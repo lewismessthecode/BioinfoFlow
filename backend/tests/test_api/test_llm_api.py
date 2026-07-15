@@ -383,6 +383,53 @@ async def test_llm_provider_create_defaults_to_chat_completions_for_compatibilit
 
 
 @pytest.mark.asyncio
+async def test_llm_provider_create_normalizes_anthropic_messages_endpoint(
+    async_client,
+):
+    response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "cch Claude Relay",
+            "kind": "anthropic",
+            "base_url": "http://8.129.13.231:8079/v1/messages",
+            "allow_insecure_http": True,
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()["data"]
+    assert payload["kind"] == "anthropic"
+    assert payload["base_url"] == "http://8.129.13.231:8079"
+    assert payload["allow_insecure_http"] is True
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_update_normalizes_anthropic_v1_endpoint(
+    async_client,
+):
+    created = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Anthropic endpoint",
+            "kind": "anthropic",
+            "base_url": "https://api.anthropic.com",
+        },
+    )
+    assert created.status_code == 201
+    provider_id = created.json()["data"]["id"]
+
+    response = await async_client.patch(
+        f"/api/v1/llm/providers/{provider_id}",
+        json={"base_url": "http://8.129.13.231:8079/v1", "allow_insecure_http": True},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["base_url"] == "http://8.129.13.231:8079"
+    assert payload["allow_insecure_http"] is True
+
+
+@pytest.mark.asyncio
 async def test_llm_provider_create_accepts_registered_headless_litellm_kind(
     async_client,
 ):

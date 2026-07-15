@@ -51,6 +51,11 @@ For headless bootstrap, set environment defaults such as:
 - `VLLM_BASE_URL`, `VLLM_API_KEY`, and `VLLM_MODEL`
 - `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY`, and `OPENAI_COMPATIBLE_MODEL`
 
+For cch or another Anthropic-compatible Claude relay, `ANTHROPIC_BASE_URL`
+must be the Anthropic root URL, not the OpenAI-compatible `/v1` URL. Public
+plain-HTTP relays also require `ANTHROPIC_ALLOW_INSECURE_HTTP=1`; see the
+RUNBOOK cch relay section for the `claude-sonnet-5` example.
+
 Start the stack:
 
 ```bash

@@ -124,6 +124,7 @@ class ProviderTemplate(ProviderAdapter):
     default_base_url: str | None = None
     env_api_key_vars: tuple[str, ...] = ()
     env_base_url_vars: tuple[str, ...] = ()
+    env_allow_insecure_http_vars: tuple[str, ...] = ()
     env_model_vars: tuple[str, ...] = ()
     env_wire_protocol_vars: tuple[str, ...] = ()
     api_key_required: bool = True
@@ -225,6 +226,7 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         default_base_url="https://api.anthropic.com",
         env_api_key_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
         env_base_url_vars=("ANTHROPIC_BASE_URL", "ANTHROPIC_API_BASE"),
+        env_allow_insecure_http_vars=("ANTHROPIC_ALLOW_INSECURE_HTTP",),
         env_model_vars=("ANTHROPIC_MODEL",),
         base_url_supported=True,
         model_id_supported=True,

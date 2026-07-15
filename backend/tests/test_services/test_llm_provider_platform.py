@@ -173,6 +173,7 @@ async def test_anthropic_environment_bootstrap_accepts_custom_base_url(
 ) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "relay-key")
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://8.129.13.231:8079")
+    monkeypatch.setenv("ANTHROPIC_ALLOW_INSECURE_HTTP", "1")
     monkeypatch.setattr(
         "app.services.llm.bootstrap.LlmCatalogService.discover_models_unchecked",
         _noop_discovery,
@@ -186,6 +187,7 @@ async def test_anthropic_environment_bootstrap_accepts_custom_base_url(
         )
     ).mappings().one()
     assert provider["base_url"] == "http://8.129.13.231:8079"
+    assert provider["allow_insecure_http"] is True
     assert provider["wire_protocol"] == "chat_completions"
     assert provider["metadata"]["providerTemplate"] == "anthropic"
 

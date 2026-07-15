@@ -45,6 +45,9 @@ async def sync_environment_llm_catalog(
     for template in list_provider_templates():
         env_api_key_var = _first_present_env_var(template.env_api_key_vars)
         env_base_url_var = _first_present_env_var(template.env_base_url_vars)
+        env_allow_insecure_http = _first_truthy_env_value(
+            template.env_allow_insecure_http_vars
+        )
         env_model = _first_present_env_value(template.env_model_vars)
         env_wire_protocol = _first_present_env_value(
             template.env_wire_protocol_vars
@@ -88,6 +91,7 @@ async def sync_environment_llm_catalog(
                 workspace_id=None,
                 user_id=None,
                 enabled=True,
+                allow_insecure_http=env_allow_insecure_http,
                 provider_metadata=metadata,
             )
             changed += 1
@@ -99,6 +103,7 @@ async def sync_environment_llm_catalog(
                 wire_protocol=wire_protocol,
                 base_url=base_url,
                 enabled=True,
+                allow_insecure_http=env_allow_insecure_http,
                 provider_metadata=metadata,
             )
             changed += 1
@@ -227,6 +232,15 @@ def _first_present_env_value(candidates: tuple[str, ...]) -> str | None:
         if value:
             return value.strip()
     return None
+
+
+def _first_truthy_env_value(candidates: tuple[str, ...]) -> bool:
+    for name in candidates:
+        value = os.getenv(name)
+        if value is None:
+            continue
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
 
 
 def _dedupe_model_templates(models: list[ModelTemplate]) -> list[ModelTemplate]:

@@ -544,7 +544,10 @@ function ProviderCard({
   const savedInsecureTransport = Boolean(
     provider?.allow_insecure_http && isPublicPlainHttpEndpoint(provider.base_url ?? ""),
   )
-  const canSave = !saving && requiredFieldsReady(template, values, configured)
+  const canSave =
+    !saving &&
+    requiredFieldsReady(template, values, configured) &&
+    (!publicPlainHttp || insecureHttpAllowed)
   const supportedProtocols = templateWireProtocols(template)
   const multipleProtocols = supportedProtocols.length > 1
   const fieldCount = template.fields.length + (multipleProtocols ? 1 : 0)

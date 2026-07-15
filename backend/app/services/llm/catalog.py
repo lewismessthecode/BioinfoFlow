@@ -38,6 +38,7 @@ from app.services.llm.provider_templates import (
     normalize_ollama_base_url,
     normalize_openai_compatible_base_url,
     normalize_provider_base_url,
+    provider_template_for_kind,
     provider_template_for_provider,
     validate_provider_configuration,
 )
@@ -81,12 +82,13 @@ class LlmCatalogService:
             str(data["kind"]),
             str(data.get("wire_protocol", "chat_completions")),
         )
+        base_url = _normalize_persisted_base_url(kind, data.get("base_url"))
         _validate_provider_base_url(
-            data.get("base_url"),
+            base_url,
             allow_insecure_http=bool(data.get("allow_insecure_http", False)),
         )
         await authorize_provider_endpoint(
-            data.get("base_url"),
+            base_url,
             role=data.get("role"),
         )
         workspace_id, user_id = _tenant_fields_for_scope(
@@ -99,7 +101,7 @@ class LlmCatalogService:
             name=data["name"],
             kind=kind,
             wire_protocol=wire_protocol,
-            base_url=data.get("base_url"),
+            base_url=base_url,
             api_key_ref=data.get("api_key_ref"),
             scope=data.get("scope", "user"),
             workspace_id=workspace_id,
@@ -259,20 +261,26 @@ class LlmCatalogService:
             role=data.get("role"),
         )
         requested_update = LlmProviderUpdate.model_validate(data)
-        requested_update.validate_merged_wire_protocol(
+        next_kind, _next_wire_protocol = requested_update.validate_merged_wire_protocol(
             current_kind=provider.kind,
             current_wire_protocol=provider.wire_protocol,
         )
         updates = _strip_none(data)
         _drop_request_tenant_fields(updates)
+        base_url = _normalize_persisted_base_url(
+            next_kind,
+            updates["base_url"] if "base_url" in updates else provider.base_url,
+        )
+        if "base_url" in updates or next_kind != provider.kind:
+            updates["base_url"] = base_url
         _validate_provider_base_url(
-            updates.get("base_url", provider.base_url),
+            base_url,
             allow_insecure_http=bool(
                 updates.get("allow_insecure_http", provider.allow_insecure_http)
             ),
         )
         await authorize_provider_endpoint(
-            updates.get("base_url", provider.base_url),
+            base_url,
             role=data.get("role"),
         )
         if "scope" in updates:
@@ -1080,6 +1088,12 @@ def validate_provider_transport(provider: LlmProvider) -> None:
         provider.base_url,
         allow_insecure_http=bool(provider.allow_insecure_http),
     )
+
+
+def _normalize_persisted_base_url(kind: str, base_url: str | None) -> str | None:
+    if provider_template_for_kind(kind) is None:
+        return base_url
+    return normalize_provider_base_url(kind, base_url)
 
 
 def _ollama_models_from_tags(payload: Any) -> list[dict[str, Any]]:
