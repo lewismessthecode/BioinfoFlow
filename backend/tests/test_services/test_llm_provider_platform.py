@@ -67,6 +67,7 @@ def test_common_provider_templates_are_key_first_and_provider_neutral() -> None:
         "ollama",
         "vllm",
         "kimi",
+        "kimi-cn",
         "qwen",
         "mistral",
         "cohere",
@@ -85,6 +86,7 @@ def test_common_provider_templates_are_key_first_and_provider_neutral() -> None:
         "groq",
         "openrouter",
         "kimi",
+        "kimi-cn",
         "qwen",
         "mistral",
         "cohere",
@@ -96,6 +98,13 @@ def test_common_provider_templates_are_key_first_and_provider_neutral() -> None:
         fields = templates[template_id].as_dict()["fields"]
         assert [field["name"] for field in fields] == ["api_key"], template_id
         assert fields[0]["placeholder"] == "Paste API key"
+
+    assert templates["kimi"].env_api_key_vars == ("KIMI_API_KEY",)
+    assert templates["kimi-cn"].env_api_key_vars == (
+        "KIMI_CN_API_KEY",
+        "MOONSHOT_CN_API_KEY",
+        "MOONSHOT_API_KEY",
+    )
 
     serialized_templates = repr([template.as_dict() for template in templates.values()])
     assert "".join(("c", "ch")) not in serialized_templates.lower()
@@ -231,6 +240,68 @@ async def test_anthropic_environment_bootstrap_accepts_https_custom_base_url(
     assert provider["allow_insecure_http"] is False
     assert provider["wire_protocol"] == "chat_completions"
     assert provider["metadata"]["providerTemplate"] == "anthropic"
+
+
+@pytest.mark.asyncio
+async def test_kimi_environment_bootstrap_uses_kimi_key_for_global(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("KIMI_API_KEY", "kimi-global-key")
+    monkeypatch.setattr(
+        "app.services.llm.bootstrap.LlmCatalogService.discover_models_unchecked",
+        _noop_discovery,
+    )
+
+    await sync_environment_llm_catalog(db_session)
+
+    provider = (
+        await db_session.execute(
+            LlmProvider.__table__.select().where(LlmProvider.kind == "kimi")
+        )
+    ).mappings().one()
+    assert provider["base_url"] == "https://api.moonshot.ai/v1"
+    assert provider["metadata"]["providerTemplate"] == "kimi"
+
+    credential = (
+        await db_session.execute(
+            LlmProviderCredential.__table__.select().where(
+                LlmProviderCredential.provider_id == provider["id"]
+            )
+        )
+    ).mappings().one()
+    assert credential["env_var_name"] == "KIMI_API_KEY"
+
+
+@pytest.mark.asyncio
+async def test_kimi_environment_bootstrap_keeps_legacy_moonshot_key_on_china(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MOONSHOT_API_KEY", "legacy-kimi-cn-key")
+    monkeypatch.setattr(
+        "app.services.llm.bootstrap.LlmCatalogService.discover_models_unchecked",
+        _noop_discovery,
+    )
+
+    await sync_environment_llm_catalog(db_session)
+
+    provider = (
+        await db_session.execute(
+            LlmProvider.__table__.select().where(LlmProvider.kind == "kimi_cn")
+        )
+    ).mappings().one()
+    assert provider["base_url"] == "https://api.moonshot.cn/v1"
+    assert provider["metadata"]["providerTemplate"] == "kimi-cn"
+
+    credential = (
+        await db_session.execute(
+            LlmProviderCredential.__table__.select().where(
+                LlmProviderCredential.provider_id == provider["id"]
+            )
+        )
+    ).mappings().one()
+    assert credential["env_var_name"] == "MOONSHOT_API_KEY"
 
 
 @pytest.mark.asyncio

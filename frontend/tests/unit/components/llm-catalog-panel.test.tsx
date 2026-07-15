@@ -116,7 +116,10 @@ describe("LlmCatalogPanel", () => {
     ]),
     providerTemplate("kimi", "Kimi", "kimi", "openai_models", [
       field("api_key", "API key", true, true),
-    ], "https://api.moonshot.cn/v1"),
+    ], "https://api.moonshot.ai/v1", [], "https://platform.kimi.ai/console/api-keys"),
+    providerTemplate("kimi-cn", "Kimi China", "kimi_cn", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.moonshot.cn/v1", [], "https://platform.kimi.com/console/api-keys"),
     providerTemplate("qwen", "Qwen", "qwen", "openai_models", [
       field("api_key", "API key", true, true),
     ], "https://dashscope.aliyuncs.com/compatible-mode/v1"),
@@ -181,6 +184,7 @@ describe("LlmCatalogPanel", () => {
       "DeepSeek",
       "OpenRouter",
       "Kimi",
+      "Kimi China",
       "Qwen",
       "Mistral",
       "Cohere",
@@ -196,6 +200,16 @@ describe("LlmCatalogPanel", () => {
 
     expect(screen.queryByText("Model profiles")).not.toBeInTheDocument()
     expect(screen.queryByText("Models")).not.toBeInTheDocument()
+    expect(
+      within(screen.getByRole("group", { name: "Kimi" })).getByRole("link", {
+        name: "Get key",
+      }),
+    ).toHaveAttribute("href", "https://platform.kimi.ai/console/api-keys")
+    expect(
+      within(screen.getByRole("group", { name: "Kimi China" })).getByRole("link", {
+        name: "Get key",
+      }),
+    ).toHaveAttribute("href", "https://platform.kimi.com/console/api-keys")
   })
 
   it("shows a compact protocol selector only for multi-protocol providers and restores saved Responses", () => {
@@ -1367,7 +1381,7 @@ describe("LlmCatalogPanel", () => {
         providerId: undefined,
         name: "Kimi",
         apiKey: "sk-moonshot",
-        baseUrl: "https://api.moonshot.cn/v1",
+        baseUrl: "https://api.moonshot.ai/v1",
         modelIds: [],
         discover: false,
         scope: "user",
@@ -1593,6 +1607,7 @@ function providerTemplate(
   fields: ReturnType<typeof field>[],
   defaultBaseUrl?: string,
   models: Array<Record<string, unknown>> = [],
+  docsUrl?: string,
 ) {
   const supportedWireProtocols =
     kind === "openai" || kind === "openai_compatible"
@@ -1602,7 +1617,7 @@ function providerTemplate(
     id,
     name,
     kind,
-    docs_url: `https://docs.example.com/${id}`,
+    docs_url: docsUrl ?? `https://docs.example.com/${id}`,
     discovery,
     default_base_url: defaultBaseUrl,
     supported_wire_protocols: supportedWireProtocols,

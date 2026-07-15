@@ -47,7 +47,8 @@ For headless bootstrap, set environment defaults such as:
 - `OPENROUTER_API_KEY`
 - `XAI_API_KEY` or `GROK_API_KEY`
 - `GROQ_API_KEY`
-- `KIMI_API_KEY` or `MOONSHOT_API_KEY`
+- `KIMI_API_KEY` for Kimi global
+- `KIMI_CN_API_KEY`, `MOONSHOT_CN_API_KEY`, or legacy `MOONSHOT_API_KEY` for Kimi China
 - `DASHSCOPE_API_KEY` or `QWEN_API_KEY`
 - `MISTRAL_API_KEY`
 - `COHERE_API_KEY`

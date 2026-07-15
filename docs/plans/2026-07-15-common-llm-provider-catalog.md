@@ -14,8 +14,8 @@ provider's model list when the upstream API supports discovery.
 - Keep endpoint override and manual model ID as advanced fallbacks for local
   gateways, self-hosted services, and providers whose model endpoint is blocked.
 - Cover common providers: OpenAI, Anthropic, Gemini, DeepSeek, xAI/Grok, Groq,
-  OpenRouter, Ollama, vLLM, Kimi/Moonshot, Qwen/DashScope, Mistral, Cohere,
-  Together AI, Fireworks AI, and Perplexity.
+  OpenRouter, Ollama, vLLM, Kimi/Moonshot global and China, Qwen/DashScope,
+  Mistral, Cohere, Together AI, Fireworks AI, and Perplexity.
 
 ## Official API Basis
 
@@ -28,7 +28,8 @@ provider's model list when the upstream API supports discovery.
 - OpenRouter: `https://openrouter.ai/docs/api-reference/list-available-models`
 - Ollama: `https://docs.ollama.com/openai`
 - vLLM: `https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html`
-- Moonshot/Kimi: `https://platform.moonshot.cn/docs/api/chat`
+- Moonshot/Kimi global: `https://platform.kimi.ai/docs/api/chat`
+- Moonshot/Kimi China: `https://platform.kimi.com/docs/api/chat`
 - Qwen/DashScope: `https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope`
 - Mistral: `https://docs.mistral.ai/api/`
 - Cohere: `https://docs.cohere.com/docs/compatibility-api`
