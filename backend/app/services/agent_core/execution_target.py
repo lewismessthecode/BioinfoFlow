@@ -171,6 +171,24 @@ def execution_scope_allows_remote(execution_scope: Any) -> bool:
     return bool(_selected_ids_from_execution_scope(normalized_scope))
 
 
+def execution_scope_allows_local(execution_scope: Any) -> bool:
+    try:
+        normalized_scope = normalize_execution_scope(execution_scope)
+    except BadRequestError:
+        return False
+    if not normalized_scope:
+        return False
+    if normalized_scope.get("mode") == "auto":
+        return True
+    targets = normalized_scope.get("selected_targets")
+    if not isinstance(targets, list):
+        return False
+    return any(
+        isinstance(target, dict) and target.get("type") == "local"
+        for target in targets
+    )
+
+
 def execution_scope_mode(execution_scope: Any) -> str | None:
     try:
         normalized_scope = normalize_execution_scope(execution_scope)

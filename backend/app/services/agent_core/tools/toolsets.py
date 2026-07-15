@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from app.services.agent_core.execution_target import (
+    execution_scope_allows_local,
     execution_scope_allows_remote,
     is_remote_ssh_execution_target,
 )
@@ -108,7 +109,12 @@ class ToolsetExposure:
         if isinstance(allowed_tools, list) and allowed_tools:
             names &= {str(name) for name in allowed_tools}
         scope_allows_remote = execution_scope_allows_remote(execution_scope)
-        if is_remote_ssh_execution_target(execution_target):
+        remote_only_scope = (
+            execution_scope is not None
+            and scope_allows_remote
+            and not execution_scope_allows_local(execution_scope)
+        )
+        if is_remote_ssh_execution_target(execution_target) or remote_only_scope:
             names &= {
                 spec.name
                 for spec in specs
