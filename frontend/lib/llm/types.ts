@@ -97,6 +97,7 @@ export type LlmProviderDiscovery =
   | "ollama_tags"
   | "anthropic_models"
   | "gemini_models"
+  | "cohere_models"
 
 export type LlmProviderTemplateField = {
   name: "api_key" | "base_url" | "model_id" | string

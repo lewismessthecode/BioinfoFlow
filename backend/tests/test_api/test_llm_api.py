@@ -130,6 +130,13 @@ async def test_llm_provider_templates_drive_frontend_configuration(async_client)
         "groq",
         "deepseek",
         "openrouter",
+        "kimi",
+        "qwen",
+        "mistral",
+        "cohere",
+        "together",
+        "fireworks",
+        "perplexity",
         "ollama",
         "vllm",
         "openai-compatible",
@@ -144,18 +151,20 @@ async def test_llm_provider_templates_drive_frontend_configuration(async_client)
             "placeholder": "Paste API key",
         }
     ]
-    anthropic_fields = {
-        field["name"]: field
-        for field in templates["anthropic"]["fields"]
-    }
-    assert anthropic_fields["base_url"] == {
-        "name": "base_url",
-        "label": "Endpoint",
-        "secret": False,
-        "required": False,
-        "placeholder": "Provider endpoint",
-        "default": "https://api.anthropic.com",
-    }
+    assert templates["anthropic"]["fields"] == [
+        {
+            "name": "api_key",
+            "label": "API key",
+            "secret": True,
+            "required": True,
+            "placeholder": "Paste API key",
+        }
+    ]
+    assert templates["kimi"]["fields"] == templates["openai"]["fields"]
+    assert templates["qwen"]["fields"] == templates["openai"]["fields"]
+    assert templates["cohere"]["default_base_url"] == (
+        "https://api.cohere.ai/compatibility/v1"
+    )
     vllm_fields = {field["name"]: field for field in templates["vllm"]["fields"]}
     assert vllm_fields["base_url"]["default"] == "http://localhost:8000/v1"
     assert vllm_fields["api_key"]["required"] is False
@@ -198,18 +207,14 @@ async def test_llm_provider_setup_creates_vllm_provider_key_and_manual_model(
 
 
 @pytest.mark.asyncio
-async def test_llm_provider_setup_creates_anthropic_compatible_relay(
+async def test_llm_provider_setup_creates_kimi_provider_from_key_only(
     async_client,
 ):
     response = await async_client.post(
         "/api/v1/llm/provider-setups",
         json={
-            "template_id": "anthropic",
-            "name": "cch Claude Relay",
-            "base_url": "http://8.129.13.231:8079",
-            "api_key": "relay-key",
-            "model_ids": ["claude-sonnet-5"],
-            "allow_insecure_http": True,
+            "template_id": "kimi",
+            "api_key": "moonshot-key",
             "scope": "user",
         },
     )
@@ -217,21 +222,21 @@ async def test_llm_provider_setup_creates_anthropic_compatible_relay(
     assert response.status_code == 200
     payload = response.json()["data"]
     provider = payload["provider"]
-    assert provider["name"] == "cch Claude Relay"
-    assert provider["kind"] == "anthropic"
+    assert provider["name"] == "Kimi"
+    assert provider["kind"] == "kimi"
     assert provider["wire_protocol"] == "chat_completions"
-    assert provider["base_url"] == "http://8.129.13.231:8079"
-    assert provider["allow_insecure_http"] is True
+    assert provider["base_url"] == "https://api.moonshot.cn/v1"
+    assert provider["allow_insecure_http"] is False
     assert provider["credential"]["configured"] is True
-    assert payload["models"][0]["model_id"] == "claude-sonnet-5"
+    assert payload["models"] == []
 
     configuration = await async_client.get("/api/v1/llm/configuration")
     assert configuration.status_code == 200
     configured = configuration.json()["data"]
     assert any(
-        model["model_id"] == "claude-sonnet-5"
-        and model["provider_id"] == provider["id"]
-        for model in configured["models"]
+        item["id"] == provider["id"]
+        and item["credential"]["configured"] is True
+        for item in configured["providers"]
     )
 
 
@@ -389,18 +394,17 @@ async def test_llm_provider_create_normalizes_anthropic_messages_endpoint(
     response = await async_client.post(
         "/api/v1/llm/providers",
         json={
-            "name": "cch Claude Relay",
+            "name": "Anthropic gateway",
             "kind": "anthropic",
-            "base_url": "http://8.129.13.231:8079/v1/messages",
-            "allow_insecure_http": True,
+            "base_url": "https://anthropic-gateway.example/v1/messages",
         },
     )
 
     assert response.status_code == 201
     payload = response.json()["data"]
     assert payload["kind"] == "anthropic"
-    assert payload["base_url"] == "http://8.129.13.231:8079"
-    assert payload["allow_insecure_http"] is True
+    assert payload["base_url"] == "https://anthropic-gateway.example"
+    assert payload["allow_insecure_http"] is False
 
 
 @pytest.mark.asyncio
@@ -420,13 +424,13 @@ async def test_llm_provider_update_normalizes_anthropic_v1_endpoint(
 
     response = await async_client.patch(
         f"/api/v1/llm/providers/{provider_id}",
-        json={"base_url": "http://8.129.13.231:8079/v1", "allow_insecure_http": True},
+        json={"base_url": "https://anthropic-gateway.example/v1"},
     )
 
     assert response.status_code == 200
     payload = response.json()["data"]
-    assert payload["base_url"] == "http://8.129.13.231:8079"
-    assert payload["allow_insecure_http"] is True
+    assert payload["base_url"] == "https://anthropic-gateway.example"
+    assert payload["allow_insecure_http"] is False
 
 
 @pytest.mark.asyncio
@@ -501,7 +505,7 @@ async def test_llm_provider_setup_updates_legacy_null_metadata(
             "template_id": "openai-compatible",
             "provider_id": str(provider.id),
             "name": "Responses relay",
-            "base_url": "http://8.129.13.231:8079/v1",
+            "base_url": "http://public-relay.example:8079/v1",
             "wire_protocol": "responses",
             "api_key": "relay-key",
             "model_ids": ["gpt-5.4-mini"],
@@ -512,7 +516,7 @@ async def test_llm_provider_setup_updates_legacy_null_metadata(
 
     assert response.status_code == 200, response.text
     configured = response.json()["data"]
-    assert configured["provider"]["base_url"] == "http://8.129.13.231:8079/v1"
+    assert configured["provider"]["base_url"] == "http://public-relay.example:8079/v1"
     await db_session.refresh(provider)
     assert provider.provider_metadata == {"providerTemplate": "openai-compatible"}
     assert configured["provider"]["wire_protocol"] == "responses"
@@ -528,7 +532,7 @@ async def test_llm_provider_setup_allows_explicit_public_insecure_http(
         json={
             "template_id": "openai-compatible",
             "name": "Public HTTP Relay",
-            "base_url": "http://8.129.13.231:8079/v1",
+            "base_url": "http://public-relay.example:8079/v1",
             "api_key": "relay-key",
             "model_ids": ["gpt-5.6-sol"],
             "allow_insecure_http": True,
@@ -539,7 +543,7 @@ async def test_llm_provider_setup_allows_explicit_public_insecure_http(
     assert response.status_code == 200
     payload = response.json()["data"]
     assert payload["provider"]["allow_insecure_http"] is True
-    assert payload["provider"]["base_url"] == "http://8.129.13.231:8079/v1"
+    assert payload["provider"]["base_url"] == "http://public-relay.example:8079/v1"
     assert payload["models"][0]["model_id"] == "gpt-5.6-sol"
 
     configuration = await async_client.get("/api/v1/llm/configuration")
@@ -571,14 +575,14 @@ async def test_llm_provider_update_requires_public_insecure_http_opt_in(
 
     rejected = await async_client.patch(
         f"/api/v1/llm/providers/{provider_id}",
-        json={"base_url": "http://8.129.13.231:8079/v1"},
+        json={"base_url": "http://public-relay.example:8079/v1"},
     )
     assert rejected.status_code == 422
 
     allowed = await async_client.patch(
         f"/api/v1/llm/providers/{provider_id}",
         json={
-            "base_url": "http://8.129.13.231:8079/v1",
+            "base_url": "http://public-relay.example:8079/v1",
             "allow_insecure_http": True,
         },
     )

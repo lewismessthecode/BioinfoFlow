@@ -13,6 +13,7 @@ ProviderDiscovery = Literal[
     "ollama_tags",
     "anthropic_models",
     "gemini_models",
+    "cohere_models",
 ]
 
 _PROVIDER_KIND_PATTERN = re.compile(
@@ -226,10 +227,7 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         default_base_url="https://api.anthropic.com",
         env_api_key_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
         env_base_url_vars=("ANTHROPIC_BASE_URL", "ANTHROPIC_API_BASE"),
-        env_allow_insecure_http_vars=("ANTHROPIC_ALLOW_INSECURE_HTTP",),
         env_model_vars=("ANTHROPIC_MODEL",),
-        base_url_supported=True,
-        model_id_supported=True,
         litellm_model_prefix="anthropic/",
     ),
     ProviderTemplate(
@@ -281,7 +279,78 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         default_base_url="https://openrouter.ai/api/v1",
         env_api_key_vars=("OPENROUTER_API_KEY",),
         litellm_model_prefix="openrouter/",
-        model_id_supported=True,
+    ),
+    ProviderTemplate(
+        id="kimi",
+        name="Kimi",
+        kind="kimi",
+        docs_url="https://platform.moonshot.cn/console/api-keys",
+        discovery="openai_models",
+        default_base_url="https://api.moonshot.cn/v1",
+        env_api_key_vars=("KIMI_API_KEY", "MOONSHOT_API_KEY"),
+        litellm_model_prefix="openai/",
+    ),
+    ProviderTemplate(
+        id="qwen",
+        name="Qwen",
+        kind="qwen",
+        docs_url="https://bailian.console.aliyun.com/",
+        discovery="openai_models",
+        default_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        env_api_key_vars=("DASHSCOPE_API_KEY", "QWEN_API_KEY"),
+        litellm_model_prefix="openai/",
+    ),
+    ProviderTemplate(
+        id="mistral",
+        name="Mistral",
+        kind="mistral",
+        docs_url="https://console.mistral.ai/api-keys/",
+        discovery="openai_models",
+        default_base_url="https://api.mistral.ai/v1",
+        env_api_key_vars=("MISTRAL_API_KEY",),
+        litellm_model_prefix="openai/",
+    ),
+    ProviderTemplate(
+        id="cohere",
+        name="Cohere",
+        kind="cohere",
+        docs_url="https://dashboard.cohere.com/api-keys",
+        discovery="cohere_models",
+        default_base_url="https://api.cohere.ai/compatibility/v1",
+        env_api_key_vars=("COHERE_API_KEY",),
+        litellm_model_prefix="openai/",
+        metadata={"modelDiscoveryBaseUrl": "https://api.cohere.ai/v2"},
+    ),
+    ProviderTemplate(
+        id="together",
+        name="Together AI",
+        kind="together",
+        docs_url="https://api.together.ai/settings/api-keys",
+        discovery="openai_models",
+        default_base_url="https://api.together.xyz/v1",
+        env_api_key_vars=("TOGETHER_API_KEY", "TOGETHERAI_API_KEY"),
+        litellm_model_prefix="openai/",
+    ),
+    ProviderTemplate(
+        id="fireworks",
+        name="Fireworks AI",
+        kind="fireworks",
+        docs_url="https://fireworks.ai/account/api-keys",
+        discovery="openai_models",
+        default_base_url="https://api.fireworks.ai/inference/v1",
+        env_api_key_vars=("FIREWORKS_API_KEY", "FIREWORKSAI_API_KEY"),
+        litellm_model_prefix="openai/",
+    ),
+    ProviderTemplate(
+        id="perplexity",
+        name="Perplexity",
+        kind="perplexity",
+        docs_url="https://www.perplexity.ai/settings/api",
+        discovery="openai_models",
+        default_base_url="https://api.perplexity.ai",
+        env_api_key_vars=("PERPLEXITY_API_KEY", "PPLX_API_KEY"),
+        litellm_model_prefix="perplexity/",
+        metadata={"preserveOpenAIBaseUrl": True},
     ),
     ProviderTemplate(
         id="ollama",
@@ -378,8 +447,6 @@ class ProviderRegistry:
 
 _HEADLESS_PROVIDER_ADAPTERS: tuple[ProviderAdapter, ...] = (
     ProviderAdapter(kind="azure", litellm_model_prefix="azure/"),
-    ProviderAdapter(kind="qwen"),
-    ProviderAdapter(kind="kimi"),
     ProviderAdapter(kind="minimax"),
 )
 
@@ -476,6 +543,9 @@ def normalize_provider_base_url(kind: str, base_url: str | None) -> str | None:
     if kind == "gemini":
         # These providers use native list endpoints (/v1/models, /v1beta/models)
         # appended at discovery time, so keep the host root intact.
+        return base_url.strip().rstrip("/")
+    template = provider_template_for_kind(kind)
+    if template and template.metadata.get("preserveOpenAIBaseUrl") is True:
         return base_url.strip().rstrip("/")
     return normalize_openai_compatible_base_url(
         base_url,
