@@ -30,10 +30,15 @@ export type SetupProviderOutcome =
   | { ok: true; result: LlmProviderSetupResult }
   | { ok: false; error: Error }
 
-function mergeModels(current: LlmModel[], incoming: LlmModel[]) {
-  const merged = new Map(current.map((model) => [model.id, model]))
-  for (const model of incoming) merged.set(model.id, model)
-  return Array.from(merged.values())
+function replaceProviderModels(
+  current: LlmModel[],
+  providerId: string,
+  incoming: LlmModel[],
+) {
+  return [
+    ...current.filter((model) => model.provider_id !== providerId),
+    ...incoming,
+  ]
 }
 
 export function useLlmCatalog() {
@@ -182,10 +187,19 @@ export function useLlmCatalog() {
       setError(null)
       try {
         const discovered = await discoverLlmProviderModels(providerId)
-        setModels((current) => mergeModels(current, discovered))
+        setModels((current) =>
+          replaceProviderModels(current, providerId, discovered),
+        )
         setConfiguration((current) =>
           current
-            ? { ...current, models: mergeModels(current.models, discovered) }
+            ? {
+                ...current,
+                models: replaceProviderModels(
+                  current.models,
+                  providerId,
+                  discovered,
+                ),
+              }
             : current,
         )
         await refresh({ background: true })

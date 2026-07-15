@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import (
     AfterValidator,
+    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
@@ -103,7 +104,10 @@ class LlmProviderRead(BaseModel):
     enabled: bool
     allow_insecure_http: bool = False
     test_status: dict | None = None
-    metadata: dict | None = Field(default=None, validation_alias="provider_metadata")
+    metadata: dict | None = Field(
+        default=None,
+        validation_alias=AliasChoices("provider_metadata", "metadata"),
+    )
     created_at: datetime
     updated_at: datetime
 
@@ -229,7 +233,10 @@ class LlmModelRead(BaseModel):
     default_temperature: str | None = None
     default_top_p: str | None = None
     cost_metadata: dict | None = None
-    metadata: dict | None = Field(default=None, validation_alias="model_metadata")
+    metadata: dict | None = Field(
+        default=None,
+        validation_alias=AliasChoices("model_metadata", "metadata"),
+    )
     created_at: datetime
     updated_at: datetime
 
@@ -290,7 +297,10 @@ class LlmModelProfileRead(BaseModel):
     workspace_id: UUID | None = None
     user_id: str | None = None
     enabled: bool
-    metadata: dict | None = Field(default=None, validation_alias="profile_metadata")
+    metadata: dict | None = Field(
+        default=None,
+        validation_alias=AliasChoices("profile_metadata", "metadata"),
+    )
     created_at: datetime
     updated_at: datetime
 

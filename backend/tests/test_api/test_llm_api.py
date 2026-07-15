@@ -14,6 +14,7 @@ from app.models.llm import (
     LlmProvider,
     LlmProviderCredential,
 )
+from app.services.llm.credentials import encrypt_secret
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -55,16 +56,18 @@ async def _create_provider(
     scope: str = "user",
     workspace_id: str | None = DEFAULT_WORKSPACE_ID,
     user_id: str | None = "user-1",
+    enabled: bool = True,
+    base_url: str = "http://localhost:11434/v1",
 ) -> LlmProvider:
     provider = LlmProvider(
         name=name,
         kind="openai_compatible",
-        base_url="http://localhost:11434/v1",
+        base_url=base_url,
         api_key_ref="env:TEST_KEY",
         scope=scope,
         workspace_id=workspace_id,
         user_id=user_id,
-        enabled=True,
+        enabled=enabled,
     )
     db_session.add(provider)
     await db_session.commit()
@@ -78,6 +81,7 @@ async def _create_model(
     provider_id: str,
     model_id: str,
     display_name: str,
+    metadata: dict | None = None,
 ) -> LlmModel:
     model = LlmModel(
         provider_id=provider_id,
@@ -85,6 +89,7 @@ async def _create_model(
         display_name=display_name,
         supports_tools=True,
         supports_streaming=True,
+        model_metadata=metadata,
     )
     db_session.add(model)
     await db_session.commit()
@@ -97,6 +102,7 @@ async def _create_profile(
     *,
     name: str,
     primary_model_id: str,
+    fallback_model_ids: list[str] | None = None,
     scope: str = "user",
     workspace_id: str | None = DEFAULT_WORKSPACE_ID,
     user_id: str | None = "user-1",
@@ -105,6 +111,7 @@ async def _create_profile(
         name=name,
         task_type="agent_core",
         primary_model_id=primary_model_id,
+        fallback_model_ids=fallback_model_ids,
         scope=scope,
         workspace_id=workspace_id,
         user_id=user_id,
@@ -279,6 +286,197 @@ async def test_llm_provider_setup_creates_kimi_china_provider_from_key_only(
 
 
 @pytest.mark.asyncio
+async def test_llm_configuration_reconciles_legacy_kimi_cn_provider(
+    async_client,
+    db_session,
+):
+    legacy_provider = LlmProvider(
+        name="Kimi",
+        kind="kimi",
+        base_url="https://api.moonshot.cn/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "kimi"},
+    )
+    db_session.add(legacy_provider)
+    await db_session.commit()
+    await db_session.refresh(legacy_provider)
+    db_session.add(
+        LlmProviderCredential(
+            provider_id=str(legacy_provider.id),
+            source="stored",
+            encrypted_secret=encrypt_secret("moonshot-cn-key"),
+            masked_hint="sk...cn",
+            updated_by="dev",
+        )
+    )
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/llm/configuration")
+
+    assert response.status_code == 200
+    provider = next(
+        item
+        for item in response.json()["data"]["providers"]
+        if item["id"] == str(legacy_provider.id)
+    )
+    assert provider["name"] == "Kimi China"
+    assert provider["kind"] == "kimi_cn"
+    assert provider["base_url"] == "https://api.moonshot.cn/v1"
+    assert provider["metadata"]["providerTemplate"] == "kimi-cn"
+
+
+@pytest.mark.asyncio
+async def test_llm_configuration_reconciles_kimi_cn_provider_without_template_metadata(
+    async_client,
+    db_session,
+):
+    legacy_provider = LlmProvider(
+        name="Kimi",
+        kind="kimi",
+        base_url="https://api.moonshot.cn/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+        provider_metadata=None,
+    )
+    db_session.add(legacy_provider)
+    await db_session.commit()
+    await db_session.refresh(legacy_provider)
+
+    response = await async_client.get("/api/v1/llm/configuration")
+
+    assert response.status_code == 200
+    provider = next(
+        item
+        for item in response.json()["data"]["providers"]
+        if item["id"] == str(legacy_provider.id)
+    )
+    assert provider["name"] == "Kimi China"
+    assert provider["kind"] == "kimi_cn"
+    assert provider["metadata"]["providerTemplate"] == "kimi-cn"
+
+
+@pytest.mark.asyncio
+async def test_llm_configuration_and_models_exclude_disabled_provider_models(
+    async_client,
+    db_session,
+):
+    enabled_provider = await _create_provider(
+        db_session,
+        name="Enabled provider",
+        user_id="dev",
+    )
+    enabled_model = await _create_model(
+        db_session,
+        provider_id=str(enabled_provider.id),
+        model_id="enabled-model",
+        display_name="Enabled Model",
+    )
+    disabled_provider = await _create_provider(
+        db_session,
+        name="Disabled provider",
+        user_id="dev",
+        enabled=False,
+    )
+    await _create_model(
+        db_session,
+        provider_id=str(disabled_provider.id),
+        model_id="disabled-model",
+        display_name="Disabled Model",
+    )
+
+    configuration = await async_client.get("/api/v1/llm/configuration")
+    models = await async_client.get("/api/v1/llm/models")
+
+    assert configuration.status_code == 200
+    configured = configuration.json()["data"]
+    assert {item["id"] for item in configured["providers"]} >= {
+        str(enabled_provider.id),
+        str(disabled_provider.id),
+    }
+    assert configured["summary"]["model_count"] == 1
+    assert [model["id"] for model in configured["models"]] == [
+        str(enabled_model.id)
+    ]
+
+    assert models.status_code == 200
+    assert [model["id"] for model in models.json()["data"]] == [
+        str(enabled_model.id)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_llm_configuration_and_profiles_exclude_invalid_model_dependencies(
+    async_client,
+    db_session,
+):
+    enabled_provider = await _create_provider(
+        db_session,
+        name="Profile enabled provider",
+        user_id="dev",
+    )
+    enabled_model = await _create_model(
+        db_session,
+        provider_id=str(enabled_provider.id),
+        model_id="profile-enabled-model",
+        display_name="Profile Enabled Model",
+    )
+    enabled_profile = await _create_profile(
+        db_session,
+        name="Enabled profile",
+        primary_model_id=str(enabled_model.id),
+        user_id="dev",
+    )
+    disabled_provider = await _create_provider(
+        db_session,
+        name="Profile disabled provider",
+        user_id="dev",
+        enabled=False,
+    )
+    disabled_model = await _create_model(
+        db_session,
+        provider_id=str(disabled_provider.id),
+        model_id="profile-disabled-model",
+        display_name="Profile Disabled Model",
+    )
+    await _create_profile(
+        db_session,
+        name="Disabled provider profile",
+        primary_model_id=str(disabled_model.id),
+        user_id="dev",
+    )
+    stale_model = await _create_model(
+        db_session,
+        provider_id=str(enabled_provider.id),
+        model_id="profile-stale-model",
+        display_name="Profile Stale Model",
+        metadata={"catalog_status": "stale"},
+    )
+    await _create_profile(
+        db_session,
+        name="Stale model profile",
+        primary_model_id=str(stale_model.id),
+        user_id="dev",
+    )
+
+    configuration = await async_client.get("/api/v1/llm/configuration")
+    profiles = await async_client.get("/api/v1/llm/model-profiles")
+
+    assert configuration.status_code == 200
+    assert profiles.status_code == 200
+    assert [profile["id"] for profile in configuration.json()["data"]["profiles"]] == [
+        str(enabled_profile.id)
+    ]
+    assert [profile["id"] for profile in profiles.json()["data"]] == [
+        str(enabled_profile.id)
+    ]
+
+
+@pytest.mark.asyncio
 async def test_discover_models_returns_provider_auth_error_without_500(
     async_client,
     monkeypatch,
@@ -324,6 +522,83 @@ async def test_discover_models_returns_provider_auth_error_without_500(
     assert payload["error"]["code"] == "VALIDATION_ERROR"
     assert "401 Unauthorized" in payload["error"]["message"]
     assert "API key" in payload["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_discover_models_hides_stale_provider_models(
+    async_client,
+    db_session,
+    monkeypatch,
+):
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers=None, params=None):
+            del headers, params
+            return httpx.Response(
+                200,
+                json={"data": [{"id": "kimi-current", "object": "model"}]},
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
+    provider = LlmProvider(
+        name="Kimi",
+        kind="kimi",
+        base_url="https://api.moonshot.ai/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "kimi"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+    await db_session.refresh(provider)
+    db_session.add(
+        LlmProviderCredential(
+            provider_id=str(provider.id),
+            source="stored",
+            encrypted_secret=encrypt_secret("moonshot-ai-key"),
+            masked_hint="sk...ai",
+            updated_by="dev",
+        )
+    )
+    stale_model = await _create_model(
+        db_session,
+        provider_id=str(provider.id),
+        model_id="wrong-manual-model",
+        display_name="Wrong Manual Model",
+    )
+
+    response = await async_client.post(
+        f"/api/v1/llm/providers/{provider.id}/discover-models"
+    )
+    configuration = await async_client.get("/api/v1/llm/configuration")
+    listed = await async_client.get(f"/api/v1/llm/models?provider_id={provider.id}")
+
+    assert response.status_code == 200
+    assert [model["model_id"] for model in response.json()["data"]] == [
+        "kimi-current"
+    ]
+    assert configuration.status_code == 200
+    assert [model["model_id"] for model in configuration.json()["data"]["models"]] == [
+        "kimi-current"
+    ]
+    assert listed.status_code == 200
+    assert [model["model_id"] for model in listed.json()["data"]] == ["kimi-current"]
+    await db_session.refresh(stale_model)
+    assert stale_model.model_metadata["catalog_status"] == "stale"
 
 
 @pytest.mark.asyncio
@@ -1334,6 +1609,80 @@ async def test_llm_provider_test_selects_model_and_rejects_foreign_model(
     )
     assert rejected.status_code == 422
     assert "foreign-model" not in rejected.text
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_test_skips_and_rejects_stale_models(
+    async_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    provider = await _create_provider(
+        db_session,
+        name="Probe stale provider",
+        base_url="https://probe.example/v1",
+        user_id="dev",
+    )
+    stale_model = await _create_model(
+        db_session,
+        provider_id=str(provider.id),
+        model_id="stale-model",
+        display_name="Alpha stale model",
+        metadata={"catalog_status": "stale"},
+    )
+    await _create_model(
+        db_session,
+        provider_id=str(provider.id),
+        model_id="active-model",
+        display_name="Zulu active model",
+    )
+    selected_models: list[str] = []
+
+    class FakeProbeResult:
+        success = True
+        latency_ms = 7
+        wire_protocol = "chat_completions"
+        model_id = "active-model"
+        error_code = None
+        error_message = None
+        retryable = False
+        http_status = None
+        provider_code = None
+
+        def to_public_dict(self) -> dict:
+            return {
+                "success": self.success,
+                "latency_ms": self.latency_ms,
+                "wire_protocol": self.wire_protocol,
+                "model_id": self.model_id,
+                "error_code": self.error_code,
+                "error_message": self.error_message,
+                "retryable": self.retryable,
+                "http_status": self.http_status,
+                "provider_code": self.provider_code,
+            }
+
+    async def fake_probe(self, **kwargs):
+        del self
+        selected_models.append(kwargs["model_id"])
+        return FakeProbeResult()
+
+    monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", fake_probe)
+
+    default_result = await async_client.post(
+        f"/api/v1/llm/providers/{provider.id}/test",
+        json={},
+    )
+    rejected = await async_client.post(
+        f"/api/v1/llm/providers/{provider.id}/test",
+        json={"model_id": str(stale_model.id)},
+    )
+
+    assert default_result.status_code == 200
+    assert default_result.json()["data"]["model"] == "active-model"
+    assert selected_models == ["active-model"]
+    assert rejected.status_code == 422
+    assert "stale-model" not in rejected.text
 
 
 @pytest.mark.asyncio

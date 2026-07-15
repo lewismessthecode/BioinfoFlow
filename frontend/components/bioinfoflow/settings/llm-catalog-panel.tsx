@@ -8,6 +8,7 @@ import {
   Loader2,
   RefreshCw,
   ShieldAlert,
+  Trash2,
 } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
@@ -64,6 +65,7 @@ export function LlmCatalogPanel() {
     refresh,
     discoverModels,
     setupProvider,
+    setProviderEnabled = async () => null,
     testProvider,
   } = useLlmCatalog()
   const [fieldValues, setFieldValues] = useState<FieldValues>({})
@@ -79,6 +81,9 @@ export function LlmCatalogPanel() {
   const [testingTemplateIds, setTestingTemplateIds] = useState<Set<string>>(
     () => new Set(),
   )
+  const [removingTemplateIds, setRemovingTemplateIds] = useState<Set<string>>(
+    () => new Set(),
+  )
   const [dirtyTemplateIds, setDirtyTemplateIds] = useState<Set<string>>(
     () => new Set(),
   )
@@ -87,9 +92,11 @@ export function LlmCatalogPanel() {
   const providersByTemplate = useMemo(() => {
     const byTemplate = new Map<string, LlmConfiguredProvider>()
     for (const template of providerTemplates) {
-      const provider = configuredProviders.find((item) =>
+      const matchingProviders = configuredProviders.filter((item) =>
         providerMatchesTemplate(item, template),
       )
+      const provider =
+        matchingProviders.find((item) => item.enabled) ?? matchingProviders[0]
       if (provider) byTemplate.set(template.id, provider)
     }
     return byTemplate
@@ -272,6 +279,10 @@ export function LlmCatalogPanel() {
         ? await discoverModels(result.provider.id)
         : null
       if (shouldDiscoverModels && discoveredModels === null) {
+        setRowErrors((current) => ({
+          ...current,
+          [template.id]: t("providerCards.savedDiscoveryFailed"),
+        }))
         toast.warning(t("providerCards.savedDiscoveryFailed"))
       } else if (shouldDiscoverModels && discoveredModels?.length === 0) {
         toast.warning(t("providerCards.savedNoModels"))
@@ -339,6 +350,36 @@ export function LlmCatalogPanel() {
       }
     } finally {
       setRefreshingModels(false)
+    }
+  }
+
+  const removeProvider = async (
+    template: LlmProviderTemplate,
+    provider: LlmConfiguredProvider,
+  ) => {
+    setRemovingTemplateIds((current) => new Set(current).add(template.id))
+    clearRowError(template.id)
+    invalidateProbeResult(template.id)
+    try {
+      const updated = await setProviderEnabled(provider, false)
+      if (!updated) {
+        const message = t("providerCards.removeFailed")
+        setRowErrors((current) => ({ ...current, [template.id]: message }))
+        toast.error(message)
+        return
+      }
+      setDirtyTemplateIds((current) => {
+        const next = new Set(current)
+        next.delete(template.id)
+        return next
+      })
+      toast.success(t("providerCards.removed"))
+    } finally {
+      setRemovingTemplateIds((current) => {
+        const next = new Set(current)
+        next.delete(template.id)
+        return next
+      })
     }
   }
 
@@ -449,6 +490,7 @@ export function LlmCatalogPanel() {
                 error={rowErrors[template.id]}
                 saving={savingTemplateIds.has(template.id)}
                 testing={testingTemplateIds.has(template.id)}
+                removing={removingTemplateIds.has(template.id)}
                 wireProtocol={
                   protocolValues[template.id] ??
                   provider?.wire_protocol ??
@@ -485,6 +527,9 @@ export function LlmCatalogPanel() {
                   }
                 }}
                 onSave={() => void saveProvider(template)}
+                onRemove={() => {
+                  if (provider) void removeProvider(template, provider)
+                }}
               />
             )
           })}
@@ -503,6 +548,7 @@ type ProviderCardProps = {
   error?: string
   saving: boolean
   testing: boolean
+  removing: boolean
   wireProtocol: LlmWireProtocol
   providerModels: LlmModel[]
   selectedTestModelId: string
@@ -514,6 +560,7 @@ type ProviderCardProps = {
   onTestModelChange: (modelId: string) => void
   onTest: () => void
   onSave: () => void
+  onRemove: () => void
 }
 
 function ProviderCard({
@@ -525,6 +572,7 @@ function ProviderCard({
   error,
   saving,
   testing,
+  removing,
   wireProtocol,
   providerModels,
   selectedTestModelId,
@@ -536,6 +584,7 @@ function ProviderCard({
   onTestModelChange,
   onTest,
   onSave,
+  onRemove,
 }: ProviderCardProps) {
   const configured = providerConfigured(template, provider)
   const note = credentialNote(t, provider)
@@ -546,6 +595,7 @@ function ProviderCard({
   )
   const canSave =
     !saving &&
+    !removing &&
     requiredFieldsReady(template, values, configured) &&
     (!publicPlainHttp || insecureHttpAllowed)
   const supportedProtocols = templateWireProtocols(template)
@@ -616,15 +666,40 @@ function ProviderCard({
             />
           ) : null}
         </div>
-        <Button
-          type="button"
-          size="sm"
-          className="h-9 w-full shrink-0 rounded-md bg-[#111111] px-4 text-white shadow-none hover:bg-[#2F3437] md:w-28"
-          disabled={!canSave}
-          onClick={onSave}
-        >
-          {saving ? t("providerCards.saving") : t("providerCards.save")}
-        </Button>
+        <div className="flex w-full shrink-0 gap-2 md:w-auto">
+          {provider && configured ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-9 min-w-0 flex-1 rounded-md border-border/80 bg-background px-3 shadow-none md:w-28 md:flex-none"
+              disabled={removing || saving || testing}
+              onClick={onRemove}
+            >
+              {removing ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="size-3.5" />
+              )}
+              <span className="truncate">
+                {removing
+                  ? t("providerCards.removing")
+                  : t("providerCards.remove")}
+              </span>
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            className="h-9 min-w-0 flex-1 rounded-md bg-[#111111] px-4 text-white shadow-none hover:bg-[#2F3437] md:w-28 md:flex-none"
+            disabled={!canSave}
+            onClick={onSave}
+          >
+            <span className="truncate">
+              {saving ? t("providerCards.saving") : t("providerCards.save")}
+            </span>
+          </Button>
+        </div>
       </div>
 
       {provider && configured ? (
@@ -1010,8 +1085,24 @@ function providerMatchesTemplate(
   template: LlmProviderTemplate,
 ) {
   const providerTemplate = String(provider.metadata?.providerTemplate ?? "")
+  if (
+    providerBaseUrlHost(provider) === "api.moonshot.cn" &&
+    (providerTemplate === "kimi" ||
+      (!providerTemplate && provider.kind === "kimi"))
+  ) {
+    return template.id === "kimi-cn"
+  }
   if (providerTemplate) return providerTemplate === template.id
   return provider.kind === template.kind
+}
+
+function providerBaseUrlHost(provider: LlmConfiguredProvider) {
+  if (!provider.base_url) return ""
+  try {
+    return new URL(provider.base_url).hostname.toLowerCase()
+  } catch {
+    return ""
+  }
 }
 
 function initialFieldValue(
@@ -1051,6 +1142,7 @@ function credentialNote(
   t: SettingsTranslations,
   provider?: LlmConfiguredProvider,
 ) {
+  if (!provider?.enabled) return ""
   const credential = provider?.credential
   if (!credential) return ""
   if (!(credential.configured || credential.available)) return ""

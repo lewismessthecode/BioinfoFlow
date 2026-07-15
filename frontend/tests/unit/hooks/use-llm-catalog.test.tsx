@@ -346,6 +346,97 @@ describe("useLlmCatalog", () => {
     expect(result.current.error?.message).toBe("catalog refresh failed")
   })
 
+  it("replaces stale models for the discovered provider before refresh completes", async () => {
+    let configurationCalls = 0
+    let resolveBackgroundRefresh!: (value: { data: typeof emptyConfiguration }) => void
+    const backgroundRefresh = new Promise<{ data: typeof emptyConfiguration }>(
+      (resolve) => {
+        resolveBackgroundRefresh = resolve
+      },
+    )
+    const staleRelayModel = {
+      id: "model-stale-relay",
+      provider_id: "provider-relay",
+      model_id: "old-relay-model",
+      display_name: "Old relay model",
+      context_length: null,
+      max_output_tokens: null,
+      supports_tools: true,
+      supports_streaming: true,
+      supports_vision: false,
+      supports_json_schema: true,
+      supports_reasoning: false,
+      default_temperature: null,
+      default_top_p: null,
+      cost_metadata: null,
+      metadata: null,
+      created_at: "2026-07-14T00:00:00Z",
+      updated_at: "2026-07-14T00:00:00Z",
+    }
+    const otherProviderModel = {
+      ...staleRelayModel,
+      id: "model-other",
+      provider_id: "provider-other",
+      model_id: "other-model",
+      display_name: "Other model",
+    }
+    const discoveredModel = {
+      ...staleRelayModel,
+      id: "model-current-relay",
+      model_id: "current-relay-model",
+      display_name: "Current relay model",
+    }
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/llm/configuration") {
+        configurationCalls += 1
+        if (configurationCalls > 1) return backgroundRefresh
+        return Promise.resolve({
+          data: {
+            ...emptyConfiguration,
+            models: [staleRelayModel, otherProviderModel],
+          },
+        })
+      }
+      if (path === "/llm/provider-templates") {
+        return Promise.resolve({ data: [] })
+      }
+      if (path === "/llm/providers/provider-relay/discover-models") {
+        return Promise.resolve({ data: [discoveredModel] })
+      }
+      return Promise.resolve({ data: null })
+    })
+    const { result } = renderHook(() => useLlmCatalog())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    let discoverPromise!: ReturnType<typeof result.current.discoverModels>
+    await act(async () => {
+      discoverPromise = result.current.discoverModels("provider-relay")
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await waitFor(() =>
+      expect(result.current.models.map((model) => model.id)).toEqual([
+        "model-other",
+        "model-current-relay",
+      ]),
+    )
+
+    resolveBackgroundRefresh({
+      data: {
+        ...emptyConfiguration,
+        models: [otherProviderModel, discoveredModel],
+      },
+    })
+    await act(async () => {
+      await discoverPromise
+    })
+    expect(result.current.models.map((model) => model.id)).toEqual([
+      "model-other",
+      "model-current-relay",
+    ])
+  })
+
   it("returns the concrete setup error for row-level rendering", async () => {
     const failure = new Error(
       "Plain HTTP endpoints require explicit insecure HTTP approval",
