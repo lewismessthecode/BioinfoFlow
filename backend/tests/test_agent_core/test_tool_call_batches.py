@@ -1379,6 +1379,58 @@ async def test_batch_flush_failure_rolls_back_and_repairs_complete_terminal_grou
 
 
 @pytest.mark.asyncio
+async def test_stale_turn_batch_sequence_self_heals_before_reserving_next_ordinal(
+    db_session, monkeypatch
+):
+    model_calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal model_calls
+        del args
+        model_calls += 1
+        if model_calls == 1:
+            return _response(
+                tool_calls=[
+                    ("stale-ordinal", "projects__list", {}),
+                ]
+            )
+        tool_results = [item for item in kwargs["messages"] if item["role"] == "tool"]
+        assert [item["tool_call_id"] for item in tool_results] == ["stale-ordinal"]
+        payload = json.loads(tool_results[0]["content"])
+        assert payload["tool"] == "projects.list"
+        assert payload["status"] == AgentActionStatus.COMPLETED
+        return _response(text="stale ordinal repaired")
+
+    _patch_model_gateway(monkeypatch, fake_completion)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Repair stale batch sequence.",
+    )
+    await AgentToolCallBatchRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        status=AgentToolCallBatchStatus.TERMINAL,
+        tool_call_count=1,
+        batch_ordinal=1,
+    )
+
+    completed = await service.runtime.run_turn(str(turn.id))
+
+    assert completed.status == AgentTurnStatus.COMPLETED
+    assert completed.final_text == "stale ordinal repaired"
+    batches, _ = await AgentToolCallBatchRepository(db_session).list(limit=10)
+    assert sorted(batch.batch_ordinal for batch in batches) == [1, 2]
+    assert all(batch.status == AgentToolCallBatchStatus.TERMINAL for batch in batches)
+
+
+@pytest.mark.asyncio
 async def test_prepare_cancellation_terminalizes_entire_batch(db_session, monkeypatch):
     async def fake_completion(*args, **kwargs):
         del args, kwargs

@@ -1607,10 +1607,23 @@ class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
         return result.scalar_one_or_none()
 
     async def reserve_next_ordinal(self, turn_id: str) -> int:
+        existing_max = (
+            select(func.coalesce(func.max(self.model.batch_ordinal), 0))
+            .where(self.model.turn_id == turn_id)
+            .scalar_subquery()
+        )
         result = await self.session.execute(
             update(AgentTurn)
             .where(AgentTurn.id == turn_id)
-            .values(tool_batch_sequence=AgentTurn.tool_batch_sequence + 1)
+            .values(
+                tool_batch_sequence=case(
+                    (
+                        AgentTurn.tool_batch_sequence < existing_max,
+                        existing_max + 1,
+                    ),
+                    else_=AgentTurn.tool_batch_sequence + 1,
+                )
+            )
             .returning(AgentTurn.tool_batch_sequence)
         )
         ordinal = result.scalar_one_or_none()
