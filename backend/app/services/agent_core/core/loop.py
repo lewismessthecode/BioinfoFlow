@@ -92,6 +92,7 @@ from app.services.model_runtime.contracts import (
 )
 from app.services.model_runtime.errors import ModelError
 from app.services.model_runtime.gateway import ModelGateway
+from app.services.model_runtime.streams import aclose_async_iterator
 from app.utils.exceptions import PermissionDeniedError
 from app.utils.logging import get_logger
 
@@ -1664,9 +1665,10 @@ class AgentLoopController:
         warnings: list[ModelWarning] = []
         semantic_output_emitted = False
 
+        event_stream = self.model_gateway.invoke(invocation)
         try:
             async with asyncio.timeout(_model_attempt_timeout_seconds()):
-                async for event in self.model_gateway.invoke(invocation):
+                async for event in event_stream:
                     await self._ensure_owned()
                     if isinstance(
                         event,
@@ -1799,6 +1801,8 @@ class AgentLoopController:
                 retryable=True,
                 replay_safe=not semantic_output_emitted,
             ) from None
+        finally:
+            await aclose_async_iterator(event_stream)
 
         thinking_text = "".join(thinking_parts).strip()
         if allow_thinking and thinking_text and not thinking_completed:

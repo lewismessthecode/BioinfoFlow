@@ -21,6 +21,7 @@ from app.services.model_runtime.contracts import (
     canonical_input_prefix_digest,
 )
 from app.services.model_runtime.errors import ModelError
+from app.services.model_runtime.streams import aclose_async_iterator
 
 
 _IGNORED_STREAM_EVENTS = {
@@ -146,8 +147,12 @@ class ResponsesCodec:
 
     async def decode_response(self, response: Any) -> AsyncIterator[ModelEvent]:
         if hasattr(response, "__aiter__"):
-            async for event in self._decode_stream(response):
-                yield event
+            stream = self._decode_stream(response)
+            try:
+                async for event in stream:
+                    yield event
+            finally:
+                await aclose_async_iterator(stream)
             return
 
         response_id = _string_or_none(_get(response, "id"))
@@ -182,132 +187,137 @@ class ResponsesCodec:
         refusal_parts: list[str] = []
         refusal_emitted = False
 
-        async for chunk in response:
-            event_type = _string_or_none(_get(chunk, "type"))
-            if event_type == "response.created" or event_type == "response.in_progress":
-                payload = _get(chunk, "response") or {}
-                response_id = _string_or_none(_get(payload, "id")) or response_id
-                continue
-            if event_type == "response.output_item.added":
-                index = _event_index(chunk)
-                item = _get(chunk, "item") or {}
-                output_items[index] = _jsonable(item)
-                item_id = _string_or_none(_get(item, "id"))
-                item_type = _string_or_none(_get(item, "type"))
-                if item_type == "message":
-                    phase = _phase(_get(item, "phase"))
-                    phases_by_index[index] = phase
-                    if item_id is not None:
-                        phases_by_item_id[item_id] = phase
-                elif item_type == "function_call":
+        try:
+            async for chunk in response:
+                event_type = _string_or_none(_get(chunk, "type"))
+                if event_type in {"response.created", "response.in_progress"}:
+                    payload = _get(chunk, "response") or {}
+                    response_id = _string_or_none(_get(payload, "id")) or response_id
+                    continue
+                if event_type == "response.output_item.added":
+                    index = _event_index(chunk)
+                    item = _get(chunk, "item") or {}
+                    output_items[index] = _jsonable(item)
+                    item_id = _string_or_none(_get(item, "id"))
+                    item_type = _string_or_none(_get(item, "type"))
+                    if item_type == "message":
+                        phase = _phase(_get(item, "phase"))
+                        phases_by_index[index] = phase
+                        if item_id is not None:
+                            phases_by_item_id[item_id] = phase
+                    elif item_type == "function_call":
+                        output_yielded = True
+                        yield ToolCallDelta(
+                            index=index,
+                            call_id=_string_or_none(_get(item, "call_id")),
+                            name=_string_or_none(_get(item, "name")),
+                            arguments_delta=_argument_text(_get(item, "arguments")),
+                        )
+                    elif item_type not in {"reasoning"}:
+                        yield _unsupported_item_warning(item_type)
+                    continue
+                if event_type == "response.output_item.done":
+                    output_items[_event_index(chunk)] = _jsonable(
+                        _get(chunk, "item") or {}
+                    )
+                    continue
+                if event_type == "response.output_text.delta":
+                    index = _event_index(chunk)
+                    item_id = _string_or_none(_get(chunk, "item_id"))
+                    phase = _phase(
+                        _get(chunk, "phase")
+                        or phases_by_item_id.get(item_id or "")
+                        or phases_by_index.get(index)
+                    )
+                    delta = _text(_get(chunk, "delta"))
+                    if delta:
+                        output_yielded = True
+                        yield TextDelta(text=delta, phase=phase)
+                    continue
+                if event_type == "response.function_call_arguments.delta":
                     output_yielded = True
                     yield ToolCallDelta(
-                        index=index,
-                        call_id=_string_or_none(_get(item, "call_id")),
-                        name=_string_or_none(_get(item, "name")),
-                        arguments_delta=_argument_text(_get(item, "arguments")),
+                        index=_event_index(chunk),
+                        call_id=None,
+                        name=None,
+                        arguments_delta=_text(_get(chunk, "delta")),
                     )
-                elif item_type not in {"reasoning"}:
-                    yield _unsupported_item_warning(item_type)
-                continue
-            if event_type == "response.output_item.done":
-                output_items[_event_index(chunk)] = _jsonable(_get(chunk, "item") or {})
-                continue
-            if event_type == "response.output_text.delta":
-                index = _event_index(chunk)
-                item_id = _string_or_none(_get(chunk, "item_id"))
-                phase = _phase(
-                    _get(chunk, "phase")
-                    or phases_by_item_id.get(item_id or "")
-                    or phases_by_index.get(index)
-                )
-                delta = _text(_get(chunk, "delta"))
-                if delta:
-                    output_yielded = True
-                    yield TextDelta(text=delta, phase=phase)
-                continue
-            if event_type == "response.function_call_arguments.delta":
-                output_yielded = True
-                yield ToolCallDelta(
-                    index=_event_index(chunk),
-                    call_id=None,
-                    name=None,
-                    arguments_delta=_text(_get(chunk, "delta")),
-                )
-                continue
-            if event_type in {
-                "response.reasoning_summary_text.delta",
-                "response.reasoning_text.delta",
-            }:
-                delta = _text(_get(chunk, "delta"))
-                if delta:
-                    output_yielded = True
-                    yield ReasoningDelta(text=delta)
-                continue
-            if event_type == "response.refusal.delta":
-                refusal = _text(_get(chunk, "delta"))
-                if refusal:
-                    refusal_parts.append(refusal)
-                continue
-            if event_type == "response.refusal.done":
-                refusal = _text(_get(chunk, "refusal")) or "".join(refusal_parts)
-                yield ModelWarning(
-                    code="response_refusal",
-                    message=refusal or "The model refused the request.",
-                )
-                refusal_emitted = True
-                continue
-            if event_type in {"response.failed", "response.incomplete", "error"}:
-                raise _terminal_error(
-                    chunk,
-                    event_type=event_type,
-                    replay_safe=not output_yielded,
-                )
-            if event_type == "response.completed":
-                completed = True
-                payload = _get(chunk, "response") or {}
-                response_id = _string_or_none(_get(payload, "id")) or response_id
-                finish_reason = _string_or_none(_get(payload, "status"))
-                if refusal_parts and not refusal_emitted:
+                    continue
+                if event_type in {
+                    "response.reasoning_summary_text.delta",
+                    "response.reasoning_text.delta",
+                }:
+                    delta = _text(_get(chunk, "delta"))
+                    if delta:
+                        output_yielded = True
+                        yield ReasoningDelta(text=delta)
+                    continue
+                if event_type == "response.refusal.delta":
+                    refusal = _text(_get(chunk, "delta"))
+                    if refusal:
+                        refusal_parts.append(refusal)
+                    continue
+                if event_type == "response.refusal.done":
+                    refusal = _text(_get(chunk, "refusal")) or "".join(refusal_parts)
                     yield ModelWarning(
                         code="response_refusal",
-                        message="".join(refusal_parts),
+                        message=refusal or "The model refused the request.",
                     )
                     refusal_emitted = True
-                final_output = _sequence(_get(payload, "output"))
-                if final_output:
-                    output_items = {
-                        index: _jsonable(item)
-                        for index, item in enumerate(final_output)
-                    }
-                usage = _usage_report(payload)
-                if usage is not None:
-                    yield usage
-                yield CompletionMetadata(
-                    response_id=response_id,
-                    finish_reason=finish_reason,
-                    continuation=_continuation(
-                        response_id,
-                        [output_items[index] for index in sorted(output_items)],
+                    continue
+                if event_type in {"response.failed", "response.incomplete", "error"}:
+                    raise _terminal_error(
+                        chunk,
+                        event_type=event_type,
+                        replay_safe=not output_yielded,
+                    )
+                if event_type == "response.completed":
+                    completed = True
+                    payload = _get(chunk, "response") or {}
+                    response_id = _string_or_none(_get(payload, "id")) or response_id
+                    finish_reason = _string_or_none(_get(payload, "status"))
+                    if refusal_parts and not refusal_emitted:
+                        yield ModelWarning(
+                            code="response_refusal",
+                            message="".join(refusal_parts),
+                        )
+                        refusal_emitted = True
+                    final_output = _sequence(_get(payload, "output"))
+                    if final_output:
+                        output_items = {
+                            index: _jsonable(item)
+                            for index, item in enumerate(final_output)
+                        }
+                    usage = _usage_report(payload)
+                    if usage is not None:
+                        yield usage
+                    yield CompletionMetadata(
+                        response_id=response_id,
+                        finish_reason=finish_reason,
+                        continuation=_continuation(
+                            response_id,
+                            [output_items[index] for index in sorted(output_items)],
+                        ),
+                    )
+                    continue
+                if event_type in _IGNORED_STREAM_EVENTS:
+                    continue
+                yield ModelWarning(
+                    code="unsupported_response_event",
+                    message=(
+                        "Unsupported Responses stream event type: "
+                        f"{event_type or '<missing>'}"
                     ),
                 )
-                continue
-            if event_type in _IGNORED_STREAM_EVENTS:
-                continue
-            yield ModelWarning(
-                code="unsupported_response_event",
-                message=(
-                    "Unsupported Responses stream event type: "
-                    f"{event_type or '<missing>'}"
-                ),
-            )
 
-        if not completed:
-            raise _terminal_error(
-                {"code": "stream_terminated"},
-                event_type="error",
-                replay_safe=not output_yielded,
-            )
+            if not completed:
+                raise _terminal_error(
+                    {"code": "stream_terminated"},
+                    event_type="error",
+                    replay_safe=not output_yielded,
+                )
+        finally:
+            await aclose_async_iterator(response)
 
 
 def _decode_output_item(item: Any, *, index: int) -> list[ModelEvent]:

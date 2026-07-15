@@ -16,6 +16,7 @@ from app.services.model_runtime.contracts import (
     ToolResultPart,
     UsageReport,
 )
+from app.services.model_runtime.streams import aclose_async_iterator
 
 
 class ChatCompletionsCodec:
@@ -76,8 +77,12 @@ class ChatCompletionsCodec:
 
     async def decode_response(self, response: Any) -> AsyncIterator[ModelEvent]:
         if hasattr(response, "__aiter__"):
-            async for event in self._decode_stream(response):
-                yield event
+            stream = self._decode_stream(response)
+            try:
+                async for event in stream:
+                    yield event
+            finally:
+                await aclose_async_iterator(stream)
             return
 
         choice = _first_choice(response)
@@ -113,32 +118,41 @@ class ChatCompletionsCodec:
         response_id: str | None = None
         finish_reason: str | None = None
         usage: UsageReport | None = None
-        async for chunk in response:
-            response_id = _string_or_none(_get(chunk, "id")) or response_id
-            choice = _first_choice(chunk)
-            chunk_finish_reason = _string_or_none(_get(choice, "finish_reason"))
-            finish_reason = chunk_finish_reason or finish_reason
-            delta = _get(choice, "delta") or {}
-            reasoning = _extract_content(
-                delta,
-                ("reasoning_content", "reasoning", "reasoning_text", "thinking", "thinking_content"),
+        try:
+            async for chunk in response:
+                response_id = _string_or_none(_get(chunk, "id")) or response_id
+                choice = _first_choice(chunk)
+                chunk_finish_reason = _string_or_none(_get(choice, "finish_reason"))
+                finish_reason = chunk_finish_reason or finish_reason
+                delta = _get(choice, "delta") or {}
+                reasoning = _extract_content(
+                    delta,
+                    (
+                        "reasoning_content",
+                        "reasoning",
+                        "reasoning_text",
+                        "thinking",
+                        "thinking_content",
+                    ),
+                )
+                if reasoning:
+                    yield ReasoningDelta(text=reasoning)
+                text = _extract_content(delta, ("content", "text", "content_text"))
+                if text:
+                    yield TextDelta(text=text, phase="final_answer")
+                for raw_call in _get(delta, "tool_calls") or []:
+                    event = _tool_call_delta(raw_call)
+                    if event is not None:
+                        yield event
+                usage = _merge_usage_reports(usage, _usage_report(chunk))
+            if usage is not None:
+                yield usage
+            yield CompletionMetadata(
+                response_id=response_id,
+                finish_reason=finish_reason,
             )
-            if reasoning:
-                yield ReasoningDelta(text=reasoning)
-            text = _extract_content(delta, ("content", "text", "content_text"))
-            if text:
-                yield TextDelta(text=text, phase="final_answer")
-            for raw_call in _get(delta, "tool_calls") or []:
-                event = _tool_call_delta(raw_call)
-                if event is not None:
-                    yield event
-            usage = _merge_usage_reports(usage, _usage_report(chunk))
-        if usage is not None:
-            yield usage
-        yield CompletionMetadata(
-            response_id=response_id,
-            finish_reason=finish_reason,
-        )
+        finally:
+            await aclose_async_iterator(response)
 
 
 def _encode_tool_call(item: ToolCallPart) -> dict[str, Any]:
