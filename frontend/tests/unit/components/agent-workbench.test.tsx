@@ -124,10 +124,13 @@ vi.mock("next-intl", () => ({
       "permission.confirm.approvePending": `Update and approve ${values?.count ?? 0} waiting tools`,
       "permission.confirm.approvePendingDescription": "Questions and plan reviews are never auto-approved.",
       "permission.confirm.cancel": "Cancel",
+      allTargets: "All targets",
+      manual: "Manual",
       menuTitle: "Local / Remote",
       manage: "Manage SSH hosts",
       "local.label": "Local",
       "local.description": "Run in this Bioinfoflow workspace",
+      localBadge: "Local",
       "remote.label": "Remote",
       emptyRemoteHosts: "No remote hosts configured.",
       loadFailed: "Could not load remote hosts.",
@@ -135,8 +138,9 @@ vi.mock("next-intl", () => ({
       "status.offline": "Offline",
       "status.error": "Connection error",
       "status.unknown": "Not tested",
-      selectedLocalAria: "Current execution target: local",
-      selectedRemoteAria: `Current execution target: ${values?.name ?? ""} at ${values?.host ?? ""}, ${values?.status ?? ""}`,
+      selectedAutoAria: `Current execution target: Auto (${values?.target ?? ""})`,
+      selectedManualAria: `Current execution target: Manual (${values?.target ?? ""})`,
+      targetCount: `${values?.count ?? 0} selected`,
       "tokenUsage.label": "Tokens",
       "tokenUsage.display": `${values?.value ?? ""} tokens`,
       "tokenUsage.compactDisplay": `${values?.value ?? ""}`,
@@ -333,6 +337,27 @@ function setupRuntime({
     permissionUpdate,
     retryPermissionModeUpdate: vi.fn(),
   })
+}
+
+const autoExecutionScope = { mode: "auto" }
+
+function manualRemoteExecutionScope(connectionId: string) {
+  return {
+    mode: "manual",
+    selected_targets: [
+      {
+        kind: "remote_ssh",
+        type: "remote_ssh",
+        connection_id: connectionId,
+        remote_connection_id: connectionId,
+      },
+    ],
+  }
+}
+
+const manualLocalExecutionScope = {
+  mode: "manual",
+  selected_targets: [{ kind: "local", type: "local" }],
 }
 
 describe("AgentWorkbench", () => {
@@ -1680,7 +1705,7 @@ describe("AgentWorkbench", () => {
     expect(screen.getByText("Queued")).toBeInTheDocument()
   })
 
-  it("hydrates the remote connection selection from session metadata before sending", async () => {
+  it("hydrates the remote execution scope from session metadata before sending", async () => {
     const send = vi.fn().mockResolvedValue(undefined)
     setupRuntime({
       session: {
@@ -1700,7 +1725,9 @@ describe("AgentWorkbench", () => {
       expect(send).toHaveBeenCalledWith(
         "Check the remote host",
         expect.objectContaining({
-          remoteConnectionId: "11111111-1111-1111-1111-111111111111",
+          executionScope: manualRemoteExecutionScope(
+            "11111111-1111-1111-1111-111111111111",
+          ),
         }),
       ),
     )
@@ -1730,7 +1757,7 @@ describe("AgentWorkbench", () => {
       expect(send).toHaveBeenCalledWith(
         "Check the normalized host",
         expect.objectContaining({
-          remoteConnectionId: "normalized-connection",
+          executionScope: manualRemoteExecutionScope("normalized-connection"),
         }),
       ),
     )
@@ -1760,13 +1787,13 @@ describe("AgentWorkbench", () => {
       expect(send).toHaveBeenCalledWith(
         "Check the backend host",
         expect.objectContaining({
-          remoteConnectionId: "backend-normalized-connection",
+          executionScope: manualRemoteExecutionScope("backend-normalized-connection"),
         }),
       ),
     )
   })
 
-  it("does not send a null remote connection override before a session exists", async () => {
+  it("sends the default auto execution scope before a session exists", async () => {
     const send = vi.fn().mockResolvedValue(undefined)
     setupRuntime({
       session: null,
@@ -1781,9 +1808,12 @@ describe("AgentWorkbench", () => {
 
     await waitFor(() => expect(send).toHaveBeenCalled())
     expect(send.mock.calls[0][1]).not.toHaveProperty("remoteConnectionId")
+    expect(send.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ executionScope: autoExecutionScope }),
+    )
   })
 
-  it("keeps a draft remote selection when sending the first message", async () => {
+  it("keeps a draft manual remote selection when sending the first message", async () => {
     const send = vi.fn().mockResolvedValue(undefined)
     apiRequestMock.mockImplementation((path: string) => {
       if (path === "/connections") {
@@ -1814,9 +1844,15 @@ describe("AgentWorkbench", () => {
     render(<AgentWorkbench />)
 
     fireEvent.pointerDown(
-      await screen.findByRole("button", { name: "Current execution target: local" }),
+      await screen.findByRole("button", {
+        name: "Current execution target: Auto (All targets)",
+      }),
     )
-    fireEvent.click(await screen.findByText("Test host sz03"))
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /Manual/ }))
+    fireEvent.click(
+      await screen.findByRole("menuitemcheckbox", { name: /Test host sz03/ }),
+    )
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: /Local/ }))
 
     const input = screen.getByPlaceholderText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Check the remote host first" } })
@@ -1825,7 +1861,9 @@ describe("AgentWorkbench", () => {
     await waitFor(() =>
       expect(send).toHaveBeenCalledWith(
         "Check the remote host first",
-        expect.objectContaining({ remoteConnectionId: "connection-test-231" }),
+        expect.objectContaining({
+          executionScope: manualRemoteExecutionScope("connection-test-231"),
+        }),
       ),
     )
   })
@@ -1870,7 +1908,7 @@ describe("AgentWorkbench", () => {
 
     expect(
       await screen.findByRole("button", {
-        name: "Current execution target: Test host sz03 at 10.227.5.231, Online",
+        name: "Current execution target: Manual (Test host sz03)",
       }),
     ).toBeInTheDocument()
 
@@ -1881,12 +1919,14 @@ describe("AgentWorkbench", () => {
     await waitFor(() =>
       expect(send).toHaveBeenCalledWith(
         "Use this remote project",
-        expect.objectContaining({ remoteConnectionId: "connection-test-231" }),
+        expect.objectContaining({
+          executionScope: manualRemoteExecutionScope("connection-test-231"),
+        }),
       ),
     )
   })
 
-  it("sends an empty remote connection override when switching a remote session back to local", async () => {
+  it("sends a manual local execution scope when switching a remote session back to local", async () => {
     const send = vi.fn().mockResolvedValue(undefined)
     apiRequestMock.mockImplementation((path: string) => {
       if (path === "/connections") {
@@ -1921,10 +1961,12 @@ describe("AgentWorkbench", () => {
 
     fireEvent.pointerDown(
       await screen.findByRole("button", {
-        name: "Current execution target: Test host sz03 at 10.227.5.231, Online",
+        name: "Current execution target: Manual (Test host sz03)",
       }),
     )
-    fireEvent.click(screen.getAllByText("Local").at(-1)!)
+    fireEvent.click(
+      await screen.findByRole("menuitemcheckbox", { name: /Test host sz03/ }),
+    )
 
     const input = screen.getByPlaceholderText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Run locally now" } })
@@ -1933,7 +1975,7 @@ describe("AgentWorkbench", () => {
     await waitFor(() =>
       expect(send).toHaveBeenCalledWith(
         "Run locally now",
-        expect.objectContaining({ remoteConnectionId: "" }),
+        expect.objectContaining({ executionScope: manualLocalExecutionScope }),
       ),
     )
   })
@@ -1968,7 +2010,9 @@ describe("AgentWorkbench", () => {
     await waitFor(() =>
       expect(secondSend).toHaveBeenCalledWith(
         "Check the new host",
-        expect.objectContaining({ remoteConnectionId: "connection-uat-245" }),
+        expect.objectContaining({
+          executionScope: manualRemoteExecutionScope("connection-uat-245"),
+        }),
       ),
     )
     expect(firstSend).not.toHaveBeenCalled()

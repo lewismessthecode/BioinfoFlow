@@ -150,6 +150,22 @@ describe("agent runtime client", () => {
     })
   })
 
+  it("serializes a null execution target when clearing session metadata", async () => {
+    await updateAgentRuntimeSessionMetadata(
+      "session-1",
+      { batch: "b001" },
+      null,
+      { mode: "auto" },
+    )
+
+    const body = JSON.parse(apiRequestMock.mock.calls[0][1].body)
+    expect(body).toMatchObject({
+      metadata: { batch: "b001" },
+      execution_target: null,
+      execution_scope: { mode: "auto" },
+    })
+  })
+
   it("serializes pending strategy and returns reconciliation metadata", async () => {
     apiRequestMock.mockResolvedValueOnce({
       data: {

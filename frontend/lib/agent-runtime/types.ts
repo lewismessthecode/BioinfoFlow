@@ -87,6 +87,7 @@ export type AgentRuntimeSession = {
   lineage?: Record<string, unknown> | null
   model_selection?: AgentModelSelection | null
   execution_target?: AgentExecutionTarget | null
+  execution_scope?: AgentExecutionScope | null
   token_usage_summary?: AgentTokenUsageSummary | null
   status: AgentSessionStatus
   pending_strategy?: AgentPendingStrategy | null

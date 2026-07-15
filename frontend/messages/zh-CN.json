@@ -2666,10 +2666,17 @@
       "comingSoon": "即将支持"
     },
     "runtimeLocation": {
-      "placeholder": "本地 / 远程",
+      "placeholder": "执行位置",
       "selectedLocalAria": "当前执行位置：本地",
       "selectedRemoteAria": "当前执行位置：{name}（{host}），{status}",
-      "menuTitle": "本地 / 远程",
+      "selectedAutoAria": "执行位置：Auto，{target}",
+      "selectedManualAria": "执行位置：手动，{target}",
+      "menuTitle": "执行位置",
+      "auto": "Auto",
+      "manual": "手动",
+      "allTargets": "全部",
+      "targetCount": "{count} 个位置",
+      "localBadge": "本地",
       "manage": "管理 SSH 主机",
       "local": {
         "label": "本地",

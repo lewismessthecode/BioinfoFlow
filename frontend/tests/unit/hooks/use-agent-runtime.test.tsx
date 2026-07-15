@@ -421,6 +421,7 @@ describe("useAgentRuntime", () => {
         remote_connection_id: "connection-2",
         connection_id: "connection-2",
       }),
+      undefined,
     )
     expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -486,6 +487,7 @@ describe("useAgentRuntime", () => {
         kind: "local",
         type: "local",
       }),
+      undefined,
     )
     expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -493,6 +495,64 @@ describe("useAgentRuntime", () => {
           kind: "local",
           type: "local",
         }),
+      }),
+    )
+  })
+
+  it("clears a stale single execution target when sending auto scope", async () => {
+    const updatedSession = {
+      ...session,
+      metadata: { batch: "b001", execution_scope: { mode: "auto" } },
+      execution_scope: { mode: "auto" },
+      updated_at: "2026-06-08T00:00:03Z",
+    }
+    const staleRemoteSession = {
+      ...session,
+      metadata: {
+        batch: "b001",
+        remote_connection_id: "connection-1",
+        execution_target: {
+          type: "remote_ssh",
+          connection_id: "connection-1",
+        },
+      },
+      execution_target: {
+        type: "remote_ssh",
+        connection_id: "connection-1",
+      },
+    } as AgentRuntimeSession
+    mocks.listAgentRuntimeSessions.mockResolvedValue([staleRemoteSession])
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session: staleRemoteSession,
+      turns: [],
+      events: [],
+    })
+    mocks.updateAgentRuntimeSessionMetadata.mockResolvedValue(updatedSession)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+
+    await act(async () => {
+      await result.current.send("hello", {
+        executionScope: { mode: "auto" },
+      })
+    })
+
+    expect(mocks.updateAgentRuntimeSessionMetadata).toHaveBeenCalledWith(
+      "session-1",
+      { batch: "b001" },
+      null,
+      { mode: "auto" },
+    )
+    expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionTarget: null,
+        executionScope: { mode: "auto" },
       }),
     )
   })

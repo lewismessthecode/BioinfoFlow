@@ -1,21 +1,29 @@
+import { useState, type AnchorHTMLAttributes } from "react"
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
-import { ConnectedNodeSelector } from "@/components/bioinfoflow/agent-runtime/connected-node-selector"
+import {
+  ConnectedNodeSelector,
+  LOCAL_TARGET_ID,
+  type ExecutionTargetSelection,
+} from "@/components/bioinfoflow/agent-runtime/connected-node-selector"
 import { apiRequest } from "@/lib/api"
 import type { RemoteConnection } from "@/lib/demo-connections"
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, string>) => {
     const labels: Record<string, string> = {
-      placeholder: "Local / Remote",
-      selectedLocalAria: "Current execution target: local",
-      selectedRemoteAria: `Current execution target: ${values?.name ?? ""} at ${values?.host ?? ""}, ${values?.status ?? ""}`,
-      menuTitle: "Local / Remote",
+      auto: "Auto",
+      manual: "Manual",
+      allTargets: "All",
+      targetCount: `${values?.count ?? "0"} targets`,
+      localBadge: "Local",
+      selectedAutoAria: `Execution targets: Auto, ${values?.target ?? ""}`,
+      selectedManualAria: `Execution targets: Manual, ${values?.target ?? ""}`,
       manage: "Manage SSH hosts",
       "local.label": "Local",
-      "local.description": "Run in this Bioinfoflow workspace",
+      "local.description": "Current Bioinfoflow workspace",
       "remote.label": "Remote",
       emptyRemoteHosts: "No remote hosts configured.",
       loadFailed: "Could not load remote hosts.",
@@ -33,7 +41,7 @@ vi.mock("next/link", () => ({
     children,
     href,
     ...props
-  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => (
+  }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => (
     <a href={href} {...props}>
       {children}
     </a>
@@ -59,166 +67,136 @@ const liveConnection: RemoteConnection = {
   skill_instructions: "Use /data/live.",
 }
 
+const secondConnection: RemoteConnection = {
+  ...liveConnection,
+  id: "connection-live-2",
+  name: "Simulation host sz01",
+  host: "10.227.5.224",
+  ssh_alias: "",
+}
+
+function ControlledSelector({
+  initialValue = { mode: "auto" },
+  onChange,
+}: {
+  initialValue?: ExecutionTargetSelection
+  onChange?: (value: ExecutionTargetSelection) => void
+}) {
+  const [value, setValue] = useState<ExecutionTargetSelection>(initialValue)
+  return (
+    <ConnectedNodeSelector
+      value={value}
+      onChange={(nextValue) => {
+        setValue(nextValue)
+        onChange?.(nextValue)
+      }}
+    />
+  )
+}
+
 describe("ConnectedNodeSelector", () => {
-  it("keeps an empty controlled selection empty after live connections load", async () => {
-    const onSelectedConnectionChange = vi.fn()
-    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
-
-    render(
-      <ConnectedNodeSelector
-        selectedConnectionId=""
-        onSelectedConnectionChange={onSelectedConnectionChange}
-      />,
-    )
-
-    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-    expect(
-      screen.getByRole("button", { name: "Current execution target: local" }),
-    ).toHaveTextContent("Local")
-    expect(onSelectedConnectionChange).not.toHaveBeenCalled()
-  })
-
-  it("shows a pending remote target for a restored backend id before live connections load", async () => {
-    const onSelectedConnectionChange = vi.fn()
-    apiRequestMock.mockReturnValueOnce(new Promise(() => {}))
-    const user = userEvent.setup()
-
-    render(
-      <ConnectedNodeSelector
-        selectedConnectionId="11111111-1111-1111-1111-111111111111"
-        onSelectedConnectionChange={onSelectedConnectionChange}
-      />,
-    )
-
-    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-    expect(
-      screen.getByRole("button", {
-        name: /Current execution target: Remote at 11111111-1111-1111-1111-111111111111/,
-      }),
-    ).toHaveTextContent("Remote")
-    await user.click(
-      screen.getByRole("button", {
-        name: /Current execution target: Remote at 11111111-1111-1111-1111-111111111111/,
-      }),
-    )
-    expect(screen.getByRole("menuitemradio", { name: /Local/ }))
-      .toHaveAttribute("aria-checked", "false")
-    expect(screen.getByRole("menuitemradio", { name: /Remote/ }))
-      .toHaveAttribute("aria-checked", "true")
-    expect(onSelectedConnectionChange).not.toHaveBeenCalled()
-  })
-
-  it("keeps a selected remote target visible when live connections fail to load", async () => {
-    const onSelectedConnectionChange = vi.fn()
-    apiRequestMock.mockRejectedValueOnce(new Error("backend unavailable"))
-
-    render(
-      <ConnectedNodeSelector
-        selectedConnectionId="11111111-1111-1111-1111-111111111111"
-        onSelectedConnectionChange={onSelectedConnectionChange}
-      />,
-    )
-
-    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-    expect(
-      screen.getByRole("button", {
-        name: "Current execution target: Remote at 11111111-1111-1111-1111-111111111111, Could not load remote hosts.",
-      }),
-    ).toHaveTextContent("Remote")
-    expect(onSelectedConnectionChange).not.toHaveBeenCalled()
-  })
-
-  it("clears a stale controlled selection", async () => {
-    const onSelectedConnectionChange = vi.fn()
-    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
-
-    render(
-      <ConnectedNodeSelector
-        selectedConnectionId="missing-connection"
-        onSelectedConnectionChange={onSelectedConnectionChange}
-      />,
-    )
-
-    await waitFor(() => expect(onSelectedConnectionChange).toHaveBeenCalledWith(""))
-  })
-
-  it("selects local from the local/remote menu", async () => {
-    const user = userEvent.setup()
-    const onSelectedConnectionChange = vi.fn()
-    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
-
-    render(
-      <ConnectedNodeSelector
-        selectedConnectionId="connection-live-1"
-        onSelectedConnectionChange={onSelectedConnectionChange}
-      />,
-    )
-
-    await user.click(
-      await screen.findByRole("button", {
-        name: "Current execution target: Live HPC at login.live.example.org, Online",
-      }),
-    )
-    await user.click(screen.getAllByText("Local").at(-1)!)
-
-    expect(onSelectedConnectionChange).toHaveBeenCalledWith("")
-  })
-
-  it("falls back to the remote host when a connection has no display name", async () => {
-    const unnamedConnection: RemoteConnection = {
-      ...liveConnection,
-      id: "connection-host-only",
-      name: " ",
-      host: "10.227.5.224",
-    }
-    apiRequestMock.mockResolvedValueOnce({ data: [unnamedConnection] })
-
-    render(<ConnectedNodeSelector selectedConnectionId="connection-host-only" />)
-
-    expect(
-      await screen.findByRole("button", {
-        name: "Current execution target: 10.227.5.224 at 10.227.5.224, Online",
-      }),
-    )
-      .toHaveTextContent("10.227.5.224")
-  })
-
-  it("shows an empty remote-host state while keeping local selectable", async () => {
-    const user = userEvent.setup()
-    const onSelectedConnectionChange = vi.fn()
-    apiRequestMock.mockResolvedValueOnce({ data: [] })
-
-    render(<ConnectedNodeSelector onSelectedConnectionChange={onSelectedConnectionChange} />)
-
-    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-    await user.click(screen.getByRole("button", { name: "Current execution target: local" }))
-
-    expect(screen.getByText("No remote hosts configured.")).toBeInTheDocument()
-    await user.click(screen.getAllByText("Local").at(-1)!)
-    expect(onSelectedConnectionChange).toHaveBeenCalledWith("")
-  })
-
-  it("disables the local/remote trigger when the composer is disabled", async () => {
-    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
-
-    render(<ConnectedNodeSelector disabled />)
-
-    expect(screen.getByRole("button", { name: "Current execution target: local" }))
-      .toBeDisabled()
-    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-  })
-
-  it("does not expose demo connections when the live connection request fails", async () => {
-    const user = userEvent.setup()
-    apiRequestMock.mockRejectedValueOnce(new Error("backend unavailable"))
+  it("defaults to Auto with a compact current-target pill", async () => {
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection, secondConnection] })
 
     render(<ConnectedNodeSelector />)
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-    await user.click(screen.getByRole("button", { name: "Current execution target: local" }))
+    const trigger = screen.getByRole("button", {
+      name: "Execution targets: Auto, All",
+    })
+    expect(trigger).toHaveTextContent("Auto")
+    expect(screen.getByTestId("execution-current-target-pill"))
+      .toHaveTextContent("All")
+  })
+
+  it("switches to Manual and emits local plus selected remote targets", async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection, secondConnection] })
+
+    render(<ControlledSelector onChange={onChange} />)
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Execution targets: Auto, All",
+      }),
+    )
+    await user.click(screen.getByRole("menuitemradio", { name: /Manual/ }))
+    await user.click(screen.getByRole("menuitemcheckbox", { name: /Live HPC/ }))
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      mode: "manual",
+      targetIds: [LOCAL_TARGET_ID, "connection-live-1"],
+    })
+  })
+
+  it("summarizes multiple manual targets in the trigger", async () => {
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+
+    render(
+      <ConnectedNodeSelector
+        value={{
+          mode: "manual",
+          targetIds: [LOCAL_TARGET_ID, "connection-live-1"],
+        }}
+      />,
+    )
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Execution targets: Manual, 2 targets",
+      }),
+    ).toHaveTextContent("2 targets")
+  })
+
+  it("drops missing manual remote targets after connections load successfully", async () => {
+    const onChange = vi.fn()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+
+    render(
+      <ControlledSelector
+        initialValue={{
+          mode: "manual",
+          targetIds: [LOCAL_TARGET_ID, "missing-connection", "connection-live-1"],
+        }}
+        onChange={onChange}
+      />,
+    )
+
+    await waitFor(() =>
+      expect(onChange).toHaveBeenCalledWith({
+        mode: "manual",
+        targetIds: [LOCAL_TARGET_ID, "connection-live-1"],
+      }),
+    )
+    expect(
+      screen.getByRole("button", {
+        name: "Execution targets: Manual, 2 targets",
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it("keeps Auto usable when remote hosts fail to load", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockRejectedValueOnce(new Error("backend unavailable"))
+
+    render(<ControlledSelector />)
+
+    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
+    await user.click(screen.getByRole("button", { name: "Execution targets: Auto, All" }))
+    await user.click(screen.getByRole("menuitemradio", { name: /Manual/ }))
 
     expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
-    expect(screen.queryByText("Test host sz03")).not.toBeInTheDocument()
     expect(screen.getByText("Could not load remote hosts.")).toBeInTheDocument()
+  })
+
+  it("disables the execution target trigger when the composer is disabled", async () => {
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+
+    render(<ConnectedNodeSelector disabled />)
+
+    expect(screen.getByRole("button", { name: "Execution targets: Auto, All" }))
+      .toBeDisabled()
+    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
   })
 })

@@ -114,6 +114,10 @@ export const updateAgentRuntimeSessionMetadata = async (
   executionTarget?: AgentExecutionTarget | null,
   executionScope?: AgentExecutionScope | null,
 ) => {
+  const requestExecutionTarget =
+    executionTarget === null
+      ? null
+      : agentExecutionTargetForRequest(executionTarget)
   const response = await apiRequest<AgentRuntimeSession>(
     `/agent/sessions/${sessionId}`,
     {
@@ -121,7 +125,7 @@ export const updateAgentRuntimeSessionMetadata = async (
       body: JSON.stringify({
         metadata,
         ...(executionTarget !== undefined
-          ? { execution_target: agentExecutionTargetForRequest(executionTarget) }
+          ? { execution_target: requestExecutionTarget }
           : {}),
         ...(executionScope !== undefined
           ? { execution_scope: agentExecutionScopeForRequest(executionScope) }

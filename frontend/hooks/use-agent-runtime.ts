@@ -17,6 +17,7 @@ import {
   updateAgentRuntimeSessionPermissionMode,
   type AgentActionDecision,
   type AgentAnswer,
+  type AgentExecutionScope,
   type AgentExecutionTarget,
   type AgentMode,
   type AgentModelSelection,
@@ -329,7 +330,8 @@ export function useAgentRuntime(
     async (
       modelSelection?: AgentModelSelection | null,
       metadata?: Record<string, unknown>,
-      executionTarget?: AgentExecutionTarget,
+      executionTarget?: AgentExecutionTarget | null,
+      executionScope?: AgentExecutionScope,
     ) => {
       if (activeSession) return activeSession
       const created = await createAgentRuntimeSession({
@@ -338,6 +340,7 @@ export function useAgentRuntime(
         mode: draftMode,
         modelSelection,
         executionTarget,
+        executionScope,
         metadata,
       })
       updateSessions((current) => [created, ...current])
@@ -356,42 +359,55 @@ export function useAgentRuntime(
     ],
   )
 
-  const ensureSessionRemoteConnection = useCallback(
-    async (session: AgentRuntimeSession, remoteConnectionId?: string | null) => {
-      if (remoteConnectionId === undefined) return session
-      const executionTarget = executionTargetForRemoteConnectionId(remoteConnectionId)
-      const currentRemoteConnectionId =
-        typeof session.metadata?.remote_connection_id === "string"
-          ? session.metadata.remote_connection_id
-          : null
-      const currentTarget = session.execution_target
-      const currentTargetKind = currentTarget?.kind ?? currentTarget?.type
-      const currentTargetConnectionId =
-        currentTarget?.remote_connection_id ?? currentTarget?.connection_id ?? null
-      if (
-        remoteConnectionId &&
-        currentRemoteConnectionId === remoteConnectionId &&
-        currentTargetKind === "remote_ssh" &&
-        currentTargetConnectionId === remoteConnectionId
-      ) {
+  const ensureSessionExecutionMetadata = useCallback(
+    async (
+      session: AgentRuntimeSession,
+      {
+        remoteConnectionId,
+        executionScope,
+        executionTarget,
+        syncExecutionTarget,
+      }: {
+        remoteConnectionId?: string | null
+        executionScope?: AgentExecutionScope | null
+        executionTarget?: AgentExecutionTarget | null
+        syncExecutionTarget: boolean
+      },
+    ) => {
+      const hasRemoteConnectionOverride = remoteConnectionId !== undefined
+      const hasExecutionScope = executionScope !== undefined
+      if (!hasRemoteConnectionOverride && !hasExecutionScope && !syncExecutionTarget) {
         return session
       }
-      if (
-        !remoteConnectionId &&
-        !currentRemoteConnectionId &&
-        currentTargetKind !== "remote_ssh"
-      ) {
-        return session
-      }
+
       const metadata = { ...(session.metadata ?? {}) }
-      if (remoteConnectionId) {
-        metadata.remote_connection_id = remoteConnectionId
-      } else {
-        delete metadata.remote_connection_id
+      if (hasRemoteConnectionOverride) {
+        if (remoteConnectionId) {
+          metadata.remote_connection_id = remoteConnectionId
+        } else {
+          delete metadata.remote_connection_id
+        }
       }
-      const updated = await updateAgentRuntimeSessionMetadata(session.id, {
-        ...metadata,
-      }, executionTarget)
+
+      if (syncExecutionTarget) {
+        const targetRemoteConnectionId =
+          remoteConnectionIdFromExecutionTarget(executionTarget)
+        if (targetRemoteConnectionId) {
+          metadata.remote_connection_id = targetRemoteConnectionId
+        } else if (!remoteConnectionId) {
+          delete metadata.remote_connection_id
+        }
+        if (executionTarget === null) {
+          delete metadata.execution_target
+        }
+      }
+
+      const updated = await updateAgentRuntimeSessionMetadata(
+        session.id,
+        Object.keys(metadata).length ? metadata : null,
+        syncExecutionTarget ? executionTarget : undefined,
+        hasExecutionScope ? executionScope : undefined,
+      )
       updateSessions((current) => mergeSessionList(current, updated))
       if (activeSessionIdRef.current === updated.id) {
         dispatch({ type: "session.selected", session: updated })
@@ -410,6 +426,7 @@ export function useAgentRuntime(
         inputParts?: AgentRuntimeInputPart[] | null
         activeSkillNames?: string[] | null
         remoteConnectionId?: string | null
+        executionScope?: AgentExecutionScope | null
       },
     ) => {
       const text = inputText.trim()
@@ -419,19 +436,35 @@ export function useAgentRuntime(
         const remoteConnectionId = Object.hasOwn(options ?? {}, "remoteConnectionId")
           ? options?.remoteConnectionId
           : undefined
-        const metadata = remoteConnectionId
-          ? { remote_connection_id: remoteConnectionId }
-          : undefined
+        const executionScope = options?.executionScope ?? undefined
+        const scopeExecutionTarget =
+          remoteConnectionId === undefined
+            ? executionTargetForExecutionScope(executionScope)
+            : undefined
+        const syncExecutionTarget =
+          remoteConnectionId !== undefined || executionScope !== undefined
         const executionTarget =
-          executionTargetForRemoteConnectionId(remoteConnectionId)
-        const session = await ensureSessionRemoteConnection(
-          await ensureSessionWithMetadata(
-            options?.modelSelection,
-            metadata,
-            executionTarget,
-          ),
+          remoteConnectionId !== undefined
+            ? executionTargetForRemoteConnectionId(remoteConnectionId)
+            : scopeExecutionTarget
+        const metadata = metadataForExecutionRequest({
           remoteConnectionId,
+          executionTarget,
+        })
+        const baseSession = await ensureSessionWithMetadata(
+          options?.modelSelection,
+          metadata,
+          executionTarget,
+          executionScope,
         )
+        const session = activeSession
+          ? await ensureSessionExecutionMetadata(baseSession, {
+              remoteConnectionId,
+              executionScope,
+              executionTarget,
+              syncExecutionTarget,
+            })
+          : baseSession
         const turn = await createAgentRuntimeTurn({
           sessionId: session.id,
           inputText: text,
@@ -439,6 +472,7 @@ export function useAgentRuntime(
           activeSkillNames: options?.activeSkillNames,
           modelSelection: options?.modelSelection,
           executionTarget,
+          executionScope,
         })
         dispatch({ type: "turn.upsert", turn })
         await refreshState(session.id)
@@ -451,7 +485,12 @@ export function useAgentRuntime(
         return null
       }
     },
-    [ensureSessionRemoteConnection, ensureSessionWithMetadata, refreshState],
+    [
+      activeSession,
+      ensureSessionExecutionMetadata,
+      ensureSessionWithMetadata,
+      refreshState,
+    ],
   )
 
   const interrupt = useCallback(async () => {
@@ -877,6 +916,40 @@ function isPermissionMode(value: unknown): value is AgentPermissionMode {
   return value === "ask_each_action" || value === "guarded_auto" || value === "bypass"
 }
 
+function metadataForExecutionRequest({
+  remoteConnectionId,
+  executionTarget,
+}: {
+  remoteConnectionId?: string | null
+  executionTarget?: AgentExecutionTarget | null
+}): Record<string, unknown> | undefined {
+  const connectionId =
+    remoteConnectionId || remoteConnectionIdFromExecutionTarget(executionTarget)
+  return connectionId ? { remote_connection_id: connectionId } : undefined
+}
+
+function executionTargetForExecutionScope(
+  executionScope: AgentExecutionScope | null | undefined,
+): AgentExecutionTarget | null | undefined {
+  if (executionScope === undefined) return undefined
+  if (!executionScope || executionScope.mode === "auto") return null
+  const targets = executionScope.selected_targets ?? []
+  if (targets.length !== 1) return null
+  const target = targets[0]
+  const kind = target.kind ?? target.type
+  if (kind === "local") return null
+  if (kind !== "remote_ssh") return null
+  const remoteConnectionId =
+    nonEmptyString(target.remote_connection_id) ?? nonEmptyString(target.connection_id)
+  if (!remoteConnectionId) return null
+  return {
+    kind: "remote_ssh",
+    type: "remote_ssh",
+    remote_connection_id: remoteConnectionId,
+    connection_id: remoteConnectionId,
+  }
+}
+
 function executionTargetForRemoteConnectionId(
   remoteConnectionId: string | null | undefined,
 ): AgentExecutionTarget | undefined {
@@ -890,6 +963,22 @@ function executionTargetForRemoteConnectionId(
     }
   }
   return { kind: "local", type: "local" }
+}
+
+function remoteConnectionIdFromExecutionTarget(
+  executionTarget: AgentExecutionTarget | null | undefined,
+) {
+  if (!executionTarget) return null
+  const kind = executionTarget.kind ?? executionTarget.type
+  if (kind !== "remote_ssh") return null
+  return (
+    nonEmptyString(executionTarget.remote_connection_id) ??
+    nonEmptyString(executionTarget.connection_id)
+  )
+}
+
+function nonEmptyString(value: unknown) {
+  return typeof value === "string" && value ? value : null
 }
 
 function timestamp(value?: string | null) {
