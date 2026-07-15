@@ -2675,7 +2675,7 @@
       "auto": "Auto",
       "manual": "Manual",
       "allTargets": "All",
-      "targetCount": "{count} targets",
+      "targetCount": "{count, plural, one {# target} other {# targets}}",
       "localBadge": "Local",
       "manage": "Manage SSH hosts",
       "local": {

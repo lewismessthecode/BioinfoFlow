@@ -250,7 +250,6 @@ export function ConnectedNodeSelector({
                 toggleManualTarget(LOCAL_TARGET_ID, checked)
               }
               label={t("local.label")}
-              statusLabel={t("localBadge")}
               icon={<Monitor className="h-3.5 w-3.5 text-muted-foreground" />}
             />
             {connections.map((connection) => {
@@ -321,7 +320,7 @@ function ManualTargetItem({
   onCheckedChange: (checked: boolean) => void
   label: string
   summary?: string
-  statusLabel: string
+  statusLabel?: string
   icon: ReactNode
 }) {
   return (
@@ -340,9 +339,11 @@ function ManualTargetItem({
           </span>
         ) : null}
       </span>
-      <span className="mt-0.5 shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
-        {statusLabel}
-      </span>
+      {statusLabel ? (
+        <span className="mt-0.5 shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
+          {statusLabel}
+        </span>
+      ) : null}
     </DropdownMenuCheckboxItem>
   )
 }
@@ -392,7 +393,7 @@ function targetSummaryLabel(
 ) {
   if (selection.mode === "auto") return t("allTargets")
   if (selection.targetIds.length > 1) {
-    return t("targetCount", { count: String(selection.targetIds.length) })
+    return t("targetCount", { count: selection.targetIds.length })
   }
   const targetId = selection.targetIds[0]
   if (targetId === LOCAL_TARGET_ID) return t("local.label")
@@ -405,7 +406,7 @@ function manualCountLabel(
   t: ReturnType<typeof useTranslations>,
 ) {
   if (selection.mode === "auto") return t("allTargets")
-  return t("targetCount", { count: String(selection.targetIds.length) })
+  return t("targetCount", { count: selection.targetIds.length })
 }
 
 function connectionDisplayName(connection: RemoteConnection) {
