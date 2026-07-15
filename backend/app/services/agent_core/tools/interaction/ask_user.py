@@ -5,6 +5,9 @@ from typing import Any
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 
 
+_HEADER_MAX_LENGTH = 12
+
+
 class AskUserTool:
     """Ask the user a structured clarifying question and pause for the answer.
 
@@ -71,6 +74,30 @@ class AskUserTool:
         audit="Ask the user a structured clarifying question.",
         interaction="user_input",
     )
+
+    def normalize_input(self, input: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(input, dict):
+            return input
+        questions = input.get("questions")
+        if not isinstance(questions, list):
+            return input
+        normalized_questions: list[Any] = []
+        changed = False
+        for question in questions:
+            if not isinstance(question, dict):
+                normalized_questions.append(question)
+                continue
+            normalized_question = dict(question)
+            header = normalized_question.get("header")
+            if isinstance(header, str):
+                normalized_header = header.strip()[:_HEADER_MAX_LENGTH] or "Question"
+                if normalized_header != header:
+                    normalized_question["header"] = normalized_header
+                    changed = True
+            normalized_questions.append(normalized_question)
+        if not changed:
+            return input
+        return {**input, "questions": normalized_questions}
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         del context
