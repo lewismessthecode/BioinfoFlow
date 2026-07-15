@@ -213,7 +213,7 @@ export function ConnectedNodeSelector({
         >
           <DropdownMenuRadioItem
             value="auto"
-            className="rounded-[7px] px-2 py-2 text-xs"
+            className="rounded-[7px] py-2 pl-8 pr-2 text-xs"
             onSelect={(event) => event.preventDefault()}
           >
             <span className="min-w-0 flex-1">
@@ -225,7 +225,7 @@ export function ConnectedNodeSelector({
           </DropdownMenuRadioItem>
           <DropdownMenuRadioItem
             value="manual"
-            className="rounded-[7px] px-2 py-2 text-xs"
+            className="rounded-[7px] py-2 pl-8 pr-2 text-xs"
             onSelect={(event) => event.preventDefault()}
           >
             <span className="min-w-0 flex-1">
