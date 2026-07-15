@@ -63,6 +63,7 @@ async def _create_agent_session(
     db_session,
     *,
     remote_connection_id: str | None = None,
+    permission_mode: str = "guarded_auto",
     session_metadata: dict | None = None,
 ):
     from app.models.agent_core import AgentSession, AgentSessionStatus
@@ -73,7 +74,7 @@ async def _create_agent_session(
         workspace_id="workspace-1",
         user_id="user-1",
         role_profile="bioinformatician",
-        permission_mode="guarded_auto",
+        permission_mode=permission_mode,
         automation_mode="assisted",
         runtime_mode="api",
         status=AgentSessionStatus.ACTIVE,
@@ -511,6 +512,83 @@ async def test_remote_exec_uses_single_execution_target_connection_when_omitted(
 
     assert result["connection"]["id"] == str(selected.id)
     assert executor.calls[0]["connection"].id == str(selected.id)
+
+
+@pytest.mark.asyncio
+async def test_remote_exec_bypass_runs_literal_inline_filter_pipeline_without_approval(
+    db_session,
+):
+    from app.services.agent_core.service import AgentCoreService
+
+    service = RemoteConnectionService(db_session)
+    selected = await service.create_connection(
+        {
+            "name": "Phoenix login",
+            "host": "phoenix-login.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "phoenix-login",
+        },
+        workspace_id="workspace-1",
+    )
+    agent_service = AgentCoreService(db_session)
+    agent_session = await agent_service.create_session(
+        project_id=None,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        permission_mode="bypass",
+        metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(selected.id),
+            },
+            "remote_project_root": "/mnt/nas1/.bioinfoflow",
+        },
+    )
+    turn = await agent_service.create_turn_record(
+        session_id=str(agent_session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="List tasks on the remote host.",
+    )
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="[]\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    registry = build_default_tool_registry()
+    remote_tool = registry.get("remote.exec")
+    remote_tool.executor = executor
+    command = (
+        "phoenixcli --no-interactive task list --output json --page-size 100 "
+        "2>&1 | python3 -c \"import sys,json; "
+        "data=json.load(sys.stdin); print(len(data.get('data', [])))\""
+    )
+
+    result = await AgentToolDispatcher(db_session, registry).dispatch(
+        tool_name="remote.exec",
+        input={"command": command},
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
+        ),
+    )
+
+    assert result.status == "completed"
+    assert executor.calls[0]["connection"].id == str(selected.id)
+    assert executor.calls[0]["command"].startswith(
+        "cd /mnt/nas1/.bioinfoflow && "
+    )
 
 
 @pytest.mark.asyncio

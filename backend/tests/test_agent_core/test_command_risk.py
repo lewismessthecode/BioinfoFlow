@@ -148,6 +148,45 @@ def test_known_remote_diagnostic_grammar_is_auto_runnable(command):
     assert assess_command_risk(command, target=REMOTE).level == "act_low"
 
 
+def test_fd_duplication_redirect_is_not_a_write_sink():
+    assessment = assess_command_risk("cat missing.json 2>&1", target=REMOTE)
+
+    assert assessment.level == "act_low"
+    assert assessment.effects == ["read"]
+    assert assessment.requires_explicit_approval is False
+
+
+def test_numeric_output_redirect_target_is_still_a_file_sink():
+    assessment = assess_command_risk("echo ok > 2", target=REMOTE)
+
+    assert assessment.level == "act_high"
+    assert assessment.effects == ["write"]
+    assert assessment.requires_explicit_approval is False
+
+
+def test_remote_full_access_allows_literal_inline_filter_pipeline():
+    command = (
+        "phoenixcli --no-interactive task list --output json --page-size 100 "
+        "2>&1 | python3 -c \"import sys,json; "
+        "data=json.load(sys.stdin); print(len(data.get('data', [])))\""
+    )
+
+    assessment = assess_command_risk(command, target=REMOTE)
+
+    assert "write" not in assessment.effects
+    assert assessment.requires_explicit_approval is False
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="assisted",
+        )
+        .decision
+        == "allow"
+    )
+
+
 def test_assessment_records_semantics_and_canonical_boundary():
     assessment = assess_command_risk(
         "cat /analysis/project/input/sequence.list | head -20",
