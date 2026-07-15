@@ -165,6 +165,14 @@ async def test_llm_provider_templates_drive_frontend_configuration(async_client)
     assert templates["cohere"]["default_base_url"] == (
         "https://api.cohere.ai/compatibility/v1"
     )
+    assert templates["together"]["default_base_url"] == "https://api.together.ai/v1"
+    assert templates["perplexity"]["discovery"] == "static"
+    assert [model["id"] for model in templates["perplexity"]["models"]] == [
+        "sonar",
+        "sonar-pro",
+        "sonar-reasoning-pro",
+        "sonar-deep-research",
+    ]
     vllm_fields = {field["name"]: field for field in templates["vllm"]["fields"]}
     assert vllm_fields["base_url"]["default"] == "http://localhost:8000/v1"
     assert vllm_fields["api_key"]["required"] is False

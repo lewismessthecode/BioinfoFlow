@@ -331,11 +331,11 @@ const DEMO_LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
   ], "https://api.cohere.ai/compatibility/v1"),
   providerTemplate("together", "Together AI", "together", "openai_models", [
     providerField("api_key", "API key", true, true),
-  ], "https://api.together.xyz/v1"),
+  ], "https://api.together.ai/v1"),
   providerTemplate("fireworks", "Fireworks AI", "fireworks", "openai_models", [
     providerField("api_key", "API key", true, true),
   ], "https://api.fireworks.ai/inference/v1"),
-  providerTemplate("perplexity", "Perplexity", "perplexity", "openai_models", [
+  providerTemplate("perplexity", "Perplexity", "perplexity", "static", [
     providerField("api_key", "API key", true, true),
   ], "https://api.perplexity.ai"),
   providerTemplate("ollama", "Ollama", "ollama", "ollama_tags", [

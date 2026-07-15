@@ -62,12 +62,15 @@ After first sign-in, configure the agent under **Settings -> AI Providers**.
 Hosted providers only need an API key; Ollama, vLLM, OpenRouter, and generic
 OpenAI-compatible endpoints can be configured from the same page. Environment
 variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
-`ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`, `DEEPSEEK_API_KEY`,
-`OPENROUTER_API_KEY`, `XAI_API_KEY`, `GROK_API_KEY`, `GROQ_API_KEY`,
-`OLLAMA_BASE_URL`, `VLLM_BASE_URL`, `VLLM_API_KEY`, `VLLM_MODEL`,
-`OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY`, and
-`OPENAI_COMPATIBLE_MODEL` are optional bootstrap defaults for fresh/headless
-deployments. UI-saved configuration takes precedence. In `AUTH_MODE=team`,
+`DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `GROK_API_KEY`,
+`GROQ_API_KEY`, `KIMI_API_KEY`, `MOONSHOT_API_KEY`, `DASHSCOPE_API_KEY`,
+`QWEN_API_KEY`, `MISTRAL_API_KEY`, `COHERE_API_KEY`, `TOGETHER_API_KEY`,
+`FIREWORKS_API_KEY`, and `PERPLEXITY_API_KEY` are optional hosted-provider
+bootstrap defaults for fresh/headless deployments. Advanced local and gateway
+defaults use variables such as `OLLAMA_BASE_URL`, `VLLM_BASE_URL`,
+`VLLM_API_KEY`, `VLLM_MODEL`, `OPENAI_COMPATIBLE_BASE_URL`,
+`OPENAI_COMPATIBLE_API_KEY`, and `OPENAI_COMPATIBLE_MODEL`. UI-saved
+configuration takes precedence. In `AUTH_MODE=team`,
 provider keys saved through the UI as stored credentials also require
 `BIOINFOFLOW_CREDENTIAL_KEY`; environment bootstrap keys do not.
 

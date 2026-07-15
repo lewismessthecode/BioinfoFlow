@@ -1124,6 +1124,8 @@ function readBaseUrl(
   provider: LlmConfiguredProvider | undefined,
   values: Record<string, string>,
 ) {
+  const exposesEndpoint = template.fields.some((field) => field.name === "base_url")
+  if (!exposesEndpoint) return template.default_base_url || null
   return (
     (values.base_url ?? "").trim() ||
     provider?.base_url ||
