@@ -263,6 +263,46 @@ async def test_turn_level_execution_target_change_increments_policy_version(
 
 
 @pytest.mark.asyncio
+async def test_turn_level_execution_scope_change_increments_policy_version(
+    db_session,
+) -> None:
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+
+    session, turn = await _create_session_and_turn(db_session)
+    await _complete_and_release_turn(db_session, session, turn)
+
+    await AgentCoreService(db_session).create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Switch scope for this turn.",
+        execution_scope={
+            "mode": "manual",
+            "selected_targets": [
+                {"type": "local"},
+                {"type": "remote_ssh", "connection_id": "conn-2"},
+            ],
+        },
+    )
+
+    refreshed = await AgentSessionRepository(db_session).get_fresh(str(session.id))
+    assert refreshed.permission_policy_version == 2
+
+    context = await PermissionContextResolver(db_session).resolve(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    assert context.snapshot()["execution_scope"] == {
+        "mode": "manual",
+        "selected_targets": [
+            {"type": "local"},
+            {"type": "remote_ssh", "connection_id": "conn-2"},
+        ],
+    }
+
+
+@pytest.mark.asyncio
 async def test_validation_failure_records_fresh_permission_context(db_session) -> None:
     session, turn = await _create_session_and_turn(db_session, permission_mode="bypass")
 

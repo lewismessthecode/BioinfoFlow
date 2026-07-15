@@ -21,10 +21,13 @@ from app.repositories.agent_core_repo import (
 from app.repositories.project_repo import ProjectRepository
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.execution_target import (
+    normalize_execution_scope,
     execution_target_from_session,
     normalize_execution_target,
+    session_execution_scope_from_metadata,
     session_metadata_with_execution_scope,
     session_metadata_with_execution_target,
+    session_metadata_without_execution_target,
 )
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.model_selection import (
@@ -216,15 +219,34 @@ class AgentCoreService:
             metadata = (
                 updates["metadata"] if "metadata" in updates else current_metadata
             )
-            execution_target = (
-                updates["execution_target"]
-                if "execution_target" in updates
-                else (current_metadata or {}).get("execution_target")
-            )
-            metadata = session_metadata_with_execution_target(
-                metadata,
-                execution_target,
-            )
+            if "execution_target" in updates:
+                execution_target = updates["execution_target"]
+                if execution_target is None:
+                    metadata = session_metadata_without_execution_target(
+                        metadata,
+                        clear_remote_alias=True,
+                    )
+                else:
+                    metadata = session_metadata_with_execution_target(
+                        metadata,
+                        execution_target,
+                    )
+            else:
+                execution_target = (current_metadata or {}).get("execution_target")
+                if "execution_scope" in updates:
+                    normalized_scope = normalize_execution_scope(
+                        updates["execution_scope"]
+                    )
+                    metadata = session_metadata_without_execution_target(
+                        metadata,
+                        clear_remote_alias=normalized_scope is not None
+                        and normalized_scope.get("mode") == "auto",
+                    )
+                else:
+                    metadata = session_metadata_with_execution_target(
+                        metadata,
+                        execution_target,
+                    )
             execution_scope = (
                 updates["execution_scope"]
                 if "execution_scope" in updates
@@ -431,13 +453,31 @@ class AgentCoreService:
                 metadata=next_metadata,
             )
         if execution_scope is not None:
+            previous_target = execution_target_from_session(session)
+            previous_scope = session_execution_scope_from_metadata(
+                getattr(session, "session_metadata", None)
+            )
+            normalized_scope = normalize_execution_scope(execution_scope)
+            base_metadata = session_updates.get(
+                "session_metadata", getattr(session, "session_metadata", None)
+            )
+            if execution_target is None:
+                base_metadata = session_metadata_without_execution_target(
+                    base_metadata,
+                    clear_remote_alias=normalized_scope is not None
+                    and normalized_scope.get("mode") == "auto",
+                )
             next_metadata = session_metadata_with_execution_scope(
-                session_updates.get(
-                    "session_metadata", getattr(session, "session_metadata", None)
-                ),
+                base_metadata,
                 execution_scope,
             )
             session_updates["session_metadata"] = next_metadata
+            increment_policy_version = (
+                increment_policy_version
+                or previous_scope != normalized_scope
+                or previous_target
+                != normalize_execution_target(None, metadata=next_metadata)
+            )
         normalized_active_skill_names = _validated_active_skill_names(
             active_skill_names
         )
@@ -1370,8 +1410,33 @@ def _authorization_state(
             session.toolset_policy if toolset_policy is _UNSET else toolset_policy
         ),
         tuple(sorted(normalize_execution_target(None, metadata=metadata).items())),
+        _normalized_execution_scope(metadata),
         remote_boundary_fingerprint,
     )
+
+
+def _normalized_execution_scope(metadata: Any) -> tuple[Any, ...] | None:
+    scope = session_execution_scope_from_metadata(
+        metadata if isinstance(metadata, dict) else None
+    )
+    if not scope:
+        return None
+    if scope.get("mode") == "auto":
+        return ("auto",)
+    targets = scope.get("selected_targets")
+    if not isinstance(targets, list):
+        return (str(scope.get("mode") or ""),)
+    normalized_targets = tuple(
+        sorted(
+            (
+                str(target.get("type") or ""),
+                str(target.get("connection_id") or ""),
+            )
+            for target in targets
+            if isinstance(target, dict)
+        )
+    )
+    return (str(scope.get("mode") or ""), normalized_targets)
 
 
 def _normalized_toolset(policy: Any) -> tuple[str, tuple[str, ...] | None]:

@@ -1,6 +1,7 @@
 import pytest
 
 from app.services.agent_core.execution_target import (
+    normalize_execution_target,
     normalize_execution_scope,
     selected_remote_connection_ids_from_policy,
     session_metadata_with_execution_scope,
@@ -82,3 +83,46 @@ def test_selected_remote_connection_ids_includes_manual_scope_targets():
             },
         }
     ) == ["conn-1", "conn-2"]
+
+
+def test_execution_scope_overrides_stale_legacy_target_metadata():
+    metadata = {
+        "remote_connection_id": "conn-stale",
+        "execution_target": {
+            "type": "remote_ssh",
+            "connection_id": "conn-stale",
+        },
+        "execution_scope": {"mode": "auto"},
+    }
+
+    assert normalize_execution_target(None, metadata=metadata) == {"type": "local"}
+    assert selected_remote_connection_ids_from_policy(metadata) == []
+    assert selected_remote_connection_ids_from_policy(
+        {
+            "execution_scope": "auto",
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "conn-stale",
+            },
+        }
+    ) == []
+
+
+def test_manual_multi_scope_does_not_fall_back_to_stale_remote_alias():
+    metadata = {
+        "remote_connection_id": "conn-stale",
+        "execution_target": {
+            "type": "remote_ssh",
+            "connection_id": "conn-stale",
+        },
+        "execution_scope": {
+            "mode": "manual",
+            "selected_targets": [
+                {"type": "local"},
+                {"type": "remote_ssh", "connection_id": "conn-selected"},
+            ],
+        },
+    }
+
+    assert normalize_execution_target(None, metadata=metadata) == {"type": "local"}
+    assert selected_remote_connection_ids_from_policy(metadata) == ["conn-selected"]

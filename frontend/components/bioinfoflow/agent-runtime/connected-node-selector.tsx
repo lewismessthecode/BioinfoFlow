@@ -190,7 +190,7 @@ export function ConnectedNodeSelector({
               <span className="min-w-0 shrink-0">{triggerModeLabel}</span>
               <span
                 key={pillLabel}
-                className="inline-flex max-w-[5.75rem] items-center gap-1 overflow-hidden rounded-full bg-[#EDF3EC] px-1.5 py-0.5 text-[11px] font-medium leading-none text-[#346538] animate-in fade-in-0 slide-in-from-bottom-1 duration-200"
+                className="inline-flex max-w-[5.75rem] items-center gap-1 overflow-hidden rounded-full bg-[#EDF3EC] px-1.5 py-0.5 text-[11px] font-medium leading-none text-[#346538] animate-in fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none motion-reduce:transition-none"
                 data-testid="execution-current-target-pill"
               >
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#346538]" />
@@ -198,7 +198,9 @@ export function ConnectedNodeSelector({
               </span>
             </>
           )}
-          <ChevronDown className={composerSelectorChevronClassName} />
+          <ChevronDown
+            className={cn(composerSelectorChevronClassName, compact && "hidden")}
+          />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -219,7 +221,10 @@ export function ConnectedNodeSelector({
             <span className="min-w-0 flex-1">
               <span className="block font-medium text-foreground">{t("auto")}</span>
             </span>
-            <span className="rounded-full bg-[#E1F3FE] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.05em] text-[#1F6C9F]">
+            <span
+              className="rounded-full bg-[#E1F3FE] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.05em] text-[#1F6C9F]"
+              aria-hidden="true"
+            >
               {connections.length ? connections.length + 1 : 1}
             </span>
           </DropdownMenuRadioItem>

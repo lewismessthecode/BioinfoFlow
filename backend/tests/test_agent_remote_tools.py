@@ -592,6 +592,94 @@ async def test_remote_exec_bypass_runs_literal_inline_filter_pipeline_without_ap
 
 
 @pytest.mark.asyncio
+async def test_remote_exec_runs_with_manual_multi_scope_selected_connection(
+    db_session,
+):
+    from app.services.agent_core.service import AgentCoreService
+
+    service = RemoteConnectionService(db_session)
+    selected = await service.create_connection(
+        {
+            "name": "Selected HPC",
+            "host": "selected.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "selected-hpc",
+        },
+        workspace_id="workspace-1",
+    )
+    stale = await service.create_connection(
+        {
+            "name": "Stale HPC",
+            "host": "stale.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "stale-hpc",
+        },
+        workspace_id="workspace-1",
+    )
+    core = AgentCoreService(db_session)
+    agent_session = await core.create_session(
+        project_id=None,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        permission_mode="bypass",
+        metadata={
+            "remote_connection_id": str(stale.id),
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(stale.id),
+            },
+        },
+        execution_scope={
+            "mode": "manual",
+            "selected_targets": [
+                {"type": "local"},
+                {"type": "remote_ssh", "connection_id": str(selected.id)},
+            ],
+        },
+    )
+    turn = await core.create_turn_record(
+        session_id=str(agent_session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Run on the scoped target.",
+    )
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="selected.cluster.example.org\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    registry = build_default_tool_registry()
+    remote_tool = registry.get("remote.exec")
+    remote_tool.executor = executor
+
+    result = await AgentToolDispatcher(db_session, registry).dispatch(
+        tool_name="remote.exec",
+        input={"connection_id": str(selected.id), "command": "hostname"},
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
+        ),
+    )
+
+    assert result.status == "completed", result.error
+    assert result.result["connection"]["id"] == str(selected.id)
+    assert executor.calls[0]["connection"].id == str(selected.id)
+
+
+@pytest.mark.asyncio
 async def test_remote_read_file_bypass_runs_data_path_outside_root_without_approval(
     db_session,
 ):
@@ -1755,6 +1843,27 @@ def test_remote_ssh_toolset_exposure_hides_local_and_platform_tools():
     assert "ask_user" not in worker_tools
     assert "todo_write" not in worker_tools
     assert "projects.list" not in worker_tools
+
+
+def test_manual_scope_with_remote_exposes_remote_and_local_tools():
+    registry = build_default_tool_registry()
+    exposure = ToolsetExposure(registry)
+
+    tools = exposure.exposed_names(
+        policy={"name": "execution"},
+        execution_target={"type": "local"},
+        execution_scope={
+            "mode": "manual",
+            "selected_targets": [
+                {"type": "local"},
+                {"type": "remote_ssh", "connection_id": "conn-1"},
+            ],
+        },
+    )
+
+    assert "remote.exec" in tools
+    assert "remote.read_file" in tools
+    assert "bash" in tools
 
 
 @pytest.mark.asyncio

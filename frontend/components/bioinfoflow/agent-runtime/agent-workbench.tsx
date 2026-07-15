@@ -132,6 +132,7 @@ type PendingSubmission = {
   inputParts: AgentRuntimeInputPart[]
   activeSkillNames: string[]
   modelSelection: AgentModelSelection | null
+  executionScope: AgentExecutionScope
   optimisticTurn: AgentRuntimeTurn
   sessionId: string
 }
@@ -611,6 +612,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         inputParts: AgentRuntimeInputPart[],
         activeSkillNamesSnapshot: string[],
         modelSelection = selectedModel,
+        executionScope: AgentExecutionScope = executionScopeForSelection(
+          executionSelection,
+        ),
         optimisticTurnOverride?: AgentRuntimeTurn,
       ) => {
         const trimmedText = text.trim()
@@ -639,7 +643,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           modelSelection,
           inputParts,
           activeSkillNames: activeSkillNamesSnapshot,
-          executionScope: executionScopeForSelection(executionSelection),
+          executionScope,
         }).then(() => {
           setOptimisticTurns((current) =>
             current.filter((turn) => turn.id !== nextOptimisticTurn.id),
@@ -667,8 +671,15 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       ) => {
         const trimmedText = text.trim()
         if (!trimmedText) return
+        const executionScope = executionScopeForSelection(executionSelection)
         if (!hasActiveTurn) {
-          sendTurn(trimmedText, inputParts, activeSkillNamesSnapshot, modelSelection)
+          sendTurn(
+            trimmedText,
+            inputParts,
+            activeSkillNamesSnapshot,
+            modelSelection,
+            executionScope,
+          )
           return
         }
 
@@ -690,6 +701,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               inputParts,
               activeSkillNames: activeSkillNamesSnapshot,
               modelSelection,
+              executionScope,
               optimisticTurn: nextOptimisticTurn,
               sessionId: submissionSessionId,
             },
@@ -718,6 +730,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             inputParts,
             activeSkillNames: activeSkillNamesSnapshot,
             modelSelection,
+            executionScope,
             optimisticTurn: nextOptimisticTurn,
             sessionId: submissionSessionId,
           })
@@ -726,10 +739,17 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
         void (async () => {
           await interrupt()
-          sendTurn(trimmedText, inputParts, activeSkillNamesSnapshot, modelSelection)
+          sendTurn(
+            trimmedText,
+            inputParts,
+            activeSkillNamesSnapshot,
+            modelSelection,
+            executionScope,
+          )
         })()
       },
       [
+        executionSelection,
         hasActiveTurn,
         hasInterruptibleBackendTurn,
         interrupt,
@@ -759,7 +779,14 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         setQueuedSubmissions((current) =>
           current[0] === next ? current.slice(1) : current,
         )
-        sendTurn(next.text, next.inputParts, next.activeSkillNames, next.modelSelection, next.optimisticTurn)
+        sendTurn(
+          next.text,
+          next.inputParts,
+          next.activeSkillNames,
+          next.modelSelection,
+          next.executionScope,
+          next.optimisticTurn,
+        )
       }, 0)
       return () => window.clearTimeout(timer)
     }, [hasActiveTurn, queuedSubmissions, sendTurn, submissionSessionId])
@@ -783,7 +810,14 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         setPendingInterruptSubmission((current) => (current === next ? null : current))
         void (async () => {
           if (hasInterruptibleBackendTurn) await interrupt()
-          sendTurn(next.text, next.inputParts, next.activeSkillNames, next.modelSelection, next.optimisticTurn)
+          sendTurn(
+            next.text,
+            next.inputParts,
+            next.activeSkillNames,
+            next.modelSelection,
+            next.executionScope,
+            next.optimisticTurn,
+          )
         })()
       }, 0)
       return () => window.clearTimeout(timer)

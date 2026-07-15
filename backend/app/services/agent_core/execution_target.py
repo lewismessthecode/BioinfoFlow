@@ -89,6 +89,24 @@ def session_metadata_with_execution_target(
     return next_metadata or None
 
 
+def session_metadata_without_execution_target(
+    metadata: dict[str, Any] | None,
+    *,
+    clear_remote_alias: bool = False,
+) -> dict[str, Any] | None:
+    next_metadata = dict(metadata or {})
+    next_metadata.pop("execution_target", None)
+    if clear_remote_alias:
+        for key in (
+            "connection_id",
+            "remote_connection_id",
+            "selected_remote_connection_id",
+            "current_remote_connection_id",
+        ):
+            next_metadata.pop(key, None)
+    return next_metadata or None
+
+
 def normalize_execution_scope(execution_scope: Any) -> dict[str, Any] | None:
     if execution_scope is None:
         return None
@@ -141,14 +159,36 @@ def is_remote_ssh_execution_target(execution_target: Any) -> bool:
     return normalized.get("type") == "remote_ssh"
 
 
+def execution_scope_allows_remote(execution_scope: Any) -> bool:
+    try:
+        normalized_scope = normalize_execution_scope(execution_scope)
+    except BadRequestError:
+        return False
+    if not normalized_scope:
+        return False
+    if normalized_scope.get("mode") == "auto":
+        return True
+    return bool(_selected_ids_from_execution_scope(normalized_scope))
+
+
+def execution_scope_mode(execution_scope: Any) -> str | None:
+    try:
+        normalized_scope = normalize_execution_scope(execution_scope)
+    except BadRequestError:
+        return None
+    if not normalized_scope:
+        return None
+    return str(normalized_scope.get("mode") or "") or None
+
+
 def selected_remote_connection_ids_from_policy(policy: Any) -> list[str]:
     if not isinstance(policy, dict):
         return []
     execution_scope = policy.get("execution_scope")
-    if isinstance(execution_scope, dict):
-        scope_ids = _selected_ids_from_execution_scope(execution_scope)
-        if scope_ids:
-            return _dedupe(scope_ids)
+    if execution_scope_mode(execution_scope) in {"auto", "manual"}:
+        normalized_scope = normalize_execution_scope(execution_scope)
+        if normalized_scope is not None:
+            return _dedupe(_selected_ids_from_execution_scope(normalized_scope))
     execution_target = policy.get("execution_target")
     if isinstance(execution_target, dict):
         target_ids = _selected_ids_from_mapping(execution_target)
@@ -173,11 +213,16 @@ def selected_remote_connection_ids_from_policy(policy: Any) -> list[str]:
 def _execution_target_from_metadata(metadata: dict[str, Any] | None) -> Any:
     if not isinstance(metadata, dict):
         return None
+    if "execution_scope" in metadata:
+        scope_target = _single_execution_target_from_scope(
+            metadata.get("execution_scope")
+        )
+        if scope_target is not None:
+            return scope_target
+        if execution_scope_mode(metadata.get("execution_scope")) == "auto":
+            return None
     if "execution_target" in metadata:
         return metadata.get("execution_target")
-    scope_target = _single_execution_target_from_scope(metadata.get("execution_scope"))
-    if scope_target is not None:
-        return scope_target
     connection_id = _first_selected_id_from_mapping(metadata)
     if connection_id:
         return {"type": "remote_ssh", "connection_id": connection_id}

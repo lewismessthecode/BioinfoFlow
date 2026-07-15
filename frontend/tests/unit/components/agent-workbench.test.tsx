@@ -1685,6 +1685,84 @@ describe("AgentWorkbench", () => {
     expect(send.mock.calls.map((call) => call[0])).toEqual(["Queued A", "Queued B"])
   })
 
+  it("keeps the execution scope selected when a draft was queued", async () => {
+    writeAgentTurnPolicy("queue")
+    const send = vi.fn().mockResolvedValue(undefined)
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/connections") {
+        return Promise.resolve({
+          data: [
+            {
+              id: "connection-test-231",
+              name: "Test host sz03",
+              host: "10.227.5.231",
+              port: 22,
+              username: "bioflow",
+              auth_method: "ssh_config",
+              ssh_alias: "bioflow-test-sz03",
+              key_path: "",
+              status: "online",
+              skill_instructions: "Use /data/test.",
+            },
+          ],
+        })
+      }
+      if (path === "/agent/skills") return Promise.resolve({ data: { skills: [] } })
+      return Promise.resolve({ data: [] })
+    })
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [{ ...baseTurn, id: "running-turn", status: "running" }],
+        events: [] as AgentRuntimeEvent[],
+        timeline: buildAgentRuntimeTimeline(
+          [{ ...baseTurn, id: "running-turn", status: "running" }],
+          [],
+        ),
+        status: "running" as "idle" | "loading" | "running" | "error",
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send,
+      interrupt: vi.fn(),
+      decideAction: vi.fn(),
+    }
+    useAgentRuntimeMock.mockReturnValue(runtime)
+    const view = render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Queued under auto" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", {
+        name: "Current execution target: Auto (All targets)",
+      }),
+    )
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /Manual/ }))
+    fireEvent.click(
+      await screen.findByRole("menuitemcheckbox", { name: /Test host sz03/ }),
+    )
+
+    runtime.state = {
+      ...runtime.state,
+      turns: [{ ...baseTurn, id: "running-turn", status: "completed" }],
+      timeline: buildAgentRuntimeTimeline(
+        [{ ...baseTurn, id: "running-turn", status: "completed" }],
+        [],
+      ),
+      status: "idle",
+    }
+    view.rerender(<AgentWorkbench />)
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Queued under auto",
+        expect.objectContaining({ executionScope: autoExecutionScope }),
+      ),
+    )
+  })
+
   it("treats approval and user waits as active turns for queue policy", () => {
     writeAgentTurnPolicy("queue")
     const send = vi.fn().mockResolvedValue(undefined)

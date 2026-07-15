@@ -8,7 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.agent_core_repo import AgentSessionRepository
 from app.models.agent_core import AgentSession
-from app.services.agent_core.execution_target import execution_target_from_session
+from app.services.agent_core.execution_target import (
+    execution_target_from_session,
+    session_execution_scope_from_metadata,
+)
 from app.services.agent_core.permissions.remote_boundary import RemoteBoundaryResolver
 from app.services.agent_core.sandbox import FilesystemPolicy, SandboxRunner
 from app.utils.exceptions import PermissionDeniedError
@@ -24,6 +27,7 @@ class PermissionContext:
     role: str
     role_profile: str
     execution_target: Mapping[str, str]
+    execution_scope: Mapping[str, Any] | None
     boundary: Mapping[str, Any]
     effective_roots: tuple[str, ...]
     remote_identity: Mapping[str, Any] | None
@@ -39,6 +43,7 @@ class PermissionContext:
             "role": self.role,
             "role_profile": self.role_profile,
             "execution_target": _thaw(self.execution_target),
+            "execution_scope": _thaw(self.execution_scope),
             "boundary": _thaw(self.boundary),
             "effective_roots": list(self.effective_roots),
             "remote_identity": _thaw(self.remote_identity),
@@ -81,6 +86,9 @@ class PermissionContextResolver:
             raise PermissionDeniedError("Agent session is not accessible")
 
         execution_target = execution_target_from_session(agent_session)
+        execution_scope = session_execution_scope_from_metadata(
+            agent_session.session_metadata
+        )
         target_type = str(execution_target.get("type") or "local")
         remote_identity: dict[str, Any] | None = None
         resource_revisions: dict[str, Any] = {}
@@ -127,6 +135,7 @@ class PermissionContextResolver:
             role="worker" if role_profile == "worker" else "orchestrator",
             role_profile=role_profile,
             execution_target=_freeze(execution_target),
+            execution_scope=_freeze(execution_scope) if execution_scope else None,
             boundary=_freeze(boundary),
             effective_roots=effective_roots,
             remote_identity=_freeze(remote_identity) if remote_identity else None,
@@ -165,4 +174,3 @@ def _thaw(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_thaw(item) for item in value]
     return value
-

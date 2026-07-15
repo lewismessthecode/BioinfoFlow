@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from app.services.agent_core.execution_target import is_remote_ssh_execution_target
+from app.services.agent_core.execution_target import (
+    execution_scope_allows_remote,
+    is_remote_ssh_execution_target,
+)
 from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.specs import AgentToolSpec
 from app.services.model_runtime.contracts import ToolDefinition
@@ -51,11 +54,13 @@ class ToolsetExposure:
         policy: dict | None,
         role: str = "orchestrator",
         execution_target: dict | str | None = None,
+        execution_scope: dict | str | None = None,
     ) -> list[AgentToolSpec]:
         names = self.exposed_names(
             policy=policy,
             role=role,
             execution_target=execution_target,
+            execution_scope=execution_scope,
         )
         return [self.registry.get(name).spec for name in sorted(names)]
 
@@ -65,6 +70,7 @@ class ToolsetExposure:
         policy: dict | None,
         role: str = "orchestrator",
         execution_target: dict | str | None = None,
+        execution_scope: dict | str | None = None,
     ) -> set[str]:
         policy = policy or DEFAULT_TOOLSET_POLICY
         policy_name = str(policy.get("name") or "default")
@@ -101,13 +107,14 @@ class ToolsetExposure:
         allowed_tools = policy.get("allowed_tools")
         if isinstance(allowed_tools, list) and allowed_tools:
             names &= {str(name) for name in allowed_tools}
+        scope_allows_remote = execution_scope_allows_remote(execution_scope)
         if is_remote_ssh_execution_target(execution_target):
             names &= {
                 spec.name
                 for spec in specs
                 if _is_remote_ssh_compatible_tool(spec)
             }
-        elif execution_target is not None:
+        elif execution_target is not None and not scope_allows_remote:
             names = {name for name in names if not name.startswith("remote.")}
         return names
 
@@ -118,11 +125,13 @@ class ToolsetExposure:
         policy: dict | None,
         role: str = "orchestrator",
         execution_target: dict | str | None = None,
+        execution_scope: dict | str | None = None,
     ) -> ToolExposureDecision:
         names = self.exposed_names(
             policy=policy,
             role=role,
             execution_target=execution_target,
+            execution_scope=execution_scope,
         )
         if tool_name in names:
             return ToolExposureDecision(

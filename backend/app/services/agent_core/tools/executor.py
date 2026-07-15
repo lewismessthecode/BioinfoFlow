@@ -236,11 +236,13 @@ class AgentToolExecutor:
         automation_mode = permission_context.automation_mode
         role = permission_context.role
         execution_target = permission_snapshot["execution_target"]
+        execution_scope = permission_snapshot.get("execution_scope")
         exposure = self.exposure.decide(
             tool_name=tool_name,
             policy=toolset_policy,
             role=role,
             execution_target=execution_target,
+            execution_scope=execution_scope,
         )
         if not exposure.allowed:
             raise PermissionDeniedError("; ".join(exposure.reasons))
@@ -579,6 +581,7 @@ class AgentToolExecutor:
             policy=snapshot["toolset_policy"],
             role=permission_context.role,
             execution_target=snapshot["execution_target"],
+            execution_scope=snapshot.get("execution_scope"),
         )
         if not exposure.allowed:
             return await self._fail_requested_permission(

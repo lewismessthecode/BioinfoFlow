@@ -13,6 +13,8 @@ from app.repositories.project_repo import ProjectRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.services.authorization_service import AuthorizationService
 from app.services.agent_core.execution_target import (
+    execution_scope_allows_remote,
+    execution_scope_mode,
     selected_remote_connection_ids_from_policy,
 )
 from app.services.agent_core.permissions.remote_boundary import RemoteBoundaryResolver
@@ -512,6 +514,34 @@ async def _resolve_claimed_remote_target(
         return connection, await _remote_working_directory(context, connection.id)
 
     execution_target = snapshot.get("execution_target")
+    execution_scope = snapshot.get("execution_scope")
+    if (
+        isinstance(execution_scope, dict)
+        and execution_scope_allows_remote(execution_scope)
+        and (
+            not isinstance(execution_target, dict)
+            or execution_target.get("type") != "remote_ssh"
+        )
+    ):
+        connection = await _resolve_connection(input, context, resolver_factory)
+        agent_session = await AgentSessionRepository(context.db).get_fresh(
+            context.session_id
+        )
+        if agent_session is None:
+            raise PermissionDeniedError("Agent session is not accessible")
+        if (
+            str(agent_session.workspace_id) != context.workspace_id
+            or str(agent_session.user_id) != context.user_id
+        ):
+            raise PermissionDeniedError("Agent session is not accessible")
+        if int(agent_session.permission_policy_version) != int(
+            snapshot.get("policy_version") or 0
+        ):
+            raise PermissionDeniedError(
+                "Remote target changed after the action was authorized"
+            )
+        return connection, await _remote_working_directory(context, connection.id)
+
     if not isinstance(execution_target, dict) or execution_target.get("type") != "remote_ssh":
         raise PermissionDeniedError("Authorized remote execution target is unavailable")
     claimed_connection_id = str(execution_target.get("connection_id") or "")
@@ -601,6 +631,17 @@ async def _selected_remote_connection_ids(
     project_connection_id = await _session_remote_project_connection_id(db, session)
     if project_connection_id:
         return [project_connection_id]
+
+    metadata = getattr(session, "session_metadata", None)
+    if isinstance(metadata, dict) and execution_scope_mode(
+        metadata.get("execution_scope")
+    ) == "auto":
+        repo = RemoteConnectionRepository(db)
+        connections, _pagination = await repo.list_for_workspace(
+            workspace_id=workspace_id,
+            limit=100,
+        )
+        return [str(connection.id) for connection in connections]
 
     selected: list[str] = []
     seen: set[str] = set()
