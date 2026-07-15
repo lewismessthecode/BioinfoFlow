@@ -41,20 +41,26 @@ saved through the UI as stored credentials also require
 For headless bootstrap, set environment defaults such as:
 
 - `OPENAI_API_KEY`
-- `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, and `ANTHROPIC_MODEL`
+- `ANTHROPIC_API_KEY`
 - `GEMINI_API_KEY`
 - `DEEPSEEK_API_KEY`
 - `OPENROUTER_API_KEY`
 - `XAI_API_KEY` or `GROK_API_KEY`
 - `GROQ_API_KEY`
+- `KIMI_API_KEY` or `MOONSHOT_API_KEY`
+- `DASHSCOPE_API_KEY` or `QWEN_API_KEY`
+- `MISTRAL_API_KEY`
+- `COHERE_API_KEY`
+- `TOGETHER_API_KEY`
+- `FIREWORKS_API_KEY`
+- `PERPLEXITY_API_KEY`
 - `OLLAMA_BASE_URL`
 - `VLLM_BASE_URL`, `VLLM_API_KEY`, and `VLLM_MODEL`
 - `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY`, and `OPENAI_COMPATIBLE_MODEL`
 
-For cch or another Anthropic-compatible Claude relay, `ANTHROPIC_BASE_URL`
-must be the Anthropic root URL, not the OpenAI-compatible `/v1` URL. Public
-plain-HTTP relays also require `ANTHROPIC_ALLOW_INSECURE_HTTP=1`; see the
-RUNBOOK cch relay section for the `claude-sonnet-5` example.
+The UI remains the simplest path for most hosted providers: choose the provider,
+paste the key, save, and let Bioinfoflow discover models. Use the OpenAI
+Compatible template for private gateways or providers not yet listed.
 
 Start the stack:
 

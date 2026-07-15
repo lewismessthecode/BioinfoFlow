@@ -439,37 +439,23 @@ cd backend && uv run uvicorn app.main:app --reload --reload-dir app --port 8000
 cd frontend && bun run dev
 ```
 
-### Configure a cch Anthropic-compatible Claude relay
+### Configure common AI providers
 
-cch exposes different API formats through different routes. If the OpenAI GPT
-routes fail, that does not prove the Anthropic route is unusable. Configure cch
-Claude models through the **Anthropic** provider template, not **OpenAI
-Compatible**.
+Use **Settings -> AI Providers** as the primary setup path. Hosted providers such
+as OpenAI, Anthropic, Gemini, DeepSeek, xAI/Grok, Groq, OpenRouter, Kimi, Qwen,
+Mistral, Cohere, Together AI, Fireworks AI, and Perplexity are key-first: choose
+the provider, paste the API key, save, then refresh or auto-discover models.
 
-In **Settings -> AI Providers**, choose **Anthropic** and set:
+For local or gateway deployments, use the dedicated **Ollama** or **vLLM**
+templates when possible. Use **OpenAI Compatible** for LM Studio, private
+gateways, or providers not yet listed in the catalog. OpenAI-compatible endpoint
+URLs normally include the API root that serves `/models` and
+`/chat/completions`; manual model IDs are only a fallback when discovery is not
+available.
 
-- Endpoint: the cch relay root, for example `http://8.129.13.231:8079`
-- API key: the cch API key
-- Model ID: a Claude model returned by the relay, for example `claude-sonnet-5`
-- Allow insecure HTTP: enabled only when the relay is public `http://`
-
-Do not add `/v1` or `/v1/messages` to the Anthropic endpoint. Bioinfoflow stores
-the root URL and LiteLLM's Anthropic adapter calls the Messages endpoint
-(`POST /v1/messages`) from there. For headless bootstrap, use the same root URL
-and add `ANTHROPIC_ALLOW_INSECURE_HTTP=1` only for public plain-HTTP relays:
-
-```bash
-export ANTHROPIC_BASE_URL=http://8.129.13.231:8079
-export ANTHROPIC_MODEL=claude-sonnet-5
-export ANTHROPIC_ALLOW_INSECURE_HTTP=1  # omit for HTTPS
-read -rsp "Anthropic/cch API key: " ANTHROPIC_API_KEY && echo
-export ANTHROPIC_API_KEY
-```
-
-For the cch service observed on July 14, 2026, the OpenAI-compatible GPT path
-timed out on `/v1/responses` and returned `no_available_providers` on
-`/v1/chat/completions`, while the Anthropic Messages path returned a normal
-Claude response. Treat those as separate provider capabilities.
+Plain public `http://` provider endpoints are disabled by default because API
+keys and prompts would travel without TLS. If a trusted test gateway only speaks
+plain HTTP, enable **Allow insecure HTTP** for that provider explicitly.
 
 ### Validate an OpenAI-compatible Responses relay
 

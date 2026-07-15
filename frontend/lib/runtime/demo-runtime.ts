@@ -296,13 +296,11 @@ const DEMO_LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
     providerModelTemplate("gpt-5.4", "GPT-5.4"),
   ], ["chat_completions", "responses"]),
   providerTemplate("anthropic", "Anthropic", "anthropic", "anthropic_models", [
-    providerField("base_url", "Endpoint", false, false, "https://api.anthropic.com"),
     providerField("api_key", "API key", true, true),
-    providerField("model_id", "Model ID", false, false),
   ], "https://api.anthropic.com", [
     providerModelTemplate("claude-sonnet-4-6", "Claude Sonnet 4.6"),
   ]),
-  providerTemplate("gemini", "Gemini", "gemini", "static", [
+  providerTemplate("gemini", "Gemini", "gemini", "gemini_models", [
     providerField("api_key", "API key", true, true),
   ]),
   providerTemplate("grok", "Grok", "grok", "openai_models", [
@@ -316,10 +314,30 @@ const DEMO_LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
   ], "https://api.deepseek.com/v1"),
   providerTemplate("openrouter", "OpenRouter", "openrouter", "openai_models", [
     providerField("api_key", "API key", true, true),
-    providerField("model_id", "Model ID", false, false),
   ], "https://openrouter.ai/api/v1", [
     providerModelTemplate("openrouter/auto", "OpenRouter Auto"),
   ]),
+  providerTemplate("kimi", "Kimi", "kimi", "openai_models", [
+    providerField("api_key", "API key", true, true),
+  ], "https://api.moonshot.cn/v1"),
+  providerTemplate("qwen", "Qwen", "qwen", "openai_models", [
+    providerField("api_key", "API key", true, true),
+  ], "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+  providerTemplate("mistral", "Mistral", "mistral", "openai_models", [
+    providerField("api_key", "API key", true, true),
+  ], "https://api.mistral.ai/v1"),
+  providerTemplate("cohere", "Cohere", "cohere", "cohere_models", [
+    providerField("api_key", "API key", true, true),
+  ], "https://api.cohere.ai/compatibility/v1"),
+  providerTemplate("together", "Together AI", "together", "openai_models", [
+    providerField("api_key", "API key", true, true),
+  ], "https://api.together.xyz/v1"),
+  providerTemplate("fireworks", "Fireworks AI", "fireworks", "openai_models", [
+    providerField("api_key", "API key", true, true),
+  ], "https://api.fireworks.ai/inference/v1"),
+  providerTemplate("perplexity", "Perplexity", "perplexity", "openai_models", [
+    providerField("api_key", "API key", true, true),
+  ], "https://api.perplexity.ai"),
   providerTemplate("ollama", "Ollama", "ollama", "ollama_tags", [
     providerField("base_url", "Endpoint", false, true, "http://localhost:11434"),
     providerField("model_id", "Model ID", false, false),

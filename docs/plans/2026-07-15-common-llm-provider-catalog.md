@@ -2,13 +2,13 @@
 
 ## Goal
 
-Remove the cch-specific relay direction and make Bioinfoflow's AI provider setup
-generic: choose a common provider, paste an API key, save, and load the provider's
-model list when the upstream API supports discovery.
+Remove the prior relay-specific direction and make Bioinfoflow's AI provider
+setup generic: choose a common provider, paste an API key, save, and load the
+provider's model list when the upstream API supports discovery.
 
 ## Requirements
 
-- Delete cch-specific examples, model IDs, relay IPs, and UI copy.
+- Delete relay-specific examples, model IDs, relay IPs, and UI copy.
 - Keep the current settings UI shape; improve the setup path without a redesign.
 - Prefer official provider defaults over user-entered model IDs.
 - Keep endpoint override and manual model ID as advanced fallbacks for local
@@ -62,14 +62,14 @@ specific IP address, no provider-specific workaround text.
 - Backend tests:
   - provider templates include the common provider IDs and expose one-field key
     setup for hosted OpenAI-compatible providers;
-  - cch strings are absent from provider templates and docs-oriented examples;
+  - relay-specific strings are absent from provider templates and docs examples;
   - OpenAI-compatible providers route through the generic `openai/` adapter;
   - Cohere model discovery parses the official list response shape;
-  - public HTTP endpoint opt-in stays generic and does not mention cch.
+  - public HTTP endpoint opt-in stays generic and does not mention one service.
 - Frontend tests:
   - provider cards keep the simple key-first setup copy;
-  - Anthropic no longer renders cch-specific endpoint label/help;
+  - Anthropic no longer renders relay-specific endpoint label/help;
   - demo runtime provider templates match the backend catalog breadth.
 - Docs checks:
   - `.env.example`, `RUNBOOK.md`, and `docs/getting-started/docker.md` describe
-    generic provider setup and contain no cch relay artifacts.
+    generic provider setup and contain no relay-specific artifacts.

@@ -57,7 +57,7 @@ describe("useLlmCatalog", () => {
               id: "provider-relay",
               name: "Public HTTP Relay",
               kind: "openai_compatible",
-              base_url: "http://8.129.13.231:8079/v1",
+              base_url: "http://public-relay.example:8079/v1",
               scope: "user",
               enabled: true,
               allow_insecure_http: true,
@@ -77,7 +77,7 @@ describe("useLlmCatalog", () => {
       await result.current.setupProvider({
         templateId: "openai-compatible",
         name: "Public HTTP Relay",
-        baseUrl: "http://8.129.13.231:8079/v1",
+        baseUrl: "http://public-relay.example:8079/v1",
         apiKey: "relay-key",
         modelIds: ["gpt-5.6-sol"],
         wireProtocol: "responses",
@@ -367,7 +367,7 @@ describe("useLlmCatalog", () => {
     await act(async () => {
       outcome = await result.current.setupProvider({
         templateId: "openai-compatible",
-        baseUrl: "http://8.129.13.231:8079/v1",
+        baseUrl: "http://public-relay.example:8079/v1",
       })
     })
 

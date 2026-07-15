@@ -23,11 +23,6 @@ vi.mock("next-intl", () => ({
       "providerCards.apiKeyPlaceholder": "Paste API key",
       "providerCards.savedKeyPlaceholder": "Key saved. Paste a new key to replace it.",
       "providerCards.endpointPlaceholder": "Endpoint URL",
-      "providerCards.anthropicEndpointLabel": "Anthropic base URL",
-      "providerCards.anthropicEndpointPlaceholder":
-        "https://api.anthropic.com or http://8.129.13.231:8079",
-      "providerCards.anthropicEndpointHelp":
-        "Use the Anthropic Messages API root. For cch, enter http://8.129.13.231:8079 without /v1.",
       "providerCards.getApiKey": "Get key",
       "providerCards.noKeyRequired": "No key required",
       "providerCards.ready": "Ready",
@@ -92,9 +87,7 @@ describe("LlmCatalogPanel", () => {
       field("api_key", "API key", true, true),
     ], "https://api.openai.com/v1"),
     providerTemplate("anthropic", "Anthropic", "anthropic", "anthropic_models", [
-      field("base_url", "Endpoint", false, false, "https://api.anthropic.com"),
       field("api_key", "API key", true, true),
-      field("model_id", "Model ID", false, false),
     ], "https://api.anthropic.com"),
     providerTemplate("gemini", "Gemini", "gemini", "gemini_models", [
       field("api_key", "API key", true, true),
@@ -110,7 +103,6 @@ describe("LlmCatalogPanel", () => {
     ], "https://api.deepseek.com/v1"),
     providerTemplate("openrouter", "OpenRouter", "openrouter", "openai_models", [
       field("api_key", "API key", true, true),
-      field("model_id", "Model ID", false, false),
     ], "https://openrouter.ai/api/v1", [
       {
         id: "openrouter/auto",
@@ -122,6 +114,27 @@ describe("LlmCatalogPanel", () => {
         supports_reasoning: false,
       },
     ]),
+    providerTemplate("kimi", "Kimi", "kimi", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.moonshot.cn/v1"),
+    providerTemplate("qwen", "Qwen", "qwen", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+    providerTemplate("mistral", "Mistral", "mistral", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.mistral.ai/v1"),
+    providerTemplate("cohere", "Cohere", "cohere", "cohere_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.cohere.ai/compatibility/v1"),
+    providerTemplate("together", "Together AI", "together", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.together.xyz/v1"),
+    providerTemplate("fireworks", "Fireworks AI", "fireworks", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.fireworks.ai/inference/v1"),
+    providerTemplate("perplexity", "Perplexity", "perplexity", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.perplexity.ai"),
     providerTemplate("ollama", "Ollama", "ollama", "ollama_tags", [
       field("base_url", "Endpoint", false, true, "http://localhost:11434"),
       field("model_id", "Model ID", false, false),
@@ -167,6 +180,13 @@ describe("LlmCatalogPanel", () => {
       "Grok",
       "DeepSeek",
       "OpenRouter",
+      "Kimi",
+      "Qwen",
+      "Mistral",
+      "Cohere",
+      "Together AI",
+      "Fireworks AI",
+      "Perplexity",
       "Ollama",
       "vLLM",
       "OpenAI Compatible",
@@ -213,7 +233,7 @@ describe("LlmCatalogPanel", () => {
     ).not.toBeInTheDocument()
   })
 
-  it("renders Anthropic relay endpoint guidance without a protocol selector", () => {
+  it("keeps hosted providers key-first without endpoint or model fields", () => {
     useLlmCatalogMock.mockReturnValue({
       providerTemplates: templates,
       configuredProviders: [],
@@ -230,18 +250,12 @@ describe("LlmCatalogPanel", () => {
     render(<LlmCatalogPanel />)
 
     const card = screen.getByRole("group", { name: "Anthropic" })
-    expect(within(card).getByLabelText("Anthropic endpoint")).toHaveValue(
-      "https://api.anthropic.com",
-    )
-    expect(within(card).getByLabelText("Anthropic endpoint")).toHaveAttribute(
+    expect(within(card).getByLabelText("Anthropic API key")).toHaveAttribute(
       "placeholder",
-      "https://api.anthropic.com or http://8.129.13.231:8079",
+      "Paste API key",
     )
-    expect(
-      within(card).getByText(
-        "Use the Anthropic Messages API root. For cch, enter http://8.129.13.231:8079 without /v1.",
-      ),
-    ).toBeInTheDocument()
+    expect(within(card).queryByLabelText("Anthropic endpoint")).not.toBeInTheDocument()
+    expect(within(card).queryByLabelText("Anthropic model id")).not.toBeInTheDocument()
     expect(
       within(card).queryByLabelText("Anthropic protocol"),
     ).not.toBeInTheDocument()
@@ -1198,7 +1212,7 @@ describe("LlmCatalogPanel", () => {
           id: "provider-relay",
           name: "OpenAI Compatible",
           kind: "openai_compatible",
-          base_url: "http://8.129.13.231:8079/v1",
+          base_url: "http://public-relay.example:8079/v1",
           allow_insecure_http: true,
           enabled: true,
           credential: { source: "stored", configured: true, available: true },
@@ -1223,7 +1237,7 @@ describe("LlmCatalogPanel", () => {
 
     const card = screen.getByRole("group", { name: "OpenAI Compatible" })
     fireEvent.change(within(card).getByLabelText("OpenAI Compatible endpoint"), {
-      target: { value: "http://8.129.13.231:8079/v1" },
+      target: { value: "http://public-relay.example:8079/v1" },
     })
     fireEvent.change(within(card).getByLabelText("OpenAI Compatible API key"), {
       target: { value: "relay-key" },
@@ -1252,7 +1266,7 @@ describe("LlmCatalogPanel", () => {
         templateId: "openai-compatible",
         providerId: undefined,
         name: "OpenAI Compatible",
-        baseUrl: "http://8.129.13.231:8079/v1",
+        baseUrl: "http://public-relay.example:8079/v1",
         apiKey: "relay-key",
         modelIds: ["gpt-5.6-sol"],
         discover: false,
@@ -1314,12 +1328,15 @@ describe("LlmCatalogPanel", () => {
     ).not.toBeInTheDocument()
   })
 
-  it("saves a cch Claude relay through the Anthropic template", async () => {
+  it("saves a hosted Kimi provider with only an API key", async () => {
+    const discoverModels = vi.fn().mockResolvedValue([
+      { id: "model-kimi", model_id: "kimi-k2" },
+    ])
     const setupProvider = vi.fn().mockResolvedValue({
       ok: true,
       result: {
-        provider: { id: "provider-anthropic", wire_protocol: "chat_completions" },
-        models: [{ id: "model-claude", model_id: "claude-sonnet-5" }],
+        provider: { id: "provider-kimi", wire_protocol: "chat_completions" },
+        models: [],
         discovered: false,
       },
     })
@@ -1331,42 +1348,36 @@ describe("LlmCatalogPanel", () => {
       isMutating: false,
       error: null,
       refresh: vi.fn(),
-      discoverModels: vi.fn(),
+      discoverModels,
       setupProvider,
       testProvider: vi.fn(),
     })
 
     render(<LlmCatalogPanel />)
 
-    const card = screen.getByRole("group", { name: "Anthropic" })
-    fireEvent.change(within(card).getByLabelText("Anthropic endpoint"), {
-      target: { value: "http://8.129.13.231:8079" },
+    const card = screen.getByRole("group", { name: "Kimi" })
+    fireEvent.change(within(card).getByLabelText("Kimi API key"), {
+      target: { value: "sk-moonshot" },
     })
-    fireEvent.change(within(card).getByLabelText("Anthropic API key"), {
-      target: { value: "sk-cch" },
-    })
-    fireEvent.change(within(card).getByLabelText("Anthropic model id"), {
-      target: { value: "claude-sonnet-5" },
-    })
-    fireEvent.click(within(card).getByRole("switch", { name: "Allow insecure HTTP" }))
     fireEvent.click(within(card).getByRole("button", { name: "Save" }))
 
     await waitFor(() => {
       expect(setupProvider).toHaveBeenCalledWith({
-        templateId: "anthropic",
+        templateId: "kimi",
         providerId: undefined,
-        name: "Anthropic",
-        apiKey: "sk-cch",
-        baseUrl: "http://8.129.13.231:8079",
-        modelIds: ["claude-sonnet-5"],
+        name: "Kimi",
+        apiKey: "sk-moonshot",
+        baseUrl: "https://api.moonshot.cn/v1",
+        modelIds: [],
         discover: false,
         scope: "user",
         enabled: true,
-        allowInsecureHttp: true,
+        allowInsecureHttp: false,
         wireProtocol: "chat_completions",
       })
     })
-    expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
+    expect(discoverModels).toHaveBeenCalledWith("provider-kimi")
+    expect(toastSuccessMock).toHaveBeenCalledWith("1 models found")
   })
 
   it("keeps other provider rows interactive while one provider is saving", async () => {

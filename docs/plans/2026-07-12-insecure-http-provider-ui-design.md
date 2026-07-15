@@ -3,7 +3,7 @@
 ## Goal
 
 Allow an administrator or user to explicitly configure a public plain-HTTP LLM
-provider, including `http://8.129.13.231:8079/v1`, without weakening the default
+provider, including `http://public-relay.example:8079/v1`, without weakening the default
 transport policy for existing providers. Redesign the AI provider settings panel
 so configuration is compact, aligned, readable, and explicit about transport
 risk.
@@ -144,7 +144,7 @@ retry action.
   allowed without enabling the switch.
 - Credential storage and masking are unchanged.
 - Provider kinds remain generic; no CCH-specific provider or URL is hardcoded.
-- `http://8.129.13.231:8079/v1` works only when its provider explicitly stores
+- `http://public-relay.example:8079/v1` works only when its provider explicitly stores
   `allow_insecure_http = true`.
 
 ## Verification

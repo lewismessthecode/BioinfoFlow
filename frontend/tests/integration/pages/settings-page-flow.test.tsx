@@ -667,11 +667,9 @@ function providerTemplates() {
       field("api_key", "API key", true, true),
     ], "https://api.openai.com/v1"),
     template("anthropic", "Anthropic", "anthropic", "anthropic_models", [
-      field("base_url", "Endpoint", false, false, "https://api.anthropic.com"),
       field("api_key", "API key", true, true),
-      field("model_id", "Model ID", false, false),
     ], "https://api.anthropic.com"),
-    template("gemini", "Gemini", "gemini", "static", [
+    template("gemini", "Gemini", "gemini", "gemini_models", [
       field("api_key", "API key", true, true),
     ]),
     template("grok", "Grok", "grok", "openai_models", [
@@ -685,7 +683,6 @@ function providerTemplates() {
     ], "https://api.deepseek.com/v1"),
     template("openrouter", "OpenRouter", "openrouter", "openai_models", [
       field("api_key", "API key", true, true),
-      field("model_id", "Model ID", false, false),
     ], "https://openrouter.ai/api/v1", [
       providerModel("openrouter/auto", "OpenRouter Auto"),
     ]),
