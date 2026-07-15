@@ -626,7 +626,10 @@ class LlmCatalogService:
                 network_access=network_access,
                 timeout=timeout,
             ) as client:
-                response = await client.get(f"{base_url}/api/tags")
+                response = await _get_model_discovery_response(
+                    client,
+                    f"{base_url}/api/tags",
+                )
                 _raise_for_model_discovery_status(response)
             return await self._upsert_models_from_discovery(
                 provider,
@@ -649,7 +652,8 @@ class LlmCatalogService:
                 network_access=network_access,
                 timeout=timeout,
             ) as client:
-                response = await client.get(
+                response = await _get_model_discovery_response(
+                    client,
                     f"{base_url}/v1/models",
                     headers=headers,
                     params={"limit": 1000},
@@ -672,7 +676,8 @@ class LlmCatalogService:
                 network_access=network_access,
                 timeout=timeout,
             ) as client:
-                response = await client.get(
+                response = await _get_model_discovery_response(
+                    client,
                     f"{base_url}/v1beta/models",
                     headers={"x-goog-api-key": material.api_key},
                     params={"pageSize": 1000},
@@ -693,7 +698,8 @@ class LlmCatalogService:
                 network_access=network_access,
                 timeout=timeout,
             ) as client:
-                response = await client.get(
+                response = await _get_model_discovery_response(
+                    client,
                     f"{base_url.rstrip('/')}/models",
                     headers={"Authorization": f"Bearer {material.api_key}"},
                     params={"page_size": 1000, "endpoint": "chat"},
@@ -726,7 +732,11 @@ class LlmCatalogService:
                 network_access=network_access,
                 timeout=timeout,
             ) as client:
-                response = await client.get(f"{base_url}/models", headers=headers)
+                response = await _get_model_discovery_response(
+                    client,
+                    f"{base_url}/models",
+                    headers=headers,
+                )
                 _raise_for_model_discovery_status(response)
             return await self._upsert_models_from_discovery(
                 provider,
@@ -1201,6 +1211,27 @@ def _provider_base_url_host(base_url: str | None) -> str:
         return (urlparse(str(base_url).strip()).hostname or "").lower()
     except ValueError:
         return ""
+
+
+async def _get_model_discovery_response(
+    client,
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    params: dict[str, Any] | None = None,
+) -> httpx.Response:
+    request_kwargs: dict[str, Any] = {}
+    if headers is not None:
+        request_kwargs["headers"] = headers
+    if params is not None:
+        request_kwargs["params"] = params
+    try:
+        return await client.get(url, **request_kwargs)
+    except httpx.RequestError as exc:
+        raise ValueError(
+            "Provider model discovery request failed. "
+            "Check that the provider endpoint is reachable and matches this provider."
+        ) from exc
 
 
 def _raise_for_model_discovery_status(response: httpx.Response) -> None:

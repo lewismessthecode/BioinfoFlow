@@ -2271,6 +2271,7 @@
       "savedNoModels": "服务商已保存，但未发现任何模型",
       "saveFailed": "服务商保存失败",
       "remove": "移除",
+      "confirmRemove": "确认移除",
       "removing": "移除中...",
       "removed": "服务商配置已移除",
       "removeFailed": "无法移除服务商配置",

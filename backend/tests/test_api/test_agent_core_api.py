@@ -1667,6 +1667,59 @@ async def test_catalog_default_prefers_env_managed_vllm_over_other_env_provider(
 
 
 @pytest.mark.asyncio
+async def test_catalog_default_skips_stale_models_for_same_provider(db_session):
+    provider = LlmProvider(
+        name="Default provider",
+        kind="openai_compatible",
+        base_url="https://models.example/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+    await db_session.refresh(provider)
+    db_session.add(
+        LlmProviderCredential(
+            provider_id=str(provider.id),
+            source="stored",
+            encrypted_secret=encrypt_secret("provider-key"),
+            fingerprint=generate_credential_fingerprint(),
+            masked_hint="sk",
+        )
+    )
+    stale_model = LlmModel(
+        provider_id=str(provider.id),
+        model_id="aaa-stale",
+        display_name="AAA stale",
+        supports_tools=True,
+        supports_streaming=True,
+        model_metadata={"catalog_status": "stale"},
+    )
+    active_model = LlmModel(
+        provider_id=str(provider.id),
+        model_id="zzz-active",
+        display_name="ZZZ active",
+        supports_tools=True,
+        supports_streaming=True,
+    )
+    db_session.add_all([stale_model, active_model])
+    await db_session.commit()
+
+    runtime = AgentCoreRuntime(db_session)
+    resolved = await runtime._catalog_default_selection(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    assert resolved is not None
+    assert resolved["model"] == "zzz-active"
+    assert resolved["source"] == "catalog_default"
+
+
+@pytest.mark.asyncio
 async def test_agent_core_prefers_user_catalog_model_over_environment_global_default(
     async_client,
     db_session,
