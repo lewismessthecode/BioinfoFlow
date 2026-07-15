@@ -753,7 +753,10 @@ class AgentToolExecutor:
         agent_metrics.increment("tools.started")
         execution_context = replace(
             context,
-            permission_context_snapshot=snapshot,
+            permission_context_snapshot={
+                **snapshot,
+                "action_permission_decision": permission_decision,
+            },
         )
         try:
             await execution_context.ensure_turn_ownership()
