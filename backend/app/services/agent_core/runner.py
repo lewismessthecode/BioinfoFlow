@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+import re
 
 import app.database as app_database
+from sqlalchemy.exc import IntegrityError
+
+from app.services.agent_core.observability import truncate_log_value
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.utils.logging import get_logger
 
@@ -99,7 +103,33 @@ def _log_task_result(turn_id: str, session_id: str | None, task: asyncio.Task) -
         logger.error(
             "agent_core.runner.failed",
             **fields,
-            exception_type=type(exc).__name__,
+            **_exception_log_fields(exc),
         )
         return
     logger.info("agent_core.runner.completed", **fields)
+
+
+def _exception_log_fields(exc: BaseException) -> dict[str, str]:
+    fields = {"exception_type": type(exc).__name__}
+    message = _safe_exception_message(exc)
+    if message:
+        fields["exception_message"] = truncate_log_value(message)
+    return fields
+
+
+def _safe_exception_message(exc: BaseException) -> str | None:
+    if isinstance(exc, IntegrityError):
+        return _first_safe_line(str(getattr(exc, "orig", None) or exc))
+    return None
+
+
+def _first_safe_line(message: str) -> str | None:
+    for line in message.splitlines():
+        line = line.strip()
+        if line:
+            return re.sub(
+                r"Duplicate entry '.*?' for key",
+                "Duplicate entry <redacted> for key",
+                line,
+            )
+    return None

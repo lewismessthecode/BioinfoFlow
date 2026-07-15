@@ -7,6 +7,7 @@ import json
 import sys
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings, settings
@@ -1224,6 +1225,51 @@ async def test_runner_failure_log_uses_safe_metadata(monkeypatch):
                 "session_id": "session-1",
                 "turn_id": "turn-1",
                 "exception_type": "RuntimeError",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_runner_integrity_failure_log_includes_constraint_detail(monkeypatch):
+    records: list[tuple[str, str, dict]] = []
+
+    class SpyLogger:
+        def error(self, event: str, **fields):
+            records.append(("error", event, fields))
+
+        def info(self, event: str, **fields):
+            records.append(("info", event, fields))
+
+    monkeypatch.setattr(runner_module, "logger", SpyLogger())
+    task = asyncio.get_running_loop().create_future()
+    task.set_exception(
+        IntegrityError(
+            "INSERT agent_tool_call_batches",
+            {},
+            Exception(
+                "UNIQUE constraint failed: "
+                "agent_tool_call_batches.turn_id, "
+                "agent_tool_call_batches.batch_ordinal"
+            ),
+        )
+    )
+
+    runner_module._log_task_result("turn-1", "session-1", task)
+
+    assert records == [
+        (
+            "error",
+            "agent_core.runner.failed",
+            {
+                "session_id": "session-1",
+                "turn_id": "turn-1",
+                "exception_type": "IntegrityError",
+                "exception_message": (
+                    "UNIQUE constraint failed: "
+                    "agent_tool_call_batches.turn_id, "
+                    "agent_tool_call_batches.batch_ordinal"
+                ),
             },
         )
     ]
