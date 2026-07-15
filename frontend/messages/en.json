@@ -2271,6 +2271,7 @@
       "savedNoModels": "Provider saved, but no models were found",
       "saveFailed": "Provider could not be saved",
       "remove": "Remove",
+      "confirmRemove": "Confirm remove",
       "removing": "Removing...",
       "removed": "Provider removed",
       "removeFailed": "Provider could not be removed",

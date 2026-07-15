@@ -39,6 +39,7 @@ vi.mock("next-intl", () => ({
       "providerCards.savedNoModels": "Provider saved, but no models were found",
       "providerCards.modelRefreshFailed": "Models could not be refreshed",
       "providerCards.remove": "Remove",
+      "providerCards.confirmRemove": "Confirm remove",
       "providerCards.removing": "Removing...",
       "providerCards.removed": "Provider removed",
       "providerCards.removeFailed": "Provider could not be removed",
@@ -1096,7 +1097,12 @@ describe("LlmCatalogPanel", () => {
     render(<LlmCatalogPanel />)
 
     const card = screen.getByRole("group", { name: "OpenAI" })
+    fireEvent.change(within(card).getByLabelText("OpenAI API key"), {
+      target: { value: "sk-replacement-before-remove" },
+    })
     fireEvent.click(within(card).getByRole("button", { name: "Remove" }))
+    expect(setProviderEnabled).not.toHaveBeenCalled()
+    fireEvent.click(within(card).getByRole("button", { name: "Confirm remove" }))
 
     await waitFor(() => {
       expect(setProviderEnabled).toHaveBeenCalledWith(
@@ -1104,6 +1110,7 @@ describe("LlmCatalogPanel", () => {
         false,
       )
     })
+    expect(within(card).getByLabelText("OpenAI API key")).toHaveValue("")
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider removed")
   })
 

@@ -798,14 +798,15 @@ class AgentCoreRuntime:
                 ):
                     continue
                 models = await self.llm_models.list_for_provider(str(provider.id))
-                if not models:
-                    continue
-                return await self._catalog_selection(
-                    {"model_id": str(models[0].id)},
-                    source="catalog_default",
-                    workspace_id=workspace_id,
-                    user_id=user_id,
-                )
+                for model in models:
+                    candidate = await self._catalog_selection(
+                        {"model_id": str(model.id)},
+                        source="catalog_default",
+                        workspace_id=workspace_id,
+                        user_id=user_id,
+                    )
+                    if candidate is not None:
+                        return candidate
         return None
 
     async def _run_model_attempts(

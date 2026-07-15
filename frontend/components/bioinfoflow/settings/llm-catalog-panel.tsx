@@ -84,6 +84,9 @@ export function LlmCatalogPanel() {
   const [removingTemplateIds, setRemovingTemplateIds] = useState<Set<string>>(
     () => new Set(),
   )
+  const [confirmingRemoveTemplateIds, setConfirmingRemoveTemplateIds] = useState<
+    Set<string>
+  >(() => new Set())
   const [dirtyTemplateIds, setDirtyTemplateIds] = useState<Set<string>>(
     () => new Set(),
   )
@@ -179,7 +182,40 @@ export function LlmCatalogPanel() {
 
   const markTemplateDirty = (templateId: string) => {
     invalidateProbeResult(templateId)
+    clearRemoveConfirmation(templateId)
     setDirtyTemplateIds((current) => new Set(current).add(templateId))
+  }
+
+  const clearRemoveConfirmation = (templateId: string) => {
+    setConfirmingRemoveTemplateIds((current) => {
+      if (!current.has(templateId)) return current
+      const next = new Set(current)
+      next.delete(templateId)
+      return next
+    })
+  }
+
+  const resetTemplateValues = (template: LlmProviderTemplate) => {
+    setFieldValues((current) => ({
+      ...current,
+      [template.id]: Object.fromEntries(
+        template.fields.map((field) => [
+          field.name,
+          initialFieldValue(template, field),
+        ]),
+      ),
+    }))
+    setInsecureHttpValues((current) => ({ ...current, [template.id]: false }))
+    setProtocolValues((current) => ({
+      ...current,
+      [template.id]: template.default_wire_protocol ?? "chat_completions",
+    }))
+    setSelectedTestModelIds((current) => {
+      if (!current[template.id]) return current
+      const next = { ...current }
+      delete next[template.id]
+      return next
+    })
   }
 
   const setFieldValue = (
@@ -368,11 +404,13 @@ export function LlmCatalogPanel() {
         toast.error(message)
         return
       }
+      resetTemplateValues(template)
       setDirtyTemplateIds((current) => {
         const next = new Set(current)
         next.delete(template.id)
         return next
       })
+      clearRemoveConfirmation(template.id)
       toast.success(t("providerCards.removed"))
     } finally {
       setRemovingTemplateIds((current) => {
@@ -491,6 +529,7 @@ export function LlmCatalogPanel() {
                 saving={savingTemplateIds.has(template.id)}
                 testing={testingTemplateIds.has(template.id)}
                 removing={removingTemplateIds.has(template.id)}
+                removeConfirming={confirmingRemoveTemplateIds.has(template.id)}
                 wireProtocol={
                   protocolValues[template.id] ??
                   provider?.wire_protocol ??
@@ -528,7 +567,14 @@ export function LlmCatalogPanel() {
                 }}
                 onSave={() => void saveProvider(template)}
                 onRemove={() => {
-                  if (provider) void removeProvider(template, provider)
+                  if (!provider) return
+                  if (!confirmingRemoveTemplateIds.has(template.id)) {
+                    setConfirmingRemoveTemplateIds((current) =>
+                      new Set(current).add(template.id),
+                    )
+                    return
+                  }
+                  void removeProvider(template, provider)
                 }}
               />
             )
@@ -549,6 +595,7 @@ type ProviderCardProps = {
   saving: boolean
   testing: boolean
   removing: boolean
+  removeConfirming: boolean
   wireProtocol: LlmWireProtocol
   providerModels: LlmModel[]
   selectedTestModelId: string
@@ -573,6 +620,7 @@ function ProviderCard({
   saving,
   testing,
   removing,
+  removeConfirming,
   wireProtocol,
   providerModels,
   selectedTestModelId,
@@ -684,7 +732,9 @@ function ProviderCard({
               <span className="truncate">
                 {removing
                   ? t("providerCards.removing")
-                  : t("providerCards.remove")}
+                  : removeConfirming
+                    ? t("providerCards.confirmRemove")
+                    : t("providerCards.remove")}
               </span>
             </Button>
           ) : null}

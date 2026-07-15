@@ -525,6 +525,53 @@ async def test_discover_models_returns_provider_auth_error_without_500(
 
 
 @pytest.mark.asyncio
+async def test_discover_models_returns_network_error_without_500(
+    async_client,
+    monkeypatch,
+):
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers=None, params=None):
+            del headers, params
+            raise httpx.ConnectError(
+                "connection failed",
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
+    setup = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "base_url": "https://unreachable.example/v1",
+            "api_key": "relay-key",
+            "scope": "user",
+        },
+    )
+    provider_id = setup.json()["data"]["provider"]["id"]
+
+    response = await async_client.post(
+        f"/api/v1/llm/providers/{provider_id}/discover-models"
+    )
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["error"]["code"] == "VALIDATION_ERROR"
+    assert "Provider model discovery request failed" in payload["error"]["message"]
+
+
+@pytest.mark.asyncio
 async def test_discover_models_hides_stale_provider_models(
     async_client,
     db_session,
