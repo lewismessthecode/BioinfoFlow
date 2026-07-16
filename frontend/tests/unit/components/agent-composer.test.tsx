@@ -67,7 +67,8 @@ vi.mock("next-intl", () => ({
       "runtimeLocation.status.unknown": "Not tested",
       "runtimeLocation.selectedLocalAria": "Current execution target: local",
       "runtimeLocation.selectedRemoteAria": `Current execution target: ${values?.name ?? ""} at ${values?.host ?? ""}, ${values?.status ?? ""}`,
-      "runtimeLocation.selectedAutoAria": `Execution targets: Auto, ${values?.target ?? ""}`,
+      "runtimeLocation.selectedAutoAria": "Execution targets: Auto",
+      "runtimeLocation.selectedAutoTargetAria": `Execution targets: Auto, current target ${values?.target ?? ""}`,
       "runtimeLocation.selectedManualAria": `Execution targets: Manual, ${values?.target ?? ""}`,
       placeholder: "Execution targets",
       menuTitle: "Execution targets",
@@ -87,7 +88,8 @@ vi.mock("next-intl", () => ({
       "status.unknown": "Not tested",
       selectedLocalAria: "Current execution target: local",
       selectedRemoteAria: `Current execution target: ${values?.name ?? ""} at ${values?.host ?? ""}, ${values?.status ?? ""}`,
-      selectedAutoAria: `Execution targets: Auto, ${values?.target ?? ""}`,
+      selectedAutoAria: "Execution targets: Auto",
+      selectedAutoTargetAria: `Execution targets: Auto, current target ${values?.target ?? ""}`,
       selectedManualAria: `Execution targets: Manual, ${values?.target ?? ""}`,
       "tokenUsage.label": "Tokens",
       "tokenUsage.display": `${values?.value ?? ""} tokens`,
@@ -611,10 +613,10 @@ describe("AgentComposer", () => {
     )
 
     const locationChip = screen.getByRole("button", {
-      name: "Execution targets: Auto, All",
+      name: "Execution targets: Auto",
     })
     expect(locationChip).toHaveAttribute("data-composer-chip", "true")
-    expect(locationChip).toHaveClass("min-h-7", "rounded-[8px]", "bg-background")
+    expect(locationChip).toHaveClass("min-h-7", "rounded-[8px]", "bg-muted/35")
 
     const permissionChip = screen.getByRole("button", { name: "Permission mode" })
     expect(permissionChip).toHaveAttribute("data-composer-chip", "true")

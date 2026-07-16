@@ -100,11 +100,15 @@ export function ConnectedNodeSelector({
     hasLoadedRemoteConnections && remoteConnectionsLoadFailed && connections.length === 0
   const triggerModeLabel =
     normalizedSelection.mode === "auto" ? t("auto") : t("manual")
+  const showTargetPill =
+    !compact && (normalizedSelection.mode === "manual" || Boolean(currentTargetLabel))
   const pillLabel =
     currentTargetLabel || targetSummaryLabel(normalizedSelection, connectionById, t)
   const triggerAria =
     normalizedSelection.mode === "auto"
-      ? t("selectedAutoAria", { target: pillLabel })
+      ? currentTargetLabel
+        ? t("selectedAutoTargetAria", { target: pillLabel })
+        : t("selectedAutoAria")
       : t("selectedManualAria", { target: pillLabel })
 
   const commitSelection = useCallback(
@@ -177,7 +181,7 @@ export function ConnectedNodeSelector({
           size="sm"
           className={cn(
             composerSelectorChipClassName,
-            "max-w-[13rem] gap-1.5 border-border/70 bg-background text-foreground/80 shadow-none",
+            "max-w-[12rem] gap-1.5 border-transparent bg-muted/35 text-foreground/76 shadow-none hover:border-transparent hover:bg-muted/70 hover:text-foreground",
             compact && "max-w-9 px-2",
           )}
           data-composer-chip="true"
@@ -188,14 +192,16 @@ export function ConnectedNodeSelector({
           {compact ? null : (
             <>
               <span className="min-w-0 shrink-0">{triggerModeLabel}</span>
-              <span
-                key={pillLabel}
-                className="inline-flex max-w-[5.75rem] items-center gap-1 overflow-hidden rounded-full bg-[#EDF3EC] px-1.5 py-0.5 text-[11px] font-medium leading-none text-[#346538] animate-in fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none motion-reduce:transition-none"
-                data-testid="execution-current-target-pill"
-              >
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#346538]" />
-                <span className="truncate">{pillLabel}</span>
-              </span>
+              {showTargetPill ? (
+                <span
+                  key={pillLabel}
+                  className="inline-flex max-w-[5.75rem] items-center gap-1 overflow-hidden rounded-[7px] bg-[#EDF3EC] px-1.5 py-0.5 text-[11px] font-medium leading-none text-[#346538] animate-in fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none motion-reduce:transition-none"
+                  data-testid="execution-current-target-pill"
+                >
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#346538]" />
+                  <span className="truncate">{pillLabel}</span>
+                </span>
+              ) : null}
             </>
           )}
           <ChevronDown
@@ -209,6 +215,9 @@ export function ConnectedNodeSelector({
         sideOffset={10}
         className={cn("w-[286px]", composerSelectorMenuClassName)}
       >
+        <div className="px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">
+          {t("menuTitle")}
+        </div>
         <DropdownMenuRadioGroup
           value={normalizedSelection.mode}
           onValueChange={(mode) => switchMode(mode === "manual" ? "manual" : "auto")}
@@ -220,12 +229,6 @@ export function ConnectedNodeSelector({
           >
             <span className="min-w-0 flex-1">
               <span className="block font-medium text-foreground">{t("auto")}</span>
-            </span>
-            <span
-              className="rounded-full bg-[#E1F3FE] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.05em] text-[#1F6C9F]"
-              aria-hidden="true"
-            >
-              {connections.length ? connections.length + 1 : 1}
             </span>
           </DropdownMenuRadioItem>
           <DropdownMenuRadioItem

@@ -19,9 +19,11 @@ vi.mock("next-intl", () => ({
       allTargets: "All",
       targetCount: `${values?.count ?? "0"} targets`,
       localBadge: "Local",
-      selectedAutoAria: `Execution targets: Auto, ${values?.target ?? ""}`,
+      selectedAutoAria: "Execution targets: Auto",
+      selectedAutoTargetAria: `Execution targets: Auto, current target ${values?.target ?? ""}`,
       selectedManualAria: `Execution targets: Manual, ${values?.target ?? ""}`,
       manage: "Manage SSH hosts",
+      menuTitle: "Run on",
       "local.label": "Local",
       "local.description": "Current Bioinfoflow workspace",
       "remote.label": "Remote",
@@ -95,18 +97,17 @@ function ControlledSelector({
 }
 
 describe("ConnectedNodeSelector", () => {
-  it("defaults to Auto with a compact current-target pill", async () => {
+  it("defaults to Auto without redundant target copy", async () => {
     apiRequestMock.mockResolvedValueOnce({ data: [liveConnection, secondConnection] })
 
     render(<ConnectedNodeSelector />)
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
     const trigger = screen.getByRole("button", {
-      name: "Execution targets: Auto, All",
+      name: "Execution targets: Auto",
     })
     expect(trigger).toHaveTextContent("Auto")
-    expect(screen.getByTestId("execution-current-target-pill"))
-      .toHaveTextContent("All")
+    expect(screen.queryByTestId("execution-current-target-pill")).not.toBeInTheDocument()
   })
 
   it("switches to Manual and emits local plus selected remote targets", async () => {
@@ -118,7 +119,7 @@ describe("ConnectedNodeSelector", () => {
 
     await user.click(
       await screen.findByRole("button", {
-        name: "Execution targets: Auto, All",
+        name: "Execution targets: Auto",
       }),
     )
     await user.click(screen.getByRole("menuitemradio", { name: "Manual" }))
@@ -230,7 +231,7 @@ describe("ConnectedNodeSelector", () => {
     render(<ControlledSelector />)
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-    await user.click(screen.getByRole("button", { name: "Execution targets: Auto, All" }))
+    await user.click(screen.getByRole("button", { name: "Execution targets: Auto" }))
     await user.click(screen.getByRole("menuitemradio", { name: "Manual" }))
 
     expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
@@ -242,7 +243,7 @@ describe("ConnectedNodeSelector", () => {
 
     render(<ConnectedNodeSelector disabled />)
 
-    expect(screen.getByRole("button", { name: "Execution targets: Auto, All" }))
+    expect(screen.getByRole("button", { name: "Execution targets: Auto" }))
       .toBeDisabled()
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
   })
@@ -254,7 +255,7 @@ describe("ConnectedNodeSelector", () => {
     render(<ConnectedNodeSelector compact />)
 
     const trigger = screen.getByRole("button", {
-      name: "Execution targets: Auto, All",
+      name: "Execution targets: Auto",
     })
     expect(trigger).toHaveClass("max-w-9")
     expect(trigger).not.toHaveTextContent("Auto")
