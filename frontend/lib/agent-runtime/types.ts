@@ -68,6 +68,18 @@ export type AgentRuntimeSkill = {
   path?: string | null
 }
 
+export type AgentRuntimeWorkflowMention = {
+  id: string
+  name: string
+  version: string
+  engine: string
+  source: string
+  description?: string | null
+  scope: "project" | "global"
+  projectId?: string | null
+  pinned?: boolean
+}
+
 export type AgentRuntimeSession = {
   id: string
   project_id?: string | null

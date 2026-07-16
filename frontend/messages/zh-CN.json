@@ -2494,7 +2494,7 @@
   },
   "agentRuntime": {
     "welcomeTitle": "今天想让 Bioinfoflow 帮你做什么？",
-    "composerPlaceholder": "给 Bioinfoflow 发送消息...",
+    "composerPlaceholder": "计划、构建，输入 / 选技能，输入 @ 加上下文",
     "attach": "添加附件或上下文",
     "send": "发送消息",
     "stop": "停止回复",
@@ -2534,6 +2534,15 @@
       "loadFailed": "无法加载技能。",
       "remove": "移除 {name}",
       "activeForNextTurn": "技能"
+    },
+    "workflows": {
+      "menuTitle": "工作流",
+      "loading": "正在加载工作流...",
+      "empty": "暂无工作流。",
+      "noMatches": "没有匹配的工作流。",
+      "loadFailed": "无法加载工作流。",
+      "remove": "移除 {name}",
+      "activeForNextTurn": "工作流上下文"
     },
     "starterSuggestions": {
       "checkWorkflow": {
