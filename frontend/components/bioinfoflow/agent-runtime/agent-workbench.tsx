@@ -237,6 +237,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     })
     const [environmentOpen, setEnvironmentOpen] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
+    const [sidecarResizing, setSidecarResizing] = useState(false)
     const [sidecarMaxWidth, setSidecarMaxWidth] = useState(SIDECAR_MAX_WIDTH)
     const [sidecarWidth, setSidecarWidth] = useState(() => {
       if (typeof window === "undefined") return SIDECAR_DEFAULT_WIDTH
@@ -1085,6 +1086,26 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       })
     }, [sidecarMaxWidth])
 
+    const resizeSidecarFromPointer = useCallback((clientX: number) => {
+      const root = workbenchRootRef.current
+      if (!root) return
+      const rect = root.getBoundingClientRect()
+      setSidecarWidth(clampSidecarWidth(rect.right - clientX, sidecarMaxWidth))
+    }, [sidecarMaxWidth])
+
+    const beginSidecarResize = useCallback(() => {
+      setSidecarResizing(true)
+    }, [])
+
+    const endSidecarResize = useCallback(() => {
+      setSidecarResizing(false)
+    }, [])
+
+    const resizeSidecarPointer = useCallback(
+      ({ clientX }: { clientX: number }) => resizeSidecarFromPointer(clientX),
+      [resizeSidecarFromPointer],
+    )
+
     const onSidecarTabKeyDown = useCallback(
       (event: KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
         const lastIndex = SIDECAR_TABS.length - 1
@@ -1452,7 +1473,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
         <div
           className={cn(
-            "relative hidden shrink-0 overflow-hidden transition-[width,opacity,transform] duration-300 ease-out lg:flex",
+            "relative hidden shrink-0 overflow-hidden transition-[width,opacity,transform] lg:flex",
+            sidecarResizing ? "duration-0" : "duration-300 ease-out",
             desktopSidecarVisible
               ? "translate-x-0 opacity-100"
               : "pointer-events-none translate-x-4 opacity-0",
@@ -1470,6 +1492,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             <ResizeHandle
               side="right"
               onResize={resizeSidecar}
+              onResizeStart={beginSidecarResize}
+              onResizeEnd={endSidecarResize}
+              onResizePointer={resizeSidecarPointer}
               valueNow={constrainedSidecarWidth}
               valueMin={sidecarResizeMin}
               valueMax={sidecarResizeMax}

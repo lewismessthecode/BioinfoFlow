@@ -773,37 +773,56 @@ describe("AgentWorkbench", () => {
   })
 
   it("resizes the desktop workspace drawer and stores the preferred width", async () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 1200,
+      height: 720,
+      top: 0,
+      right: 1200,
+      bottom: 720,
+      left: 0,
+      toJSON: () => ({}),
+    } as DOMRect)
     setupRuntime({ session: baseSession })
-    render(<AgentWorkbench projectId="project-1" />)
-    const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
-    render(<>{navbarActions}</>)
+    try {
+      render(<AgentWorkbench projectId="project-1" />)
+      const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+      render(<>{navbarActions}</>)
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
-      await Promise.resolve()
-    })
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+        await Promise.resolve()
+      })
 
-    const sidecar = screen.getByTestId("agent-sidecar-column")
-    const resizer = screen.getByRole("separator", { name: "Resize right sidebar" })
-    expect(resizer).toHaveAttribute("aria-valuemin", "380")
-    expect(resizer).toHaveAttribute("aria-valuemax", "760")
-    expect(resizer).toHaveAttribute("aria-valuenow", "600")
-    expect(resizer).toHaveClass("w-2")
-    expect(resizer.firstElementChild).toHaveClass("w-px")
+      const sidecar = screen.getByTestId("agent-sidecar-column")
+      const resizer = screen.getByRole("separator", { name: "Resize right sidebar" })
+      expect(resizer).toHaveAttribute("aria-valuemin", "380")
+      expect(resizer).toHaveAttribute("aria-valuemax", "760")
+      expect(resizer).toHaveAttribute("aria-valuenow", "600")
+      expect(resizer).toHaveClass("w-2")
+      expect(resizer.firstElementChild).toHaveClass("w-px")
 
-    fireEvent.keyDown(resizer, { key: "ArrowLeft" })
-    expect(sidecar).toHaveStyle({ width: "616px" })
-    expect(resizer).toHaveAttribute("aria-valuenow", "616")
-    expect(window.localStorage.getItem("agent-sidecar-width")).toBe("616")
+      fireEvent.keyDown(resizer, { key: "ArrowLeft" })
+      expect(sidecar).toHaveStyle({ width: "616px" })
+      expect(resizer).toHaveAttribute("aria-valuenow", "616")
+      expect(window.localStorage.getItem("agent-sidecar-width")).toBe("616")
 
-    fireEvent.mouseDown(resizer, { clientX: 500 })
-    fireEvent.mouseMove(document, { clientX: 460 })
-    fireEvent.mouseUp(document)
+      fireEvent.pointerDown(resizer, { clientX: 600, pointerId: 1 })
+      expect(sidecar).toHaveClass("duration-0")
+      expect(sidecar).not.toHaveClass("duration-300")
 
-    await waitFor(() => {
-      expect(sidecar).toHaveStyle({ width: "656px" })
-    })
-    expect(window.localStorage.getItem("agent-sidecar-width")).toBe("656")
+      fireEvent.pointerMove(window, { clientX: 500, pointerId: 1 })
+      fireEvent.pointerUp(window, { pointerId: 1 })
+
+      await waitFor(() => {
+        expect(sidecar).toHaveStyle({ width: "700px" })
+      })
+      expect(sidecar).toHaveClass("duration-300")
+      expect(window.localStorage.getItem("agent-sidecar-width")).toBe("700")
+    } finally {
+      rectSpy.mockRestore()
+    }
   })
 
   it("clamps the desktop workspace drawer to preserve the chat column on narrow desktop widths", async () => {

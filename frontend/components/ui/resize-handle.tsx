@@ -3,10 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 
+type ResizePointerPosition = {
+  clientX: number
+  clientY: number
+}
+
 interface ResizeHandleProps {
   side: "left" | "right" | "top"
   onResize: (delta: number) => void
+  onResizeStart?: () => void
   onResizeEnd?: () => void
+  onResizePointer?: (position: ResizePointerPosition) => void
   className?: string
   ariaLabel?: string
   valueNow?: number
@@ -17,7 +24,9 @@ interface ResizeHandleProps {
 export function ResizeHandle({
   side,
   onResize,
+  onResizeStart,
   onResizeEnd,
+  onResizePointer,
   className,
   ariaLabel,
   valueNow,
@@ -28,12 +37,17 @@ export function ResizeHandle({
   const startX = useRef(0)
   const startY = useRef(0)
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-    startX.current = e.clientX
-    startY.current = e.clientY
-  }, [])
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault()
+      setIsDragging(true)
+      startX.current = event.clientX
+      startY.current = event.clientY
+      onResizeStart?.()
+      onResizePointer?.({ clientX: event.clientX, clientY: event.clientY })
+    },
+    [onResizePointer, onResizeStart],
+  )
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -59,33 +73,41 @@ export function ResizeHandle({
   useEffect(() => {
     if (!isDragging) return
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const originalUserSelect = document.body.style.userSelect
+    document.body.style.userSelect = "none"
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (onResizePointer) {
+        onResizePointer({ clientX: event.clientX, clientY: event.clientY })
+        return
+      }
       let delta = 0
       if (side === "top") {
-        delta = startY.current - e.clientY
-        startY.current = e.clientY
+        delta = startY.current - event.clientY
+        startY.current = event.clientY
       } else {
         delta = side === "left"
-          ? e.clientX - startX.current
-          : startX.current - e.clientX
-        startX.current = e.clientX
+          ? event.clientX - startX.current
+          : startX.current - event.clientX
+        startX.current = event.clientX
       }
       onResize(delta)
     }
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       setIsDragging(false)
       onResizeEnd?.()
     }
 
-    document.addEventListener("mousemove", handleMouseMove)
-    document.addEventListener("mouseup", handleMouseUp)
+    window.addEventListener("pointermove", handlePointerMove)
+    window.addEventListener("pointerup", handlePointerUp, { once: true })
 
     return () => {
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
+      document.body.style.userSelect = originalUserSelect
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", handlePointerUp)
     }
-  }, [isDragging, onResize, onResizeEnd, side])
+  }, [isDragging, onResize, onResizeEnd, onResizePointer, side])
 
   return (
     <div
@@ -96,7 +118,7 @@ export function ResizeHandle({
         side === "left" ? "right-0" : side === "right" ? "left-0" : "",
         className
       )}
-      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
       onKeyDown={handleKeyDown}
       role="separator"
       aria-orientation={side === "top" ? "horizontal" : "vertical"}
