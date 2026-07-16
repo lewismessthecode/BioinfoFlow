@@ -1,4 +1,6 @@
 import { apiRequest, buildApiUrl } from "@/lib/api"
+import type { ProjectWorkflowGroup, Workflow } from "@/lib/types"
+import { buildHubWorkflowGroups } from "@/lib/workflow-groups"
 import {
   agentExecutionScopeForRequest,
   agentExecutionTargetForRequest,
@@ -20,6 +22,7 @@ import type {
   AgentRuntimeSkill,
   AgentRuntimeStatePayload,
   AgentRuntimeTurn,
+  AgentRuntimeWorkflowMention,
 } from "./types"
 
 type CreateAgentRuntimeSessionInput = {
@@ -52,6 +55,22 @@ export const listAgentRuntimeSkills = async () => {
   return response.data.skills
 }
 
+export const listAgentRuntimeWorkflowMentions = async (
+  projectId?: string | null,
+) => {
+  if (projectId) {
+    const response = await apiRequest<ProjectWorkflowGroup[]>(
+      `/projects/${projectId}/workflows`,
+    )
+    return workflowMentionsFromProjectGroups(response.data, projectId)
+  }
+
+  const response = await apiRequest<Workflow[]>("/workflows", {
+    params: { limit: 200 },
+  })
+  return workflowMentionsFromHubGroups(buildHubWorkflowGroups(response.data))
+}
+
 export const createAgentRuntimeSession = async (
   input: CreateAgentRuntimeSessionInput,
 ) => {
@@ -70,6 +89,62 @@ export const createAgentRuntimeSession = async (
     }),
   })
   return response.data
+}
+
+function workflowMentionsFromProjectGroups(
+  groups: ProjectWorkflowGroup[],
+  projectId: string,
+): AgentRuntimeWorkflowMention[] {
+  return groups.flatMap((group) => {
+    const pinnedId = group.pinned_workflow.id
+    return group.versions.map((workflow) =>
+      workflowMentionFromWorkflow(workflow, {
+        scope: "project",
+        projectId,
+        pinned: workflow.id === pinnedId,
+      }),
+    )
+  })
+}
+
+function workflowMentionsFromHubGroups(
+  groups: ReturnType<typeof buildHubWorkflowGroups>,
+): AgentRuntimeWorkflowMention[] {
+  return groups.flatMap((group) => {
+    const latestId = group.latest_workflow.id
+    return group.versions.map((workflow) =>
+      workflowMentionFromWorkflow(workflow, {
+        scope: "global",
+        projectId: null,
+        pinned: workflow.id === latestId,
+      }),
+    )
+  })
+}
+
+function workflowMentionFromWorkflow(
+  workflow: Workflow,
+  {
+    scope,
+    projectId,
+    pinned,
+  }: {
+    scope: AgentRuntimeWorkflowMention["scope"]
+    projectId: string | null
+    pinned: boolean
+  },
+): AgentRuntimeWorkflowMention {
+  return {
+    id: workflow.id,
+    name: workflow.name,
+    version: workflow.version,
+    engine: workflow.engine,
+    source: workflow.source,
+    description: workflow.description ?? null,
+    scope,
+    projectId,
+    pinned,
+  }
 }
 
 export const getAgentRuntimeSession = async (sessionId: string) => {

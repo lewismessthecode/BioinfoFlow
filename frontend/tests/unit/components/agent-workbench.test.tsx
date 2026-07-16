@@ -380,7 +380,9 @@ describe("AgentWorkbench", () => {
     apiRequestMock.mockReset()
     apiRequestMock.mockImplementation((path: string) => {
       if (path === "/connections") return new Promise(() => {})
-      if (path === "/agent/skills") return Promise.resolve({ data: { skills: [] } })
+      if (path === "/agent/skills") return new Promise(() => {})
+      if (path === "/workflows") return new Promise(() => {})
+      if (/^\/projects\/[^/]+\/workflows$/.test(path)) return new Promise(() => {})
       if (path.startsWith("/agent/fs/tree")) {
         return Promise.resolve({ path: "/workspace/project-1", entries: [] })
       }
@@ -1347,8 +1349,10 @@ describe("AgentWorkbench", () => {
 
     const input = screen.getByPlaceholderText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "@rna" } })
-    await waitFor(() => expect(screen.getByTestId("agent-command-option")).toBeInTheDocument())
-    fireEvent.click(screen.getByTestId("agent-command-option"))
+    await waitFor(() =>
+      expect(screen.getAllByTestId("agent-command-option").length).toBeGreaterThan(0),
+    )
+    fireEvent.click(screen.getAllByTestId("agent-command-option")[0]!)
     expect(screen.getByText("@rnaseq-quant-mini")).toBeInTheDocument()
 
     fireEvent.change(input, { target: { value: "Draft a run plan" } })
@@ -1409,8 +1413,10 @@ describe("AgentWorkbench", () => {
 
     const input = screen.getByPlaceholderText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "@par" } })
-    await waitFor(() => expect(screen.getByTestId("agent-command-option")).toBeInTheDocument())
-    fireEvent.click(screen.getByTestId("agent-command-option"))
+    await waitFor(() =>
+      expect(screen.getAllByTestId("agent-command-option").length).toBeGreaterThan(0),
+    )
+    fireEvent.click(screen.getAllByTestId("agent-command-option")[0]!)
     fireEvent.change(input, { target: { value: "Explain required inputs" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
