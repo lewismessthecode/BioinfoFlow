@@ -140,6 +140,13 @@ type PendingSubmission = {
   sessionId: string
 }
 
+type WorkflowMentionLoadState = {
+  scopeKey: string
+  workflows: AgentRuntimeWorkflowMention[]
+  loading: boolean
+  error: string | null
+}
+
 export type AgentWorkbenchHandle = {
   focusInput: () => void
   stop: () => void
@@ -180,10 +187,26 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [activeSkillNames, setActiveSkillNames] = useState<string[]>([])
     const [skillsLoading, setSkillsLoading] = useState(true)
     const [skillsError, setSkillsError] = useState<string | null>(null)
-    const [availableWorkflowMentions, setAvailableWorkflowMentions] = useState<AgentRuntimeWorkflowMention[]>([])
+    const currentWorkflowMentionScopeKey = workflowMentionScopeKey(projectId)
+    const [workflowMentionLoadState, setWorkflowMentionLoadState] =
+      useState<WorkflowMentionLoadState>(() => ({
+        scopeKey: currentWorkflowMentionScopeKey,
+        workflows: [],
+        loading: true,
+        error: null,
+      }))
     const [activeWorkflowMentions, setActiveWorkflowMentions] = useState<AgentRuntimeWorkflowMention[]>([])
-    const [workflowMentionsLoading, setWorkflowMentionsLoading] = useState(true)
-    const [workflowMentionsError, setWorkflowMentionsError] = useState<string | null>(null)
+    const workflowMentionStateMatchesScope =
+      workflowMentionLoadState.scopeKey === currentWorkflowMentionScopeKey
+    const availableWorkflowMentions = workflowMentionStateMatchesScope
+      ? workflowMentionLoadState.workflows
+      : []
+    const workflowMentionsLoading = workflowMentionStateMatchesScope
+      ? workflowMentionLoadState.loading
+      : true
+    const workflowMentionsError = workflowMentionStateMatchesScope
+      ? workflowMentionLoadState.error
+      : null
     const scopedActiveWorkflowMentions = useMemo(
       () =>
         activeWorkflowMentions.filter((workflow) =>
@@ -531,28 +554,32 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
     useEffect(() => {
       let cancelled = false
+      const scopeKey = currentWorkflowMentionScopeKey
       void listAgentRuntimeWorkflowMentions(projectId)
         .then((workflows) => {
           if (!cancelled) {
-            setAvailableWorkflowMentions(workflows)
-            setWorkflowMentionsError(null)
+            setWorkflowMentionLoadState({
+              scopeKey,
+              workflows,
+              loading: false,
+              error: null,
+            })
           }
         })
         .catch((error) => {
           if (!cancelled) {
-            setAvailableWorkflowMentions([])
-            setWorkflowMentionsError(
-              error instanceof Error ? error.message : workflowsLoadFailedLabel,
-            )
+            setWorkflowMentionLoadState({
+              scopeKey,
+              workflows: [],
+              loading: false,
+              error: error instanceof Error ? error.message : workflowsLoadFailedLabel,
+            })
           }
-        })
-        .finally(() => {
-          if (!cancelled) setWorkflowMentionsLoading(false)
         })
       return () => {
         cancelled = true
       }
-    }, [projectId, workflowsLoadFailedLabel])
+    }, [currentWorkflowMentionScopeKey, projectId, workflowsLoadFailedLabel])
 
     useEffect(() => {
       const sessionId = state.session?.id
@@ -1707,6 +1734,10 @@ function workflowMentionInputPart(
     project_id: workflow.projectId ?? null,
     scope: workflow.scope,
   }
+}
+
+function workflowMentionScopeKey(projectId?: string | null) {
+  return projectId ? `project:${projectId}` : "global"
 }
 
 function getSessionRemoteConnectionId(

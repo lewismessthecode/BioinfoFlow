@@ -118,6 +118,7 @@ vi.mock("next-intl", () => ({
       "workflows.loadFailed": "Could not load workflows.",
       "workflows.remove": `Remove ${values?.name ?? ""}`,
       "workflows.activeForNextTurn": "Workflow context",
+      "workflows.pinned": "Pinned version",
     }
     return labels[key] ?? key
   },
@@ -358,6 +359,87 @@ describe("AgentComposer", () => {
     expect(screen.getByTestId("agent-command-menu")).toBeInTheDocument()
     expect(screen.getByTestId("agent-command-option")).toHaveTextContent(
       "@rnaseq-quant-mini",
+    )
+  })
+
+  it("connects the command listbox and highlighted option to the textarea", () => {
+    render(
+      <AgentComposer
+        value="/"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        availableSkills={[
+          {
+            name: "nextflow-debugging",
+            version: "0.1.0",
+            description: "Diagnose failed Nextflow runs.",
+            tags: ["nextflow"],
+          },
+          {
+            name: "run-failure-triage",
+            version: "0.1.0",
+            description: "Collect run evidence.",
+            tags: ["runs"],
+          },
+        ]}
+        onAddActiveSkill={vi.fn()}
+      />,
+    )
+
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    textarea.setSelectionRange(1, 1)
+    fireEvent.click(textarea)
+
+    const menu = screen.getByTestId("agent-command-menu")
+    const options = screen.getAllByTestId("agent-command-option")
+    expect(textarea).toHaveAttribute("aria-haspopup", "listbox")
+    expect(textarea).toHaveAttribute("aria-expanded", "true")
+    expect(textarea).toHaveAttribute("aria-controls", menu.id)
+    expect(textarea).toHaveAttribute("aria-activedescendant", options[0]!.id)
+
+    fireEvent.keyDown(textarea, { key: "ArrowDown" })
+    expect(textarea).toHaveAttribute("aria-activedescendant", options[1]!.id)
+  })
+
+  it("localizes the pinned workflow option detail", () => {
+    render(
+      <AgentComposer
+        value="@rna"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        availableWorkflowMentions={[
+          {
+            id: "workflow-rna-12",
+            name: "rnaseq-quant-mini",
+            version: "1.2.0",
+            engine: "nextflow",
+            source: "local",
+            description: "RNA-seq quantification.",
+            scope: "global",
+            projectId: null,
+            pinned: true,
+          },
+        ]}
+        onAddWorkflowMention={vi.fn()}
+      />,
+    )
+
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    textarea.setSelectionRange(4, 4)
+    fireEvent.click(textarea)
+
+    expect(screen.getByTestId("agent-command-option")).toHaveTextContent(
+      "Pinned version",
     )
   })
 

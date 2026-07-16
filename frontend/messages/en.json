@@ -2542,7 +2542,8 @@
       "noMatches": "No matching workflows.",
       "loadFailed": "Could not load workflows.",
       "remove": "Remove {name}",
-      "activeForNextTurn": "Workflow context"
+      "activeForNextTurn": "Workflow context",
+      "pinned": "Pinned"
     },
     "starterSuggestions": {
       "checkWorkflow": {
