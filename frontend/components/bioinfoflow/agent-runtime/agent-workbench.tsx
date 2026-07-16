@@ -248,6 +248,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         : SIDECAR_DEFAULT_WIDTH
     })
     const [activeSidecarTab, setActiveSidecarTab] = useState<AgentTabbedPanelTab>("preview")
+    const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
     const [composerBottomSpace, setComposerBottomSpace] = useState(176)
     const [browserInput, setBrowserInput] = useState("")
     const [browserSrc, setBrowserSrc] = useState("")
@@ -525,6 +526,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setEnvironmentOpen(false)
           setSidecarOpen(false)
           setActiveSidecarTab("preview")
+          setSelectedArtifactId(null)
           setBrowserInput("")
           setBrowserSrc("")
         },
@@ -1059,6 +1061,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       setSidecarOpen(true)
     }, [closeSidecar, desktopSidecarVisible, mobileSidecarVisible])
 
+    const openArtifactPreview = useCallback((artifactId: string) => {
+      setEnvironmentOpen(false)
+      setActiveSidecarTab("preview")
+      setSelectedArtifactId(artifactId)
+      setSidecarOpen(true)
+    }, [])
+
     const toggleEnvironment = useCallback(() => {
       setEnvironmentOpen((current) => {
         const next = !current
@@ -1349,6 +1358,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               <AgentTodoDock items={todoDisplayItems} />
               <AgentTranscript
                 timeline={transcriptTimeline}
+                artifacts={transcriptArtifacts}
+                onOpenArtifact={openArtifactPreview}
                 onDecision={decideActionWithFocus}
                 onRetryTurn={retryTurn}
                 eventWindowLimited={eventWindowLimited}
@@ -1472,6 +1483,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 events={state.events}
                 activeTab={activeSidecarTab}
                 onActiveTabChange={setActiveSidecarTab}
+                selectedArtifactId={selectedArtifactId}
+                onSelectedArtifactIdChange={setSelectedArtifactId}
                 browserInput={browserInput}
                 browserSrc={browserSrc}
                 onBrowserInputChange={setBrowserInput}
@@ -1501,6 +1514,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               events={state.events}
               activeTab={activeSidecarTab}
               onActiveTabChange={setActiveSidecarTab}
+              selectedArtifactId={selectedArtifactId}
+              onSelectedArtifactIdChange={setSelectedArtifactId}
               browserInput={browserInput}
               browserSrc={browserSrc}
               onBrowserInputChange={setBrowserInput}

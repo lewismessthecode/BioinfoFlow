@@ -1,9 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { AgentTranscript } from "@/components/bioinfoflow/agent-runtime/agent-transcript"
 import { buildAgentRuntimeTimeline } from "@/lib/agent-runtime"
 import type {
+  AgentRuntimeArtifact,
   AgentRuntimeEvent,
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
@@ -90,6 +91,14 @@ vi.mock("next-intl", () => ({
       "sources.types.pubmed": "PubMed",
       "sources.types.biorxiv": "bioRxiv",
       "sources.types.web": "Web",
+      "artifacts.generatedFiles": "Generated files",
+      "artifacts.preview": "Preview",
+      "artifacts.download": "Download",
+      "artifacts.copyPath": "Copy path",
+      "artifacts.pathCopied": "Path copied",
+      "artifacts.types.file": "File",
+      "artifacts.types.html": "HTML",
+      "artifacts.types.markdown": "Markdown",
     }
     const label = labels[key] ?? key
     return label
@@ -148,18 +157,24 @@ function event(
 function renderTranscript({
   turn = baseTurn,
   events = [],
+  artifacts = [],
+  onOpenArtifact,
   onDecision,
   onRetryTurn,
   eventWindowLimited = false,
 }: {
   turn?: AgentRuntimeTurn
   events?: AgentRuntimeEvent[]
+  artifacts?: AgentRuntimeArtifact[]
+  onOpenArtifact?: (artifactId: string) => void
   onDecision?: Parameters<typeof AgentTranscript>[0]["onDecision"]
   onRetryTurn?: (turn: AgentRuntimeTurn) => void
   eventWindowLimited?: boolean
 } = {}) {
   const props = {
     timeline: buildAgentRuntimeTimeline([turn], events),
+    artifacts,
+    onOpenArtifact,
     onDecision,
     onRetryTurn,
     eventWindowLimited,
@@ -169,6 +184,26 @@ function renderTranscript({
   return render(
     <AgentTranscript {...props} />,
   )
+}
+
+function transcriptArtifact(
+  overrides: Partial<AgentRuntimeArtifact>,
+): AgentRuntimeArtifact {
+  return {
+    id: "artifact-1",
+    session_id: "session-1",
+    turn_id: "turn-1",
+    action_id: null,
+    type: "file",
+    title: "report.md",
+    summary: null,
+    payload: { path: "/workspace/report.md", content: "# Report" },
+    file_path: "/workspace/report.md",
+    resource_ref: null,
+    created_at: "2026-06-10T00:00:03Z",
+    updated_at: "2026-06-10T00:00:03Z",
+    ...overrides,
+  }
 }
 
 function textTimeline(text: string) {
@@ -631,6 +666,57 @@ describe("AgentTranscript", () => {
 
     expect(screen.queryByTestId("inline-todo-card")).not.toBeInTheDocument()
     expect(screen.queryByText("Editing")).not.toBeInTheDocument()
+  })
+
+  it("renders generated file cards for the matching assistant turn only", () => {
+    const onOpenArtifact = vi.fn()
+    const otherTurnArtifact = transcriptArtifact({
+      id: "other-file",
+      turn_id: "turn-2",
+      title: "other.md",
+      file_path: "/workspace/other.md",
+      payload: { path: "/workspace/other.md", content: "# Other" },
+    })
+
+    renderTranscript({
+      artifacts: [
+        transcriptArtifact({
+          id: "html-1",
+          type: "html",
+          title: "/workspace/index.html",
+          summary: "Wrote 13166 bytes",
+          file_path: "/workspace/index.html",
+          payload: { path: "/workspace/index.html", content: "<h1>Report</h1>" },
+        }),
+        transcriptArtifact({
+          id: "command-1",
+          type: "command",
+          title: "shell output",
+          payload: { stdout: "index.html" },
+          file_path: null,
+        }),
+        transcriptArtifact({
+          id: "run-1",
+          type: "run",
+          title: "Run record",
+          file_path: "/workspace/run-output.txt",
+        }),
+        otherTurnArtifact,
+      ],
+      onOpenArtifact,
+    })
+
+    const cards = screen.getByTestId("generated-file-cards")
+    expect(within(cards).getByText("Generated files")).toBeInTheDocument()
+    expect(within(cards).getByText("index.html")).toBeInTheDocument()
+    expect(within(cards).getByText("Wrote 13166 bytes")).toBeInTheDocument()
+    expect(within(cards).queryByText("shell output")).not.toBeInTheDocument()
+    expect(within(cards).queryByText("Run record")).not.toBeInTheDocument()
+    expect(within(cards).queryByText("other.md")).not.toBeInTheDocument()
+
+    fireEvent.click(within(cards).getByRole("button", { name: "Preview index.html" }))
+
+    expect(onOpenArtifact).toHaveBeenCalledWith("html-1")
   })
 
   it("renders inline approval cards with decision buttons", () => {

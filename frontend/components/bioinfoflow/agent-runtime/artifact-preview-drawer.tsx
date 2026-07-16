@@ -17,20 +17,33 @@ export function ArtifactPreviewDrawer({
   error,
   hasSession = true,
   onRetry,
+  selectedArtifactId,
+  onSelectedArtifactIdChange,
 }: {
   artifacts: AgentRuntimeArtifact[]
   status?: "idle" | "loading" | "ready" | "error"
   error?: string | null
   hasSession?: boolean
   onRetry?: () => void
+  selectedArtifactId?: string | null
+  onSelectedArtifactIdChange?: (artifactId: string | null) => void
 }) {
   const t = useTranslations("agentRuntime")
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null)
   const selectedBackButtonRef = useRef<HTMLButtonElement>(null)
   const previewArtifacts = useMemo(
     () => deliverableArtifacts(artifacts),
     [artifacts],
   )
+  const selectedId =
+    selectedArtifactId !== undefined ? selectedArtifactId : internalSelectedId
+  const setSelectedId = (artifactId: string | null) => {
+    if (onSelectedArtifactIdChange) {
+      onSelectedArtifactIdChange(artifactId)
+      return
+    }
+    setInternalSelectedId(artifactId)
+  }
   const selected =
     previewArtifacts.find((artifact) => artifact.id === selectedId) ?? null
 

@@ -8,6 +8,8 @@ import {
   ChevronDown,
   CircleDashed,
   Copy,
+  Download,
+  FileText,
   RotateCcw,
 } from "@/lib/icons"
 import { useTranslations } from "next-intl"
@@ -15,8 +17,10 @@ import { useTranslations } from "next-intl"
 import { ScrollToBottom } from "@/components/bioinfoflow/chat/scroll-to-bottom"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { buildAgentFsDownloadUrl, deliverableArtifacts } from "@/lib/agent-runtime"
 import type {
   AgentRuntimeSource,
+  AgentRuntimeArtifact,
   AgentRuntimeTimelineEntry,
   AgentRuntimeTranscriptSegment,
   AgentRuntimeTurn,
@@ -28,6 +32,7 @@ import {
   SourceEvidenceFooter,
   SourcesDrawer,
 } from "./agent-sources"
+import { artifactTypeLabel } from "./artifact-viewers"
 import { InlineApprovalCard } from "./inline-approval-card"
 import type { AgentDecisionHandler, AgentRetryHandler } from "./types"
 
@@ -36,11 +41,15 @@ const TEXT_SWAP_DURATION_MS = 150
 
 export function AgentTranscript({
   timeline,
+  artifacts = [],
+  onOpenArtifact,
   onDecision,
   onRetryTurn,
   eventWindowLimited = false,
 }: {
   timeline: AgentRuntimeTimelineEntry[]
+  artifacts?: AgentRuntimeArtifact[]
+  onOpenArtifact?: (artifactId: string) => void
   onDecision?: AgentDecisionHandler
   onRetryTurn?: AgentRetryHandler
   eventWindowLimited?: boolean
@@ -53,6 +62,7 @@ export function AgentTranscript({
     sources: AgentRuntimeSource[]
     highlightedSourceId: string | null
   } | null>(null)
+  const visibleArtifacts = deliverableArtifacts(artifacts)
 
   const scrollToBottom = useCallback(() => {
     const scroller = scrollRef.current
@@ -129,6 +139,12 @@ export function AgentTranscript({
                       content={t("pendingResponse")}
                     />
                   ) : null}
+                  <GeneratedFileCards
+                    artifacts={visibleArtifacts.filter(
+                      (artifact) => artifact.turn_id === entry.turn.id,
+                    )}
+                    onOpenArtifact={onOpenArtifact}
+                  />
                   {liveStatusLabel ? <LiveStatusLine label={liveStatusLabel} /> : null}
                   {showResponseActions ? (
                     <ResponseActionBar
@@ -166,6 +182,114 @@ export function AgentTranscript({
       />
     </div>
   )
+}
+
+function GeneratedFileCards({
+  artifacts,
+  onOpenArtifact,
+}: {
+  artifacts: AgentRuntimeArtifact[]
+  onOpenArtifact?: (artifactId: string) => void
+}) {
+  const t = useTranslations("agentRuntime")
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  if (!artifacts.length) return null
+
+  const copyPath = (artifact: AgentRuntimeArtifact) => {
+    const path = artifactPath(artifact)
+    if (!path) return
+    void navigator.clipboard?.writeText(path).then(() => {
+      setCopiedId(artifact.id)
+      window.setTimeout(() => setCopiedId(null), 1500)
+    })
+  }
+
+  return (
+    <section
+      className="mt-3 grid gap-2 rounded-lg border border-border/70 bg-muted/20 p-2.5"
+      data-testid="generated-file-cards"
+      aria-label={t("artifacts.generatedFiles")}
+    >
+      <div className="flex items-center gap-2 px-1 text-xs font-medium text-muted-foreground">
+        <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+        <span>{t("artifacts.generatedFiles")}</span>
+      </div>
+      <div className="grid gap-2">
+        {artifacts.map((artifact) => {
+          const path = artifactPath(artifact)
+          const downloadUrl = path ? buildAgentFsDownloadUrl(path) : null
+          const title = artifactTitle(artifact)
+          const previewLabel = `${t("artifacts.preview")} ${title}`
+          return (
+            <article
+              key={artifact.id}
+              className="grid gap-2 rounded-lg border border-border/70 bg-background px-3 py-2.5 shadow-sm shadow-foreground/[0.03] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+            >
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    {artifactTypeLabel(t, artifact.type)}
+                  </span>
+                  <h3 className="truncate text-sm font-medium text-foreground">{title}</h3>
+                </div>
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {artifact.summary || path || artifactTypeLabel(t, artifact.type)}
+                </p>
+              </div>
+              <div className="flex min-w-0 items-center gap-1 justify-self-start sm:justify-self-end">
+                <button
+                  type="button"
+                  className="inline-flex h-8 items-center rounded-md bg-muted/70 px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => onOpenArtifact?.(artifact.id)}
+                  aria-label={previewLabel}
+                >
+                  {t("artifacts.preview")}
+                </button>
+                {downloadUrl ? (
+                  <a
+                    href={downloadUrl}
+                    download
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={`${t("artifacts.download")} ${title}`}
+                  >
+                    <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                  </a>
+                ) : null}
+                {path ? (
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => copyPath(artifact)}
+                    aria-label={`${t("artifacts.copyPath")} ${title}`}
+                  >
+                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span className="sr-only">
+                      {copiedId === artifact.id
+                        ? t("artifacts.pathCopied")
+                        : t("artifacts.copyPath")}
+                    </span>
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function artifactPath(artifact: AgentRuntimeArtifact) {
+  const payload = artifact.payload ?? {}
+  if (typeof payload.path === "string" && payload.path.trim()) return payload.path
+  return artifact.file_path || null
+}
+
+function artifactTitle(artifact: AgentRuntimeArtifact) {
+  const path = artifactPath(artifact)
+  const title = artifact.title?.trim()
+  if (title) return title.split("/").pop() || title
+  return path?.split("/").pop() || artifact.type
 }
 
 function TranscriptSegment({

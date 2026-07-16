@@ -318,6 +318,7 @@ export function artifactTypeLabel(
     "image",
     "markdown",
     "pdf",
+    "report",
     "run",
     "sheet",
     "spreadsheet",

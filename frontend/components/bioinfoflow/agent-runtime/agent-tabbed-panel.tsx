@@ -28,6 +28,8 @@ type AgentTabbedPanelProps = {
   events: AgentRuntimeEvent[]
   activeTab: AgentTabbedPanelTab
   onActiveTabChange: (tab: AgentTabbedPanelTab) => void
+  selectedArtifactId?: string | null
+  onSelectedArtifactIdChange?: (artifactId: string | null) => void
   browserInput: string
   browserSrc: string
   onBrowserInputChange: (value: string) => void
@@ -57,6 +59,8 @@ export function AgentTabbedPanel({
   events,
   activeTab,
   onActiveTabChange,
+  selectedArtifactId,
+  onSelectedArtifactIdChange,
   browserInput,
   browserSrc,
   onBrowserInputChange,
@@ -292,6 +296,8 @@ export function AgentTabbedPanel({
             error={effectiveArtifactError}
             hasSession={Boolean(sessionId)}
             onRetry={() => setArtifactReloadNonce((value) => value + 1)}
+            selectedArtifactId={selectedArtifactId}
+            onSelectedArtifactIdChange={onSelectedArtifactIdChange}
           />
         ) : null}
         {activeTab === "browser" ? (

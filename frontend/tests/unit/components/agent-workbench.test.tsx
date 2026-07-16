@@ -80,6 +80,15 @@ vi.mock("next-intl", () => ({
       "artifacts.loadFailed": "Could not load artifacts.",
       "artifacts.loadFailedDescription": "Refresh the panel and try again.",
       "artifacts.retry": "Retry",
+      "artifacts.back": "Back to generated files",
+      "artifacts.preview": "Preview",
+      "artifacts.download": "Download",
+      "artifacts.copyPath": "Copy path",
+      "artifacts.pathCopied": "Path copied",
+      "artifacts.generatedFiles": "Generated files",
+      "artifacts.types.file": "File",
+      "artifacts.types.html": "HTML",
+      "artifacts.types.markdown": "Markdown",
       "files.title": "Files",
       "browser.title": "Browser",
       "browser.empty": "Enter a URL to preview a page.",
@@ -205,6 +214,13 @@ vi.mock("next/link", () => ({
 
 vi.mock("@/lib/api", () => ({
   apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+  buildApiUrl: (path: string, params?: Record<string, string | undefined>) => {
+    const query = new URLSearchParams()
+    Object.entries(params ?? {}).forEach(([key, value]) => {
+      if (value !== undefined) query.set(key, value)
+    })
+    return `${path}${query.size ? `?${query.toString()}` : ""}`
+  },
 }))
 
 vi.mock("@/hooks/use-agent-runtime", () => ({
@@ -543,6 +559,68 @@ describe("AgentWorkbench", () => {
       "true",
     )
     expect(within(navbarActions).queryByRole("tab", { name: "Tools" })).not.toBeInTheDocument()
+  })
+
+  it("opens generated file cards in the right-side deliverables preview", async () => {
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/connections") return new Promise(() => {})
+      if (path === "/agent/skills") return Promise.resolve({ data: { skills: [] } })
+      if (path === "/agent/sessions/session-1/artifacts") {
+        return Promise.resolve({
+          data: [
+            {
+              id: "artifact-html-1",
+              session_id: "session-1",
+              turn_id: "turn-1",
+              action_id: null,
+              type: "html",
+              title: "index.html",
+              summary: "Wrote 13166 bytes",
+              payload: {
+                path: "/workspace/index.html",
+                content: "<h1>Generated Report</h1>",
+              },
+              file_path: "/workspace/index.html",
+              resource_ref: null,
+              created_at: "2026-06-09T00:00:03Z",
+              updated_at: "2026-06-09T00:00:03Z",
+            },
+            {
+              id: "artifact-run-1",
+              session_id: "session-1",
+              turn_id: "turn-1",
+              action_id: null,
+              type: "run",
+              title: "Run record",
+              summary: null,
+              payload: null,
+              file_path: "/workspace/run-output.txt",
+              resource_ref: null,
+              created_at: "2026-06-09T00:00:03Z",
+              updated_at: "2026-06-09T00:00:03Z",
+            },
+          ],
+        })
+      }
+      if (path.startsWith("/agent/fs/tree")) {
+        return Promise.resolve({ path: "/workspace/project-1", entries: [] })
+      }
+      return Promise.resolve({ data: [] })
+    })
+    setupRuntime({ session: baseSession, turns: [baseTurn] })
+    render(<AgentWorkbench projectId="project-1" />)
+
+    const cards = await screen.findByTestId("generated-file-cards")
+    expect(within(cards).getByText("index.html")).toBeInTheDocument()
+    expect(within(cards).queryByText("Run record")).not.toBeInTheDocument()
+
+    fireEvent.click(within(cards).getByRole("button", { name: "Preview index.html" }))
+
+    expect(await screen.findByTestId("artifact-panel")).toBeInTheDocument()
+    expect(screen.getByTitle("index.html")).toHaveAttribute(
+      "srcdoc",
+      "<h1>Generated Report</h1>",
+    )
   })
 
   it("keeps agent actions and workspace tabs in the single app top chrome while the desktop drawer is open", async () => {
