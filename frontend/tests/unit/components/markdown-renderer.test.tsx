@@ -136,7 +136,14 @@ describe("MarkdownRenderer link sanitization", () => {
     const longPath = `/workspace/${"very-long-directory-name-".repeat(8)}result.json`
     render(<MarkdownRenderer content={`Path: \`${longPath}\``} />)
 
-    expect(screen.getByText(longPath)).toHaveClass("break-all")
+    expect(screen.getByText(longPath)).toHaveClass(
+      "break-all",
+      "bg-accent",
+      "ring-1",
+      "ring-inset",
+      "ring-border/80",
+      "text-foreground",
+    )
   })
 
   it("bounds wide code blocks and tables to internal horizontal scrolling", () => {
@@ -159,6 +166,7 @@ describe("MarkdownRenderer link sanitization", () => {
     expect(codeBlock?.className).toContain("min-w-0")
     expect(codeBlock?.className).toContain("max-w-full")
     expect(codeBlock?.className).toContain("overflow-hidden")
+    expect(codeBlock).toHaveClass("bg-accent/80", "border-border")
 
     const tableScroller = container.querySelector("[data-testid='markdown-table-scroller']")
     expect(tableScroller?.className).toContain("max-w-full")

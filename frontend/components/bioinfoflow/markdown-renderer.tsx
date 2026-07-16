@@ -95,10 +95,10 @@ function CodeBlock({
 
   return (
     <div
-      className="mb-3 min-w-0 max-w-full overflow-hidden rounded-xl border border-border/60 bg-secondary/60"
+      className="mb-3 min-w-0 max-w-full overflow-hidden rounded-xl border border-border bg-accent/80"
       data-testid="markdown-code-block"
     >
-      <div className="flex items-center justify-between border-b border-border/50 px-3 py-1.5">
+      <div className="flex items-center justify-between border-b border-border/50 bg-background/40 px-3 py-1.5">
         <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
           {language}
         </span>
@@ -194,7 +194,7 @@ export function MarkdownRenderer({
             const isInline = !codeClassName
             if (isInline) {
               return (
-                <code className="break-all rounded bg-secondary px-1.5 py-0.5 font-mono text-sm-tight text-foreground" {...props}>
+                <code className="break-all rounded bg-accent px-1.5 py-0.5 font-mono text-sm-tight font-medium text-foreground ring-1 ring-inset ring-border/80" {...props}>
                   {children}
                 </code>
               )
