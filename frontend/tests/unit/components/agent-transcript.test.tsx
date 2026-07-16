@@ -264,6 +264,42 @@ describe("AgentTranscript", () => {
     expect(scroller.scrollTop).toBe(220)
   })
 
+  it("keeps the transcript pinned to the bottom when generated file cards arrive", () => {
+    const timeline = textTimeline("Generated the report.")
+    const { rerender } = render(<AgentTranscript timeline={timeline} />)
+    const scroller = screen.getByTestId("agent-transcript-scroll")
+    Object.defineProperties(scroller, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, value: 360 },
+      scrollTop: { configurable: true, writable: true, value: 160 },
+    })
+
+    act(() => {
+      fireEvent.scroll(scroller)
+    })
+
+    Object.defineProperty(scroller, "scrollHeight", {
+      configurable: true,
+      value: 500,
+    })
+
+    rerender(
+      <AgentTranscript
+        timeline={timeline}
+        artifacts={[
+          transcriptArtifact({
+            id: "report-file",
+            title: "report.md",
+            file_path: "/workspace/report.md",
+          }),
+        ]}
+      />,
+    )
+
+    expect(screen.getByTestId("generated-file-cards")).toBeInTheDocument()
+    expect(scroller.scrollTop).toBe(300)
+  })
+
   it("pauses bottom following after the user scrolls up and resumes from the control", () => {
     const { rerender } = render(<AgentTranscript timeline={textTimeline("First chunk")} />)
     const scroller = screen.getByTestId("agent-transcript-scroll")

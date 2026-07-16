@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertTriangle,
   Brain,
@@ -66,7 +66,14 @@ export function AgentTranscript({
     sources: AgentRuntimeSource[]
     highlightedSourceId: string | null
   } | null>(null)
-  const visibleArtifacts = deliverableArtifacts(artifacts)
+  const visibleArtifacts = useMemo(() => deliverableArtifacts(artifacts), [artifacts])
+  const visibleArtifactScrollKey = useMemo(
+    () =>
+      visibleArtifacts
+        .map((artifact) => `${artifact.id}:${artifact.turn_id}:${artifact.updated_at}`)
+        .join("|"),
+    [visibleArtifacts],
+  )
 
   const scrollToBottom = useCallback(() => {
     const scroller = scrollRef.current
@@ -85,7 +92,7 @@ export function AgentTranscript({
 
   useEffect(() => {
     if (isFollowingBottom) scrollToBottom()
-  }, [isFollowingBottom, scrollToBottom, timeline])
+  }, [isFollowingBottom, scrollToBottom, timeline, visibleArtifactScrollKey])
 
   return (
     <div
