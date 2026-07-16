@@ -1,11 +1,5 @@
 import type { AgentRuntimeArtifact } from "./types"
 
-const NON_REVIEW_ARTIFACT_TYPES = new Set([
-  "command",
-  "log_summary",
-  "todo_list",
-])
-
 const DELIVERABLE_ARTIFACT_TYPES = new Set([
   "file",
   "html",
@@ -18,11 +12,27 @@ const DELIVERABLE_ARTIFACT_TYPES = new Set([
 ])
 
 function isDeliverableArtifact(artifact: AgentRuntimeArtifact) {
-  if (NON_REVIEW_ARTIFACT_TYPES.has(artifact.type)) return false
-  if (artifact.file_path) return true
-  return DELIVERABLE_ARTIFACT_TYPES.has(artifact.type)
+  if (!DELIVERABLE_ARTIFACT_TYPES.has(artifact.type)) return false
+  return hasRenderableFileSource(artifact)
 }
 
 export function deliverableArtifacts(artifacts: AgentRuntimeArtifact[]) {
   return artifacts.filter(isDeliverableArtifact)
+}
+
+function hasRenderableFileSource(artifact: AgentRuntimeArtifact) {
+  if (isNonEmptyString(artifact.file_path)) return true
+
+  const payload = artifact.payload ?? {}
+  if (isNonEmptyString(payload.path)) return true
+  if (isNonEmptyString(payload.url) || isNonEmptyString(payload.href)) return true
+  if (typeof payload.content === "string") return true
+  if (Array.isArray(payload.rows)) return true
+
+  const resource = artifact.resource_ref ?? {}
+  return isNonEmptyString(resource.url) || isNonEmptyString(resource.href)
+}
+
+function isNonEmptyString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0
 }
