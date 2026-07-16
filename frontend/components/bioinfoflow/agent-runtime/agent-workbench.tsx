@@ -60,12 +60,14 @@ import {
   deriveTodoDisplayItems,
   listAgentRuntimeSessionArtifacts,
   listAgentRuntimeSkills,
+  listAgentRuntimeWorkflowMentions,
   type AgentRuntimeArtifact,
   type AgentExecutionScope,
   type AgentRuntimeFileRefPart,
   type AgentRuntimeInputPart,
   type AgentRuntimeEvent,
   type AgentRuntimeSkill,
+  type AgentRuntimeWorkflowMention,
   type AgentModelSelection,
   type AgentPendingStrategy,
   type AgentPermissionMode,
@@ -178,6 +180,19 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [activeSkillNames, setActiveSkillNames] = useState<string[]>([])
     const [skillsLoading, setSkillsLoading] = useState(true)
     const [skillsError, setSkillsError] = useState<string | null>(null)
+    const [availableWorkflowMentions, setAvailableWorkflowMentions] = useState<AgentRuntimeWorkflowMention[]>([])
+    const [activeWorkflowMentions, setActiveWorkflowMentions] = useState<AgentRuntimeWorkflowMention[]>([])
+    const [workflowMentionsLoading, setWorkflowMentionsLoading] = useState(true)
+    const [workflowMentionsError, setWorkflowMentionsError] = useState<string | null>(null)
+    const scopedActiveWorkflowMentions = useMemo(
+      () =>
+        activeWorkflowMentions.filter((workflow) =>
+          projectId
+            ? workflow.scope === "project" && workflow.projectId === projectId
+            : workflow.scope === "global",
+        ),
+      [activeWorkflowMentions, projectId],
+    )
     const [executionSelectionOverride, setExecutionSelectionOverride] = useState<{
       sessionId: string
       value: ExecutionTargetSelection
@@ -452,6 +467,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       ? t("environment.close")
       : t("environment.open")
     const skillsLoadFailedLabel = t("skills.loadFailed")
+    const workflowsLoadFailedLabel = t("workflows.loadFailed")
 
     const clearLocalPendingSubmissions = useCallback(() => {
       setQueuedSubmissions([])
@@ -476,6 +492,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setInput("")
           setContextAttachments([])
           setActiveSkillNames([])
+          setActiveWorkflowMentions([])
           setExecutionSelectionOverride(null)
           setHasSubmittedDraft(false)
           setOptimisticTurns([])
@@ -511,6 +528,31 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         cancelled = true
       }
     }, [skillsLoadFailedLabel])
+
+    useEffect(() => {
+      let cancelled = false
+      void listAgentRuntimeWorkflowMentions(projectId)
+        .then((workflows) => {
+          if (!cancelled) {
+            setAvailableWorkflowMentions(workflows)
+            setWorkflowMentionsError(null)
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setAvailableWorkflowMentions([])
+            setWorkflowMentionsError(
+              error instanceof Error ? error.message : workflowsLoadFailedLabel,
+            )
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setWorkflowMentionsLoading(false)
+        })
+      return () => {
+        cancelled = true
+      }
+    }, [projectId, workflowsLoadFailedLabel])
 
     useEffect(() => {
       const sessionId = state.session?.id
@@ -593,6 +635,18 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
     const removeActiveSkill = useCallback((name: string) => {
       setActiveSkillNames((current) => current.filter((item) => item !== name))
+    }, [])
+
+    const addWorkflowMention = useCallback((workflow: AgentRuntimeWorkflowMention) => {
+      setActiveWorkflowMentions((current) =>
+        current.some((item) => item.id === workflow.id) ? current : [...current, workflow],
+      )
+    }, [])
+
+    const removeWorkflowMention = useCallback((workflowId: string) => {
+      setActiveWorkflowMentions((current) =>
+        current.filter((item) => item.id !== workflowId),
+      )
     }, [])
 
     const fillStarterSuggestion = useCallback((prompt: string) => {
@@ -844,6 +898,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       if (!text) return
       const inputParts: AgentRuntimeInputPart[] = [
         { type: "text", text },
+        ...scopedActiveWorkflowMentions.map(workflowMentionInputPart),
         ...workflowInput.workflowParts,
         ...contextAttachments,
       ]
@@ -852,6 +907,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       setInput("")
       setContextAttachments([])
       setActiveSkillNames([])
+      setActiveWorkflowMentions([])
     }
 
     const retryTurn = useCallback(
@@ -1150,6 +1206,12 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         skillsError={skillsError}
         onAddActiveSkill={addActiveSkill}
         onRemoveActiveSkill={removeActiveSkill}
+        availableWorkflowMentions={availableWorkflowMentions}
+        activeWorkflowMentions={scopedActiveWorkflowMentions}
+        workflowMentionsLoading={workflowMentionsLoading}
+        workflowMentionsError={workflowMentionsError}
+        onAddWorkflowMention={addWorkflowMention}
+        onRemoveWorkflowMention={removeWorkflowMention}
         tokenUsageSummary={state.session?.token_usage_summary}
         executionSelection={executionSelection}
         currentExecutionTargetLabel={
@@ -1633,6 +1695,17 @@ function workflowContextInputFromComposerValue({
         scope: projectId ? "project" : "global",
       },
     ],
+  }
+}
+
+function workflowMentionInputPart(
+  workflow: AgentRuntimeWorkflowMention,
+): AgentRuntimeInputPart {
+  return {
+    kind: "workflow_ref",
+    workflow_id: workflow.id,
+    project_id: workflow.projectId ?? null,
+    scope: workflow.scope,
   }
 }
 
