@@ -32,6 +32,11 @@ import {
   SourceEvidenceFooter,
   SourcesDrawer,
 } from "./agent-sources"
+import {
+  artifactDisplaySubtitle,
+  artifactDisplayTitle,
+  artifactFilePath,
+} from "./artifact-display"
 import { artifactTypeLabel } from "./artifact-viewers"
 import { InlineApprovalCard } from "./inline-approval-card"
 import type { AgentDecisionHandler, AgentRetryHandler } from "./types"
@@ -196,7 +201,7 @@ function GeneratedFileCards({
   if (!artifacts.length) return null
 
   const copyPath = (artifact: AgentRuntimeArtifact) => {
-    const path = artifactPath(artifact)
+    const path = artifactFilePath(artifact)
     if (!path) return
     void navigator.clipboard?.writeText(path).then(() => {
       setCopiedId(artifact.id)
@@ -216,9 +221,11 @@ function GeneratedFileCards({
       </div>
       <div className="grid gap-2">
         {artifacts.map((artifact) => {
-          const path = artifactPath(artifact)
+          const path = artifactFilePath(artifact)
           const downloadUrl = path ? buildAgentFsDownloadUrl(path) : null
-          const title = artifactTitle(artifact)
+          const title = artifactDisplayTitle(artifact)
+          const typeLabel = artifactTypeLabel(t, artifact.type)
+          const subtitle = artifactDisplaySubtitle(artifact, typeLabel)
           const previewLabel = `${t("artifacts.preview")} ${title}`
           return (
             <article
@@ -228,12 +235,12 @@ function GeneratedFileCards({
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                    {artifactTypeLabel(t, artifact.type)}
+                    {typeLabel}
                   </span>
                   <h3 className="truncate text-sm font-medium text-foreground">{title}</h3>
                 </div>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {artifact.summary || path || artifactTypeLabel(t, artifact.type)}
+                  {subtitle}
                 </p>
               </div>
               <div className="flex min-w-0 items-center gap-1 justify-self-start sm:justify-self-end">
@@ -277,19 +284,6 @@ function GeneratedFileCards({
       </div>
     </section>
   )
-}
-
-function artifactPath(artifact: AgentRuntimeArtifact) {
-  const payload = artifact.payload ?? {}
-  if (typeof payload.path === "string" && payload.path.trim()) return payload.path
-  return artifact.file_path || null
-}
-
-function artifactTitle(artifact: AgentRuntimeArtifact) {
-  const path = artifactPath(artifact)
-  const title = artifact.title?.trim()
-  if (title) return title.split("/").pop() || title
-  return path?.split("/").pop() || artifact.type
 }
 
 function TranscriptSegment({

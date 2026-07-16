@@ -27,7 +27,14 @@ vi.mock("@/lib/agent-runtime", async (importOriginal) => {
 })
 
 vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string) => key,
+  useTranslations: () => (key: string) => {
+    const labels: Record<string, string> = {
+      "artifacts.types.file": "File",
+      "artifacts.types.html": "HTML",
+      "artifacts.types.markdown": "Markdown",
+    }
+    return labels[key] ?? key
+  },
 }))
 
 function waitingEvent(payload: Record<string, unknown>): AgentRuntimeEvent {
@@ -196,9 +203,9 @@ describe("ArtifactPreviewDrawer", () => {
           artifact({
             id: "file-1",
             type: "file",
-            title: "report.md",
-            summary: null,
-            file_path: "/workspace/report.md",
+            title: "/workspace/results/report.md",
+            summary: "Wrote 2048 bytes",
+            file_path: "/workspace/results/report.md",
             payload: { content: "QC passed" },
           }),
         ]}
@@ -207,7 +214,9 @@ describe("ArtifactPreviewDrawer", () => {
 
     const drawer = screen.getByTestId("artifact-preview-drawer")
     expect(within(drawer).getByRole("button", { name: /report.md/ })).toBeInTheDocument()
-    expect(screen.getByText("/workspace/report.md")).toBeInTheDocument()
+    expect(screen.getByText("File · results/report.md")).toBeInTheDocument()
+    expect(screen.queryByText("/workspace/results/report.md")).not.toBeInTheDocument()
+    expect(screen.queryByText("Wrote 2048 bytes")).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /ls output/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /Run record/ })).not.toBeInTheDocument()
     expect(screen.queryByText("artifacts.toolLogs")).not.toBeInTheDocument()
@@ -414,10 +423,10 @@ describe("AgentTabbedPanel", () => {
     expect(screen.queryByText("artifacts.title")).not.toBeInTheDocument()
     expect(screen.queryByText("sidecar.title")).not.toBeInTheDocument()
     expect(screen.queryByText("artifacts.count")).not.toBeInTheDocument()
-    const artifactsTab = screen.getByRole("tab", { name: "tabs.artifacts" })
+    const artifactsTab = screen.getByRole("tab", { name: "tabs.generatedFiles" })
     const filesTab = screen.getByRole("tab", { name: "tabs.files" })
     const browserTab = screen.getByRole("tab", { name: "tabs.browser" })
-    expect(within(artifactsTab).queryByText("tabs.artifacts")).not.toBeInTheDocument()
+    expect(within(artifactsTab).queryByText("tabs.generatedFiles")).not.toBeInTheDocument()
     expect(within(filesTab).queryByText("tabs.files")).not.toBeInTheDocument()
     expect(within(browserTab).queryByText("tabs.browser")).not.toBeInTheDocument()
     expect(artifactsTab).toHaveAttribute(

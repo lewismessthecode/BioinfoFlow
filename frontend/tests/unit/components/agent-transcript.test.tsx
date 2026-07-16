@@ -685,8 +685,8 @@ describe("AgentTranscript", () => {
           type: "html",
           title: "/workspace/index.html",
           summary: "Wrote 13166 bytes",
-          file_path: "/workspace/index.html",
-          payload: { path: "/workspace/index.html", content: "<h1>Report</h1>" },
+          file_path: "/workspace/results/index.html",
+          payload: { path: "/workspace/results/index.html", content: "<h1>Report</h1>" },
         }),
         transcriptArtifact({
           id: "command-1",
@@ -709,7 +709,8 @@ describe("AgentTranscript", () => {
     const cards = screen.getByTestId("generated-file-cards")
     expect(within(cards).getByText("Generated files")).toBeInTheDocument()
     expect(within(cards).getByText("index.html")).toBeInTheDocument()
-    expect(within(cards).getByText("Wrote 13166 bytes")).toBeInTheDocument()
+    expect(within(cards).getByText("HTML · results/index.html")).toBeInTheDocument()
+    expect(within(cards).queryByText("Wrote 13166 bytes")).not.toBeInTheDocument()
     expect(within(cards).queryByText("shell output")).not.toBeInTheDocument()
     expect(within(cards).queryByText("Run record")).not.toBeInTheDocument()
     expect(within(cards).queryByText("other.md")).not.toBeInTheDocument()

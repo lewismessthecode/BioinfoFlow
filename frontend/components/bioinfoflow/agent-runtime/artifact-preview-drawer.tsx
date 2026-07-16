@@ -9,6 +9,7 @@ import {
   deliverableArtifacts,
   type AgentRuntimeArtifact,
 } from "@/lib/agent-runtime"
+import { artifactDisplaySubtitle, artifactDisplayTitle } from "./artifact-display"
 import { ArtifactIcon, ArtifactViewer, artifactTypeLabel } from "./artifact-viewers"
 
 export function ArtifactPreviewDrawer({
@@ -138,10 +139,10 @@ export function ArtifactPreviewDrawer({
           <ArtifactIcon type={artifact.type} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium text-foreground">
-              {artifact.title}
+              {artifactDisplayTitle(artifact)}
             </div>
             <div className="truncate text-xs text-muted-foreground">
-              {artifact.summary || artifact.file_path || artifactTypeLabel(t, artifact.type)}
+              {artifactDisplaySubtitle(artifact, artifactTypeLabel(t, artifact.type))}
             </div>
           </div>
         </button>

@@ -11,7 +11,7 @@ type ResizePointerPosition = {
 interface ResizeHandleProps {
   side: "left" | "right" | "top"
   onResize: (delta: number) => void
-  onResizeStart?: () => void
+  onResizeStart?: (position: ResizePointerPosition) => void
   onResizeEnd?: () => void
   onResizePointer?: (position: ResizePointerPosition) => void
   className?: string
@@ -40,13 +40,13 @@ export function ResizeHandle({
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault()
+      event.currentTarget.setPointerCapture?.(event.pointerId)
       setIsDragging(true)
       startX.current = event.clientX
       startY.current = event.clientY
-      onResizeStart?.()
-      onResizePointer?.({ clientX: event.clientX, clientY: event.clientY })
+      onResizeStart?.({ clientX: event.clientX, clientY: event.clientY })
     },
-    [onResizePointer, onResizeStart],
+    [onResizeStart],
   )
 
   const handleKeyDown = useCallback(
@@ -94,18 +94,22 @@ export function ResizeHandle({
       onResize(delta)
     }
 
-    const handlePointerUp = () => {
+    const finishResize = () => {
       setIsDragging(false)
       onResizeEnd?.()
     }
 
     window.addEventListener("pointermove", handlePointerMove)
-    window.addEventListener("pointerup", handlePointerUp, { once: true })
+    window.addEventListener("pointerup", finishResize, { once: true })
+    window.addEventListener("pointercancel", finishResize, { once: true })
+    window.addEventListener("blur", finishResize, { once: true })
 
     return () => {
       document.body.style.userSelect = originalUserSelect
       window.removeEventListener("pointermove", handlePointerMove)
-      window.removeEventListener("pointerup", handlePointerUp)
+      window.removeEventListener("pointerup", finishResize)
+      window.removeEventListener("pointercancel", finishResize)
+      window.removeEventListener("blur", finishResize)
     }
   }, [isDragging, onResize, onResizeEnd, onResizePointer, side])
 
@@ -113,8 +117,8 @@ export function ResizeHandle({
     <div
       className={cn(
         side === "top"
-          ? "absolute left-0 right-0 top-0 z-10 h-2 cursor-row-resize group"
-          : "absolute top-0 bottom-0 z-10 w-2 cursor-col-resize group",
+          ? "absolute left-0 right-0 top-0 z-10 h-2 cursor-row-resize touch-none group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          : "absolute top-0 bottom-0 z-10 w-2 cursor-col-resize touch-none group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
         side === "left" ? "right-0" : side === "right" ? "left-0" : "",
         className
       )}

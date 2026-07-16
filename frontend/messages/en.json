@@ -2804,6 +2804,7 @@
       "tools": "Tools",
       "preview": "Preview",
       "artifacts": "Artifacts",
+      "generatedFiles": "Generated files",
       "progress": "Progress",
       "files": "Files",
       "browser": "Browser"

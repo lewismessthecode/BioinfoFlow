@@ -69,6 +69,7 @@ vi.mock("next-intl", () => ({
       "tabs.tools": "Tools",
       "tabs.preview": "Preview",
       "tabs.artifacts": "Artifacts",
+      "tabs.generatedFiles": "Generated files",
       "tabs.files": "Files",
       "tabs.browser": "Browser",
       "artifacts.title": "Artifacts",
@@ -554,7 +555,7 @@ describe("AgentWorkbench", () => {
     expect(
       within(navbarActions).getByRole("tablist", { name: "Workspace" }),
     ).toBeInTheDocument()
-    expect(within(navbarActions).getByRole("tab", { name: "Artifacts" })).toHaveAttribute(
+    expect(within(navbarActions).getByRole("tab", { name: "Generated files" })).toHaveAttribute(
       "data-active",
       "true",
     )
@@ -651,7 +652,7 @@ describe("AgentWorkbench", () => {
     expect(
       within(navbarActions).getByRole("tablist", { name: "Workspace" }),
     ).toBeInTheDocument()
-    expect(within(navbarActions).getByRole("tab", { name: "Artifacts" })).toBeInTheDocument()
+    expect(within(navbarActions).getByRole("tab", { name: "Generated files" })).toBeInTheDocument()
     expect(within(navbarActions).getByRole("tab", { name: "Files" })).toBeInTheDocument()
     expect(within(navbarActions).getByRole("tab", { name: "Browser" })).toBeInTheDocument()
     expect(
@@ -801,6 +802,7 @@ describe("AgentWorkbench", () => {
       expect(resizer).toHaveAttribute("aria-valuemax", "760")
       expect(resizer).toHaveAttribute("aria-valuenow", "600")
       expect(resizer).toHaveClass("w-2")
+      expect(resizer.className).toContain("focus-visible")
       expect(resizer.firstElementChild).toHaveClass("w-px")
 
       fireEvent.keyDown(resizer, { key: "ArrowLeft" })
@@ -808,18 +810,59 @@ describe("AgentWorkbench", () => {
       expect(resizer).toHaveAttribute("aria-valuenow", "616")
       expect(window.localStorage.getItem("agent-sidecar-width")).toBe("616")
 
-      fireEvent.pointerDown(resizer, { clientX: 600, pointerId: 1 })
+      fireEvent.pointerDown(resizer, { clientX: 604, pointerId: 1 })
       expect(sidecar).toHaveClass("duration-0")
       expect(sidecar).not.toHaveClass("duration-300")
+      expect(sidecar).toHaveStyle({ width: "616px" })
 
       fireEvent.pointerMove(window, { clientX: 500, pointerId: 1 })
       fireEvent.pointerUp(window, { pointerId: 1 })
 
       await waitFor(() => {
-        expect(sidecar).toHaveStyle({ width: "700px" })
+        expect(sidecar).toHaveStyle({ width: "720px" })
       })
       expect(sidecar).toHaveClass("duration-300")
-      expect(window.localStorage.getItem("agent-sidecar-width")).toBe("700")
+      expect(window.localStorage.getItem("agent-sidecar-width")).toBe("720")
+    } finally {
+      rectSpy.mockRestore()
+    }
+  })
+
+  it("restores sidecar resize state when pointer dragging is cancelled", async () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 1200,
+      height: 720,
+      top: 0,
+      right: 1200,
+      bottom: 720,
+      left: 0,
+      toJSON: () => ({}),
+    } as DOMRect)
+    setupRuntime({ session: baseSession })
+    try {
+      render(<AgentWorkbench projectId="project-1" />)
+      const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+      render(<>{navbarActions}</>)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+        await Promise.resolve()
+      })
+
+      const sidecar = screen.getByTestId("agent-sidecar-column")
+      const resizer = screen.getByRole("separator", { name: "Resize right sidebar" })
+      fireEvent.pointerDown(resizer, { clientX: 600, pointerId: 1 })
+      expect(sidecar).toHaveClass("duration-0")
+      expect(document.body.style.userSelect).toBe("none")
+
+      fireEvent.pointerCancel(window, { pointerId: 1 })
+
+      await waitFor(() => {
+        expect(sidecar).toHaveClass("duration-300")
+      })
+      expect(document.body.style.userSelect).toBe("")
     } finally {
       rectSpy.mockRestore()
     }
@@ -919,7 +962,7 @@ describe("AgentWorkbench", () => {
       <>{setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}</>,
     )
 
-    expect(screen.getByRole("tab", { name: "Artifacts" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Generated files" })).toHaveAttribute(
       "data-active",
       "true",
     )
@@ -1157,7 +1200,7 @@ describe("AgentWorkbench", () => {
     expect(mobilePanel).toBeInTheDocument()
     expect(mobilePanel).toHaveClass("flex")
     expect(mobilePanel).not.toHaveClass("hidden")
-    expect(screen.getByRole("tab", { name: "Artifacts" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Generated files" })).toHaveAttribute(
       "data-active",
       "true",
     )

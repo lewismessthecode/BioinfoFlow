@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 
@@ -138,15 +138,15 @@ describe("MarkdownRenderer link sanitization", () => {
 
     expect(screen.getByText(longPath)).toHaveClass(
       "break-all",
-      "bg-accent",
+      "bg-slate-950",
       "ring-1",
       "ring-inset",
-      "ring-border/80",
-      "text-foreground",
+      "ring-slate-700",
+      "text-slate-100",
     )
   })
 
-  it("bounds wide code blocks and tables to internal horizontal scrolling", () => {
+  it("bounds wide code blocks and tables to internal horizontal scrolling", async () => {
     const longPath = "/mnt/nas/bioinfoflow/projects/example/" + "nested/".repeat(20)
     const { container } = render(
       <MarkdownRenderer
@@ -166,7 +166,19 @@ describe("MarkdownRenderer link sanitization", () => {
     expect(codeBlock?.className).toContain("min-w-0")
     expect(codeBlock?.className).toContain("max-w-full")
     expect(codeBlock?.className).toContain("overflow-hidden")
-    expect(codeBlock).toHaveClass("bg-accent/80", "border-border")
+    expect(codeBlock).toHaveClass("bg-slate-950", "text-slate-100", "border-slate-800")
+
+    const highlightedShell = await waitFor(() => {
+      const shell = codeBlock?.querySelector("[data-testid='markdown-highlighted-code']")
+      expect(shell).not.toBeNull()
+      return shell
+    })
+    expect(highlightedShell?.className).toContain(
+      "dark:[&_.shiki_span]:![color:var(--shiki-dark)]",
+    )
+    expect(highlightedShell?.className).toContain(
+      "[&_.shiki_span]:![color:var(--shiki-light)]",
+    )
 
     const tableScroller = container.querySelector("[data-testid='markdown-table-scroller']")
     expect(tableScroller?.className).toContain("max-w-full")

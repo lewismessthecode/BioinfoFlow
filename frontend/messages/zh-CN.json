@@ -2804,6 +2804,7 @@
       "tools": "工具",
       "preview": "预览",
       "artifacts": "产物",
+      "generatedFiles": "生成文件",
       "progress": "进度",
       "files": "打开文件",
       "browser": "浏览器"

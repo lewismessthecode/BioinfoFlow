@@ -95,18 +95,18 @@ function CodeBlock({
 
   return (
     <div
-      className="mb-3 min-w-0 max-w-full overflow-hidden rounded-xl border border-border bg-accent/80"
+      className="mb-3 min-w-0 max-w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-950 text-slate-100 shadow-sm shadow-slate-950/10 dark:border-slate-700"
       data-testid="markdown-code-block"
     >
-      <div className="flex items-center justify-between border-b border-border/50 bg-background/40 px-3 py-1.5">
-        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+      <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/95 px-3 py-1.5 dark:border-slate-700">
+        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-300">
           {language}
         </span>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               type="button"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-300"
               aria-label="Copy code"
               title="Copy code"
               onClick={copyCode}
@@ -119,11 +119,12 @@ function CodeBlock({
       </div>
       {highlightedHtml ? (
         <div
-          className="min-w-0 max-w-full overflow-hidden [&_.shiki]:m-0 [&_.shiki]:max-w-full [&_.shiki]:overflow-x-auto [&_.shiki]:bg-transparent! [&_.shiki]:p-3 [&_.shiki_pre]:m-0"
+          className="min-w-0 max-w-full overflow-hidden [&_.shiki]:m-0 [&_.shiki]:max-w-full [&_.shiki]:overflow-x-auto [&_.shiki]:![background-color:transparent] [&_.shiki]:![color:var(--shiki-light)] [&_.shiki]:p-3 [&_.shiki_pre]:m-0 [&_.shiki_span]:![color:var(--shiki-light)] dark:[&_.shiki]:![color:var(--shiki-dark)] dark:[&_.shiki_span]:![color:var(--shiki-dark)]"
+          data-testid="markdown-highlighted-code"
           dangerouslySetInnerHTML={{ __html: highlightedHtml }}
         />
       ) : (
-        <pre className="max-w-full overflow-x-auto p-3 text-sm-tight">
+        <pre className="max-w-full overflow-x-auto p-3 text-sm-tight text-slate-100">
           <code className={`font-mono language-${language}`}>{code}</code>
         </pre>
       )}
@@ -194,7 +195,7 @@ export function MarkdownRenderer({
             const isInline = !codeClassName
             if (isInline) {
               return (
-                <code className="break-all rounded bg-accent px-1.5 py-0.5 font-mono text-sm-tight font-medium text-foreground ring-1 ring-inset ring-border/80" {...props}>
+                <code className="break-all rounded bg-slate-950 px-1.5 py-0.5 font-mono text-sm-tight font-medium text-slate-100 ring-1 ring-inset ring-slate-700" {...props}>
                   {children}
                 </code>
               )

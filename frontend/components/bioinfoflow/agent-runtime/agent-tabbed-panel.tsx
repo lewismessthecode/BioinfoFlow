@@ -48,7 +48,7 @@ const TABS: Array<{
   iconName: string
   Icon: AppIcon
 }> = [
-  { key: "preview", labelKey: "tabs.artifacts", iconName: "file-box", Icon: FileBox },
+  { key: "preview", labelKey: "tabs.generatedFiles", iconName: "file-box", Icon: FileBox },
   { key: "files", labelKey: "tabs.files", iconName: "folder-tree", Icon: FolderTree },
   { key: "browser", labelKey: "tabs.browser", iconName: "globe", Icon: Globe },
 ]

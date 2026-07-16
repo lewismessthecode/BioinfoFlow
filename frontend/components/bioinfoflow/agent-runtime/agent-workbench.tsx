@@ -125,7 +125,7 @@ const SIDECAR_TABS: Array<{
   iconName: string
   Icon: AppIcon
 }> = [
-  { key: "preview", labelKey: "tabs.artifacts", iconName: "file-box", Icon: FileBox },
+  { key: "preview", labelKey: "tabs.generatedFiles", iconName: "file-box", Icon: FileBox },
   { key: "files", labelKey: "tabs.files", iconName: "folder-tree", Icon: FolderTree },
   { key: "browser", labelKey: "tabs.browser", iconName: "globe", Icon: Globe },
 ]
@@ -180,6 +180,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const environmentPanelRef = useRef<HTMLDivElement>(null)
     const composerShellRef = useRef<HTMLDivElement>(null)
     const workbenchRootRef = useRef<HTMLDivElement>(null)
+    const sidecarResizeRightRef = useRef<number | null>(null)
+    const sidecarResizeGrabOffsetRef = useRef(0)
     const isMobile = useIsMobile()
     const [input, setInput] = useState("")
     const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
@@ -1088,16 +1090,30 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
     const resizeSidecarFromPointer = useCallback((clientX: number) => {
       const root = workbenchRootRef.current
-      if (!root) return
-      const rect = root.getBoundingClientRect()
-      setSidecarWidth(clampSidecarWidth(rect.right - clientX, sidecarMaxWidth))
+      const right =
+        sidecarResizeRightRef.current ?? root?.getBoundingClientRect().right
+      if (right === undefined) return
+      setSidecarWidth(
+        clampSidecarWidth(
+          right - clientX - sidecarResizeGrabOffsetRef.current,
+          sidecarMaxWidth,
+        ),
+      )
     }, [sidecarMaxWidth])
 
-    const beginSidecarResize = useCallback(() => {
+    const beginSidecarResize = useCallback(({ clientX }: { clientX: number }) => {
+      const root = workbenchRootRef.current
+      const right = root?.getBoundingClientRect().right ?? null
+      const visibleWidth = clampSidecarWidth(sidecarWidth, sidecarMaxWidth)
+      sidecarResizeRightRef.current = right
+      sidecarResizeGrabOffsetRef.current =
+        right === null ? 0 : right - clientX - visibleWidth
       setSidecarResizing(true)
-    }, [])
+    }, [sidecarMaxWidth, sidecarWidth])
 
     const endSidecarResize = useCallback(() => {
+      sidecarResizeRightRef.current = null
+      sidecarResizeGrabOffsetRef.current = 0
       setSidecarResizing(false)
     }, [])
 
