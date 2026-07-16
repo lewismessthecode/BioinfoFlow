@@ -77,7 +77,7 @@ export function AgentTranscript({
       scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
     const atBottom = distanceFromBottom <= BOTTOM_FOLLOW_THRESHOLD
     setIsFollowingBottom(atBottom)
-  }, [])
+  }, [setIsFollowingBottom])
 
   useEffect(() => {
     if (isFollowingBottom) scrollToBottom()
