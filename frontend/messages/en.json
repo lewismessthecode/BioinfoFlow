@@ -2494,7 +2494,7 @@
   },
   "agentRuntime": {
     "welcomeTitle": "What should Bioinfoflow help you do today?",
-    "composerPlaceholder": "Message Bioinfoflow...",
+    "composerPlaceholder": "Plan, Build, / for skills, @ for context",
     "attach": "Attach or add context",
     "send": "Send message",
     "stop": "Stop response",
@@ -2534,6 +2534,15 @@
       "loadFailed": "Could not load skills.",
       "remove": "Remove {name}",
       "activeForNextTurn": "Skills"
+    },
+    "workflows": {
+      "menuTitle": "Workflows",
+      "loading": "Loading workflows...",
+      "empty": "No workflows found.",
+      "noMatches": "No matching workflows.",
+      "loadFailed": "Could not load workflows.",
+      "remove": "Remove {name}",
+      "activeForNextTurn": "Workflow context"
     },
     "starterSuggestions": {
       "checkWorkflow": {

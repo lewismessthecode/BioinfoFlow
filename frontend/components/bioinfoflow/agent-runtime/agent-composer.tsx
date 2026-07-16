@@ -42,6 +42,7 @@ import type {
   AgentPermissionMode,
   AgentRuntimeFileRefPart,
   AgentRuntimeSkill,
+  AgentRuntimeWorkflowMention,
   AgentTokenUsageSummary,
 } from "@/lib/agent-runtime"
 import { tokenUsageViewFromSummary } from "@/lib/agent-runtime"
@@ -78,6 +79,12 @@ type AgentComposerProps = {
   skillsError?: string | null
   onAddActiveSkill?: (name: string) => void
   onRemoveActiveSkill?: (name: string) => void
+  availableWorkflowMentions?: AgentRuntimeWorkflowMention[]
+  activeWorkflowMentions?: AgentRuntimeWorkflowMention[]
+  workflowMentionsLoading?: boolean
+  workflowMentionsError?: string | null
+  onAddWorkflowMention?: (mention: AgentRuntimeWorkflowMention) => void
+  onRemoveWorkflowMention?: (workflowId: string) => void
   tokenUsageSummary?: AgentTokenUsageSummary | null
   executionSelection?: ExecutionTargetSelection
   currentExecutionTargetLabel?: string | null
@@ -125,6 +132,12 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       skillsError = null,
       onAddActiveSkill,
       onRemoveActiveSkill,
+      availableWorkflowMentions = [],
+      activeWorkflowMentions = [],
+      workflowMentionsLoading = false,
+      workflowMentionsError = null,
+      onAddWorkflowMention,
+      onRemoveWorkflowMention,
       tokenUsageSummary,
       executionSelection,
       currentExecutionTargetLabel,
@@ -139,10 +152,9 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     const t = useTranslations("agentRuntime")
     const canSubmit = !disabled && value.trim().length > 0
     const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-    const [skillMenuOpen, setSkillMenuOpen] = useState(false)
-    const [skillQuery, setSkillQuery] = useState("")
-    const [skillToken, setSkillToken] = useState<SkillSlashToken | null>(null)
-    const [highlightedSkillIndex, setHighlightedSkillIndex] = useState(0)
+    const [commandMenuOpen, setCommandMenuOpen] = useState(false)
+    const [commandToken, setCommandToken] = useState<ComposerCommandToken | null>(null)
+    const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0)
     const isCenterPresentation = presentation === "center"
 
     useImperativeHandle(ref, () => textareaRef.current as HTMLTextAreaElement, [])
@@ -167,51 +179,118 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       () =>
         availableSkills
           .filter((skill) => !activeSkillSet.has(skill.name))
-          .filter((skill) => skillMatchesQuery(skill, skillQuery))
+          .filter((skill) =>
+            commandToken?.kind === "skill"
+              ? skillMatchesQuery(skill, commandToken.query)
+              : false,
+          )
           .slice(0, 8),
-      [activeSkillSet, availableSkills, skillQuery],
+      [activeSkillSet, availableSkills, commandToken],
     )
-    const visibleHighlightedSkillIndex = skillOptions.length
-      ? Math.min(highlightedSkillIndex, skillOptions.length - 1)
+    const activeWorkflowMentionSet = useMemo(
+      () => new Set(activeWorkflowMentions.map((workflow) => workflow.id)),
+      [activeWorkflowMentions],
+    )
+    const workflowMentionOptions = useMemo(
+      () =>
+        availableWorkflowMentions
+          .filter((workflow) => !activeWorkflowMentionSet.has(workflow.id))
+          .filter((workflow) =>
+            commandToken?.kind === "workflow"
+              ? workflowMentionMatchesQuery(workflow, commandToken.query)
+              : false,
+          )
+          .slice(0, 8),
+      [activeWorkflowMentionSet, availableWorkflowMentions, commandToken],
+    )
+    const commandOptions: ComposerCommandOption[] = useMemo(
+      () =>
+        commandToken?.kind === "workflow"
+          ? workflowMentionOptions.map((workflow) => ({ kind: "workflow", workflow }))
+          : skillOptions.map((skill) => ({ kind: "skill", skill })),
+      [commandToken?.kind, skillOptions, workflowMentionOptions],
+    )
+    const visibleHighlightedCommandIndex = commandOptions.length
+      ? Math.min(highlightedCommandIndex, commandOptions.length - 1)
       : 0
 
-    const closeSkillMenu = useCallback(() => {
-      setSkillMenuOpen(false)
-      setSkillToken(null)
-      setSkillQuery("")
-      setHighlightedSkillIndex(0)
+    const closeCommandMenu = useCallback(() => {
+      setCommandMenuOpen(false)
+      setCommandToken(null)
+      setHighlightedCommandIndex(0)
     }, [])
 
-    const updateSkillMenu = useCallback(
+    const updateCommandMenu = useCallback(
       (textarea: HTMLTextAreaElement) => {
-        const token = skillSlashTokenAt(textarea.value, textarea.selectionStart ?? textarea.value.length)
-        if (!token || disabled || !onAddActiveSkill) {
-          closeSkillMenu()
+        const token = composerCommandTokenAt(textarea.value, textarea.selectionStart ?? textarea.value.length)
+        const canHandleToken =
+          token?.kind === "skill"
+            ? Boolean(onAddActiveSkill)
+            : token?.kind === "workflow"
+              ? Boolean(onAddWorkflowMention)
+              : false
+        if (!token || disabled || !canHandleToken) {
+          closeCommandMenu()
           return
         }
-        setSkillToken(token)
-        setSkillQuery(token.query)
-        setHighlightedSkillIndex(0)
-        setSkillMenuOpen(true)
+        setCommandToken(token)
+        setHighlightedCommandIndex(0)
+        setCommandMenuOpen(true)
       },
-      [closeSkillMenu, disabled, onAddActiveSkill],
+      [closeCommandMenu, disabled, onAddActiveSkill, onAddWorkflowMention],
     )
 
     const selectSkill = useCallback(
       (skill: AgentRuntimeSkill) => {
         const textarea = textareaRef.current
-        const token = skillToken ?? (textarea ? skillSlashTokenAt(value, textarea.selectionStart ?? value.length) : null)
+        const token = commandToken?.kind === "skill"
+          ? commandToken
+          : textarea
+            ? composerCommandTokenAt(value, textarea.selectionStart ?? value.length)
+            : null
         if (!token) return
         const nextValue = `${value.slice(0, token.start)}${value.slice(token.end)}`
         onChange(nextValue)
         onAddActiveSkill?.(skill.name)
-        closeSkillMenu()
+        closeCommandMenu()
         window.requestAnimationFrame(() => {
           textarea?.focus()
           textarea?.setSelectionRange(token.start, token.start)
         })
       },
-      [closeSkillMenu, onAddActiveSkill, onChange, skillToken, value],
+      [closeCommandMenu, commandToken, onAddActiveSkill, onChange, value],
+    )
+
+    const selectWorkflowMention = useCallback(
+      (workflow: AgentRuntimeWorkflowMention) => {
+        const textarea = textareaRef.current
+        const token = commandToken?.kind === "workflow"
+          ? commandToken
+          : textarea
+            ? composerCommandTokenAt(value, textarea.selectionStart ?? value.length)
+            : null
+        if (!token) return
+        const nextValue = `${value.slice(0, token.start)}${value.slice(token.end)}`
+        onChange(nextValue)
+        onAddWorkflowMention?.(workflow)
+        closeCommandMenu()
+        window.requestAnimationFrame(() => {
+          textarea?.focus()
+          textarea?.setSelectionRange(token.start, token.start)
+        })
+      },
+      [closeCommandMenu, commandToken, onAddWorkflowMention, onChange, value],
+    )
+
+    const selectCommandOption = useCallback(
+      (option: ComposerCommandOption) => {
+        if (option.kind === "skill") {
+          selectSkill(option.skill)
+          return
+        }
+        selectWorkflowMention(option.workflow)
+      },
+      [selectSkill, selectWorkflowMention],
     )
 
     useEffect(() => {
@@ -241,6 +320,33 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           attachments={contextAttachments}
           onRemove={onRemoveContextAttachment ?? (() => {})}
         />
+        {activeWorkflowMentions.length ? (
+          <div className="flex flex-wrap items-center gap-1.5 px-3" data-testid="agent-active-workflows">
+            <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
+              {t("workflows.activeForNextTurn")}
+            </span>
+            {activeWorkflowMentions.map((workflow) => (
+              <button
+                key={workflow.id}
+                type="button"
+                className={cn(
+                  composerSelectorChipClassName,
+                  "max-w-[16rem] gap-1.5 px-2.5 text-foreground/78",
+                )}
+                onClick={() => onRemoveWorkflowMention?.(workflow.id)}
+                disabled={disabled}
+                aria-label={t("workflows.remove", { name: workflow.name })}
+                data-testid="agent-active-workflow-chip"
+              >
+                <span className="min-w-0 truncate">@{workflow.name}</span>
+                <span className="shrink-0 text-[10px] text-muted-foreground/75">
+                  {workflow.version}
+                </span>
+                <X className="h-3 w-3 shrink-0 opacity-55" />
+              </button>
+            ))}
+          </div>
+        ) : null}
         {activeSkills.length ? (
           <div className="flex flex-wrap items-center gap-1.5 px-3" data-testid="agent-active-skills">
             <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
@@ -272,35 +378,35 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             onChange={(event) => {
               resizeTextarea(event.currentTarget)
               onChange(event.target.value)
-              updateSkillMenu(event.currentTarget)
+              updateCommandMenu(event.currentTarget)
             }}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return
-              if (skillMenuOpen) {
+              if (commandMenuOpen) {
                 if (event.key === "ArrowDown") {
                   event.preventDefault()
-                  setHighlightedSkillIndex((current) =>
-                    skillOptions.length ? (current + 1) % skillOptions.length : 0,
+                  setHighlightedCommandIndex((current) =>
+                    commandOptions.length ? (current + 1) % commandOptions.length : 0,
                   )
                   return
                 }
                 if (event.key === "ArrowUp") {
                   event.preventDefault()
-                  setHighlightedSkillIndex((current) =>
-                    skillOptions.length
-                      ? (current - 1 + skillOptions.length) % skillOptions.length
+                  setHighlightedCommandIndex((current) =>
+                    commandOptions.length
+                      ? (current - 1 + commandOptions.length) % commandOptions.length
                       : 0,
                   )
                   return
                 }
                 if (event.key === "Escape") {
                   event.preventDefault()
-                  closeSkillMenu()
+                  closeCommandMenu()
                   return
                 }
-                if ((event.key === "Enter" || event.key === "Tab") && skillOptions[visibleHighlightedSkillIndex]) {
+                if ((event.key === "Enter" || event.key === "Tab") && commandOptions[visibleHighlightedCommandIndex]) {
                   event.preventDefault()
-                  selectSkill(skillOptions[visibleHighlightedSkillIndex])
+                  selectCommandOption(commandOptions[visibleHighlightedCommandIndex])
                   return
                 }
               }
@@ -314,8 +420,8 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                 onSubmit()
               }
             }}
-            onClick={(event) => updateSkillMenu(event.currentTarget)}
-            onBlur={() => window.setTimeout(closeSkillMenu, 120)}
+            onClick={(event) => updateCommandMenu(event.currentTarget)}
+            onBlur={() => window.setTimeout(closeCommandMenu, 120)}
             placeholder={t("composerPlaceholder")}
             aria-label={t("composerPlaceholder")}
             className={cn(
@@ -326,15 +432,15 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             disabled={disabled}
             style={{ overflowY: "hidden" }}
           />
-          {skillMenuOpen ? (
-            <SkillSlashMenu
-              skills={skillOptions}
-              query={skillQuery}
-              loading={skillsLoading}
-              error={skillsError}
-              highlightedIndex={visibleHighlightedSkillIndex}
-              onHover={setHighlightedSkillIndex}
-              onSelect={selectSkill}
+          {commandMenuOpen && commandToken ? (
+            <ComposerCommandMenu
+              token={commandToken}
+              options={commandOptions}
+              loading={commandToken.kind === "workflow" ? workflowMentionsLoading : skillsLoading}
+              error={commandToken.kind === "workflow" ? workflowMentionsError : skillsError}
+              highlightedIndex={visibleHighlightedCommandIndex}
+              onHover={setHighlightedCommandIndex}
+              onSelect={selectCommandOption}
             />
           ) : null}
         </div>
@@ -510,76 +616,90 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
   },
 )
 
-type SkillSlashToken = {
+type ComposerCommandToken = {
+  kind: "skill" | "workflow"
   start: number
   end: number
   query: string
 }
 
-function SkillSlashMenu({
-  skills,
-  query,
+type ComposerCommandOption =
+  | { kind: "skill"; skill: AgentRuntimeSkill }
+  | { kind: "workflow"; workflow: AgentRuntimeWorkflowMention }
+
+function ComposerCommandMenu({
+  token,
+  options,
   loading,
   error,
   highlightedIndex,
   onHover,
   onSelect,
 }: {
-  skills: AgentRuntimeSkill[]
-  query: string
+  token: ComposerCommandToken
+  options: ComposerCommandOption[]
   loading: boolean
   error?: string | null
   highlightedIndex: number
   onHover: (index: number) => void
-  onSelect: (skill: AgentRuntimeSkill) => void
+  onSelect: (option: ComposerCommandOption) => void
 }) {
   const t = useTranslations("agentRuntime")
+  const isWorkflow = token.kind === "workflow"
   const statusText = error
-    ? t("skills.loadFailed")
+    ? t(isWorkflow ? "workflows.loadFailed" : "skills.loadFailed")
     : loading
-      ? t("skills.loading")
-      : query
-        ? t("skills.noMatches")
-        : t("skills.empty")
+      ? t(isWorkflow ? "workflows.loading" : "skills.loading")
+      : token.query
+        ? t(isWorkflow ? "workflows.noMatches" : "skills.noMatches")
+        : t(isWorkflow ? "workflows.empty" : "skills.empty")
 
   return (
     <div
       className={cn(
-        "absolute bottom-[calc(100%+0.5rem)] left-3 z-50 w-[min(28rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-border bg-popover p-1.5 shadow-[0_18px_48px_rgba(36,35,33,0.12)]",
+        "absolute bottom-[calc(100%+0.5rem)] left-3 z-50 w-[min(28rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-border bg-popover p-1 shadow-[0_8px_24px_rgba(15,15,15,0.06)]",
         composerSelectorMenuClassName,
       )}
-      data-testid="agent-skill-menu"
+      data-testid="agent-command-menu"
+      role="listbox"
+      aria-label={t(isWorkflow ? "workflows.menuTitle" : "skills.menuTitle")}
     >
-      <div className="px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
-        {t("skills.menuTitle")}
+      <div
+        className="px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70"
+        data-testid={isWorkflow ? "agent-workflow-menu" : "agent-skill-menu"}
+      >
+        {t(isWorkflow ? "workflows.menuTitle" : "skills.menuTitle")}
       </div>
-      {skills.length ? (
+      {options.length ? (
         <div className="grid gap-1">
-          {skills.map((skill, index) => (
+          {options.map((option, index) => (
             <button
-              key={skill.name}
+              key={commandOptionKey(option)}
               type="button"
               className={cn(
-                "grid w-full gap-0.5 rounded-xl px-2.5 py-2 text-left transition-colors",
+                "grid w-full gap-0.5 rounded-[7px] px-2.5 py-2 text-left transition-colors",
                 index === highlightedIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/65",
               )}
+              role="option"
+              aria-selected={index === highlightedIndex}
               onMouseEnter={() => onHover(index)}
               onMouseDown={(event) => event.preventDefault()}
-              onClick={() => onSelect(skill)}
-              data-testid="agent-skill-option"
+              onClick={() => onSelect(option)}
+              data-testid="agent-command-option"
             >
-              <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
-                <span className="min-w-0 truncate">/{skill.name}</span>
-                <span className="shrink-0 text-[11px] text-muted-foreground">{skill.version}</span>
-              </span>
-              <span className="line-clamp-2 text-xs leading-5 text-muted-foreground">
-                {skill.description}
-              </span>
+              {option.kind === "skill" ? (
+                <SkillCommandOptionContent skill={option.skill} />
+              ) : (
+                <WorkflowCommandOptionContent workflow={option.workflow} />
+              )}
             </button>
           ))}
         </div>
       ) : (
-        <div className="px-2.5 py-3 text-sm text-muted-foreground" data-testid="agent-skill-menu-empty">
+        <div
+          className="px-2.5 py-3 text-sm text-muted-foreground"
+          data-testid={isWorkflow ? "agent-workflow-menu-empty" : "agent-skill-menu-empty"}
+        >
           {statusText}
         </div>
       )}
@@ -587,20 +707,78 @@ function SkillSlashMenu({
   )
 }
 
-function skillSlashTokenAt(value: string, cursor: number): SkillSlashToken | null {
+function SkillCommandOptionContent({ skill }: { skill: AgentRuntimeSkill }) {
+  return (
+    <span data-testid="agent-skill-option">
+      <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+        <span className="min-w-0 truncate">/{skill.name}</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">{skill.version}</span>
+      </span>
+      <span className="line-clamp-2 text-xs leading-5 text-muted-foreground">
+        {skill.description}
+      </span>
+    </span>
+  )
+}
+
+function WorkflowCommandOptionContent({
+  workflow,
+}: {
+  workflow: AgentRuntimeWorkflowMention
+}) {
+  return (
+    <span className="grid gap-0.5">
+      <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+        <span className="min-w-0 truncate">@{workflow.name}</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          {workflow.version}
+        </span>
+      </span>
+      <span className="line-clamp-1 text-xs leading-5 text-muted-foreground">
+        {workflow.engine} · {workflow.source}
+        {workflow.pinned ? " · pinned" : ""}
+        {workflow.description ? ` · ${workflow.description}` : ""}
+      </span>
+    </span>
+  )
+}
+
+function commandOptionKey(option: ComposerCommandOption) {
+  return option.kind === "skill" ? `skill:${option.skill.name}` : `workflow:${option.workflow.id}`
+}
+
+function composerCommandTokenAt(value: string, cursor: number): ComposerCommandToken | null {
   let start = cursor
   while (start > 0 && !/\s/.test(value[start - 1])) start -= 1
   const token = value.slice(start, cursor)
-  if (!token.startsWith("/")) return null
+  const marker = token[0]
+  if (marker !== "/" && marker !== "@") return null
   const query = token.slice(1)
   if (!/^[A-Za-z0-9._-]*$/.test(query)) return null
-  return { start, end: cursor, query }
+  return { kind: marker === "/" ? "skill" : "workflow", start, end: cursor, query }
 }
 
 function skillMatchesQuery(skill: AgentRuntimeSkill, query: string) {
   const normalized = query.trim().toLowerCase()
   if (!normalized) return true
   return [skill.name, skill.description, skill.category, ...skill.tags]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(normalized))
+}
+
+function workflowMentionMatchesQuery(
+  workflow: AgentRuntimeWorkflowMention,
+  query: string,
+) {
+  const normalized = query.trim().toLowerCase()
+  if (!normalized) return true
+  return [
+    workflow.name,
+    workflow.version,
+    workflow.description,
+    workflow.engine,
+    workflow.source,
+  ]
     .filter(Boolean)
     .some((value) => String(value).toLowerCase().includes(normalized))
 }
