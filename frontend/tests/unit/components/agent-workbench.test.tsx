@@ -126,7 +126,7 @@ vi.mock("next-intl", () => ({
       "permission.confirm.cancel": "Cancel",
       allTargets: "All targets",
       manual: "Manual",
-      menuTitle: "Local / Remote",
+      menuTitle: "Run on",
       manage: "Manage SSH hosts",
       "local.label": "Local",
       "runtimeLocation.local.label": "Local",
@@ -139,7 +139,8 @@ vi.mock("next-intl", () => ({
       "status.offline": "Offline",
       "status.error": "Connection error",
       "status.unknown": "Not tested",
-      selectedAutoAria: `Execution targets: Auto, ${values?.target ?? ""}`,
+      selectedAutoAria: "Execution targets: Auto",
+      selectedAutoTargetAria: `Execution targets: Auto, current target ${values?.target ?? ""}`,
       selectedManualAria: `Execution targets: Manual, ${values?.target ?? ""}`,
       targetCount: `${values?.count ?? 0} selected`,
       "tokenUsage.label": "Tokens",
@@ -1737,7 +1738,7 @@ describe("AgentWorkbench", () => {
 
     fireEvent.pointerDown(
       await screen.findByRole("button", {
-        name: "Execution targets: Auto, All targets",
+        name: "Execution targets: Auto",
       }),
     )
     fireEvent.click(await screen.findByRole("menuitemradio", { name: /Manual/ }))
@@ -1810,7 +1811,7 @@ describe("AgentWorkbench", () => {
 
     expect(
       await screen.findByRole("button", {
-        name: "Execution targets: Auto, bioflow@sz01.example.org",
+        name: "Execution targets: Auto, current target bioflow@sz01.example.org",
       }),
     ).toBeInTheDocument()
 
@@ -1827,7 +1828,7 @@ describe("AgentWorkbench", () => {
 
     expect(
       await screen.findByRole("button", {
-        name: "Execution targets: Auto, Local",
+        name: "Execution targets: Auto, current target Local",
       }),
     ).toBeInTheDocument()
   })
@@ -1894,13 +1895,13 @@ describe("AgentWorkbench", () => {
 
     expect(
       await screen.findByRole("button", {
-        name: "Execution targets: Auto, All targets",
+        name: "Execution targets: Auto",
       }),
     ).toBeInTheDocument()
 
     fireEvent.pointerDown(
       await screen.findByRole("button", {
-        name: "Execution targets: Auto, All targets",
+        name: "Execution targets: Auto",
       }),
     )
     fireEvent.click(await screen.findByRole("menuitemradio", { name: /Manual/ }))
@@ -2073,7 +2074,7 @@ describe("AgentWorkbench", () => {
 
     fireEvent.pointerDown(
       await screen.findByRole("button", {
-        name: "Execution targets: Auto, All targets",
+        name: "Execution targets: Auto",
       }),
     )
     fireEvent.click(await screen.findByRole("menuitemradio", { name: /Manual/ }))
