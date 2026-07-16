@@ -2542,7 +2542,8 @@
       "noMatches": "没有匹配的工作流。",
       "loadFailed": "无法加载工作流。",
       "remove": "移除 {name}",
-      "activeForNextTurn": "工作流上下文"
+      "activeForNextTurn": "工作流上下文",
+      "pinned": "已固定"
     },
     "starterSuggestions": {
       "checkWorkflow": {

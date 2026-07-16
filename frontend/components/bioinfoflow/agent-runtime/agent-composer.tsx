@@ -1,6 +1,6 @@
 "use client"
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react"
+import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react"
 import {
   ChevronDown,
   ClipboardCheck,
@@ -152,6 +152,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     const t = useTranslations("agentRuntime")
     const canSubmit = !disabled && value.trim().length > 0
     const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+    const commandMenuId = useId()
     const [commandMenuOpen, setCommandMenuOpen] = useState(false)
     const [commandToken, setCommandToken] = useState<ComposerCommandToken | null>(null)
     const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0)
@@ -213,6 +214,16 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     const visibleHighlightedCommandIndex = commandOptions.length
       ? Math.min(highlightedCommandIndex, commandOptions.length - 1)
       : 0
+    const activeCommandOptionId =
+      commandMenuOpen && commandOptions.length
+        ? commandOptionId(commandMenuId, visibleHighlightedCommandIndex)
+        : undefined
+    const commandTextareaPopupProps = {
+      "aria-haspopup": "listbox" as const,
+      "aria-expanded": commandMenuOpen,
+      "aria-controls": commandMenuOpen ? commandMenuId : undefined,
+      "aria-activedescendant": activeCommandOptionId,
+    }
 
     const closeCommandMenu = useCallback(() => {
       setCommandMenuOpen(false)
@@ -424,6 +435,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             onBlur={() => window.setTimeout(closeCommandMenu, 120)}
             placeholder={t("composerPlaceholder")}
             aria-label={t("composerPlaceholder")}
+            {...commandTextareaPopupProps}
             className={cn(
               "w-full resize-none bg-transparent px-3 py-2 text-[14px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/64",
               isCenterPresentation ? "min-h-[64px]" : "min-h-10",
@@ -434,6 +446,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           />
           {commandMenuOpen && commandToken ? (
             <ComposerCommandMenu
+              id={commandMenuId}
               token={commandToken}
               options={commandOptions}
               loading={commandToken.kind === "workflow" ? workflowMentionsLoading : skillsLoading}
@@ -628,6 +641,7 @@ type ComposerCommandOption =
   | { kind: "workflow"; workflow: AgentRuntimeWorkflowMention }
 
 function ComposerCommandMenu({
+  id,
   token,
   options,
   loading,
@@ -636,6 +650,7 @@ function ComposerCommandMenu({
   onHover,
   onSelect,
 }: {
+  id: string
   token: ComposerCommandToken
   options: ComposerCommandOption[]
   loading: boolean
@@ -656,6 +671,7 @@ function ComposerCommandMenu({
 
   return (
     <div
+      id={id}
       className={cn(
         "absolute bottom-[calc(100%+0.5rem)] left-3 z-50 w-[min(28rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-border bg-popover p-1 shadow-[0_8px_24px_rgba(15,15,15,0.06)]",
         composerSelectorMenuClassName,
@@ -674,6 +690,7 @@ function ComposerCommandMenu({
         <div className="grid gap-1">
           {options.map((option, index) => (
             <button
+              id={commandOptionId(id, index)}
               key={commandOptionKey(option)}
               type="button"
               className={cn(
@@ -726,6 +743,7 @@ function WorkflowCommandOptionContent({
 }: {
   workflow: AgentRuntimeWorkflowMention
 }) {
+  const t = useTranslations("agentRuntime")
   return (
     <span className="grid gap-0.5">
       <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
@@ -736,7 +754,7 @@ function WorkflowCommandOptionContent({
       </span>
       <span className="line-clamp-1 text-xs leading-5 text-muted-foreground">
         {workflow.engine} · {workflow.source}
-        {workflow.pinned ? " · pinned" : ""}
+        {workflow.pinned ? ` · ${t("workflows.pinned")}` : ""}
         {workflow.description ? ` · ${workflow.description}` : ""}
       </span>
     </span>
@@ -745,6 +763,10 @@ function WorkflowCommandOptionContent({
 
 function commandOptionKey(option: ComposerCommandOption) {
   return option.kind === "skill" ? `skill:${option.skill.name}` : `workflow:${option.workflow.id}`
+}
+
+function commandOptionId(menuId: string, index: number) {
+  return `${menuId}-option-${index}`
 }
 
 function composerCommandTokenAt(value: string, cursor: number): ComposerCommandToken | null {

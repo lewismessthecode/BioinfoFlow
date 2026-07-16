@@ -170,6 +170,7 @@ vi.mock("next-intl", () => ({
       "workflows.loadFailed": "Could not load workflows.",
       "workflows.remove": `Remove ${values?.name ?? ""}`,
       "workflows.activeForNextTurn": "Workflow context",
+      "workflows.pinned": "Pinned version",
       "starterSuggestions.checkWorkflow.prompt": "Check this workflow before I run it",
       "starterSuggestions.chooseInputs.prompt": "Help me choose analysis inputs",
       "starterSuggestions.reviewFailure.prompt": "Review the latest failed run",
@@ -1373,6 +1374,71 @@ describe("AgentWorkbench", () => {
           ],
         }),
       ),
+    )
+  })
+
+  it("clears stale workflow options while project workflow mentions reload", async () => {
+    setupRuntime()
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/agent/skills") return Promise.resolve({ data: { skills: [] } })
+      if (path === "/connections") return new Promise(() => {})
+      if (path === "/projects/project-1/workflows") {
+        return Promise.resolve({
+          data: [
+            {
+              source: "local",
+              name: "old-project-workflow",
+              pinned_workflow: {
+                id: "workflow-old-10",
+                name: "old-project-workflow",
+                version: "1.0.0",
+                source: "local",
+                engine: "nextflow",
+                description: "Old project workflow.",
+                updated_at: "2026-07-10T00:00:00Z",
+              },
+              versions: [
+                {
+                  id: "workflow-old-10",
+                  name: "old-project-workflow",
+                  version: "1.0.0",
+                  source: "local",
+                  engine: "nextflow",
+                  description: "Old project workflow.",
+                  updated_at: "2026-07-10T00:00:00Z",
+                },
+              ],
+            },
+          ],
+        })
+      }
+      if (path === "/projects/project-2/workflows") {
+        return new Promise(() => {})
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    const { rerender } = render(<AgentWorkbench projectId="project-1" />)
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "@old" } })
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-command-option")).toHaveTextContent(
+        "@old-project-workflow",
+      ),
+    )
+
+    fireEvent.change(input, { target: { value: "" } })
+    rerender(<AgentWorkbench projectId="project-2" />)
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenCalledWith("/projects/project-2/workflows"),
+    )
+
+    const nextInput = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(nextInput, { target: { value: "@old" } })
+
+    expect(screen.queryByText("@old-project-workflow")).not.toBeInTheDocument()
+    expect(screen.getByTestId("agent-workflow-menu-empty")).toHaveTextContent(
+      "Loading workflows...",
     )
   })
 
