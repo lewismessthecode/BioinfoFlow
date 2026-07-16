@@ -163,6 +163,13 @@ vi.mock("next-intl", () => ({
       "skills.loadFailed": "Could not load skills.",
       "skills.remove": `Remove ${values?.name ?? ""}`,
       "skills.activeForNextTurn": "Skills",
+      "workflows.menuTitle": "Workflows",
+      "workflows.loading": "Loading workflows...",
+      "workflows.empty": "No workflows found.",
+      "workflows.noMatches": "No matching workflows.",
+      "workflows.loadFailed": "Could not load workflows.",
+      "workflows.remove": `Remove ${values?.name ?? ""}`,
+      "workflows.activeForNextTurn": "Workflow context",
       "starterSuggestions.checkWorkflow.prompt": "Check this workflow before I run it",
       "starterSuggestions.chooseInputs.prompt": "Help me choose analysis inputs",
       "starterSuggestions.reviewFailure.prompt": "Review the latest failed run",
@@ -1286,6 +1293,143 @@ describe("AgentWorkbench", () => {
       ),
     )
     expect(screen.queryByText("/nextflow-debugging")).not.toBeInTheDocument()
+  })
+
+  it("sends a selected project workflow version with the next turn", async () => {
+    const send = vi.fn(async () => undefined)
+    setupRuntime({ send })
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/agent/skills") return Promise.resolve({ data: { skills: [] } })
+      if (path === "/connections") return new Promise(() => {})
+      if (path === "/projects/project-1/workflows") {
+        return Promise.resolve({
+          data: [
+            {
+              source: "local",
+              name: "rnaseq-quant-mini",
+              pinned_workflow: {
+                id: "workflow-rna-12",
+                name: "rnaseq-quant-mini",
+                version: "1.2.0",
+                source: "local",
+                engine: "nextflow",
+                description: "RNA-seq quantification.",
+                updated_at: "2026-07-10T00:00:00Z",
+              },
+              versions: [
+                {
+                  id: "workflow-rna-12",
+                  name: "rnaseq-quant-mini",
+                  version: "1.2.0",
+                  source: "local",
+                  engine: "nextflow",
+                  description: "RNA-seq quantification.",
+                  updated_at: "2026-07-10T00:00:00Z",
+                },
+                {
+                  id: "workflow-rna-11",
+                  name: "rnaseq-quant-mini",
+                  version: "1.1.0",
+                  source: "local",
+                  engine: "nextflow",
+                  description: "Older RNA-seq quantification.",
+                  updated_at: "2026-07-01T00:00:00Z",
+                },
+              ],
+            },
+          ],
+        })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    render(<AgentWorkbench projectId="project-1" />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "@rna" } })
+    await waitFor(() => expect(screen.getByTestId("agent-command-option")).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId("agent-command-option"))
+    expect(screen.getByText("@rnaseq-quant-mini")).toBeInTheDocument()
+
+    fireEvent.change(input, { target: { value: "Draft a run plan" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Draft a run plan",
+        expect.objectContaining({
+          inputParts: [
+            { type: "text", text: "Draft a run plan" },
+            {
+              kind: "workflow_ref",
+              workflow_id: "workflow-rna-12",
+              project_id: "project-1",
+              scope: "project",
+            },
+          ],
+        }),
+      ),
+    )
+  })
+
+  it("sends a selected global workflow version when no project is active", async () => {
+    const send = vi.fn(async () => undefined)
+    setupRuntime({ send })
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/agent/skills") return Promise.resolve({ data: { skills: [] } })
+      if (path === "/connections") return new Promise(() => {})
+      if (path === "/workflows") {
+        return Promise.resolve({
+          data: [
+            {
+              id: "workflow-wgs-20",
+              name: "parabricks-wgs",
+              version: "2.0.0",
+              source: "github",
+              engine: "nextflow",
+              description: "GPU WGS workflow.",
+              updated_at: "2026-07-12T00:00:00Z",
+            },
+            {
+              id: "workflow-wgs-10",
+              name: "parabricks-wgs",
+              version: "1.0.0",
+              source: "github",
+              engine: "nextflow",
+              description: "Previous GPU WGS workflow.",
+              updated_at: "2026-07-01T00:00:00Z",
+            },
+          ],
+        })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "@par" } })
+    await waitFor(() => expect(screen.getByTestId("agent-command-option")).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId("agent-command-option"))
+    fireEvent.change(input, { target: { value: "Explain required inputs" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Explain required inputs",
+        expect.objectContaining({
+          inputParts: [
+            { type: "text", text: "Explain required inputs" },
+            {
+              kind: "workflow_ref",
+              workflow_id: "workflow-wgs-20",
+              project_id: null,
+              scope: "global",
+            },
+          ],
+        }),
+      ),
+    )
   })
 
   it("turns @workflow into workflow context for the next turn", async () => {

@@ -111,6 +111,13 @@ vi.mock("next-intl", () => ({
       "skills.loadFailed": "Could not load skills.",
       "skills.remove": `Remove ${values?.name ?? ""}`,
       "skills.activeForNextTurn": "Skills",
+      "workflows.menuTitle": "Workflows",
+      "workflows.loading": "Loading workflows...",
+      "workflows.empty": "No workflows found.",
+      "workflows.noMatches": "No matching workflows.",
+      "workflows.loadFailed": "Could not load workflows.",
+      "workflows.remove": `Remove ${values?.name ?? ""}`,
+      "workflows.activeForNextTurn": "Workflow context",
     }
     return labels[key] ?? key
   },
@@ -270,6 +277,152 @@ describe("AgentComposer", () => {
 
     expect(screen.getByText("/run-failure-triage")).toBeInTheDocument()
     expect(onRemoveActiveSkill).toHaveBeenCalledWith("run-failure-triage")
+  })
+
+  it("opens the unified command menu for slash skills and workflow mentions", () => {
+    const { rerender } = render(
+      <AgentComposer
+        value="/next"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        availableSkills={[
+          {
+            name: "nextflow-debugging",
+            version: "0.1.0",
+            description: "Diagnose failed Nextflow runs.",
+            tags: ["nextflow"],
+          },
+        ]}
+        availableWorkflowMentions={[
+          {
+            id: "workflow-rna-12",
+            name: "rnaseq-quant-mini",
+            version: "1.2.0",
+            engine: "nextflow",
+            source: "local",
+            description: "RNA-seq quantification.",
+            scope: "global",
+            projectId: null,
+          },
+        ]}
+        onAddActiveSkill={vi.fn()}
+        onAddWorkflowMention={vi.fn()}
+      />,
+    )
+
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    textarea.setSelectionRange(5, 5)
+    fireEvent.click(textarea)
+
+    expect(screen.getByTestId("agent-command-menu")).toBeInTheDocument()
+    expect(screen.getByTestId("agent-command-option")).toHaveTextContent(
+      "/nextflow-debugging",
+    )
+
+    rerender(
+      <AgentComposer
+        value="@rna"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        availableSkills={[]}
+        availableWorkflowMentions={[
+          {
+            id: "workflow-rna-12",
+            name: "rnaseq-quant-mini",
+            version: "1.2.0",
+            engine: "nextflow",
+            source: "local",
+            description: "RNA-seq quantification.",
+            scope: "global",
+            projectId: null,
+          },
+        ]}
+        onAddActiveSkill={vi.fn()}
+        onAddWorkflowMention={vi.fn()}
+      />,
+    )
+    const nextTextarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    nextTextarea.setSelectionRange(4, 4)
+    fireEvent.click(nextTextarea)
+
+    expect(screen.getByTestId("agent-command-menu")).toBeInTheDocument()
+    expect(screen.getByTestId("agent-command-option")).toHaveTextContent(
+      "@rnaseq-quant-mini",
+    )
+  })
+
+  it("selects and removes a workflow mention chip without keeping the token", () => {
+    function WorkflowMentionHarness() {
+      const [value, setValue] = useState("@rna")
+      const [mentions, setMentions] = useState<Array<{
+        id: string
+        name: string
+        version: string
+        engine: "nextflow"
+        source: "local"
+        description: string
+        scope: "global"
+        projectId: null
+      }>>([])
+      const workflow = {
+        id: "workflow-rna-12",
+        name: "rnaseq-quant-mini",
+        version: "1.2.0",
+        engine: "nextflow" as const,
+        source: "local" as const,
+        description: "RNA-seq quantification.",
+        scope: "global" as const,
+        projectId: null,
+      }
+
+      return (
+        <AgentComposer
+          value={value}
+          onChange={setValue}
+          onSubmit={vi.fn()}
+          onStop={vi.fn()}
+          isRunning={false}
+          models={[]}
+          selectedModel={null}
+          onSelectModel={vi.fn()}
+          availableWorkflowMentions={[workflow]}
+          activeWorkflowMentions={mentions}
+          onAddWorkflowMention={(mention) =>
+            setMentions((current) =>
+              current.some((item) => item.id === mention.id)
+                ? current
+                : [...current, mention],
+            )
+          }
+          onRemoveWorkflowMention={(workflowId) =>
+            setMentions((current) => current.filter((item) => item.id !== workflowId))
+          }
+        />
+      )
+    }
+
+    render(<WorkflowMentionHarness />)
+
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    textarea.setSelectionRange(4, 4)
+    fireEvent.click(textarea)
+    fireEvent.click(screen.getByTestId("agent-command-option"))
+
+    expect(textarea).toHaveValue("")
+    expect(screen.getByText("@rnaseq-quant-mini")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove rnaseq-quant-mini" }))
+    expect(screen.queryByText("@rnaseq-quant-mini")).not.toBeInTheDocument()
   })
 
   it("names the textarea independently from the visible placeholder", () => {
