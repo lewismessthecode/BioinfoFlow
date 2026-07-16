@@ -26,7 +26,6 @@ import type {
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
-import { ActivityGroup } from "./activity-group"
 import {
   SourceCitation,
   SourceEvidenceFooter,
@@ -317,7 +316,7 @@ function TranscriptSegment({
         </details>
       )
     case "activity_group":
-      return <ActivityGroup group={segment.activityGroup} />
+      return null
     case "decision":
       return <InlineApprovalCard decision={segment.decision} onDecision={onDecision} />
     case "turn_error":

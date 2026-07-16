@@ -816,6 +816,7 @@ describe("AgentWorkbench", () => {
       expect(sidecar).toHaveStyle({ width: "616px" })
 
       fireEvent.pointerMove(window, { clientX: 500, pointerId: 1 })
+      expect(window.localStorage.getItem("agent-sidecar-width")).toBe("616")
       fireEvent.pointerUp(window, { pointerId: 1 })
 
       await waitFor(() => {
@@ -2923,7 +2924,7 @@ describe("AgentWorkbench", () => {
     expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
   })
 
-  it("renders thinking and tool-call activity in the transcript", async () => {
+  it("renders thinking while hiding tool-call activity in the transcript", async () => {
     setupRuntime({
       turns: [{ ...baseTurn, status: "running", final_text: null }],
       events: [
@@ -2987,7 +2988,7 @@ describe("AgentWorkbench", () => {
 
     expect(await screen.findByText("Thinking")).toBeInTheDocument()
     expect(screen.getByText("Project scan complete.")).toBeInTheDocument()
-    expect(screen.getByText("Read 1 source")).toBeInTheDocument()
+    expect(screen.queryByText("Read 1 source")).not.toBeInTheDocument()
   })
 
   it("keeps an approved approval visible in the transcript until resume progress arrives", () => {

@@ -431,7 +431,7 @@ describe("AgentTranscript", () => {
     expect(screen.queryByRole("button", { name: "Retry response" })).not.toBeInTheDocument()
   })
 
-  it("renders tool activity as collapsed narrative groups by default", () => {
+  it("hides tool activity and details from the transcript stream", () => {
     renderTranscript({
       events: [
         event("event-call-1", 1, "assistant.tool_call.completed", {
@@ -451,27 +451,16 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Read 2 sources")).toBeInTheDocument()
+    expect(screen.queryByText("Read 2 sources")).not.toBeInTheDocument()
     expect(screen.queryByText("glob")).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: /Read 2 sources/ }))
-
-    expect(screen.getByText("glob")).toBeInTheDocument()
-    expect(screen.getByText("files__read")).toBeInTheDocument()
-    expect(screen.getAllByTestId("agent-tool-activity-row")).toHaveLength(2)
+    expect(screen.queryByText("files__read")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("agent-activity-group")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("agent-tool-activity-row")).not.toBeInTheDocument()
     expect(screen.queryByText("Arguments")).not.toBeInTheDocument()
-
-    const detailsButton = screen.getAllByRole("button", { name: /Show details/ })[1]
-    expect(detailsButton).toHaveAttribute("aria-expanded", "false")
-
-    fireEvent.click(detailsButton)
-
-    expect(detailsButton).toHaveAttribute("aria-expanded", "true")
-    expect(screen.getByText("Arguments")).toBeInTheDocument()
-    expect(screen.getAllByText(/workflow\.wdl/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/workflow\.wdl/)).not.toBeInTheDocument()
   })
 
-  it("classifies workflow list and source lookups as reads, not workflow registration", () => {
+  it("hides workflow list and source lookup activity", () => {
     renderTranscript({
       events: [
         event("event-workflow-list", 1, "assistant.tool_call.completed", {
@@ -491,11 +480,11 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Read 2 sources")).toBeInTheDocument()
+    expect(screen.queryByText("Read 2 sources")).not.toBeInTheDocument()
     expect(screen.queryByText("Manage workflows")).not.toBeInTheDocument()
   })
 
-  it("classifies real platform read, workflow, command, and verify tools into coarse groups", () => {
+  it("hides platform read, workflow, command, and verify activity summaries", () => {
     renderTranscript({
       events: [
         event("event-runs-logs", 1, "assistant.tool_call.completed", {
@@ -535,14 +524,14 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Read 2 sources")).toBeInTheDocument()
-    expect(screen.getByText("Managed 1 workflows")).toBeInTheDocument()
-    expect(screen.getByText("Ran 1 commands")).toBeInTheDocument()
-    expect(screen.getByText("Verified 1 check")).toBeInTheDocument()
+    expect(screen.queryByText("Read 2 sources")).not.toBeInTheDocument()
+    expect(screen.queryByText("Managed 1 workflows")).not.toBeInTheDocument()
+    expect(screen.queryByText("Ran 1 commands")).not.toBeInTheDocument()
+    expect(screen.queryByText("Verified 1 check")).not.toBeInTheDocument()
     expect(screen.queryByText("activity.groups.other")).not.toBeInTheDocument()
   })
 
-  it("uses tool-call arguments as fallback hints for bash activity classification", () => {
+  it("hides bash activity even when arguments look like verification or edits", () => {
     renderTranscript({
       events: [
         event("event-bash-verify", 1, "assistant.tool_call.completed", {
@@ -562,12 +551,12 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Verified 1 check")).toBeInTheDocument()
-    expect(screen.getByText("Edited 1 files")).toBeInTheDocument()
+    expect(screen.queryByText("Verified 1 check")).not.toBeInTheDocument()
+    expect(screen.queryByText("Edited 1 files")).not.toBeInTheDocument()
     expect(screen.queryByText("Ran 1 commands")).not.toBeInTheDocument()
   })
 
-  it("compacts same-category tool calls inside one contiguous tool burst", () => {
+  it("does not expose compacted tool bursts in the transcript", () => {
     renderTranscript({
       events: [
         event("event-glob-1", 1, "assistant.tool_call.completed", {
@@ -606,12 +595,13 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getAllByTestId("agent-activity-group")).toHaveLength(2)
-    expect(screen.getByText("Read 3 sources")).toBeInTheDocument()
-    expect(screen.getByText("Ran 2 commands")).toBeInTheDocument()
+    expect(screen.queryByTestId("agent-activity-group")).not.toBeInTheDocument()
+    expect(screen.queryByText("Read 3 sources")).not.toBeInTheDocument()
+    expect(screen.queryByText("Ran 2 commands")).not.toBeInTheDocument()
+    expect(screen.queryByText("glob")).not.toBeInTheDocument()
   })
 
-  it("renders failed tool activity as collapsed narrative groups by default", () => {
+  it("hides failed tool output from the transcript", () => {
     renderTranscript({
       events: [
         event("event-failed", 1, "action.failed", {
@@ -622,23 +612,12 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Submitted 1 run")).toBeInTheDocument()
-    expect(screen.getByText("Failed")).toBeInTheDocument()
+    expect(screen.queryByText("Submitted 1 run")).not.toBeInTheDocument()
+    expect(screen.queryByText("Failed")).not.toBeInTheDocument()
     expect(
       screen.queryByText("Image quay.io/example/missing:tag was not found"),
     ).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: /Submitted 1 run/ }))
-
-    expect(
-      screen.queryByText("Image quay.io/example/missing:tag was not found"),
-    ).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
-
-    expect(
-      screen.getByText("Image quay.io/example/missing:tag was not found"),
-    ).toBeInTheDocument()
+    expect(screen.queryByTestId("agent-tool-activity-row")).not.toBeInTheDocument()
   })
 
   it("renders exit_plan_mode plans as inline conversation decisions", () => {
@@ -867,7 +846,7 @@ describe("AgentTranscript", () => {
     expect(screen.queryByTestId("inline-approval-card")).not.toBeInTheDocument()
   })
 
-  it("expands active tool groups by default and collapses completed groups", () => {
+  it("keeps the live running status while hiding active and completed tool groups", () => {
     renderTranscript({
       turn: { ...baseTurn, status: "running", final_text: null },
       events: [
@@ -886,13 +865,14 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Verified 1 check")).toBeInTheDocument()
-    expect(screen.getByText("bash")).toBeInTheDocument()
-    expect(screen.getByText("Read 1 sources")).toBeInTheDocument()
+    expect(screen.getByText("Working...")).toBeInTheDocument()
+    expect(screen.queryByText("Verified 1 check")).not.toBeInTheDocument()
+    expect(screen.queryByText("bash")).not.toBeInTheDocument()
+    expect(screen.queryByText("Read 1 sources")).not.toBeInTheDocument()
     expect(screen.queryByText("glob")).not.toBeInTheDocument()
   })
 
-  it("keeps activity details collapsed until the user expands them", () => {
+  it("does not render expandable activity details", () => {
     renderTranscript({
       events: [
         event("event-tool", 1, "assistant.tool_call.completed", {
@@ -906,18 +886,11 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Read 1 sources")).toBeInTheDocument()
+    expect(screen.queryByText("Read 1 sources")).not.toBeInTheDocument()
     expect(screen.queryByTestId("agent-tool-activity-row")).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: /Read 1 sources/ }))
-
-    expect(screen.getByTestId("agent-tool-activity-row")).toBeInTheDocument()
-    expect(screen.getByText("glob")).toBeInTheDocument()
+    expect(screen.queryByTestId("agent-activity-group")).not.toBeInTheDocument()
+    expect(screen.queryByText("glob")).not.toBeInTheDocument()
     expect(screen.queryByText("Arguments")).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
-
-    expect(screen.getByText("Arguments")).toBeInTheDocument()
   })
 
   it("keeps wide transcript content inside the transcript scroller", () => {
@@ -939,7 +912,7 @@ describe("AgentTranscript", () => {
     expect(code.closest("pre")).toHaveClass("overflow-x-auto")
   })
 
-  it("keeps text, tool calls, and later text in segment order", () => {
+  it("keeps text before and after hidden tool calls in segment order", () => {
     renderTranscript({
       turn: { ...baseTurn, status: "running", final_text: null },
       events: [
@@ -965,7 +938,7 @@ describe("AgentTranscript", () => {
     expect(
       screen.getByText("I am checking the workflow registry before reading files."),
     ).toBeInTheDocument()
-    expect(screen.getByText("Read 1 sources")).toBeInTheDocument()
+    expect(screen.queryByText("Read 1 sources")).not.toBeInTheDocument()
     expect(screen.getByText("The workflow file is present.")).toBeInTheDocument()
     expect(screen.queryByText("Working on it...")).not.toBeInTheDocument()
   })
@@ -1132,7 +1105,7 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Found 2 sources")).toBeInTheDocument()
+    expect(screen.queryByText("Found 2 sources")).not.toBeInTheDocument()
     const firstCitation = screen.getByRole("button", {
       name: /Source 1: STAR: ultrafast universal RNA-seq aligner/,
     })
@@ -1293,7 +1266,7 @@ describe("AgentTranscript", () => {
     expect(document.querySelector('a[href^="javascript:"]')).toBeNull()
   })
 
-  it("does not make unsafe activity-row source URLs navigable", () => {
+  it("does not expose unsafe search activity URLs in the transcript", () => {
     renderTranscript({
       events: [
         event("event-search", 1, "action.completed", {
@@ -1313,10 +1286,8 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    fireEvent.click(screen.getByRole("button", { name: /Found 1 sources/ }))
-    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
-
-    expect(screen.getByText("Unsafe search result")).toBeInTheDocument()
+    expect(screen.queryByText("Found 1 sources")).not.toBeInTheDocument()
+    expect(screen.queryByText("Unsafe search result")).not.toBeInTheDocument()
     expect(screen.queryByRole("link", { name: /Unsafe search result/ })).not.toBeInTheDocument()
     expect(document.querySelector('a[href^="javascript:"]')).toBeNull()
   })
@@ -1381,7 +1352,7 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Found 0 sources")).toBeInTheDocument()
+    expect(screen.queryByText("Found 0 sources")).not.toBeInTheDocument()
   })
 
   it("keeps running searches in a searching state before results arrive", () => {
@@ -1395,11 +1366,11 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Searching sources...")).toBeInTheDocument()
+    expect(screen.queryByText("Searching sources...")).not.toBeInTheDocument()
     expect(screen.queryByText("Found 0 sources")).not.toBeInTheDocument()
   })
 
-  it("shows provider search errors as failed activity with zero sources", () => {
+  it("hides provider search errors from the transcript activity stream", () => {
     renderTranscript({
       events: [
         event("event-search", 1, "action.completed", {
@@ -1415,13 +1386,9 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Found 0 sources")).toBeInTheDocument()
-    expect(screen.getAllByText("Failed").length).toBeGreaterThan(0)
-
-    fireEvent.click(screen.getByRole("button", { name: /Found 0 sources/ }))
-    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
-
-    expect(screen.getByText("Error")).toBeInTheDocument()
-    expect(screen.getByText("Search provider unavailable")).toBeInTheDocument()
+    expect(screen.queryByText("Found 0 sources")).not.toBeInTheDocument()
+    expect(screen.queryByText("Failed")).not.toBeInTheDocument()
+    expect(screen.queryByText("Error")).not.toBeInTheDocument()
+    expect(screen.queryByText("Search provider unavailable")).not.toBeInTheDocument()
   })
 })

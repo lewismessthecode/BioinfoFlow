@@ -174,11 +174,9 @@ describe("MarkdownRenderer link sanitization", () => {
       return shell
     })
     expect(highlightedShell?.className).toContain(
-      "dark:[&_.shiki_span]:![color:var(--shiki-dark)]",
+      "[&_.shiki]:![background-color:transparent]",
     )
-    expect(highlightedShell?.className).toContain(
-      "[&_.shiki_span]:![color:var(--shiki-light)]",
-    )
+    expect(highlightedShell?.className).not.toContain("shiki-light")
 
     const tableScroller = container.querySelector("[data-testid='markdown-table-scroller']")
     expect(tableScroller?.className).toContain("max-w-full")

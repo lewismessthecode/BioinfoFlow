@@ -65,10 +65,7 @@ function CodeBlock({
         const codeToHtml = await getCodeToHtml()
         const html = await codeToHtml(code, {
           lang: language === "text" ? "txt" : language,
-          themes: {
-            light: "github-light",
-            dark: "github-dark",
-          },
+          theme: "github-dark",
         })
         highlightedCodeCache.set(cacheKey, html)
         if (highlightedCodeCache.size > CACHE_MAX_SIZE) {
@@ -119,7 +116,7 @@ function CodeBlock({
       </div>
       {highlightedHtml ? (
         <div
-          className="min-w-0 max-w-full overflow-hidden [&_.shiki]:m-0 [&_.shiki]:max-w-full [&_.shiki]:overflow-x-auto [&_.shiki]:![background-color:transparent] [&_.shiki]:![color:var(--shiki-light)] [&_.shiki]:p-3 [&_.shiki_pre]:m-0 [&_.shiki_span]:![color:var(--shiki-light)] dark:[&_.shiki]:![color:var(--shiki-dark)] dark:[&_.shiki_span]:![color:var(--shiki-dark)]"
+          className="min-w-0 max-w-full overflow-hidden [&_.shiki]:m-0 [&_.shiki]:max-w-full [&_.shiki]:overflow-x-auto [&_.shiki]:![background-color:transparent] [&_.shiki]:p-3 [&_.shiki_pre]:m-0"
           data-testid="markdown-highlighted-code"
           dangerouslySetInnerHTML={{ __html: highlightedHtml }}
         />

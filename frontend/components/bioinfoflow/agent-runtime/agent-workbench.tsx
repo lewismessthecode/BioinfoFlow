@@ -466,8 +466,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     }, [])
 
     useEffect(() => {
+      if (sidecarResizing) return
       window.localStorage.setItem(SIDECAR_WIDTH_STORAGE_KEY, String(sidecarWidth))
-    }, [sidecarWidth])
+    }, [sidecarResizing, sidecarWidth])
 
     useEffect(() => {
       if (!hasConversation) return
