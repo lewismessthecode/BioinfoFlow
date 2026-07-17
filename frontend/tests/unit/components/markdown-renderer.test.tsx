@@ -139,6 +139,25 @@ describe("MarkdownRenderer link sanitization", () => {
     expect(screen.getByText(longPath)).toHaveClass("break-all")
   })
 
+  it("keeps ordered list markers inside the clipped markdown viewport", () => {
+    const { container } = render(
+      <MarkdownRenderer
+        content={[
+          "1. Divide the array",
+          "2. Conquer the halves",
+          "3. Merge the result",
+        ].join("\n")}
+      />,
+    )
+
+    const markdownRoot = container.firstElementChild
+    const orderedList = container.querySelector("ol")
+
+    expect(markdownRoot).toHaveClass("overflow-hidden")
+    expect(orderedList).toHaveClass("list-outside", "pl-6")
+    expect(orderedList).not.toHaveClass("ml-4")
+  })
+
   it("bounds wide code blocks and tables to internal horizontal scrolling", () => {
     const longPath = "/mnt/nas/bioinfoflow/projects/example/" + "nested/".repeat(20)
     const { container } = render(
