@@ -282,6 +282,52 @@ describe("AgentComposer", () => {
     expect(onRemoveActiveSkill).toHaveBeenCalledWith("run-failure-triage")
   })
 
+  it("renders inline tokens in the caller-provided insertion order", () => {
+    const skill = {
+      name: "phoenix-platform-operator",
+      version: "0.1.0",
+      description: "Operate Phoenix platform workflows.",
+      tags: ["phoenix"],
+    }
+    const workflow = {
+      id: "workflow-deaf-20",
+      name: "Deaf_20",
+      version: "2.0.9.9",
+      engine: "nextflow",
+      source: "local",
+      description: "Deaf workflow.",
+      scope: "global" as const,
+      projectId: null,
+    }
+
+    render(
+      <AgentComposer
+        value="我想"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        availableSkills={[skill]}
+        activeSkillNames={[skill.name]}
+        activeWorkflowMentions={[workflow]}
+        activeComposerTokens={[
+          { kind: "skill", skill },
+          { kind: "workflow", workflow },
+        ]}
+      />,
+    )
+
+    const tokenFlow = screen.getByTestId("agent-inline-token-flow")
+    const skillToken = within(tokenFlow).getByTestId("agent-inline-skill-token")
+    const workflowToken = within(tokenFlow).getByTestId("agent-inline-workflow-token")
+    expect(
+      skillToken.compareDocumentPosition(workflowToken) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
   it("opens the unified command menu for slash skills and workflow mentions", () => {
     const { rerender } = render(
       <AgentComposer

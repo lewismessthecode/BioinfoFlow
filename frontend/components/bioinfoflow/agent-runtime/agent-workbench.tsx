@@ -26,7 +26,7 @@ import {
 } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
-import { AgentComposer } from "./agent-composer"
+import { AgentComposer, type AgentComposerInlineToken } from "./agent-composer"
 import { AgentEnvironmentCard } from "./agent-environment-card"
 import { AgentTabbedPanel, type AgentTabbedPanelTab } from "./agent-tabbed-panel"
 import { AgentTodoDock } from "./agent-todo-dock"
@@ -160,6 +160,10 @@ type AgentInputDisplayPart =
     }
   | { type: "skill"; name: string }
 
+type ActiveComposerTokenKey =
+  | { kind: "skill"; name: string }
+  | { kind: "workflow"; id: string }
+
 export type AgentWorkbenchHandle = {
   focusInput: () => void
   stop: () => void
@@ -198,6 +202,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
     const [availableSkills, setAvailableSkills] = useState<AgentRuntimeSkill[]>([])
     const [activeSkillNames, setActiveSkillNames] = useState<string[]>([])
+    const [activeComposerTokenKeys, setActiveComposerTokenKeys] = useState<
+      ActiveComposerTokenKey[]
+    >([])
     const [skillsLoading, setSkillsLoading] = useState(true)
     const [skillsError, setSkillsError] = useState<string | null>(null)
     const currentWorkflowMentionScopeKey = workflowMentionScopeKey(projectId)
@@ -229,6 +236,49 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         ),
       [activeWorkflowMentions, projectId],
     )
+    const activeComposerTokens = useMemo<AgentComposerInlineToken[]>(() => {
+      const tokens = activeComposerTokenKeys.flatMap((token) => {
+        if (token.kind === "skill") {
+          if (!activeSkillNames.includes(token.name)) return []
+          return [
+            {
+              kind: "skill" as const,
+              skill:
+                availableSkills.find((skill) => skill.name === token.name) ??
+                fallbackAgentRuntimeSkill(token.name),
+            },
+          ]
+        }
+        const workflow = scopedActiveWorkflowMentions.find(
+          (item) => item.id === token.id,
+        )
+        return workflow ? [{ kind: "workflow" as const, workflow }] : []
+      })
+      const orderedKeys = new Set(
+        tokens.map((token) =>
+          token.kind === "skill"
+            ? `skill:${token.skill.name}`
+            : `workflow:${token.workflow.id}`,
+        ),
+      )
+      const missingWorkflows = scopedActiveWorkflowMentions
+        .filter((workflow) => !orderedKeys.has(`workflow:${workflow.id}`))
+        .map((workflow) => ({ kind: "workflow" as const, workflow }))
+      const missingSkills = activeSkillNames
+        .filter((name) => !orderedKeys.has(`skill:${name}`))
+        .map((name) => ({
+          kind: "skill" as const,
+          skill:
+            availableSkills.find((skill) => skill.name === name) ??
+            fallbackAgentRuntimeSkill(name),
+        }))
+      return [...tokens, ...missingWorkflows, ...missingSkills]
+    }, [
+      activeComposerTokenKeys,
+      activeSkillNames,
+      availableSkills,
+      scopedActiveWorkflowMentions,
+    ])
     const [executionSelectionOverride, setExecutionSelectionOverride] = useState<{
       sessionId: string
       value: ExecutionTargetSelection
@@ -529,6 +579,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setContextAttachments([])
           setActiveSkillNames([])
           setActiveWorkflowMentions([])
+          setActiveComposerTokenKeys([])
           setExecutionSelectionOverride(null)
           setHasSubmittedDraft(false)
           setOptimisticTurns([])
@@ -671,21 +722,39 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       setActiveSkillNames((current) =>
         current.includes(name) ? current : [...current, name],
       )
+      setActiveComposerTokenKeys((current) =>
+        current.some((token) => token.kind === "skill" && token.name === name)
+          ? current
+          : [...current, { kind: "skill", name }],
+      )
     }, [])
 
     const removeActiveSkill = useCallback((name: string) => {
       setActiveSkillNames((current) => current.filter((item) => item !== name))
+      setActiveComposerTokenKeys((current) =>
+        current.filter((token) => token.kind !== "skill" || token.name !== name),
+      )
     }, [])
 
     const addWorkflowMention = useCallback((workflow: AgentRuntimeWorkflowMention) => {
       setActiveWorkflowMentions((current) =>
         current.some((item) => item.id === workflow.id) ? current : [...current, workflow],
       )
+      setActiveComposerTokenKeys((current) =>
+        current.some((token) => token.kind === "workflow" && token.id === workflow.id)
+          ? current
+          : [...current, { kind: "workflow", id: workflow.id }],
+      )
     }, [])
 
     const removeWorkflowMention = useCallback((workflowId: string) => {
       setActiveWorkflowMentions((current) =>
         current.filter((item) => item.id !== workflowId),
+      )
+      setActiveComposerTokenKeys((current) =>
+        current.filter(
+          (token) => token.kind !== "workflow" || token.id !== workflowId,
+        ),
       )
     }, [])
 
@@ -965,6 +1034,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         workflowDisplayParts: workflowInput.displayParts,
         activeWorkflowMentions: scopedActiveWorkflowMentions,
         activeSkillNames: activeSkillNamesSnapshot,
+        activeComposerTokens,
       })
       submitTurn(
         text,
@@ -977,6 +1047,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       setContextAttachments([])
       setActiveSkillNames([])
       setActiveWorkflowMentions([])
+      setActiveComposerTokenKeys([])
     }
 
     const retryTurn = useCallback(
@@ -1277,6 +1348,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         onRemoveContextAttachment={removeContextAttachment}
         availableSkills={availableSkills}
         activeSkillNames={activeSkillNames}
+        activeComposerTokens={activeComposerTokens}
         skillsLoading={skillsLoading}
         skillsError={skillsError}
         onAddActiveSkill={addActiveSkill}
@@ -1810,22 +1882,39 @@ function inputDisplayPartsForSubmission({
   workflowDisplayParts,
   activeWorkflowMentions,
   activeSkillNames,
+  activeComposerTokens,
 }: {
   text: string
   workflowDisplayParts?: AgentInputDisplayPart[] | null
   activeWorkflowMentions: AgentRuntimeWorkflowMention[]
   activeSkillNames: string[]
+  activeComposerTokens?: AgentComposerInlineToken[]
 }): AgentInputDisplayPart[] | null {
+  const orderedTokenParts = (activeComposerTokens?.length
+    ? activeComposerTokens
+    : [
+        ...activeWorkflowMentions.map((workflow) => ({
+          kind: "workflow" as const,
+          workflow,
+        })),
+        ...activeSkillNames.map((name) => ({
+          kind: "skill" as const,
+          skill: fallbackAgentRuntimeSkill(name),
+        })),
+      ]
+  ).map((token): AgentInputDisplayPart => {
+    if (token.kind === "skill") return { type: "skill", name: token.skill.name }
+    return {
+      type: "workflow",
+      workflow_id: token.workflow.id,
+      project_id: token.workflow.projectId ?? null,
+      scope: token.workflow.scope,
+      name: token.workflow.name,
+      version: token.workflow.version,
+    }
+  })
   const parts: AgentInputDisplayPart[] = [
-    ...activeWorkflowMentions.map((workflow) => ({
-      type: "workflow" as const,
-      workflow_id: workflow.id,
-      project_id: workflow.projectId ?? null,
-      scope: workflow.scope,
-      name: workflow.name,
-      version: workflow.version,
-    })),
-    ...activeSkillNames.map((name) => ({ type: "skill" as const, name })),
+    ...orderedTokenParts,
     ...(workflowDisplayParts?.length ? workflowDisplayParts : [{ type: "text" as const, text }]),
   ]
   const trimmedParts = trimInputDisplayTextParts(parts)
@@ -2146,6 +2235,15 @@ function runtimeTargetLabel(
 
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+function fallbackAgentRuntimeSkill(name: string): AgentRuntimeSkill {
+  return {
+    name,
+    version: "",
+    description: name,
+    tags: [],
+  }
 }
 
 function maxSidecarWidthForWorkbench(width: number) {

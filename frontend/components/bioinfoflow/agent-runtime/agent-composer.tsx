@@ -76,6 +76,7 @@ type AgentComposerProps = {
   onRemoveContextAttachment?: (path: string) => void
   availableSkills?: AgentRuntimeSkill[]
   activeSkillNames?: string[]
+  activeComposerTokens?: AgentComposerInlineToken[]
   skillsLoading?: boolean
   skillsError?: string | null
   onAddActiveSkill?: (name: string) => void
@@ -95,6 +96,10 @@ type AgentComposerProps = {
   contextTitle?: string | null
   className?: string
 }
+
+export type AgentComposerInlineToken =
+  | { kind: "skill"; skill: AgentRuntimeSkill }
+  | { kind: "workflow"; workflow: AgentRuntimeWorkflowMention }
 
 const attachMenuItems = [
   { key: "attachFiles", Icon: Paperclip },
@@ -129,6 +134,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       onRemoveContextAttachment,
       availableSkills = [],
       activeSkillNames = [],
+      activeComposerTokens,
       skillsLoading = false,
       skillsError = null,
       onAddActiveSkill,
@@ -176,6 +182,18 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           availableSkills.find((skill) => skill.name === name) ?? fallbackSkill(name),
         ),
       [activeSkillNames, availableSkills],
+    )
+    const visibleComposerTokens = useMemo<AgentComposerInlineToken[]>(
+      () =>
+        activeComposerTokens ??
+        [
+          ...activeWorkflowMentions.map((workflow) => ({
+            kind: "workflow" as const,
+            workflow,
+          })),
+          ...activeSkills.map((skill) => ({ kind: "skill" as const, skill })),
+        ],
+      [activeComposerTokens, activeSkills, activeWorkflowMentions],
     )
     const skillOptions = useMemo(
       () =>
@@ -306,22 +324,18 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     )
 
     const removePreviousInlineToken = useCallback(() => {
-      const lastSkill = activeSkills.at(-1)
-      if (lastSkill) {
-        onRemoveActiveSkill?.(lastSkill.name)
+      const lastToken = visibleComposerTokens.at(-1)
+      if (!lastToken) return false
+      if (lastToken.kind === "skill") {
+        onRemoveActiveSkill?.(lastToken.skill.name)
         return true
       }
-      const lastWorkflow = activeWorkflowMentions.at(-1)
-      if (lastWorkflow) {
-        onRemoveWorkflowMention?.(lastWorkflow.id)
-        return true
-      }
-      return false
+      onRemoveWorkflowMention?.(lastToken.workflow.id)
+      return true
     }, [
-      activeSkills,
-      activeWorkflowMentions,
       onRemoveActiveSkill,
       onRemoveWorkflowMention,
+      visibleComposerTokens,
     ])
 
     useEffect(() => {
@@ -360,8 +374,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             data-testid="agent-inline-token-flow"
           >
             <ComposerInlineTokens
-              activeSkills={activeSkills}
-              activeWorkflowMentions={activeWorkflowMentions}
+              tokens={visibleComposerTokens}
               disabled={disabled}
               onRemoveActiveSkill={onRemoveActiveSkill}
               onRemoveWorkflowMention={onRemoveWorkflowMention}
@@ -808,70 +821,73 @@ function fallbackSkill(name: string): AgentRuntimeSkill {
 }
 
 function ComposerInlineTokens({
-  activeSkills,
-  activeWorkflowMentions,
+  tokens,
   disabled,
   onRemoveActiveSkill,
   onRemoveWorkflowMention,
 }: {
-  activeSkills: AgentRuntimeSkill[]
-  activeWorkflowMentions: AgentRuntimeWorkflowMention[]
+  tokens: AgentComposerInlineToken[]
   disabled: boolean
   onRemoveActiveSkill?: (name: string) => void
   onRemoveWorkflowMention?: (workflowId: string) => void
 }) {
   const t = useTranslations("agentRuntime")
-  if (!activeSkills.length && !activeWorkflowMentions.length) return null
+  if (!tokens.length) return null
 
   return (
     <>
-      {activeWorkflowMentions.map((workflow) => (
-        <span
-          key={`workflow:${workflow.id}`}
-          className={cn(composerInlineTokenClassName, "max-w-[16rem]")}
-          data-testid="agent-inline-workflow-token"
-          role="group"
-          aria-label={`@${workflowRemoveName(workflow)}`}
-        >
-          <span className="min-w-0 truncate" translate="no">@{workflow.name}</span>
+      {tokens.map((token) => {
+        if (token.kind === "skill") {
+          return (
+            <span
+              key={`skill:${token.skill.name}`}
+              className={cn(composerInlineTokenClassName, "max-w-[14rem]")}
+              data-testid="agent-inline-skill-token"
+              role="group"
+              aria-label={`/${token.skill.name}`}
+            >
+              <span className="min-w-0 truncate" translate="no">/{token.skill.name}</span>
+              <button
+                type="button"
+                className="-mr-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/35"
+                onClick={() => onRemoveActiveSkill?.(token.skill.name)}
+                disabled={disabled}
+                aria-label={t("skills.remove", { name: token.skill.name })}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )
+        }
+        const workflow = token.workflow
+        return (
           <span
-            className="shrink-0 text-[10px] font-normal leading-none text-muted-foreground/78"
-            title={`${workflow.name} ${workflow.version}`}
-            translate="no"
+            key={`workflow:${workflow.id}`}
+            className={cn(composerInlineTokenClassName, "max-w-[16rem]")}
+            data-testid="agent-inline-workflow-token"
+            role="group"
+            aria-label={`@${workflowRemoveName(workflow)}`}
           >
-            {workflow.version}
+            <span className="min-w-0 truncate" translate="no">@{workflow.name}</span>
+            <span
+              className="shrink-0 text-[10px] font-normal leading-none text-muted-foreground/78"
+              title={`${workflow.name} ${workflow.version}`}
+              translate="no"
+            >
+              {workflow.version}
+            </span>
+            <button
+              type="button"
+              className="-mr-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/35"
+              onClick={() => onRemoveWorkflowMention?.(workflow.id)}
+              disabled={disabled}
+              aria-label={t("workflows.remove", { name: workflowRemoveName(workflow) })}
+            >
+              <X className="h-3 w-3" />
+            </button>
           </span>
-          <button
-            type="button"
-            className="-mr-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/35"
-            onClick={() => onRemoveWorkflowMention?.(workflow.id)}
-            disabled={disabled}
-            aria-label={t("workflows.remove", { name: workflowRemoveName(workflow) })}
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </span>
-      ))}
-      {activeSkills.map((skill) => (
-        <span
-          key={`skill:${skill.name}`}
-          className={cn(composerInlineTokenClassName, "max-w-[14rem]")}
-          data-testid="agent-inline-skill-token"
-          role="group"
-          aria-label={`/${skill.name}`}
-        >
-          <span className="min-w-0 truncate" translate="no">/{skill.name}</span>
-          <button
-            type="button"
-            className="-mr-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/35"
-            onClick={() => onRemoveActiveSkill?.(skill.name)}
-            disabled={disabled}
-            aria-label={t("skills.remove", { name: skill.name })}
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </span>
-      ))}
+        )
+      })}
     </>
   )
 }
