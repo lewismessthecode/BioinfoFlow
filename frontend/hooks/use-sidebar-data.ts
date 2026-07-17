@@ -234,12 +234,14 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     return listenForAgentSessionUpdates((conversation) => {
       if (!isSidebarConversation(conversation)) return
       setProjectConversations((prev) => {
-        const existing = prev.get(conversation.project_id)
-        if (!existing) return prev
-
-        const next = existing.map((item) =>
-          item.id === conversation.id ? { ...item, ...conversation } : item
-        )
+        const existing = prev.get(conversation.project_id) || []
+        const index = existing.findIndex((item) => item.id === conversation.id)
+        const next =
+          index >= 0
+            ? existing.map((item) =>
+                item.id === conversation.id ? { ...item, ...conversation } : item
+              )
+            : [sidebarConversationFromUpdate(conversation), ...existing]
 
         return new Map(prev).set(conversation.project_id, sortAgentSessions(next))
       })
@@ -496,4 +498,27 @@ function isSidebarConversation(conversation: AgentCoreSession) {
     !(typeof lineageParentId === "string" && lineageParentId) &&
     !(typeof metadataParentId === "string" && metadataParentId)
   )
+}
+
+function sidebarConversationFromUpdate(
+  conversation: Pick<
+    AgentCoreSession,
+    "id" | "project_id" | "title" | "created_at" | "updated_at"
+  >,
+): AgentCoreSession {
+  return {
+    id: conversation.id,
+    project_id: conversation.project_id,
+    workspace_id: "",
+    user_id: "",
+    title: conversation.title,
+    role_profile: "bioinformatician",
+    permission_mode: "guarded_auto",
+    automation_mode: "assisted",
+    default_model_profile_id: null,
+    status: "active",
+    metadata: null,
+    created_at: conversation.created_at,
+    updated_at: conversation.updated_at,
+  }
 }

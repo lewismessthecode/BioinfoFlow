@@ -558,6 +558,60 @@ describe("useSidebarData", () => {
     ])
   })
 
+  it("adds newly created default-project sessions to the workspace inbox from update events", async () => {
+    const defaultProject: Project = {
+      id: "project-default",
+      name: "Recent",
+      project_root: "asset://project",
+      storage_mode: "managed",
+      is_default: true,
+    }
+
+    apiRequestMock.mockImplementation(async (path) => {
+      if (path === "/projects") {
+        return { data: [defaultProject], meta: undefined }
+      }
+      if (path === "/projects/default") {
+        return { data: defaultProject, meta: undefined }
+      }
+      if (path === "/agent/sessions") {
+        return { data: [], meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper()
+    const { result } = renderHook(
+      () => ({ sidebar: useSidebarData(tSidebar), project: useProjectContext() }),
+      { wrapper: Wrapper },
+    )
+
+    await waitFor(() =>
+      expect(result.current.sidebar.defaultProject?.id).toBe(defaultProject.id),
+    )
+    await waitFor(() =>
+      expect(result.current.sidebar.inboxConversations).toEqual([]),
+    )
+
+    act(() => {
+      emitAgentSessionUpdated({
+        id: "session-new",
+        project_id: defaultProject.id,
+        title: "Workspace analysis",
+        created_at: "2026-06-04T00:00:00Z",
+        updated_at: "2026-06-04T00:00:05Z",
+      })
+    })
+
+    expect(result.current.sidebar.inboxConversations).toEqual([
+      expect.objectContaining({
+        id: "session-new",
+        project_id: defaultProject.id,
+        title: "Workspace analysis",
+      }),
+    ])
+  })
+
   it("deletes an existing AgentCore session", async () => {
     const project: Project = {
       id: "project-1",
