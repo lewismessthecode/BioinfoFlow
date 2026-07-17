@@ -204,6 +204,35 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("nextflow log")).toBeInTheDocument()
   })
 
+  it("lets wide assistant code blocks shrink inside the transcript column", () => {
+    const longDescription = "Reads FASTA files and computes sequence statistics. ".repeat(12)
+    renderTranscript({
+      events: [
+        event("event-wide-code", 1, "assistant.text.completed", {
+          message_id: "message-1",
+          content: [
+            "```wdl",
+            "version 1.0",
+            "workflow hello_fasta {",
+            "  meta {",
+            `    description: "${longDescription}"`,
+            "  }",
+            "}",
+            "```",
+          ].join("\n"),
+        }),
+      ],
+    })
+
+    const codeBlock = screen.getByTestId("markdown-code-block")
+    const markdownRoot = codeBlock.parentElement
+    const segmentWrapper = markdownRoot?.parentElement
+
+    expect(codeBlock).toHaveClass("max-w-full", "overflow-hidden")
+    expect(markdownRoot).toHaveClass("min-w-0")
+    expect(segmentWrapper).toHaveClass("min-w-0", "max-w-full")
+  })
+
   it("keeps the transcript pinned to the bottom when new content streams in", () => {
     const { rerender } = render(<AgentTranscript timeline={textTimeline("First chunk")} />)
     const scroller = screen.getByTestId("agent-transcript-scroll")

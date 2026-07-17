@@ -232,7 +232,7 @@ function SourceBackedTextSegment({
   )
 
   return (
-    <div>
+    <div className="min-w-0 max-w-full">
       <MarkdownRenderer
         className="text-[15px] leading-7"
         content={segment.textBlock.text}
