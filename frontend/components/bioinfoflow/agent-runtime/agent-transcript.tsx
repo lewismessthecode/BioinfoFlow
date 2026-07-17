@@ -182,28 +182,33 @@ function UserMessageBubble({ turn }: { turn: AgentRuntimeTurn }) {
 
   return (
     <div
-      className="max-w-[76%] rounded-lg border border-border/60 bg-muted/35 px-3.5 py-2.5 text-[15px] leading-6 text-foreground shadow-none"
-      data-testid="agent-user-message"
+      className="flex min-w-0 max-w-[76%] flex-col items-end gap-1.5"
+      data-testid="agent-user-message-shell"
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-        {displayParts.map((part) =>
-          part.type === "text" ? (
-            <span
-              key={part.key}
-              className="min-w-0 whitespace-pre-wrap break-words"
-            >
-              {part.text}
-            </span>
-          ) : (
-            <UserMessageTokenSpan key={part.key} token={part} />
-          ),
-        )}
+      <div
+        className="max-w-full rounded-lg border border-border/60 bg-muted/35 px-3.5 py-2.5 text-[15px] leading-6 text-foreground shadow-none"
+        data-testid="agent-user-message"
+      >
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+          {displayParts.map((part) =>
+            part.type === "text" ? (
+              <span
+                key={part.key}
+                className="min-w-0 whitespace-pre-wrap break-words"
+              >
+                {part.text}
+              </span>
+            ) : (
+              <UserMessageTokenSpan key={part.key} token={part} />
+            ),
+          )}
+        </div>
       </div>
       {timestamp ? (
         <time
           dateTime={timestampDateTime}
           title={absoluteTimestamp ?? timestamp}
-          className="mt-2 block text-right text-[11px] font-normal leading-none text-muted-foreground/64"
+          className="block px-0.5 text-right text-[11px] font-normal leading-none text-muted-foreground/64"
           data-testid="agent-user-message-timestamp"
           suppressHydrationWarning
         >
