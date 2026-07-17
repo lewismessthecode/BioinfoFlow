@@ -121,6 +121,8 @@ export type AgentRuntimeWorkflowRefPart = {
   workflow_id?: string | null
   project_id?: string | null
   scope?: "project" | "global"
+  display_name?: string | null
+  display_version?: string | null
 }
 
 export type AgentRuntimeTextInputPart = {

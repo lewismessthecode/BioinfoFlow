@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -249,7 +249,7 @@ describe("AgentComposer", () => {
     expect(onChange).toHaveBeenCalledWith("")
   })
 
-  it("renders active skill chips and removes them", () => {
+  it("renders active skill tokens inside the composer input surface and removes them", () => {
     const onRemoveActiveSkill = vi.fn()
     render(
       <AgentComposer
@@ -274,9 +274,11 @@ describe("AgentComposer", () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove run-failure-triage" }))
+    const tokenBar = screen.getByTestId("agent-inline-token-bar")
+    expect(screen.queryByTestId("agent-active-skills")).not.toBeInTheDocument()
+    expect(within(tokenBar).getByText("/run-failure-triage")).toBeInTheDocument()
 
-    expect(screen.getByText("/run-failure-triage")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Remove run-failure-triage" }))
     expect(onRemoveActiveSkill).toHaveBeenCalledWith("run-failure-triage")
   })
 
@@ -443,7 +445,7 @@ describe("AgentComposer", () => {
     )
   })
 
-  it("selects and removes a workflow mention chip without keeping the token", () => {
+  it("selects and removes a workflow mention token inside the composer input surface", () => {
     function WorkflowMentionHarness() {
       const [value, setValue] = useState("@rna")
       const [mentions, setMentions] = useState<Array<{
@@ -501,7 +503,13 @@ describe("AgentComposer", () => {
     fireEvent.click(screen.getByTestId("agent-command-option"))
 
     expect(textarea).toHaveValue("")
-    expect(screen.getByText("@rnaseq-quant-mini")).toBeInTheDocument()
+    const tokenBar = screen.getByTestId("agent-inline-token-bar")
+    expect(screen.queryByTestId("agent-active-workflows")).not.toBeInTheDocument()
+    expect(within(tokenBar).getByText("@rnaseq-quant-mini")).toBeInTheDocument()
+    expect(within(tokenBar).getByText("1.2.0")).toHaveAttribute(
+      "title",
+      "rnaseq-quant-mini 1.2.0",
+    )
 
     fireEvent.click(screen.getByRole("button", { name: "Remove rnaseq-quant-mini" }))
     expect(screen.queryByText("@rnaseq-quant-mini")).not.toBeInTheDocument()

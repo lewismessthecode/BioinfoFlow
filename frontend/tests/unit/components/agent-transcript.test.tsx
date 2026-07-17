@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { AgentTranscript } from "@/components/bioinfoflow/agent-runtime/agent-transcript"
@@ -202,6 +202,76 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("First finding")).toBeInTheDocument()
     expect(screen.getByText("Second finding")).toBeInTheDocument()
     expect(screen.getByText("nextflow log")).toBeInTheDocument()
+  })
+
+  it("renders selected skill and workflow tokens in the user bubble", () => {
+    renderTranscript({
+      turn: {
+        ...baseTurn,
+        input_text: "Draft a run plan",
+        active_skill_names: ["nextflow-debugging"],
+        input_parts: [
+          { type: "text", text: "Draft a run plan" },
+          {
+            kind: "workflow_ref",
+            workflow_id: "workflow-rna-12",
+            project_id: "project-1",
+            scope: "project",
+            display_name: "rnaseq-quant-mini",
+            display_version: "1.2.0",
+          } as unknown as NonNullable<AgentRuntimeTurn["input_parts"]>[number],
+        ],
+      },
+    })
+
+    const bubble = screen.getByTestId("agent-user-message")
+    expect(within(bubble).getByText("/nextflow-debugging")).toBeInTheDocument()
+    expect(within(bubble).getByText("@rnaseq-quant-mini")).toBeInTheDocument()
+    expect(within(bubble).getByText("1.2.0")).toHaveAttribute(
+      "title",
+      "rnaseq-quant-mini 1.2.0",
+    )
+    expect(within(bubble).getByText("Draft a run plan")).toBeInTheDocument()
+  })
+
+  it("uses persisted workflow display metadata when backend input parts are sanitized", () => {
+    renderTranscript({
+      turn: {
+        ...baseTurn,
+        input_text: "Explain required inputs",
+        input_parts: [
+          { type: "text", text: "Explain required inputs" },
+          {
+            kind: "workflow_ref",
+            workflow_id: "workflow-wgs-20",
+            project_id: null,
+            scope: "global",
+          },
+        ],
+        model_profile_snapshot: {
+          metadata: {
+            input_display: {
+              workflow_mentions: [
+                {
+                  workflow_id: "workflow-wgs-20",
+                  project_id: null,
+                  scope: "global",
+                  name: "parabricks-wgs",
+                  version: "2.0.0",
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+
+    const bubble = screen.getByTestId("agent-user-message")
+    expect(within(bubble).getByText("@parabricks-wgs")).toBeInTheDocument()
+    expect(within(bubble).getByText("2.0.0")).toHaveAttribute(
+      "title",
+      "parabricks-wgs 2.0.0",
+    )
   })
 
   it("lets wide assistant code blocks shrink inside the transcript column", () => {
