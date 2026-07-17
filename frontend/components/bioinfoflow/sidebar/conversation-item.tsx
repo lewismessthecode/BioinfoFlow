@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
+import { useLocale } from "next-intl"
 import { cn } from "@/lib/utils"
 import { MessageSquare, MoreVertical, Trash2 } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
@@ -11,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { AgentCoreSession } from "@/lib/agent-core"
+import { formatSidebarRelativeDate } from "@/lib/agent-runtime/date-format"
 
 interface ConversationItemProps {
   conversation: AgentCoreSession
@@ -43,11 +45,16 @@ export function ConversationItem({
   tSidebar,
   tCommon,
 }: ConversationItemProps) {
+  const locale = useLocale()
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
   const editInputRef = useRef<HTMLInputElement>(null)
 
   const label = conversation.title || tSidebar("conversationFallback", { index: index + 1 })
+  const dateLabel = formatSidebarRelativeDate(
+    conversation.updated_at || conversation.created_at,
+    locale,
+  )
 
   const startRename = () => {
     setIsEditing(true)
@@ -107,7 +114,16 @@ export function ConversationItem({
           ) : (
             <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 text-sidebar-foreground/72" />
           )}
-          <span className="truncate leading-snug py-0.5">{label}</span>
+          <span className="min-w-0 flex-1 truncate py-0.5 leading-snug">{label}</span>
+          {dateLabel ? (
+            <span
+              aria-hidden="true"
+              className="ml-auto shrink-0 text-[11px] font-normal leading-none tabular-nums text-sidebar-foreground/42"
+              title={dateLabel}
+            >
+              {dateLabel}
+            </span>
+          ) : null}
         </button>
       )}
       <DropdownMenu>
