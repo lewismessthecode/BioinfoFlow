@@ -397,6 +397,24 @@ describe("AgentTranscript", () => {
     vi.useRealTimers()
   })
 
+  it("places the user timestamp outside the message bubble", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-07-17T12:00:00"))
+    renderTranscript({
+      turn: {
+        ...baseTurn,
+        created_at: "2026-07-17T10:31:00",
+      },
+    })
+
+    const shell = screen.getByTestId("agent-user-message-shell")
+    const bubble = screen.getByTestId("agent-user-message")
+    const timestamp = screen.getByTestId("agent-user-message-timestamp")
+    expect(shell).toContainElement(timestamp)
+    expect(bubble).not.toContainElement(timestamp)
+    vi.useRealTimers()
+  })
+
   it("shows the assistant completion time below completed responses", () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-07-17T12:00:00"))
