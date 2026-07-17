@@ -10,7 +10,7 @@ import {
   Copy,
   RotateCcw,
 } from "@/lib/icons"
-import { useTranslations } from "next-intl"
+import { useLocale, useTranslations } from "next-intl"
 
 import { ScrollToBottom } from "@/components/bioinfoflow/chat/scroll-to-bottom"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
@@ -22,6 +22,7 @@ import type {
   AgentRuntimeTurn,
   AgentRuntimeWorkflowRefPart,
 } from "@/lib/agent-runtime"
+import { formatTranscriptMessageDateTime } from "@/lib/agent-runtime/date-format"
 import { cn } from "@/lib/utils"
 import { ActivityGroup } from "./activity-group"
 import {
@@ -168,7 +169,9 @@ export function AgentTranscript({
 }
 
 function UserMessageBubble({ turn }: { turn: AgentRuntimeTurn }) {
+  const locale = useLocale()
   const tokens = userMessageTokensForTurn(turn)
+  const timestamp = formatTranscriptMessageDateTime(turn.created_at, locale)
 
   return (
     <div
@@ -197,6 +200,14 @@ function UserMessageBubble({ turn }: { turn: AgentRuntimeTurn }) {
           {turn.input_text}
         </span>
       </div>
+      {timestamp ? (
+        <div
+          className="mt-1.5 text-right text-[11px] font-normal leading-none text-muted-foreground/64"
+          data-testid="agent-user-message-timestamp"
+        >
+          {timestamp}
+        </div>
+      ) : null}
     </div>
   )
 }

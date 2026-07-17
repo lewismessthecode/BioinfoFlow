@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { AgentTranscript } from "@/components/bioinfoflow/agent-runtime/agent-transcript"
 import { buildAgentRuntimeTimeline } from "@/lib/agent-runtime"
@@ -8,7 +8,10 @@ import type {
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
 
+const nextIntlMock = vi.hoisted(() => ({ locale: "zh-CN" }))
+
 vi.mock("next-intl", () => ({
+  useLocale: () => nextIntlMock.locale,
   useTranslations: () => (key: string, values?: Record<string, string | number>) => {
     const labels: Record<string, string> = {
       pendingResponse: "Working on it...",
@@ -184,6 +187,10 @@ function textTimeline(text: string) {
 }
 
 describe("AgentTranscript", () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it("marks long conversations when only the recent activity window is loaded", () => {
     renderTranscript({ eventWindowLimited: true })
 
@@ -272,6 +279,38 @@ describe("AgentTranscript", () => {
       "title",
       "parabricks-wgs 2.0.0",
     )
+  })
+
+  it("shows a weekday and time for recent user messages", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-07-17T12:00:00"))
+    renderTranscript({
+      turn: {
+        ...baseTurn,
+        created_at: "2026-07-16T10:11:00",
+      },
+    })
+
+    expect(screen.getByTestId("agent-user-message-timestamp")).toHaveTextContent(
+      "星期四 10:11",
+    )
+    vi.useRealTimers()
+  })
+
+  it("shows a month day and time for older user messages", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-07-17T12:00:00"))
+    renderTranscript({
+      turn: {
+        ...baseTurn,
+        created_at: "2026-07-01T12:18:00",
+      },
+    })
+
+    expect(screen.getByTestId("agent-user-message-timestamp")).toHaveTextContent(
+      "7月1日 12:18",
+    )
+    vi.useRealTimers()
   })
 
   it("lets wide assistant code blocks shrink inside the transcript column", () => {
