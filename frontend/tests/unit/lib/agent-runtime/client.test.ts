@@ -101,6 +101,61 @@ describe("agent runtime client", () => {
     })
   })
 
+  it("strips workflow display fields from API input parts while preserving turn metadata", async () => {
+    await createAgentRuntimeTurn({
+      sessionId: "session-1",
+      inputText: "Draft a run plan",
+      inputParts: [
+        { type: "text", text: "Draft a run plan" },
+        {
+          kind: "workflow_ref",
+          workflow_id: "workflow-rna-12",
+          project_id: "project-1",
+          scope: "project",
+          display_name: "rnaseq-quant-mini",
+          display_version: "1.2.0",
+        } as never,
+      ],
+      metadata: {
+        input_display: {
+          workflow_mentions: [
+            {
+              workflow_id: "workflow-rna-12",
+              project_id: "project-1",
+              scope: "project",
+              name: "rnaseq-quant-mini",
+              version: "1.2.0",
+            },
+          ],
+        },
+      },
+    } as never)
+
+    const body = JSON.parse(apiRequestMock.mock.calls[0][1].body)
+    expect(body.input_parts).toEqual([
+      { type: "text", text: "Draft a run plan" },
+      {
+        kind: "workflow_ref",
+        workflow_id: "workflow-rna-12",
+        project_id: "project-1",
+        scope: "project",
+      },
+    ])
+    expect(body.metadata).toEqual({
+      input_display: {
+        workflow_mentions: [
+          {
+            workflow_id: "workflow-rna-12",
+            project_id: "project-1",
+            scope: "project",
+            name: "rnaseq-quant-mini",
+            version: "1.2.0",
+          },
+        ],
+      },
+    })
+  })
+
   it("serializes a selected remote execution target when creating a session", async () => {
     await createAgentRuntimeSession({
       title: "Remote session",

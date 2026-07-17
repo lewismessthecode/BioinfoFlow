@@ -316,6 +316,36 @@ describe("useAgentRuntime", () => {
     )
   })
 
+  it("passes turn display metadata through when creating a turn", async () => {
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    const metadata = {
+      input_display: {
+        workflow_mentions: [
+          {
+            workflow_id: "workflow-rna-12",
+            project_id: "project-1",
+            scope: "project",
+            name: "rnaseq-quant-mini",
+            version: "1.2.0",
+          },
+        ],
+      },
+    }
+
+    await act(async () => {
+      await result.current.send("Draft a run plan", { metadata } as never)
+    })
+
+    expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata }),
+    )
+  })
+
   it("stores the selected remote connection on newly created session metadata", async () => {
     mocks.createAgentRuntimeSession.mockResolvedValue({
       ...session,

@@ -20,6 +20,7 @@ import type {
   AgentRuntimeTimelineEntry,
   AgentRuntimeTranscriptSegment,
   AgentRuntimeTurn,
+  AgentRuntimeWorkflowRefPart,
 } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 import { ActivityGroup } from "./activity-group"
@@ -100,9 +101,7 @@ export function AgentTranscript({
               )}
             >
               <div className="flex justify-end">
-                <div className="max-w-[76%] rounded-lg border border-border/60 bg-muted/35 px-3.5 py-2.5 text-[15px] leading-6 text-foreground shadow-none">
-                  {entry.turn.input_text}
-                </div>
+                <UserMessageBubble turn={entry.turn} />
               </div>
               <div className="flex justify-start">
                 <div className="w-full min-w-0 max-w-[min(100%,46rem)] px-0">
@@ -166,6 +165,153 @@ export function AgentTranscript({
       />
     </div>
   )
+}
+
+function UserMessageBubble({ turn }: { turn: AgentRuntimeTurn }) {
+  const tokens = userMessageTokensForTurn(turn)
+
+  return (
+    <div
+      className="max-w-[76%] rounded-lg border border-border/60 bg-muted/35 px-3.5 py-2.5 text-[15px] leading-6 text-foreground shadow-none"
+      data-testid="agent-user-message"
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+        {tokens.map((token) => (
+          <span
+            key={token.key}
+            className="inline-flex min-h-6 max-w-full items-center gap-1 rounded-[6px] border border-border/60 bg-background/70 px-1.5 py-0.5 text-[12px] font-medium leading-4 text-foreground/78"
+            data-token-kind={token.kind}
+          >
+            <span className="min-w-0 truncate">{token.label}</span>
+            {token.version ? (
+              <span
+                className="shrink-0 text-[10px] font-normal leading-none text-muted-foreground/78"
+                title={token.title}
+              >
+                {token.version}
+              </span>
+            ) : null}
+          </span>
+        ))}
+        <span className="min-w-0 whitespace-pre-wrap break-words">
+          {turn.input_text}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+type UserMessageToken = {
+  key: string
+  kind: "skill" | "workflow"
+  label: string
+  version?: string | null
+  title?: string
+}
+
+type WorkflowDisplayMetadata = {
+  workflow_id?: string | null
+  project_id?: string | null
+  scope?: "project" | "global"
+  name: string
+  version?: string | null
+}
+
+function userMessageTokensForTurn(turn: AgentRuntimeTurn): UserMessageToken[] {
+  const workflowDisplays = workflowDisplayMetadataFromTurn(turn)
+  const workflowTokens = (turn.input_parts ?? [])
+    .map((part, index) =>
+      workflowTokenForInputPart(part, index, workflowDisplays),
+    )
+    .filter((token): token is UserMessageToken => Boolean(token))
+  const skillTokens = Array.from(new Set(turn.active_skill_names ?? []))
+    .filter((name) => name.trim().length > 0)
+    .map((name) => ({
+      key: `skill:${name}`,
+      kind: "skill" as const,
+      label: `/${name}`,
+    }))
+  return [...workflowTokens, ...skillTokens]
+}
+
+function workflowTokenForInputPart(
+  part: NonNullable<AgentRuntimeTurn["input_parts"]>[number],
+  index: number,
+  workflowDisplays: WorkflowDisplayMetadata[],
+): UserMessageToken | null {
+  if (!("kind" in part) || part.kind !== "workflow_ref") return null
+  const display = workflowDisplayForPart(part, workflowDisplays)
+  const name = display?.name || "workflow"
+  const version = display?.version?.trim() || null
+  return {
+    key: `workflow:${part.workflow_id ?? part.project_id ?? part.scope ?? index}:${index}`,
+    kind: "workflow",
+    label: `@${name}`,
+    version,
+    title: version ? `${name} ${version}` : undefined,
+  }
+}
+
+function workflowDisplayForPart(
+  part: AgentRuntimeWorkflowRefPart,
+  workflowDisplays: WorkflowDisplayMetadata[],
+): WorkflowDisplayMetadata | null {
+  const directName = part.display_name?.trim()
+  if (directName) {
+    return {
+      workflow_id: part.workflow_id ?? null,
+      project_id: part.project_id ?? null,
+      scope: part.scope,
+      name: directName,
+      version: part.display_version?.trim() || null,
+    }
+  }
+  return workflowDisplays.find((display) => workflowDisplayMatchesPart(display, part)) ?? null
+}
+
+function workflowDisplayMatchesPart(
+  display: WorkflowDisplayMetadata,
+  part: AgentRuntimeWorkflowRefPart,
+) {
+  if (part.workflow_id && display.workflow_id === part.workflow_id) return true
+  if (part.workflow_id) return false
+  const partProjectId = part.project_id ?? null
+  const displayProjectId = display.project_id ?? null
+  const scopeMatches = part.scope ? display.scope === part.scope : true
+  return displayProjectId === partProjectId && scopeMatches
+}
+
+function workflowDisplayMetadataFromTurn(
+  turn: AgentRuntimeTurn,
+): WorkflowDisplayMetadata[] {
+  const metadata = turn.model_profile_snapshot?.metadata
+  if (!isRecord(metadata)) return []
+  const inputDisplay = metadata.input_display
+  if (!isRecord(inputDisplay)) return []
+  const workflowMentions = inputDisplay.workflow_mentions
+  if (!Array.isArray(workflowMentions)) return []
+  return workflowMentions.flatMap((item) => {
+    if (!isRecord(item) || typeof item.name !== "string" || !item.name.trim()) {
+      return []
+    }
+    return [
+      {
+        workflow_id: nullableString(item.workflow_id),
+        project_id: nullableString(item.project_id),
+        scope: item.scope === "project" || item.scope === "global" ? item.scope : undefined,
+        name: item.name.trim(),
+        version: nullableString(item.version),
+      },
+    ]
+  })
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null
 }
 
 function TranscriptSegment({

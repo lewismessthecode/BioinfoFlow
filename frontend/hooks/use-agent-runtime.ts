@@ -427,6 +427,7 @@ export function useAgentRuntime(
         activeSkillNames?: string[] | null
         remoteConnectionId?: string | null
         executionScope?: AgentExecutionScope | null
+        metadata?: Record<string, unknown> | null
       },
     ) => {
       const text = inputText.trim()
@@ -473,6 +474,7 @@ export function useAgentRuntime(
           modelSelection: options?.modelSelection,
           executionTarget,
           executionScope,
+          metadata: options?.metadata,
         })
         dispatch({ type: "turn.upsert", turn })
         await refreshState(session.id)

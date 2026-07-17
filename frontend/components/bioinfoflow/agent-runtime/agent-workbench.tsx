@@ -714,6 +714,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             sessionId: submissionSessionId,
             projectId,
           })
+        const metadata = inputDisplayMetadataFromInputParts(inputParts)
         setOptimisticTurns((current) => {
           if (current.some((turn) => turn.id === nextOptimisticTurn.id)) {
             return current
@@ -729,6 +730,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           inputParts,
           activeSkillNames: activeSkillNamesSnapshot,
           executionScope,
+          metadata,
         }).then(() => {
           setOptimisticTurns((current) =>
             current.filter((turn) => turn.id !== nextOptimisticTurn.id),
@@ -1536,6 +1538,7 @@ function createOptimisticTurn({
   localPendingInterrupt?: boolean
 }): AgentRuntimeTurn {
   const now = new Date().toISOString()
+  const metadata = inputDisplayMetadataFromInputParts(inputParts)
   return {
     id: `optimistic-${now}`,
     session_id: sessionId,
@@ -1547,7 +1550,7 @@ function createOptimisticTurn({
     active_skill_names: activeSkillNames,
     status: "queued",
     model_selection: null,
-    model_profile_snapshot: null,
+    model_profile_snapshot: metadata ? { metadata } : null,
     final_text: null,
     token_usage: null,
     termination_reason: null,
@@ -1733,7 +1736,31 @@ function workflowMentionInputPart(
     workflow_id: workflow.id,
     project_id: workflow.projectId ?? null,
     scope: workflow.scope,
+    display_name: workflow.name,
+    display_version: workflow.version,
   }
+}
+
+function inputDisplayMetadataFromInputParts(
+  inputParts: AgentRuntimeInputPart[],
+): Record<string, unknown> | null {
+  const workflowMentions = inputParts
+    .map((part) => {
+      if (!("kind" in part) || part.kind !== "workflow_ref") return null
+      const name = part.display_name?.trim()
+      if (!name) return null
+      return {
+        workflow_id: part.workflow_id ?? null,
+        project_id: part.project_id ?? null,
+        scope: part.scope,
+        name,
+        version: part.display_version?.trim() || null,
+      }
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+
+  if (!workflowMentions.length) return null
+  return { input_display: { workflow_mentions: workflowMentions } }
 }
 
 function workflowMentionScopeKey(projectId?: string | null) {

@@ -219,6 +219,7 @@ export const createAgentRuntimeTurn = async (input: {
   modelSelection?: AgentModelSelection | null
   executionTarget?: AgentExecutionTarget | null
   executionScope?: AgentExecutionScope | null
+  metadata?: Record<string, unknown> | null
 }) => {
   const response = await apiRequest<AgentRuntimeTurn>(
     `/agent/sessions/${input.sessionId}/turns`,
@@ -226,17 +227,38 @@ export const createAgentRuntimeTurn = async (input: {
       method: "POST",
       body: JSON.stringify({
         input_text: input.inputText,
-        input_parts: input.inputParts,
+        input_parts: agentRuntimeInputPartsForRequest(input.inputParts),
         ...(input.activeSkillNames?.length
           ? { active_skill_names: input.activeSkillNames }
           : {}),
         model_selection: input.modelSelection,
         execution_target: agentExecutionTargetForRequest(input.executionTarget),
         execution_scope: agentExecutionScopeForRequest(input.executionScope),
+        metadata: input.metadata,
       }),
     },
   )
   return response.data
+}
+
+function agentRuntimeInputPartsForRequest(
+  inputParts?: AgentRuntimeInputPart[] | null,
+): AgentRuntimeInputPart[] | null | undefined {
+  if (!inputParts) return inputParts
+  return inputParts.map((part) => {
+    if (!("kind" in part) || part.kind !== "workflow_ref") return part
+    const requestPart: AgentRuntimeInputPart = { kind: "workflow_ref" }
+    if (Object.hasOwn(part, "workflow_id")) {
+      requestPart.workflow_id = part.workflow_id ?? null
+    }
+    if (Object.hasOwn(part, "project_id")) {
+      requestPart.project_id = part.project_id ?? null
+    }
+    if (Object.hasOwn(part, "scope")) {
+      requestPart.scope = part.scope
+    }
+    return requestPart
+  })
 }
 
 export const interruptAgentRuntimeTurn = async (turnId: string) => {

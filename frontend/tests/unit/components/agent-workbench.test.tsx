@@ -1259,7 +1259,7 @@ describe("AgentWorkbench", () => {
   })
 
   it("sends selected slash skills with the next turn", async () => {
-    const send = vi.fn(async () => undefined)
+    const send = vi.fn(() => new Promise(() => {}))
     setupRuntime({ send })
     apiRequestMock.mockImplementation((path: string) => {
       if (path === "/agent/skills") {
@@ -1295,11 +1295,11 @@ describe("AgentWorkbench", () => {
         expect.objectContaining({ activeSkillNames: ["nextflow-debugging"] }),
       ),
     )
-    expect(screen.queryByText("/nextflow-debugging")).not.toBeInTheDocument()
+    expect(screen.getByText("/nextflow-debugging")).toBeInTheDocument()
   })
 
   it("sends a selected project workflow version with the next turn", async () => {
-    const send = vi.fn(async () => undefined)
+    const send = vi.fn(() => new Promise(() => {}))
     setupRuntime({ send })
     apiRequestMock.mockImplementation((path: string) => {
       if (path === "/agent/skills") return Promise.resolve({ data: { skills: [] } })
@@ -1365,16 +1365,32 @@ describe("AgentWorkbench", () => {
         expect.objectContaining({
           inputParts: [
             { type: "text", text: "Draft a run plan" },
-            {
+            expect.objectContaining({
               kind: "workflow_ref",
               workflow_id: "workflow-rna-12",
               project_id: "project-1",
               scope: "project",
-            },
+              display_name: "rnaseq-quant-mini",
+              display_version: "1.2.0",
+            }),
           ],
+          metadata: {
+            input_display: {
+              workflow_mentions: [
+                {
+                  workflow_id: "workflow-rna-12",
+                  project_id: "project-1",
+                  scope: "project",
+                  name: "rnaseq-quant-mini",
+                  version: "1.2.0",
+                },
+              ],
+            },
+          },
         }),
       ),
     )
+    expect(screen.getByText("@rnaseq-quant-mini")).toBeInTheDocument()
   })
 
   it("clears stale workflow options while project workflow mentions reload", async () => {
@@ -1492,13 +1508,28 @@ describe("AgentWorkbench", () => {
         expect.objectContaining({
           inputParts: [
             { type: "text", text: "Explain required inputs" },
-            {
+            expect.objectContaining({
               kind: "workflow_ref",
               workflow_id: "workflow-wgs-20",
               project_id: null,
               scope: "global",
-            },
+              display_name: "parabricks-wgs",
+              display_version: "2.0.0",
+            }),
           ],
+          metadata: {
+            input_display: {
+              workflow_mentions: [
+                {
+                  workflow_id: "workflow-wgs-20",
+                  project_id: null,
+                  scope: "global",
+                  name: "parabricks-wgs",
+                  version: "2.0.0",
+                },
+              ],
+            },
+          },
         }),
       ),
     )
