@@ -274,9 +274,9 @@ describe("AgentComposer", () => {
       />,
     )
 
-    const tokenBar = screen.getByTestId("agent-inline-token-bar")
+    const tokenFlow = screen.getByTestId("agent-inline-token-flow")
     expect(screen.queryByTestId("agent-active-skills")).not.toBeInTheDocument()
-    expect(within(tokenBar).getByText("/run-failure-triage")).toBeInTheDocument()
+    expect(within(tokenFlow).getByText("/run-failure-triage")).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Remove run-failure-triage" }))
     expect(onRemoveActiveSkill).toHaveBeenCalledWith("run-failure-triage")
@@ -503,16 +503,51 @@ describe("AgentComposer", () => {
     fireEvent.click(screen.getByTestId("agent-command-option"))
 
     expect(textarea).toHaveValue("")
-    const tokenBar = screen.getByTestId("agent-inline-token-bar")
+    const tokenFlow = screen.getByTestId("agent-inline-token-flow")
     expect(screen.queryByTestId("agent-active-workflows")).not.toBeInTheDocument()
-    expect(within(tokenBar).getByText("@rnaseq-quant-mini")).toBeInTheDocument()
-    expect(within(tokenBar).getByText("1.2.0")).toHaveAttribute(
+    expect(within(tokenFlow).getByText("@rnaseq-quant-mini")).toBeInTheDocument()
+    expect(within(tokenFlow).getByText("1.2.0")).toHaveAttribute(
       "title",
       "rnaseq-quant-mini 1.2.0",
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove rnaseq-quant-mini" }))
+    fireEvent.click(screen.getByRole("button", { name: "Remove rnaseq-quant-mini 1.2.0" }))
     expect(screen.queryByText("@rnaseq-quant-mini")).not.toBeInTheDocument()
+  })
+
+  it("removes the previous inline token with backspace at the input start", () => {
+    const onRemoveWorkflowMention = vi.fn()
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        activeWorkflowMentions={[
+          {
+            id: "workflow-rna-12",
+            name: "rnaseq-quant-mini",
+            version: "1.2.0",
+            engine: "nextflow",
+            source: "local",
+            description: "RNA-seq quantification.",
+            scope: "global",
+            projectId: null,
+          },
+        ]}
+        onRemoveWorkflowMention={onRemoveWorkflowMention}
+      />,
+    )
+
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    textarea.setSelectionRange(0, 0)
+    fireEvent.keyDown(textarea, { key: "Backspace" })
+
+    expect(onRemoveWorkflowMention).toHaveBeenCalledWith("workflow-rna-12")
   })
 
   it("names the textarea independently from the visible placeholder", () => {

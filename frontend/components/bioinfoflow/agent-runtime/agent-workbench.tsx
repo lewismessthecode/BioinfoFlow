@@ -133,6 +133,7 @@ const SIDECAR_TABS: Array<{
 type PendingSubmission = {
   text: string
   inputParts: AgentRuntimeInputPart[]
+  inputDisplayParts?: AgentInputDisplayPart[] | null
   activeSkillNames: string[]
   modelSelection: AgentModelSelection | null
   executionScope: AgentExecutionScope
@@ -146,6 +147,18 @@ type WorkflowMentionLoadState = {
   loading: boolean
   error: string | null
 }
+
+type AgentInputDisplayPart =
+  | { type: "text"; text: string }
+  | {
+      type: "workflow"
+      workflow_id?: string | null
+      project_id?: string | null
+      scope?: "project" | "global"
+      name: string
+      version?: string | null
+    }
+  | { type: "skill"; name: string }
 
 export type AgentWorkbenchHandle = {
   focusInput: () => void
@@ -696,6 +709,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         text: string,
         inputParts: AgentRuntimeInputPart[],
         activeSkillNamesSnapshot: string[],
+        inputDisplayParts?: AgentInputDisplayPart[] | null,
         modelSelection = selectedModel,
         executionScope: AgentExecutionScope = executionScopeForSelection(
           executionSelection,
@@ -710,11 +724,16 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           createOptimisticTurn({
             text: trimmedText,
             inputParts,
+            inputDisplayParts,
             activeSkillNames: activeSkillNamesSnapshot,
             sessionId: submissionSessionId,
             projectId,
           })
-        const metadata = inputDisplayMetadataFromInputParts(inputParts)
+        const metadata = inputDisplayMetadataFromInputParts(
+          inputParts,
+          activeSkillNamesSnapshot,
+          inputDisplayParts,
+        )
         setOptimisticTurns((current) => {
           if (current.some((turn) => turn.id === nextOptimisticTurn.id)) {
             return current
@@ -754,6 +773,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         text: string,
         inputParts: AgentRuntimeInputPart[],
         activeSkillNamesSnapshot: string[],
+        inputDisplayParts?: AgentInputDisplayPart[] | null,
         modelSelection = selectedModel,
       ) => {
         const trimmedText = text.trim()
@@ -764,6 +784,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             trimmedText,
             inputParts,
             activeSkillNamesSnapshot,
+            inputDisplayParts,
             modelSelection,
             executionScope,
           )
@@ -774,6 +795,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           const nextOptimisticTurn = createOptimisticTurn({
             text: trimmedText,
             inputParts,
+            inputDisplayParts,
             activeSkillNames: activeSkillNamesSnapshot,
             sessionId: submissionSessionId,
             projectId,
@@ -786,6 +808,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             {
               text: trimmedText,
               inputParts,
+              inputDisplayParts,
               activeSkillNames: activeSkillNamesSnapshot,
               modelSelection,
               executionScope,
@@ -800,6 +823,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           const nextOptimisticTurn = createOptimisticTurn({
             text: trimmedText,
             inputParts,
+            inputDisplayParts,
             activeSkillNames: activeSkillNamesSnapshot,
             sessionId: submissionSessionId,
             projectId,
@@ -815,6 +839,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setPendingInterruptSubmission({
             text: trimmedText,
             inputParts,
+            inputDisplayParts,
             activeSkillNames: activeSkillNamesSnapshot,
             modelSelection,
             executionScope,
@@ -830,6 +855,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             trimmedText,
             inputParts,
             activeSkillNamesSnapshot,
+            inputDisplayParts,
             modelSelection,
             executionScope,
           )
@@ -870,6 +896,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           next.text,
           next.inputParts,
           next.activeSkillNames,
+          next.inputDisplayParts,
           next.modelSelection,
           next.executionScope,
           next.optimisticTurn,
@@ -901,6 +928,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             next.text,
             next.inputParts,
             next.activeSkillNames,
+            next.inputDisplayParts,
             next.modelSelection,
             next.executionScope,
             next.optimisticTurn,
@@ -932,7 +960,19 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         ...contextAttachments,
       ]
       const activeSkillNamesSnapshot = [...activeSkillNames]
-      submitTurn(text, inputParts, activeSkillNamesSnapshot, selectedModel)
+      const inputDisplayParts = inputDisplayPartsForSubmission({
+        text,
+        workflowDisplayParts: workflowInput.displayParts,
+        activeWorkflowMentions: scopedActiveWorkflowMentions,
+        activeSkillNames: activeSkillNamesSnapshot,
+      })
+      submitTurn(
+        text,
+        inputParts,
+        activeSkillNamesSnapshot,
+        inputDisplayParts,
+        selectedModel,
+      )
       setInput("")
       setContextAttachments([])
       setActiveSkillNames([])
@@ -945,9 +985,15 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         if (!text) return
         const inputParts =
           turn.input_parts && turn.input_parts.length
-            ? turn.input_parts
+            ? retryInputPartsForTurn(turn)
             : [{ type: "text" as const, text }]
-        submitTurn(text, inputParts, turn.active_skill_names ?? [], turn.model_selection ?? null)
+        submitTurn(
+          text,
+          inputParts,
+          turn.active_skill_names ?? [],
+          inputDisplayPartsFromTurn(turn),
+          turn.model_selection ?? null,
+        )
       },
       [submitTurn],
     )
@@ -1523,6 +1569,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 function createOptimisticTurn({
   text,
   inputParts,
+  inputDisplayParts,
   activeSkillNames,
   sessionId,
   projectId,
@@ -1531,6 +1578,7 @@ function createOptimisticTurn({
 }: {
   text: string
   inputParts: AgentRuntimeInputPart[]
+  inputDisplayParts?: AgentInputDisplayPart[] | null
   activeSkillNames: string[]
   sessionId: string
   projectId?: string | null
@@ -1538,7 +1586,11 @@ function createOptimisticTurn({
   localPendingInterrupt?: boolean
 }): AgentRuntimeTurn {
   const now = new Date().toISOString()
-  const metadata = inputDisplayMetadataFromInputParts(inputParts)
+  const metadata = inputDisplayMetadataFromInputParts(
+    inputParts,
+    activeSkillNames,
+    inputDisplayParts,
+  )
   return {
     id: `optimistic-${now}`,
     session_id: sessionId,
@@ -1703,21 +1755,46 @@ function workflowContextInputFromComposerValue({
   value: string
   projectId?: string | null
   label: string
-}): { text: string; workflowParts: AgentRuntimeInputPart[] } {
+}): {
+  text: string
+  workflowParts: AgentRuntimeInputPart[]
+  displayParts: AgentInputDisplayPart[] | null
+} {
   let hasWorkflowMention = false
+  const displayParts: AgentInputDisplayPart[] = []
+  let displayCursor = 0
   const text = value
-    .replace(WORKFLOW_MENTION_PATTERN, (_match, prefix: string) => {
+    .replace(WORKFLOW_MENTION_PATTERN, (_match, prefix: string, offset: number) => {
       hasWorkflowMention = true
+      const tokenStart = offset + prefix.length
+      if (tokenStart > displayCursor) {
+        displayParts.push({ type: "text", text: value.slice(displayCursor, tokenStart) })
+      }
+      displayParts.push({
+        type: "workflow",
+        project_id: projectId || null,
+        scope: projectId ? "project" : "global",
+        name: "workflow",
+        version: null,
+      })
+      displayCursor = tokenStart + "@workflow".length
       return prefix
     })
     .replace(/\s+([,.!?;:])/g, "$1")
     .replace(/\s+/g, " ")
     .trim()
 
-  if (!hasWorkflowMention) return { text: value.trim(), workflowParts: [] }
+  if (!hasWorkflowMention) {
+    return { text: value.trim(), workflowParts: [], displayParts: null }
+  }
+
+  if (displayCursor < value.length) {
+    displayParts.push({ type: "text", text: value.slice(displayCursor) })
+  }
 
   return {
     text: text || label,
+    displayParts: trimInputDisplayTextParts(displayParts),
     workflowParts: [
       {
         kind: "workflow_ref",
@@ -1726,6 +1803,51 @@ function workflowContextInputFromComposerValue({
       },
     ],
   }
+}
+
+function inputDisplayPartsForSubmission({
+  text,
+  workflowDisplayParts,
+  activeWorkflowMentions,
+  activeSkillNames,
+}: {
+  text: string
+  workflowDisplayParts?: AgentInputDisplayPart[] | null
+  activeWorkflowMentions: AgentRuntimeWorkflowMention[]
+  activeSkillNames: string[]
+}): AgentInputDisplayPart[] | null {
+  const parts: AgentInputDisplayPart[] = [
+    ...activeWorkflowMentions.map((workflow) => ({
+      type: "workflow" as const,
+      workflow_id: workflow.id,
+      project_id: workflow.projectId ?? null,
+      scope: workflow.scope,
+      name: workflow.name,
+      version: workflow.version,
+    })),
+    ...activeSkillNames.map((name) => ({ type: "skill" as const, name })),
+    ...(workflowDisplayParts?.length ? workflowDisplayParts : [{ type: "text" as const, text }]),
+  ]
+  const trimmedParts = trimInputDisplayTextParts(parts)
+  return trimmedParts.some((part) => part.type !== "text") ? trimmedParts : null
+}
+
+function trimInputDisplayTextParts(parts: AgentInputDisplayPart[]) {
+  const nextParts = parts
+    .map((part) => {
+      if (part.type !== "text") return part
+      return { ...part, text: part.text.replace(/\s+/g, " ") }
+    })
+    .filter((part) => part.type !== "text" || part.text.length > 0)
+  const firstText = nextParts[0]
+  if (firstText?.type === "text") {
+    firstText.text = firstText.text.trimStart()
+  }
+  const lastText = nextParts.at(-1)
+  if (lastText?.type === "text") {
+    lastText.text = lastText.text.trimEnd()
+  }
+  return nextParts.filter((part) => part.type !== "text" || part.text.length > 0)
 }
 
 function workflowMentionInputPart(
@@ -1743,6 +1865,8 @@ function workflowMentionInputPart(
 
 function inputDisplayMetadataFromInputParts(
   inputParts: AgentRuntimeInputPart[],
+  activeSkillNames: string[] = [],
+  inputDisplayParts?: AgentInputDisplayPart[] | null,
 ): Record<string, unknown> | null {
   const workflowMentions = inputParts
     .map((part) => {
@@ -1759,8 +1883,160 @@ function inputDisplayMetadataFromInputParts(
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item))
 
-  if (!workflowMentions.length) return null
-  return { input_display: { workflow_mentions: workflowMentions } }
+  const inlineParts = normalizeInputDisplayParts(inputDisplayParts)
+  const inputDisplay: Record<string, unknown> = {}
+  if (workflowMentions.length) inputDisplay.workflow_mentions = workflowMentions
+  if (inlineParts.length) inputDisplay.inline_parts = inlineParts
+  if (!Object.keys(inputDisplay).length && activeSkillNames.length) {
+    inputDisplay.inline_parts = normalizeInputDisplayParts(
+      inputDisplayPartsForSubmission({
+        text: "",
+        workflowDisplayParts: null,
+        activeWorkflowMentions: [],
+        activeSkillNames,
+      }),
+    )
+  }
+  return Object.keys(inputDisplay).length ? { input_display: inputDisplay } : null
+}
+
+function normalizeInputDisplayParts(inputDisplayParts?: AgentInputDisplayPart[] | null) {
+  if (!inputDisplayParts?.length) return []
+  return inputDisplayParts.flatMap((part) => {
+    if (part.type === "text") {
+      return part.text ? [{ type: "text", text: part.text }] : []
+    }
+    if (part.type === "skill") {
+      const name = part.name.trim()
+      return name ? [{ type: "skill", name }] : []
+    }
+    const name = part.name.trim()
+    if (!name) return []
+    return [
+      {
+        type: "workflow",
+        workflow_id: part.workflow_id ?? null,
+        project_id: part.project_id ?? null,
+        scope: part.scope,
+        name,
+        version: part.version?.trim() || null,
+      },
+    ]
+  })
+}
+
+type WorkflowInputDisplayMetadata = {
+  workflow_id?: string | null
+  project_id?: string | null
+  scope?: "project" | "global"
+  name: string
+  version?: string | null
+}
+
+function retryInputPartsForTurn(turn: AgentRuntimeTurn): AgentRuntimeInputPart[] {
+  const inputParts = turn.input_parts ?? []
+  const workflowDisplays = workflowInputDisplayMetadataFromTurn(turn)
+  if (!workflowDisplays.length) return inputParts
+
+  return inputParts.map((part) => {
+    if (!("kind" in part) || part.kind !== "workflow_ref" || part.display_name) {
+      return part
+    }
+    const display = workflowDisplays.find((item) =>
+      workflowDisplayMatchesInputPart(item, part),
+    )
+    if (!display) return part
+    return {
+      ...part,
+      display_name: display.name,
+      display_version: display.version ?? null,
+    }
+  })
+}
+
+function workflowInputDisplayMetadataFromTurn(
+  turn: AgentRuntimeTurn,
+): WorkflowInputDisplayMetadata[] {
+  const metadata = turn.model_profile_snapshot?.metadata
+  if (!isRecord(metadata)) return []
+  const inputDisplay = metadata.input_display
+  if (!isRecord(inputDisplay)) return []
+  const workflowMentions = inputDisplay.workflow_mentions
+  if (!Array.isArray(workflowMentions)) return []
+
+  return workflowMentions.flatMap((item) => {
+    if (!isRecord(item) || typeof item.name !== "string" || !item.name.trim()) {
+      return []
+    }
+    return [
+      {
+        workflow_id: nullableString(item.workflow_id),
+        project_id: nullableString(item.project_id),
+        scope: item.scope === "project" || item.scope === "global" ? item.scope : undefined,
+        name: item.name.trim(),
+        version: nullableString(item.version),
+      },
+    ]
+  })
+}
+
+function inputDisplayPartsFromTurn(turn: AgentRuntimeTurn): AgentInputDisplayPart[] | null {
+  const metadata = turn.model_profile_snapshot?.metadata
+  if (!isRecord(metadata)) return null
+  const inputDisplay = metadata.input_display
+  if (!isRecord(inputDisplay)) return null
+  const inlineParts = inputDisplay.inline_parts
+  if (!Array.isArray(inlineParts)) return null
+  const parts = inlineParts.flatMap((item) => inputDisplayPartFromMetadata(item))
+  return parts.length ? parts : null
+}
+
+function inputDisplayPartFromMetadata(item: unknown): AgentInputDisplayPart[] {
+  if (!isRecord(item) || typeof item.type !== "string") return []
+  if (item.type === "text") {
+    return typeof item.text === "string" && item.text
+      ? [{ type: "text", text: item.text }]
+      : []
+  }
+  if (item.type === "skill") {
+    return typeof item.name === "string" && item.name.trim()
+      ? [{ type: "skill", name: item.name.trim() }]
+      : []
+  }
+  if (item.type !== "workflow" || typeof item.name !== "string" || !item.name.trim()) {
+    return []
+  }
+  return [
+    {
+      type: "workflow",
+      workflow_id: nullableString(item.workflow_id),
+      project_id: nullableString(item.project_id),
+      scope: item.scope === "project" || item.scope === "global" ? item.scope : undefined,
+      name: item.name.trim(),
+      version: nullableString(item.version),
+    },
+  ]
+}
+
+function workflowDisplayMatchesInputPart(
+  display: WorkflowInputDisplayMetadata,
+  part: Extract<AgentRuntimeInputPart, { kind: "workflow_ref" }>,
+) {
+  if (part.workflow_id && display.workflow_id === part.workflow_id) return true
+  if (part.workflow_id) return false
+  if (display.workflow_id) return false
+  const partProjectId = part.project_id ?? null
+  const displayProjectId = display.project_id ?? null
+  const scopeMatches = part.scope ? display.scope === part.scope : true
+  return displayProjectId === partProjectId && scopeMatches
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null
 }
 
 function workflowMentionScopeKey(projectId?: string | null) {

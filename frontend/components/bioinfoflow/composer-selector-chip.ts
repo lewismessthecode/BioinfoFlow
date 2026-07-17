@@ -6,6 +6,11 @@ export const composerSelectorChipClassName = cn(
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] has-[>svg]:px-2 motion-reduce:transition-none motion-reduce:active:scale-100",
 )
 
+export const composerInlineTokenClassName = cn(
+  "inline-flex min-h-6 max-w-full min-w-0 items-center gap-1 rounded-[6px] border border-border/55 bg-foreground/[0.045] px-1.5 py-0.5 text-[12px] font-medium leading-4 text-foreground/78",
+  "transition-[background-color,border-color,color] duration-150 hover:border-border/80 hover:bg-foreground/[0.065] hover:text-foreground",
+)
+
 export const composerSelectorIconClassName =
   "h-3 w-3 shrink-0 text-foreground/52"
 
