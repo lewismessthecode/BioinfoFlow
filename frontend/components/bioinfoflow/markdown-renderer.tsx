@@ -178,10 +178,10 @@ export function MarkdownRenderer({
 
           // Lists
           ul: ({ children }) => (
-            <ul className="list-disc list-outside ml-4 mb-3 space-y-1 text-sm">{children}</ul>
+            <ul className="mb-3 list-outside list-disc space-y-1 pl-6 text-sm">{children}</ul>
           ),
           ol: ({ children }) => (
-            <ol className="list-decimal list-outside ml-4 mb-3 space-y-1 text-sm">{children}</ol>
+            <ol className="mb-3 list-outside list-decimal space-y-1 pl-6 text-sm">{children}</ol>
           ),
           li: ({ children }) => (
             <li className="text-foreground pl-1">{children}</li>
