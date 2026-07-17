@@ -12,7 +12,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { AgentCoreSession } from "@/lib/agent-core"
-import { formatSidebarRelativeDate } from "@/lib/agent-runtime/date-format"
+import {
+  dateTimeAttribute,
+  formatAbsoluteDateTime,
+  formatSidebarRelativeDate,
+} from "@/lib/agent-runtime/date-format"
 
 interface ConversationItemProps {
   conversation: AgentCoreSession
@@ -51,10 +55,11 @@ export function ConversationItem({
   const editInputRef = useRef<HTMLInputElement>(null)
 
   const label = conversation.title || tSidebar("conversationFallback", { index: index + 1 })
-  const dateLabel = formatSidebarRelativeDate(
-    conversation.updated_at || conversation.created_at,
-    locale,
-  )
+  const conversationDate = conversation.updated_at || conversation.created_at
+  const [now] = useState(() => new Date())
+  const dateLabel = formatSidebarRelativeDate(conversationDate, locale, now)
+  const absoluteDateLabel = formatAbsoluteDateTime(conversationDate, locale)
+  const dateTime = dateTimeAttribute(conversationDate)
 
   const startRename = () => {
     setIsEditing(true)
@@ -116,13 +121,15 @@ export function ConversationItem({
           )}
           <span className="min-w-0 flex-1 truncate py-0.5 leading-snug">{label}</span>
           {dateLabel ? (
-            <span
+            <time
+              dateTime={dateTime}
               aria-hidden="true"
               className="ml-auto shrink-0 text-[11px] font-normal leading-none tabular-nums text-sidebar-foreground/42"
-              title={dateLabel}
+              title={absoluteDateLabel ?? dateLabel}
+              suppressHydrationWarning
             >
               {dateLabel}
-            </span>
+            </time>
           ) : null}
         </button>
       )}

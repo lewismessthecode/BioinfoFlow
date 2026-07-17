@@ -22,7 +22,11 @@ import type {
   AgentRuntimeTurn,
   AgentRuntimeWorkflowRefPart,
 } from "@/lib/agent-runtime"
-import { formatTranscriptMessageDateTime } from "@/lib/agent-runtime/date-format"
+import {
+  dateTimeAttribute,
+  formatAbsoluteDateTime,
+  formatTranscriptMessageDateTime,
+} from "@/lib/agent-runtime/date-format"
 import { cn } from "@/lib/utils"
 import { ActivityGroup } from "./activity-group"
 import {
@@ -170,8 +174,11 @@ export function AgentTranscript({
 
 function UserMessageBubble({ turn }: { turn: AgentRuntimeTurn }) {
   const locale = useLocale()
-  const tokens = userMessageTokensForTurn(turn)
-  const timestamp = formatTranscriptMessageDateTime(turn.created_at, locale)
+  const [now] = useState(() => new Date())
+  const displayParts = userMessageDisplayPartsForTurn(turn)
+  const timestamp = formatTranscriptMessageDateTime(turn.created_at, locale, now)
+  const absoluteTimestamp = formatAbsoluteDateTime(turn.created_at, locale)
+  const timestampDateTime = dateTimeAttribute(turn.created_at)
 
   return (
     <div
@@ -179,40 +186,56 @@ function UserMessageBubble({ turn }: { turn: AgentRuntimeTurn }) {
       data-testid="agent-user-message"
     >
       <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-        {tokens.map((token) => (
-          <span
-            key={token.key}
-            className="inline-flex min-h-6 max-w-full items-center gap-1 rounded-[6px] border border-border/60 bg-background/70 px-1.5 py-0.5 text-[12px] font-medium leading-4 text-foreground/78"
-            data-token-kind={token.kind}
-          >
-            <span className="min-w-0 truncate">{token.label}</span>
-            {token.version ? (
-              <span
-                className="shrink-0 text-[10px] font-normal leading-none text-muted-foreground/78"
-                title={token.title}
-              >
-                {token.version}
-              </span>
-            ) : null}
-          </span>
-        ))}
-        <span className="min-w-0 whitespace-pre-wrap break-words">
-          {turn.input_text}
-        </span>
+        {displayParts.map((part) =>
+          part.type === "text" ? (
+            <span
+              key={part.key}
+              className="min-w-0 whitespace-pre-wrap break-words"
+            >
+              {part.text}
+            </span>
+          ) : (
+            <UserMessageTokenSpan key={part.key} token={part} />
+          ),
+        )}
       </div>
       {timestamp ? (
-        <div
+        <time
+          dateTime={timestampDateTime}
+          title={absoluteTimestamp ?? timestamp}
           className="mt-1.5 text-right text-[11px] font-normal leading-none text-muted-foreground/64"
           data-testid="agent-user-message-timestamp"
+          suppressHydrationWarning
         >
           {timestamp}
-        </div>
+        </time>
       ) : null}
     </div>
   )
 }
 
+function UserMessageTokenSpan({ token }: { token: UserMessageToken }) {
+  return (
+    <span
+      className="inline-flex min-h-6 max-w-full items-center gap-1 rounded-[6px] border border-border/60 bg-background/70 px-1.5 py-0.5 text-[12px] font-medium leading-4 text-foreground/78"
+      data-token-kind={token.kind}
+    >
+      <span className="min-w-0 truncate" translate="no">{token.label}</span>
+      {token.version ? (
+        <span
+          className="shrink-0 text-[10px] font-normal leading-none text-muted-foreground/78"
+          title={token.title}
+          translate="no"
+        >
+          {token.version}
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
 type UserMessageToken = {
+  type: "token"
   key: string
   kind: "skill" | "workflow"
   label: string
@@ -220,12 +243,33 @@ type UserMessageToken = {
   title?: string
 }
 
+type UserMessageTextPart = {
+  type: "text"
+  key: string
+  text: string
+}
+
+type UserMessageDisplayPart = UserMessageTextPart | UserMessageToken
+
 type WorkflowDisplayMetadata = {
   workflow_id?: string | null
   project_id?: string | null
   scope?: "project" | "global"
   name: string
   version?: string | null
+}
+
+function userMessageDisplayPartsForTurn(turn: AgentRuntimeTurn): UserMessageDisplayPart[] {
+  const inlineParts = userMessageInlinePartsFromTurn(turn)
+  if (inlineParts.length) return inlineParts
+  return [
+    ...userMessageTokensForTurn(turn),
+    {
+      type: "text",
+      key: "text:fallback",
+      text: turn.input_text,
+    },
+  ]
 }
 
 function userMessageTokensForTurn(turn: AgentRuntimeTurn): UserMessageToken[] {
@@ -238,6 +282,7 @@ function userMessageTokensForTurn(turn: AgentRuntimeTurn): UserMessageToken[] {
   const skillTokens = Array.from(new Set(turn.active_skill_names ?? []))
     .filter((name) => name.trim().length > 0)
     .map((name) => ({
+      type: "token" as const,
       key: `skill:${name}`,
       kind: "skill" as const,
       label: `/${name}`,
@@ -255,12 +300,59 @@ function workflowTokenForInputPart(
   const name = display?.name || "workflow"
   const version = display?.version?.trim() || null
   return {
+    type: "token",
     key: `workflow:${part.workflow_id ?? part.project_id ?? part.scope ?? index}:${index}`,
     kind: "workflow",
     label: `@${name}`,
     version,
     title: version ? `${name} ${version}` : undefined,
   }
+}
+
+function userMessageInlinePartsFromTurn(turn: AgentRuntimeTurn): UserMessageDisplayPart[] {
+  const metadata = turn.model_profile_snapshot?.metadata
+  if (!isRecord(metadata)) return []
+  const inputDisplay = metadata.input_display
+  if (!isRecord(inputDisplay)) return []
+  const inlineParts = inputDisplay.inline_parts
+  if (!Array.isArray(inlineParts)) return []
+  return inlineParts.flatMap((item, index) => userMessageInlinePart(item, index))
+}
+
+function userMessageInlinePart(item: unknown, index: number): UserMessageDisplayPart[] {
+  if (!isRecord(item) || typeof item.type !== "string") return []
+  if (item.type === "text") {
+    return typeof item.text === "string" && item.text
+      ? [{ type: "text", key: `inline-text:${index}`, text: item.text }]
+      : []
+  }
+  if (item.type === "skill") {
+    if (typeof item.name !== "string" || !item.name.trim()) return []
+    const name = item.name.trim()
+    return [
+      {
+        type: "token",
+        key: `inline-skill:${name}:${index}`,
+        kind: "skill",
+        label: `/${name}`,
+      },
+    ]
+  }
+  if (item.type !== "workflow" || typeof item.name !== "string" || !item.name.trim()) {
+    return []
+  }
+  const name = item.name.trim()
+  const version = nullableString(item.version)?.trim() || null
+  return [
+    {
+      type: "token",
+      key: `inline-workflow:${nullableString(item.workflow_id) ?? nullableString(item.project_id) ?? index}:${index}`,
+      kind: "workflow",
+      label: `@${name}`,
+      version,
+      title: version ? `${name} ${version}` : undefined,
+    },
+  ]
 }
 
 function workflowDisplayForPart(
@@ -286,6 +378,7 @@ function workflowDisplayMatchesPart(
 ) {
   if (part.workflow_id && display.workflow_id === part.workflow_id) return true
   if (part.workflow_id) return false
+  if (display.workflow_id) return false
   const partProjectId = part.project_id ?? null
   const displayProjectId = display.project_id ?? null
   const scopeMatches = part.scope ? display.scope === part.scope : true

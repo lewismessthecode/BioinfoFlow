@@ -281,6 +281,87 @@ describe("AgentTranscript", () => {
     )
   })
 
+  it("keeps generic workflow context distinct from selected workflow tokens", () => {
+    renderTranscript({
+      turn: {
+        ...baseTurn,
+        input_text: "Draft a run plan",
+        input_parts: [
+          { type: "text", text: "Draft a run plan" },
+          {
+            kind: "workflow_ref",
+            workflow_id: "workflow-rna-12",
+            project_id: "project-1",
+            scope: "project",
+          },
+          {
+            kind: "workflow_ref",
+            project_id: "project-1",
+            scope: "project",
+          },
+        ],
+        model_profile_snapshot: {
+          metadata: {
+            input_display: {
+              workflow_mentions: [
+                {
+                  workflow_id: "workflow-rna-12",
+                  project_id: "project-1",
+                  scope: "project",
+                  name: "rnaseq-quant-mini",
+                  version: "1.2.0",
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+
+    const bubble = screen.getByTestId("agent-user-message")
+    expect(within(bubble).getByText("@rnaseq-quant-mini")).toBeInTheDocument()
+    expect(within(bubble).getByText("@workflow")).toBeInTheDocument()
+    expect(within(bubble).getAllByText("@rnaseq-quant-mini")).toHaveLength(1)
+  })
+
+  it("renders display-only workflow mentions at their original transcript position", () => {
+    renderTranscript({
+      turn: {
+        ...baseTurn,
+        input_text: "Run with sample A",
+        input_parts: [
+          { type: "text", text: "Run with sample A" },
+          {
+            kind: "workflow_ref",
+            project_id: "project-1",
+            scope: "project",
+          },
+        ],
+        model_profile_snapshot: {
+          metadata: {
+            input_display: {
+              inline_parts: [
+                { type: "text", text: "Run " },
+                {
+                  type: "workflow",
+                  project_id: "project-1",
+                  scope: "project",
+                  name: "workflow",
+                  version: null,
+                },
+                { type: "text", text: " with sample A" },
+              ],
+            },
+          },
+        },
+      },
+    })
+
+    const bubble = screen.getByTestId("agent-user-message")
+    expect(within(bubble).getByText("@workflow")).toBeInTheDocument()
+    expect(bubble).toHaveTextContent("Run @workflow with sample A")
+  })
+
   it("shows a weekday and time for recent user messages", () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-07-17T12:00:00"))

@@ -13,10 +13,12 @@ export function formatSidebarRelativeDate(
   if (dayDiff <= 0) return zh ? "今天" : "today"
   if (dayDiff === 1) return zh ? "昨天" : "yesterday"
   if (dayDiff < 7) return zh ? `${dayDiff}天前` : `${dayDiff} days ago`
+  if (dayDiff < 14) return zh ? "一周前" : "1 week ago"
 
-  const weekDiff = Math.max(1, Math.floor(dayDiff / 7))
-  if (zh) return weekDiff === 1 ? "一周前" : `${weekDiff}周前`
-  return weekDiff === 1 ? "1 week ago" : `${weekDiff} weeks ago`
+  return new Intl.DateTimeFormat(locale, {
+    month: isZhLocale(locale) ? "long" : "short",
+    day: "numeric",
+  }).format(date)
 }
 
 export function formatTranscriptMessageDateTime(
@@ -44,6 +46,23 @@ export function formatTranscriptMessageDateTime(
     day: "numeric",
   }).format(date)
   return `${monthDay} ${time}`
+}
+
+export function formatAbsoluteDateTime(value?: string | null, locale = "en") {
+  const date = parseDate(value)
+  if (!date) return null
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: isZhLocale(locale) ? "long" : "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date)
+}
+
+export function dateTimeAttribute(value?: string | null) {
+  return parseDate(value) ? value : undefined
 }
 
 function parseDate(value?: string | null) {

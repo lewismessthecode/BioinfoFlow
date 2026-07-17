@@ -1211,6 +1211,81 @@ describe("AgentWorkbench", () => {
     expect(screen.getByText("Working on it...")).toBeInTheDocument()
   })
 
+  it("preserves workflow token display metadata when retrying a completed turn", async () => {
+    const send = vi.fn(() => new Promise(() => {}))
+    setupRuntime({
+      send,
+      turns: [
+        {
+          ...baseTurn,
+          id: "turn-workflow",
+          input_text: "Draft a run plan",
+          input_parts: [
+            { type: "text", text: "Draft a run plan" },
+            {
+              kind: "workflow_ref",
+              workflow_id: "workflow-rna-12",
+              project_id: "project-1",
+              scope: "project",
+            },
+          ],
+          model_profile_snapshot: {
+            metadata: {
+              input_display: {
+                workflow_mentions: [
+                  {
+                    workflow_id: "workflow-rna-12",
+                    project_id: "project-1",
+                    scope: "project",
+                    name: "rnaseq-quant-mini",
+                    version: "1.2.0",
+                  },
+                ],
+              },
+            },
+          },
+        },
+      ],
+    })
+
+    render(<AgentWorkbench projectId="project-1" />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry response" }))
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Draft a run plan",
+        expect.objectContaining({
+          inputParts: [
+            { type: "text", text: "Draft a run plan" },
+            expect.objectContaining({
+              kind: "workflow_ref",
+              workflow_id: "workflow-rna-12",
+              project_id: "project-1",
+              scope: "project",
+              display_name: "rnaseq-quant-mini",
+              display_version: "1.2.0",
+            }),
+          ],
+          metadata: expect.objectContaining({
+            input_display: expect.objectContaining({
+              workflow_mentions: [
+                {
+                  workflow_id: "workflow-rna-12",
+                  project_id: "project-1",
+                  scope: "project",
+                  name: "rnaseq-quant-mini",
+                  version: "1.2.0",
+                },
+              ],
+            }),
+          }),
+        }),
+      ),
+    )
+    expect(screen.getAllByText("@rnaseq-quant-mini")).toHaveLength(2)
+  })
+
   it("keeps an active loading session in the conversation layout", () => {
     setupRuntime({ turns: [], status: "loading" })
 
@@ -1374,8 +1449,8 @@ describe("AgentWorkbench", () => {
               display_version: "1.2.0",
             }),
           ],
-          metadata: {
-            input_display: {
+          metadata: expect.objectContaining({
+            input_display: expect.objectContaining({
               workflow_mentions: [
                 {
                   workflow_id: "workflow-rna-12",
@@ -1385,12 +1460,70 @@ describe("AgentWorkbench", () => {
                   version: "1.2.0",
                 },
               ],
-            },
-          },
+              inline_parts: [
+                {
+                  type: "workflow",
+                  workflow_id: "workflow-rna-12",
+                  project_id: "project-1",
+                  scope: "project",
+                  name: "rnaseq-quant-mini",
+                  version: "1.2.0",
+                },
+                { type: "text", text: "Draft a run plan" },
+              ],
+            }),
+          }),
         }),
       ),
     )
     expect(screen.getByText("@rnaseq-quant-mini")).toBeInTheDocument()
+  })
+
+  it("keeps typed @workflow mentions inline in the optimistic transcript", async () => {
+    const send = vi.fn(() => new Promise(() => {}))
+    setupRuntime({ send })
+
+    render(<AgentWorkbench projectId="project-1" />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Run @workflow with sample A" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Run with sample A",
+        expect.objectContaining({
+          inputParts: [
+            { type: "text", text: "Run with sample A" },
+            expect.objectContaining({
+              kind: "workflow_ref",
+              project_id: "project-1",
+              scope: "project",
+            }),
+          ],
+          metadata: expect.objectContaining({
+            input_display: expect.objectContaining({
+              inline_parts: [
+                { type: "text", text: "Run " },
+                {
+                  type: "workflow",
+                  workflow_id: null,
+                  project_id: "project-1",
+                  scope: "project",
+                  name: "workflow",
+                  version: null,
+                },
+                { type: "text", text: " with sample A" },
+              ],
+            }),
+          }),
+        }),
+      ),
+    )
+
+    const bubble = screen.getByTestId("agent-user-message")
+    expect(within(bubble).getByText("@workflow")).toBeInTheDocument()
+    expect(bubble).toHaveTextContent("Run @workflow with sample A")
   })
 
   it("clears stale workflow options while project workflow mentions reload", async () => {
@@ -1517,8 +1650,8 @@ describe("AgentWorkbench", () => {
               display_version: "2.0.0",
             }),
           ],
-          metadata: {
-            input_display: {
+          metadata: expect.objectContaining({
+            input_display: expect.objectContaining({
               workflow_mentions: [
                 {
                   workflow_id: "workflow-wgs-20",
@@ -1528,8 +1661,19 @@ describe("AgentWorkbench", () => {
                   version: "2.0.0",
                 },
               ],
-            },
-          },
+              inline_parts: [
+                {
+                  type: "workflow",
+                  workflow_id: "workflow-wgs-20",
+                  project_id: null,
+                  scope: "global",
+                  name: "parabricks-wgs",
+                  version: "2.0.0",
+                },
+                { type: "text", text: "Explain required inputs" },
+              ],
+            }),
+          }),
         }),
       ),
     )
