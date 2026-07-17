@@ -378,6 +378,47 @@ describe("AgentTranscript", () => {
     vi.useRealTimers()
   })
 
+  it("shows only time for today's user messages", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-07-17T12:00:00"))
+    renderTranscript({
+      turn: {
+        ...baseTurn,
+        created_at: "2026-07-17T10:31:00",
+      },
+    })
+
+    expect(screen.getByTestId("agent-user-message-timestamp")).toHaveTextContent(
+      "10:31",
+    )
+    expect(screen.getByTestId("agent-user-message-timestamp")).not.toHaveTextContent(
+      "星期",
+    )
+    vi.useRealTimers()
+  })
+
+  it("shows the assistant completion time below completed responses", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-07-17T12:00:00"))
+    renderTranscript({
+      turn: {
+        ...baseTurn,
+        completed_at: "2026-07-17T10:45:00",
+      },
+      events: [
+        event("event-text", 1, "assistant.text.completed", {
+          message_id: "message-1",
+          content: "Done.",
+        }),
+      ],
+    })
+
+    expect(screen.getByTestId("assistant-response-timestamp")).toHaveTextContent(
+      "10:45",
+    )
+    vi.useRealTimers()
+  })
+
   it("shows a month day and time for older user messages", () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-07-17T12:00:00"))

@@ -1373,6 +1373,60 @@ describe("AgentWorkbench", () => {
     expect(screen.getByText("/nextflow-debugging")).toBeInTheDocument()
   })
 
+  it("keeps selected workflow tokens in composer insertion order with skills", async () => {
+    setupRuntime()
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/agent/skills") {
+        return Promise.resolve({
+          data: {
+            skills: [
+              {
+                name: "phoenix-platform-operator",
+                version: "0.1.0",
+                description: "Operate Phoenix platform workflows.",
+                tags: ["phoenix"],
+              },
+            ],
+          },
+        })
+      }
+      if (path === "/workflows") {
+        return Promise.resolve({
+          data: [
+            {
+              id: "workflow-deaf-20",
+              name: "Deaf_20",
+              version: "2.0.9.9",
+              source: "local",
+              engine: "nextflow",
+              description: "Deaf workflow.",
+              updated_at: "2026-07-12T00:00:00Z",
+            },
+          ],
+        })
+      }
+      if (path === "/connections") return new Promise(() => {})
+      return Promise.resolve({ data: [] })
+    })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "/phoenix" } })
+    await waitFor(() => expect(screen.getByTestId("agent-skill-option")).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId("agent-skill-option"))
+    fireEvent.change(input, { target: { value: "@deaf" } })
+    await waitFor(() => expect(screen.getByTestId("agent-command-option")).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId("agent-command-option"))
+
+    const tokenFlow = screen.getByTestId("agent-inline-token-flow")
+    const skillToken = within(tokenFlow).getByTestId("agent-inline-skill-token")
+    const workflowToken = within(tokenFlow).getByTestId("agent-inline-workflow-token")
+    expect(
+      skillToken.compareDocumentPosition(workflowToken) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
   it("sends a selected project workflow version with the next turn", async () => {
     const send = vi.fn(() => new Promise(() => {}))
     setupRuntime({ send })

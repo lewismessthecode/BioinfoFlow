@@ -36,6 +36,8 @@ export function formatTranscriptMessageDateTime(
     hour12: false,
   }).format(date)
 
+  if (dayDiff <= 0) return time
+
   if (recent) {
     const weekday = new Intl.DateTimeFormat(locale, { weekday: "long" }).format(date)
     return `${weekday} ${time}`

@@ -203,7 +203,7 @@ function UserMessageBubble({ turn }: { turn: AgentRuntimeTurn }) {
         <time
           dateTime={timestampDateTime}
           title={absoluteTimestamp ?? timestamp}
-          className="mt-1.5 text-right text-[11px] font-normal leading-none text-muted-foreground/64"
+          className="mt-2 block text-right text-[11px] font-normal leading-none text-muted-foreground/64"
           data-testid="agent-user-message-timestamp"
           suppressHydrationWarning
         >
@@ -584,8 +584,14 @@ function ResponseActionBar({
   onRetryTurn?: AgentRetryHandler
 }) {
   const t = useTranslations("agentRuntime")
+  const locale = useLocale()
+  const [now] = useState(() => new Date())
   const copyLabel = t("responseActions.copy")
   const retryLabel = t("responseActions.retry")
+  const completedAt = turn.completed_at ?? turn.updated_at
+  const timestamp = formatTranscriptMessageDateTime(completedAt, locale, now)
+  const absoluteTimestamp = formatAbsoluteDateTime(completedAt, locale)
+  const timestampDateTime = dateTimeAttribute(completedAt)
 
   const copyResponse = useCallback(() => {
     void navigator.clipboard?.writeText(text)
@@ -625,6 +631,17 @@ function ResponseActionBar({
         </TooltipTrigger>
         <TooltipContent side="bottom">{retryLabel}</TooltipContent>
       </Tooltip>
+      {timestamp ? (
+        <time
+          dateTime={timestampDateTime}
+          title={absoluteTimestamp ?? timestamp}
+          className="ml-1 text-[11px] leading-none text-muted-foreground/64"
+          data-testid="assistant-response-timestamp"
+          suppressHydrationWarning
+        >
+          {timestamp}
+        </time>
+      ) : null}
     </div>
   )
 }
