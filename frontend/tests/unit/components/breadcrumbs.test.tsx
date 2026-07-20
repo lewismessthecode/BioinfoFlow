@@ -41,4 +41,19 @@ describe("Breadcrumbs", () => {
     expect(screen.getByText("Runs")).toBeInTheDocument()
     expect(screen.getByText("run-123")).toBeInTheDocument()
   })
+
+  it("limits project-name width on mobile so navbar actions remain usable", () => {
+    pathname = "/agent"
+
+    render(
+      <BreadcrumbProvider>
+        <Breadcrumbs projectName="Bioinfoflow Demo" />
+      </BreadcrumbProvider>,
+    )
+
+    expect(screen.getByText("Bioinfoflow Demo")).toHaveClass(
+      "max-w-[90px]",
+      "sm:max-w-[160px]",
+    )
+  })
 })

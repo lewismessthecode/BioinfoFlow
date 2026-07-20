@@ -81,7 +81,9 @@ export function Breadcrumbs({ projectName, conversationTitle }: BreadcrumbsProps
         className="flex items-center gap-1.5 min-w-0 text-muted-foreground hover:text-foreground transition-colors shrink-0"
       >
         <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-        <span className="truncate max-w-[160px]">{projectName}</span>
+        <span className="max-w-[90px] truncate sm:max-w-[160px]">
+          {projectName}
+        </span>
       </Link>
 
       {/* Level 2: Agent conversation or page section */}
