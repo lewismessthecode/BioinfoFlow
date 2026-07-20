@@ -50,6 +50,7 @@ def test_release_please_uses_numeric_pre_major_versions() -> None:
     assert package["include-component-in-tag"] is False
     assert package["bump-minor-pre-major"] is True
     assert package["bump-patch-for-minor-pre-major"] is False
+    assert "pull-request-title-pattern" not in package
 
     extra_files = {
         (entry["type"], entry["path"], entry.get("jsonpath"))
@@ -57,10 +58,14 @@ def test_release_please_uses_numeric_pre_major_versions() -> None:
     }
     assert ("toml", "backend/pyproject.toml", "$.project.version") in extra_files
     assert (
-        "toml",
+        "generic",
         "backend/uv.lock",
-        "$.package[?(@.name=='bioinfoflow-backend')].version",
+        None,
     ) in extra_files
+    assert (
+        'version = "0.1.0"  # x-release-please-version'
+        in read_repo_file("backend/uv.lock")
+    )
     assert ("json", "frontend/package.json", "$.version") in extra_files
     assert ("generic", "backend/app/config.py", None) in extra_files
     assert (
