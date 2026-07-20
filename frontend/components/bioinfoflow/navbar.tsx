@@ -77,7 +77,7 @@ export function Navbar({
       )}
 
       {/* Breadcrumbs */}
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="hidden min-w-0 items-center gap-3 sm:flex">
         <Breadcrumbs projectName={projectName} conversationTitle={conversationTitle} />
       </div>
       {connectionState && <ConnectionStatus state={connectionState} />}

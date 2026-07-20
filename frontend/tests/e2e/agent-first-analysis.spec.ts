@@ -57,6 +57,71 @@ test.describe("Agent first analysis journey", () => {
       sidebar.root.getByRole("button", { name: "Bioinfoflow Demo", exact: true }),
     ).toBeVisible()
     await agent.expectComposerReady()
+    const breadcrumbs = page.getByRole("navigation", { name: "Breadcrumbs" })
+    const actionRow = page.getByTestId("navbar-action-row")
+
+    await page.setViewportSize({ width: 768, height: 720 })
+    await expect(breadcrumbs).toBeVisible()
+    await expect(breadcrumbs).toContainText("Bioinfoflow Demo")
+    await expect(actionRow).toBeVisible()
+    const breadcrumbBounds = await breadcrumbs.boundingBox()
+    const actionRowBounds = await actionRow.boundingBox()
+    expect(breadcrumbBounds).not.toBeNull()
+    expect(actionRowBounds).not.toBeNull()
+    expect(breadcrumbBounds!.x + breadcrumbBounds!.width).toBeLessThanOrEqual(
+      actionRowBounds!.x,
+    )
+    const navbarActionCount = await actionRow.locator("button").count()
+    expect(navbarActionCount).toBeGreaterThan(0)
+
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 720 })
+      await expect(breadcrumbs).toBeHidden()
+      await expect(actionRow.locator("button")).toHaveCount(navbarActionCount)
+      for (let index = 0; index < navbarActionCount; index += 1) {
+        await expect(actionRow.locator("button").nth(index)).toBeVisible()
+      }
+
+      const layout = await page.evaluate(() => {
+        const navbar = document.querySelector("header")
+        const actionRow = document.querySelector<HTMLElement>(
+          '[data-testid="navbar-action-row"]',
+        )
+        const actionBounds = actionRow
+          ? Array.from(actionRow.querySelectorAll<HTMLElement>("button")).map(
+              (button) => {
+                const rect = button.getBoundingClientRect()
+                return { left: rect.left, right: rect.right }
+              },
+            )
+          : []
+        return {
+          overflow: {
+            document:
+              document.documentElement.scrollWidth -
+              document.documentElement.clientWidth,
+            body: document.body.scrollWidth - document.body.clientWidth,
+            navbar: navbar ? navbar.scrollWidth - navbar.clientWidth : null,
+          },
+          actionBounds,
+        }
+      })
+
+      expect(layout.overflow, `${width}px viewport overflow`).toEqual({
+        document: 0,
+        body: 0,
+        navbar: 0,
+      })
+      expect(layout.actionBounds.length).toBeGreaterThan(0)
+      for (const bounds of layout.actionBounds) {
+        expect(bounds.left, `${width}px action left edge`).toBeGreaterThanOrEqual(0)
+        expect(bounds.right, `${width}px action right edge`).toBeLessThanOrEqual(width)
+      }
+      await expect(agent.messageInput).toBeVisible()
+      await expect(agent.sendButton).toBeVisible()
+    }
+    await page.setViewportSize({ width: 1280, height: 720 })
+
     const primaryStarter = page.getByRole("button", { name: prompt, exact: true })
     await expect(primaryStarter).toBeVisible()
     const sessionRequestPromise = page.waitForRequest(
