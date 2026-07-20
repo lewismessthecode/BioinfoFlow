@@ -83,7 +83,7 @@ task summarize_reads {
   }
 
   runtime {
-    docker: "alpine:3.20.3@sha256:1e42bbe2508154c9126d48c2b8a75420c3544343bf86fd041fb7527e017a4b4a"
+    docker: "bash:5.3.15@sha256:a19c811ee9e97fa8a080001d82b8e0ded303f0795cffdb1cbd162731bc8ce208"
   }
 }
 
@@ -102,6 +102,6 @@ task render_report {
   }
 
   runtime {
-    docker: "alpine:3.20.3@sha256:1e42bbe2508154c9126d48c2b8a75420c3544343bf86fd041fb7527e017a4b4a"
+    docker: "bash:5.3.15@sha256:a19c811ee9e97fa8a080001d82b8e0ded303f0795cffdb1cbd162731bc8ce208"
   }
 }

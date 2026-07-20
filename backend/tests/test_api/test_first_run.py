@@ -31,7 +31,7 @@ DEMO_PROJECT_NAME = "Bioinfoflow Demo"
 DEMO_WORKFLOW_NAME = "bioinfoflow-quickstart"
 DEMO_WORKFLOW_VERSION = "1.0.0"
 DEMO_RUNTIME_IMAGE = (
-    "alpine:3.20.3@sha256:1e42bbe2508154c9126d48c2b8a75420c3544343bf86fd041fb7527e017a4b4a"
+    "bash:5.3.15@sha256:a19c811ee9e97fa8a080001d82b8e0ded303f0795cffdb1cbd162731bc8ce208"
 )
 SAMPLES_TSV = (
     "sample\tfastq\n"
