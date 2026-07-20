@@ -28,6 +28,7 @@ const celebrationsPreference = createCelebrationsPreferenceMock()
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
+  useRouter: () => ({ refresh: vi.fn() }),
 }))
 
 vi.mock("next-intl", () => ({

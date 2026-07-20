@@ -25,10 +25,11 @@ const {
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
+  useRouter: () => ({ refresh: vi.fn() }),
 }))
 
 vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string, values?: Record<string, string>) => {
+  useTranslations: () => (key: string, values?: Record<string, string | number>) => {
     const labels: Record<string, string> = {
       pageTitle: "Settings",
       "nav.account": "Account",
@@ -74,6 +75,25 @@ vi.mock("next-intl", () => ({
       "account.savingPassword": "Saving password",
       "account.passwordChanged": "Password changed",
       "account.passwordChangeFailed": "Password change failed",
+      "account.avatar.title": "Profile image",
+      "account.avatar.description": "Choose a Bioinfoflow pixel identity or upload your own image.",
+      "account.avatar.previewAlt": "Current profile image",
+      "account.avatar.builtInLabel": "Pixel personas",
+      "account.avatar.selected": "Selected",
+      "account.avatar.showAnotherSet": "Show another set",
+      "account.avatar.upload": "Upload image",
+      "account.avatar.restoreDefault": "Restore default",
+      "account.avatar.cropTitle": "Crop profile image",
+      "account.avatar.cropDescription": "Move and zoom the image.",
+      "account.avatar.zoom": "Zoom",
+      "account.avatar.cancel": "Cancel",
+      "account.avatar.useImage": "Use image",
+      "account.avatar.saving": "Saving avatar...",
+      "account.avatar.saved": "Avatar updated.",
+      "account.avatar.reset": "Default avatar restored.",
+      "account.avatar.saveFailed": "Couldn't update your avatar.",
+      "account.avatar.unsupportedType": "Choose a PNG, JPEG, or WebP image.",
+      "account.avatar.tooLarge": "Choose an image smaller than 5 MB.",
       "account.modes.team": "Team",
       "members.roles.owner": "Owner",
       "providerCards.loading": "Loading providers...",
@@ -133,6 +153,9 @@ vi.mock("next-intl", () => ({
     }
     if (key === "appearance.activePreset") {
       return `Current preset: ${values?.preset ?? ""}`
+    }
+    if (key === "account.avatar.optionLabel") {
+      return `Pixel avatar ${values?.number ?? ""}`
     }
     if (key === "settingSaved") return `Saved ${values?.field}`
     if (key === "settingCleared") return `Cleared ${values?.field}`
@@ -475,6 +498,10 @@ describe("Settings page flow", () => {
         }}
       />,
     )
+
+    expect(screen.getByText("Profile image")).toBeInTheDocument()
+    expect(screen.getAllByRole("radio", { name: /Pixel avatar/ })).toHaveLength(6)
+    expect(screen.getByRole("button", { name: "Upload image" })).toBeInTheDocument()
 
     await user.type(screen.getByLabelText("Current password"), "old-secret")
     await user.type(screen.getByLabelText("New password"), "new-secret")

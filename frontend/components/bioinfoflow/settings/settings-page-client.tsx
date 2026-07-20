@@ -14,6 +14,7 @@ import { Logo } from "@/components/bioinfoflow/logo"
 import { ContainerRegistriesPanel } from "@/components/bioinfoflow/settings/container-registries-panel"
 import { LlmCatalogPanel } from "@/components/bioinfoflow/settings/llm-catalog-panel"
 import { MembersPanel } from "@/components/bioinfoflow/settings/members-panel"
+import { AvatarSettingsPanel } from "@/components/bioinfoflow/settings/avatar-settings-panel"
 import {
   appearancePresetIds,
   appearancePresets,
@@ -59,6 +60,7 @@ type SettingsPageClientProps = {
     id: string
     name?: string
     email?: string
+    image?: string | null
     role: TeamRole
     mode: AuthMode
     canManageMembers: boolean
@@ -512,6 +514,8 @@ export default function SettingsPageClient({
                 title={t("account.title")}
                 description={t("account.description")}
               />
+
+              <AvatarSettingsPanel viewer={viewer} />
 
               <SettingsGroup>
                 <SettingsRow title={t("account.email")}>

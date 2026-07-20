@@ -157,4 +157,18 @@ describe("UserMenu", () => {
     const trigger = screen.getByRole("button", { name: "Alice Example — User menu" })
     expect(trigger).not.toHaveTextContent("alice@example.com")
   })
+
+  it("renders the selected pixel persona in the sidebar trigger", () => {
+    render(
+      <UserMenu
+        collapsed={false}
+        viewer={{
+          ...ALICE_VIEWER,
+          image: "bioinfoflow-avatar:pixel-persona-17",
+        }}
+      />,
+    )
+
+    expect(screen.getByTestId("pixel-persona-17")).toBeInTheDocument()
+  })
 })
