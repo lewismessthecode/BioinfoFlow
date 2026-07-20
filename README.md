@@ -59,17 +59,19 @@ git clone https://github.com/lewismessthecode/BioinfoFlow.git
 cd BioinfoFlow
 cp .env.example .env
 
-# Before starting, edit .env and replace at least:
-# AUTH_BOOTSTRAP_OWNER_EMAIL, AUTH_BOOTSTRAP_OWNER_PASSWORD, BETTER_AUTH_SECRET
+# Before starting, change the bootstrap owner credentials:
+# AUTH_BOOTSTRAP_OWNER_EMAIL, AUTH_BOOTSTRAP_OWNER_PASSWORD
 ${EDITOR:-vi} .env
 
 docker compose up -d --build
 ```
 
-Generate `BETTER_AUTH_SECRET` with a command such as `openssl rand -base64 32`
-and paste the result into `.env`. The source Compose stack publishes its frontend
-and backend ports on host interfaces by default, so change the owner credentials
-and secret before startup and use it only on a trusted machine and network.
+For localhost-only use, `BETTER_AUTH_SECRET` may stay empty; Bioinfoflow
+generates and persists a local secret. Set a stable value, for example from
+`openssl rand -base64 32`, before shared or remote deployment. The source
+Compose stack publishes its frontend and backend ports on host interfaces by
+default, so change the owner credentials before startup and use it only on a
+trusted machine and network.
 
 Open <http://localhost:3000>, sign in with the owner account you configured, and
 go to the Agent page.
@@ -90,36 +92,23 @@ Provider setup is UI-first. OpenAI, Anthropic, and DeepSeek have a compact
 composer path; Kimi, Kimi China, Gemini, OpenRouter, Ollama, vLLM, and
 other compatible endpoints remain available in **Settings → AI Providers**.
 
-<details>
-<summary>One-line localhost installer (available with the first tagged release)</summary>
+### One-line localhost installer
 
-The first tagged release containing this work will publish `install.sh` and the
-versioned container images used by the localhost installer. Once that release
-exists, the one-line path will be:
+Once the first `v*` release publishes the installer and matching images, the
+shortest install path will be:
 
 ```bash
-# Install from the latest tagged release
 curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh
-
-# Or inspect before running
-curl -fLO https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh
-less install.sh
-sh install.sh
-
-# Lifecycle
-~/.bioinfoflow/install/install.sh --update
-~/.bioinfoflow/install/install.sh --uninstall  # preserves data
-~/.bioinfoflow/install/install.sh --purge      # removes managed data
 ```
 
-The installer also supports `--dry-run`, `--version <tag>`, and `--no-open`.
-It pulls versioned images, stores data under `~/.bioinfoflow/data`, binds only to
-`127.0.0.1`, waits for health checks, and opens the Agent page without a
-Bioinfoflow login screen. Its API port is fixed at `8000`; lifecycle commands
-preserve control and data if the installed stack cannot be confirmed stopped.
-Until the tagged release is published, use the source installation above.
+**That URL does not work yet because those release assets have not been
+published.** Until the first release is created and tested, use the source
+installation above.
 
-</details>
+It stores data under `~/.bioinfoflow/data`, binds only to `127.0.0.1`, and opens
+the Agent page without a Bioinfoflow login screen. Updates, removal, version
+selection, and script-inspection instructions are in the
+[Docker and installer guide](docs/getting-started/docker.md).
 
 ## The Agent works through the platform
 
@@ -238,6 +227,10 @@ cd frontend
 bun install
 bun run dev
 ```
+
+The backend reads the repository-root `.env` when its process starts. Restart
+the backend after changing it. Restart or rebuild the frontend after changing
+any `NEXT_PUBLIC_*` value because those values are baked into the frontend.
 
 Run backend checks with `uv run pytest && uv run ruff check .`. Run frontend
 checks with `bun run lint && bun run test`.

@@ -3,24 +3,25 @@
 This is the canonical runbook for local trials, source development, and shared
 deployments.
 
-## Localhost Installer (Recommended Trial Path)
+## Localhost Installer (after the first tagged release)
 
 The release installer is the shortest path from an empty machine to the Agent
 workspace. It requires Docker Desktop or Docker Engine with Compose v2 and a
 local Unix-socket Docker context.
 
-Installer assets are attached to tagged GitHub releases. When a release includes
-`install.sh`, `docker-compose.local.yml`, and `SHA256SUMS`, install it with:
+This branch adds the installer and release packaging, but the repository does
+not yet have a `v*` release containing those assets. Until that release exists,
+use the [source-build path](#2-build-from-source-with-docker).
+
+When a release includes `install.sh`, `docker-compose.local.yml`, and
+`SHA256SUMS`, install it with:
 
 ```bash
 curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh
 ```
 
-If those assets are not present on the
-[Releases page](https://github.com/lewismessthecode/BioinfoFlow/releases), use
-the [source-build path](#2-build-from-source-with-docker). Do not run the
-repository copy of `scripts/install.sh` directly: release packaging embeds the
-matching version and publishes the checksums it verifies.
+Do not run the repository copy of `scripts/install.sh` directly: release
+packaging embeds the matching version and publishes the checksums it verifies.
 
 The installer pulls the matching `amd64` or `arm64` images, waits for both
 services to become healthy, and opens `http://localhost:3000`. A fresh local
@@ -409,6 +410,11 @@ uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --reload-dir app --port 8000
 ```
 
+The backend reads `.env` at process startup. Its app-only reload watcher does
+not watch the repo-root `.env`, so stop and restart Uvicorn after changing that
+file. Otherwise the frontend and backend can run with different auth modes and
+API requests will return `401 Unauthorized`.
+
 If this machine has runner paths that should not live in the shared `.env`, create `backend/.env` and only put overrides there:
 
 ```env
@@ -425,6 +431,10 @@ cd frontend
 bun install
 bun run dev
 ```
+
+Restart the frontend after changing `.env`. Any `NEXT_PUBLIC_*` value is loaded
+when the frontend starts or builds and will not update in an already running
+process.
 
 Open:
 
