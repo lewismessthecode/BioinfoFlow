@@ -24,6 +24,7 @@ Source-of-truth documentation for the Bioinfoflow platform, written against the 
 ## Operations And Development
 
 - [Operations Supplement](operations/runbook.md): deployment/runtime context after the base setup works.
+- [Release Maintainer SOP](development/releases.md): version policy, Release PR review, bootstrap, verification, and recovery.
 - [GitHub CI/CD](development/github-ci-cd.md): CI, container release, and automation notes for maintainers.
 - [Icon System](development/icon-system.md): frontend icon adapter and control-state conventions.
 

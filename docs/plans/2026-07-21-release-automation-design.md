@@ -73,10 +73,10 @@ the manifest configuration and `include-v-in-tag: false` to maintain a release
 pull request and create bare numeric tags.
 
 The release configuration keeps the application version synchronized across
-the backend package metadata, backend runtime default, frontend package
-metadata, and generated API contract where applicable. Tests must compare
-against the canonical application version instead of requiring manual edits for
-every release.
+the backend package and lock metadata, backend runtime default, frontend
+package metadata, and generated API contract where applicable. Tests must
+compare against the canonical application version instead of requiring manual
+edits for every release.
 
 ### Container Publishing
 
