@@ -2517,6 +2517,25 @@
   "agentRuntime": {
     "welcomeTitle": "今天想让 Bioinfoflow 帮你做什么？",
     "composerPlaceholder": "计划、构建，输入 / 选技能，输入 @ 加上下文",
+    "connectModel": {
+      "action": "连接模型",
+      "title": "连接模型",
+      "description": "添加提供商密钥，即可在此使用模型。",
+      "apiKey": "API 密钥",
+      "apiKeyPlaceholder": "粘贴 API 密钥",
+      "submit": "连接",
+      "connecting": "正在连接...",
+      "moreProviders": "更多提供商",
+      "loading": "正在加载提供商...",
+      "catalogError": "无法加载提供商。",
+      "retry": "重试",
+      "errors": {
+        "setup": "无法保存提供商。",
+        "discovery": "提供商已保存，但无法加载模型。",
+        "model": "提供商已保存，但没有找到可用模型。",
+        "probe": "提供商已保存，但无法验证模型。"
+      }
+    },
     "composerPlaceholders": {
       "checkWorkflow": "运行前检查一个工作流",
       "chooseInputs": "为分析选择输入数据",

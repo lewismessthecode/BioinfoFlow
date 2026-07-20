@@ -27,6 +27,7 @@ import {
 import { useTranslations } from "next-intl"
 
 import { AgentComposer, type AgentComposerInlineToken } from "./agent-composer"
+import { ConnectModelDialog } from "./connect-model-dialog"
 import { AgentEnvironmentCard } from "./agent-environment-card"
 import { AgentTabbedPanel, type AgentTabbedPanelTab } from "./agent-tabbed-panel"
 import { AgentTodoDock } from "./agent-todo-dock"
@@ -199,6 +200,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const workbenchRootRef = useRef<HTMLDivElement>(null)
     const isMobile = useIsMobile()
     const [input, setInput] = useState("")
+    const [connectModelOpen, setConnectModelOpen] = useState(false)
     const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
     const [availableSkills, setAvailableSkills] = useState<AgentRuntimeSkill[]>([])
     const [activeSkillNames, setActiveSkillNames] = useState<string[]>([])
@@ -320,8 +322,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     } | null>(null)
     const workspaceShell = useOptionalWorkspaceShell()
     const setNavbarActions = workspaceShell?.setNavbarActions
-    const { models, selectedModel, isLoading: modelsLoading, setSelectedModel } =
-      useLlmSettings()
+    const {
+      models,
+      selectedModel,
+      isLoading: modelsLoading,
+      setSelectedModel,
+      refresh: refreshLlmSettings,
+    } = useLlmSettings()
     const {
       state,
       eventWindowLimited,
@@ -1501,6 +1508,19 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 <h1 className="mb-4 text-center text-[15px] font-medium tracking-normal text-muted-foreground">
                   {t("welcomeTitle")}
                 </h1>
+                {!modelsLoading && !selectedModel ? (
+                  <div className="mb-3 flex justify-center">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 rounded-[6px] border-border/80 bg-background px-3 text-xs shadow-none"
+                      onClick={() => setConnectModelOpen(true)}
+                    >
+                      {t("connectModel.action")}
+                    </Button>
+                  </div>
+                ) : null}
                 {!composerDocked ? (
                   <div data-testid="agent-composer-shell" data-placement="center">
                     {composer}
@@ -1567,6 +1587,17 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 artifacts={transcriptArtifacts}
               />
             </div>
+          ) : null}
+          {connectModelOpen ? (
+            <ConnectModelDialog
+              open
+              onOpenChange={setConnectModelOpen}
+              setSelectedModel={setSelectedModel}
+              refreshSettings={refreshLlmSettings}
+              onConnected={() => {
+                setTimeout(() => textareaRef.current?.focus(), 0)
+              }}
+            />
           ) : null}
         </main>
 

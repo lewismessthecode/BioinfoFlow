@@ -332,6 +332,7 @@ export function useLlmSettings() {
     selectedModel,
     setSelectedModel,
     testProvider,
+    refresh: fetchSettings,
     refetch: async () => {
       await fetchSettings()
     },

@@ -22,6 +22,7 @@ import {
   useLlmCatalog,
   type SetupProviderOutcome,
 } from "@/hooks/use-llm-catalog"
+import { useProviderConnection } from "@/hooks/use-provider-connection"
 import { celebrateMilestone } from "@/lib/celebrations"
 import type {
   LlmConfiguredProvider,
@@ -41,6 +42,7 @@ type ProbeResults = Record<string, LlmProviderTestResult>
 type SettingsTranslations = ReturnType<typeof useTranslations>
 
 const SKELETON_ROWS = [0, 1, 2, 3]
+const QUICK_CONNECTION_TEMPLATE_IDS = new Set(["openai", "anthropic", "deepseek"])
 const INTERNAL_HOST_SUFFIXES = [
   ".local",
   ".internal",
@@ -68,6 +70,18 @@ export function LlmCatalogPanel() {
     setProviderEnabled = async () => null,
     testProvider,
   } = useLlmCatalog()
+  const providerConnectionOperations = useMemo(
+    () => ({
+      setupProvider,
+      discoverModels,
+      testProvider,
+      activation: { mode: "preserve" as const },
+    }),
+    [discoverModels, setupProvider, testProvider],
+  )
+  const { connect: connectProvider } = useProviderConnection(
+    providerConnectionOperations,
+  )
   const [fieldValues, setFieldValues] = useState<FieldValues>({})
   const [insecureHttpValues, setInsecureHttpValues] = useState<ToggleValues>({})
   const [protocolValues, setProtocolValues] = useState<ProtocolValues>({})
@@ -292,6 +306,45 @@ export function LlmCatalogPanel() {
     try {
       const hadConfiguredProvider = configuredProviders.some(providerIsUsable)
       const setupInput = buildSetupInput(template, false)
+      if (QUICK_CONNECTION_TEMPLATE_IDS.has(template.id)) {
+        const outcome = await connectProvider(setupInput)
+        if (!outcome.ok) {
+          if (outcome.providerId) {
+            setDirtyTemplateIds((current) => {
+              const next = new Set(current)
+              next.delete(template.id)
+              return next
+            })
+            setFieldValue(template.id, "api_key", "", false)
+          }
+          const message =
+            outcome.stage === "setup"
+              ? outcome.error.message || t("providerCards.saveFailed")
+              : outcome.stage === "discovery"
+                ? t("providerCards.savedDiscoveryFailed")
+                : outcome.stage === "model"
+                  ? t("providerCards.savedNoModels")
+                  : t("providerCards.testFailed")
+          setRowErrors((current) => ({ ...current, [template.id]: message }))
+          if (outcome.stage === "discovery" || outcome.stage === "model") {
+            toast.warning(message)
+          } else {
+            toast.error(message)
+          }
+          return
+        }
+        setDirtyTemplateIds((current) => {
+          const next = new Set(current)
+          next.delete(template.id)
+          return next
+        })
+        setFieldValue(template.id, "api_key", "", false)
+        toast.success(t("providerCards.saved"))
+        if (!hadConfiguredProvider && setupInput.apiKey) {
+          celebrateMilestone("first-provider-key")
+        }
+        return
+      }
       const outcome: SetupProviderOutcome = await setupProvider(setupInput)
       if (!outcome.ok) {
         setRowErrors((current) => ({

@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { LlmCatalogPanel } from "@/components/bioinfoflow/settings/llm-catalog-panel"
 
 const useLlmCatalogMock = vi.fn()
+const useLlmSettingsMock = vi.fn()
+const useProviderConnectionMock = vi.fn()
 const toastErrorMock = vi.fn()
 const toastSuccessMock = vi.fn()
 const toastWarningMock = vi.fn()
@@ -11,6 +13,14 @@ const celebrateMilestoneMock = vi.fn()
 
 vi.mock("@/hooks/use-llm-catalog", () => ({
   useLlmCatalog: () => useLlmCatalogMock(),
+}))
+
+vi.mock("@/hooks/use-llm-settings", () => ({
+  useLlmSettings: () => useLlmSettingsMock(),
+}))
+
+vi.mock("@/hooks/use-provider-connection", () => ({
+  useProviderConnection: (...args: unknown[]) => useProviderConnectionMock(...args),
 }))
 
 vi.mock("next-intl", () => ({
@@ -161,10 +171,90 @@ describe("LlmCatalogPanel", () => {
 
   beforeEach(() => {
     useLlmCatalogMock.mockReset()
+    useLlmSettingsMock.mockReset()
+    useProviderConnectionMock.mockReset()
     toastErrorMock.mockReset()
     toastSuccessMock.mockReset()
     toastWarningMock.mockReset()
     celebrateMilestoneMock.mockReset()
+    useLlmSettingsMock.mockReturnValue({
+      setSelectedModel: vi.fn(),
+      refresh: vi.fn(),
+    })
+    useProviderConnectionMock.mockImplementation((operations) => ({
+      isConnecting: false,
+      connect: async (input: Record<string, unknown>) => {
+        const setup = await operations.setupProvider({ ...input, discover: false })
+        if (!setup.ok) return { ok: false, stage: "setup", error: setup.error }
+        const providerId = setup.result.provider.id
+        if (setup.result.models.length === 0) {
+          const discovered = await operations.discoverModels(providerId)
+          if (discovered === null) {
+            return {
+              ok: false,
+              stage: "discovery",
+              error: new Error("discovery failed"),
+              providerId,
+            }
+          }
+          if (Array.isArray(discovered) && discovered.length === 0) {
+            return {
+              ok: false,
+              stage: "model",
+              error: new Error("no models"),
+              providerId,
+            }
+          }
+        }
+        return {
+          ok: true,
+          providerId,
+          modelId: setup.result.models[0]?.id ?? "model-test",
+          modelName: setup.result.models[0]?.model_id ?? "model-test",
+        }
+      },
+    }))
+  })
+
+  it("uses the shared provider connection operation for hosted quick setup", async () => {
+    const connect = vi.fn().mockResolvedValue({
+      ok: true,
+      providerId: "provider-openai",
+      modelId: "model-gpt",
+      modelName: "gpt-5.4-mini",
+    })
+    useProviderConnectionMock.mockReturnValue({ connect, isConnecting: false })
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+    expect(useLlmSettingsMock).not.toHaveBeenCalled()
+    expect(useProviderConnectionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activation: { mode: "preserve" },
+      }),
+    )
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    fireEvent.change(within(card).getByLabelText("OpenAI API key"), {
+      target: { value: "sk-new" },
+    })
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    await waitFor(() =>
+      expect(connect).toHaveBeenCalledWith(
+        expect.objectContaining({ templateId: "openai", apiKey: "sk-new" }),
+      ),
+    )
   })
 
   it("renders the provider key grid with common hosted and local providers", () => {
@@ -907,7 +997,7 @@ describe("LlmCatalogPanel", () => {
       )
       expect(discoverModels).toHaveBeenCalledWith("provider-openai")
     })
-    expect(toastSuccessMock).toHaveBeenCalledWith("1 models found")
+    expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
   })
 
   it("keeps the provider saved when automatic model discovery fails", async () => {
