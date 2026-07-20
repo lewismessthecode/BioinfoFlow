@@ -273,7 +273,7 @@ async def test_demo_bootstrap_values_compile_through_normal_wdl_inputs(
     )
     assert "app.engine._miniwdl_entry" in " ".join(compiled.launch.argv)
     assert (
-        "bash:5.3.15@sha256:a19c811ee9e97fa8a080001d82b8e0ded303f0795cffdb1cbd162731bc8ce208"
+        "ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90"
         in str(workflow.schema_json)
     )
 

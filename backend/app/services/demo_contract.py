@@ -70,8 +70,8 @@ DEMO_WORKFLOW = DemoWorkflowContract(
     bundle_kind="local_bundle",
     marker="bioinfoflow.demo.quickstart.v1",
     runtime_image=(
-        "bash:5.3.15@sha256:"
-        "a19c811ee9e97fa8a080001d82b8e0ded303f0795cffdb1cbd162731bc8ce208"
+        "ubuntu:24.04@sha256:"
+        "4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90"
     ),
     task_names=("summarize_reads", "render_report"),
 )
