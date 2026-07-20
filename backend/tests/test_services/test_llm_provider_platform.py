@@ -15,6 +15,7 @@ from app.services.llm.provider_templates import (
     get_provider_template,
     list_provider_templates,
     normalize_provider_base_url,
+    provider_template_for_provider,
 )
 from app.utils.exceptions import PermissionDeniedError
 
@@ -100,16 +101,37 @@ def test_common_provider_templates_are_key_first_and_provider_neutral() -> None:
         assert fields[0]["placeholder"] == "Paste API key"
 
     assert templates["kimi"].env_api_key_vars == ("KIMI_API_KEY",)
+    assert templates["kimi"].default_base_url == "https://api.moonshot.ai/v1"
     assert templates["kimi-cn"].env_api_key_vars == (
         "KIMI_CN_API_KEY",
         "MOONSHOT_CN_API_KEY",
         "MOONSHOT_API_KEY",
     )
+    assert templates["kimi-cn"].default_base_url == "https://api.moonshot.cn/v1"
 
     serialized_templates = repr([template.as_dict() for template in templates.values()])
     assert "".join(("c", "ch")) not in serialized_templates.lower()
     assert ".".join(("8", "129", "13", "231")) not in serialized_templates
     assert "-".join(("claude", "sonnet", "5")) not in serialized_templates
+
+
+def test_legacy_kimi_china_endpoint_resolves_to_china_template() -> None:
+    provider = LlmProvider(
+        name="Kimi",
+        kind="kimi",
+        base_url="https://api.moonshot.cn/v1",
+        scope="user",
+        workspace_id="00000000-0000-0000-0000-000000000001",
+        user_id="user-1",
+        enabled=True,
+        provider_metadata={"providerTemplate": "kimi"},
+    )
+
+    template = provider_template_for_provider(provider)
+
+    assert template is not None
+    assert template.id == "kimi-cn"
+    assert template.kind == "kimi_cn"
 
 
 @pytest.mark.parametrize(

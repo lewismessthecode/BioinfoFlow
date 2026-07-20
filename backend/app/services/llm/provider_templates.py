@@ -506,7 +506,7 @@ def route_provider_model_name(
     provider_kind: str,
     model_name: str,
     *,
-    wire_protocol: str,
+    wire_protocol: str = LlmWireProtocol.CHAT_COMPLETIONS,
 ) -> str:
     return PROVIDER_REGISTRY.route_model_name(
         provider_kind,

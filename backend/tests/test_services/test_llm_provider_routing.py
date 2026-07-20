@@ -63,6 +63,11 @@ def _invocation(
     )
 
 
+def test_kimi_models_route_through_openai_compatibility_by_default() -> None:
+    assert route_provider_model_name("kimi", "kimi-k2") == "openai/kimi-k2"
+    assert route_provider_model_name("kimi_cn", "kimi-k2") == "openai/kimi-k2"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("provider_kind", "model_name", "expected_request_model"),
