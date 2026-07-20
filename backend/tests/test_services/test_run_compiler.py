@@ -220,7 +220,8 @@ def test_demo_workflow_executes_with_miniwdl_when_runtime_is_available(tmp_path)
     )
 
     assert result.returncode == 0, result.stderr
-    outputs = json.loads(outputs_path.read_text(encoding="utf-8"))
+    run_result = json.loads(outputs_path.read_text(encoding="utf-8"))
+    outputs = run_result["outputs"]
     summary = Path(outputs["bioinfoflow_quickstart.summary_tsv"])
     report = Path(outputs["bioinfoflow_quickstart.report"])
     assert summary.read_text(encoding="utf-8") == (
