@@ -14,6 +14,8 @@ import { writeAgentTurnPolicy } from "@/lib/agent-runtime/turn-policy"
 
 const useAgentRuntimeMock = vi.fn()
 const useLlmSettingsMock = vi.fn()
+const useLlmCatalogMock = vi.fn()
+const useProviderConnectionMock = vi.fn()
 const useIsMobileMock = vi.fn(() => false)
 const setNavbarActionsMock = vi.fn()
 const apiRequestMock = vi.fn()
@@ -23,6 +25,10 @@ let workspaceProjectsMock: Array<{
   storage_mode?: "managed" | "external" | "remote"
   remote_connection_id?: string | null
 }> = []
+let providerTemplatesMock: Array<Record<string, unknown>> = []
+let catalogLoadingMock = false
+let catalogErrorMock: Error | null = null
+const catalogRefreshMock = vi.fn()
 
 vi.mock("next-intl", () => ({
   useLocale: () => "en",
@@ -190,6 +196,21 @@ vi.mock("next-intl", () => ({
       configure: "Configure providers",
       noProviders: "No model available",
       searchModels: "Search models...",
+      "connectModel.action": "Connect a model",
+      "connectModel.title": "Connect a model",
+      "connectModel.description": "Add a provider key to use a model here.",
+      "connectModel.apiKey": "API key",
+      "connectModel.apiKeyPlaceholder": "Paste API key",
+      "connectModel.submit": "Connect",
+      "connectModel.connecting": "Connecting...",
+      "connectModel.moreProviders": "More providers",
+      "connectModel.loading": "Loading providers...",
+      "connectModel.catalogError": "Providers could not be loaded.",
+      "connectModel.retry": "Retry",
+      "connectModel.errors.setup": "The provider could not be saved.",
+      "connectModel.errors.discovery": "The provider was saved, but models could not be loaded.",
+      "connectModel.errors.model": "The provider was saved, but no usable model was found.",
+      "connectModel.errors.probe": "The provider was saved, but the model could not be verified.",
     }
     return labels[key] ?? key
   },
@@ -217,6 +238,14 @@ vi.mock("@/hooks/use-agent-runtime", () => ({
 
 vi.mock("@/hooks/use-llm-settings", () => ({
   useLlmSettings: () => useLlmSettingsMock(),
+}))
+
+vi.mock("@/hooks/use-llm-catalog", () => ({
+  useLlmCatalog: () => useLlmCatalogMock(),
+}))
+
+vi.mock("@/hooks/use-provider-connection", () => ({
+  useProviderConnection: (...args: unknown[]) => useProviderConnectionMock(...args),
 }))
 
 vi.mock("@/hooks/use-media-query", () => ({
@@ -378,9 +407,14 @@ describe("AgentWorkbench", () => {
   beforeEach(() => {
     useAgentRuntimeMock.mockReset()
     useLlmSettingsMock.mockReset()
+    useLlmCatalogMock.mockReset()
+    useProviderConnectionMock.mockReset()
     useIsMobileMock.mockReset()
     useIsMobileMock.mockReturnValue(false)
     setNavbarActionsMock.mockReset()
+    catalogRefreshMock.mockReset()
+    catalogLoadingMock = false
+    catalogErrorMock = null
     workspaceProjectsMock = []
     apiRequestMock.mockReset()
     apiRequestMock.mockImplementation((path: string) => {
@@ -398,6 +432,25 @@ describe("AgentWorkbench", () => {
       selectedModel: null,
       isLoading: false,
       setSelectedModel: vi.fn(),
+      refresh: vi.fn(),
+    })
+    providerTemplatesMock = [
+        { id: "openai", name: "OpenAI" },
+        { id: "anthropic", name: "Anthropic" },
+        { id: "deepseek", name: "DeepSeek" },
+      ]
+    useLlmCatalogMock.mockImplementation(() => ({
+      providerTemplates: providerTemplatesMock,
+      isLoading: catalogLoadingMock,
+      error: catalogErrorMock,
+      refresh: catalogRefreshMock,
+      setupProvider: vi.fn(),
+      discoverModels: vi.fn(),
+      testProvider: vi.fn(),
+    }))
+    useProviderConnectionMock.mockReturnValue({
+      connect: vi.fn(),
+      isConnecting: false,
     })
     setupRuntime()
     window.localStorage.clear()
@@ -424,6 +477,174 @@ describe("AgentWorkbench", () => {
       "aria-hidden",
       "true",
     )
+  })
+
+  it("opens a compact model connection dialog from the empty Agent surface", () => {
+    render(<AgentWorkbench />)
+
+    expect(useLlmCatalogMock).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect a model" }))
+
+    expect(useLlmCatalogMock).toHaveBeenCalled()
+    expect(useProviderConnectionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activation: expect.objectContaining({ mode: "activate" }),
+      }),
+    )
+    expect(screen.getByRole("dialog", { name: "Connect a model" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "OpenAI" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Anthropic" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "DeepSeek" })).toBeVisible()
+    expect(screen.getAllByLabelText("API key")).toHaveLength(1)
+    expect(screen.getByRole("link", { name: "More providers" })).toHaveAttribute(
+      "href",
+      "/settings?section=providers",
+    )
+  })
+
+  it("shows a quiet loading state without selecting a provider", () => {
+    catalogLoadingMock = true
+    providerTemplatesMock = []
+    render(<AgentWorkbench />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect a model" }))
+    const dialog = screen.getByRole("dialog", { name: "Connect a model" })
+    fireEvent.change(within(dialog).getByLabelText("API key"), {
+      target: { value: "waiting-key" },
+    })
+
+    expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "Loading providers...",
+    )
+    expect(within(dialog).queryByRole("button", { name: "OpenAI" })).not.toBeInTheDocument()
+    expect(within(dialog).getByRole("button", { name: "Connect" })).toBeDisabled()
+  })
+
+  it("shows an actionable catalog error while keeping More providers available", () => {
+    providerTemplatesMock = []
+    catalogErrorMock = new Error("catalog unavailable")
+    render(<AgentWorkbench />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect a model" }))
+    const dialog = screen.getByRole("dialog", { name: "Connect a model" })
+    fireEvent.change(within(dialog).getByLabelText("API key"), {
+      target: { value: "waiting-key" },
+    })
+
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Providers could not be loaded.",
+    )
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }))
+    expect(catalogRefreshMock).toHaveBeenCalledOnce()
+    expect(within(dialog).getByRole("link", { name: "More providers" })).toHaveAttribute(
+      "href",
+      "/settings?section=providers",
+    )
+    expect(within(dialog).getByRole("button", { name: "Connect" })).toBeDisabled()
+  })
+
+  it("selects the first provider once delayed templates arrive without clearing the key", () => {
+    catalogLoadingMock = true
+    providerTemplatesMock = []
+    const { rerender } = render(<AgentWorkbench />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect a model" }))
+    fireEvent.change(screen.getByLabelText("API key"), {
+      target: { value: "delayed-key" },
+    })
+    expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled()
+
+    catalogLoadingMock = false
+    providerTemplatesMock = [
+      { id: "openai", name: "OpenAI" },
+      { id: "anthropic", name: "Anthropic" },
+      { id: "deepseek", name: "DeepSeek" },
+    ]
+    rerender(<AgentWorkbench />)
+
+    expect(screen.getByLabelText("API key")).toHaveValue("delayed-key")
+    expect(screen.getByRole("button", { name: "OpenAI" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+    expect(screen.getByRole("button", { name: "Connect" })).toBeEnabled()
+  })
+
+  it.each([
+    ["setup", "The provider could not be saved."],
+    ["discovery", "The provider was saved, but models could not be loaded."],
+    ["model", "The provider was saved, but no usable model was found."],
+    ["probe", "The provider was saved, but the model could not be verified."],
+  ] as const)("keeps the dialog open on a %s failure", async (stage, message) => {
+    const connect = vi.fn().mockResolvedValue({
+      ok: false,
+      stage,
+      error: new Error("provider detail"),
+      ...(stage === "setup" ? {} : { providerId: "provider-openai" }),
+    })
+    useProviderConnectionMock.mockReturnValue({ connect, isConnecting: false })
+    render(<AgentWorkbench />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect a model" }))
+    fireEvent.change(screen.getByLabelText("API key"), {
+      target: { value: "sk-test" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(message)
+    expect(screen.getByRole("dialog", { name: "Connect a model" })).toBeVisible()
+  })
+
+  it("closes after success and restores composer focus", async () => {
+    const connect = vi.fn().mockResolvedValue({
+      ok: true,
+      providerId: "provider-openai",
+      modelId: "model-gpt",
+      modelName: "gpt-5.4-mini",
+    })
+    useProviderConnectionMock.mockReturnValue({ connect, isConnecting: false })
+    render(<AgentWorkbench />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect a model" }))
+    fireEvent.change(screen.getByLabelText("API key"), {
+      target: { value: "sk-test" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Connect a model" })).not.toBeInTheDocument(),
+    )
+    expect(document.activeElement).toBe(screen.getByLabelText("Message Bioinfoflow..."))
+  })
+
+  it("preserves provider, key, and recoverable failure across template refreshes", async () => {
+    const connect = vi.fn().mockResolvedValue({
+      ok: false,
+      stage: "discovery",
+      error: new Error("catalog unavailable"),
+      providerId: "provider-anthropic",
+    })
+    useProviderConnectionMock.mockReturnValue({ connect, isConnecting: false })
+    const { rerender } = render(<AgentWorkbench />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect a model" }))
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic" }))
+    fireEvent.change(screen.getByLabelText("API key"), {
+      target: { value: "anthropic-key" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }))
+    expect(await screen.findByRole("alert")).toBeVisible()
+
+    providerTemplatesMock = providerTemplatesMock.map((template) => ({ ...template }))
+    rerender(<AgentWorkbench />)
+
+    expect(screen.getByLabelText("API key")).toHaveValue("anthropic-key")
+    expect(screen.getByRole("button", { name: "Anthropic" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+    expect(screen.getByRole("alert")).toBeVisible()
   })
 
   it("renders restrained starter suggestions and command discovery hints in the empty composer", () => {

@@ -2517,6 +2517,25 @@
   "agentRuntime": {
     "welcomeTitle": "What should Bioinfoflow help you do today?",
     "composerPlaceholder": "Plan, Build, / for skills, @ for context",
+    "connectModel": {
+      "action": "Connect a model",
+      "title": "Connect a model",
+      "description": "Add a provider key to use a model here.",
+      "apiKey": "API key",
+      "apiKeyPlaceholder": "Paste API key",
+      "submit": "Connect",
+      "connecting": "Connecting...",
+      "moreProviders": "More providers",
+      "loading": "Loading providers...",
+      "catalogError": "Providers could not be loaded.",
+      "retry": "Retry",
+      "errors": {
+        "setup": "The provider could not be saved.",
+        "discovery": "The provider was saved, but models could not be loaded.",
+        "model": "The provider was saved, but no usable model was found.",
+        "probe": "The provider was saved, but the model could not be verified."
+      }
+    },
     "composerPlaceholders": {
       "checkWorkflow": "Check a workflow before running it",
       "chooseInputs": "Choose inputs for an analysis",

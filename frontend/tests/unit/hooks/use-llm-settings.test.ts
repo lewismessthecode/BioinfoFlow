@@ -122,6 +122,19 @@ describe("useLlmSettings", () => {
     expect(result.current.hasConfiguredProvider).toBe(true)
   })
 
+  it("exposes a refresh operation for provider connection flows", async () => {
+    const { result } = renderHook(() => useLlmSettings())
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    mockApiRequest.mockClear()
+
+    await act(async () => {
+      await result.current.refresh()
+    })
+
+    expect(mockApiRequest).toHaveBeenCalledWith("/llm/configuration")
+  })
+
   it("flattens allModels with provider info", async () => {
     const { result } = renderHook(() => useLlmSettings())
 
