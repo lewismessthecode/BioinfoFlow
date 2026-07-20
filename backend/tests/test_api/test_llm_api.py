@@ -570,6 +570,65 @@ async def test_discover_models_returns_network_error_without_500(
     assert payload["error"]["code"] == "VALIDATION_ERROR"
     assert "Provider model discovery request failed" in payload["error"]["message"]
 
+    configuration = await async_client.get("/api/v1/llm/configuration")
+    assert configuration.status_code == 200
+    configured_provider = next(
+        provider
+        for provider in configuration.json()["data"]["providers"]
+        if provider["id"] == provider_id
+    )
+    assert configured_provider["credential"]["configured"] is True
+
+
+@pytest.mark.asyncio
+async def test_failed_provider_probe_keeps_saved_credential_configured(
+    async_client,
+    monkeypatch,
+):
+    class FakeProbeResult:
+        def to_public_dict(self) -> dict:
+            return {
+                "success": False,
+                "latency_ms": 12,
+                "wire_protocol": "chat_completions",
+                "model_id": "kimi-k2",
+                "error_code": "timeout",
+                "error_message": "The model provider request timed out.",
+                "retryable": True,
+                "http_status": 408,
+                "provider_code": "probe_timeout",
+            }
+
+    async def fake_probe(*args, **kwargs):
+        del args, kwargs
+        return FakeProbeResult()
+
+    monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", fake_probe)
+    setup = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "kimi",
+            "api_key": "saved-moonshot-key",
+            "model_ids": ["kimi-k2"],
+            "scope": "user",
+        },
+    )
+    assert setup.status_code == 200
+    provider_id = setup.json()["data"]["provider"]["id"]
+
+    response = await async_client.post(f"/api/v1/llm/providers/{provider_id}/test")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["success"] is False
+    assert response.json()["data"]["error_code"] == "timeout"
+    configuration = await async_client.get("/api/v1/llm/configuration")
+    configured_provider = next(
+        provider
+        for provider in configuration.json()["data"]["providers"]
+        if provider["id"] == provider_id
+    )
+    assert configured_provider["credential"]["configured"] is True
+
 
 @pytest.mark.asyncio
 async def test_discover_models_hides_stale_provider_models(
