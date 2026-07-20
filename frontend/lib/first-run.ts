@@ -1,6 +1,6 @@
 import { apiRequest } from "@/lib/api"
 
-export type FirstRunWorkflowContext = {
+type FirstRunWorkflowContext = {
   id: string
   name: string
   version: string

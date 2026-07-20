@@ -2,6 +2,7 @@
   "ignore": [
     "scripts/check-i18n-coverage.mjs",
     "scripts/ensure-better-sqlite3-node-abi.mjs",
+    "tests/e2e/support/mock-openai-server.mjs",
     "tests/e2e/support/start-backend.mjs"
   ],
   "ignoreDependencies": ["server-only"]

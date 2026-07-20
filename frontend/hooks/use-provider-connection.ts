@@ -25,7 +25,7 @@ export type ProviderConnectionOutcome =
       providerId?: string
     }
 
-export type ProviderConnectionActivationPolicy =
+type ProviderConnectionActivationPolicy =
   | {
       mode: "activate"
       setSelectedModel: (selection: ModelSelection | null) => Promise<void>
