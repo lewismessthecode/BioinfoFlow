@@ -1,5 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "ffae4af3c28a5285220cac59db389ca84cac307c",
   "packages": {
     ".": {
       "release-type": "simple",
@@ -64,6 +65,11 @@
           "type": "toml",
           "path": "backend/pyproject.toml",
           "jsonpath": "$.project.version"
+        },
+        {
+          "type": "toml",
+          "path": "backend/uv.lock",
+          "jsonpath": "$.package[?(@.name=='bioinfoflow-backend')].version"
         },
         {
           "type": "json",
