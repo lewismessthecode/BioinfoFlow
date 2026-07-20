@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "Bioinfoflow"
-    app_version: str = "0.1.0"
+    app_version: str = "0.1.0"  # x-release-please-version
     debug: bool = False
     repo_root: str = str(REPO_ROOT)
     bioinfoflow_home: str = "data"
