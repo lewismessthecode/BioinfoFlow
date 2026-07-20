@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs"
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentComposer } from "@/components/bioinfoflow/agent-runtime/agent-composer"
 import { apiRequest } from "@/lib/api"
@@ -179,6 +179,12 @@ describe("AgentComposer", () => {
   beforeEach(() => {
     apiRequestMock.mockReset()
     apiRequestMock.mockReturnValue(new Promise(() => {}))
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
   })
 
   it("grows with input until the max height cap", () => {
@@ -613,6 +619,156 @@ describe("AgentComposer", () => {
     expect(
       screen.getByRole("textbox", { name: "Message Bioinfoflow..." }),
     ).toBeInTheDocument()
+  })
+
+  it("types, pauses, deletes faster, and advances to the next placeholder", () => {
+    vi.useFakeTimers()
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        placeholderSuggestions={["AB", "CD"]}
+      />,
+    )
+
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    expect(textarea).toHaveAttribute("placeholder", "")
+
+    act(() => vi.advanceTimersByTime(80))
+    expect(textarea).toHaveAttribute("placeholder", "A")
+
+    act(() => vi.advanceTimersByTime(80))
+    expect(textarea).toHaveAttribute("placeholder", "AB")
+
+    act(() => vi.advanceTimersByTime(1_399))
+    expect(textarea).toHaveAttribute("placeholder", "AB")
+
+    act(() => vi.advanceTimersByTime(1))
+    act(() => vi.advanceTimersByTime(35))
+    expect(textarea).toHaveAttribute("placeholder", "A")
+
+    act(() => vi.advanceTimersByTime(35))
+    act(() => vi.advanceTimersByTime(300))
+    act(() => vi.advanceTimersByTime(80))
+    expect(textarea).toHaveAttribute("placeholder", "C")
+    expect(textarea).toHaveAttribute("aria-label", "Message Bioinfoflow...")
+
+    act(() => vi.advanceTimersByTime(80))
+    act(() => vi.advanceTimersByTime(1_400))
+    act(() => vi.advanceTimersByTime(35))
+    act(() => vi.advanceTimersByTime(35))
+    act(() => vi.advanceTimersByTime(300))
+    act(() => vi.advanceTimersByTime(80))
+    expect(textarea).toHaveAttribute("placeholder", "A")
+  })
+
+  it("stops placeholder animation while focused or while the composer has a value", () => {
+    vi.useFakeTimers()
+    const { rerender } = render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        placeholderSuggestions={["AB", "CD"]}
+      />,
+    )
+
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    act(() => vi.advanceTimersByTime(80))
+    expect(textarea).toHaveAttribute("placeholder", "A")
+
+    fireEvent.focus(textarea)
+    expect(textarea).toHaveAttribute("placeholder", "AB")
+    act(() => vi.advanceTimersByTime(5_000))
+    expect(textarea).toHaveAttribute("placeholder", "AB")
+
+    fireEvent.blur(textarea)
+    rerender(
+      <AgentComposer
+        value="already writing"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        placeholderSuggestions={["AB", "CD"]}
+      />,
+    )
+    expect(textarea).toHaveAttribute("placeholder", "AB")
+    act(() => vi.advanceTimersByTime(5_000))
+    expect(textarea).toHaveAttribute("placeholder", "AB")
+  })
+
+  it("uses one complete stable placeholder when reduced motion is preferred", () => {
+    vi.useFakeTimers()
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout")
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
+      matches: true,
+      media: "(prefers-reduced-motion: reduce)",
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        placeholderSuggestions={["Complete prompt", "Another prompt"]}
+      />,
+    )
+
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    expect(textarea).toHaveAttribute("placeholder", "Complete prompt")
+    expect(setTimeoutSpy).not.toHaveBeenCalledWith(expect.any(Function), 80)
+    act(() => vi.advanceTimersByTime(10_000))
+    expect(textarea).toHaveAttribute("placeholder", "Complete prompt")
+  })
+
+  it("cleans the active placeholder timer after unmount", () => {
+    vi.useFakeTimers()
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout")
+    const clearTimeoutSpy = vi.spyOn(window, "clearTimeout")
+    const { unmount } = render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        placeholderSuggestions={["First prompt", "Second prompt"]}
+      />,
+    )
+
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 80)
+    const timer = setTimeoutSpy.mock.results.at(-1)?.value
+    unmount()
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(timer)
   })
 
   it("toggles plan and act modes with Shift+Tab", () => {
