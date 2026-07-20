@@ -13,6 +13,7 @@ on:
         type: string
 
 permissions:
+  actions: write
   contents: write
   issues: write
   packages: write
@@ -45,6 +46,23 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      - name: Run required checks for the release pull request
+        if: steps.release.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PR: ${{ steps.release.outputs.pr }}
+        run: |
+          set -euo pipefail
+
+          head_branch="$(printf '%s' "$RELEASE_PR" | jq -r '.headBranchName')"
+          if [ -z "$head_branch" ] || [ "$head_branch" = "null" ]; then
+            echo "Release Please did not return a release pull request branch."
+            exit 1
+          fi
+
+          gh workflow run ci.yml --ref "$head_branch"
+          echo "Dispatched required CI checks for $head_branch."
 
       - name: Resolve formal release
         id: resolve

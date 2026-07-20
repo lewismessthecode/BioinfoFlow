@@ -19,12 +19,19 @@ def read_repo_file(path: str) -> str:
 def test_release_version_is_synchronized() -> None:
     version = read_repo_file("version.txt").strip()
     backend = tomllib.loads(read_repo_file("backend/pyproject.toml"))
+    backend_lock = tomllib.loads(read_repo_file("backend/uv.lock"))
     frontend = json.loads(read_repo_file("frontend/package.json"))
     openapi = json.loads(read_repo_file("docs/contracts/openapi-v1.json"))
     runtime_version = Settings.model_fields["app_version"].get_default()
 
     assert re.fullmatch(r"\d+\.\d+\.\d+", version)
     assert backend["project"]["version"] == version
+    locked_backend = next(
+        package
+        for package in backend_lock["package"]
+        if package["name"] == "bioinfoflow-backend"
+    )
+    assert locked_backend["version"] == version
     assert frontend["version"] == version
     assert openapi["info"]["version"] == version
     assert runtime_version == version
@@ -35,6 +42,7 @@ def test_release_please_uses_numeric_pre_major_versions() -> None:
     manifest = json.loads(read_repo_file(".release-please-manifest.json"))
     package = config["packages"]["."]
 
+    assert config["bootstrap-sha"] == "ffae4af3c28a5285220cac59db389ca84cac307c"
     assert manifest["."] == "0.1.0"
     assert package["release-type"] == "simple"
     assert package["package-name"] == "bioinfoflow"
@@ -48,6 +56,11 @@ def test_release_please_uses_numeric_pre_major_versions() -> None:
         for entry in package["extra-files"]
     }
     assert ("toml", "backend/pyproject.toml", "$.project.version") in extra_files
+    assert (
+        "toml",
+        "backend/uv.lock",
+        "$.package[?(@.name=='bioinfoflow-backend')].version",
+    ) in extra_files
     assert ("json", "frontend/package.json", "$.version") in extra_files
     assert ("generic", "backend/app/config.py", None) in extra_files
     assert (
@@ -79,6 +92,8 @@ def test_formal_release_workflow_publishes_numeric_aliases() -> None:
     workflow = read_repo_file(".github/workflows/release-please.yml")
 
     assert "googleapis/release-please-action@v4" in workflow
+    assert "actions: write" in workflow
+    assert 'gh workflow run ci.yml --ref "$head_branch"' in workflow
     assert "publish_version:" in workflow
     assert "include-v-in-tag" not in workflow
     assert ":${{ needs.release.outputs.version }}" in workflow
