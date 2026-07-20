@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test"
 
 const frontendPort = Number(process.env.PLAYWRIGHT_FRONTEND_PORT || 3100)
 const backendPort = Number(process.env.PLAYWRIGHT_BACKEND_PORT || 8100)
+const modelPort = Number(process.env.PLAYWRIGHT_MODEL_PORT || 9100)
 const baseURL = process.env.BASE_URL || `http://127.0.0.1:${frontendPort}`
 const apiBaseUrl = `http://127.0.0.1:${backendPort}/api/v1`
 
@@ -28,6 +29,12 @@ export default defineConfig({
     { name: "webkit", use: { ...devices["Desktop Safari"] } },
   ],
   webServer: [
+    {
+      command: `PLAYWRIGHT_MODEL_PORT=${modelPort} node tests/e2e/support/mock-openai-server.mjs`,
+      url: `http://127.0.0.1:${modelPort}/v1/models`,
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
     {
       command: `PLAYWRIGHT_BACKEND_PORT=${backendPort} node tests/e2e/support/start-backend.mjs`,
       url: `${apiBaseUrl}/system/health`,

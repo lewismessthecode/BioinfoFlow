@@ -2606,6 +2606,17 @@
         "prompt": "Prepare a run from @workflow"
       }
     },
+    "demoStarterSuggestions": {
+      "checkAndRun": {
+        "prompt": "Check and run the demo workflow"
+      },
+      "explainInputs": {
+        "prompt": "Explain the demo inputs"
+      },
+      "reviewRun": {
+        "prompt": "Review the latest demo run"
+      }
+    },
     "commandHints": {
       "workflow": {
         "prefix": "Use",

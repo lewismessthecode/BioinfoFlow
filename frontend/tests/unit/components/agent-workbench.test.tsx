@@ -29,6 +29,7 @@ let providerTemplatesMock: Array<Record<string, unknown>> = []
 let catalogLoadingMock = false
 let catalogErrorMock: Error | null = null
 const catalogRefreshMock = vi.fn()
+let firstRunContextMock: Record<string, unknown> | null = null
 
 vi.mock("next-intl", () => ({
   useLocale: () => "en",
@@ -185,6 +186,9 @@ vi.mock("next-intl", () => ({
       "starterSuggestions.chooseInputs.prompt": "Help me choose analysis inputs",
       "starterSuggestions.reviewFailure.prompt": "Review the latest failed run",
       "starterSuggestions.prepareRun.prompt": "Prepare a run from @workflow",
+      "demoStarterSuggestions.checkAndRun.prompt": "Check and run the demo workflow",
+      "demoStarterSuggestions.explainInputs.prompt": "Explain the demo inputs",
+      "demoStarterSuggestions.reviewRun.prompt": "Review the latest demo run",
       "commandHints.workflow.prefix": "Use",
       "commandHints.workflow.suffix": "to attach workflow context",
       "commandHints.skills.prefix": "Type",
@@ -246,6 +250,10 @@ vi.mock("@/hooks/use-llm-catalog", () => ({
 
 vi.mock("@/hooks/use-provider-connection", () => ({
   useProviderConnection: (...args: unknown[]) => useProviderConnectionMock(...args),
+}))
+
+vi.mock("@/hooks/use-first-run", () => ({
+  useFirstRunContext: () => firstRunContextMock,
 }))
 
 vi.mock("@/hooks/use-media-query", () => ({
@@ -403,6 +411,32 @@ const manualLocalExecutionScope = {
   selected_targets: [{ kind: "local", type: "local" }],
 }
 
+function demoFirstRunContext() {
+  return {
+    ready: true,
+    created: true,
+    demo_project_id: "project-demo",
+    workflow_id: "workflow-demo",
+    starter_context: {
+      project_id: "project-demo",
+      workflow: {
+        id: "workflow-demo",
+        name: "bioinfoflow-quickstart",
+        version: "1.0.0",
+        source: "local",
+        engine: "wdl",
+        scope: "project",
+        project_id: "project-demo",
+      },
+      values: {
+        samples_tsv: "asset://project/samples.tsv",
+        sample_a_fastq: "asset://project/sample-a.fastq",
+        sample_b_fastq: "asset://project/sample-b.fastq",
+      },
+    },
+  }
+}
+
 describe("AgentWorkbench", () => {
   beforeEach(() => {
     useAgentRuntimeMock.mockReset()
@@ -415,6 +449,7 @@ describe("AgentWorkbench", () => {
     catalogRefreshMock.mockReset()
     catalogLoadingMock = false
     catalogErrorMock = null
+    firstRunContextMock = null
     workspaceProjectsMock = []
     apiRequestMock.mockReset()
     apiRequestMock.mockImplementation((path: string) => {
@@ -476,6 +511,102 @@ describe("AgentWorkbench", () => {
     expect(screen.getByTestId("agent-sidecar-column")).toHaveAttribute(
       "aria-hidden",
       "true",
+    )
+  })
+
+  it("shows short contextual starters for the seeded demo project", () => {
+    firstRunContextMock = demoFirstRunContext()
+    render(<AgentWorkbench projectId="project-demo" />)
+
+    const starters = screen.getByTestId("agent-starter-suggestions")
+    expect(within(starters).getAllByRole("button")).toHaveLength(3)
+    expect(
+      within(starters).getByRole("button", {
+        name: "Check and run the demo workflow",
+      }),
+    ).toBeVisible()
+    expect(
+      within(starters).getByRole("button", { name: "Explain the demo inputs" }),
+    ).toBeVisible()
+    expect(
+      within(starters).getByRole("button", { name: "Review the latest demo run" }),
+    ).toBeVisible()
+    expect(
+      within(starters).queryByRole("button", {
+        name: "Check this workflow before I run it",
+      }),
+    ).not.toBeInTheDocument()
+  })
+
+  it("attaches the seeded workflow and immediately submits the primary demo starter", async () => {
+    firstRunContextMock = demoFirstRunContext()
+    const send = vi.fn().mockResolvedValue(undefined)
+    setupRuntime({ send })
+    useLlmSettingsMock.mockReturnValue({
+      models: [],
+      selectedModel: { provider: "openai", model: "gpt-5" },
+      isLoading: false,
+      setSelectedModel: vi.fn(),
+      refresh: vi.fn(),
+    })
+    render(<AgentWorkbench projectId="project-demo" />)
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Check and run the demo workflow" }),
+    )
+
+    await waitFor(() => expect(send).toHaveBeenCalledOnce())
+    expect(send).toHaveBeenCalledWith(
+      "Check and run the demo workflow",
+      expect.objectContaining({
+        inputParts: [
+          { type: "text", text: "Check and run the demo workflow" },
+          {
+            kind: "workflow_ref",
+            workflow_id: "workflow-demo",
+            project_id: "project-demo",
+            scope: "project",
+            display_name: "bioinfoflow-quickstart",
+            display_version: "1.0.0",
+          },
+        ],
+        activeSkillNames: [],
+      }),
+    )
+    expect(send.mock.calls[0]?.[1]).not.toHaveProperty("permissionMode")
+    expect(
+      apiRequestMock.mock.calls.some(([path]) =>
+        String(path).startsWith("/runs"),
+      ),
+    ).toBe(false)
+  })
+
+  it("opens model connection instead of submitting the primary demo starter without a model", () => {
+    firstRunContextMock = demoFirstRunContext()
+    const send = vi.fn().mockResolvedValue(undefined)
+    setupRuntime({ send })
+    render(<AgentWorkbench projectId="project-demo" />)
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Check and run the demo workflow" }),
+    )
+
+    expect(screen.getByRole("dialog", { name: "Connect a model" })).toBeVisible()
+    expect(send).not.toHaveBeenCalled()
+    expect(screen.getByTestId("agent-composer-shell")).toHaveAttribute(
+      "data-placement",
+      "center",
+    )
+  })
+
+  it("keeps non-primary demo starters editable before submission", () => {
+    firstRunContextMock = demoFirstRunContext()
+    render(<AgentWorkbench projectId="project-demo" />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Explain the demo inputs" }))
+
+    expect(screen.getByLabelText("Message Bioinfoflow...")).toHaveValue(
+      "Explain the demo inputs",
     )
   })
 
@@ -2967,7 +3098,12 @@ describe("AgentWorkbench", () => {
   it("renders a compact composer jump prompt and inline approval controls", () => {
     setupRuntime({
       turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
-      events: [waitingDecisionEvent],
+      events: [
+        {
+          ...waitingDecisionEvent,
+          payload: { action_id: "action-1", name: "runs.submit" },
+        },
+      ],
       status: "running",
     })
 
@@ -2981,6 +3117,7 @@ describe("AgentWorkbench", () => {
       ),
     ).toBeInTheDocument()
     expect(screen.getByTestId("inline-approval-card")).toBeInTheDocument()
+    expect(screen.getAllByText("runs.submit")).not.toHaveLength(0)
     expect(screen.queryByTestId("pending-decisions")).not.toBeInTheDocument()
     expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
     expect(screen.getByText("Needs your decision")).toBeInTheDocument()

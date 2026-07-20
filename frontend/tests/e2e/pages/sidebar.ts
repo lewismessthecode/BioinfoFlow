@@ -9,7 +9,9 @@ export class Sidebar {
 
   async expectLoaded() {
     await expect(this.root).toBeVisible()
-    await expect(this.root.getByRole("button", { name: "New Conversation" })).toBeVisible()
+    await expect(
+      this.root.getByRole("button", { name: "New Conversation" }).first(),
+    ).toBeVisible()
   }
 
   async openCreateProjectDialog() {
