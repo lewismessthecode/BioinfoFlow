@@ -3,10 +3,12 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from app.auth.session import AuthUser, normalize_session_token, validate_session
+import app.auth.session as session_module
 from app.config import settings
 
 
@@ -213,3 +215,38 @@ def test_validate_session_db_not_found(
 
     result = validate_session("any-token")
     assert result is None
+
+
+def test_validate_session_reports_uninitialized_auth_schema_without_exception_noise(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "better-auth.db"
+    sqlite3.connect(db_path).close()
+    monkeypatch.setattr(settings, "better_auth_db_path", str(db_path))
+
+    warnings: list[tuple[str, dict]] = []
+    exceptions: list[str] = []
+    monkeypatch.setattr(
+        session_module,
+        "logger",
+        SimpleNamespace(
+            warning=lambda event, **kwargs: warnings.append((event, kwargs)),
+            exception=lambda event, **_kwargs: exceptions.append(event),
+        ),
+    )
+
+    first_result = validate_session("any-token")
+    second_result = validate_session("another-token")
+
+    assert first_result is None
+    assert second_result is None
+    assert warnings == [
+        (
+            "auth.db_schema_not_ready",
+            {
+                "path": str(db_path),
+                "missing_tables": ["session", "user"],
+            },
+        )
+    ]
+    assert exceptions == []
