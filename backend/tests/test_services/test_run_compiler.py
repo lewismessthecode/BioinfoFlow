@@ -206,7 +206,7 @@ def test_demo_workflow_executes_with_miniwdl_when_runtime_is_available(tmp_path)
             str(tmp_path / "run" / "."),
             "--input",
             str(inputs_path),
-            "--output",
+            "-o",
             str(outputs_path),
             "--no-color",
         ]
