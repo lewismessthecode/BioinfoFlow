@@ -340,7 +340,8 @@ function setupRuntime({
   turns = [],
   events = [],
   status = "idle",
-  send = vi.fn(),
+  send,
+  modelSelection,
   permissionMode = "guarded_auto",
   setPermissionMode = vi.fn(),
   permissionUpdate = {
@@ -356,6 +357,7 @@ function setupRuntime({
   events?: AgentRuntimeEvent[]
   status?: "idle" | "loading" | "running" | "error"
   send?: ReturnType<typeof vi.fn>
+  modelSelection?: { provider: string; model: string } | null
   permissionMode?: "ask_each_action" | "guarded_auto" | "bypass"
   setPermissionMode?: ReturnType<typeof vi.fn>
   permissionUpdate?: {
@@ -370,6 +372,9 @@ function setupRuntime({
     error: string | null
   }
 } = {}) {
+  if (send && modelSelection !== null) {
+    configureModelForTest(modelSelection ?? undefined)
+  }
   useAgentRuntimeMock.mockReturnValue({
     state: {
       session,
@@ -380,7 +385,7 @@ function setupRuntime({
       error: null,
     },
     setActiveSessionId: vi.fn(),
-    send,
+    send: send ?? vi.fn(),
     interrupt: vi.fn(),
     decideAction: vi.fn(),
     permissionMode,
@@ -435,6 +440,18 @@ function demoFirstRunContext() {
       },
     },
   }
+}
+
+function configureModelForTest(
+  selectedModel = { provider: "openai", model: "gpt-5" },
+) {
+  useLlmSettingsMock.mockReturnValue({
+    models: [],
+    selectedModel,
+    isLoading: false,
+    setSelectedModel: vi.fn(),
+    refresh: vi.fn(),
+  })
 }
 
 describe("AgentWorkbench", () => {
@@ -542,13 +559,6 @@ describe("AgentWorkbench", () => {
     firstRunContextMock = demoFirstRunContext()
     const send = vi.fn().mockResolvedValue(undefined)
     setupRuntime({ send })
-    useLlmSettingsMock.mockReturnValue({
-      models: [],
-      selectedModel: { provider: "openai", model: "gpt-5" },
-      isLoading: false,
-      setSelectedModel: vi.fn(),
-      refresh: vi.fn(),
-    })
     render(<AgentWorkbench projectId="project-demo" />)
 
     fireEvent.click(
@@ -584,7 +594,7 @@ describe("AgentWorkbench", () => {
   it("opens model connection instead of submitting the primary demo starter without a model", () => {
     firstRunContextMock = demoFirstRunContext()
     const send = vi.fn().mockResolvedValue(undefined)
-    setupRuntime({ send })
+    setupRuntime({ send, modelSelection: null })
     render(<AgentWorkbench projectId="project-demo" />)
 
     fireEvent.click(
@@ -597,6 +607,44 @@ describe("AgentWorkbench", () => {
       "data-placement",
       "center",
     )
+  })
+
+  it("preserves a manually entered draft and opens model connection on Enter without a model", () => {
+    const send = vi.fn().mockResolvedValue(undefined)
+    setupRuntime({ send, modelSelection: null })
+    render(<AgentWorkbench />)
+
+    const input = screen.getByLabelText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Explain these inputs" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(input).toHaveValue("Explain these inputs")
+    expect(send).not.toHaveBeenCalled()
+    expect(screen.getByTestId("agent-composer-shell")).toHaveAttribute(
+      "data-placement",
+      "center",
+    )
+    expect(screen.getByRole("dialog", { name: "Connect a model" })).toBeVisible()
+  })
+
+  it("preserves a secondary demo starter and opens model connection on send without a model", () => {
+    firstRunContextMock = demoFirstRunContext()
+    const send = vi.fn().mockResolvedValue(undefined)
+    setupRuntime({ send, modelSelection: null })
+    render(<AgentWorkbench projectId="project-demo" />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Explain the demo inputs" }))
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }))
+
+    expect(screen.getByLabelText("Message Bioinfoflow...")).toHaveValue(
+      "Explain the demo inputs",
+    )
+    expect(send).not.toHaveBeenCalled()
+    expect(screen.getByTestId("agent-composer-shell")).toHaveAttribute(
+      "data-placement",
+      "center",
+    )
+    expect(screen.getByRole("dialog", { name: "Connect a model" })).toBeVisible()
   })
 
   it("keeps non-primary demo starters editable before submission", () => {
@@ -1663,6 +1711,7 @@ describe("AgentWorkbench", () => {
 
   it("shows an optimistic pending response immediately after submitting the centered composer", () => {
     const send = vi.fn(() => new Promise(() => {}))
+    configureModelForTest()
     useAgentRuntimeMock.mockReturnValue({
       state: {
         session: null,
@@ -2121,6 +2170,7 @@ describe("AgentWorkbench", () => {
 
   it("interrupts the active turn before sending when the turn policy is interrupt", async () => {
     writeAgentTurnPolicy("interrupt")
+    configureModelForTest()
     const calls: string[] = []
     const send = vi.fn(async () => {
       calls.push("send")
@@ -2163,6 +2213,7 @@ describe("AgentWorkbench", () => {
 
   it("waits for an optimistic in-flight turn to become interruptible before replacement send", async () => {
     writeAgentTurnPolicy("interrupt")
+    configureModelForTest()
     const calls: string[] = []
     const send = vi.fn((text: string) => {
       calls.push(`send:${text}`)
@@ -2222,6 +2273,7 @@ describe("AgentWorkbench", () => {
 
   it("queues a submitted draft until the active turn finishes when the turn policy is queue", async () => {
     writeAgentTurnPolicy("queue")
+    configureModelForTest()
     const send = vi.fn().mockResolvedValue(undefined)
     const runtime = {
       state: {
@@ -2271,6 +2323,7 @@ describe("AgentWorkbench", () => {
 
   it("drops queued drafts when the active conversation changes", async () => {
     writeAgentTurnPolicy("queue")
+    configureModelForTest()
     const send = vi.fn().mockResolvedValue(undefined)
     const sessionA = { ...baseSession, id: "session-a" }
     const sessionB = { ...baseSession, id: "session-b" }
@@ -2335,6 +2388,7 @@ describe("AgentWorkbench", () => {
 
   it("cancels queued drafts when starting a new conversation", async () => {
     writeAgentTurnPolicy("queue")
+    configureModelForTest()
     const send = vi.fn().mockResolvedValue(undefined)
     const runtime = {
       state: {
@@ -2382,6 +2436,7 @@ describe("AgentWorkbench", () => {
 
   it("clears queued drafts when stopping the active turn", async () => {
     writeAgentTurnPolicy("queue")
+    configureModelForTest()
     const send = vi.fn().mockResolvedValue(undefined)
     const interrupt = vi.fn().mockResolvedValue(null)
     const runtime = {
@@ -2431,6 +2486,7 @@ describe("AgentWorkbench", () => {
 
   it("keeps multiple queued drafts in FIFO order", async () => {
     writeAgentTurnPolicy("queue")
+    configureModelForTest()
     const send = vi.fn().mockResolvedValue(undefined)
     const runtime = {
       state: {
@@ -2493,6 +2549,7 @@ describe("AgentWorkbench", () => {
 
   it("keeps the execution scope selected when a draft was queued", async () => {
     writeAgentTurnPolicy("queue")
+    configureModelForTest()
     const send = vi.fn().mockResolvedValue(undefined)
     apiRequestMock.mockImplementation((path: string) => {
       if (path === "/connections") {

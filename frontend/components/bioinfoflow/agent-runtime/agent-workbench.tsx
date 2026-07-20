@@ -1075,6 +1075,11 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     ])
 
     const submit = () => {
+      if (!input.trim()) return
+      if (!selectedModel) {
+        setConnectModelOpen(true)
+        return
+      }
       const workflowInput = workflowContextInputFromComposerValue({
         value: input,
         projectId,
