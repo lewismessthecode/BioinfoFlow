@@ -13,7 +13,7 @@ def test_settings_defaults():
 
 
 def test_fastapi_version_matches_release_version():
-    assert fastapi_app.version == "0.1.0"
+    assert fastapi_app.version == settings.app_version
 
 
 @pytest.mark.asyncio
