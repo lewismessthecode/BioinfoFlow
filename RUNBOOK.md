@@ -1,6 +1,64 @@
 # Bioinfoflow Runbook
 
-This is the canonical runbook for v0.1.0.
+This is the canonical runbook for local trials, source development, and shared
+deployments.
+
+## Localhost Installer (Recommended Trial Path)
+
+The release installer is the shortest path from an empty machine to the Agent
+workspace. It requires Docker Desktop or Docker Engine with Compose v2 and a
+local Unix-socket Docker context.
+
+Installer assets are attached to tagged GitHub releases. When a release includes
+`install.sh`, `docker-compose.local.yml`, and `SHA256SUMS`, install it with:
+
+```bash
+curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh
+```
+
+If those assets are not present on the
+[Releases page](https://github.com/lewismessthecode/BioinfoFlow/releases), use
+the [source-build path](#2-build-from-source-with-docker). Do not run the
+repository copy of `scripts/install.sh` directly: release packaging embeds the
+matching version and publishes the checksums it verifies.
+
+The installer pulls the matching `amd64` or `arm64` images, waits for both
+services to become healthy, and opens `http://localhost:3000`. A fresh local
+workspace opens in the Agent experience with a managed **Bioinfoflow Demo**
+project, a registered WDL workflow, and small sample-sheet/FASTQ inputs. Connect
+one model in the composer, then choose a short demo starter such as **Check and
+run the demo workflow**. Tool approvals still appear before the Agent submits a
+run.
+
+The managed paths are deliberately separate:
+
+- `~/.bioinfoflow/install` contains the installer, Compose file, release
+  version, and generated environment file.
+- `~/.bioinfoflow/data` contains Bioinfoflow state, demo assets, projects, and
+  run data.
+
+Lifecycle commands:
+
+```bash
+~/.bioinfoflow/install/install.sh --update
+~/.bioinfoflow/install/install.sh --uninstall
+~/.bioinfoflow/install/install.sh --purge
+```
+
+`--uninstall` removes the containers and managed control files but preserves
+`~/.bioinfoflow/data`. `--purge` removes both control files and managed data. If
+you already uninstalled and later decide to remove the preserved data, fetch a
+published installer again and pass `--purge`:
+
+```bash
+curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh -s -- --purge
+```
+
+The localhost stack binds the UI and API to `127.0.0.1` and intentionally runs
+with authentication disabled. It is for one trusted local machine, not a shared
+server, reverse proxy, or port-forwarded deployment. It also mounts the local
+Docker socket so the Agent and workflow runtime can launch containers. See
+[Security Notes](docs/security.md) before changing that boundary.
 
 If you only remember one rule, remember this:
 
@@ -95,7 +153,7 @@ For any shared or production deployment, also set:
 TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER_IP_OR_DOMAIN"]
 ```
 
-## 2. Fastest Path: Docker
+## 2. Build From Source With Docker
 
 ### Prerequisites
 

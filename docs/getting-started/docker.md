@@ -1,14 +1,76 @@
 # Docker Quick Start
 
-Learn how to start Bioinfoflow locally with Docker Compose, sign in as the
-bootstrap owner, and choose the right settings for local or shared deployments.
+Use the release installer for the lowest-friction local trial. Build from source
+when you are developing Bioinfoflow or configuring a shared deployment.
 
 ## Prerequisites
 
 - Docker Engine or Docker Desktop with Compose
 - At least one AI provider: use an API key for a hosted provider, or configure an endpoint and model for Ollama, vLLM, or another OpenAI-compatible service.
 
-## First Run
+## Localhost Installer
+
+Bioinfoflow publishes the installer, its Compose file, and their checksums as
+tagged-release assets. Once those three assets appear on the
+[Releases page](https://github.com/lewismessthecode/BioinfoFlow/releases), run:
+
+```bash
+curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh
+```
+
+The installer accepts only a local Unix-socket Docker context, selects the
+matching `amd64` or `arm64` images, verifies the downloaded release assets, and
+waits for the UI and API health checks. If the release assets are not available
+yet, continue with [Build From Source](#build-from-source).
+
+It manages two paths:
+
+| Path | Purpose |
+| --- | --- |
+| `~/.bioinfoflow/install` | Versioned installer, Compose file, generated environment, and release metadata |
+| `~/.bioinfoflow/data` | Databases, credentials, demo assets, projects, workflow inputs, and run outputs |
+
+The browser opens at `http://localhost:3000`. There is no sign-in in this
+localhost mode. On a fresh workspace, Bioinfoflow creates the **Bioinfoflow
+Demo** project, registers its WDL workflow, and places its small sample sheet and
+FASTQ inputs under the managed data root. Connect one provider from the Agent
+composer and choose **Check and run the demo workflow** to start a normal Agent
+turn. Bioinfoflow still asks for approval before `runs.submit` executes.
+
+Update to the newest tagged release:
+
+```bash
+~/.bioinfoflow/install/install.sh --update
+```
+
+Remove the application while keeping `~/.bioinfoflow/data`:
+
+```bash
+~/.bioinfoflow/install/install.sh --uninstall
+```
+
+Remove the application and its managed data:
+
+```bash
+~/.bioinfoflow/install/install.sh --purge
+```
+
+Run `--purge` before `--uninstall` if you want everything removed. After an
+uninstall, the installed script is gone; you can fetch a published installer
+again to delete the preserved managed data:
+
+```bash
+curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh -s -- --purge
+```
+
+Both published ports bind to `127.0.0.1`, and the stack runs with
+`AUTH_MODE=dev`. This deliberate no-auth setup is only for a trusted local
+machine. Do not expose it through a reverse proxy, SSH port forwarding, a public
+Docker host, or a changed `0.0.0.0` bind. The backend also mounts the host Docker
+socket. Use the source-build configuration below for personal/team auth and
+shared or remote access, and review [Security Notes](../security.md).
+
+## Build From Source
 
 From the repo root:
 
