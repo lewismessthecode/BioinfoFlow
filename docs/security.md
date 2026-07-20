@@ -2,6 +2,39 @@
 
 Bioinfoflow is designed first for trusted local machines and lab servers. Treat it like infrastructure that can launch containers and access local data.
 
+## Localhost Installer Trust Boundary
+
+The release installer creates a deliberately low-friction, single-machine
+environment:
+
+- the frontend and backend publish only on `127.0.0.1`
+- both services use `AUTH_MODE=dev`, so there is no login or user isolation
+- the backend mounts the effective local Unix Docker socket
+- control files live in `~/.bioinfoflow/install`
+- persistent state, credentials, projects, and run data live in
+  `~/.bioinfoflow/data`
+
+This is safe only when the host account and local machine are trusted. Any local
+process or user that can reach the bound ports can use Bioinfoflow without
+authenticating, and Docker-socket access gives the backend container authority
+over the host Docker daemon. Do not expose this stack with a reverse proxy, SSH
+port forwarding, a public port bind, or a remote Docker context.
+
+Provider API keys are not accepted or stored by the installer. Connect a model
+after the app opens; Bioinfoflow stores saved provider credentials through its
+normal credential-encryption system under the persistent data root.
+
+For shared or remote use, build from source and configure `personal` or `team`
+auth, explicit secrets, trusted hosts, matching origins, and TLS as described
+below. The localhost installer is not a shortcut for production deployment.
+
+Uninstalling preserves `~/.bioinfoflow/data`; purging explicitly removes it:
+
+```bash
+~/.bioinfoflow/install/install.sh --uninstall
+~/.bioinfoflow/install/install.sh --purge
+```
+
 ## Docker Socket
 
 The Docker Compose setup mounts:
