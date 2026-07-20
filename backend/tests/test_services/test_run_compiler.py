@@ -8,7 +8,12 @@ resolution / table rendering surface clearly.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import re
+import shutil
+import subprocess
+import textwrap
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -17,6 +22,8 @@ import pytest
 
 import app.services.run_compiler as run_compiler_module
 from app.path_layout import RunLayout
+from app.models.workflow import Workflow
+from app.services.demo_bootstrap_service import DEMO_ASSET_ROOT
 from app.schemas.form_spec import ColumnSpec, FormField, FormSpec
 from app.schemas.run import RunCreate
 from app.services.run_compiler import (
@@ -27,6 +34,7 @@ from app.services.run_compiler import (
     ValidatedRun,
     _render_csv,
 )
+from sqlalchemy import select
 from app.services.workflow_image_service import WorkflowImageRegistry
 
 
@@ -45,6 +53,229 @@ def test_run_create_rejects_legacy_fields():
                 workflow_id=uuid4(),
                 **{legacy: {"x": 1}},
             )
+
+
+def _demo_task_command(task_name: str, **inputs: Path) -> str:
+    workflow_text = (DEMO_ASSET_ROOT / "workflow.wdl").read_text(encoding="utf-8")
+    match = re.search(
+        rf"task {task_name} \{{.*?command <<<\n(?P<command>.*?)\n  >>>",
+        workflow_text,
+        flags=re.DOTALL,
+    )
+    assert match is not None
+    command = textwrap.dedent(match.group("command"))
+    for name, path in inputs.items():
+        command = command.replace(f"~{{{name}}}", str(path))
+    return command
+
+
+def test_demo_task_commands_use_sheet_labels_and_compute_deterministic_report(
+    tmp_path,
+):
+    samples_tsv = tmp_path / "samples.tsv"
+    sample_a = tmp_path / "sample-a.fastq"
+    sample_b = tmp_path / "sample-b.fastq"
+    samples_tsv.write_text(
+        "sample\tfastq\nTumor A\tsample-a.fastq\nControl B\tsample-b.fastq\n",
+        encoding="utf-8",
+    )
+    sample_a.write_bytes((DEMO_ASSET_ROOT / "sample-a.fastq").read_bytes())
+    sample_b.write_bytes((DEMO_ASSET_ROOT / "sample-b.fastq").read_bytes())
+
+    summary_result = subprocess.run(
+        [
+            "sh",
+            "-eu",
+            "-c",
+            _demo_task_command(
+                "summarize_reads",
+                samples_tsv=samples_tsv,
+                sample_a_fastq=sample_a,
+                sample_b_fastq=sample_b,
+            ),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert summary_result.returncode == 0, summary_result.stderr
+    summary_path = tmp_path / "summary.tsv"
+    assert summary_path.read_text(encoding="utf-8") == (
+        "sample\treads\tbases\n"
+        "Tumor A\t2\t16\n"
+        "Control B\t2\t12\n"
+    )
+
+    report_result = subprocess.run(
+        [
+            "sh",
+            "-eu",
+            "-c",
+            _demo_task_command("render_report", summary_tsv=summary_path),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert report_result.returncode == 0, report_result.stderr
+    assert (tmp_path / "report.md").read_text(encoding="utf-8") == (
+        "# Bioinfoflow Quickstart Report\n\n"
+        "Samples: 2\n"
+        "Total reads: 4\n"
+        "Total bases: 28\n"
+    )
+
+
+def test_demo_summary_rejects_sheet_with_unmatched_fastq_basename(tmp_path):
+    samples_tsv = tmp_path / "samples.tsv"
+    sample_a = tmp_path / "sample-a.fastq"
+    sample_b = tmp_path / "sample-b.fastq"
+    samples_tsv.write_text(
+        "sample\tfastq\nTumor A\tmissing.fastq\nControl B\tsample-b.fastq\n",
+        encoding="utf-8",
+    )
+    sample_a.write_bytes((DEMO_ASSET_ROOT / "sample-a.fastq").read_bytes())
+    sample_b.write_bytes((DEMO_ASSET_ROOT / "sample-b.fastq").read_bytes())
+
+    result = subprocess.run(
+        [
+            "sh",
+            "-eu",
+            "-c",
+            _demo_task_command(
+                "summarize_reads",
+                samples_tsv=samples_tsv,
+                sample_a_fastq=sample_a,
+                sample_b_fastq=sample_b,
+            ),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "must reference each bundled FASTQ basename exactly once" in result.stderr
+
+
+def test_demo_workflow_executes_with_miniwdl_when_runtime_is_available(tmp_path):
+    miniwdl = shutil.which("miniwdl")
+    if miniwdl is None:
+        pytest.skip("miniwdl executable is unavailable")
+
+    docker_available = subprocess.run(
+        ["docker", "info"],
+        check=False,
+        capture_output=True,
+        text=True,
+    ).returncode == 0
+    help_text = subprocess.run(
+        [miniwdl, "run", "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    ).stdout
+    no_container_supported = "--no-container" in help_text
+    if not docker_available and not no_container_supported:
+        pytest.skip("installed miniwdl has no --no-container mode and Docker is down")
+
+    inputs = {
+        "bioinfoflow_quickstart.samples_tsv": str(DEMO_ASSET_ROOT / "samples.tsv"),
+        "bioinfoflow_quickstart.sample_a_fastq": str(
+            DEMO_ASSET_ROOT / "sample-a.fastq"
+        ),
+        "bioinfoflow_quickstart.sample_b_fastq": str(
+            DEMO_ASSET_ROOT / "sample-b.fastq"
+        ),
+    }
+    inputs_path = tmp_path / "inputs.json"
+    outputs_path = tmp_path / "outputs.json"
+    inputs_path.write_text(json.dumps(inputs), encoding="utf-8")
+    command = [miniwdl, "run"]
+    if not docker_available:
+        command.append("--no-container")
+    command.extend(
+        [
+            str(DEMO_ASSET_ROOT / "workflow.wdl"),
+            "--dir",
+            str(tmp_path / "run" / "."),
+            "--input",
+            str(inputs_path),
+            "--output",
+            str(outputs_path),
+            "--no-color",
+        ]
+    )
+    result = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr
+    outputs = json.loads(outputs_path.read_text(encoding="utf-8"))
+    summary = Path(outputs["bioinfoflow_quickstart.summary_tsv"])
+    report = Path(outputs["bioinfoflow_quickstart.report"])
+    assert summary.read_text(encoding="utf-8") == (
+        "sample\treads\tbases\n"
+        "sample-a\t2\t16\n"
+        "sample-b\t2\t12\n"
+    )
+    assert report.read_text(encoding="utf-8") == (
+        "# Bioinfoflow Quickstart Report\n\n"
+        "Samples: 2\n"
+        "Total reads: 4\n"
+        "Total bases: 28\n"
+    )
+
+
+@pytest.mark.asyncio
+async def test_demo_bootstrap_values_compile_through_normal_wdl_inputs(
+    async_client, db_session
+):
+    response = await async_client.post("/api/v1/first-run/bootstrap")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    workflow = await db_session.scalar(
+        select(Workflow).where(Workflow.id == data["workflow_id"])
+    )
+    assert workflow is not None
+
+    compiler = RunCompiler(db_session)
+    payload = RunCreate(
+        project_id=data["demo_project_id"],
+        workflow_id=data["workflow_id"],
+        values=data["starter_context"]["values"],
+    )
+    validated = await compiler.validate(
+        payload,
+        user_id="dev",
+        workspace_id="00000000-0000-0000-0000-000000000001",
+    )
+    compiled = await compiler._compile(payload, validated=validated)
+
+    assert compiled.launch.engine == "wdl"
+    assert compiled.run.config["inputs"]["bioinfoflow_quickstart.samples_tsv"].endswith(
+        "/data/samples.tsv"
+    )
+    assert compiled.run.config["inputs"]["bioinfoflow_quickstart.sample_a_fastq"].endswith(
+        "/data/sample-a.fastq"
+    )
+    assert compiled.run.config["inputs"]["bioinfoflow_quickstart.sample_b_fastq"].endswith(
+        "/data/sample-b.fastq"
+    )
+    assert "app.engine._miniwdl_entry" in " ".join(compiled.launch.argv)
+    assert (
+        "alpine:3.20.3@sha256:1e42bbe2508154c9126d48c2b8a75420c3544343bf86fd041fb7527e017a4b4a"
+        in str(workflow.schema_json)
+    )
 
 
 @pytest.mark.unit

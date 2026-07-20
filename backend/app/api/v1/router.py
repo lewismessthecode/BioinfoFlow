@@ -5,6 +5,7 @@ from app.api.v1.batch import router as batch_router
 from app.api.v1.container_registries import router as container_registries_router
 from app.api.v1.events import router as events_router
 from app.api.v1.files import router as files_router
+from app.api.v1.first_run import router as first_run_router
 from app.api.v1.images import router as images_router
 from app.api.v1.agent import router as agent_router
 from app.api.v1.llm import router as llm_router
@@ -26,6 +27,7 @@ api_router.include_router(projects_router)
 api_router.include_router(project_workflows_router)
 api_router.include_router(workflows_router)
 api_router.include_router(files_router)
+api_router.include_router(first_run_router)
 api_router.include_router(storage_router)
 api_router.include_router(images_router)
 api_router.include_router(events_router)
