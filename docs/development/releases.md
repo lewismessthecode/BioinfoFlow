@@ -41,7 +41,7 @@ the next release entry.
 ## Normal Release Procedure
 
 1. Open the Release Please pull request whose title looks like
-   `chore(main): release 0.2.0`.
+   `chore(main): release bioinfoflow 0.2.0`.
 2. Confirm that the proposed version matches the merged work:
    - fixes and performance work only: patch;
    - at least one feature: minor;

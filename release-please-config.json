@@ -11,7 +11,6 @@
       "include-v-in-release-name": false,
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": false,
-      "pull-request-title-pattern": "chore${scope}: release ${version}",
       "changelog-sections": [
         {
           "type": "feat",
@@ -67,9 +66,8 @@
           "jsonpath": "$.project.version"
         },
         {
-          "type": "toml",
-          "path": "backend/uv.lock",
-          "jsonpath": "$.package[?(@.name=='bioinfoflow-backend')].version"
+          "type": "generic",
+          "path": "backend/uv.lock"
         },
         {
           "type": "json",
