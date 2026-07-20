@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 import app.database as app_database
+import app.main as app_main
 from app.config import settings
 from app.api.deps import get_db
 from app.database import Base, stamp_database_revision
@@ -95,7 +96,7 @@ async def db_session(db_engine):
 
 
 @pytest_asyncio.fixture
-async def async_client(app, db_session):
+async def async_client(app, db_session, monkeypatch):
     session_maker = async_sessionmaker(
         bind=db_session.bind,
         expire_on_commit=False,
@@ -107,6 +108,11 @@ async def async_client(app, db_session):
 
     app_database.engine = db_session.bind
     app_database.async_session_maker = session_maker
+
+    async def leave_fixture_engine_open():
+        return None
+
+    monkeypatch.setattr(app_main, "close_db", leave_fixture_engine_open)
 
     async def override_get_db():
         async with session_maker() as session:

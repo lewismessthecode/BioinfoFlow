@@ -24,6 +24,8 @@ from app.repositories.workflow_repo import WorkflowRepository
 from app.services.workflow_form_spec import reconcile_workflow_form_spec
 from app.services.workflow_image_service import WorkflowImagePrefetchService
 from app.services.workflow_validator import WorkflowValidator
+from app.services.demo_contract import DEMO_WORKFLOW
+from app.utils.exceptions import ConflictError, PermissionDeniedError
 from app.utils.logging import get_logger
 from app.utils.repo_paths import allowed_local_path_roots, repo_root
 
@@ -68,6 +70,9 @@ class WorkflowService:
         estimated_time = payload.get("estimated_time")
         container_registry_id = payload.get("container_registry_id")
         weight = payload.get("weight", 1)
+
+        if DEMO_WORKFLOW.reserves(source=source, name=name, version=version):
+            raise ConflictError("The canonical demo workflow identity is reserved")
 
         source_ref = payload.get("source_ref")
         entrypoint_relpath = payload.get("entrypoint_relpath")
@@ -262,6 +267,8 @@ class WorkflowService:
         return workflow
 
     async def update_workflow(self, workflow, payload: dict[str, Any]):
+        if str(workflow.id) == DEMO_WORKFLOW.id:
+            raise PermissionDeniedError("The canonical demo workflow cannot be changed")
         if "schema_json" in payload and payload["schema_json"] is not None:
             engine_value = (
                 workflow.engine.value
@@ -277,6 +284,8 @@ class WorkflowService:
         return await self.repo.update(workflow, **payload)
 
     async def delete_workflow(self, workflow):
+        if str(workflow.id) == DEMO_WORKFLOW.id:
+            raise PermissionDeniedError("The canonical demo workflow cannot be deleted")
         if (
             str(getattr(workflow.source, "value", workflow.source))
             == WorkflowSource.LOCAL.value
