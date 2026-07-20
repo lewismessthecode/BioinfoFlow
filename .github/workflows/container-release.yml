@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - main
+  workflow_call:
+    inputs:
+      publish_images:
+        description: "Choose whether to publish container images."
+        required: false
+        default: force
+        type: string
   workflow_dispatch:
     inputs:
       publish_images:
@@ -33,7 +40,7 @@ jobs:
       publish_frontend: ${{ steps.changes.outputs.publish_frontend }}
       backend_image: ${{ steps.images.outputs.backend }}
       frontend_image: ${{ steps.images.outputs.frontend }}
-      short_sha: ${{ steps.images.outputs.short_sha }}
+      frontend_localhost_image: ${{ steps.images.outputs.frontend_localhost }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -43,7 +50,7 @@ jobs:
       - name: Detect image changes
         id: changes
         env:
-          REQUESTED_PUBLISH: ${{ github.event.inputs.publish_images || 'auto' }}
+          REQUESTED_PUBLISH: ${{ inputs.publish_images || github.event.inputs.publish_images || 'auto' }}
           BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
@@ -78,6 +85,11 @@ jobs:
                 if grep -Eq '^frontend/' "$changed_files"; then
                   publish_frontend="true"
                 fi
+
+                if grep -Eq '^(docker-compose\.local\.yml|\.github/workflows/(container-release|release)\.yml)$' "$changed_files"; then
+                  publish_backend="true"
+                  publish_frontend="true"
+                fi
               fi
               ;;
             *)
@@ -98,11 +110,10 @@ jobs:
         id: images
         run: |
           owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
-          short_sha="${GITHUB_SHA::12}"
           {
             echo "backend=ghcr.io/${owner}/bioinfoflow-backend"
             echo "frontend=ghcr.io/${owner}/bioinfoflow-frontend"
-            echo "short_sha=${short_sha}"
+            echo "frontend_localhost=ghcr.io/${owner}/bioinfoflow-frontend-localhost"
           } >> "$GITHUB_OUTPUT"
 
   publish-backend:
@@ -124,15 +135,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Generate backend image tags
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.detect.outputs.backend_image }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=tag
+            type=sha,prefix=sha-
+
       - name: Publish backend image
         uses: docker/build-push-action@v7
         with:
           context: ./backend
           file: ./backend/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ${{ needs.detect.outputs.backend_image }}:main
-            ${{ needs.detect.outputs.backend_image }}:sha-${{ needs.detect.outputs.short_sha }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
@@ -155,22 +178,63 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Generate authenticated frontend image tags
+        id: frontend-metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.detect.outputs.frontend_image }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=tag
+            type=sha,prefix=sha-
+
+      - name: Generate localhost frontend image tags
+        id: localhost-metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.detect.outputs.frontend_localhost_image }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=tag
+            type=sha,prefix=sha-
+
       - name: Publish frontend image
         uses: docker/build-push-action@v7
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
             NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
             NEXT_PUBLIC_AUTH_MODE=personal
             NEXT_PUBLIC_AUTH_LOCAL_ENABLED=true
             NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED=false
-          tags: |
-            ${{ needs.detect.outputs.frontend_image }}:main
-            ${{ needs.detect.outputs.frontend_image }}:sha-${{ needs.detect.outputs.short_sha }}
+          tags: ${{ steps.frontend-metadata.outputs.tags }}
+          labels: ${{ steps.frontend-metadata.outputs.labels }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Publish localhost frontend image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
+            NEXT_PUBLIC_AUTH_MODE=dev
+            NEXT_PUBLIC_AUTH_LOCAL_ENABLED=true
+            NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED=false
+          tags: ${{ steps.localhost-metadata.outputs.tags }}
+          labels: ${{ steps.localhost-metadata.outputs.labels }}
+          cache-from: type=gha,scope=frontend-localhost
+          cache-to: type=gha,mode=max,scope=frontend-localhost
 
   skip-publish:
     name: skip publish

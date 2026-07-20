@@ -1,0 +1,412 @@
+#!/bin/sh
+set -eu
+
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
+INSTALLER="$ROOT/scripts/install.sh"
+COMPOSE_SOURCE="$ROOT/docker-compose.local.yml"
+PASS=0
+FAIL=0
+
+fail() {
+  printf 'not ok - %s\n' "$1"
+  FAIL=$((FAIL + 1))
+}
+
+pass() {
+  printf 'ok - %s\n' "$1"
+  PASS=$((PASS + 1))
+}
+
+assert_contains() {
+  haystack=$1
+  needle=$2
+  case "$haystack" in
+    *"$needle"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+setup_case() {
+  CASE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/bioinfoflow-install-test.XXXXXX")
+  HOME_DIR="$CASE_DIR/home"
+  BIN_DIR="$CASE_DIR/bin"
+  CALLS="$CASE_DIR/calls"
+  mkdir -p "$HOME_DIR" "$BIN_DIR"
+  : > "$CALLS"
+
+  cat > "$BIN_DIR/docker" <<'EOF'
+#!/bin/sh
+printf 'docker %s\n' "$*" >> "$FAKE_CALLS"
+previous=
+for argument in "$@"; do
+  if [ "$previous" = --env-file ] && [ -f "$argument" ]; then
+    sed -n 's/^BIOINFOFLOW_VERSION=/docker version=/p' "$argument" >> "$FAKE_CALLS"
+  fi
+  previous=$argument
+done
+case "$*" in
+  "compose version"*) [ "${FAKE_COMPOSE_MISSING:-0}" = 0 ] ;;
+  "info"*) [ "${FAKE_DAEMON_DOWN:-0}" = 0 ] ;;
+  "context show"*) printf '%s\n' "${FAKE_DOCKER_CONTEXT:-default}" ;;
+  "context inspect"*) printf '%s\n' "${FAKE_DOCKER_ENDPOINT:-unix:///var/run/docker.sock}" ;;
+  "context inspect "*) printf '%s\n' "${FAKE_DOCKER_ENDPOINT:-unix:///var/run/docker.sock}" ;;
+  context\ inspect*) printf '%s\n' "${FAKE_DOCKER_ENDPOINT:-unix:///var/run/docker.sock}" ;;
+  *" pull"*) [ "${FAKE_PULL_FAIL:-0}" = 0 ] ;;
+  *" up -d"*) [ "${FAKE_UP_FAIL:-0}" = 0 ] ;;
+  *" ps"*) printf '%s\n' 'bioinfoflow status snapshot' ;;
+  *" logs"*) printf '%s\n' 'bounded diagnostic log' ;;
+  *) exit 0 ;;
+esac
+EOF
+
+  cat > "$BIN_DIR/curl" <<'EOF'
+#!/bin/sh
+printf 'curl %s\n' "$*" >> "$FAKE_CALLS"
+output=
+url=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o|--output) output=$2; shift 2 ;;
+    -*) shift ;;
+    *) url=$1; shift ;;
+  esac
+done
+case "$url" in
+  http://127.0.0.1:*|http://localhost:*) [ "${FAKE_HEALTH_FAIL:-0}" = 0 ]; exit ;;
+  */releases/latest)
+    [ "${FAKE_LATEST_FAIL:-0}" = 0 ] || exit 22
+    printf '{"tag_name":"%s"}\n' "${FAKE_LATEST_VERSION:-v2.0.0}" > "$output"
+    ;;
+  */install.sh)
+    cp "$FAKE_INSTALLER_SOURCE" "$output"
+    ;;
+  */docker-compose.local.yml)
+    [ "${FAKE_DOWNLOAD_INTERRUPT:-0}" = 0 ] || { printf 'partial' > "$output"; exit 18; }
+    cp "$FAKE_COMPOSE_SOURCE" "$output"
+    ;;
+  */SHA256SUMS)
+    printf '%s  install.sh\n' "${FAKE_CHECKSUM_VALUE:-valid}" > "$output"
+    printf '%s  docker-compose.local.yml\n' "${FAKE_CHECKSUM_VALUE:-valid}" >> "$output"
+    ;;
+  *) exit 22 ;;
+esac
+EOF
+
+  cat > "$BIN_DIR/sha256sum" <<'EOF'
+#!/bin/sh
+printf 'sha256sum %s\n' "$*" >> "$FAKE_CALLS"
+[ "${FAKE_CHECKSUM_FAIL:-0}" = 0 ]
+EOF
+
+  cat > "$BIN_DIR/shasum" <<'EOF'
+#!/bin/sh
+printf 'shasum %s\n' "$*" >> "$FAKE_CALLS"
+[ "${FAKE_CHECKSUM_FAIL:-0}" = 0 ]
+EOF
+
+  cat > "$BIN_DIR/uname" <<'EOF'
+#!/bin/sh
+printf '%s\n' "${FAKE_ARCH:-x86_64}"
+EOF
+
+  cat > "$BIN_DIR/lsof" <<'EOF'
+#!/bin/sh
+printf 'lsof %s\n' "$*" >> "$FAKE_CALLS"
+[ "${FAKE_PORTS_BUSY:-0}" = 1 ]
+EOF
+
+  cat > "$BIN_DIR/open" <<'EOF'
+#!/bin/sh
+printf 'open %s\n' "$*" >> "$FAKE_CALLS"
+EOF
+
+  cat > "$BIN_DIR/xdg-open" <<'EOF'
+#!/bin/sh
+printf 'xdg-open %s\n' "$*" >> "$FAKE_CALLS"
+EOF
+
+  chmod +x "$BIN_DIR"/*
+}
+
+teardown_case() {
+  rm -rf "$CASE_DIR"
+}
+
+run_installer() {
+  set +e
+  # ARGS is deliberately expanded by the isolated child shell.
+  # shellcheck disable=SC2016
+  OUTPUT=$(env \
+    HOME="$HOME_DIR" \
+    PATH="$BIN_DIR:/usr/bin:/bin" \
+    FAKE_CALLS="$CALLS" \
+    FAKE_COMPOSE_SOURCE="$COMPOSE_SOURCE" \
+    FAKE_INSTALLER_SOURCE="$INSTALLER" \
+    BIOINFOFLOW_RELEASE_BASE_URL="https://example.test/releases/download" \
+    BIOINFOFLOW_HEALTH_ATTEMPTS=2 \
+    BIOINFOFLOW_HEALTH_INTERVAL=0 \
+    INSTALLER="$INSTALLER" \
+    "$@" \
+    sh -c 'sh "$INSTALLER" ${ARGS:-}' 2>&1)
+  STATUS=$?
+  set -e
+}
+
+test_failure() {
+  name=$1
+  expected=$2
+  shift 2
+  setup_case
+  run_installer "$@"
+  if [ "$STATUS" -ne 0 ] && assert_contains "$OUTPUT" "$expected"; then pass "$name"; else fail "$name (status=$STATUS output=$OUTPUT)"; fi
+  teardown_case
+}
+
+test_success() {
+  name=$1
+  shift
+  setup_case
+  run_installer "$@"
+  if [ "$STATUS" -eq 0 ]; then pass "$name"; else fail "$name (status=$STATUS output=$OUTPUT)"; fi
+  teardown_case
+}
+
+test_failure_with_hint() {
+  name=$1
+  expected=$2
+  hint=$3
+  shift 3
+  setup_case
+  run_installer "$@"
+  if [ "$STATUS" -ne 0 ] && assert_contains "$OUTPUT" "$expected" && assert_contains "$OUTPUT" "$hint"; then pass "$name"; else fail "$name (status=$STATUS output=$OUTPUT)"; fi
+  teardown_case
+}
+
+test_failure_with_hint "reports missing Docker Compose with recovery" "Docker Compose" "Install Docker Desktop" FAKE_COMPOSE_MISSING=1
+test_failure_with_hint "reports a stopped Docker daemon with recovery" "Docker daemon" "Start Docker" FAKE_DAEMON_DOWN=1
+test_failure_with_hint "rejects a remote Docker endpoint with recovery" "local Unix" "docker context use" FAKE_DOCKER_CONTEXT=production FAKE_DOCKER_ENDPOINT=tcp://docker.example.test:2376
+
+setup_case
+run_installer FAKE_ARCH=x86_64 ARGS=--no-open
+if [ "$STATUS" -eq 0 ] && assert_contains "$(cat "$HOME_DIR/.bioinfoflow/install/.env")" "BIOINFOFLOW_ARCH=amd64"; then pass "maps x86_64 to amd64"; else fail "maps x86_64 to amd64"; fi
+teardown_case
+
+setup_case
+run_installer FAKE_ARCH=arm64 ARGS=--no-open
+if [ "$STATUS" -eq 0 ] && assert_contains "$(cat "$HOME_DIR/.bioinfoflow/install/.env")" "BIOINFOFLOW_ARCH=arm64"; then pass "maps arm64 to arm64"; else fail "maps arm64 to arm64"; fi
+teardown_case
+
+test_failure_with_hint "rejects unsupported architectures with recovery" "Unsupported architecture" "amd64 or arm64" FAKE_ARCH=riscv64
+test_failure_with_hint "rejects occupied localhost ports with recovery" "already in use" "FRONTEND_PORT" FAKE_PORTS_BUSY=1
+test_failure_with_hint "keeps interrupted downloads out of place with recovery" "download" "release tag" FAKE_DOWNLOAD_INTERRUPT=1
+test_failure_with_hint "rejects checksum failures with recovery" "checksum" "Do not bypass" FAKE_CHECKSUM_FAIL=1
+test_failure "rejects DOCKER_HOST TCP endpoints" "local Unix" DOCKER_HOST=tcp://docker.example.test:2376
+
+test_failure_with_hint "reports latest release lookup recovery" "latest release lookup" "--version" FAKE_LATEST_FAIL=1 ARGS="--update --no-open"
+
+setup_case
+run_installer DOCKER_HOST=unix:///tmp/docker-test.sock ARGS=--no-open
+if [ "$STATUS" -eq 0 ] && grep -q 'DOCKER_SOCKET_PATH=/tmp/docker-test.sock' "$HOME_DIR/.bioinfoflow/install/.env"; then pass "derives the mounted socket from DOCKER_HOST"; else fail "derives the mounted socket from DOCKER_HOST"; fi
+teardown_case
+
+setup_case
+run_installer BIOINFOFLOW_VERSION=v1.0.0 ARGS=--no-open
+: > "$CALLS"
+run_installer BIOINFOFLOW_VERSION=v2.0.0 FAKE_PULL_FAIL=1 ARGS="--update --no-open"
+if [ "$STATUS" -ne 0 ] && [ "$(cat "$HOME_DIR/.bioinfoflow/install/VERSION")" = v1.0.0 ] && grep -q 'docker version=v1.0.0' "$CALLS" && assert_contains "$OUTPUT" "restored"; then pass "rolls back control files and restarts the previous release after pull failure"; else fail "rolls back control files and restarts the previous release after pull failure"; fi
+teardown_case
+
+setup_case
+run_installer BIOINFOFLOW_VERSION=v1.0.0 ARGS=--no-open
+: > "$CALLS"
+run_installer BIOINFOFLOW_VERSION=v2.0.0 FAKE_HEALTH_FAIL=1 ARGS="--update --no-open"
+up_count=$(grep -c ' up -d' "$CALLS" || true)
+if [ "$STATUS" -ne 0 ] && [ "$(cat "$HOME_DIR/.bioinfoflow/install/VERSION")" = v1.0.0 ] && [ "$up_count" -ge 2 ] && grep -q 'docker version=v1.0.0' "$CALLS"; then pass "rolls back and restarts the previous release after health failure"; else fail "rolls back and restarts the previous release after health failure"; fi
+teardown_case
+
+setup_case
+run_installer BIOINFOFLOW_VERSION=v2.0.0 FAKE_PULL_FAIL=1 ARGS=--no-open
+if [ "$STATUS" -ne 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow/install/VERSION" ] && [ ! -e "$HOME_DIR/.bioinfoflow/install/docker-compose.local.yml" ]; then pass "does not commit control files for a failed fresh install"; else fail "does not commit control files for a failed fresh install"; fi
+teardown_case
+
+setup_case
+run_installer FAKE_PULL_FAIL=1 ARGS=--no-open
+if [ "$STATUS" -ne 0 ] && assert_contains "$OUTPUT" "pull" && assert_contains "$OUTPUT" "status snapshot" && assert_contains "$OUTPUT" "Recovery commands"; then pass "reports pull failure status and recovery commands"; else fail "reports pull failure status and recovery commands"; fi
+teardown_case
+test_failure "reports compose startup failures" "start" FAKE_UP_FAIL=1
+
+setup_case
+run_installer FAKE_HEALTH_FAIL=1 ARGS=--no-open
+if [ "$STATUS" -ne 0 ] && assert_contains "$OUTPUT" "health" && assert_contains "$OUTPUT" "bounded diagnostic log" && rtk_count=$(grep -c -- '--tail 100' "$CALLS" || true) && [ "$rtk_count" -ge 1 ]; then pass "bounds health polling and prints bounded logs"; else fail "bounds health polling and prints bounded logs"; fi
+teardown_case
+
+setup_case
+run_installer ARGS=--no-open
+first_status=$STATUS
+run_installer ARGS=--no-open
+if [ "$first_status" -eq 0 ] && [ "$STATUS" -eq 0 ]; then pass "repairs idempotently on rerun"; else fail "repairs idempotently on rerun"; fi
+teardown_case
+
+setup_case
+run_installer BIOINFOFLOW_VERSION=v1.0.0 ARGS=--no-open
+run_installer BIOINFOFLOW_VERSION=v1.1.0 ARGS="--update --no-open"
+if [ "$STATUS" -eq 0 ] && [ "$(cat "$HOME_DIR/.bioinfoflow/install/VERSION")" = v1.1.0 ]; then pass "updates to an explicit version"; else fail "updates to an explicit version"; fi
+teardown_case
+
+setup_case
+run_installer BIOINFOFLOW_VERSION=v1.0.0 ARGS=--no-open
+run_installer FAKE_LATEST_VERSION=v1.2.0 ARGS="--update --no-open"
+if [ "$STATUS" -eq 0 ] && [ "$(cat "$HOME_DIR/.bioinfoflow/install/VERSION")" = v1.2.0 ] && grep -q '/v1.2.0/install.sh' "$CALLS"; then pass "update resolves and downloads the latest release installer"; else fail "update resolves and downloads the latest release installer"; fi
+teardown_case
+
+setup_case
+run_installer ARGS=--no-open
+mkdir -p "$HOME_DIR/.bioinfoflow/data"
+printf 'keep me\n' > "$HOME_DIR/.bioinfoflow/data/user-file"
+run_installer ARGS=--uninstall
+if [ "$STATUS" -eq 0 ] && [ -f "$HOME_DIR/.bioinfoflow/data/user-file" ] && [ ! -e "$HOME_DIR/.bioinfoflow/install" ]; then pass "uninstall preserves user data"; else fail "uninstall preserves user data"; fi
+teardown_case
+
+setup_case
+run_installer ARGS=--no-open
+printf 'keep me\n' > "$HOME_DIR/.bioinfoflow/data/user-file"
+rm "$BIN_DIR/docker"
+NO_DOCKER_BIN="$CASE_DIR/no-docker-bin"
+mkdir "$NO_DOCKER_BIN"
+ln -s "$(command -v sh)" "$NO_DOCKER_BIN/sh"
+ln -s "$(command -v rm)" "$NO_DOCKER_BIN/rm"
+ln -s "$(command -v rmdir)" "$NO_DOCKER_BIN/rmdir"
+run_installer PATH="$NO_DOCKER_BIN" ARGS=--uninstall
+if [ "$STATUS" -eq 0 ] && [ -f "$HOME_DIR/.bioinfoflow/data/user-file" ] && [ ! -e "$HOME_DIR/.bioinfoflow/install" ] && assert_contains "$OUTPUT" "could not stop containers"; then pass "uninstall cleans control files without Docker"; else fail "uninstall cleans control files without Docker"; fi
+teardown_case
+
+setup_case
+run_installer ARGS=--no-open
+mkdir -p "$HOME_DIR/.bioinfoflow/data"
+printf 'delete me\n' > "$HOME_DIR/.bioinfoflow/data/user-file"
+run_installer ARGS=--purge
+if [ "$STATUS" -eq 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow" ]; then pass "purge explicitly removes user data"; else fail "purge explicitly removes user data"; fi
+teardown_case
+
+setup_case
+run_installer ARGS=--no-open
+run_installer FAKE_DAEMON_DOWN=1 ARGS=--purge
+if [ "$STATUS" -eq 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow" ] && assert_contains "$OUTPUT" "could not stop containers"; then pass "purge cleans managed files when the Docker daemon is unavailable"; else fail "purge cleans managed files when the Docker daemon is unavailable"; fi
+teardown_case
+
+setup_case
+run_installer ARGS=--no-open
+run_installer FAKE_DOCKER_ENDPOINT=tcp://remote.example.test:2376 ARGS=--uninstall
+if [ "$STATUS" -eq 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow/install" ] && assert_contains "$OUTPUT" "could not stop containers"; then pass "uninstall cleans control files with a remote Docker context"; else fail "uninstall cleans control files with a remote Docker context"; fi
+teardown_case
+
+setup_case
+printf 'do not delete\n' > "$HOME_DIR/sentinel"
+run_installer BIOINFOFLOW_INSTALL_DIR="$HOME_DIR" ARGS=--purge
+if [ "$STATUS" -ne 0 ] && [ -f "$HOME_DIR/sentinel" ]; then pass "purge rejects arbitrary install roots and preserves HOME"; else fail "purge rejects arbitrary install roots and preserves HOME"; fi
+teardown_case
+
+setup_case
+mkdir -p "$CASE_DIR/linked-root"
+ln -s "$CASE_DIR/linked-root" "$HOME_DIR/.bioinfoflow"
+run_installer ARGS=--no-open
+if [ "$STATUS" -ne 0 ] && assert_contains "$OUTPUT" "symlink"; then pass "rejects a symlinked managed root"; else fail "rejects a symlinked managed root"; fi
+teardown_case
+
+setup_case
+mkdir -p "$HOME_DIR/.bioinfoflow" "$CASE_DIR/linked-install"
+ln -s "$CASE_DIR/linked-install" "$HOME_DIR/.bioinfoflow/install"
+run_installer ARGS=--no-open
+if [ "$STATUS" -ne 0 ] && assert_contains "$OUTPUT" "symlink"; then pass "rejects a symlinked install directory"; else fail "rejects a symlinked install directory"; fi
+teardown_case
+
+setup_case
+mkdir -p "$HOME_DIR/.bioinfoflow" "$CASE_DIR/linked-data"
+ln -s "$CASE_DIR/linked-data" "$HOME_DIR/.bioinfoflow/data"
+run_installer ARGS=--no-open
+if [ "$STATUS" -ne 0 ] && assert_contains "$OUTPUT" "symlink"; then pass "rejects a symlinked data directory"; else fail "rejects a symlinked data directory"; fi
+teardown_case
+
+setup_case
+run_installer ARGS=--dry-run
+if [ "$STATUS" -eq 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow" ]; then pass "dry-run does not mutate the installation"; else fail "dry-run does not mutate the installation"; fi
+teardown_case
+
+setup_case
+run_installer ARGS=--no-open
+if [ "$STATUS" -eq 0 ] && ! grep -Eq 'open |xdg-open ' "$CALLS"; then pass "no-open suppresses browser launch"; else fail "no-open suppresses browser launch"; fi
+teardown_case
+
+setup_case
+run_installer ARGS=--no-open
+if [ "$STATUS" -eq 0 ] && [ -f "$HOME_DIR/.bioinfoflow/install/docker-compose.local.yml" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ]; then pass "separates control files from managed data"; else fail "separates control files from managed data"; fi
+teardown_case
+
+if [ -x "$INSTALLER" ] && [ -x "$ROOT/scripts/tests/install-test.sh" ]; then pass "installer scripts are executable"; else fail "installer scripts are executable"; fi
+
+RELEASE_WORKFLOW="$ROOT/.github/workflows/release.yml"
+if grep -q 'sh -n scripts/install.sh scripts/tests/install-test.sh' "$RELEASE_WORKFLOW" && \
+   grep -q 'shellcheck scripts/install.sh scripts/tests/install-test.sh' "$RELEASE_WORKFLOW" && \
+   grep -q 'sh scripts/tests/install-test.sh' "$RELEASE_WORKFLOW" && \
+   grep -q 'docker compose.*docker-compose.local.yml config' "$RELEASE_WORKFLOW" && \
+   grep -q 'sha256sum -c SHA256SUMS' "$RELEASE_WORKFLOW" && \
+   grep -q 'imagetools inspect' "$RELEASE_WORKFLOW"; then
+  pass "release workflow verifies installer, Compose, checksums, and multiarch manifests"
+else
+  fail "release workflow verifies installer, Compose, checksums, and multiarch manifests"
+fi
+
+if grep -q 'AUTH_MODE == "dev"' "$RELEASE_WORKFLOW" && \
+   grep -q 'DOCKER_SOCKET == "unix:///var/run/docker.sock"' "$RELEASE_WORKFLOW" && \
+   grep -q 'source == "/var/run/docker.sock"' "$RELEASE_WORKFLOW"; then
+  pass "release workflow asserts dev auth and Docker socket Compose contract"
+else
+  fail "release workflow asserts dev auth and Docker socket Compose contract"
+fi
+
+if grep -q 'ubuntu-24.04-arm' "$RELEASE_WORKFLOW" && \
+   grep -q 'ubuntu-24.04' "$RELEASE_WORKFLOW" && \
+   grep -q 'python3 -m http.server' "$RELEASE_WORKFLOW" && \
+   grep -q 'BIOINFOFLOW_RELEASE_BASE_URL=http://127.0.0.1' "$RELEASE_WORKFLOW" && \
+   grep -q 'installer_path=.*install.sh' "$RELEASE_WORKFLOW" && \
+   grep -q "sh \"\$installer_path\" --no-open" "$RELEASE_WORKFLOW" && \
+   grep -q -- '--uninstall' "$RELEASE_WORKFLOW" && \
+   grep -q 'api/v1/system/ping' "$RELEASE_WORKFLOW"; then
+  pass "release workflow smoke-tests the installer on amd64 and arm64"
+else
+  fail "release workflow smoke-tests the installer on amd64 and arm64"
+fi
+
+if grep -q 'docker/metadata-action@' "$ROOT/.github/workflows/container-release.yml" && \
+   grep -q 'type=raw,value=latest,enable=.*refs/heads/main' "$ROOT/.github/workflows/container-release.yml" && \
+   grep -q 'type=raw,value=main,enable=.*refs/heads/main' "$ROOT/.github/workflows/container-release.yml" && \
+   grep -q 'type=ref,event=tag' "$ROOT/.github/workflows/container-release.yml" && \
+   grep -q 'type=sha' "$ROOT/.github/workflows/container-release.yml" && \
+   ! grep -q 'secrets: inherit' "$RELEASE_WORKFLOW"; then
+  pass "release tags isolate mutable main channels from version tags"
+else
+  fail "release tags isolate mutable main channels from version tags"
+fi
+
+latest_flavor_count=$(grep -c 'latest=false' "$ROOT/.github/workflows/container-release.yml" || true)
+if [ "$latest_flavor_count" -eq 3 ]; then
+  pass "tag metadata cannot implicitly publish latest"
+else
+  fail "tag metadata cannot implicitly publish latest"
+fi
+
+if grep -qi 'signed checksum\|signed release' "$INSTALLER" "$RELEASE_WORKFLOW"; then
+  fail "checksum wording does not claim cryptographic signing"
+else
+  pass "checksum wording does not claim cryptographic signing"
+fi
+
+SPECIAL_COMPOSE=$(docker compose --env-file "$ROOT/scripts/tests/fixtures/local-special-path.env" -f "$COMPOSE_SOURCE" config --format json 2>/dev/null || true)
+if printf '%s' "$SPECIAL_COMPOSE" | jq -e '.services.backend.volumes[] | select(.source == "/tmp/Bioinfoflow Data:Local" and .target == "/tmp/Bioinfoflow Data:Local")' >/dev/null 2>&1; then
+  pass "Compose renders managed paths containing spaces and colons"
+else
+  fail "Compose renders managed paths containing spaces and colons"
+fi
+
+printf '%s passed, %s failed\n' "$PASS" "$FAIL"
+[ "$FAIL" -eq 0 ]

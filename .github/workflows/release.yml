@@ -1,0 +1,186 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  verify:
+    name: verify installer release contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Verify shell behavior
+        run: |
+          sh -n scripts/install.sh scripts/tests/install-test.sh
+          shellcheck scripts/install.sh scripts/tests/install-test.sh
+          sh scripts/tests/install-test.sh
+
+      - name: Verify localhost Compose contract
+        run: |
+          docker compose --env-file scripts/tests/fixtures/local.env -f docker-compose.local.yml config --format json > /tmp/docker-compose.local.rendered.json
+          jq -e '.services.frontend.ports[] | select(.host_ip == "127.0.0.1" and .published == "3000" and .target == 3000)' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.backend.ports[] | select(.host_ip == "127.0.0.1" and .published == "8000" and .target == 8000)' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.backend.image == "ghcr.io/lewismessthecode/bioinfoflow-backend:v0.0.0-test"' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.frontend.image == "ghcr.io/lewismessthecode/bioinfoflow-frontend-localhost:v0.0.0-test"' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.backend.environment.AUTH_MODE == "dev"' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.frontend.environment.AUTH_MODE == "dev" and .services.frontend.environment.NEXT_PUBLIC_AUTH_MODE == "dev"' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.backend.environment.DOCKER_SOCKET == "unix:///var/run/docker.sock"' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.backend.volumes[] | select(.source == "/tmp/bioinfoflow-local-test" and .target == "/tmp/bioinfoflow-local-test")' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.backend.volumes[] | select(.source == "/var/run/docker.sock" and .target == "/var/run/docker.sock")' /tmp/docker-compose.local.rendered.json
+
+  package:
+    name: package installer assets
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build version-matched installer assets
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir dist
+          sed "s/__BIOINFOFLOW_VERSION__/${RELEASE_TAG}/g" scripts/install.sh > dist/install.sh
+          cp docker-compose.local.yml dist/docker-compose.local.yml
+          chmod 755 dist/install.sh
+          chmod 644 dist/docker-compose.local.yml
+          (cd dist && sha256sum install.sh docker-compose.local.yml > SHA256SUMS)
+          (cd dist && sha256sum -c SHA256SUMS)
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: localhost-installer-${{ github.ref_name }}
+          path: dist/
+          if-no-files-found: error
+
+  images:
+    name: publish release images
+    needs: verify
+    uses: ./.github/workflows/container-release.yml
+    with:
+      publish_images: force
+
+  manifests:
+    name: verify multiarch manifests
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release image platforms
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          for image in bioinfoflow-backend bioinfoflow-frontend bioinfoflow-frontend-localhost; do
+            docker buildx imagetools inspect "ghcr.io/${owner}/${image}:${RELEASE_TAG}" > "/tmp/${image}.manifest"
+            grep -F 'linux/amd64' "/tmp/${image}.manifest"
+            grep -F 'linux/arm64' "/tmp/${image}.manifest"
+          done
+
+  smoke:
+    name: installer smoke (${{ matrix.arch }})
+    needs:
+      - images
+      - package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: localhost-installer-${{ github.ref_name }}
+          path: dist
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install, health-check, uninstall, and purge
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          asset_port=8765
+          frontend_port=3100
+          backend_port=8100
+          mkdir -p "serve/${RELEASE_TAG}"
+          cp dist/install.sh dist/docker-compose.local.yml dist/SHA256SUMS "serve/${RELEASE_TAG}/"
+          installer_path="serve/${RELEASE_TAG}/install.sh"
+          python3 -m http.server "$asset_port" --bind 127.0.0.1 --directory serve > /tmp/bioinfoflow-asset-server.log 2>&1 &
+          server_pid=$!
+          cleanup() {
+            HOME="$HOME" sh "$installer_path" --purge --no-open >/dev/null 2>&1 || true
+            kill "$server_pid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          curl --retry 10 --retry-connrefused --retry-delay 1 -fsS "http://127.0.0.1:${asset_port}/${RELEASE_TAG}/SHA256SUMS" >/dev/null
+          BIOINFOFLOW_RELEASE_BASE_URL=http://127.0.0.1:${asset_port} \
+            BIOINFOFLOW_VERSION="$RELEASE_TAG" \
+            FRONTEND_PORT="$frontend_port" \
+            BACKEND_PORT="$backend_port" \
+            sh "$installer_path" --no-open
+          grep -F "BIOINFOFLOW_ARCH=${EXPECTED_ARCH}" "$HOME/.bioinfoflow/install/.env"
+          curl -fsS "http://127.0.0.1:${backend_port}/api/v1/system/ping" >/dev/null
+          curl -fsS "http://127.0.0.1:${frontend_port}/" >/dev/null
+          sh "$installer_path" --uninstall --no-open
+          test ! -e "$HOME/.bioinfoflow/install"
+          test -d "$HOME/.bioinfoflow/data"
+          sh "$installer_path" --purge --no-open
+          test ! -e "$HOME/.bioinfoflow"
+
+  assets:
+    name: attach installer assets
+    needs:
+      - manifests
+      - smoke
+      - package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: localhost-installer-${{ github.ref_name }}
+          path: dist
+
+      - name: Verify release checksums
+        run: cd dist && sha256sum -c SHA256SUMS
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/install.sh
+            dist/docker-compose.local.yml
+            dist/SHA256SUMS
