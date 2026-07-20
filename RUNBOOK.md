@@ -46,16 +46,25 @@ Lifecycle commands:
 ```
 
 `--uninstall` removes the containers and managed control files but preserves
-`~/.bioinfoflow/data`. `--purge` removes both control files and managed data. If
-you already uninstalled and later decide to remove the preserved data, fetch a
-published installer again and pass `--purge`:
+`~/.bioinfoflow/data`. `--purge` removes both control files and managed data.
+Both commands first confirm that the managed Compose stack stopped through the
+same normalized local Unix socket recorded at installation. If Docker, the
+daemon, Compose, or that socket is unavailable—or `compose down` fails—the
+command exits without removing control files or data. Restore the installation's
+Docker context and retry.
+
+If you already uninstalled and later decide to remove the preserved data, no
+running managed stack remains, so you can fetch a published installer again and
+pass `--purge` even when Docker is unavailable:
 
 ```bash
 curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh -s -- --purge
 ```
 
 The localhost stack binds the UI and API to `127.0.0.1` and intentionally runs
-with authentication disabled. It is for one trusted local machine, not a shared
+with authentication disabled. The API port is fixed at `8000` because the
+published localhost frontend is built against that origin; installation stops
+if port 8000 is occupied. It is for one trusted local machine, not a shared
 server, reverse proxy, or port-forwarded deployment. It also mounts the local
 Docker socket so the Agent and workflow runtime can launch containers. See
 [Security Notes](docs/security.md) before changing that boundary.

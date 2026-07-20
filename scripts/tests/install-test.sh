@@ -53,6 +53,7 @@ case "$*" in
   context\ inspect*) printf '%s\n' "${FAKE_DOCKER_ENDPOINT:-unix:///var/run/docker.sock}" ;;
   *" pull"*) [ "${FAKE_PULL_FAIL:-0}" = 0 ] ;;
   *" up -d"*) [ "${FAKE_UP_FAIL:-0}" = 0 ] ;;
+  *" down --remove-orphans"*) [ "${FAKE_DOWN_FAIL:-0}" = 0 ] ;;
   *" ps"*) printf '%s\n' 'bioinfoflow status snapshot' ;;
   *" logs"*) printf '%s\n' 'bounded diagnostic log' ;;
   *) exit 0 ;;
@@ -109,10 +110,13 @@ EOF
 printf '%s\n' "${FAKE_ARCH:-x86_64}"
 EOF
 
-  cat > "$BIN_DIR/lsof" <<'EOF'
+cat > "$BIN_DIR/lsof" <<'EOF'
 #!/bin/sh
 printf 'lsof %s\n' "$*" >> "$FAKE_CALLS"
-[ "${FAKE_PORTS_BUSY:-0}" = 1 ]
+case "$*" in
+  *-iTCP:8000*) [ "${FAKE_BACKEND_PORT_BUSY:-0}" = 1 ] || [ "${FAKE_PORTS_BUSY:-0}" = 1 ] ;;
+  *) [ "${FAKE_PORTS_BUSY:-0}" = 1 ] ;;
+esac
 EOF
 
   cat > "$BIN_DIR/open" <<'EOF'
@@ -198,9 +202,28 @@ teardown_case
 
 test_failure_with_hint "rejects unsupported architectures with recovery" "Unsupported architecture" "amd64 or arm64" FAKE_ARCH=riscv64
 test_failure_with_hint "rejects occupied localhost ports with recovery" "already in use" "FRONTEND_PORT" FAKE_PORTS_BUSY=1
+test_failure_with_hint "requires fixed backend port 8000 to be free" "backend port 8000 is already in use" "Stop the process using port 8000" FAKE_BACKEND_PORT_BUSY=1
 test_failure_with_hint "keeps interrupted downloads out of place with recovery" "download" "release tag" FAKE_DOWNLOAD_INTERRUPT=1
 test_failure_with_hint "rejects checksum failures with recovery" "checksum" "Do not bypass" FAKE_CHECKSUM_FAIL=1
 test_failure "rejects DOCKER_HOST TCP endpoints" "local Unix" DOCKER_HOST=tcp://docker.example.test:2376
+test_failure_with_hint "rejects unsupported backend port overrides" "backend port is fixed at 8000" "port 8000" BACKEND_PORT=8100
+
+setup_case
+PACKAGED_INSTALLER="$CASE_DIR/install-v9.8.7.sh"
+sed 's/__BIOINFOFLOW_VERSION__/v9.8.7/g' "$INSTALLER" > "$PACKAGED_INSTALLER"
+chmod +x "$PACKAGED_INSTALLER"
+INSTALLER="$PACKAGED_INSTALLER"
+run_installer ARGS=--version
+version_output=$OUTPUT
+: > "$CALLS"
+run_installer ARGS=--no-open
+if [ "$version_output" = v9.8.7 ] && [ "$STATUS" -eq 0 ] && grep -q '/v9.8.7/install.sh' "$CALLS"; then
+  pass "packaged installer retains its embedded release tag"
+else
+  fail "packaged installer retains its embedded release tag (version=$version_output status=$STATUS calls=$(cat "$CALLS"))"
+fi
+teardown_case
+INSTALLER="$ROOT/scripts/install.sh"
 
 test_failure_with_hint "reports latest release lookup recovery" "latest release lookup" "--version" FAKE_LATEST_FAIL=1 ARGS="--update --no-open"
 
@@ -277,7 +300,7 @@ ln -s "$(command -v sh)" "$NO_DOCKER_BIN/sh"
 ln -s "$(command -v rm)" "$NO_DOCKER_BIN/rm"
 ln -s "$(command -v rmdir)" "$NO_DOCKER_BIN/rmdir"
 run_installer PATH="$NO_DOCKER_BIN" ARGS=--uninstall
-if [ "$STATUS" -eq 0 ] && [ -f "$HOME_DIR/.bioinfoflow/data/user-file" ] && [ ! -e "$HOME_DIR/.bioinfoflow/install" ] && assert_contains "$OUTPUT" "could not stop containers"; then pass "uninstall cleans control files without Docker"; else fail "uninstall cleans control files without Docker"; fi
+if [ "$STATUS" -ne 0 ] && [ -f "$HOME_DIR/.bioinfoflow/data/user-file" ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && assert_contains "$OUTPUT" "Docker is unavailable"; then pass "uninstall preserves control and data when Docker is unavailable"; else fail "uninstall preserves control and data when Docker is unavailable (status=$STATUS output=$OUTPUT)"; fi
 teardown_case
 
 setup_case
@@ -291,13 +314,52 @@ teardown_case
 setup_case
 run_installer ARGS=--no-open
 run_installer FAKE_DAEMON_DOWN=1 ARGS=--purge
-if [ "$STATUS" -eq 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow" ] && assert_contains "$OUTPUT" "could not stop containers"; then pass "purge cleans managed files when the Docker daemon is unavailable"; else fail "purge cleans managed files when the Docker daemon is unavailable"; fi
+if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ] && assert_contains "$OUTPUT" "Docker daemon"; then pass "purge preserves control and data when the Docker daemon is unavailable"; else fail "purge preserves control and data when the Docker daemon is unavailable (status=$STATUS output=$OUTPUT)"; fi
 teardown_case
 
 setup_case
 run_installer ARGS=--no-open
 run_installer FAKE_DOCKER_ENDPOINT=tcp://remote.example.test:2376 ARGS=--uninstall
-if [ "$STATUS" -eq 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow/install" ] && assert_contains "$OUTPUT" "could not stop containers"; then pass "uninstall cleans control files with a remote Docker context"; else fail "uninstall cleans control files with a remote Docker context"; fi
+if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && assert_contains "$OUTPUT" "local Unix socket"; then pass "uninstall preserves control files with a remote Docker context"; else fail "uninstall preserves control files with a remote Docker context (status=$STATUS output=$OUTPUT)"; fi
+teardown_case
+
+setup_case
+run_installer DOCKER_HOST=unix:///tmp/bioinfoflow-installed.sock ARGS=--no-open
+: > "$CALLS"
+run_installer DOCKER_HOST=unix:///tmp/bioinfoflow-other.sock ARGS=--uninstall
+if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ] && ! grep -q ' down --remove-orphans' "$CALLS" && assert_contains "$OUTPUT" "does not match the installed Docker socket"; then pass "uninstall preserves control and data on local Docker socket mismatch"; else fail "uninstall preserves control and data on local Docker socket mismatch (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"; fi
+teardown_case
+
+setup_case
+run_installer DOCKER_HOST=unix:///tmp/bioinfoflow/../bioinfoflow-installed.sock ARGS=--no-open
+: > "$CALLS"
+run_installer DOCKER_HOST=unix:///tmp/bioinfoflow-other.sock ARGS=--purge
+if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ] && ! grep -q ' down --remove-orphans' "$CALLS" && assert_contains "$OUTPUT" "does not match the installed Docker socket"; then pass "purge preserves control and data on normalized local Docker socket mismatch"; else fail "purge preserves control and data on normalized local Docker socket mismatch (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"; fi
+teardown_case
+
+setup_case
+run_installer DOCKER_HOST=unix:///tmp/bioinfoflow/../bioinfoflow-installed.sock ARGS=--no-open
+run_installer DOCKER_HOST=unix:///tmp/bioinfoflow-installed.sock ARGS=--uninstall
+if [ "$STATUS" -eq 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ]; then pass "uninstall accepts normalized paths to the installed Docker socket"; else fail "uninstall accepts normalized paths to the installed Docker socket (status=$STATUS output=$OUTPUT)"; fi
+teardown_case
+
+setup_case
+run_installer ARGS=--no-open
+run_installer FAKE_DOWN_FAIL=1 ARGS=--uninstall
+if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ] && assert_contains "$OUTPUT" "could not stop"; then pass "uninstall preserves control and data when Compose down fails"; else fail "uninstall preserves control and data when Compose down fails (status=$STATUS output=$OUTPUT)"; fi
+teardown_case
+
+setup_case
+run_installer ARGS=--no-open
+run_installer ARGS=--uninstall
+rm "$BIN_DIR/docker"
+NO_DOCKER_BIN="$CASE_DIR/no-docker-bin"
+mkdir "$NO_DOCKER_BIN"
+ln -s "$(command -v sh)" "$NO_DOCKER_BIN/sh"
+ln -s "$(command -v rm)" "$NO_DOCKER_BIN/rm"
+ln -s "$(command -v rmdir)" "$NO_DOCKER_BIN/rmdir"
+run_installer PATH="$NO_DOCKER_BIN" ARGS=--purge
+if [ "$STATUS" -eq 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow" ]; then pass "data-only purge remains available without Docker after uninstall"; else fail "data-only purge remains available without Docker after uninstall (status=$STATUS output=$OUTPUT)"; fi
 teardown_case
 
 setup_case

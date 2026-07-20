@@ -37,6 +37,10 @@ FASTQ inputs under the managed data root. Connect one provider from the Agent
 composer and choose **Check and run the demo workflow** to start a normal Agent
 turn. Bioinfoflow still asks for approval before `runs.submit` executes.
 
+The localhost frontend is built against the API at `127.0.0.1:8000`, so the
+installer requires host port 8000 to be free and rejects `BACKEND_PORT`
+overrides. Use the source-build path for a different API port.
+
 Update to the newest tagged release:
 
 ```bash
@@ -62,6 +66,14 @@ again to delete the preserved managed data:
 ```bash
 curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh -s -- --purge
 ```
+
+For an existing installation, both lifecycle commands remove files only after
+the installer confirms that `docker compose down` succeeded through the same
+normalized local Unix socket recorded during installation. If Docker or Compose
+is unavailable, the daemon is stopped, the active context is remote or points to
+a different socket, or Compose cannot stop the stack, the command fails and
+preserves both control files and data. Once `--uninstall` has succeeded, a later
+data-only `--purge` does not require Docker.
 
 Both published ports bind to `127.0.0.1`, and the stack runs with
 `AUTH_MODE=dev`. This deliberate no-auth setup is only for a trusted local

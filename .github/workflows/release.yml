@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir dist
-          sed "s/__BIOINFOFLOW_VERSION__/${RELEASE_TAG}/g" scripts/install.sh > dist/install.sh
+          sed "s/^EMBEDDED_VERSION=.*/EMBEDDED_VERSION=${RELEASE_TAG}/" scripts/install.sh > dist/install.sh
           cp docker-compose.local.yml dist/docker-compose.local.yml
           chmod 755 dist/install.sh
           chmod 644 dist/docker-compose.local.yml
@@ -134,7 +134,6 @@ jobs:
           set -euo pipefail
           asset_port=8765
           frontend_port=3100
-          backend_port=8100
           mkdir -p "serve/${RELEASE_TAG}"
           cp dist/install.sh dist/docker-compose.local.yml dist/SHA256SUMS "serve/${RELEASE_TAG}/"
           installer_path="serve/${RELEASE_TAG}/install.sh"
@@ -147,12 +146,12 @@ jobs:
           trap cleanup EXIT
           curl --retry 10 --retry-connrefused --retry-delay 1 -fsS "http://127.0.0.1:${asset_port}/${RELEASE_TAG}/SHA256SUMS" >/dev/null
           BIOINFOFLOW_RELEASE_BASE_URL=http://127.0.0.1:${asset_port} \
-            BIOINFOFLOW_VERSION="$RELEASE_TAG" \
             FRONTEND_PORT="$frontend_port" \
-            BACKEND_PORT="$backend_port" \
             sh "$installer_path" --no-open
+          test "$(sh "$installer_path" --version)" = "$RELEASE_TAG"
+          grep -F "BIOINFOFLOW_VERSION=${RELEASE_TAG}" "$HOME/.bioinfoflow/install/.env"
           grep -F "BIOINFOFLOW_ARCH=${EXPECTED_ARCH}" "$HOME/.bioinfoflow/install/.env"
-          curl -fsS "http://127.0.0.1:${backend_port}/api/v1/system/ping" >/dev/null
+          curl -fsS "http://127.0.0.1:8000/api/v1/system/ping" >/dev/null
           curl -fsS "http://127.0.0.1:${frontend_port}/" >/dev/null
           sh "$installer_path" --uninstall --no-open
           test ! -e "$HOME/.bioinfoflow/install"

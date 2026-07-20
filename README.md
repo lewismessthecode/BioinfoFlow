@@ -115,8 +115,9 @@ sh install.sh
 The installer also supports `--dry-run`, `--version <tag>`, and `--no-open`.
 It pulls versioned images, stores data under `~/.bioinfoflow/data`, binds only to
 `127.0.0.1`, waits for health checks, and opens the Agent page without a
-Bioinfoflow login screen. Until the tagged release is published, use the source
-installation above.
+Bioinfoflow login screen. Its API port is fixed at `8000`; lifecycle commands
+preserve control and data if the installed stack cannot be confirmed stopped.
+Until the tagged release is published, use the source installation above.
 
 </details>
 

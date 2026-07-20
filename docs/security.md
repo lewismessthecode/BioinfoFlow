@@ -35,6 +35,14 @@ Uninstalling preserves `~/.bioinfoflow/data`; purging explicitly removes it:
 ~/.bioinfoflow/install/install.sh --purge
 ```
 
+For an existing managed stack, neither command deletes anything until the
+installer confirms that `docker compose down` succeeded through a local Unix
+socket whose normalized path matches the socket recorded during installation. A
+missing Docker client, unavailable daemon or Compose plugin, remote or different
+local context, or stop failure leaves control files and data intact. After a
+successful uninstall has removed the managed stack, a separately downloaded
+installer may purge the marked data directory without Docker.
+
 ## Docker Socket
 
 The Docker Compose setup mounts:

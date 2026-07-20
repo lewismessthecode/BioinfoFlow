@@ -53,7 +53,14 @@ while [ "$#" -gt 0 ]; do
         VERSION_EXPLICIT=1
         shift
       else
-        if [ -n "$REQUESTED_VERSION" ]; then printf '%s\n' "$REQUESTED_VERSION"; elif [ "$EMBEDDED_VERSION" != __BIOINFOFLOW_VERSION__ ]; then printf '%s\n' "$EMBEDDED_VERSION"; else printf '%s\n' latest; fi
+        if [ -n "$REQUESTED_VERSION" ]; then
+          printf '%s\n' "$REQUESTED_VERSION"
+        else
+          case "$EMBEDDED_VERSION" in
+            __*__) printf '%s\n' latest ;;
+            *) printf '%s\n' "$EMBEDDED_VERSION" ;;
+          esac
+        fi
         exit 0
       fi
       ;;
@@ -64,7 +71,10 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ -z "$REQUESTED_VERSION" ]; then
-  if [ "$EMBEDDED_VERSION" = __BIOINFOFLOW_VERSION__ ]; then REQUESTED_VERSION=latest; else REQUESTED_VERSION=$EMBEDDED_VERSION; fi
+  case "$EMBEDDED_VERSION" in
+    __*__) REQUESTED_VERSION=latest ;;
+    *) REQUESTED_VERSION=$EMBEDDED_VERSION ;;
+  esac
 fi
 
 case "$HOME" in /*) ;; *) die_with_hint "HOME must be an absolute path" "Set HOME to your absolute user home directory and retry." ;; esac
@@ -82,7 +92,10 @@ DATA_MARKER="$DATA_DIR/.managed-by-bioinfoflow"
 RELEASE_BASE=${BIOINFOFLOW_RELEASE_BASE_URL:-$DEFAULT_RELEASE_BASE}
 LATEST_RELEASE_URL=${BIOINFOFLOW_LATEST_RELEASE_URL:-$DEFAULT_LATEST_RELEASE_URL}
 FRONTEND_PORT=${FRONTEND_PORT:-3000}
-BACKEND_PORT=${BACKEND_PORT:-8000}
+if [ -n "${BACKEND_PORT:-}" ] && [ "$BACKEND_PORT" != 8000 ]; then
+  die_with_hint "backend port is fixed at 8000 for the localhost frontend" "Stop the process using port 8000, unset BACKEND_PORT, and retry."
+fi
+BACKEND_PORT=8000
 IMAGE_REGISTRY=${IMAGE_REGISTRY:-$DEFAULT_REGISTRY}
 HEALTH_ATTEMPTS=${BIOINFOFLOW_HEALTH_ATTEMPTS:-60}
 HEALTH_INTERVAL=${BIOINFOFLOW_HEALTH_INTERVAL:-2}
@@ -102,31 +115,61 @@ compose() {
   compose_with "$ENV_FILE" "$COMPOSE_FILE" "$@"
 }
 
-warn_stop_failure() {
-  printf 'Warning: could not stop containers automatically (%s). Managed file cleanup will continue.\n' "$1" >&2
+normalize_absolute_path() {
+  path_to_normalize=$1
+  case "$path_to_normalize" in /*) ;; *) return 1 ;; esac
+  normalized_path=
+  saved_ifs=$IFS
+  IFS=/
+  set -f
+  # Splitting only on '/' is intentional so normalization does not require the
+  # path to exist and preserves spaces or colons in socket paths.
+  # shellcheck disable=SC2086
+  set -- $path_to_normalize
+  set +f
+  IFS=$saved_ifs
+  for path_component in "$@"; do
+    case "$path_component" in
+      ''|.) ;;
+      ..) normalized_path=${normalized_path%/*} ;;
+      *) normalized_path="$normalized_path/$path_component" ;;
+    esac
+  done
+  [ -n "$normalized_path" ] || normalized_path=/
+  printf '%s\n' "$normalized_path"
 }
 
-stop_installed_best_effort() {
-  [ -f "$COMPOSE_FILE" ] && [ -f "$ENV_FILE" ] || return 0
-  if ! command -v docker >/dev/null 2>&1; then
-    warn_stop_failure "Docker is unavailable"
-  elif ! docker compose version >/dev/null 2>&1; then
-    warn_stop_failure "Docker Compose v2 is unavailable"
-  elif ! docker info >/dev/null 2>&1; then
-    warn_stop_failure "the Docker daemon is unavailable"
-  else
-    cleanup_context=$(docker context show 2>/dev/null || true)
-    cleanup_endpoint=${DOCKER_HOST:-}
-    if [ -z "$cleanup_endpoint" ] && [ -n "$cleanup_context" ]; then
-      cleanup_endpoint=$(docker context inspect "$cleanup_context" --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)
-    fi
-    case "$cleanup_endpoint" in
-      unix:///*)
-        compose down --remove-orphans >/dev/null 2>&1 || warn_stop_failure "Docker Compose could not stop the installed project"
-        ;;
-      *) warn_stop_failure "the effective Docker context is not a local Unix socket" ;;
-    esac
+stop_installed_or_fail() {
+  if [ ! -e "$INSTALL_DIR" ]; then
+    return 0
   fi
+  if [ ! -f "$COMPOSE_FILE" ] || [ ! -f "$ENV_FILE" ]; then
+    die_with_hint "managed control files are incomplete; cannot confirm the installed stack is stopped" "Preserve $INSTALL_DIR, restore its Compose and environment files, then retry."
+  fi
+  command -v docker >/dev/null 2>&1 || die_with_hint "Docker is unavailable; cannot confirm the installed stack is stopped" "Start or install Docker, then retry. Control files and data were preserved."
+  docker compose version >/dev/null 2>&1 || die_with_hint "Docker Compose v2 is unavailable; cannot confirm the installed stack is stopped" "Install Docker Compose v2, then retry. Control files and data were preserved."
+  docker info >/dev/null 2>&1 || die_with_hint "Docker daemon is unavailable; cannot confirm the installed stack is stopped" "Start Docker, then retry. Control files and data were preserved."
+  cleanup_context=$(docker context show 2>/dev/null || true)
+  cleanup_endpoint=${DOCKER_HOST:-}
+  if [ -z "$cleanup_endpoint" ] && [ -n "$cleanup_context" ]; then
+    cleanup_endpoint=$(docker context inspect "$cleanup_context" --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)
+  fi
+  case "$cleanup_endpoint" in
+    unix:///*) ;;
+    *) die_with_hint "the effective Docker context is not a local Unix socket; cannot confirm the installed stack is stopped" "Select the local Docker context, then retry. Control files and data were preserved." ;;
+  esac
+  installed_socket_path=
+  while IFS= read -r installed_env_line || [ -n "$installed_env_line" ]; do
+    case "$installed_env_line" in
+      DOCKER_SOCKET_PATH=*) installed_socket_path=${installed_env_line#DOCKER_SOCKET_PATH=} ;;
+    esac
+  done < "$ENV_FILE"
+  [ -n "$installed_socket_path" ] || die_with_hint "managed environment does not record the installed Docker socket; cannot confirm the installed stack is stopped" "Preserve $INSTALL_DIR, restore its generated environment file, then retry."
+  normalized_installed_socket=$(normalize_absolute_path "$installed_socket_path") || die_with_hint "installed Docker socket path is not absolute; cannot confirm the installed stack is stopped" "Preserve $INSTALL_DIR, restore its generated environment file, then retry."
+  cleanup_socket_path=${cleanup_endpoint#unix://}
+  normalized_cleanup_socket=$(normalize_absolute_path "$cleanup_socket_path") || die_with_hint "effective Docker socket path is not absolute; cannot confirm the installed stack is stopped" "Select the installation's local Docker context, then retry. Control files and data were preserved."
+  [ "$normalized_cleanup_socket" = "$normalized_installed_socket" ] || die_with_hint "effective Docker socket $normalized_cleanup_socket does not match the installed Docker socket $normalized_installed_socket" "Select the Docker context used to install Bioinfoflow, then retry. Control files and data were preserved."
+  compose down --remove-orphans >/dev/null 2>&1 || die_with_hint "Docker Compose could not stop the installed project" "Resolve the Compose error and retry. Control files and data were preserved."
 }
 
 if [ "$ACTION" = uninstall ] || [ "$ACTION" = purge ]; then
@@ -135,7 +178,7 @@ if [ "$ACTION" = uninstall ] || [ "$ACTION" = purge ]; then
     [ "$ACTION" = purge ] && say "Would also remove managed data from $DATA_DIR"
     exit 0
   fi
-  stop_installed_best_effort
+  stop_installed_or_fail
   if [ "$ACTION" = purge ]; then
     if [ -e "$DATA_DIR" ] && [ ! -f "$DATA_MARKER" ]; then
       die_with_hint "refusing to purge unmarked data directory $DATA_DIR" "Move or back up that directory, then remove it manually if deletion is intended."
@@ -189,7 +232,7 @@ show_diagnostics() {
 
 if [ ! -f "$COMPOSE_FILE" ] && command -v lsof >/dev/null 2>&1; then
   if lsof -nP -iTCP:"$FRONTEND_PORT" -sTCP:LISTEN >/dev/null 2>&1; then die_with_hint "frontend port $FRONTEND_PORT is already in use" "Stop the process using it, or retry with FRONTEND_PORT set to a free port."; fi
-  if lsof -nP -iTCP:"$BACKEND_PORT" -sTCP:LISTEN >/dev/null 2>&1; then die_with_hint "backend port $BACKEND_PORT is already in use" "Stop the process using it, or retry with BACKEND_PORT set to a free port."; fi
+  if lsof -nP -iTCP:"$BACKEND_PORT" -sTCP:LISTEN >/dev/null 2>&1; then die_with_hint "backend port $BACKEND_PORT is already in use" "Stop the process using port 8000, then retry."; fi
 fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
@@ -236,7 +279,6 @@ BIOINFOFLOW_VERSION=$REQUESTED_VERSION
 BIOINFOFLOW_ARCH=$PLATFORM_ARCH
 IMAGE_REGISTRY=$IMAGE_REGISTRY
 FRONTEND_PORT=$FRONTEND_PORT
-BACKEND_PORT=$BACKEND_PORT
 DOCKER_SOCKET_PATH=$DOCKER_SOCKET_PATH
 EOF
 printf '%s\n' "$REQUESTED_VERSION" > "$TMP_DIR/VERSION"

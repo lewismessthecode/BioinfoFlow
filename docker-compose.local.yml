@@ -2,7 +2,7 @@ services:
   backend:
     image: ${IMAGE_REGISTRY:-ghcr.io/lewismessthecode}/bioinfoflow-backend:${BIOINFOFLOW_VERSION:?Set BIOINFOFLOW_VERSION to a release tag}
     ports:
-      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       AUTH_MODE: dev
       BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}
