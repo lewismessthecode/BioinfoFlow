@@ -11,6 +11,7 @@ from app.utils.logging import get_logger
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 logger = get_logger(__name__)
+_reported_schema_gaps: set[tuple[str, tuple[str, ...]]] = set()
 
 
 class AuthUser(BaseModel):
@@ -28,6 +29,25 @@ class AuthUser(BaseModel):
 def _column_names(conn: sqlite3.Connection, table: str) -> set[str]:
     rows = conn.execute(f'PRAGMA table_info("{table}")').fetchall()
     return {str(row[1]) for row in rows}
+
+
+def _table_names(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    ).fetchall()
+    return {str(row[0]) for row in rows}
+
+
+def _warn_schema_not_ready_once(db_path: Path, missing_tables: list[str]) -> None:
+    key = (str(db_path), tuple(missing_tables))
+    if key in _reported_schema_gaps:
+        return
+    _reported_schema_gaps.add(key)
+    logger.warning(
+        "auth.db_schema_not_ready",
+        path=str(db_path),
+        missing_tables=missing_tables,
+    )
 
 
 def _build_session_query(user_columns: set[str]) -> str:
@@ -79,6 +99,11 @@ def validate_session(token: str) -> AuthUser | None:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
         try:
+            required_tables = {"session", "user"}
+            missing_tables = sorted(required_tables - _table_names(conn))
+            if missing_tables:
+                _warn_schema_not_ready_once(db_path, missing_tables)
+                return None
             user_columns = _column_names(conn, "user")
             session_query = _build_session_query(user_columns)
             now_iso = (
