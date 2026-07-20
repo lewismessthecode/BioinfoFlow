@@ -19,7 +19,7 @@ const LEGACY_FRONTEND_BETTER_AUTH_PATHS = new Set(["better-auth.db", "./better-a
 const LOCAL_BETTER_AUTH_SECRET_FILE = ".better-auth-local-secret"
 const LOCAL_AUTH_HOSTS = new Set(["localhost", "127.0.0.1", "::1"])
 
-function resolveBioinfoflowHome() {
+export function resolveBioinfoflowHome() {
   const configured = process.env.BIOINFOFLOW_HOME?.trim()
   if (configured) {
     return path.resolve(process.cwd(), configured)

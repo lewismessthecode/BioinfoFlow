@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { UserAvatar } from "@/components/bioinfoflow/user-avatar"
 import { authClient } from "@/lib/auth-client"
 import { buildAnonymousViewer } from "@/lib/auth-config"
 import { toast } from "sonner"
@@ -32,13 +32,6 @@ export function UserMenu({ collapsed, viewer }: UserMenuProps) {
   const userName = currentViewer.name || tUserMenu("defaultName")
   const userEmail = currentViewer.email || ""
   const userImage = currentViewer.image || null
-  const userInitials = userName
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2) || "U"
-
   const handleLogout = async () => {
     if (!currentViewer.authEnabled) {
       router.replace("/agent")
@@ -71,15 +64,14 @@ export function UserMenu({ collapsed, viewer }: UserMenuProps) {
           }
           aria-label={`${userName} — ${tAccessibility("userMenu")}`}
         >
-          <Avatar
+          <UserAvatar
+            viewerId={currentViewer.id}
+            name={userName}
+            image={userImage}
+            authEnabled={currentViewer.authEnabled}
             className={collapsed ? "h-7 w-7 rounded-[7px] ring-1 ring-border/60" : "h-8 w-8 rounded-[8px] ring-1 ring-border/60"}
-            aria-hidden="true"
-          >
-            <AvatarImage src={userImage || undefined} alt="" />
-            <AvatarFallback className="rounded-[8px] bg-primary/10 text-xs text-primary">
-              {userInitials}
-            </AvatarFallback>
-          </Avatar>
+            decorative
+          />
           {!collapsed && (
             <>
               <span className="min-w-0 flex-1 text-left">
