@@ -20,6 +20,7 @@ import {
   sortAgentSessions,
 } from "@/lib/agent-core/session-storage"
 import { celebrateMilestone } from "@/lib/celebrations"
+import { useFirstRunLoadingContext } from "@/hooks/use-first-run"
 
 const LAST_USED_PROJECT_STORAGE_KEY = "bioinfoflow:last-used-project"
 
@@ -36,6 +37,7 @@ function setStoredLastUsedProjectId(projectId: string | null) {
 }
 
 export function useSidebarData(tSidebar: (key: string, values?: Record<string, string>) => string) {
+  const firstRunLoading = useFirstRunLoadingContext()
   const {
     selectedProjectId,
     setSelectedProjectId,
@@ -117,8 +119,9 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   }, [selectedProjectId, conversationProjectId, activeConversationId, setActiveConversationId])
 
   useEffect(() => {
+    if (firstRunLoading) return
     fetchProjects()
-  }, [fetchProjects])
+  }, [fetchProjects, firstRunLoading])
 
   useEffect(() => {
     if (!selectedProjectId) return

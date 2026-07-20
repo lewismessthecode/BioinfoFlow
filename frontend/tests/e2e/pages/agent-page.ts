@@ -23,7 +23,7 @@ export class AgentPage {
   }
 
   get messageInput(): Locator {
-    return this.page.getByRole("textbox", { name: "Message" })
+    return this.page.locator('[data-testid="agent-composer"] textarea')
   }
 
   get sendButton(): Locator {

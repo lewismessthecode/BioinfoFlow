@@ -33,7 +33,15 @@ import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useIsMobile } from "@/hooks/use-media-query"
+import {
+  FirstRunProvider,
+  useFirstRun,
+} from "@/hooks/use-first-run"
 import type { ViewerIdentity } from "@/lib/auth-config"
+import {
+  firstRunActivationStorageKey,
+  LAST_USED_PROJECT_STORAGE_KEY,
+} from "@/lib/first-run"
 import { RuntimeProvider, getActiveRuntime, type RuntimeMode } from "@/lib/runtime"
 
 const LEFT_SIDEBAR_MIN = 240
@@ -97,11 +105,43 @@ export default function AppLayout({
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
   const [sidebarPrefsLoaded, setSidebarPrefsLoaded] = useState(false)
   const isMobile = useIsMobile()
+  const onAgentRoute = pathname === "/agent" || pathname.startsWith("/agent/")
+  const firstRun = useFirstRun(runtimeMode === "live" && onAgentRoute)
   const selectWorkspaceProject = useCallback((projectId: string) => {
     setSelectedProjectId(projectId)
     setConversationProjectId(projectId)
     setActiveConversationId("")
   }, [])
+
+  useEffect(() => {
+    const data = firstRun.data
+    const demoProjectId = data?.demo_project_id
+    if (!data?.ready || !demoProjectId) return
+
+    const activationKey = firstRunActivationStorageKey(demoProjectId)
+    if (localStorage.getItem(activationKey)) return
+
+    const rememberedProjectId = localStorage.getItem(
+      LAST_USED_PROJECT_STORAGE_KEY,
+    )
+    if (
+      selectedProjectId ||
+      conversationProjectId ||
+      rememberedProjectId
+    ) {
+      return
+    }
+    const timer = window.setTimeout(() => {
+      selectWorkspaceProject(demoProjectId)
+      localStorage.setItem(activationKey, "true")
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [
+    conversationProjectId,
+    firstRun.data,
+    selectWorkspaceProject,
+    selectedProjectId,
+  ])
   const terminalEnabled =
     runtime.capabilities.terminal &&
     Boolean(selectedProjectId) &&
@@ -208,7 +248,8 @@ export default function AppLayout({
 
   return (
     <RuntimeProvider mode={runtimeMode}>
-      <ProjectProvider
+      <FirstRunProvider value={firstRun.data} isLoading={firstRun.isLoading}>
+        <ProjectProvider
         value={{
           selectedProjectId,
           setSelectedProjectId,
@@ -303,7 +344,8 @@ export default function AppLayout({
             </TerminalDockProvider>
           </BreadcrumbProvider>
         </WorkspaceShellProvider>
-      </ProjectProvider>
+        </ProjectProvider>
+      </FirstRunProvider>
     </RuntimeProvider>
   )
 }

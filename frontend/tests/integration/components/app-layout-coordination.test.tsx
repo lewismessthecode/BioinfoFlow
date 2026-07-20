@@ -1,5 +1,5 @@
 import * as React from "react"
-import { fireEvent, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import AppLayout from "@/app/(app)/app-layout"
@@ -7,6 +7,7 @@ import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useBreadcrumbDetail } from "@/components/bioinfoflow/breadcrumb-context"
 import { useTerminalDock } from "@/components/bioinfoflow/terminal/terminal-dock-context"
 import { renderAppPage } from "@/tests/app-test-utils"
+import { firstRunActivationStorageKey } from "@/lib/first-run"
 
 const pathnameState = {
   value: "/agent",
@@ -15,6 +16,45 @@ const pathnameState = {
 const searchParamsState = {
   value: new URLSearchParams(),
 }
+
+const freshDemoResult = {
+  ready: true,
+  created: true,
+  demo_project_id: "project-demo",
+  workflow_id: "workflow-demo",
+  starter_context: {
+    project_id: "project-demo",
+    workflow: {
+      id: "workflow-demo",
+      name: "bioinfoflow-quickstart",
+      version: "1.0.0",
+      source: "local",
+      engine: "wdl",
+      scope: "project" as const,
+      project_id: "project-demo",
+    },
+    values: {
+      samples_tsv: "asset://project/samples.tsv",
+      sample_a_fastq: "asset://project/sample-a.fastq",
+      sample_b_fastq: "asset://project/sample-b.fastq",
+    },
+  },
+}
+let firstRunStateMock: {
+  data: typeof freshDemoResult | null
+  isLoading: boolean
+  error: Error | null
+}
+
+vi.mock("@/hooks/use-first-run", async () => {
+  const actual = await vi.importActual<typeof import("@/hooks/use-first-run")>(
+    "@/hooks/use-first-run",
+  )
+  return {
+    ...actual,
+    useFirstRun: () => firstRunStateMock,
+  }
+})
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathnameState.value,
@@ -175,11 +215,177 @@ function LayoutStateSeeder({
   return <div>page content</div>
 }
 
+function ProjectStateProbe() {
+  const { selectedProjectId, conversationProjectId, selectWorkspaceProject } =
+    useProjectContext()
+  return (
+    <div>
+      <span data-testid="selected-project">{selectedProjectId || "none"}</span>
+      <span data-testid="conversation-project">
+        {conversationProjectId || "none"}
+      </span>
+      <button onClick={() => selectWorkspaceProject("")}>clear project</button>
+    </div>
+  )
+}
+
 describe("AppLayout coordination", () => {
   beforeEach(() => {
     pathnameState.value = "/agent"
     searchParamsState.value = new URLSearchParams()
     localStorage.clear()
+    firstRunStateMock = { data: null, isLoading: false, error: null }
+  })
+
+  it("activates a freshly created demo exactly once", async () => {
+    firstRunStateMock = {
+      data: freshDemoResult,
+      isLoading: false,
+      error: null,
+    }
+    renderAppPage(
+      <AppLayout>
+        <ProjectStateProbe />
+      </AppLayout>,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByTestId("selected-project")).toHaveTextContent(
+        "project-demo",
+      ),
+    )
+    expect(screen.getByTestId("conversation-project")).toHaveTextContent(
+      "project-demo",
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "clear project" }))
+    await waitFor(() =>
+      expect(screen.getByTestId("selected-project")).toHaveTextContent("none"),
+    )
+    expect(screen.getByTestId("conversation-project")).toHaveTextContent("none")
+  })
+
+  it("does not mark the demo activated when deferred selection is cleaned up", () => {
+    vi.useFakeTimers()
+    try {
+      firstRunStateMock = {
+        data: freshDemoResult,
+        isLoading: false,
+        error: null,
+      }
+      const { unmount } = renderAppPage(
+        <AppLayout>
+          <ProjectStateProbe />
+        </AppLayout>,
+      )
+
+      unmount()
+      act(() => vi.runAllTimers())
+
+      expect(
+        localStorage.getItem(firstRunActivationStorageKey("project-demo")),
+      ).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("activates an existing demo after an interrupted first bootstrap response", async () => {
+    vi.useFakeTimers()
+    try {
+      firstRunStateMock = {
+        data: freshDemoResult,
+        isLoading: false,
+        error: null,
+      }
+      const firstRender = renderAppPage(
+        <AppLayout>
+          <ProjectStateProbe />
+        </AppLayout>,
+      )
+
+      firstRender.unmount()
+      act(() => vi.runAllTimers())
+      expect(
+        localStorage.getItem(firstRunActivationStorageKey("project-demo")),
+      ).toBeNull()
+
+      firstRunStateMock = {
+        data: { ...freshDemoResult, created: false },
+        isLoading: false,
+        error: null,
+      }
+      renderAppPage(
+        <AppLayout>
+          <ProjectStateProbe />
+        </AppLayout>,
+      )
+      act(() => vi.runAllTimers())
+
+      expect(screen.getByTestId("selected-project")).toHaveTextContent(
+        "project-demo",
+      )
+      expect(screen.getByTestId("conversation-project")).toHaveTextContent(
+        "project-demo",
+      )
+      expect(
+        localStorage.getItem(firstRunActivationStorageKey("project-demo")),
+      ).toBe("true")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("does not replace a remembered project with the fresh demo", async () => {
+    localStorage.setItem("bioinfoflow:last-used-project", "project-existing")
+    firstRunStateMock = {
+      data: freshDemoResult,
+      isLoading: false,
+      error: null,
+    }
+    renderAppPage(
+      <AppLayout>
+        <ProjectStateProbe />
+      </AppLayout>,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByTestId("selected-project")).toHaveTextContent("none"),
+    )
+    expect(screen.getByTestId("conversation-project")).toHaveTextContent("none")
+  })
+
+  it("does not replace an existing project selected before bootstrap completes", async () => {
+    const { rerender } = renderAppPage(
+      <AppLayout>
+        <LayoutStateSeeder projectId="project-existing" projectName="Existing" />
+        <ProjectStateProbe />
+      </AppLayout>,
+    )
+    expect(await screen.findByTestId("selected-project")).toHaveTextContent(
+      "project-existing",
+    )
+
+    firstRunStateMock = {
+      data: freshDemoResult,
+      isLoading: false,
+      error: null,
+    }
+    rerender(
+      <AppLayout>
+        <LayoutStateSeeder projectId="project-existing" projectName="Existing" />
+        <ProjectStateProbe />
+      </AppLayout>,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByTestId("selected-project")).toHaveTextContent(
+        "project-existing",
+      ),
+    )
+    expect(screen.getByTestId("conversation-project")).toHaveTextContent(
+      "project-existing",
+    )
   })
 
   it("keeps breadcrumbs, the left sidebar, and the terminal dock coordinated on terminal-enabled routes", async () => {

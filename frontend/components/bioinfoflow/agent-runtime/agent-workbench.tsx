@@ -54,6 +54,7 @@ import { ResizeHandle } from "@/components/ui/resize-handle"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
+import { useFirstRunContext } from "@/hooks/use-first-run"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
 import { useIsMobile } from "@/hooks/use-media-query"
 import {
@@ -110,6 +111,12 @@ const STARTER_SUGGESTIONS = [
     key: "prepareRun",
     icon: CircleCheck,
   },
+] as const
+
+const DEMO_STARTER_SUGGESTIONS = [
+  { key: "checkAndRun", icon: CircleCheck },
+  { key: "explainInputs", icon: MessageCircle },
+  { key: "reviewRun", icon: RotateCcw },
 ] as const
 
 const COMMAND_DISCOVERY_HINTS = [
@@ -191,6 +198,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     ref,
   ) {
     const t = useTranslations("agentRuntime")
+    const firstRun = useFirstRunContext()
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const mobileSidecarDialogRef = useRef<HTMLDivElement>(null)
     const mobileSidecarRestoreFocusRef = useRef<HTMLElement | null>(null)
@@ -218,6 +226,24 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         error: null,
       }))
     const [activeWorkflowMentions, setActiveWorkflowMentions] = useState<AgentRuntimeWorkflowMention[]>([])
+    const demoStarterContext =
+      firstRun?.ready && firstRun.starter_context?.project_id === projectId
+        ? firstRun.starter_context
+        : null
+    const demoWorkflow = useMemo<AgentRuntimeWorkflowMention | null>(() => {
+      const workflow = demoStarterContext?.workflow
+      if (!workflow) return null
+      return {
+        id: workflow.id,
+        name: workflow.name,
+        version: workflow.version,
+        engine: workflow.engine,
+        source: workflow.source,
+        scope: workflow.scope,
+        projectId: workflow.project_id,
+        pinned: true,
+      }
+    }, [demoStarterContext])
     const workflowMentionStateMatchesScope =
       workflowMentionLoadState.scopeKey === currentWorkflowMentionScopeKey
     const availableWorkflowMentions = workflowMentionStateMatchesScope
@@ -950,6 +976,33 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       ],
     )
 
+    const submitDemoStarter = useCallback(
+      (prompt: string) => {
+        if (!demoWorkflow) return
+        if (!selectedModel) {
+          setConnectModelOpen(true)
+          return
+        }
+        const inputParts: AgentRuntimeInputPart[] = [
+          { type: "text", text: prompt },
+          workflowMentionInputPart(demoWorkflow),
+        ]
+        const inputDisplayParts: AgentInputDisplayPart[] = [
+          {
+            type: "workflow",
+            workflow_id: demoWorkflow.id,
+            project_id: demoWorkflow.projectId ?? null,
+            scope: demoWorkflow.scope,
+            name: demoWorkflow.name,
+            version: demoWorkflow.version,
+          },
+          { type: "text", text: prompt },
+        ]
+        submitTurn(prompt, inputParts, [], inputDisplayParts, selectedModel)
+      },
+      [demoWorkflow, selectedModel, submitTurn],
+    )
+
     useEffect(() => {
       if (!queuedSubmissions.length || hasActiveTurn) return
       const next = queuedSubmissions[0]
@@ -1528,15 +1581,34 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 ) : null}
                 {!composerDocked && !input.trim() ? (
                   <StarterSuggestionList
-                    suggestions={STARTER_SUGGESTIONS.slice(
-                      0,
-                      desktopSidecarVisible ? 3 : STARTER_SUGGESTIONS.length,
-                    ).map((suggestion) => ({
-                      key: suggestion.key,
-                      icon: suggestion.icon,
-                      prompt: t(`starterSuggestions.${suggestion.key}.prompt`),
-                    }))}
-                    onSelect={fillStarterSuggestion}
+                    suggestions={(demoStarterContext
+                      ? DEMO_STARTER_SUGGESTIONS
+                      : STARTER_SUGGESTIONS
+                    )
+                      .slice(
+                        0,
+                        desktopSidecarVisible
+                          ? 3
+                          : demoStarterContext
+                            ? DEMO_STARTER_SUGGESTIONS.length
+                            : STARTER_SUGGESTIONS.length,
+                      )
+                      .map((suggestion) => ({
+                        key: suggestion.key,
+                        icon: suggestion.icon,
+                        prompt: t(
+                          demoStarterContext
+                            ? `demoStarterSuggestions.${suggestion.key}.prompt`
+                            : `starterSuggestions.${suggestion.key}.prompt`,
+                        ),
+                      }))}
+                    onSelect={(key, prompt) => {
+                      if (demoStarterContext && key === "checkAndRun") {
+                        submitDemoStarter(prompt)
+                        return
+                      }
+                      fillStarterSuggestion(prompt)
+                    }}
                   />
                 ) : null}
               </div>
@@ -1771,7 +1843,7 @@ function StarterSuggestionList({
     icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>
     prompt: string
   }>
-  onSelect: (prompt: string) => void
+  onSelect: (key: string, prompt: string) => void
 }) {
   return (
     <div
@@ -1786,7 +1858,7 @@ function StarterSuggestionList({
             "group grid min-h-[32px] w-full grid-cols-[0.875rem_minmax(0,1fr)] items-center gap-2 rounded-[5px] px-4 text-left transition-colors duration-150 hover:bg-foreground/[0.025] focus-visible:relative focus-visible:z-10 focus-visible:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/18 focus-visible:ring-offset-1 focus-visible:ring-offset-background sm:min-h-[35px]",
             index > 0 && "border-t border-border/75",
           )}
-          onClick={() => onSelect(suggestion.prompt)}
+          onClick={() => onSelect(suggestion.key, suggestion.prompt)}
         >
           <suggestion.icon
             className="h-3.5 w-3.5 text-muted-foreground/65 transition-colors duration-150 group-hover:text-muted-foreground/85"

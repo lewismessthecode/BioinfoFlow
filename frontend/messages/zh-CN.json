@@ -2606,6 +2606,17 @@
         "prompt": "基于 @workflow 准备一次运行"
       }
     },
+    "demoStarterSuggestions": {
+      "checkAndRun": {
+        "prompt": "检查并运行演示工作流"
+      },
+      "explainInputs": {
+        "prompt": "解释演示输入"
+      },
+      "reviewRun": {
+        "prompt": "查看最近的演示运行"
+      }
+    },
     "commandHints": {
       "workflow": {
         "prefix": "输入",
