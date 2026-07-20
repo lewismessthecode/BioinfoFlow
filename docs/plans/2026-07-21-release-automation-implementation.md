@@ -107,6 +107,7 @@ Configure these extra files:
 
 ```text
 backend/pyproject.toml                 $.project.version
+backend/uv.lock                        root backend package version
 frontend/package.json                 $.version
 backend/app/config.py                  generic annotation
 docs/contracts/openapi-v1.json         $.info.version

@@ -91,12 +91,17 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-The release workflow publishes:
+Bioinfoflow publishes:
 
 - `ghcr.io/lewismessthecode/bioinfoflow-backend:<tag>`
 - `ghcr.io/lewismessthecode/bioinfoflow-frontend:<tag>`
 
-Use `latest`, `main`, or `sha-<12-char-commit>` as the tag. Images are republished from `main` only when backend or frontend code changes; docs-only changes do not create a new image.
+Use an exact numeric tag such as `0.1.0` for reproducible deployments. `latest`
+tracks the newest formal release. `main` and `sha-<12-char-commit>` are
+development channels; eligible images are republished from `main` only when
+backend or frontend code changes, and docs-only changes do not create a new
+image. See the [Release Maintainer SOP](../development/releases.md) for the full
+tag policy.
 
 The published frontend image is fixed at build time to
 `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1`, personal auth mode,
