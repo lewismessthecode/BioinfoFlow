@@ -1325,6 +1325,15 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     }, [agentActionButtons, setNavbarActions])
 
     const composerDocked = hasConversation
+    const composerPlaceholders = useMemo(
+      () => [
+        t("composerPlaceholders.checkWorkflow"),
+        t("composerPlaceholders.chooseInputs"),
+        t("composerPlaceholders.reviewFailure"),
+        t("composerPlaceholders.prepareRun"),
+      ],
+      [t],
+    )
     const composer = (
       <AgentComposer
         ref={textareaRef}
@@ -1368,6 +1377,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         compactControls={desktopSidecarVisible}
         presentation={composerDocked ? "dock" : "center"}
         contextTitle={null}
+        ariaLabel={t("composerPlaceholder")}
+        placeholderSuggestions={composerPlaceholders}
       />
     )
 

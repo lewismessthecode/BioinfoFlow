@@ -37,6 +37,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import type { ModelSelection, ProviderModels } from "@/hooks/use-llm-settings"
+import { useAnimatedPlaceholder } from "@/hooks/use-animated-placeholder"
 import type { AgentPermissionUpdateState } from "@/hooks/use-agent-runtime"
 import type {
   AgentMode,
@@ -94,6 +95,8 @@ type AgentComposerProps = {
   compactControls?: boolean
   presentation?: "center" | "dock"
   contextTitle?: string | null
+  ariaLabel?: string
+  placeholderSuggestions?: readonly string[]
   className?: string
 }
 
@@ -152,6 +155,8 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       compactControls = false,
       presentation = "dock",
       contextTitle,
+      ariaLabel,
+      placeholderSuggestions = [],
       className,
     },
     ref,
@@ -163,7 +168,18 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     const [commandMenuOpen, setCommandMenuOpen] = useState(false)
     const [commandToken, setCommandToken] = useState<ComposerCommandToken | null>(null)
     const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0)
+    const [focused, setFocused] = useState(false)
     const isCenterPresentation = presentation === "center"
+    const animatedPlaceholder = useAnimatedPlaceholder({
+      enabled: !disabled && placeholderSuggestions.length > 0,
+      focused,
+      value,
+      strings: placeholderSuggestions,
+    })
+    const visualPlaceholder = placeholderSuggestions.length
+      ? animatedPlaceholder
+      : t("composerPlaceholder")
+    const stableAriaLabel = ariaLabel ?? t("composerPlaceholder")
 
     useImperativeHandle(ref, () => textareaRef.current as HTMLTextAreaElement, [])
 
@@ -437,9 +453,13 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
               }
             }}
             onClick={(event) => updateCommandMenu(event.currentTarget)}
-            onBlur={() => window.setTimeout(closeCommandMenu, 120)}
-            placeholder={t("composerPlaceholder")}
-            aria-label={t("composerPlaceholder")}
+            onFocus={() => setFocused(true)}
+            onBlur={() => {
+              setFocused(false)
+              window.setTimeout(closeCommandMenu, 120)
+            }}
+            placeholder={visualPlaceholder}
+            aria-label={stableAriaLabel}
             {...commandTextareaPopupProps}
             className={cn(
               "min-w-[12rem] flex-1 resize-none bg-transparent px-0 py-0.5 text-[14px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/64",

@@ -2517,6 +2517,12 @@
   "agentRuntime": {
     "welcomeTitle": "What should Bioinfoflow help you do today?",
     "composerPlaceholder": "Plan, Build, / for skills, @ for context",
+    "composerPlaceholders": {
+      "checkWorkflow": "Check a workflow before running it",
+      "chooseInputs": "Choose inputs for an analysis",
+      "reviewFailure": "Review a failed run",
+      "prepareRun": "Prepare a workflow run"
+    },
     "attach": "Attach or add context",
     "send": "Send message",
     "stop": "Stop response",

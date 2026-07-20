@@ -30,6 +30,10 @@ vi.mock("next-intl", () => ({
     const labels: Record<string, string> = {
       welcomeTitle: "What should Bioinfoflow help you do today?",
       composerPlaceholder: "Message Bioinfoflow...",
+      "composerPlaceholders.checkWorkflow": "Check a workflow before running it",
+      "composerPlaceholders.chooseInputs": "Choose inputs for an analysis",
+      "composerPlaceholders.reviewFailure": "Review a failed run",
+      "composerPlaceholders.prepareRun": "Prepare a workflow run",
       attach: "Attach or add context",
       send: "Send message",
       stop: "Stop response",
@@ -425,6 +429,9 @@ describe("AgentWorkbench", () => {
   it("renders restrained starter suggestions and command discovery hints in the empty composer", () => {
     render(<AgentWorkbench />)
 
+    expect(
+      screen.getByLabelText("Message Bioinfoflow..."),
+    ).toHaveAttribute("placeholder", "")
     expect(screen.getByTestId("agent-starter-suggestions")).toBeInTheDocument()
     expect(
       screen.getByRole("button", { name: "Check this workflow before I run it" }),
@@ -469,7 +476,7 @@ describe("AgentWorkbench", () => {
       screen.getByRole("button", { name: "Check this workflow before I run it" }),
     )
 
-    expect(screen.getByPlaceholderText("Message Bioinfoflow...")).toHaveValue(
+    expect(screen.getByLabelText("Message Bioinfoflow...")).toHaveValue(
       "Check this workflow before I run it",
     )
   })
@@ -1321,7 +1328,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Plan RNA-seq QC" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -1357,7 +1364,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "/next" } })
     await waitFor(() => expect(screen.getByTestId("agent-skill-option")).toBeInTheDocument())
     fireEvent.click(screen.getByTestId("agent-skill-option"))
@@ -1411,7 +1418,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "/phoenix" } })
     await waitFor(() => expect(screen.getByTestId("agent-skill-option")).toBeInTheDocument())
     fireEvent.click(screen.getByTestId("agent-skill-option"))
@@ -1477,7 +1484,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench projectId="project-1" />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "@rna" } })
     await waitFor(() =>
       expect(screen.getAllByTestId("agent-command-option").length).toBeGreaterThan(0),
@@ -1539,7 +1546,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench projectId="project-1" />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Run @workflow with sample A" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -1622,7 +1629,7 @@ describe("AgentWorkbench", () => {
     })
 
     const { rerender } = render(<AgentWorkbench projectId="project-1" />)
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "@old" } })
     await waitFor(() =>
       expect(screen.getByTestId("agent-command-option")).toHaveTextContent(
@@ -1636,7 +1643,7 @@ describe("AgentWorkbench", () => {
       expect(apiRequestMock).toHaveBeenCalledWith("/projects/project-2/workflows"),
     )
 
-    const nextInput = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const nextInput = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(nextInput, { target: { value: "@old" } })
 
     expect(screen.queryByText("@old-project-workflow")).not.toBeInTheDocument()
@@ -1680,7 +1687,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "@par" } })
     await waitFor(() =>
       expect(screen.getAllByTestId("agent-command-option").length).toBeGreaterThan(0),
@@ -1739,7 +1746,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "@workflow Draft a run plan" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -1791,7 +1798,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Switch to Deaf_20" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -1832,7 +1839,7 @@ describe("AgentWorkbench", () => {
     useAgentRuntimeMock.mockReturnValue(runtime)
     const view = render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "First turn" } })
     fireEvent.keyDown(input, { key: "Enter" })
     fireEvent.change(input, { target: { value: "Second turn" } })
@@ -1884,7 +1891,7 @@ describe("AgentWorkbench", () => {
     useAgentRuntimeMock.mockReturnValue(runtime)
     const view = render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Run Deaf_20 next" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -1935,7 +1942,7 @@ describe("AgentWorkbench", () => {
     useAgentRuntimeMock.mockReturnValue(runtime)
     const view = render(<AgentWorkbench activeSessionId="session-a" />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Belongs to A" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -1963,7 +1970,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "First turn" } })
     fireEvent.keyDown(input, { key: "Enter" })
     fireEvent.change(input, { target: { value: "Second turn" } })
@@ -1998,7 +2005,7 @@ describe("AgentWorkbench", () => {
     const workbenchRef = { current: null as React.ElementRef<typeof AgentWorkbench> | null }
     const view = render(<AgentWorkbench ref={workbenchRef} />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Do this later" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -2046,7 +2053,7 @@ describe("AgentWorkbench", () => {
     const workbenchRef = { current: null as React.ElementRef<typeof AgentWorkbench> | null }
     const view = render(<AgentWorkbench ref={workbenchRef} />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Do not auto-send" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -2093,7 +2100,7 @@ describe("AgentWorkbench", () => {
     useAgentRuntimeMock.mockReturnValue(runtime)
     const view = render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Queued A" } })
     fireEvent.keyDown(input, { key: "Enter" })
     fireEvent.change(input, { target: { value: "Queued B" } })
@@ -2177,7 +2184,7 @@ describe("AgentWorkbench", () => {
     useAgentRuntimeMock.mockReturnValue(runtime)
     const view = render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Queued under auto" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -2370,7 +2377,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "After approval" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -2391,7 +2398,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Check the remote host" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -2423,7 +2430,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Check the normalized host" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -2453,7 +2460,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Check the backend host" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -2476,7 +2483,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Check the project host" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -2528,7 +2535,7 @@ describe("AgentWorkbench", () => {
     )
     fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: /Local/ }))
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Check the remote host first" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -2586,7 +2593,7 @@ describe("AgentWorkbench", () => {
       }),
     ).toBeInTheDocument()
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Use this remote project" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -2642,7 +2649,7 @@ describe("AgentWorkbench", () => {
       await screen.findByRole("menuitemcheckbox", { name: /Test host sz03/ }),
     )
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Run locally now" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -2677,7 +2684,7 @@ describe("AgentWorkbench", () => {
     })
     rerender(<AgentWorkbench />)
 
-    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Check the new host" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -2878,7 +2885,7 @@ describe("AgentWorkbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "Approve" }))
 
     await waitFor(() =>
-      expect(screen.getByPlaceholderText("Message Bioinfoflow...")).toHaveFocus(),
+      expect(screen.getByLabelText("Message Bioinfoflow...")).toHaveFocus(),
     )
     expect(screen.getByRole("status")).toHaveTextContent(
       "Decision submitted. Focus returned to the composer.",
