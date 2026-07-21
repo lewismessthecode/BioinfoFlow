@@ -182,7 +182,9 @@ def test_encode_request_discards_continuation_bound_to_another_target() -> None:
     assert "must-not-cross-targets" not in repr(request)
 
 
-def test_encode_request_discards_continuation_when_count_exceeds_current_input() -> None:
+def test_encode_request_discards_continuation_when_count_exceeds_current_input() -> (
+    None
+):
     invocation = _invocation(
         continuation=ResponsesContinuation(
             response_id="resp-stale",
