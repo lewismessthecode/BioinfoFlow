@@ -601,10 +601,18 @@ describe("Settings page flow", () => {
         }),
       )
     })
-    expect(apiRequestMock).toHaveBeenCalledWith(
+    expect(apiRequestMock).not.toHaveBeenCalledWith(
       "/llm/providers/llm-provider-1/discover-models",
       { method: "POST" },
     )
+
+    await user.click(screen.getByRole("button", { name: "Refresh models" }))
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith(
+        "/llm/providers/llm-provider-1/discover-models",
+        { method: "POST" },
+      )
+    })
 
     const testModel = within(openAiCard).getByRole("combobox", {
       name: "OpenAI test model",
