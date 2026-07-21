@@ -794,3 +794,96 @@ async def test_environment_bootstrap_swallows_discovery_errors_without_logging_s
     model = (await db_session.execute(LlmModel.__table__.select())).mappings().one()
     assert model["model_id"] == "deepseek_v4"
     assert secret not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_legacy_grok_provider_reconciles_to_xai(db_session) -> None:
+    provider = LlmProvider(
+        name="Grok",
+        kind="grok",
+        base_url="https://api.x.ai/v1",
+        scope="user",
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "grok"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+
+    reconciled = (await LlmCatalogService(db_session).list_providers(user_id="dev"))[0]
+
+    assert reconciled.kind == "xai"
+    assert reconciled.provider_metadata["providerTemplate"] == "xai"
+    assert reconciled.enabled is True
+
+
+@pytest.mark.asyncio
+async def test_legacy_kimi_code_provider_reconciles_to_canonical_profile(
+    db_session,
+) -> None:
+    provider = LlmProvider(
+        name="Kimi",
+        kind="kimi",
+        base_url="https://api.kimi.com/coding/v1",
+        scope="user",
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "kimi"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+
+    reconciled = (await LlmCatalogService(db_session).list_providers(user_id="dev"))[0]
+
+    assert reconciled.kind == "kimi_code"
+    assert reconciled.name == "Kimi Code"
+    assert reconciled.provider_metadata["providerTemplate"] == "kimi-code"
+    assert reconciled.enabled is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "base_url", "template_id"),
+    [
+        ("kimi", "https://api.moonshot.ai/v1", "kimi"),
+        ("kimi_cn", "https://api.moonshot.cn/v1", "kimi-cn"),
+    ],
+)
+async def test_removed_moonshot_provider_is_disabled_without_deleting_credential(
+    db_session,
+    kind,
+    base_url,
+    template_id,
+) -> None:
+    provider = LlmProvider(
+        name="Legacy Kimi",
+        kind=kind,
+        base_url=base_url,
+        scope="user",
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": template_id},
+    )
+    credential = LlmProviderCredential(
+        provider=provider,
+        source="stored",
+        encrypted_secret="preserved-encrypted-value",
+        masked_hint="sk...ed",
+        updated_by="dev",
+    )
+    db_session.add_all([provider, credential])
+    await db_session.commit()
+
+    reconciled = (await LlmCatalogService(db_session).list_providers(user_id="dev"))[0]
+    saved_credential = await LlmCatalogService(db_session).credential_repo.get_for_provider(
+        str(provider.id)
+    )
+
+    assert reconciled.enabled is False
+    assert reconciled.provider_metadata["providerTemplate"] == "legacy-kimi-platform"
+    assert (
+        reconciled.provider_metadata["unsupported_reason"]
+        == "kimi_open_platform_removed"
+    )
+    assert saved_credential is not None
+    assert saved_credential.encrypted_secret == "preserved-encrypted-value"
