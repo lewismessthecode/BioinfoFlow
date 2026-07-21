@@ -22,7 +22,7 @@ export function RegistrationProgress({ step }: { step: RegistrationStep | null }
             className={cn(
               "h-1.5 w-1.5 rounded-full transition-colors duration-150",
               i < currentIdx
-                ? "bg-emerald-500"
+                ? "bg-success"
                 : i === currentIdx
                   ? "animate-pulse bg-primary"
                   : "bg-muted-foreground/30",

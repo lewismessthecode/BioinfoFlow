@@ -81,8 +81,6 @@ export function PipelineNode({ data }: NodeProps<PipelineNodeData>) {
           config.animation,
           isSchema && "border-dashed",
           data.status === "queued" && "bg-warning/5",
-          data.status === "success" && "shadow-[0_0_12px_var(--success-border)]",
-          data.status === "failed" && "shadow-[0_0_12px_var(--error-border)]",
         )}
         data-status={data.status}
         data-source={data.source}

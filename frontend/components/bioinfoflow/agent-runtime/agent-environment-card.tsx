@@ -83,8 +83,8 @@ export function AgentEnvironmentCard({
           value={changes.files ? t("environment.filesChanged", { count: changes.files }) : t("environment.none")}
           trailing={
             <div className="flex shrink-0 items-center gap-1 font-mono text-sm">
-              <span className="text-emerald-600">+{changes.additions}</span>
-              <span className="text-red-600">-{changes.deletions}</span>
+              <span className="text-success-foreground">+{changes.additions}</span>
+              <span className="text-error-foreground">-{changes.deletions}</span>
             </div>
           }
         />
@@ -150,7 +150,7 @@ export function AgentEnvironmentCard({
                 <CheckCircle2 className={cn(
                   "h-4 w-4 shrink-0",
                   activity.status === "completed"
-                    ? "text-emerald-500"
+                    ? "text-success-foreground"
                     : "text-muted-foreground",
                 )} />
                 <span className="min-w-0 flex-1 truncate">{activity.summary || activity.name}</span>

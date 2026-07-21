@@ -17,7 +17,7 @@ export function HeroSection() {
           <div className="max-w-xl">
             <FadeInOnScroll delay={0}>
               <div className="flex items-center gap-2 mb-4">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 text-green-600 dark:text-green-400 text-xs font-medium">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-success-border bg-success-muted px-3 py-1 text-xs font-medium text-success-foreground">
                   <Cpu className="w-3 h-3" />
                   {t("gpuPowered")}
                 </span>

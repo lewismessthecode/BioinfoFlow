@@ -164,7 +164,7 @@ function UserQuestionsPanel({ questions }: { questions: UserQuestionItem[] }) {
             ) : null}
             {question.status === "resolved" && question.answer ? (
               <div className="mt-2 flex flex-wrap items-center gap-2 text-foreground">
-                <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                <Check className="h-3.5 w-3.5 text-success-foreground" />
                 <span className="font-medium">{t("clarificationResolved")}</span>
                 <span className="font-mono">{question.answer}</span>
               </div>

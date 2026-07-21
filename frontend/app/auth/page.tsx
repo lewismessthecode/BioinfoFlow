@@ -68,7 +68,7 @@ export default async function AuthPage() {
             {/* ── Header ─────────────────────────────────── */}
             <div className="px-4 pb-2 pt-5 sm:px-6">
               <div className="mb-3 flex flex-wrap items-center gap-2">
-                <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-900/10 bg-emerald-950 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.18em] text-emerald-50">
+                <div className="inline-flex items-center gap-1.5 rounded-full border border-success-border bg-success-muted px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.18em] text-success-foreground">
                   <Shield className="h-2.5 w-2.5" />
                   {modeBadge}
                 </div>

@@ -2,9 +2,9 @@ import { RemoteConnectionStatusDot } from "@/components/bioinfoflow/remote-conne
 import type { RemoteConnectionStatus } from "@/lib/demo-connections"
 
 export const statusBorderClassNames: Record<RemoteConnectionStatus, string> = {
-  online: "border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300",
-  offline: "border-rose-500/20 bg-rose-500/5 text-rose-700 dark:text-rose-300",
-  error: "border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-300",
+  online: "border-success-border bg-success-muted text-success-foreground",
+  offline: "border-error-border bg-error-muted text-error-foreground",
+  error: "border-error-border bg-error-muted text-error-foreground",
   unknown: "border-slate-500/20 bg-slate-500/5 text-slate-700 dark:text-slate-300",
 }
 

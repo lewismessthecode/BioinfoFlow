@@ -25,10 +25,16 @@
   --muted-foreground: #6f6e69;
   --accent: #f1f1ef;
   --accent-foreground: #191919;
-  --destructive: #ef4444;
-  --destructive-foreground: #fafafa;
-  --success: #346538;
-  --success-foreground: #ffffff;
+  --success: #3F8A5D;
+  --success-foreground: #2F744A;
+  --success-muted: #E9F3EC;
+  --success-border: #C6DEC9;
+  --error: #C0575C;
+  --error-foreground: #984248;
+  --error-muted: #F9EAEC;
+  --error-border: #E9C5C8;
+  --destructive: var(--error);
+  --destructive-foreground: #ffffff;
   --warning: #956400;
   --warning-foreground: #191919;
   --info: #1f6c9f;
@@ -81,10 +87,6 @@
   --composer-shadow: 0 1px 2px rgba(15, 15, 15, 0.032), 0 10px 24px rgba(15, 15, 15, 0.028);
 
   /* Semantic border/muted — light-mode counterparts to .dark vars */
-  --success-border: rgba(79, 125, 88, 0.22);
-  --success-muted: rgba(237, 243, 236, 0.92);
-  --error-border: rgba(239, 68, 68, 0.20);
-  --error-muted: rgba(239, 68, 68, 0.08);
   --warning-border: rgba(161, 111, 31, 0.22);
   --warning-muted: rgba(251, 243, 219, 0.92);
   --info-border: rgba(55, 109, 143, 0.20);
@@ -127,16 +129,18 @@
   --accent-hover: rgba(255,255,255,0.10);
 
   /* Semantic colors — used sparingly */
-  --success: #22C55E;
-  --success-muted: rgba(34,197,94,0.10);
-  --success-border: rgba(34,197,94,0.15);
+  --success: #5DBB7C;
+  --success-foreground: #78C991;
+  --success-muted: #17271D;
+  --success-border: #31563D;
   --warning: #EAB308;
   --warning-foreground: #FDE68A;
   --warning-muted: rgba(234,179,8,0.10);
   --warning-border: rgba(234,179,8,0.15);
-  --error: #EF4444;
-  --error-muted: rgba(239,68,68,0.10);
-  --error-border: rgba(239,68,68,0.15);
+  --error: #D96C72;
+  --error-foreground: #E58A8E;
+  --error-muted: #2D1B1D;
+  --error-border: #60383C;
   --info: #60A5FA;
   --info-muted: rgba(96,165,250,0.10);
   --info-border: rgba(96,165,250,0.15);
@@ -151,8 +155,8 @@
   /* Pipeline state tokens */
   --pipeline-pending: #A1A1AA;
   --pipeline-running: #EAB308;
-  --pipeline-success: #22C55E;
-  --pipeline-error: #EF4444;
+  --pipeline-success: var(--success);
+  --pipeline-error: var(--error);
 
   /* Legacy compatibility mappings */
   --background: var(--bg);
@@ -169,7 +173,7 @@
   --muted-foreground: var(--fg-muted);
   --accent-foreground: var(--fg);
   --destructive: var(--error);
-  --destructive-foreground: var(--fg);
+  --destructive-foreground: var(--bg);
   --input: var(--border);
   --ring: var(--fg-secondary);
   --chart-1: var(--fg);
@@ -221,6 +225,12 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
+  --color-success-muted: var(--success-muted);
+  --color-success-border: var(--success-border);
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+  --color-error-muted: var(--error-muted);
+  --color-error-border: var(--error-border);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --color-info: var(--info);
@@ -558,16 +568,15 @@ html {
   }
 }
 
-/* Node completion flash */
+/* Node completion settle */
 @keyframes node-complete {
   0% {
-    box-shadow: 0 0 0 0 var(--success-muted);
-  }
-  50% {
-    box-shadow: 0 0 12px 4px var(--success-border);
+    opacity: 0.72;
+    transform: scale(0.98);
   }
   100% {
-    box-shadow: 0 0 12px 0 var(--success-border);
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
