@@ -6,6 +6,7 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 from app.models.llm import LlmWireProtocol
+from app.services.llm.registry import ModelSpec, list_provider_specs
 
 
 ProviderDiscovery = Literal[
@@ -205,7 +206,7 @@ class ProviderTemplate(ProviderAdapter):
         }
 
 
-PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
+_LEGACY_PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
     ProviderTemplate(
         id="openai",
         name="OpenAI",
@@ -427,6 +428,50 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
 )
 
 
+def _template_from_spec(spec) -> ProviderTemplate:
+    return ProviderTemplate(
+        id=spec.id,
+        name=spec.name,
+        kind=spec.kind,
+        docs_url=spec.docs_url,
+        discovery=(
+            "static"
+            if spec.catalog.strategy == "bundled"
+            else spec.catalog.strategy
+        ),
+        default_base_url=spec.endpoint.default_base_url,
+        env_api_key_vars=spec.auth.env_vars,
+        env_base_url_vars=spec.endpoint.env_vars,
+        supported_wire_protocols=spec.runtime.supported_wire_protocols,
+        default_wire_protocol=spec.runtime.default_wire_protocol,
+        litellm_model_prefix=spec.runtime.litellm_model_prefix,
+        responses_litellm_model_prefix=(
+            spec.runtime.responses_litellm_model_prefix
+        ),
+        base_url_supported=spec.endpoint.base_url_supported,
+        models=tuple(_model_template_from_spec(model) for model in spec.bundled_models),
+    )
+
+
+def _model_template_from_spec(model: ModelSpec) -> ModelTemplate:
+    return ModelTemplate(
+        id=model.id,
+        name=model.name,
+        context_length=model.context_length,
+        max_output_tokens=model.max_output_tokens,
+        supports_tools=model.supports_tools,
+        supports_streaming=model.supports_streaming,
+        supports_vision=model.supports_vision,
+        supports_json_schema=model.supports_json_schema,
+        supports_reasoning=model.supports_reasoning,
+    )
+
+
+PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = tuple(
+    _template_from_spec(spec) for spec in list_provider_specs()
+)
+
+
 class ProviderRegistry:
     def __init__(self, adapters: tuple[ProviderAdapter, ...]):
         self._adapters_by_kind: dict[str, ProviderAdapter] = {}
@@ -472,18 +517,34 @@ class ProviderRegistry:
         return adapter.route_model_name(model_name, wire_protocol)
 
 
+_PRIMARY_KINDS = {template.kind for template in PROVIDER_TEMPLATES}
+_LEGACY_COMPAT_TEMPLATES = tuple(
+    template
+    for template in _LEGACY_PROVIDER_TEMPLATES
+    if template.kind not in _PRIMARY_KINDS
+)
 _HEADLESS_PROVIDER_ADAPTERS: tuple[ProviderAdapter, ...] = (
     ProviderAdapter(kind="azure", litellm_model_prefix="azure/"),
-    ProviderAdapter(kind="minimax"),
 )
 
 PROVIDER_REGISTRY = ProviderRegistry(
-    (*PROVIDER_TEMPLATES, *_HEADLESS_PROVIDER_ADAPTERS)
+    (*PROVIDER_TEMPLATES, *_LEGACY_COMPAT_TEMPLATES, *_HEADLESS_PROVIDER_ADAPTERS)
 )
 
 
 def list_provider_templates() -> list[ProviderTemplate]:
-    return PROVIDER_REGISTRY.list_templates()
+    return list(PROVIDER_TEMPLATES)
+
+
+def list_bootstrap_provider_templates() -> list[ProviderTemplate]:
+    return [
+        *PROVIDER_TEMPLATES,
+        *(
+            template
+            for template in _LEGACY_COMPAT_TEMPLATES
+            if template.id not in {"kimi", "kimi-cn"}
+        ),
+    ]
 
 
 def get_provider_template(template_id: str) -> ProviderTemplate | None:
