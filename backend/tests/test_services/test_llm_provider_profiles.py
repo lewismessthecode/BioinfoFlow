@@ -242,3 +242,19 @@ def test_qwen_profile_omits_qwen_controls_for_heterogeneous_dashscope_model() ->
 
     assert "reasoning_effort" not in compiled
     assert "extra_body" not in compiled
+
+
+def test_openai_profile_compiles_responses_reasoning_shape() -> None:
+    compiled = profile_for("openai").compile_request(
+        {
+            "model": "openai/gpt-5",
+            "input": [{"role": "user", "content": "hello"}],
+            "max_output_tokens": 100,
+        },
+        model_name="gpt-5",
+        wire_protocol="responses",
+        reasoning=ReasoningRequest(enabled=True, effort="high"),
+    )
+
+    assert compiled["reasoning"] == {"effort": "high"}
+    assert "reasoning_effort" not in compiled
