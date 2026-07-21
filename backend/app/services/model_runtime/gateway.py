@@ -60,11 +60,11 @@ class ModelGateway:
         except ValueError:
             profile = None
         if profile is not None:
-            request.update(
-                profile.invocation_options(
-                    invocation.target.model_name,
-                    invocation.reasoning,
-                )
+            request = profile.compile_request(
+                request,
+                model_name=invocation.target.model_name,
+                wire_protocol=wire_protocol,
+                reasoning=invocation.reasoning,
             )
         if invocation.target.base_url is not None:
             request["api_base"] = invocation.target.base_url
