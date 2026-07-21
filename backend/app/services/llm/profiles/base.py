@@ -69,10 +69,14 @@ class ProviderProfile:
         wire_protocol: WireProtocol,
         reasoning: ReasoningRequest,
     ) -> dict[str, Any]:
-        del model_name, wire_protocol
+        del model_name
         compiled = copy.deepcopy(request)
         if reasoning.enabled:
-            compiled["reasoning_effort"] = reasoning.effort or "medium"
+            effort = reasoning.effort or "medium"
+            if wire_protocol == "responses":
+                compiled["reasoning"] = {"effort": effort}
+            else:
+                compiled["reasoning_effort"] = effort
         return compiled
 
 
