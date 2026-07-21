@@ -11,6 +11,7 @@ import { useAppearance } from "@/lib/appearance/use-appearance"
 import { cn } from "@/lib/utils"
 import type { TerminalServerMessage } from "@/lib/types"
 import { useTerminalSession } from "@/hooks/use-terminal-session"
+import { loadTerminalRuntime } from "@/lib/terminal/runtime"
 import { useTerminalDock } from "./terminal-dock-context"
 
 type TerminalModule = typeof import("@xterm/xterm")
@@ -173,10 +174,7 @@ export function TerminalDock() {
     }
 
     const boot = async () => {
-      const [{ Terminal }, { FitAddon }] = await Promise.all([
-        import("@xterm/xterm"),
-        import("@xterm/addon-fit"),
-      ])
+      const { Terminal, FitAddon } = await loadTerminalRuntime()
       if (disposed || !terminalViewportRef.current) return
 
       const terminal = new Terminal({

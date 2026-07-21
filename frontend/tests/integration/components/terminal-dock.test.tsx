@@ -106,12 +106,11 @@ vi.mock("@/hooks/use-terminal-session", () => ({
   useTerminalSession: (...args: unknown[]) => useTerminalSessionMock(...args),
 }))
 
-vi.mock("@xterm/xterm", () => ({
-  Terminal: MockTerminal,
-}))
-
-vi.mock("@xterm/addon-fit", () => ({
-  FitAddon: MockFitAddon,
+vi.mock("@/lib/terminal/runtime", () => ({
+  loadTerminalRuntime: async () => ({
+    Terminal: MockTerminal,
+    FitAddon: MockFitAddon,
+  }),
 }))
 
 vi.mock("@/components/ui/resize-handle", () => ({
