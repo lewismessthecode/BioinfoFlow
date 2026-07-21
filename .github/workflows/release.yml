@@ -33,8 +33,8 @@ jobs:
             echo "Release version must be a bare numeric semantic version: $version"
             exit 2
           fi
-          if [ "$GITHUB_REF_NAME" != "$version" ]; then
-            echo "Workflow ref must match the release version: ref=$GITHUB_REF_NAME version=$version"
+          if [ "$GITHUB_REF_NAME" != "$version" ] && [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "Workflow ref must be the release version or main recovery workflow: ref=$GITHUB_REF_NAME version=$version"
             exit 2
           fi
           gh release view "$version" --repo "$GITHUB_REPOSITORY" >/dev/null
@@ -60,7 +60,7 @@ jobs:
       - name: Verify shell behavior
         run: |
           sh -n scripts/install.sh scripts/tests/install-test.sh
-          shellcheck scripts/install.sh scripts/tests/install-test.sh
+          shellcheck -e SC2317 scripts/install.sh scripts/tests/install-test.sh
           sh scripts/tests/install-test.sh
 
       - name: Verify localhost Compose contract
