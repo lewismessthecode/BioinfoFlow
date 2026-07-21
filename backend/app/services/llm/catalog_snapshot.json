@@ -1,0 +1,3852 @@
+{
+  "providers": {
+    "anthropic": [
+      {
+        "context_length": 1000000,
+        "id": "claude-fable-5",
+        "max_output_tokens": 128000,
+        "name": "Claude Fable 5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 200000,
+        "id": "claude-haiku-4-5",
+        "max_output_tokens": 64000,
+        "name": "Claude Haiku 4.5 (latest)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 200000,
+        "id": "claude-haiku-4-5-20251001",
+        "max_output_tokens": 64000,
+        "name": "Claude Haiku 4.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 200000,
+        "id": "claude-opus-4-1",
+        "max_output_tokens": 32000,
+        "name": "Claude Opus 4.1 (latest)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 200000,
+        "id": "claude-opus-4-1-20250805",
+        "max_output_tokens": 32000,
+        "name": "Claude Opus 4.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 200000,
+        "id": "claude-opus-4-5",
+        "max_output_tokens": 64000,
+        "name": "Claude Opus 4.5 (latest)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 200000,
+        "id": "claude-opus-4-5-20251101",
+        "max_output_tokens": 64000,
+        "name": "Claude Opus 4.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "claude-opus-4-6",
+        "max_output_tokens": 128000,
+        "name": "Claude Opus 4.6",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "claude-opus-4-7",
+        "max_output_tokens": 128000,
+        "name": "Claude Opus 4.7",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "claude-opus-4-8",
+        "max_output_tokens": 128000,
+        "name": "Claude Opus 4.8",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "claude-sonnet-4-5",
+        "max_output_tokens": 64000,
+        "name": "Claude Sonnet 4.5 (latest)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "claude-sonnet-4-5-20250929",
+        "max_output_tokens": 64000,
+        "name": "Claude Sonnet 4.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "claude-sonnet-4-6",
+        "max_output_tokens": 128000,
+        "name": "Claude Sonnet 4.6",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "claude-sonnet-5",
+        "max_output_tokens": 128000,
+        "name": "Claude Sonnet 5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      }
+    ],
+    "deepseek": [
+      {
+        "context_length": 1000000,
+        "id": "deepseek-chat",
+        "max_output_tokens": 384000,
+        "name": "DeepSeek Chat",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "deepseek-reasoner",
+        "max_output_tokens": 384000,
+        "name": "DeepSeek Reasoner",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "deepseek-v4-flash",
+        "max_output_tokens": 384000,
+        "name": "DeepSeek V4 Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "deepseek-v4-pro",
+        "max_output_tokens": 384000,
+        "name": "DeepSeek V4 Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      }
+    ],
+    "fireworks": [
+      {
+        "context_length": 1000000,
+        "id": "accounts/fireworks/models/deepseek-v4-flash",
+        "max_output_tokens": 384000,
+        "name": "DeepSeek V4 Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "accounts/fireworks/models/deepseek-v4-pro",
+        "max_output_tokens": 384000,
+        "name": "DeepSeek V4 Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 202800,
+        "id": "accounts/fireworks/models/glm-5p1",
+        "max_output_tokens": 131072,
+        "name": "GLM 5.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1048575,
+        "id": "accounts/fireworks/models/glm-5p2",
+        "max_output_tokens": 131072,
+        "name": "GLM 5.2",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "accounts/fireworks/models/gpt-oss-120b",
+        "max_output_tokens": 32768,
+        "name": "GPT OSS 120B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "accounts/fireworks/models/gpt-oss-20b",
+        "max_output_tokens": 32768,
+        "name": "GPT OSS 20B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262000,
+        "id": "accounts/fireworks/models/kimi-k2p6",
+        "max_output_tokens": 262000,
+        "name": "Kimi K2.6",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262000,
+        "id": "accounts/fireworks/models/kimi-k2p7-code",
+        "max_output_tokens": 262000,
+        "name": "Kimi K2.7 Code",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 196608,
+        "id": "accounts/fireworks/models/minimax-m2p7",
+        "max_output_tokens": 196608,
+        "name": "MiniMax-M2.7",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 512000,
+        "id": "accounts/fireworks/models/minimax-m3",
+        "max_output_tokens": 512000,
+        "name": "MiniMax-M3",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "accounts/fireworks/models/qwen3p7-plus",
+        "max_output_tokens": 65536,
+        "name": "Qwen 3.7 Plus",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 202800,
+        "id": "accounts/fireworks/routers/glm-5p1-fast",
+        "max_output_tokens": 131072,
+        "name": "GLM 5.1 Fast",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1048575,
+        "id": "accounts/fireworks/routers/glm-5p2-fast",
+        "max_output_tokens": 131072,
+        "name": "GLM 5.2 Fast",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262000,
+        "id": "accounts/fireworks/routers/kimi-k2p6-fast",
+        "max_output_tokens": 262000,
+        "name": "Kimi K2.6 Fast",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262000,
+        "id": "accounts/fireworks/routers/kimi-k2p6-turbo",
+        "max_output_tokens": 262000,
+        "name": "Kimi K2.6 Turbo",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262000,
+        "id": "accounts/fireworks/routers/kimi-k2p7-code-fast",
+        "max_output_tokens": 262000,
+        "name": "Kimi K2.7 Code Fast",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      }
+    ],
+    "gemini": [
+      {
+        "context_length": 1048576,
+        "id": "gemini-2.0-flash",
+        "max_output_tokens": 8192,
+        "name": "Gemini 2.0 Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "gemini-2.0-flash-lite",
+        "max_output_tokens": 8192,
+        "name": "Gemini 2.0 Flash-Lite",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "gemini-2.5-flash",
+        "max_output_tokens": 65536,
+        "name": "Gemini 2.5 Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "gemini-2.5-flash-lite",
+        "max_output_tokens": 65536,
+        "name": "Gemini 2.5 Flash-Lite",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "gemini-2.5-pro",
+        "max_output_tokens": 65536,
+        "name": "Gemini 2.5 Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "gemini-3-flash-preview",
+        "max_output_tokens": 65536,
+        "name": "Gemini 3 Flash Preview",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "gemini-3-pro-preview",
+        "max_output_tokens": 65536,
+        "name": "Gemini 3 Pro Preview",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "gemini-3.1-flash-lite",
+        "max_output_tokens": 65536,
+        "name": "Gemini 3.1 Flash Lite",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "gemini-3.1-flash-lite-preview",
+        "max_output_tokens": 65536,
+        "name": "Gemini 3.1 Flash Lite Preview",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "gemini-3.1-pro-preview",
+        "max_output_tokens": 65536,
+        "name": "Gemini 3.1 Pro Preview",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "gemini-3.1-pro-preview-customtools",
+        "max_output_tokens": 65536,
+        "name": "Gemini 3.1 Pro Preview Custom Tools",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "gemini-3.5-flash",
+        "max_output_tokens": 65536,
+        "name": "Gemini 3.5 Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "gemini-flash-latest",
+        "max_output_tokens": 65536,
+        "name": "Gemini Flash Latest",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "gemini-flash-lite-latest",
+        "max_output_tokens": 65536,
+        "name": "Gemini Flash-Lite Latest",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "gemma-4-26b-a4b-it",
+        "max_output_tokens": 32768,
+        "name": "Gemma 4 26B A4B IT",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "gemma-4-31b-it",
+        "max_output_tokens": 32768,
+        "name": "Gemma 4 31B IT",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      }
+    ],
+    "huggingface": [
+      {
+        "context_length": 204800,
+        "id": "MiniMaxAI/MiniMax-M2",
+        "max_output_tokens": 128000,
+        "name": "MiniMax-M2",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 204800,
+        "id": "MiniMaxAI/MiniMax-M2.1",
+        "max_output_tokens": 131072,
+        "name": "MiniMax-M2.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 204800,
+        "id": "MiniMaxAI/MiniMax-M2.5",
+        "max_output_tokens": 131072,
+        "name": "MiniMax-M2.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 204800,
+        "id": "MiniMaxAI/MiniMax-M2.7",
+        "max_output_tokens": 131072,
+        "name": "MiniMax-M2.7",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 524288,
+        "id": "MiniMaxAI/MiniMax-M3",
+        "max_output_tokens": 128000,
+        "name": "MiniMax-M3",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 40960,
+        "id": "Qwen/Qwen3-235B-A22B",
+        "max_output_tokens": 16384,
+        "name": "Qwen3 235B-A22B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "Qwen/Qwen3-235B-A22B-Thinking-2507",
+        "max_output_tokens": 131072,
+        "name": "Qwen3-235B-A22B-Thinking-2507",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "Qwen/Qwen3-32B",
+        "max_output_tokens": 16384,
+        "name": "Qwen3 32B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        "max_output_tokens": 65536,
+        "name": "Qwen3-Coder 30B-A3B Instruct",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+        "max_output_tokens": 66536,
+        "name": "Qwen3-Coder-480B-A35B-Instruct",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "Qwen/Qwen3-Coder-Next",
+        "max_output_tokens": 65536,
+        "name": "Qwen3-Coder-Next",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "Qwen/Qwen3-Next-80B-A3B-Instruct",
+        "max_output_tokens": 66536,
+        "name": "Qwen3-Next-80B-A3B-Instruct",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "Qwen/Qwen3-Next-80B-A3B-Thinking",
+        "max_output_tokens": 131072,
+        "name": "Qwen3-Next-80B-A3B-Thinking",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "Qwen/Qwen3.5-122B-A10B",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.5 122B-A10B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "Qwen/Qwen3.5-27B",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.5 27B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "Qwen/Qwen3.5-35B-A3B",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.5 35B-A3B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "Qwen/Qwen3.5-397B-A17B",
+        "max_output_tokens": 32768,
+        "name": "Qwen3.5-397B-A17B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "Qwen/Qwen3.5-9B",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.5 9B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "Qwen/Qwen3.6-27B",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.6 27B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "Qwen/Qwen3.6-35B-A3B",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.6 35B-A3B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "XiaomiMiMo/MiMo-V2-Flash",
+        "max_output_tokens": 4096,
+        "name": "MiMo-V2-Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1048576,
+        "id": "XiaomiMiMo/MiMo-V2.5-Pro",
+        "max_output_tokens": 131072,
+        "name": "MiMo-V2.5-Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 64000,
+        "id": "deepseek-ai/DeepSeek-R1",
+        "max_output_tokens": 32768,
+        "name": "DeepSeek-R1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 163840,
+        "id": "deepseek-ai/DeepSeek-R1-0528",
+        "max_output_tokens": 163840,
+        "name": "DeepSeek-R1-0528",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 163840,
+        "id": "deepseek-ai/DeepSeek-V3.2",
+        "max_output_tokens": 65536,
+        "name": "DeepSeek-V3.2",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1048576,
+        "id": "deepseek-ai/DeepSeek-V4-Flash",
+        "max_output_tokens": 384000,
+        "name": "DeepSeek V4 Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1048576,
+        "id": "deepseek-ai/DeepSeek-V4-Pro",
+        "max_output_tokens": 393216,
+        "name": "DeepSeek V4 Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "google/gemma-4-26B-A4B-it",
+        "max_output_tokens": 32768,
+        "name": "Gemma 4 26B A4B IT",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "google/gemma-4-31B-it",
+        "max_output_tokens": 32768,
+        "name": "Gemma 4 31B IT",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 131072,
+        "id": "meta-llama/Llama-3.3-70B-Instruct",
+        "max_output_tokens": 4096,
+        "name": "Llama-3.3-70B-Instruct",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "moonshotai/Kimi-K2-Instruct",
+        "max_output_tokens": 16384,
+        "name": "Kimi-K2-Instruct",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "moonshotai/Kimi-K2-Instruct-0905",
+        "max_output_tokens": 16384,
+        "name": "Kimi-K2-Instruct-0905",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "moonshotai/Kimi-K2-Thinking",
+        "max_output_tokens": 262144,
+        "name": "Kimi-K2-Thinking",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "moonshotai/Kimi-K2.5",
+        "max_output_tokens": 262144,
+        "name": "Kimi-K2.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "moonshotai/Kimi-K2.6",
+        "max_output_tokens": 262144,
+        "name": "Kimi-K2.6",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "moonshotai/Kimi-K2.7-Code",
+        "max_output_tokens": 262144,
+        "name": "Kimi K2.7 Code",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 131072,
+        "id": "openai/gpt-oss-120b",
+        "max_output_tokens": 32768,
+        "name": "GPT OSS 120B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "openai/gpt-oss-20b",
+        "max_output_tokens": 32768,
+        "name": "GPT OSS 20B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "stepfun-ai/Step-3.5-Flash",
+        "max_output_tokens": 256000,
+        "name": "Step 3.5 Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "stepfun-ai/Step-3.7-Flash",
+        "max_output_tokens": 256000,
+        "name": "Step 3.7 Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 131072,
+        "id": "zai-org/GLM-4.5",
+        "max_output_tokens": 98304,
+        "name": "GLM-4.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "zai-org/GLM-4.5-Air",
+        "max_output_tokens": 98304,
+        "name": "GLM-4.5-Air",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 65536,
+        "id": "zai-org/GLM-4.5V",
+        "max_output_tokens": 16384,
+        "name": "GLM-4.5V",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 204800,
+        "id": "zai-org/GLM-4.6",
+        "max_output_tokens": 131072,
+        "name": "GLM-4.6",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 204800,
+        "id": "zai-org/GLM-4.7",
+        "max_output_tokens": 131072,
+        "name": "GLM-4.7",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 200000,
+        "id": "zai-org/GLM-4.7-Flash",
+        "max_output_tokens": 128000,
+        "name": "GLM-4.7-Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 202752,
+        "id": "zai-org/GLM-5",
+        "max_output_tokens": 131072,
+        "name": "GLM-5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 202752,
+        "id": "zai-org/GLM-5.1",
+        "max_output_tokens": 131072,
+        "name": "GLM-5.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "zai-org/GLM-5.2",
+        "max_output_tokens": 131072,
+        "name": "GLM-5.2",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      }
+    ],
+    "kimi-code": [
+      {
+        "context_length": 1048576,
+        "id": "k3",
+        "max_output_tokens": 131072,
+        "name": "Kimi K3",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "kimi-for-coding",
+        "max_output_tokens": 32768,
+        "name": "Kimi K2.7 Code",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "kimi-for-coding-highspeed",
+        "max_output_tokens": 32768,
+        "name": "Kimi For Coding HighSpeed",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      }
+    ],
+    "minimax": [
+      {
+        "context_length": 196608,
+        "id": "MiniMax-M2",
+        "max_output_tokens": 128000,
+        "name": "MiniMax-M2",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 204800,
+        "id": "MiniMax-M2.1",
+        "max_output_tokens": 131072,
+        "name": "MiniMax-M2.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 204800,
+        "id": "MiniMax-M2.5",
+        "max_output_tokens": 131072,
+        "name": "MiniMax-M2.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 204800,
+        "id": "MiniMax-M2.5-highspeed",
+        "max_output_tokens": 131072,
+        "name": "MiniMax-M2.5-highspeed",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 204800,
+        "id": "MiniMax-M2.7",
+        "max_output_tokens": 131072,
+        "name": "MiniMax-M2.7",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 204800,
+        "id": "MiniMax-M2.7-highspeed",
+        "max_output_tokens": 131072,
+        "name": "MiniMax-M2.7-highspeed",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "MiniMax-M3",
+        "max_output_tokens": 128000,
+        "name": "MiniMax-M3",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      }
+    ],
+    "openai": [
+      {
+        "context_length": 8192,
+        "id": "gpt-4",
+        "max_output_tokens": 8192,
+        "name": "GPT-4",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 128000,
+        "id": "gpt-4-turbo",
+        "max_output_tokens": 4096,
+        "name": "GPT-4 Turbo",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1047576,
+        "id": "gpt-4.1",
+        "max_output_tokens": 32768,
+        "name": "GPT-4.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1047576,
+        "id": "gpt-4.1-mini",
+        "max_output_tokens": 32768,
+        "name": "GPT-4.1 mini",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1047576,
+        "id": "gpt-4.1-nano",
+        "max_output_tokens": 32768,
+        "name": "GPT-4.1 nano",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 128000,
+        "id": "gpt-4o",
+        "max_output_tokens": 16384,
+        "name": "GPT-4o",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 128000,
+        "id": "gpt-4o-2024-05-13",
+        "max_output_tokens": 4096,
+        "name": "GPT-4o (2024-05-13)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 128000,
+        "id": "gpt-4o-2024-08-06",
+        "max_output_tokens": 16384,
+        "name": "GPT-4o (2024-08-06)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 128000,
+        "id": "gpt-4o-2024-11-20",
+        "max_output_tokens": 16384,
+        "name": "GPT-4o (2024-11-20)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 128000,
+        "id": "gpt-4o-mini",
+        "max_output_tokens": 16384,
+        "name": "GPT-4o mini",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5",
+        "max_output_tokens": 128000,
+        "name": "GPT-5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5-codex",
+        "max_output_tokens": 128000,
+        "name": "GPT-5-Codex",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5-mini",
+        "max_output_tokens": 128000,
+        "name": "GPT-5 Mini",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5-nano",
+        "max_output_tokens": 128000,
+        "name": "GPT-5 Nano",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5-pro",
+        "max_output_tokens": 272000,
+        "name": "GPT-5 Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5.1",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 128000,
+        "id": "gpt-5.1-chat-latest",
+        "max_output_tokens": 16384,
+        "name": "GPT-5.1 Chat",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5.1-codex",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.1 Codex",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5.1-codex-max",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.1 Codex Max",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5.1-codex-mini",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.1 Codex mini",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5.2",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.2",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 128000,
+        "id": "gpt-5.2-chat-latest",
+        "max_output_tokens": 16384,
+        "name": "GPT-5.2 Chat",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5.2-codex",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.2 Codex",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5.2-pro",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.2 Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 128000,
+        "id": "gpt-5.3-chat-latest",
+        "max_output_tokens": 16384,
+        "name": "GPT-5.3 Chat (latest)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5.3-codex",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.3 Codex",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 128000,
+        "id": "gpt-5.3-codex-spark",
+        "max_output_tokens": 32000,
+        "name": "GPT-5.3 Codex Spark",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "gpt-5.4",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.4",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5.4-mini",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.4 mini",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "gpt-5.4-nano",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.4 nano",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "gpt-5.4-pro",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.4 Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "gpt-5.5",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "gpt-5.5-pro",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.5 Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "gpt-5.6",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.6",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "gpt-5.6-luna",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.6 Luna",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "gpt-5.6-sol",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.6 Sol",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "gpt-5.6-terra",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.6 Terra",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 200000,
+        "id": "o1",
+        "max_output_tokens": 100000,
+        "name": "o1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 200000,
+        "id": "o1-pro",
+        "max_output_tokens": 100000,
+        "name": "o1-pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 200000,
+        "id": "o3",
+        "max_output_tokens": 100000,
+        "name": "o3",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 200000,
+        "id": "o3-deep-research",
+        "max_output_tokens": 100000,
+        "name": "o3-deep-research",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 200000,
+        "id": "o3-mini",
+        "max_output_tokens": 100000,
+        "name": "o3-mini",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 200000,
+        "id": "o3-pro",
+        "max_output_tokens": 100000,
+        "name": "o3-pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 200000,
+        "id": "o4-mini",
+        "max_output_tokens": 100000,
+        "name": "o4-mini",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 200000,
+        "id": "o4-mini-deep-research",
+        "max_output_tokens": 100000,
+        "name": "o4-mini-deep-research",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      }
+    ],
+    "openrouter": [
+      {
+        "context_length": 131072,
+        "id": "aion-labs/aion-3.0",
+        "max_output_tokens": 32768,
+        "name": "Aion-3.0",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "aion-labs/aion-3.0-mini",
+        "max_output_tokens": 32768,
+        "name": "Aion-3.0-Mini",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "anthropic/claude-fable-5",
+        "max_output_tokens": 128000,
+        "name": "Claude Fable 5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "anthropic/claude-opus-4.8",
+        "max_output_tokens": 128000,
+        "name": "Claude Opus 4.8",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "anthropic/claude-opus-4.8-fast",
+        "max_output_tokens": 128000,
+        "name": "Claude Opus 4.8 (Fast)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "anthropic/claude-sonnet-5",
+        "max_output_tokens": 128000,
+        "name": "Claude Sonnet 5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 256000,
+        "id": "cohere/north-mini-code:free",
+        "max_output_tokens": 64000,
+        "name": "North Mini Code (free)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1048576,
+        "id": "google/gemini-3.1-flash-lite",
+        "max_output_tokens": 65536,
+        "name": "Gemini 3.1 Flash Lite",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "google/gemini-3.5-flash",
+        "max_output_tokens": 65536,
+        "name": "Gemini 3.5 Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 131072,
+        "id": "ibm-granite/granite-4.1-8b",
+        "max_output_tokens": 131072,
+        "name": "Granite 4.1 8B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "inclusionai/ring-2.6-1t",
+        "max_output_tokens": 65536,
+        "name": "Ring-2.6-1T",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 256000,
+        "id": "kwaipilot/kat-coder-air-v2.5",
+        "max_output_tokens": 80000,
+        "name": "KAT-Coder-Air V2.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 256000,
+        "id": "kwaipilot/kat-coder-pro-v2.5",
+        "max_output_tokens": 80000,
+        "name": "KAT-Coder-Pro V2.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1048756,
+        "id": "meituan/longcat-2.0",
+        "max_output_tokens": 262144,
+        "name": "LongCat 2.0",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1048576,
+        "id": "meta/muse-spark-1.1",
+        "max_output_tokens": 1048576,
+        "name": "Muse Spark 1.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "minimax/minimax-m3",
+        "max_output_tokens": 512000,
+        "name": "MiniMax-M3",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "mistralai/mistral-medium-3-5",
+        "max_output_tokens": 262144,
+        "name": "Mistral Medium 3.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "moonshotai/kimi-k2.7-code",
+        "max_output_tokens": 262144,
+        "name": "Kimi K2.7 Code",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "moonshotai/kimi-k3",
+        "max_output_tokens": 1048576,
+        "name": "Kimi K3",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "nex-agi/nex-n2-mini",
+        "max_output_tokens": 262144,
+        "name": "Nex-N2-Mini",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "nex-agi/nex-n2-pro",
+        "max_output_tokens": 262144,
+        "name": "Nex-N2-Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 256000,
+        "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+        "max_output_tokens": 65536,
+        "name": "Nemotron 3 Nano Omni (free)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "nvidia/nemotron-3-ultra-550b-a55b",
+        "max_output_tokens": 16384,
+        "name": "Nemotron 3 Ultra 550B A55B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "max_output_tokens": 65536,
+        "name": "Nemotron 3 Ultra (free)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1050000,
+        "id": "openai/gpt-5.6-luna",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.6 Luna",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "openai/gpt-5.6-luna-pro",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.6 Luna Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "openai/gpt-5.6-sol",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.6 Sol",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "openai/gpt-5.6-sol-pro",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.6 Sol Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "openai/gpt-5.6-terra",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.6 Terra",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "openai/gpt-5.6-terra-pro",
+        "max_output_tokens": 128000,
+        "name": "GPT-5.6 Terra Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "openai/gpt-chat-latest",
+        "max_output_tokens": 128000,
+        "name": "GPT Chat Latest",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "poolside/laguna-m.1",
+        "max_output_tokens": 32768,
+        "name": "Laguna M.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "poolside/laguna-m.1:free",
+        "max_output_tokens": 32768,
+        "name": "Laguna M.1 (free)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "poolside/laguna-xs-2.1",
+        "max_output_tokens": 32768,
+        "name": "Laguna XS 2.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "poolside/laguna-xs-2.1:free",
+        "max_output_tokens": 32768,
+        "name": "Laguna XS 2.1 (free)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "qwen/qwen3.7-max",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.7 Max",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "qwen/qwen3.7-plus",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.7 Plus",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "sakana/fugu-ultra",
+        "max_output_tokens": 128000,
+        "name": "Fugu Ultra",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 256000,
+        "id": "stepfun/step-3.7-flash",
+        "max_output_tokens": 256000,
+        "name": "Step 3.7 Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "tencent/hy3",
+        "max_output_tokens": 131072,
+        "name": "Hy3",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "tencent/hy3:free",
+        "max_output_tokens": 262144,
+        "name": "Hy3 (free)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1048576,
+        "id": "thinkingmachines/inkling",
+        "max_output_tokens": 1048576,
+        "name": "Inkling",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 500000,
+        "id": "x-ai/grok-4.5",
+        "max_output_tokens": 500000,
+        "name": "Grok 4.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "z-ai/glm-5.2",
+        "max_output_tokens": 131072,
+        "name": "GLM-5.2",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "~anthropic/claude-fable-latest",
+        "max_output_tokens": 128000,
+        "name": "Claude Fable Latest",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "~google/gemini-pro-latest",
+        "max_output_tokens": 65536,
+        "name": "Google Gemini Pro Latest",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1048576,
+        "id": "~moonshotai/kimi-latest",
+        "max_output_tokens": 262144,
+        "name": "MoonshotAI Kimi Latest",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1050000,
+        "id": "~openai/gpt-latest",
+        "max_output_tokens": 128000,
+        "name": "OpenAI GPT Latest",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 400000,
+        "id": "~openai/gpt-mini-latest",
+        "max_output_tokens": 128000,
+        "name": "OpenAI GPT Mini Latest",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 500000,
+        "id": "~x-ai/grok-latest",
+        "max_output_tokens": 1000000,
+        "name": "Grok Latest",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      }
+    ],
+    "qwen": [
+      {
+        "context_length": 204800,
+        "id": "MiniMax-M2.5",
+        "max_output_tokens": 131072,
+        "name": "MiniMax-M2.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 204800,
+        "id": "MiniMax/MiniMax-M2.7",
+        "max_output_tokens": 131072,
+        "name": "MiniMax-M2.7",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "deepseek-r1-0528",
+        "max_output_tokens": 16384,
+        "name": "DeepSeek R1 0528",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "deepseek-v3-1",
+        "max_output_tokens": 65536,
+        "name": "DeepSeek V3.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "deepseek-v3-2-exp",
+        "max_output_tokens": 65536,
+        "name": "DeepSeek V3.2 Exp",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "deepseek-v4-flash",
+        "max_output_tokens": 384000,
+        "name": "DeepSeek V4 Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "deepseek-v4-pro",
+        "max_output_tokens": 384000,
+        "name": "DeepSeek V4 Pro",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 202752,
+        "id": "glm-5",
+        "max_output_tokens": 16384,
+        "name": "GLM-5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 202752,
+        "id": "glm-5.1",
+        "max_output_tokens": 128000,
+        "name": "GLM-5.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "glm-5.2",
+        "max_output_tokens": 128000,
+        "name": "GLM-5.2",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "kimi-k2-thinking",
+        "max_output_tokens": 16384,
+        "name": "Moonshot Kimi K2 Thinking",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "kimi-k2.5",
+        "max_output_tokens": 32768,
+        "name": "Moonshot Kimi K2.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "kimi-k2.6",
+        "max_output_tokens": 16384,
+        "name": "Moonshot Kimi K2.6",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "kimi/kimi-k2.5",
+        "max_output_tokens": 262144,
+        "name": "kimi/kimi-k2.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 131072,
+        "id": "moonshot-kimi-k2-instruct",
+        "max_output_tokens": 8192,
+        "name": "Moonshot Kimi K2 Instruct",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "qvq-max",
+        "max_output_tokens": 8192,
+        "name": "QVQ Max",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "qwen-flash",
+        "max_output_tokens": 32768,
+        "name": "Qwen Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 10000000,
+        "id": "qwen-long",
+        "max_output_tokens": 8192,
+        "name": "Qwen Long",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "qwen-max",
+        "max_output_tokens": 8192,
+        "name": "Qwen Max",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "qwen-plus",
+        "max_output_tokens": 32768,
+        "name": "Qwen Plus",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "qwen-turbo",
+        "max_output_tokens": 16384,
+        "name": "Qwen Turbo",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "qwen-vl-max",
+        "max_output_tokens": 8192,
+        "name": "Qwen-VL Max",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 131072,
+        "id": "qwen-vl-plus",
+        "max_output_tokens": 8192,
+        "name": "Qwen-VL Plus",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 131072,
+        "id": "qwen3-14b",
+        "max_output_tokens": 8192,
+        "name": "Qwen3 14B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "qwen3-235b-a22b",
+        "max_output_tokens": 16384,
+        "name": "Qwen3 235B-A22B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "qwen3-32b",
+        "max_output_tokens": 16384,
+        "name": "Qwen3 32B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "qwen3-8b",
+        "max_output_tokens": 8192,
+        "name": "Qwen3 8B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "qwen3-coder-30b-a3b-instruct",
+        "max_output_tokens": 65536,
+        "name": "Qwen3-Coder 30B-A3B Instruct",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "qwen3-coder-480b-a35b-instruct",
+        "max_output_tokens": 65536,
+        "name": "Qwen3-Coder 480B-A35B Instruct",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "qwen3-coder-flash",
+        "max_output_tokens": 65536,
+        "name": "Qwen3 Coder Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1048576,
+        "id": "qwen3-coder-plus",
+        "max_output_tokens": 65536,
+        "name": "Qwen3 Coder Plus",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 262144,
+        "id": "qwen3-max",
+        "max_output_tokens": 65536,
+        "name": "Qwen3 Max",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "qwen3-next-80b-a3b-instruct",
+        "max_output_tokens": 32768,
+        "name": "Qwen3-Next 80B-A3B Instruct",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "qwen3-next-80b-a3b-thinking",
+        "max_output_tokens": 32768,
+        "name": "Qwen3-Next 80B-A3B (Thinking)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "qwen3-vl-235b-a22b",
+        "max_output_tokens": 32768,
+        "name": "Qwen3-VL 235B-A22B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 131072,
+        "id": "qwen3-vl-30b-a3b",
+        "max_output_tokens": 32768,
+        "name": "Qwen3-VL 30B-A3B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "qwen3-vl-plus",
+        "max_output_tokens": 32768,
+        "name": "Qwen3-VL Plus",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 262144,
+        "id": "qwen3.5-397b-a17b",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.5 397B-A17B",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "qwen3.5-flash",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.5 Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "qwen3.5-plus",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.5 Plus",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "qwen3.6-flash",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.6 Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 245800,
+        "id": "qwen3.6-max-preview",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.6 Max Preview",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "qwen3.6-plus",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.6 Plus",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "qwen3.7-max",
+        "max_output_tokens": 65536,
+        "name": "Qwen3.7 Max",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "qwen3.7-plus",
+        "max_output_tokens": 64000,
+        "name": "Qwen3.7 Plus",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 131072,
+        "id": "qwq-plus",
+        "max_output_tokens": 8192,
+        "name": "QwQ Plus",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 163840,
+        "id": "siliconflow/deepseek-r1-0528",
+        "max_output_tokens": 32768,
+        "name": "siliconflow/deepseek-r1-0528",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 163840,
+        "id": "siliconflow/deepseek-v3-0324",
+        "max_output_tokens": 163840,
+        "name": "siliconflow/deepseek-v3-0324",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 163840,
+        "id": "siliconflow/deepseek-v3.1-terminus",
+        "max_output_tokens": 65536,
+        "name": "siliconflow/deepseek-v3.1-terminus",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 163840,
+        "id": "siliconflow/deepseek-v3.2",
+        "max_output_tokens": 65536,
+        "name": "siliconflow/deepseek-v3.2",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      }
+    ],
+    "xai": [
+      {
+        "context_length": 1000000,
+        "id": "grok-4.20-0309-non-reasoning",
+        "max_output_tokens": 30000,
+        "name": "Grok 4.20 (Non-Reasoning)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": false,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "grok-4.20-0309-reasoning",
+        "max_output_tokens": 30000,
+        "name": "Grok 4.20 (Reasoning)",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 1000000,
+        "id": "grok-4.3",
+        "max_output_tokens": 30000,
+        "name": "Grok 4.3",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 500000,
+        "id": "grok-4.5",
+        "max_output_tokens": 500000,
+        "name": "Grok 4.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 256000,
+        "id": "grok-build-0.1",
+        "max_output_tokens": 256000,
+        "name": "Grok Build 0.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      }
+    ],
+    "zai": [
+      {
+        "context_length": 131072,
+        "id": "glm-4.5",
+        "max_output_tokens": 98304,
+        "name": "GLM-4.5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "glm-4.5-air",
+        "max_output_tokens": 98304,
+        "name": "GLM-4.5-Air",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 131072,
+        "id": "glm-4.5-flash",
+        "max_output_tokens": 98304,
+        "name": "GLM-4.5-Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 64000,
+        "id": "glm-4.5v",
+        "max_output_tokens": 16384,
+        "name": "GLM-4.5V",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 204800,
+        "id": "glm-4.6",
+        "max_output_tokens": 131072,
+        "name": "GLM-4.6",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 128000,
+        "id": "glm-4.6v",
+        "max_output_tokens": 32768,
+        "name": "GLM-4.6V",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      },
+      {
+        "context_length": 204800,
+        "id": "glm-4.7",
+        "max_output_tokens": 131072,
+        "name": "GLM-4.7",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 200000,
+        "id": "glm-4.7-flash",
+        "max_output_tokens": 131072,
+        "name": "GLM-4.7-Flash",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 200000,
+        "id": "glm-4.7-flashx",
+        "max_output_tokens": 131072,
+        "name": "GLM-4.7-FlashX",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 204800,
+        "id": "glm-5",
+        "max_output_tokens": 131072,
+        "name": "GLM-5",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 200000,
+        "id": "glm-5-turbo",
+        "max_output_tokens": 131072,
+        "name": "GLM-5-Turbo",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 200000,
+        "id": "glm-5.1",
+        "max_output_tokens": 131072,
+        "name": "GLM-5.1",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 1000000,
+        "id": "glm-5.2",
+        "max_output_tokens": 131072,
+        "name": "GLM-5.2",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": true,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": false
+      },
+      {
+        "context_length": 200000,
+        "id": "glm-5v-turbo",
+        "max_output_tokens": 131072,
+        "name": "GLM-5V-Turbo",
+        "output_modalities": [
+          "text"
+        ],
+        "supports_json_schema": false,
+        "supports_reasoning": true,
+        "supports_streaming": true,
+        "supports_tools": true,
+        "supports_vision": true
+      }
+    ]
+  },
+  "schema_version": 1,
+  "source": "https://models.dev/api.json"
+}

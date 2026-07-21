@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import json
+from pathlib import Path
 from typing import Literal
 
 from app.models.llm import LlmWireProtocol
@@ -58,6 +60,7 @@ class ModelSpec:
     supports_vision: bool = False
     supports_json_schema: bool = True
     supports_reasoning: bool = False
+    output_modalities: tuple[str, ...] = ("text",)
 
 
 @dataclass(frozen=True)
@@ -237,15 +240,49 @@ if len(_BY_ID) != len(_SPECS) or len(_BY_KIND) != len(_SPECS):
 
 
 def list_provider_specs() -> list[ProviderSpec]:
-    return list(_SPECS)
+    snapshot = load_catalog_snapshot()
+    return [
+        replace(spec, bundled_models=snapshot.get(spec.id, spec.bundled_models))
+        for spec in _SPECS
+    ]
 
 
 def get_provider_spec(provider_id: str) -> ProviderSpec:
     try:
-        return _BY_ID[provider_id]
+        spec = _BY_ID[provider_id]
     except KeyError as exc:
         raise ValueError(f"Unknown LLM provider spec: {provider_id}") from exc
+    return replace(
+        spec,
+        bundled_models=load_catalog_snapshot().get(provider_id, spec.bundled_models),
+    )
 
 
 def provider_spec_for_kind(kind: str) -> ProviderSpec | None:
-    return _BY_KIND.get(kind)
+    spec = _BY_KIND.get(kind)
+    return get_provider_spec(spec.id) if spec is not None else None
+
+
+def load_catalog_snapshot() -> dict[str, tuple[ModelSpec, ...]]:
+    path = Path(__file__).with_name("catalog_snapshot.json")
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        provider_id: tuple(
+            ModelSpec(
+                id=model["id"],
+                name=model["name"],
+                context_length=model.get("context_length"),
+                max_output_tokens=model.get("max_output_tokens"),
+                supports_tools=model["supports_tools"],
+                supports_streaming=model.get("supports_streaming", True),
+                supports_vision=model.get("supports_vision", False),
+                supports_json_schema=model.get("supports_json_schema", False),
+                supports_reasoning=model.get("supports_reasoning", False),
+                output_modalities=tuple(model["output_modalities"]),
+            )
+            for model in models
+        )
+        for provider_id, models in payload["providers"].items()
+    }
