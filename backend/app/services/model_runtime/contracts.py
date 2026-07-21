@@ -11,6 +11,7 @@ from typing import Any, Literal, TypeAlias
 Phase: TypeAlias = Literal["commentary", "final_answer"]
 WireProtocol: TypeAlias = Literal["chat_completions", "responses"]
 NetworkAccessPolicy: TypeAlias = Literal["public_only", "unrestricted"]
+ReasoningEffort: TypeAlias = Literal["low", "medium", "high"]
 
 
 @dataclass(frozen=True)
@@ -299,6 +300,12 @@ def _valid_digest(value: object) -> bool:
 
 
 @dataclass(frozen=True)
+class ReasoningRequest:
+    enabled: bool = False
+    effort: ReasoningEffort | None = None
+
+
+@dataclass(frozen=True)
 class ModelInvocation:
     target: ModelTarget
     instructions: str
@@ -306,7 +313,7 @@ class ModelInvocation:
     tools: tuple[ToolDefinition, ...]
     stream: bool
     max_output_tokens: int
-    allow_reasoning: bool = False
+    reasoning: ReasoningRequest = field(default_factory=ReasoningRequest)
     continuation: ResponsesContinuation | None = None
 
 

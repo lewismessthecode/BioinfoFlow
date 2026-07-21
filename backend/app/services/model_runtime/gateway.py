@@ -53,6 +53,19 @@ class ModelGateway:
             raise ValueError(f"No codec registered for wire protocol: {wire_protocol}")
 
         request = codec.encode_request(invocation)
+        from app.services.llm.profiles import profile_for
+
+        try:
+            profile = profile_for(invocation.target.provider_kind)
+        except ValueError:
+            profile = None
+        if profile is not None:
+            request.update(
+                profile.invocation_options(
+                    invocation.target.model_name,
+                    invocation.reasoning,
+                )
+            )
         if invocation.target.base_url is not None:
             request["api_base"] = invocation.target.base_url
         api_key = invocation.target.resolved_api_key()

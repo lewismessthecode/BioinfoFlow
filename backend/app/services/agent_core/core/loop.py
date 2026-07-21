@@ -82,6 +82,7 @@ from app.services.agent_core.transcript.messages import (
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ModelInvocation,
+    ReasoningRequest,
     ModelTarget,
     ModelWarning,
     ReasoningDelta,
@@ -319,7 +320,10 @@ class AgentLoopController:
                 tools=model_tool_definitions(visible_tools if tools_enabled else []),
                 stream=capabilities.supports_streaming and strategy.use_streaming,
                 max_output_tokens=max_tokens or settings.agent_max_tokens,
-                allow_reasoning=strategy.allow_thinking,
+                reasoning=ReasoningRequest(
+                    enabled=strategy.allow_thinking,
+                    effort="medium" if strategy.allow_thinking else None,
+                ),
                 continuation=continuation,
             )
 

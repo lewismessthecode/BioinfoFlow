@@ -89,7 +89,7 @@ async def test_probe_uses_selected_protocol_with_minimal_canonical_invocation(
     assert invocation.tools == ()
     assert invocation.stream is False
     assert invocation.max_output_tokens == 16
-    assert invocation.allow_reasoning is False
+    assert invocation.reasoning.enabled is False
     rendered = repr(result.to_public_dict()) + repr(result)
     assert secret not in rendered
     assert "response-raw-id" not in rendered

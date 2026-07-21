@@ -10,6 +10,7 @@ from app.services.llm.credentials import CredentialMaterial
 from app.services.llm.provider_templates import route_provider_model_name
 from app.services.model_runtime.contracts import (
     ModelInvocation,
+    ReasoningRequest,
     ModelTarget,
     NetworkAccessPolicy,
     TextPart,
@@ -102,7 +103,7 @@ class LlmProviderProbe:
             tools=(),
             stream=False,
             max_output_tokens=16,
-            allow_reasoning=False,
+            reasoning=ReasoningRequest(enabled=False),
         )
         started_at = self._clock()
         try:
