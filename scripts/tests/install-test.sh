@@ -431,7 +431,8 @@ fi
 # shellcheck disable=SC2016
 if grep -Fq '[ "$GITHUB_REF_NAME" != "$version" ] && [ "$GITHUB_REF_NAME" != "main" ]' "$RELEASE_WORKFLOW" && \
    grep -q 'checkout_ref:.*needs.resolve.outputs.version' "$RELEASE_WORKFLOW" && \
-   [ "$(grep -c '^[[:space:]]*ref:.*needs.resolve.outputs.version' "$RELEASE_WORKFLOW" || true)" -eq 0 ]; then
+   [ "$(grep -c '^[[:space:]]*ref:.*needs.resolve.outputs.version' "$RELEASE_WORKFLOW" || true)" -eq 0 ] && \
+   grep -q 'gh release upload.*RELEASE_TAG.*--clobber' "$RELEASE_WORKFLOW"; then
   pass "release recovery packages fixed main assets while images use immutable tag source"
 else
   fail "release recovery packages fixed main assets while images use immutable tag source"
