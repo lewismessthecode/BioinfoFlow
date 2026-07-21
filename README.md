@@ -59,7 +59,7 @@ curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/downl
 
 It verifies the published release assets, pulls the matching architecture, and
 opens <http://localhost:3000>. The localhost stack binds only to `127.0.0.1`,
-stores persistent state under `~/.bioinfoflow/data`, and opens the Agent without
+stores persistent state and native skills under `~/.bioinfoflow`, and opens the Agent without
 a Bioinfoflow login screen. Do not expose this no-auth localhost mode through a
 reverse proxy, port forward, or public Docker host.
 

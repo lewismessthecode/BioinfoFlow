@@ -27,12 +27,16 @@ one model in the composer, then choose a short demo starter such as **Check and
 run the demo workflow**. Tool approvals still appear before the Agent submits a
 run.
 
-The managed paths are deliberately separate:
+The localhost installation uses a single product home while keeping installer
+control files outside the backend container:
 
 - `~/.bioinfoflow/install` contains the installer, Compose file, release
-  version, and generated environment file.
-- `~/.bioinfoflow/data` contains Bioinfoflow state, demo assets, projects, and
-  run data.
+  version, and generated environment file. This directory is not mounted into
+  the application containers.
+- `~/.bioinfoflow/skills` receives the reviewed native NGS skill suite on the
+  first installation. Updates never overwrite an existing skills directory.
+- `~/.bioinfoflow/state`, `projects`, and `sources` contain application state,
+  demo assets, project data, inputs, references, and run results.
 
 Lifecycle commands:
 
@@ -43,7 +47,14 @@ Lifecycle commands:
 ```
 
 `--uninstall` removes the containers and managed control files but preserves
-`~/.bioinfoflow/data`. `--purge` removes both control files and managed data.
+the rest of `~/.bioinfoflow`, including user-modified skills. `--purge` removes
+the complete marked Bioinfoflow home.
+
+When updating an older localhost installation that used
+`~/.bioinfoflow/data`, the installer moves its `skills`, `state`, `projects`,
+and `sources` directories into the unified home before starting the new
+release. If startup fails, that migration is rolled back before the previous
+release is restarted.
 Both commands first confirm that the managed Compose stack stopped through the
 same normalized local Unix socket recorded at installation. If Docker, the
 daemon, Compose, or that socket is unavailable—or `compose down` fails—the

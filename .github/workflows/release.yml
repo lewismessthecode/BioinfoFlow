@@ -71,7 +71,12 @@ jobs:
           jq -e '.services.backend.environment.AUTH_MODE == "dev"' /tmp/docker-compose.local.rendered.json
           jq -e '.services.frontend.environment.AUTH_MODE == "dev" and .services.frontend.environment.NEXT_PUBLIC_AUTH_MODE == "dev"' /tmp/docker-compose.local.rendered.json
           jq -e '.services.backend.environment.DOCKER_SOCKET == "unix:///var/run/docker.sock"' /tmp/docker-compose.local.rendered.json
-          jq -e '.services.backend.volumes[] | select(.source == "/tmp/bioinfoflow-local-test" and .target == "/tmp/bioinfoflow-local-test")' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.backend.environment.BIOINFOFLOW_SKILLS_ROOT == "/tmp/bioinfoflow-local-test/skills"' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.backend.volumes[] | select(.source == "/tmp/bioinfoflow-local-test/skills" and .target == "/tmp/bioinfoflow-local-test/skills")' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.backend.volumes[] | select(.source == "/tmp/bioinfoflow-local-test/state" and .target == "/tmp/bioinfoflow-local-test/state")' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.backend.volumes[] | select(.source == "/tmp/bioinfoflow-local-test/projects" and .target == "/tmp/bioinfoflow-local-test/projects")' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.backend.volumes[] | select(.source == "/tmp/bioinfoflow-local-test/sources" and .target == "/tmp/bioinfoflow-local-test/sources")' /tmp/docker-compose.local.rendered.json
+          jq -e '[.services.backend.volumes[].target] | index("/tmp/bioinfoflow-local-test/install") | not' /tmp/docker-compose.local.rendered.json
           jq -e '.services.backend.volumes[] | select(.source == "/var/run/docker.sock" and .target == "/var/run/docker.sock")' /tmp/docker-compose.local.rendered.json
 
   package:
@@ -92,9 +97,10 @@ jobs:
           mkdir dist
           sed "s/^EMBEDDED_VERSION=.*/EMBEDDED_VERSION=${RELEASE_TAG}/" scripts/install.sh > dist/install.sh
           cp docker-compose.local.yml dist/docker-compose.local.yml
+          tar -czf dist/bioinfoflow-skills.tar.gz -C bundled-skills .
           chmod 755 dist/install.sh
-          chmod 644 dist/docker-compose.local.yml
-          (cd dist && sha256sum install.sh docker-compose.local.yml > SHA256SUMS)
+          chmod 644 dist/docker-compose.local.yml dist/bioinfoflow-skills.tar.gz
+          (cd dist && sha256sum install.sh docker-compose.local.yml bioinfoflow-skills.tar.gz > SHA256SUMS)
           (cd dist && sha256sum -c SHA256SUMS)
 
       - name: Upload installer artifact
@@ -184,7 +190,7 @@ jobs:
           asset_port=8765
           frontend_port=3100
           mkdir -p "serve/${RELEASE_TAG}"
-          cp dist/install.sh dist/docker-compose.local.yml dist/SHA256SUMS "serve/${RELEASE_TAG}/"
+          cp dist/install.sh dist/docker-compose.local.yml dist/bioinfoflow-skills.tar.gz dist/SHA256SUMS "serve/${RELEASE_TAG}/"
           installer_path="serve/${RELEASE_TAG}/install.sh"
           python3 -m http.server "$asset_port" --bind 127.0.0.1 --directory serve > /tmp/bioinfoflow-asset-server.log 2>&1 &
           server_pid=$!
@@ -200,11 +206,21 @@ jobs:
           test "$(sh "$installer_path" --version)" = "$RELEASE_TAG"
           grep -F "BIOINFOFLOW_VERSION=${RELEASE_TAG}" "$HOME/.bioinfoflow/install/.env"
           grep -F "BIOINFOFLOW_ARCH=${EXPECTED_ARCH}" "$HOME/.bioinfoflow/install/.env"
+          grep -F "BIOINFOFLOW_HOME=$HOME/.bioinfoflow" "$HOME/.bioinfoflow/install/.env"
+          test -f "$HOME/.bioinfoflow/skills/ngs-analysis-router/SKILL.md"
+          test -f "$HOME/.bioinfoflow/skills/ngs-runtime-env/SKILL.md"
           curl -fsS "http://127.0.0.1:8000/api/v1/system/ping" >/dev/null
           curl -fsS "http://127.0.0.1:${frontend_port}/" >/dev/null
+          printf '\nsmoke-preserved\n' >> "$HOME/.bioinfoflow/skills/ngs-analysis-router/SKILL.md"
+          BIOINFOFLOW_RELEASE_BASE_URL=http://127.0.0.1:${asset_port} \
+            BIOINFOFLOW_VERSION="$RELEASE_TAG" \
+            FRONTEND_PORT="$frontend_port" \
+            sh "$installer_path" --update --no-open
+          grep -F "smoke-preserved" "$HOME/.bioinfoflow/skills/ngs-analysis-router/SKILL.md"
           sh "$installer_path" --uninstall --no-open
           test ! -e "$HOME/.bioinfoflow/install"
-          test -d "$HOME/.bioinfoflow/data"
+          test -d "$HOME/.bioinfoflow/skills"
+          test -d "$HOME/.bioinfoflow/state"
           sh "$installer_path" --purge --no-open
           test ! -e "$HOME/.bioinfoflow"
 
@@ -230,4 +246,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.resolve.outputs.version }}
-        run: gh release upload "$RELEASE_TAG" dist/install.sh dist/docker-compose.local.yml dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "$RELEASE_TAG" dist/install.sh dist/docker-compose.local.yml dist/bioinfoflow-skills.tar.gz dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"

@@ -10,7 +10,8 @@ when you are developing Bioinfoflow or configuring a shared deployment.
 
 ## Localhost Installer
 
-Bioinfoflow publishes the installer, its Compose file, and their checksums as
+Bioinfoflow publishes the installer, its Compose file, the native skills
+archive, and their checksums as
 tagged-release assets on the
 [Releases page](https://github.com/lewismessthecode/BioinfoFlow/releases). Run:
 
@@ -22,12 +23,13 @@ The installer accepts only a local Unix-socket Docker context, selects the
 matching `amd64` or `arm64` images, verifies the downloaded release assets, and
 waits for the UI and API health checks.
 
-It manages two paths:
+It manages these paths:
 
 | Path | Purpose |
 | --- | --- |
 | `~/.bioinfoflow/install` | Versioned installer, Compose file, generated environment, and release metadata |
-| `~/.bioinfoflow/data` | Databases, credentials, demo assets, projects, workflow inputs, and run outputs |
+| `~/.bioinfoflow/skills` | Native NGS skills seeded on first install and never overwritten by updates |
+| `~/.bioinfoflow/state`, `projects`, `sources` | Databases, credentials, demo assets, projects, workflow inputs, references, and run outputs |
 
 The browser opens at `http://localhost:3000`. There is no sign-in in this
 localhost mode. On a fresh workspace, Bioinfoflow creates the **Bioinfoflow
@@ -46,7 +48,7 @@ Update to the newest tagged release:
 ~/.bioinfoflow/install/install.sh --update
 ```
 
-Remove the application while keeping `~/.bioinfoflow/data`:
+Remove the application while keeping `~/.bioinfoflow`, including skills and data:
 
 ```bash
 ~/.bioinfoflow/install/install.sh --uninstall
@@ -72,7 +74,7 @@ normalized local Unix socket recorded during installation. If Docker or Compose
 is unavailable, the daemon is stopped, the active context is remote or points to
 a different socket, or Compose cannot stop the stack, the command fails and
 preserves both control files and data. Once `--uninstall` has succeeded, a later
-data-only `--purge` does not require Docker.
+home-only `--purge` does not require Docker.
 
 Both published ports bind to `127.0.0.1`, and the stack runs with
 `AUTH_MODE=dev`. This deliberate no-auth setup is only for a trusted local

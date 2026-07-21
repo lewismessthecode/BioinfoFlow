@@ -81,14 +81,18 @@ case "$HOME" in /*) ;; *) die_with_hint "HOME must be an absolute path" "Set HOM
 [ "$HOME" != / ] || die_with_hint "refusing to manage installer files directly under /" "Run as a regular user with HOME set to that user's home directory."
 MANAGED_ROOT="$HOME/.bioinfoflow"
 INSTALL_DIR="$MANAGED_ROOT/install"
-DATA_DIR="$MANAGED_ROOT/data"
+SKILLS_DIR="$MANAGED_ROOT/skills"
+STATE_DIR="$MANAGED_ROOT/state"
+PROJECTS_DIR="$MANAGED_ROOT/projects"
+SOURCES_DIR="$MANAGED_ROOT/sources"
+LEGACY_DATA_DIR="$MANAGED_ROOT/data"
 [ -z "${BIOINFOFLOW_INSTALL_DIR:-}" ] || [ "$BIOINFOFLOW_INSTALL_DIR" = "$INSTALL_DIR" ] || die_with_hint "BIOINFOFLOW_INSTALL_DIR must be the managed control path $INSTALL_DIR" "Unset BIOINFOFLOW_INSTALL_DIR; the localhost installer manages this path automatically."
-[ -z "${BIOINFOFLOW_HOME:-}" ] || [ "$BIOINFOFLOW_HOME" = "$DATA_DIR" ] || die_with_hint "BIOINFOFLOW_HOME must be the managed data path $DATA_DIR" "Unset BIOINFOFLOW_HOME; the localhost installer manages this path automatically."
+[ -z "${BIOINFOFLOW_HOME:-}" ] || [ "$BIOINFOFLOW_HOME" = "$MANAGED_ROOT" ] || die_with_hint "BIOINFOFLOW_HOME must be the managed home $MANAGED_ROOT" "Unset BIOINFOFLOW_HOME; the localhost installer manages this path automatically."
 COMPOSE_FILE="$INSTALL_DIR/docker-compose.local.yml"
 ENV_FILE="$INSTALL_DIR/.env"
 VERSION_FILE="$INSTALL_DIR/VERSION"
 INSTALLED_INSTALLER="$INSTALL_DIR/install.sh"
-DATA_MARKER="$DATA_DIR/.managed-by-bioinfoflow"
+HOME_MARKER="$MANAGED_ROOT/.managed-by-bioinfoflow"
 RELEASE_BASE=${BIOINFOFLOW_RELEASE_BASE_URL:-$DEFAULT_RELEASE_BASE}
 LATEST_RELEASE_URL=${BIOINFOFLOW_LATEST_RELEASE_URL:-$DEFAULT_LATEST_RELEASE_URL}
 FRONTEND_PORT=${FRONTEND_PORT:-3000}
@@ -102,7 +106,10 @@ HEALTH_INTERVAL=${BIOINFOFLOW_HEALTH_INTERVAL:-2}
 
 [ ! -L "$MANAGED_ROOT" ] || die_with_hint "managed root must not be a symlink: $MANAGED_ROOT" "Remove the symlink and retry; Bioinfoflow only manages real directories under HOME."
 [ ! -L "$INSTALL_DIR" ] || die_with_hint "install directory must not be a symlink: $INSTALL_DIR" "Remove the symlink and retry; control files must stay under the managed root."
-[ ! -L "$DATA_DIR" ] || die_with_hint "data directory must not be a symlink: $DATA_DIR" "Remove the symlink and retry; data must stay under the managed root."
+for runtime_dir in "$SKILLS_DIR" "$STATE_DIR" "$PROJECTS_DIR" "$SOURCES_DIR"; do
+  [ ! -L "$runtime_dir" ] || die_with_hint "managed runtime directory must not be a symlink: $runtime_dir" "Remove the symlink and retry; Bioinfoflow only manages real directories under its home."
+done
+[ ! -L "$HOME_MARKER" ] || die_with_hint "managed home marker must not be a symlink: $HOME_MARKER" "Remove the symlink and retry."
 
 compose_with() {
   selected_env=$1
@@ -180,29 +187,27 @@ stop_installed_or_fail() {
   case "$installed_uid" in ''|*[!0-9]*) die_with_hint "managed environment does not record a valid installer user ID; cannot return data ownership" "Preserve $INSTALL_DIR, restore its generated environment file, then retry." ;; esac
   case "$installed_gid" in ''|*[!0-9]*) die_with_hint "managed environment does not record a valid installer group ID; cannot return data ownership" "Preserve $INSTALL_DIR, restore its generated environment file, then retry." ;; esac
   compose stop >/dev/null 2>&1 || die_with_hint "Docker Compose could not stop the installed project before ownership handoff" "Resolve the Compose error and retry. Control files and data were preserved."
-  compose run --rm --no-deps --entrypoint /bin/chown backend -R "$installed_uid:$installed_gid" "$DATA_DIR" >/dev/null 2>&1 || die_with_hint "Docker could not return managed data ownership to the installing user" "Preserve $INSTALL_DIR and $DATA_DIR, resolve the container error, then retry."
+  compose run --rm --no-deps --entrypoint /bin/chown backend -R "$installed_uid:$installed_gid" "$SKILLS_DIR" "$STATE_DIR" "$PROJECTS_DIR" "$SOURCES_DIR" >/dev/null 2>&1 || die_with_hint "Docker could not return managed home ownership to the installing user" "Preserve $INSTALL_DIR and $MANAGED_ROOT, resolve the container error, then retry."
   compose down --remove-orphans >/dev/null 2>&1 || die_with_hint "Docker Compose could not stop the installed project" "Resolve the Compose error and retry. Control files and data were preserved."
 }
 
 if [ "$ACTION" = uninstall ] || [ "$ACTION" = purge ]; then
   if [ "$DRY_RUN" -eq 1 ]; then
     say "Would remove the Bioinfoflow launcher from $INSTALL_DIR"
-    [ "$ACTION" = purge ] && say "Would also remove managed data from $DATA_DIR"
+    [ "$ACTION" = purge ] && say "Would also remove managed home $MANAGED_ROOT"
     exit 0
   fi
   stop_installed_or_fail
   if [ "$ACTION" = purge ]; then
-    if [ -e "$DATA_DIR" ] && [ ! -f "$DATA_MARKER" ]; then
-      die_with_hint "refusing to purge unmarked data directory $DATA_DIR" "Move or back up that directory, then remove it manually if deletion is intended."
+    if [ -e "$MANAGED_ROOT" ] && [ ! -f "$HOME_MARKER" ]; then
+      die_with_hint "refusing to purge unmarked Bioinfoflow home $MANAGED_ROOT" "Move or back up that directory, then remove it manually if deletion is intended."
     fi
-    rm -rf "$INSTALL_DIR"
-    [ ! -e "$DATA_DIR" ] || rm -rf "$DATA_DIR"
-    rmdir "$MANAGED_ROOT" 2>/dev/null || true
+    [ ! -e "$MANAGED_ROOT" ] || rm -rf "$MANAGED_ROOT"
     say "Bioinfoflow and its data were purged."
   else
     rm -rf "$INSTALL_DIR"
     rmdir "$MANAGED_ROOT" 2>/dev/null || true
-    say "Bioinfoflow was uninstalled. Data was preserved at $DATA_DIR."
+    say "Bioinfoflow was uninstalled. Skills and data were preserved at $MANAGED_ROOT."
   fi
   exit 0
 fi
@@ -247,18 +252,44 @@ if [ ! -f "$COMPOSE_FILE" ] && command -v lsof >/dev/null 2>&1; then
   if lsof -nP -iTCP:"$BACKEND_PORT" -sTCP:LISTEN >/dev/null 2>&1; then die_with_hint "backend port $BACKEND_PORT is already in use" "Stop the process using port 8000, then retry."; fi
 fi
 
+HAD_PREVIOUS=0
+PREVIOUS_VERSION=unknown
+if [ -f "$COMPOSE_FILE" ] && [ -f "$ENV_FILE" ]; then
+  HAD_PREVIOUS=1
+  [ ! -f "$VERSION_FILE" ] || PREVIOUS_VERSION=$(sed -n '1p' "$VERSION_FILE")
+fi
+
+LEGACY_LAYOUT=0
+if [ "$HAD_PREVIOUS" -eq 1 ] && grep -Fqx "BIOINFOFLOW_HOME=$LEGACY_DATA_DIR" "$ENV_FILE"; then
+  LEGACY_LAYOUT=1
+  for runtime_name in skills state projects sources; do
+    legacy_path="$LEGACY_DATA_DIR/$runtime_name"
+    current_path="$MANAGED_ROOT/$runtime_name"
+    if [ -e "$legacy_path" ] && [ -e "$current_path" ]; then
+      die_with_hint "legacy and current runtime paths both exist for $runtime_name" "Merge or move one of $legacy_path and $current_path, then retry the update."
+    fi
+  done
+fi
+
+SEED_SKILLS=0
+if [ "$HAD_PREVIOUS" -eq 0 ] && [ ! -e "$SKILLS_DIR" ]; then
+  SEED_SKILLS=1
+fi
+[ ! -e "$SKILLS_DIR" ] || [ -d "$SKILLS_DIR" ] || die_with_hint "skills path is not a directory: $SKILLS_DIR" "Move that path aside and retry."
+
 if [ "$DRY_RUN" -eq 1 ]; then
   say "Would install Bioinfoflow $REQUESTED_VERSION for linux/$PLATFORM_ARCH in $INSTALL_DIR"
-  say "Would preserve application data in $DATA_DIR"
+  say "Would use Bioinfoflow home $MANAGED_ROOT"
+  [ "$SEED_SKILLS" -eq 0 ] || say "Would seed bundled NGS skills in $SKILLS_DIR"
   exit 0
 fi
 
 umask 077
-mkdir -p "$INSTALL_DIR" "$DATA_DIR"
-chmod 700 "$INSTALL_DIR" "$DATA_DIR"
-if [ ! -e "$DATA_MARKER" ]; then
-  : > "$DATA_MARKER"
-  chmod 600 "$DATA_MARKER"
+mkdir -p "$INSTALL_DIR"
+chmod 700 "$INSTALL_DIR"
+if [ ! -e "$HOME_MARKER" ]; then
+  : > "$HOME_MARKER"
+  chmod 600 "$HOME_MARKER"
 fi
 TMP_DIR=$(mktemp -d "$INSTALL_DIR/.install.XXXXXX")
 # shellcheck disable=SC2329 # Invoked by the trap below.
@@ -275,8 +306,15 @@ ASSET_BASE="$RELEASE_BASE/$REQUESTED_VERSION"
 curl -fL --retry 2 --connect-timeout 15 -o "$TMP_DIR/install.sh" "$ASSET_BASE/install.sh" || die_with_hint "installer download failed" "Check that release tag '$REQUESTED_VERSION' exists and that GitHub releases are reachable."
 curl -fL --retry 2 --connect-timeout 15 -o "$TMP_DIR/docker-compose.local.yml" "$ASSET_BASE/docker-compose.local.yml" || die_with_hint "release asset download failed" "Check that release tag '$REQUESTED_VERSION' exists and retry; partial downloads are discarded."
 curl -fL --retry 2 --connect-timeout 15 -o "$TMP_DIR/SHA256SUMS" "$ASSET_BASE/SHA256SUMS" || die_with_hint "checksum download failed" "Check that release tag '$REQUESTED_VERSION' includes SHA256SUMS and retry."
-sed -n '/[[:space:]]install\.sh$/p; /[[:space:]]docker-compose\.local\.yml$/p' "$TMP_DIR/SHA256SUMS" > "$TMP_DIR/assets.sha256"
-[ "$(sed -n '$=' "$TMP_DIR/assets.sha256")" = 2 ] || die_with_hint "checksum manifest must contain install.sh and docker-compose.local.yml" "Do not bypass verification; retry the same release or choose another published release tag."
+if [ "$SEED_SKILLS" -eq 1 ]; then
+  command -v tar >/dev/null 2>&1 || die_with_hint "tar is required to install bundled skills" "Install tar and retry."
+  curl -fL --retry 2 --connect-timeout 15 -o "$TMP_DIR/bioinfoflow-skills.tar.gz" "$ASSET_BASE/bioinfoflow-skills.tar.gz" || die_with_hint "skills archive download failed" "Check that release tag '$REQUESTED_VERSION' includes bioinfoflow-skills.tar.gz and retry."
+  sed -n '/[[:space:]]install\.sh$/p; /[[:space:]]docker-compose\.local\.yml$/p; /[[:space:]]bioinfoflow-skills\.tar\.gz$/p' "$TMP_DIR/SHA256SUMS" > "$TMP_DIR/assets.sha256"
+  [ "$(sed -n '$=' "$TMP_DIR/assets.sha256")" = 3 ] || die_with_hint "checksum manifest must contain installer, Compose, and skills assets" "Do not bypass verification; retry the same release or choose another published release tag."
+else
+  sed -n '/[[:space:]]install\.sh$/p; /[[:space:]]docker-compose\.local\.yml$/p' "$TMP_DIR/SHA256SUMS" > "$TMP_DIR/assets.sha256"
+  [ "$(sed -n '$=' "$TMP_DIR/assets.sha256")" = 2 ] || die_with_hint "checksum manifest must contain install.sh and docker-compose.local.yml" "Do not bypass verification; retry the same release or choose another published release tag."
+fi
 if command -v sha256sum >/dev/null 2>&1; then
   (cd "$TMP_DIR" && sha256sum -c assets.sha256 >/dev/null 2>&1) || die_with_hint "checksum verification failed" "Do not bypass verification; retry to replace the downloaded release assets."
 elif command -v shasum >/dev/null 2>&1; then
@@ -285,8 +323,47 @@ else
   die_with_hint "SHA-256 checksum tool is required (sha256sum or shasum)" "Install coreutils, or use the shasum command included with macOS, then retry."
 fi
 
+STAGED_SKILLS="$TMP_DIR/skills"
+if [ "$SEED_SKILLS" -eq 1 ]; then
+  tar -tzf "$TMP_DIR/bioinfoflow-skills.tar.gz" > "$TMP_DIR/skills.entries" || die_with_hint "skills archive could not be read" "Retry the release download; the partial installation was not committed."
+  tar -tvzf "$TMP_DIR/bioinfoflow-skills.tar.gz" > "$TMP_DIR/skills.verbose" || die_with_hint "skills archive metadata could not be read" "Retry the release download; the partial installation was not committed."
+  while IFS= read -r archive_metadata || [ -n "$archive_metadata" ]; do
+    case "$archive_metadata" in
+      l*|h*) die_with_hint "skills archive contains links" "Use an official Bioinfoflow release asset and retry." ;;
+    esac
+  done < "$TMP_DIR/skills.verbose"
+  while IFS= read -r archive_entry || [ -n "$archive_entry" ]; do
+    normalized_entry=${archive_entry#./}
+    case "$normalized_entry" in
+      '') continue ;;
+      /*|../*|*/../*|*/..) die_with_hint "skills archive contains an unsafe path: $archive_entry" "Use an official Bioinfoflow release asset and retry." ;;
+    esac
+  done < "$TMP_DIR/skills.entries"
+  mkdir "$STAGED_SKILLS"
+  tar -xzf "$TMP_DIR/bioinfoflow-skills.tar.gz" -C "$STAGED_SKILLS" || die_with_hint "skills archive extraction failed" "Retry the release download; the partial installation was not committed."
+  if find "$STAGED_SKILLS" -type l -print -quit | grep -q .; then
+    die_with_hint "skills archive contains symbolic links" "Use an official Bioinfoflow release asset and retry."
+  fi
+  skill_count=0
+  for skill_dir in "$STAGED_SKILLS"/*; do
+    [ -d "$skill_dir" ] || continue
+    [ -f "$skill_dir/SKILL.md" ] || die_with_hint "bundled skill is missing SKILL.md: $skill_dir" "Use an official Bioinfoflow release asset and retry."
+    skill_count=$((skill_count + 1))
+  done
+  [ "$skill_count" -gt 0 ] || die_with_hint "skills archive contains no native skills" "Use an official Bioinfoflow release asset and retry."
+fi
+
+MIGRATED_LEGACY_THIS_RUN=0
+if [ "$LEGACY_LAYOUT" -eq 0 ]; then
+  mkdir -p "$STATE_DIR" "$PROJECTS_DIR" "$SOURCES_DIR"
+  [ "$SEED_SKILLS" -eq 1 ] || mkdir -p "$SKILLS_DIR"
+  chmod 700 "$STATE_DIR" "$PROJECTS_DIR" "$SOURCES_DIR"
+  [ "$SEED_SKILLS" -eq 1 ] || chmod 700 "$SKILLS_DIR"
+fi
+
 cat > "$TMP_DIR/.env" <<EOF
-BIOINFOFLOW_HOME=$DATA_DIR
+BIOINFOFLOW_HOME=$MANAGED_ROOT
+BIOINFOFLOW_SKILLS_ROOT=$SKILLS_DIR
 BIOINFOFLOW_VERSION=$REQUESTED_VERSION
 BIOINFOFLOW_ARCH=$PLATFORM_ARCH
 IMAGE_REGISTRY=$IMAGE_REGISTRY
@@ -299,14 +376,21 @@ printf '%s\n' "$REQUESTED_VERSION" > "$TMP_DIR/VERSION"
 chmod 700 "$TMP_DIR/install.sh"
 chmod 600 "$TMP_DIR/docker-compose.local.yml" "$TMP_DIR/.env" "$TMP_DIR/VERSION"
 
-HAD_PREVIOUS=0
-PREVIOUS_VERSION=unknown
-if [ -f "$COMPOSE_FILE" ] && [ -f "$ENV_FILE" ]; then
-  HAD_PREVIOUS=1
-  [ ! -f "$VERSION_FILE" ] || PREVIOUS_VERSION=$(sed -n '1p' "$VERSION_FILE")
-fi
+SEEDED_SKILLS_THIS_RUN=0
 
 rollback_transaction() {
+  if [ "$MIGRATED_LEGACY_THIS_RUN" -eq 1 ]; then
+    mkdir -p "$LEGACY_DATA_DIR"
+    for runtime_name in skills state projects sources; do
+      current_path="$MANAGED_ROOT/$runtime_name"
+      legacy_path="$LEGACY_DATA_DIR/$runtime_name"
+      if [ -e "$current_path" ]; then
+        rm -rf "$legacy_path"
+        mv "$current_path" "$legacy_path"
+      fi
+    done
+    MIGRATED_LEGACY_THIS_RUN=0
+  fi
   if [ "$HAD_PREVIOUS" -eq 1 ]; then
     if compose up -d --remove-orphans >/dev/null 2>&1; then
       printf 'Previous Bioinfoflow release %s was restored and restarted.\n' "$PREVIOUS_VERSION" >&2
@@ -315,6 +399,10 @@ rollback_transaction() {
     fi
   else
     compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" down --remove-orphans >/dev/null 2>&1 || true
+  fi
+  if [ "$SEEDED_SKILLS_THIS_RUN" -eq 1 ]; then
+    rm -rf "$SKILLS_DIR"
+    SEEDED_SKILLS_THIS_RUN=0
   fi
 }
 
@@ -328,6 +416,24 @@ fail_transaction() {
 if ! compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" pull; then
   fail_transaction "failed to pull Bioinfoflow images"
 fi
+if [ "$LEGACY_LAYOUT" -eq 1 ]; then
+  for runtime_name in skills state projects sources; do
+    legacy_path="$LEGACY_DATA_DIR/$runtime_name"
+    current_path="$MANAGED_ROOT/$runtime_name"
+    if [ -e "$legacy_path" ]; then
+      mv "$legacy_path" "$current_path"
+    else
+      mkdir -p "$current_path"
+    fi
+  done
+  chmod 700 "$SKILLS_DIR" "$STATE_DIR" "$PROJECTS_DIR" "$SOURCES_DIR"
+  MIGRATED_LEGACY_THIS_RUN=1
+fi
+if [ "$SEED_SKILLS" -eq 1 ]; then
+  mv "$STAGED_SKILLS" "$SKILLS_DIR"
+  chmod 700 "$SKILLS_DIR"
+  SEEDED_SKILLS_THIS_RUN=1
+fi
 if ! compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" up -d --remove-orphans; then
   fail_transaction "failed to start Bioinfoflow"
 fi
@@ -339,6 +445,11 @@ while [ "$attempt" -le "$HEALTH_ATTEMPTS" ]; do
     mv "$TMP_DIR/docker-compose.local.yml" "$COMPOSE_FILE"
     mv "$TMP_DIR/.env" "$ENV_FILE"
     mv "$TMP_DIR/VERSION" "$VERSION_FILE"
+    if [ "$MIGRATED_LEGACY_THIS_RUN" -eq 1 ]; then
+      rm -f "$LEGACY_DATA_DIR/.managed-by-bioinfoflow"
+      rmdir "$LEGACY_DATA_DIR" 2>/dev/null || true
+      MIGRATED_LEGACY_THIS_RUN=0
+    fi
     say "Bioinfoflow $REQUESTED_VERSION is ready at http://localhost:$FRONTEND_PORT"
     if [ "$NO_OPEN" -eq 0 ]; then
       if command -v open >/dev/null 2>&1; then open "http://localhost:$FRONTEND_PORT" >/dev/null 2>&1 || true
