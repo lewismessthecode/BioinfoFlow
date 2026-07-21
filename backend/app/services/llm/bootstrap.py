@@ -49,9 +49,7 @@ async def sync_environment_llm_catalog(
             template.env_allow_insecure_http_vars
         )
         env_model = _first_present_env_value(template.env_model_vars)
-        env_wire_protocol = _first_present_env_value(
-            template.env_wire_protocol_vars
-        )
+        env_wire_protocol = _first_present_env_value(template.env_wire_protocol_vars)
         should_sync = bool(
             env_api_key_var or env_base_url_var or env_model or env_wire_protocol
         )
@@ -77,7 +75,11 @@ async def sync_environment_llm_catalog(
             "envManaged": True,
             "providerTemplate": template.id,
         }
-        name = os.getenv("OPENAI_COMPATIBLE_NAME") if template.id == "openai-compatible" else None
+        name = (
+            os.getenv("OPENAI_COMPATIBLE_NAME")
+            if template.id == "openai-compatible"
+            else None
+        )
         name = (name or template.name).strip()
 
         if provider is None:
@@ -199,7 +201,6 @@ async def sync_environment_llm_catalog(
                 exc,
             )
 
-
     return LlmCatalogBootstrapResult(created_or_updated=changed)
 
 
@@ -256,4 +257,7 @@ def _dedupe_model_templates(models: list[ModelTemplate]) -> list[ModelTemplate]:
 
 def _model_id_suggests_reasoning(model_id: str) -> bool:
     normalized = model_id.lower()
-    return any(token in normalized for token in ("reason", "thinking", "deepseek-r1", "o1", "o3"))
+    return any(
+        token in normalized
+        for token in ("reason", "thinking", "deepseek-r1", "o1", "o3")
+    )

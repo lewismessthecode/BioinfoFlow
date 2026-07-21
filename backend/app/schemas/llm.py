@@ -310,6 +310,13 @@ class LlmProviderTestRequest(BaseModel):
     model_id: UUID | None = None
 
 
+class LlmProviderVerificationCheck(BaseModel):
+    name: Literal["configuration", "catalog", "runtime"]
+    status: Literal["passed", "failed", "skipped"]
+    error_code: str | None = None
+    message: str | None = None
+
+
 class LlmProviderTestResult(BaseModel):
     provider_id: UUID
     success: bool
@@ -321,6 +328,8 @@ class LlmProviderTestResult(BaseModel):
     retryable: bool = False
     http_status: int | None = None
     provider_code: str | None = None
+    failed_at: Literal["configuration", "catalog", "runtime"] | None = None
+    checks: list[LlmProviderVerificationCheck] = Field(default_factory=list)
 
 
 class LlmConfigurationSummary(BaseModel):

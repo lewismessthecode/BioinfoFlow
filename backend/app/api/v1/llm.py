@@ -59,10 +59,7 @@ async def list_providers(
         user_id=user.id,
     )
     return success_response(
-        [
-            _dump(LlmProviderRead.model_validate(provider))
-            for provider in providers
-        ],
+        [_dump(LlmProviderRead.model_validate(provider)) for provider in providers],
         request=request,
     )
 
@@ -81,10 +78,7 @@ async def list_provider_templates(
         for template in service.list_provider_templates()
     ]
     return success_response(
-        [
-            template.model_dump(mode="json", exclude_none=True)
-            for template in templates
-        ],
+        [template.model_dump(mode="json", exclude_none=True) for template in templates],
         request=request,
     )
 
@@ -104,7 +98,9 @@ async def get_configuration(
     providers = [
         LlmConfiguredProviderRead.model_validate(
             {
-                **LlmProviderRead.model_validate(item["provider"]).model_dump(mode="json"),
+                **LlmProviderRead.model_validate(item["provider"]).model_dump(
+                    mode="json"
+                ),
                 "credential": item["credential"],
             }
         )
@@ -114,8 +110,7 @@ async def get_configuration(
         summary=configuration["summary"],
         providers=providers,
         models=[
-            LlmModelRead.model_validate(model)
-            for model in configuration["models"]
+            LlmModelRead.model_validate(model) for model in configuration["models"]
         ],
         profiles=[
             LlmModelProfileRead.model_validate(profile)
@@ -144,10 +139,7 @@ async def setup_provider(
     )
     result = LlmProviderSetupResult(
         provider=provider,
-        models=[
-            LlmModelRead.model_validate(model)
-            for model in setup["models"]
-        ],
+        models=[LlmModelRead.model_validate(model) for model in setup["models"]],
         discovered=setup["discovered"],
     )
     return success_response(_dump(result), request=request)
@@ -208,7 +200,9 @@ async def update_provider(
         provider_id,
         _with_user_context(payload.model_dump(exclude_unset=True), user),
     )
-    return success_response(_dump(LlmProviderRead.model_validate(provider)), request=request)
+    return success_response(
+        _dump(LlmProviderRead.model_validate(provider)), request=request
+    )
 
 
 @router.post("/providers/{provider_id}/test")
@@ -239,6 +233,8 @@ async def test_provider(
         retryable=bool(status.get("retryable")),
         http_status=status.get("http_status"),
         provider_code=status.get("provider_code"),
+        failed_at=status.get("failed_at"),
+        checks=status.get("checks") or [],
     )
     return success_response(_dump(result), request=request)
 
@@ -331,10 +327,7 @@ async def list_model_profiles(
         user_id=user.id,
     )
     return success_response(
-        [
-            _dump(LlmModelProfileRead.model_validate(profile))
-            for profile in profiles
-        ],
+        [_dump(LlmModelProfileRead.model_validate(profile)) for profile in profiles],
         request=request,
     )
 

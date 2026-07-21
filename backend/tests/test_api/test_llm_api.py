@@ -164,8 +164,7 @@ async def test_llm_provider_templates_drive_frontend_configuration(async_client)
     ]
     assert templates["kimi-code"]["fields"] == templates["openai"]["fields"]
     assert (
-        templates["kimi-code"]["default_base_url"]
-        == "https://api.kimi.com/coding/v1"
+        templates["kimi-code"]["default_base_url"] == "https://api.kimi.com/coding/v1"
     )
     assert templates["kimi-code"]["docs_url"] == "https://www.kimi.com/code/console"
     assert [model["id"] for model in templates["kimi-code"]["models"]] == [
@@ -242,8 +241,7 @@ async def test_llm_provider_setup_creates_kimi_provider_from_key_only(
     assert configuration.status_code == 200
     configured = configuration.json()["data"]
     assert any(
-        item["id"] == provider["id"]
-        and item["credential"]["configured"] is True
+        item["id"] == provider["id"] and item["credential"]["configured"] is True
         for item in configured["providers"]
     )
 
@@ -386,14 +384,10 @@ async def test_llm_configuration_and_models_exclude_disabled_provider_models(
         str(disabled_provider.id),
     }
     assert configured["summary"]["model_count"] == 1
-    assert [model["id"] for model in configured["models"]] == [
-        str(enabled_model.id)
-    ]
+    assert [model["id"] for model in configured["models"]] == [str(enabled_model.id)]
 
     assert models.status_code == 200
-    assert [model["id"] for model in models.json()["data"]] == [
-        str(enabled_model.id)
-    ]
+    assert [model["id"] for model in models.json()["data"]] == [str(enabled_model.id)]
 
 
 @pytest.mark.asyncio
@@ -608,6 +602,22 @@ async def test_failed_provider_probe_keeps_saved_credential_configured(
     assert response.status_code == 200
     assert response.json()["data"]["success"] is False
     assert response.json()["data"]["error_code"] == "timeout"
+    assert response.json()["data"]["failed_at"] == "runtime"
+    assert response.json()["data"]["checks"] == [
+        {
+            "name": "configuration",
+            "status": "passed",
+            "error_code": None,
+            "message": None,
+        },
+        {"name": "catalog", "status": "skipped", "error_code": None, "message": None},
+        {
+            "name": "runtime",
+            "status": "failed",
+            "error_code": "timeout",
+            "message": "The model provider request timed out.",
+        },
+    ]
     configuration = await async_client.get("/api/v1/llm/configuration")
     configured_provider = next(
         provider
@@ -760,8 +770,7 @@ async def test_llm_provider_setup_can_switch_wire_protocol_in_both_directions(
     )
     assert switched_to_responses.status_code == 200
     assert (
-        switched_to_responses.json()["data"]["provider"]["wire_protocol"]
-        == "responses"
+        switched_to_responses.json()["data"]["provider"]["wire_protocol"] == "responses"
     )
 
     switched_to_chat = await async_client.post(
@@ -1130,7 +1139,10 @@ async def test_anthropic_provider_discovers_models_from_v1_models(
                 200,
                 json={
                     "data": [
-                        {"id": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6"},
+                        {
+                            "id": "claude-sonnet-4-6",
+                            "display_name": "Claude Sonnet 4.6",
+                        },
                         {"id": "claude-haiku-4-5", "display_name": "Claude Haiku 4.5"},
                     ]
                 },
@@ -1217,7 +1229,9 @@ async def test_gemini_provider_discovers_models_and_skips_non_generative(
     models = response.json()["data"]
     model_ids = {model["model_id"] for model in models}
     assert model_ids == {"gemini-3-pro"}
-    gemini_model = next(model for model in models if model["model_id"] == "gemini-3-pro")
+    gemini_model = next(
+        model for model in models if model["model_id"] == "gemini-3-pro"
+    )
     assert gemini_model["context_length"] == 1000000
 
 
@@ -1581,7 +1595,11 @@ async def test_ollama_provider_discovers_local_models(async_client, monkeypatch)
                 "primary_model_id": OTHER_MODEL_ID,
             },
         ),
-        ("patch", f"/api/v1/llm/model-profiles/{OTHER_PROFILE_ID}", {"name": "Agent profile"}),
+        (
+            "patch",
+            f"/api/v1/llm/model-profiles/{OTHER_PROFILE_ID}",
+            {"name": "Agent profile"},
+        ),
     ],
 )
 async def test_llm_mutations_require_authenticated_user(
@@ -1803,7 +1821,9 @@ async def test_llm_provider_test_without_models_returns_safe_failure(
         del args, kwargs
         raise AssertionError("probe must not run without a configured model")
 
-    monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", forbidden_probe)
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe", forbidden_probe
+    )
 
     response = await async_client.post(f"/api/v1/llm/providers/{provider_id}/test")
 
@@ -1819,6 +1839,27 @@ async def test_llm_provider_test_without_models_returns_safe_failure(
         "retryable": False,
         "http_status": None,
         "provider_code": None,
+        "failed_at": "configuration",
+        "checks": [
+            {
+                "name": "configuration",
+                "status": "failed",
+                "error_code": "model_not_configured",
+                "message": "No model is configured for this provider.",
+            },
+            {
+                "name": "catalog",
+                "status": "skipped",
+                "error_code": None,
+                "message": None,
+            },
+            {
+                "name": "runtime",
+                "status": "skipped",
+                "error_code": None,
+                "message": None,
+            },
+        ],
     }
     provider_row = await db_session.get(LlmProvider, provider_id)
     assert provider_row is not None
@@ -1974,7 +2015,9 @@ async def test_provider_list_invalidates_test_status_after_env_rotation(
     providers = await async_client.get("/api/v1/llm/providers")
 
     assert providers.status_code == 200
-    provider = next(item for item in providers.json()["data"] if item["id"] == provider_id)
+    provider = next(
+        item for item in providers.json()["data"] if item["id"] == provider_id
+    )
     assert provider["test_status"] is None
     assert "first-secret-value" not in providers.text
     assert "second-secret-value" not in providers.text
@@ -2039,9 +2082,11 @@ async def test_provider_setup_is_local_even_when_discover_true(
 
     assert response.status_code == 200
     assert response.json()["data"]["discovered"] is False
-    assert {
-        model["model_id"] for model in response.json()["data"]["models"]
-    } == {"k3", "kimi-for-coding", "kimi-for-coding-highspeed"}
+    assert {model["model_id"] for model in response.json()["data"]["models"]} == {
+        "k3",
+        "kimi-for-coding",
+        "kimi-for-coding-highspeed",
+    }
 
 
 @pytest.mark.asyncio
