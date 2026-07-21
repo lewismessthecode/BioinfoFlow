@@ -489,7 +489,15 @@ describe("useLlmCatalog", () => {
         return Promise.resolve({
           data: {
             provider: { id: "provider-openai" },
-            models: [],
+            models: [
+              {
+                id: "model-gpt",
+                provider_id: "provider-openai",
+                model_id: "gpt-test",
+                display_name: "GPT Test",
+                supports_tools: true,
+              },
+            ],
             discovered: false,
           },
         })
@@ -507,6 +515,7 @@ describe("useLlmCatalog", () => {
     })
 
     expect(result.current.isLoading).toBe(false)
+    expect(result.current.models.map((model) => model.id)).toEqual(["model-gpt"])
 
     resolveBackgroundRefresh({ data: emptyConfiguration })
     await act(async () => {

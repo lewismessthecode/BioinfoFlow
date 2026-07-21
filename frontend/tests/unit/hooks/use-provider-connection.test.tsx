@@ -21,7 +21,7 @@ function operations(overrides: Record<string, unknown> = {}) {
   return {
     setupProvider: vi.fn().mockResolvedValue({
       ok: true,
-      result: { provider, models: [], discovered: false },
+      result: { provider, models: [model], discovered: false },
     }),
     discoverModels: vi.fn().mockResolvedValue([model]),
     testProvider: vi.fn().mockResolvedValue({
@@ -40,7 +40,7 @@ function operations(overrides: Record<string, unknown> = {}) {
 }
 
 describe("useProviderConnection", () => {
-  it("sets up, discovers, probes, selects, and refreshes a provider", async () => {
+  it("sets up, probes, selects, and refreshes a provider without discovery", async () => {
     const deps = operations()
     const { result } = renderHook(() => useProviderConnection(deps))
 
@@ -57,7 +57,7 @@ describe("useProviderConnection", () => {
       apiKey: "sk-test",
       discover: false,
     })
-    expect(deps.discoverModels).toHaveBeenCalledWith(provider.id)
+    expect(deps.discoverModels).not.toHaveBeenCalled()
     expect(deps.testProvider).toHaveBeenCalledWith(provider.id, model.id)
     expect(deps.activation.setSelectedModel).toHaveBeenCalledWith({
       provider: provider.id,
@@ -88,8 +88,13 @@ describe("useProviderConnection", () => {
     expect(outcome).toEqual({ ok: false, stage: "setup", error })
   })
 
-  it("keeps the saved provider id when discovery fails", async () => {
-    const deps = operations({ discoverModels: vi.fn().mockResolvedValue(null) })
+  it("returns a model failure when setup returns no models", async () => {
+    const deps = operations({
+      setupProvider: vi.fn().mockResolvedValue({
+        ok: true,
+        result: { provider, models: [], discovered: false },
+      }),
+    })
     const { result } = renderHook(() => useProviderConnection(deps))
 
     let outcome
@@ -99,13 +104,23 @@ describe("useProviderConnection", () => {
 
     expect(outcome).toMatchObject({
       ok: false,
-      stage: "discovery",
+      stage: "model",
       providerId: provider.id,
     })
+    expect(deps.discoverModels).not.toHaveBeenCalled()
   })
 
-  it("returns a model failure when setup and discovery yield no usable model", async () => {
-    const deps = operations({ discoverModels: vi.fn().mockResolvedValue([]) })
+  it("returns a model failure when setup models are not tool capable", async () => {
+    const deps = operations({
+      setupProvider: vi.fn().mockResolvedValue({
+        ok: true,
+        result: {
+          provider,
+          models: [{ ...model, supports_tools: false }],
+          discovered: false,
+        },
+      }),
+    })
     const { result } = renderHook(() => useProviderConnection(deps))
 
     let outcome
@@ -167,7 +182,7 @@ describe("useProviderConnection", () => {
     })
   })
 
-  it("selects the first discovered model that supports tools", async () => {
+  it("selects the first setup model that supports tools", async () => {
     const textOnlyModel = {
       ...model,
       id: "model-text-only",
@@ -176,7 +191,14 @@ describe("useProviderConnection", () => {
       supports_tools: undefined,
     }
     const deps = operations({
-      discoverModels: vi.fn().mockResolvedValue([textOnlyModel, model]),
+      setupProvider: vi.fn().mockResolvedValue({
+        ok: true,
+        result: {
+          provider,
+          models: [textOnlyModel, model],
+          discovered: false,
+        },
+      }),
     })
     const { result } = renderHook(() => useProviderConnection(deps))
 
@@ -194,17 +216,24 @@ describe("useProviderConnection", () => {
     expect(outcome).toMatchObject({ ok: true, modelId: model.id })
   })
 
-  it("returns a model failure when discovered models do not support tools", async () => {
+  it("returns a model failure when setup models do not support tools", async () => {
     const deps = operations({
-      discoverModels: vi.fn().mockResolvedValue([
-        { ...model, supports_tools: false },
-        {
-          ...model,
-          id: "model-unknown-tools",
-          model_id: "gpt-unknown-tools",
-          supports_tools: undefined,
+      setupProvider: vi.fn().mockResolvedValue({
+        ok: true,
+        result: {
+          provider,
+          models: [
+            { ...model, supports_tools: false },
+            {
+              ...model,
+              id: "model-unknown-tools",
+              model_id: "gpt-unknown-tools",
+              supports_tools: undefined,
+            },
+          ],
+          discovered: false,
         },
-      ]),
+      }),
     })
     const { result } = renderHook(() => useProviderConnection(deps))
 

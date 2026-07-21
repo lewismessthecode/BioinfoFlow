@@ -188,22 +188,11 @@ describe("LlmCatalogPanel", () => {
         if (!setup.ok) return { ok: false, stage: "setup", error: setup.error }
         const providerId = setup.result.provider.id
         if (setup.result.models.length === 0) {
-          const discovered = await operations.discoverModels(providerId)
-          if (discovered === null) {
-            return {
-              ok: false,
-              stage: "discovery",
-              error: new Error("discovery failed"),
-              providerId,
-            }
-          }
-          if (Array.isArray(discovered) && discovered.length === 0) {
-            return {
-              ok: false,
-              stage: "model",
-              error: new Error("no models"),
-              providerId,
-            }
+          return {
+            ok: false,
+            stage: "model",
+            error: new Error("no models"),
+            providerId,
           }
         }
         return {
@@ -375,7 +364,9 @@ describe("LlmCatalogPanel", () => {
       ok: true,
       result: {
         provider: { id: "provider-openai", wire_protocol: "responses" },
-        models: [],
+        models: [
+          { id: "model-openai", model_id: "gpt-test", supports_tools: true },
+        ],
         discovered: false,
       },
     })
@@ -837,7 +828,9 @@ describe("LlmCatalogPanel", () => {
       ok: true,
       result: {
         provider: { id: "provider-openai", wire_protocol: "responses" },
-        models: [],
+        models: [
+          { id: "model-openai", model_id: "gpt-test", supports_tools: true },
+        ],
         discovered: false,
       },
     })
@@ -900,7 +893,9 @@ describe("LlmCatalogPanel", () => {
       ok: true,
       result: {
         provider: { id: "provider-openai" },
-        models: [],
+        models: [
+          { id: "model-openai", model_id: "gpt-test", supports_tools: true },
+        ],
         discovered: false,
       },
     })
@@ -960,12 +955,18 @@ describe("LlmCatalogPanel", () => {
     expect(celebrateMilestoneMock).not.toHaveBeenCalled()
   })
 
-  it("discovers models after saving a discoverable provider without model ids", async () => {
+  it("uses models returned by setup without save-time discovery", async () => {
     const setupProvider = vi.fn().mockResolvedValue({
       ok: true,
       result: {
         provider: { id: "provider-openai" },
-        models: [],
+        models: [
+          {
+            id: "model-openai",
+            model_id: "gpt-5.4-mini",
+            supports_tools: true,
+          },
+        ],
         discovered: false,
       },
     })
@@ -995,21 +996,23 @@ describe("LlmCatalogPanel", () => {
       expect(setupProvider).toHaveBeenCalledWith(
         expect.objectContaining({ discover: false, modelIds: [] }),
       )
-      expect(discoverModels).toHaveBeenCalledWith("provider-openai")
     })
+    expect(discoverModels).not.toHaveBeenCalled()
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
   })
 
-  it("keeps the provider saved when automatic model discovery fails", async () => {
+  it("does not run model discovery while saving a provider", async () => {
     const setupProvider = vi.fn().mockResolvedValue({
       ok: true,
       result: {
         provider: { id: "provider-openai" },
-        models: [],
+        models: [{ id: "model-openai", model_id: "gpt-test", supports_tools: true }],
         discovered: false,
       },
     })
-    const discoverModels = vi.fn().mockResolvedValue(null)
+    const discoverModels = vi.fn().mockRejectedValue(
+      new Error("Provider returned a detailed discovery failure"),
+    )
     useLlmCatalogMock.mockReturnValue({
       providerTemplates: templates,
       configuredProviders: [],
@@ -1028,20 +1031,14 @@ describe("LlmCatalogPanel", () => {
     fireEvent.change(apiKeyInput, { target: { value: "sk-new" } })
     fireEvent.click(within(card).getByRole("button", { name: "Save" }))
 
-    await waitFor(() =>
-      expect(toastWarningMock).toHaveBeenCalledWith(
-        "Provider saved, but model discovery failed",
-      ),
-    )
-    expect(
-      within(card).getByText("Provider saved, but model discovery failed"),
-    ).toBeInTheDocument()
+    await waitFor(() => expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved"))
+    expect(discoverModels).not.toHaveBeenCalled()
     expect(apiKeyInput).toHaveValue("")
     expect(toastErrorMock).not.toHaveBeenCalled()
-    expect(toastSuccessMock).not.toHaveBeenCalled()
+    expect(toastWarningMock).not.toHaveBeenCalled()
   })
 
-  it("matches a legacy Kimi cn endpoint to Kimi China instead of global Kimi", () => {
+  it("matches configured providers by backend template metadata only", () => {
     useLlmCatalogMock.mockReturnValue({
       providerTemplates: templates,
       configuredProviders: [
@@ -1068,14 +1065,14 @@ describe("LlmCatalogPanel", () => {
     render(<LlmCatalogPanel />)
 
     expect(
-      within(screen.getByRole("group", { name: "Kimi" })).getByText("Setup"),
+      within(screen.getByRole("group", { name: "Kimi" })).getByText("Ready"),
     ).toBeInTheDocument()
     expect(
-      within(screen.getByRole("group", { name: "Kimi China" })).getByText("Ready"),
+      within(screen.getByRole("group", { name: "Kimi China" })).getByText("Setup"),
     ).toBeInTheDocument()
   })
 
-  it("matches a legacy Kimi cn endpoint without metadata to Kimi China", () => {
+  it("falls back to provider kind without inferring from the endpoint", () => {
     useLlmCatalogMock.mockReturnValue({
       providerTemplates: templates,
       configuredProviders: [
@@ -1102,10 +1099,10 @@ describe("LlmCatalogPanel", () => {
     render(<LlmCatalogPanel />)
 
     expect(
-      within(screen.getByRole("group", { name: "Kimi" })).getByText("Setup"),
+      within(screen.getByRole("group", { name: "Kimi" })).getByText("Ready"),
     ).toBeInTheDocument()
     expect(
-      within(screen.getByRole("group", { name: "Kimi China" })).getByText("Ready"),
+      within(screen.getByRole("group", { name: "Kimi China" })).getByText("Setup"),
     ).toBeInTheDocument()
   })
 
@@ -1204,7 +1201,7 @@ describe("LlmCatalogPanel", () => {
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider removed")
   })
 
-  it("warns when automatic model discovery finds no models", async () => {
+  it("warns when deterministic setup returns no models", async () => {
     const setupProvider = vi.fn().mockResolvedValue({
       ok: true,
       result: {
@@ -1255,7 +1252,9 @@ describe("LlmCatalogPanel", () => {
           enabled: true,
           credential: { source: "stored", configured: true, available: true },
         },
-        models: [],
+        models: [
+          { id: "model-openai", model_id: "gpt-test", supports_tools: true },
+        ],
         discovered: false,
       },
     })
@@ -1651,8 +1650,8 @@ describe("LlmCatalogPanel", () => {
         wireProtocol: "chat_completions",
       })
     })
-    expect(discoverModels).toHaveBeenCalledWith("provider-kimi")
-    expect(toastSuccessMock).toHaveBeenCalledWith("1 models found")
+    expect(discoverModels).not.toHaveBeenCalled()
+    expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
   })
 
   it("keeps other provider rows interactive while one provider is saving", async () => {
@@ -1697,7 +1696,9 @@ describe("LlmCatalogPanel", () => {
       ok: true,
       result: {
         provider: { id: "provider-openai" },
-        models: [],
+        models: [
+          { id: "model-openai", model_id: "gpt-test", supports_tools: true },
+        ],
         discovered: false,
       },
     })

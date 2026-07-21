@@ -320,13 +320,11 @@ export function LlmCatalogPanel() {
           const message =
             outcome.stage === "setup"
               ? outcome.error.message || t("providerCards.saveFailed")
-              : outcome.stage === "discovery"
-                ? t("providerCards.savedDiscoveryFailed")
-                : outcome.stage === "model"
+              : outcome.stage === "model"
                   ? t("providerCards.savedNoModels")
                   : t("providerCards.testFailed")
           setRowErrors((current) => ({ ...current, [template.id]: message }))
-          if (outcome.stage === "discovery" || outcome.stage === "model") {
+          if (outcome.stage === "model") {
             toast.warning(message)
           } else {
             toast.error(message)
@@ -362,30 +360,7 @@ export function LlmCatalogPanel() {
         return next
       })
       setFieldValue(template.id, "api_key", "", false)
-      const shouldDiscoverModels =
-        setupInput.modelIds.length === 0 && template.discovery !== "static"
-      const discoveredModels = shouldDiscoverModels
-        ? await discoverModels(result.provider.id)
-        : null
-      if (shouldDiscoverModels && discoveredModels === null) {
-        setRowErrors((current) => ({
-          ...current,
-          [template.id]: t("providerCards.savedDiscoveryFailed"),
-        }))
-        toast.warning(t("providerCards.savedDiscoveryFailed"))
-      } else if (shouldDiscoverModels && discoveredModels?.length === 0) {
-        toast.warning(t("providerCards.savedNoModels"))
-      } else if (discoveredModels && discoveredModels.length > 0) {
-        toast.success(
-          t("providerCards.modelsDiscovered", { count: discoveredModels.length }),
-        )
-      } else if (result.discovered && result.models.length > 0) {
-        toast.success(
-          t("providerCards.modelsDiscovered", { count: result.models.length }),
-        )
-      } else {
-        toast.success(t("providerCards.saved"))
-      }
+      toast.success(t("providerCards.saved"))
       if (
         !hadConfiguredProvider &&
         setupInput.apiKey &&
@@ -425,15 +400,21 @@ export function LlmCatalogPanel() {
     try {
       let refreshed = 0
       let discovered = 0
+      let lastError: Error | null = null
       for (const { provider } of providersToRefresh) {
-        const result = await discoverModels(provider.id)
-        if (result) {
+        try {
+          const result = await discoverModels(provider.id)
           refreshed += 1
           discovered += result.length
+        } catch (caught) {
+          lastError =
+            caught instanceof Error
+              ? caught
+              : new Error(t("providerCards.modelRefreshFailed"))
         }
       }
       if (refreshed === 0) {
-        toast.error(t("providerCards.modelRefreshFailed"))
+        toast.error(lastError?.message || t("providerCards.modelRefreshFailed"))
       } else {
         toast.success(t("providerCards.modelsDiscovered", { count: discovered }))
       }
@@ -1188,24 +1169,8 @@ function providerMatchesTemplate(
   template: LlmProviderTemplate,
 ) {
   const providerTemplate = String(provider.metadata?.providerTemplate ?? "")
-  if (
-    providerBaseUrlHost(provider) === "api.moonshot.cn" &&
-    (providerTemplate === "kimi" ||
-      (!providerTemplate && provider.kind === "kimi"))
-  ) {
-    return template.id === "kimi-cn"
-  }
   if (providerTemplate) return providerTemplate === template.id
   return provider.kind === template.kind
-}
-
-function providerBaseUrlHost(provider: LlmConfiguredProvider) {
-  if (!provider.base_url) return ""
-  try {
-    return new URL(provider.base_url).hostname.toLowerCase()
-  } catch {
-    return ""
-  }
 }
 
 function initialFieldValue(

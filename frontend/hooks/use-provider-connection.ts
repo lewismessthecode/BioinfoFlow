@@ -12,7 +12,6 @@ import type {
 
 export type ProviderConnectionFailureStage =
   | "setup"
-  | "discovery"
   | "model"
   | "probe"
 
@@ -81,29 +80,7 @@ export function useProviderConnection(
         }
 
         providerId = setupOutcome.result.provider.id
-        let availableModels = setupOutcome.result.models
-
-        if (availableModels.length === 0) {
-          try {
-            const discovered = await operations.discoverModels(providerId)
-            if (discovered === null) {
-              return {
-                ok: false,
-                stage: "discovery",
-                error: new Error("Model discovery failed"),
-                providerId,
-              }
-            }
-            availableModels = discovered
-          } catch (error) {
-            return {
-              ok: false,
-              stage: "discovery",
-              error: asError(error, "Model discovery failed"),
-              providerId,
-            }
-          }
-        }
+        const availableModels = setupOutcome.result.models
 
         const model = availableModels.find(
           (candidate) => candidate.supports_tools === true,
