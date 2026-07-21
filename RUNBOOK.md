@@ -3,18 +3,14 @@
 This is the canonical runbook for local trials, source development, and shared
 deployments.
 
-## Localhost Installer (after the first tagged release)
+## Localhost Installer
 
 The release installer is the shortest path from an empty machine to the Agent
 workspace. It requires Docker Desktop or Docker Engine with Compose v2 and a
 local Unix-socket Docker context.
 
-This branch adds the installer and release packaging, but the repository does
-not yet have a numeric release containing those assets. Until that release exists,
-use the [source-build path](#2-build-from-source-with-docker).
-
-When a release includes `install.sh`, `docker-compose.local.yml`, and
-`SHA256SUMS`, install it with:
+The latest numeric release publishes `install.sh`, `docker-compose.local.yml`,
+and `SHA256SUMS`. Install it with:
 
 ```bash
 curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh

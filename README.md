@@ -51,8 +51,23 @@ or deliberately connected remote resources.
 Requirements: macOS or Linux, Docker Engine or Docker Desktop with Compose, and
 an `amd64` or `arm64` machine.
 
-Until the first tagged release publishes the installer and container images,
-clone the repository and build the current version from source:
+The shortest path for a trusted local machine is the release installer:
+
+```bash
+curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh
+```
+
+It verifies the published release assets, pulls the matching architecture, and
+opens <http://localhost:3000>. The localhost stack binds only to `127.0.0.1`,
+stores persistent state under `~/.bioinfoflow/data`, and opens the Agent without
+a Bioinfoflow login screen. Do not expose this no-auth localhost mode through a
+reverse proxy, port forward, or public Docker host.
+
+For updates, removal, version selection, checksum inspection, and source-build
+alternatives, see the [Docker and installer guide](docs/getting-started/docker.md).
+
+Build from source instead when developing Bioinfoflow or configuring a shared
+or remote deployment:
 
 ```bash
 git clone https://github.com/lewismessthecode/BioinfoFlow.git
@@ -73,8 +88,8 @@ Compose stack publishes its frontend and backend ports on host interfaces by
 default, so change the owner credentials before startup and use it only on a
 trusted machine and network.
 
-Open <http://localhost:3000>, sign in with the owner account you configured, and
-go to the Agent page.
+Open <http://localhost:3000>. Source builds use the owner account configured in
+`.env`; the localhost installer opens directly in development auth mode.
 
 Your first useful run takes three steps:
 
@@ -91,24 +106,6 @@ after approval.
 Provider setup is UI-first. OpenAI, Anthropic, and DeepSeek have a compact
 composer path; Kimi, Kimi China, Gemini, OpenRouter, Ollama, vLLM, and
 other compatible endpoints remain available in **Settings → AI Providers**.
-
-### One-line localhost installer
-
-Once the first numeric release publishes the installer and matching images, the
-shortest install path will be:
-
-```bash
-curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh
-```
-
-**That URL does not work yet because those release assets have not been
-published.** Until the first release is created and tested, use the source
-installation above.
-
-It stores data under `~/.bioinfoflow/data`, binds only to `127.0.0.1`, and opens
-the Agent page without a Bioinfoflow login screen. Updates, removal, version
-selection, and script-inspection instructions are in the
-[Docker and installer guide](docs/getting-started/docker.md).
 
 ## The Agent works through the platform
 

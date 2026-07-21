@@ -11,8 +11,8 @@ when you are developing Bioinfoflow or configuring a shared deployment.
 ## Localhost Installer
 
 Bioinfoflow publishes the installer, its Compose file, and their checksums as
-tagged-release assets. Once those three assets appear on the
-[Releases page](https://github.com/lewismessthecode/BioinfoFlow/releases), run:
+tagged-release assets on the
+[Releases page](https://github.com/lewismessthecode/BioinfoFlow/releases). Run:
 
 ```bash
 curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh
@@ -20,8 +20,7 @@ curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/downl
 
 The installer accepts only a local Unix-socket Docker context, selects the
 matching `amd64` or `arm64` images, verifies the downloaded release assets, and
-waits for the UI and API health checks. If the release assets are not available
-yet, continue with [Build From Source](#build-from-source).
+waits for the UI and API health checks.
 
 It manages two paths:
 
