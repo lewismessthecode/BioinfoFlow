@@ -242,6 +242,7 @@ async def test_active_skill_body_is_added_to_current_turn_context(db_session):
     assert "- nextflow-debugging (0.1.0): Diagnose failed Nextflow runs." in system_content
     assert "- wdl-debugging (0.1.0): Diagnose WDL runs." in system_content
     assert "## Active skills for this turn" in system_content
+    assert f"Skill directory: {skill_dir.resolve()}" in system_content
     assert "Use run logs, DAG, and audit events before explaining failures." in system_content
     assert "This inactive body should stay hidden." not in system_content
 
