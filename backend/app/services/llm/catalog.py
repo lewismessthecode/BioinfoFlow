@@ -44,6 +44,8 @@ from app.services.llm.provider_templates import (
     validate_provider_configuration,
 )
 from app.services.llm.probe import LlmProviderProbe
+from app.services.llm.profiles import ProviderConnection, profile_for
+from app.services.llm.registry import provider_spec_for_kind
 from app.services.model_runtime.backend.litellm_network import (
     network_policy_http_client,
 )
@@ -252,21 +254,11 @@ class LlmCatalogService:
                 {model.model_id for model in models},
                 stale_reason="not_in_template",
             )
-        discovered = False
-        if data.get("discover"):
-            models = await self.discover_models(
-                str(provider.id),
-                workspace_id=data["workspace_id"],
-                user_id=data["user_id"],
-                role=data.get("role"),
-            )
-            discovered = True
-
         return {
             "provider": provider,
             "credential": self.credential_read_dict(provider, credential),
             "models": models,
-            "discovered": discovered,
+            "discovered": False,
         }
 
     async def update_provider(self, provider_id: str, data: dict[str, Any]):
@@ -616,6 +608,66 @@ class LlmCatalogService:
         bounds each network call so startup bootstrap can fail fast.
         """
         validate_provider_transport(provider)
+        spec = provider_spec_for_kind(provider.kind)
+        if spec is not None:
+            profile = profile_for(provider.kind)
+            if spec.catalog.strategy == "bundled":
+                models = [
+                    await self._upsert_model_from_template(
+                        provider,
+                        ModelTemplate(
+                            id=model.id,
+                            name=model.name,
+                            context_length=model.context_length,
+                            max_output_tokens=model.max_output_tokens,
+                            supports_tools=model.supports_tools,
+                            supports_streaming=model.supports_streaming,
+                            supports_vision=model.supports_vision,
+                            supports_json_schema=model.supports_json_schema,
+                            supports_reasoning=model.supports_reasoning,
+                        ),
+                    )
+                    for model in spec.bundled_models
+                ]
+                return models
+            material = await self._provider_credential_material(provider)
+            request = profile.catalog_request(
+                ProviderConnection(
+                    base_url=provider.base_url or spec.endpoint.default_base_url,
+                    api_key=material.api_key,
+                )
+            )
+            if request is None:
+                return []
+            async with network_policy_http_client(
+                network_access=network_access,
+                timeout=timeout,
+            ) as client:
+                response = await _get_model_discovery_response(
+                    client,
+                    request.url,
+                    headers=request.headers,
+                    params=request.params,
+                )
+                _raise_for_model_discovery_status(response)
+            return await self._upsert_models_from_discovery(
+                provider,
+                [
+                    {
+                        "model_id": model.id,
+                        "display_name": model.name,
+                        "context_length": model.context_length,
+                        "max_output_tokens": model.max_output_tokens,
+                        "supports_tools": model.supports_tools,
+                        "supports_streaming": model.supports_streaming,
+                        "supports_vision": model.supports_vision,
+                        "supports_json_schema": model.supports_json_schema,
+                        "supports_reasoning": model.supports_reasoning,
+                        "metadata": {"source": "live_discovery"},
+                    }
+                    for model in profile.parse_catalog(response.json())
+                ],
+            )
         template = provider_template_for_provider(provider)
         discovery = template.discovery if template else "openai_models"
         if discovery == "ollama_tags":
@@ -853,6 +905,11 @@ class LlmCatalogService:
         provider: LlmProvider,
         model_template: ModelTemplate,
     ):
+        source = (
+            "catalog_snapshot"
+            if provider_spec_for_kind(provider.kind) is not None
+            else "provider_template"
+        )
         return await self._upsert_model_from_discovered(
             provider,
             {
@@ -865,7 +922,7 @@ class LlmCatalogService:
                 "supports_vision": model_template.supports_vision,
                 "supports_json_schema": model_template.supports_json_schema,
                 "supports_reasoning": model_template.supports_reasoning,
-                "metadata": {"source": "provider_template"},
+                "metadata": {"source": source},
             },
         )
 
@@ -909,6 +966,7 @@ class LlmCatalogService:
             provider,
             {model.model_id for model in models},
             stale_reason="not_returned_by_discovery",
+            preserve_sources={"manual", "provider_template", "catalog_snapshot"},
         )
         return models
 
@@ -918,14 +976,18 @@ class LlmCatalogService:
         active_model_ids: set[str],
         *,
         stale_reason: str,
+        preserve_sources: set[str] | None = None,
     ) -> None:
         existing_models = await self.model_repo.list_for_provider(str(provider.id))
         stale_at = datetime.now(timezone.utc).isoformat()
         for model in existing_models:
             if model.model_id in active_model_ids or not _model_is_active(model):
                 continue
+            metadata = model.model_metadata or {}
+            if metadata.get("source") in (preserve_sources or set()):
+                continue
             metadata = {
-                **(model.model_metadata or {}),
+                **metadata,
                 "catalog_status": "stale",
                 "stale_reason": stale_reason,
                 "stale_at": stale_at,

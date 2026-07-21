@@ -150,6 +150,7 @@ class LlmProviderTemplateRead(BaseModel):
         "openai_models",
         "ollama_tags",
         "anthropic_models",
+        "openrouter_models",
         "gemini_models",
         "cohere_models",
     ]
