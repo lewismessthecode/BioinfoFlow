@@ -86,6 +86,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const locale = await getLocale()
   const messages = await getMessages()
   const tA11y = await getTranslations("accessibility")
+  const analyticsEnabled =
+    process.env.VERCEL === "1" ||
+    process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === "true"
 
   return (
     <html lang={locale} suppressHydrationWarning>
@@ -101,7 +104,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <AppearanceProvider>{children}</AppearanceProvider>
           </ThemeProvider>
         </NextIntlClientProvider>
-        <Analytics />
+        {analyticsEnabled ? <Analytics /> : null}
         {process.env.NODE_ENV === "development" && <Agentation />}
       </body>
     </html>
