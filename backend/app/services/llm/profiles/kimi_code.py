@@ -1,10 +1,10 @@
 from typing import Any
 
-from app.services.llm.profiles.deepseek import DeepSeekProfile
+from app.services.llm.profiles.base import ProviderProfile
 from app.services.llm.profiles.kimi_schema import normalize_kimi_tool_schema
 from app.services.model_runtime.contracts import ReasoningRequest, WireProtocol
 
-class KimiCodeProfile(DeepSeekProfile):
+class KimiCodeProfile(ProviderProfile):
     def compile_request(
         self,
         request: dict[str, Any],

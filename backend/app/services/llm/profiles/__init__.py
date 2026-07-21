@@ -8,9 +8,11 @@ from app.services.llm.profiles.base import (
 )
 from app.services.llm.profiles.deepseek import DeepSeekProfile
 from app.services.llm.profiles.gemini import GeminiProfile
+from app.services.llm.profiles.huggingface import HuggingFaceProfile
 from app.services.llm.profiles.kimi_code import KimiCodeProfile
 from app.services.llm.profiles.minimax import MiniMaxProfile
 from app.services.llm.profiles.openrouter import OpenRouterProfile
+from app.services.llm.profiles.qwen import QwenProfile
 from app.services.llm.profiles.zai import ZaiProfile
 from app.services.llm.registry import provider_spec_for_kind
 
@@ -20,8 +22,10 @@ _PROFILE_TYPES = {
     "deepseek": DeepSeekProfile,
     "openrouter": OpenRouterProfile,
     "gemini": GeminiProfile,
+    "huggingface": HuggingFaceProfile,
     "minimax": MiniMaxProfile,
     "kimi_code": KimiCodeProfile,
+    "qwen": QwenProfile,
     "zai": ZaiProfile,
 }
 

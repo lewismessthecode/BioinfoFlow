@@ -6,7 +6,7 @@ from app.services.llm.profiles.base import ProviderProfile
 from app.services.model_runtime.contracts import ReasoningRequest, WireProtocol
 
 
-class ZaiProfile(ProviderProfile):
+class QwenProfile(ProviderProfile):
     def compile_request(
         self,
         request: dict[str, Any],
@@ -21,8 +21,10 @@ class ZaiProfile(ProviderProfile):
             wire_protocol=wire_protocol,
             reasoning=ReasoningRequest(enabled=False),
         )
+        if "qwen" not in model_name.lower():
+            return compiled
         compiled["extra_body"] = {
             **compiled.get("extra_body", {}),
-            "thinking": {"type": "enabled" if reasoning.enabled else "disabled"},
+            "enable_thinking": reasoning.enabled,
         }
         return compiled

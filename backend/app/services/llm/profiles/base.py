@@ -61,16 +61,6 @@ class ProviderProfile:
                 models.append(ModelSpec(model_id, item.get("name") or model_id))
         return tuple(models)
 
-    def invocation_options(
-        self,
-        model_name: str,
-        reasoning: ReasoningRequest,
-    ) -> dict[str, Any]:
-        del model_name
-        if not reasoning.enabled:
-            return {}
-        return {"reasoning_effort": reasoning.effort or "medium"}
-
     def compile_request(
         self,
         request: dict[str, Any],
@@ -79,9 +69,10 @@ class ProviderProfile:
         wire_protocol: WireProtocol,
         reasoning: ReasoningRequest,
     ) -> dict[str, Any]:
-        del wire_protocol
+        del model_name, wire_protocol
         compiled = copy.deepcopy(request)
-        compiled.update(self.invocation_options(model_name, reasoning))
+        if reasoning.enabled:
+            compiled["reasoning_effort"] = reasoning.effort or "medium"
         return compiled
 
 
