@@ -1,3 +1,36 @@
-from app.services.llm.profiles.base import ProviderProfile, profile_for
+from __future__ import annotations
 
-__all__ = ["ProviderProfile", "profile_for"]
+from app.services.llm.profiles.anthropic import AnthropicProfile
+from app.services.llm.profiles.base import (
+    CatalogRequest,
+    ProviderConnection,
+    ProviderProfile,
+)
+from app.services.llm.profiles.gemini import GeminiProfile
+from app.services.llm.profiles.minimax import MiniMaxProfile
+from app.services.llm.profiles.openrouter import OpenRouterProfile
+from app.services.llm.registry import provider_spec_for_kind
+
+
+_PROFILE_TYPES = {
+    "anthropic": AnthropicProfile,
+    "openrouter": OpenRouterProfile,
+    "gemini": GeminiProfile,
+    "minimax": MiniMaxProfile,
+}
+
+
+def profile_for(provider_kind: str) -> ProviderProfile:
+    spec = provider_spec_for_kind(provider_kind)
+    if spec is None:
+        raise ValueError(f"No provider profile for kind: {provider_kind}")
+    profile_type = _PROFILE_TYPES.get(provider_kind, ProviderProfile)
+    return profile_type(spec)
+
+
+__all__ = [
+    "CatalogRequest",
+    "ProviderConnection",
+    "ProviderProfile",
+    "profile_for",
+]
