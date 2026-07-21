@@ -77,7 +77,7 @@ Agent 页面。
 
 ### 一行安装什么时候可以用？
 
-首个带安装器和配套镜像的 `v*` 版本发布后，可以直接运行：
+首个带安装器和配套镜像的正式版本发布后，可以直接运行：
 
 ```bash
 curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh

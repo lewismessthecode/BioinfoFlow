@@ -7,7 +7,8 @@ This repository uses GitHub Actions to make worktree branches flow through PRs, 
 - `CI` runs on PRs to `main`, pushes to `main`, and manual dispatch.
 - `CodeQL` runs on PRs to `main`, pushes to `main`, weekly schedule, and manual dispatch.
 - `Container Release` publishes development Docker images after eligible code reaches `main`.
-- `Release` maintains the Release Please PR and publishes formal versioned images after that PR is intentionally merged.
+- `Release` maintains the Release Please PR and dispatches the installer/image release after that PR is intentionally merged.
+- `Installer Release` publishes three formal multi-architecture images, smoke-tests the localhost installer, and attaches its assets to the GitHub Release.
 - `PR Automation` opens a PR to `main` when you push a non-main branch.
 - `Auto Merge` queues a squash merge when a reviewed PR has the `automerge` label.
 
@@ -104,6 +105,7 @@ Development and formal release images are pushed to:
 ```text
 ghcr.io/lewismessthecode/bioinfoflow-backend
 ghcr.io/lewismessthecode/bioinfoflow-frontend
+ghcr.io/lewismessthecode/bioinfoflow-frontend-localhost
 ```
 
 Eligible merges to `main` publish development tags only:
@@ -113,14 +115,14 @@ main
 sha-<12-char-sha>
 ```
 
-The development workflow publishes backend and frontend independently.
-Backend-only changes publish only the backend image, frontend-only changes
-publish only the frontend image, and changes on both sides publish both images
-in parallel. Manual `workflow_dispatch` with `publish_images=force` publishes
-both development images; `publish_images=skip` publishes neither.
+The development workflow publishes backend and frontend images independently.
+Backend-only changes publish only the backend image. Frontend changes publish
+both authenticated and localhost frontend variants. Manual `workflow_dispatch`
+with `publish_images=force` publishes all three development images;
+`publish_images=skip` publishes none.
 
-Merging a Release Please PR publishes both backend and frontend with the same
-formal version:
+Merging a Release Please PR dispatches `Installer Release`, which publishes all
+three images with the same formal version:
 
 ```text
 0.2.1

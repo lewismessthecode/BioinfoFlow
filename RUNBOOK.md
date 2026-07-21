@@ -10,7 +10,7 @@ workspace. It requires Docker Desktop or Docker Engine with Compose v2 and a
 local Unix-socket Docker context.
 
 This branch adds the installer and release packaging, but the repository does
-not yet have a `v*` release containing those assets. Until that release exists,
+not yet have a numeric release containing those assets. Until that release exists,
 use the [source-build path](#2-build-from-source-with-docker).
 
 When a release includes `install.sh`, `docker-compose.local.yml`, and
@@ -251,9 +251,10 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-Formal images are published by `.github/workflows/release-please.yml` after a
-Release Please PR is intentionally merged. Development images are published by
-`.github/workflows/container-release.yml` after eligible changes reach `main`.
+After a Release Please PR is intentionally merged,
+`.github/workflows/release-please.yml` dispatches `.github/workflows/release.yml`
+to publish formal images and installer assets. Development images are published
+by `.github/workflows/container-release.yml` after eligible changes reach `main`.
 The stack uses:
 
 - `ghcr.io/lewismessthecode/bioinfoflow-backend:<tag>`

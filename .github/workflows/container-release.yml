@@ -11,6 +11,26 @@ on:
         required: false
         default: force
         type: string
+      checkout_ref:
+        description: "Git ref to build. Defaults to the triggering ref."
+        required: false
+        default: ""
+        type: string
+      release_version:
+        description: "Exact numeric release tag, or empty for development images."
+        required: false
+        default: ""
+        type: string
+      release_major_minor:
+        description: "Numeric major.minor release alias."
+        required: false
+        default: ""
+        type: string
+      release_major:
+        description: "Numeric major release alias."
+        required: false
+        default: ""
+        type: string
   workflow_dispatch:
     inputs:
       publish_images:
@@ -46,6 +66,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ inputs.checkout_ref || github.ref }}
 
       - name: Detect image changes
         id: changes
@@ -124,6 +145,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.checkout_ref || github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -142,10 +165,12 @@ jobs:
           images: ${{ needs.detect.outputs.backend_image }}
           flavor: latest=false
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=tag
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ inputs.release_version }},enable=${{ inputs.release_version != '' }}
+            type=raw,value=${{ inputs.release_major_minor }},enable=${{ inputs.release_major_minor != '' }}
+            type=raw,value=${{ inputs.release_major }},enable=${{ inputs.release_major != '' }}
+            type=raw,value=latest,enable=${{ inputs.release_version != '' }}
 
       - name: Publish backend image
         uses: docker/build-push-action@v7
@@ -167,6 +192,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.checkout_ref || github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -185,10 +212,12 @@ jobs:
           images: ${{ needs.detect.outputs.frontend_image }}
           flavor: latest=false
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=tag
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ inputs.release_version }},enable=${{ inputs.release_version != '' }}
+            type=raw,value=${{ inputs.release_major_minor }},enable=${{ inputs.release_major_minor != '' }}
+            type=raw,value=${{ inputs.release_major }},enable=${{ inputs.release_major != '' }}
+            type=raw,value=latest,enable=${{ inputs.release_version != '' }}
 
       - name: Generate localhost frontend image tags
         id: localhost-metadata
@@ -197,10 +226,12 @@ jobs:
           images: ${{ needs.detect.outputs.frontend_localhost_image }}
           flavor: latest=false
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=tag
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ inputs.release_version }},enable=${{ inputs.release_version != '' }}
+            type=raw,value=${{ inputs.release_major_minor }},enable=${{ inputs.release_major_minor != '' }}
+            type=raw,value=${{ inputs.release_major }},enable=${{ inputs.release_major != '' }}
+            type=raw,value=latest,enable=${{ inputs.release_version != '' }}
 
       - name: Publish frontend image
         uses: docker/build-push-action@v7

@@ -88,20 +88,39 @@ def test_changelog_starts_with_curated_initial_release() -> None:
 def test_main_container_workflow_only_publishes_development_tags() -> None:
     workflow = read_repo_file(".github/workflows/container-release.yml")
 
-    assert ":main" in workflow
-    assert ":sha-${{ needs.detect.outputs.short_sha }}" in workflow
-    assert ":latest" not in workflow
+    assert "type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}" in workflow
+    assert "type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/main' }}" in workflow
+    assert (
+        "type=raw,value=latest,enable=${{ inputs.release_version != '' }}"
+        in workflow
+    )
+    assert "type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}" not in workflow
 
 
 def test_formal_release_workflow_publishes_numeric_aliases() -> None:
     workflow = read_repo_file(".github/workflows/release-please.yml")
+    installer_workflow = read_repo_file(".github/workflows/release.yml")
+    container_workflow = read_repo_file(".github/workflows/container-release.yml")
 
     assert "googleapis/release-please-action@v4" in workflow
     assert "actions: write" in workflow
     assert 'gh workflow run ci.yml --ref "$head_branch"' in workflow
     assert "publish_version:" in workflow
     assert "include-v-in-tag" not in workflow
-    assert ":${{ needs.release.outputs.version }}" in workflow
-    assert ":${{ needs.release.outputs.major_minor }}" in workflow
-    assert ":${{ needs.release.outputs.major }}" in workflow
-    assert ":latest" in workflow
+    assert (
+        'gh workflow run release.yml --ref "$tag_name" '
+        '-f release_version="$version"'
+        in workflow
+    )
+    assert "publish-images:" not in workflow
+
+    assert "release_version:" in installer_workflow
+    assert "^[0-9]+\\.[0-9]+\\.[0-9]+$" in installer_workflow
+    assert "release_version: ${{ needs.resolve.outputs.version }}" in installer_workflow
+    assert "release_major_minor: ${{ needs.resolve.outputs.major_minor }}" in installer_workflow
+    assert "release_major: ${{ needs.resolve.outputs.major }}" in installer_workflow
+
+    assert "type=raw,value=${{ inputs.release_version }}" in container_workflow
+    assert "type=raw,value=${{ inputs.release_major_minor }}" in container_workflow
+    assert "type=raw,value=${{ inputs.release_major }}" in container_workflow
+    assert "type=raw,value=latest,enable=${{ inputs.release_version != '' }}" in container_workflow

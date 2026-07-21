@@ -440,14 +440,17 @@ else
 fi
 
 if grep -q 'docker/metadata-action@' "$ROOT/.github/workflows/container-release.yml" && \
-   grep -q 'type=raw,value=latest,enable=.*refs/heads/main' "$ROOT/.github/workflows/container-release.yml" && \
    grep -q 'type=raw,value=main,enable=.*refs/heads/main' "$ROOT/.github/workflows/container-release.yml" && \
-   grep -q 'type=ref,event=tag' "$ROOT/.github/workflows/container-release.yml" && \
-   grep -q 'type=sha' "$ROOT/.github/workflows/container-release.yml" && \
+   grep -q 'type=sha,prefix=sha-,enable=.*refs/heads/main' "$ROOT/.github/workflows/container-release.yml" && \
+   grep -q 'type=raw,value=.*inputs.release_version' "$ROOT/.github/workflows/container-release.yml" && \
+   grep -q 'type=raw,value=latest,enable=.*inputs.release_version' "$ROOT/.github/workflows/container-release.yml" && \
+   ! grep -q 'type=raw,value=latest,enable=.*refs/heads/main' "$ROOT/.github/workflows/container-release.yml" && \
+   grep -q 'gh workflow run release.yml --ref' "$ROOT/.github/workflows/release-please.yml" && \
+   grep -q 'release_version:' "$RELEASE_WORKFLOW" && \
    ! grep -q 'secrets: inherit' "$RELEASE_WORKFLOW"; then
-  pass "release tags isolate mutable main channels from version tags"
+  pass "numeric releases isolate stable aliases from development tags"
 else
-  fail "release tags isolate mutable main channels from version tags"
+  fail "numeric releases isolate stable aliases from development tags"
 fi
 
 latest_flavor_count=$(grep -c 'latest=false' "$ROOT/.github/workflows/container-release.yml" || true)

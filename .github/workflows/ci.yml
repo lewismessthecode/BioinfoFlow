@@ -74,7 +74,7 @@ jobs:
               frontend_changed="true"
             fi
 
-            if grep -Eq '^(backend/Dockerfile|frontend/Dockerfile|docker-compose(\.prod)?\.yml|backend/(pyproject\.toml|uv\.lock)|frontend/(package\.json|bun\.lock)|version\.txt|release-please-config\.json|\.release-please-manifest\.json|\.github/workflows/(ci|container-release|release-please)\.yml)$' "$changed_files"; then
+            if grep -Eq '^(backend/Dockerfile|frontend/Dockerfile|docker-compose(\.prod)?\.yml|backend/(pyproject\.toml|uv\.lock)|frontend/(package\.json|bun\.lock)|version\.txt|release-please-config\.json|\.release-please-manifest\.json|\.github/workflows/(ci|container-release|release-please|release)\.yml)$' "$changed_files"; then
               docker_changed="true"
             fi
 
