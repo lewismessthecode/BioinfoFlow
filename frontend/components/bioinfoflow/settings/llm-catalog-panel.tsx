@@ -832,7 +832,7 @@ function ProviderCard({
       {error ? (
         <div
           role="alert"
-          className="mt-3 flex items-start gap-2 rounded-lg border border-[#F4D6D7] bg-[#FDEBEC] px-3 py-2.5 text-xs leading-5 text-[#9F2F2D]"
+          className="mt-3 flex items-start gap-2 rounded-lg border border-error-border bg-error-muted px-3 py-2.5 text-xs leading-5 text-error-foreground"
         >
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
           <span className="text-pretty">{error}</span>
@@ -974,8 +974,8 @@ function ProviderProbeStatus({
       className={cn(
         "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border px-2.5 py-1.5 text-[11px] leading-4",
         result.success
-          ? "border-[#DDE8DB] bg-[#EDF3EC] text-[#346538]"
-          : "border-[#F4D6D7] bg-[#FDEBEC] text-[#9F2F2D]",
+          ? "border-success-border bg-success-muted text-success-foreground"
+          : "border-error-border bg-error-muted text-error-foreground",
       )}
     >
       <span className="font-semibold">
@@ -1010,7 +1010,7 @@ function ProviderStatus({
       className={cn(
         "inline-flex h-6 shrink-0 items-center rounded-md border px-2 text-[11px] font-medium tracking-[0.02em]",
         configured
-          ? "border-[#DDE8DB] bg-[#EDF3EC] text-[#346538]"
+          ? "border-success-border bg-success-muted text-success-foreground"
           : "border-border/70 bg-[#F7F6F3] text-muted-foreground",
       )}
     >
@@ -1164,7 +1164,7 @@ function ProviderCatalogError({
   onRetry: () => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-[10px] border border-[#F4D6D7] bg-[#FDEBEC] px-4 py-3 text-[#9F2F2D]">
+    <div className="flex items-center justify-between gap-4 rounded-[10px] border border-error-border bg-error-muted px-4 py-3 text-error-foreground">
       <div className="flex items-center gap-2.5">
         <AlertTriangle className="size-4 shrink-0" />
         <p className="text-sm font-medium">{t("providerCards.loadFailed")}</p>

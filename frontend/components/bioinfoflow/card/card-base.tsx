@@ -17,8 +17,8 @@ export function CardRoot({ className, variant = "default", ...props }: CardRootP
       className={cn(
         "rounded-xl border bg-card overflow-hidden",
         variant === "default" && "border-border",
-        variant === "success" && "border-emerald-200 dark:border-emerald-900/50",
-        variant === "error" && "border-red-200 dark:border-red-900/50",
+        variant === "success" && "border-success-border",
+        variant === "error" && "border-error-border",
         variant === "warning" && "border-amber-200 dark:border-amber-900/50",
         variant === "workbench" && "bif-workbench-card",
         className

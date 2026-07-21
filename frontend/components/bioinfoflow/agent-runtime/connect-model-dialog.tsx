@@ -210,7 +210,7 @@ export function ConnectModelDialog({
         {failureStage ? (
           <p
             role="alert"
-            className="rounded-[6px] border border-[#F4D6D7] bg-[#FDEBEC] px-3 py-2 text-xs leading-5 text-[#9F2F2D]"
+            className="rounded-[6px] border border-error-border bg-error-muted px-3 py-2 text-xs leading-5 text-error-foreground"
           >
             {t(`connectModel.errors.${failureStage}`)}
           </p>

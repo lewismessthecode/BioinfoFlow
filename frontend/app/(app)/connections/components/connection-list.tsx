@@ -182,7 +182,7 @@ function SummaryPill({
     <span
       className={cn(
         "inline-flex h-8 items-center gap-1.5 rounded-full border border-border/50 bg-muted/30 px-2.5 font-medium",
-        tone === "online" && "border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300",
+        tone === "online" && "border-success-border bg-success-muted text-success-foreground",
         tone === "attention" && "border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-300",
       )}
     >

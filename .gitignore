@@ -152,6 +152,7 @@ backend/output/
 
 # --- Design artifacts (personal) ---
 .impeccable.md
+.superpowers/
 frontend/public/mockups/
 
 # --- Root-level npm (claude-code CLI only) ---

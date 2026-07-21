@@ -939,7 +939,7 @@ function AgentTokenUsageBadge({
   })
   const toneClass =
     view.status === "critical"
-      ? "border-[#FDEBEC] bg-[#FDEBEC]/70 text-[#9F2F2D]"
+      ? "border-error-border bg-error-muted text-error-foreground"
       : view.status === "warning"
         ? "border-foreground/12 bg-foreground/[0.045] text-foreground/72"
         : ""
@@ -983,7 +983,7 @@ function AgentTokenUsageBadge({
                   className={cn(
                     "h-full rounded-sm transition-[width] duration-200",
                     view.status === "critical"
-                      ? "bg-[#9F2F2D]"
+                      ? "bg-error"
                       : view.status === "warning"
                         ? "bg-foreground/45"
                         : "bg-foreground/55",

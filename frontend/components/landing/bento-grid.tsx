@@ -88,12 +88,12 @@ function GpuVisual() {
           30h
         </span>
       </div>
-      <ChevronRight className="w-4 h-4 text-green-500" />
+      <ChevronRight className="h-4 w-4 text-success" />
       <div className="flex flex-col items-center">
-        <span className="text-xs text-green-600 dark:text-green-400 font-medium">
+        <span className="text-xs font-medium text-success-foreground">
           GPU
         </span>
-        <span className="text-sm font-mono text-green-600 dark:text-green-400 font-bold">
+        <span className="font-mono text-sm font-bold text-success-foreground">
           &lt;2h
         </span>
       </div>

@@ -137,10 +137,10 @@ function CommandArtifact({ artifact }: { artifact: AgentRuntimeArtifact }) {
         </span>
       </div>
       <div className="rounded-lg border border-border/70 bg-foreground/95 p-3 font-mono text-xs leading-5 text-background dark:bg-black/70 dark:text-foreground">
-        <div className="mb-2 text-emerald-400">$ {command}</div>
+        <div className="mb-2 text-success">$ {command}</div>
         {stdout ? <pre className="whitespace-pre-wrap break-words">{stdout}</pre> : null}
         {stderr ? (
-          <pre className="whitespace-pre-wrap break-words text-red-400">{stderr}</pre>
+          <pre className="whitespace-pre-wrap break-words text-error">{stderr}</pre>
         ) : null}
         {!stdout && !stderr ? <span className="text-muted-foreground">—</span> : null}
       </div>

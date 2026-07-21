@@ -17,9 +17,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--normal-bg": "var(--popover)",
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "var(--border)",
-          "--error-bg": "color-mix(in oklab, var(--destructive) 14%, white)",
-          "--error-text": "color-mix(in oklab, var(--destructive) 88%, black)",
-          "--error-border": "color-mix(in oklab, var(--destructive) 55%, white)",
+          "--error-bg": "var(--error-muted)",
+          "--error-text": "var(--error-foreground)",
+          "--error-border": "var(--error-border)",
         } as React.CSSProperties
       }
       {...props}

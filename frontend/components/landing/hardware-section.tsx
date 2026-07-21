@@ -161,7 +161,7 @@ export function HardwareSection() {
       <div className="container mx-auto px-6">
         <FadeInOnScroll>
           <div className="text-center mb-14">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 text-green-600 dark:text-green-400 text-xs font-medium mb-4">
+            <span className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-success-border bg-success-muted px-3 py-1 text-xs font-medium text-success-foreground">
               <Cpu className="w-3 h-3" />
               {t("badge")}
             </span>
@@ -219,7 +219,7 @@ export function HardwareSection() {
               ) : status.checked ? (
                 <>
                   {status.compatible ? (
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <CheckCircle2 className="h-4 w-4 text-success" />
                   ) : (
                     <AlertCircle className="w-4 h-4" />
                   )}

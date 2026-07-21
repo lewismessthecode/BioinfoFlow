@@ -11,7 +11,7 @@ describe("workflow source diff styling", () => {
 
     expect(source).not.toContain("border-r border-border/50")
     expect(source).not.toContain("border-b border-border/60")
-    expect(source).toContain("bg-rose-50/90")
-    expect(source).toContain("bg-emerald-50/90")
+    expect(source).toContain("bg-error-muted")
+    expect(source).toContain("bg-success-muted")
   })
 })

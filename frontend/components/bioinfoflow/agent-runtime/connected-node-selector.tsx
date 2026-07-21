@@ -195,10 +195,10 @@ export function ConnectedNodeSelector({
               {showTargetPill ? (
                 <span
                   key={pillLabel}
-                  className="inline-flex max-w-[5.75rem] items-center gap-1 overflow-hidden rounded-[7px] bg-[#EDF3EC] px-1.5 py-0.5 text-[11px] font-medium leading-none text-[#346538] animate-in fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none motion-reduce:transition-none"
+                  className="inline-flex max-w-[5.75rem] items-center gap-1 overflow-hidden rounded-[7px] border border-success-border bg-success-muted px-1.5 py-0.5 text-[11px] font-medium leading-none text-success-foreground animate-in fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none motion-reduce:transition-none"
                   data-testid="execution-current-target-pill"
                 >
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#346538]" />
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
                   <span className="truncate">{pillLabel}</span>
                 </span>
               ) : null}

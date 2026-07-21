@@ -94,7 +94,7 @@ function TerminalDot({ status }: { status: RunStatus }) {
   const t = useTranslations("runs.stage")
   if (status === "completed") {
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
+      <span className="inline-flex items-center gap-1 text-xs text-success-foreground">
         <Check className="size-4" />
         {t("completed")}
       </span>
@@ -102,7 +102,7 @@ function TerminalDot({ status }: { status: RunStatus }) {
   }
   if (status === "failed") {
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-destructive">
+      <span className="inline-flex items-center gap-1 text-xs text-error-foreground">
         <XCircle className="size-4" />
         {t("failed")}
       </span>

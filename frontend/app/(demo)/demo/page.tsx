@@ -83,7 +83,7 @@ export default function DemoPage() {
         {/* Chat panel */}
         <div className="flex flex-1 flex-col border-r border-border">
           <div className="flex items-center gap-2 border-b border-border px-4 py-2">
-            <div className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+            <div className="size-2 rounded-full bg-success animate-pulse" />
             <span className="text-xs font-medium text-muted-foreground">
               {statusLabel}
             </span>
@@ -136,7 +136,7 @@ export default function DemoPage() {
             {runStatus && (
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
                 runStatus === "completed"
-                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  ? "bg-success-muted text-success-foreground"
                   : runStatus === "running"
                     ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
                     : "bg-muted text-muted-foreground"

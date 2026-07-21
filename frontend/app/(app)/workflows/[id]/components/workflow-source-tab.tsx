@@ -68,8 +68,8 @@ function DiffCell({
       className={cn(
         "grid min-h-7 grid-cols-[56px_22px_minmax(0,1fr)] font-mono text-[13px] leading-5",
         kind === "context" && "bg-transparent",
-        kind === "remove" && !isEmpty && "bg-rose-50/90 dark:bg-rose-950/25",
-        kind === "add" && !isEmpty && "bg-emerald-50/90 dark:bg-emerald-950/25",
+        kind === "remove" && !isEmpty && "bg-error-muted",
+        kind === "add" && !isEmpty && "bg-success-muted",
         isEmpty && "bg-muted/20 text-transparent",
       )}
     >
@@ -79,8 +79,8 @@ function DiffCell({
       <div
         className={cn(
           "px-1.5 py-1 text-center select-none",
-          kind === "remove" && !isEmpty && "text-rose-700 dark:text-rose-300",
-          kind === "add" && !isEmpty && "text-emerald-700 dark:text-emerald-300",
+          kind === "remove" && !isEmpty && "text-error-foreground",
+          kind === "add" && !isEmpty && "text-success-foreground",
           kind === "context" && "text-muted-foreground/50",
         )}
       >
@@ -202,10 +202,10 @@ export function WorkflowSourceTab({
             </Badge>
             {diff ? (
               <>
-                <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
+                <Badge className="border-success-border bg-success-muted text-success-foreground">
                   +{diff.summary.additions}
                 </Badge>
-                <Badge className="border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+                <Badge className="border-error-border bg-error-muted text-error-foreground">
                   -{diff.summary.deletions}
                 </Badge>
               </>
