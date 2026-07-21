@@ -190,7 +190,12 @@ def test_kimi_k3_maps_medium_effort_to_supported_high_tier() -> None:
             ("reasoning", "effort"),
             "high",
         ),
-        ("fireworks", "accounts/fireworks/models/gpt-oss-120b", ("reasoning_effort",), "high"),
+        (
+            "fireworks",
+            "accounts/fireworks/models/gpt-oss-120b",
+            ("reasoning_effort",),
+            "high",
+        ),
         ("qwen", "qwen3-max", ("extra_body", "enable_thinking"), True),
         ("deepseek", "deepseek-reasoner", ("thinking", "type"), "enabled"),
         ("xai", "grok-4.5", ("reasoning_effort",), "high"),

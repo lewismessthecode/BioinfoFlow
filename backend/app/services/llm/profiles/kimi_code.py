@@ -4,6 +4,7 @@ from app.services.llm.profiles.base import ProviderProfile
 from app.services.llm.profiles.kimi_schema import normalize_kimi_tool_schema
 from app.services.model_runtime.contracts import ReasoningRequest, WireProtocol
 
+
 class KimiCodeProfile(ProviderProfile):
     def compile_request(
         self,
@@ -33,7 +34,9 @@ class KimiCodeProfile(ProviderProfile):
         }
         for tool in compiled.get("tools", []):
             function = tool.get("function") if isinstance(tool, dict) else None
-            parameters = function.get("parameters") if isinstance(function, dict) else None
+            parameters = (
+                function.get("parameters") if isinstance(function, dict) else None
+            )
             if isinstance(parameters, dict):
                 function["parameters"] = normalize_kimi_tool_schema(parameters)
         for message in compiled.get("messages", []):

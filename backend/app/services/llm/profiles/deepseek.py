@@ -19,7 +19,5 @@ class DeepSeekProfile(ProviderProfile):
             wire_protocol=wire_protocol,
             reasoning=ReasoningRequest(enabled=False),
         )
-        compiled["thinking"] = {
-            "type": "enabled" if reasoning.enabled else "disabled"
-        }
+        compiled["thinking"] = {"type": "enabled" if reasoning.enabled else "disabled"}
         return compiled
