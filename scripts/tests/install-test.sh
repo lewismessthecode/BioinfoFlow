@@ -53,6 +53,8 @@ case "$*" in
   context\ inspect*) printf '%s\n' "${FAKE_DOCKER_ENDPOINT:-unix:///var/run/docker.sock}" ;;
   *" pull"*) [ "${FAKE_PULL_FAIL:-0}" = 0 ] ;;
   *" up -d"*) [ "${FAKE_UP_FAIL:-0}" = 0 ] ;;
+  *" stop"*) [ "${FAKE_STOP_FAIL:-0}" = 0 ] ;;
+  *" run --rm --no-deps --entrypoint /bin/chown backend -R "*) [ "${FAKE_CHOWN_FAIL:-0}" = 0 ] ;;
   *" down --remove-orphans"*) [ "${FAKE_DOWN_FAIL:-0}" = 0 ] ;;
   *" ps"*) printf '%s\n' 'bioinfoflow status snapshot' ;;
   *" logs"*) printf '%s\n' 'bounded diagnostic log' ;;
@@ -286,8 +288,15 @@ setup_case
 run_installer ARGS=--no-open
 mkdir -p "$HOME_DIR/.bioinfoflow/data"
 printf 'keep me\n' > "$HOME_DIR/.bioinfoflow/data/user-file"
+: > "$CALLS"
 run_installer ARGS=--uninstall
-if [ "$STATUS" -eq 0 ] && [ -f "$HOME_DIR/.bioinfoflow/data/user-file" ] && [ ! -e "$HOME_DIR/.bioinfoflow/install" ]; then pass "uninstall preserves user data"; else fail "uninstall preserves user data"; fi
+if [ "$STATUS" -eq 0 ] && [ -f "$HOME_DIR/.bioinfoflow/data/user-file" ] && [ ! -e "$HOME_DIR/.bioinfoflow/install" ] && grep -q ' stop' "$CALLS" && grep -q ' run --rm --no-deps --entrypoint /bin/chown backend -R ' "$CALLS"; then pass "uninstall preserves host-owned user data"; else fail "uninstall preserves host-owned user data (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"; fi
+teardown_case
+
+setup_case
+run_installer ARGS=--no-open
+run_installer FAKE_CHOWN_FAIL=1 ARGS=--uninstall
+if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ] && assert_contains "$OUTPUT" "ownership"; then pass "uninstall preserves control and data when ownership handoff fails"; else fail "uninstall preserves control and data when ownership handoff fails (status=$STATUS output=$OUTPUT)"; fi
 teardown_case
 
 setup_case
@@ -421,10 +430,11 @@ fi
 # The workflow expression is intentionally matched as a literal string.
 # shellcheck disable=SC2016
 if grep -Fq '[ "$GITHUB_REF_NAME" != "$version" ] && [ "$GITHUB_REF_NAME" != "main" ]' "$RELEASE_WORKFLOW" && \
-   grep -q 'ref:.*needs.resolve.outputs.version' "$RELEASE_WORKFLOW"; then
-  pass "release recovery runs fixed workflow code against immutable tag source"
+   grep -q 'checkout_ref:.*needs.resolve.outputs.version' "$RELEASE_WORKFLOW" && \
+   [ "$(grep -c '^[[:space:]]*ref:.*needs.resolve.outputs.version' "$RELEASE_WORKFLOW" || true)" -eq 0 ]; then
+  pass "release recovery packages fixed main assets while images use immutable tag source"
 else
-  fail "release recovery runs fixed workflow code against immutable tag source"
+  fail "release recovery packages fixed main assets while images use immutable tag source"
 fi
 
 if grep -q 'AUTH_MODE == "dev"' "$RELEASE_WORKFLOW" && \

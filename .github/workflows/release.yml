@@ -54,8 +54,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.resolve.outputs.version }}
 
       - name: Verify shell behavior
         run: |
@@ -85,8 +83,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.resolve.outputs.version }}
 
       - name: Build version-matched installer assets
         env:
