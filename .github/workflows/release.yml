@@ -227,10 +227,7 @@ jobs:
         run: cd dist && sha256sum -c SHA256SUMS
 
       - name: Upload release assets
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.resolve.outputs.version }}
-          files: |
-            dist/install.sh
-            dist/docker-compose.local.yml
-            dist/SHA256SUMS
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.version }}
+        run: gh release upload "$RELEASE_TAG" dist/install.sh dist/docker-compose.local.yml dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
