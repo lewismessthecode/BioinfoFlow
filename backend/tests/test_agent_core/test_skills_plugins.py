@@ -314,6 +314,7 @@ async def test_skill_and_plugin_tools_use_default_registry_roots(tmp_path: Path,
 
     loaded = await LoadSkillTool().run({"name": "multiqc"}, context)
     assert loaded["skill"]["body"].startswith("# MultiQC")
+    assert loaded["skill"]["directory"] == str((tmp_path / "skills" / "multiqc").resolve())
 
     listed_plugins = await ListPluginsTool().run({}, context)
     assert listed_plugins["plugins"][0]["id"] == "qc-plugin"
@@ -381,9 +382,10 @@ async def test_skill_tools_use_repo_scoped_registry_with_debug_payloads(
             "description": "Configured-only guidance.",
             "category": None,
             "tags": [],
-            "source": "configured",
-            "root": str(configured_root.resolve()),
-            "path": str(configured_root / "configured-only" / "SKILL.md"),
+                "source": "configured",
+                "root": str(configured_root.resolve()),
+                "path": str(configured_root / "configured-only" / "SKILL.md"),
+                "directory": str((configured_root / "configured-only").resolve()),
         },
         {
             "name": "shared-qc",
@@ -392,9 +394,10 @@ async def test_skill_tools_use_repo_scoped_registry_with_debug_payloads(
             "description": "Repo scoped QC guidance.",
             "category": None,
             "tags": [],
-            "source": "repo",
-            "root": str(repo_skills_root.resolve()),
-            "path": str(repo_skills_root / "shared-qc" / "SKILL.md"),
+                "source": "repo",
+                "root": str(repo_skills_root.resolve()),
+                "path": str(repo_skills_root / "shared-qc" / "SKILL.md"),
+                "directory": str((repo_skills_root / "shared-qc").resolve()),
         },
     ]
 

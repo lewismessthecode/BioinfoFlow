@@ -120,6 +120,7 @@ def _skill_payload(skill, *, include_body: bool = False) -> dict[str, Any]:
         "source": skill.source,
         "root": str(skill.root) if skill.root else None,
         "path": str(skill.path),
+        "directory": str(skill.path.parent),
     }
     if include_body:
         payload["body"] = skill.body

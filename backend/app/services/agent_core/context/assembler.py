@@ -523,6 +523,11 @@ class AgentContextAssembler:
             for skill in active_skills:
                 lines.append("")
                 lines.append(f"### {skill.name} ({skill.version})")
+                lines.append(f"Skill directory: {skill.path.parent}")
+                lines.append(
+                    "Resolve relative references/, scripts/, assets/, and templates/ "
+                    "paths from this directory."
+                )
                 lines.append(skill.body)
 
         enabled_plugins = plugins.list()
