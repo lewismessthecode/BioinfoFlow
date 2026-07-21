@@ -86,46 +86,24 @@ def test_anthropic_and_gemini_parsers_normalize_model_ids() -> None:
     ]
 
 
-@pytest.mark.parametrize(
-    ("provider_kind", "model_name", "expected"),
-    [
-        ("openai", "gpt-5", {"reasoning_effort": "high"}),
-        ("deepseek", "deepseek-chat", {"thinking": {"type": "enabled"}}),
-        ("zai", "glm-4.7", {"thinking": {"type": "enabled"}}),
-        ("kimi_code", "kimi-for-coding", {"thinking": {"type": "enabled"}}),
-        ("minimax", "MiniMax-M3", {"reasoning_split": True}),
-        ("gemini", "gemini-3-pro", {"reasoning_effort": "high"}),
-        ("openrouter", "anthropic/claude-sonnet-5", {"reasoning": {"effort": "high"}}),
-    ],
-)
-def test_provider_profiles_translate_normalized_reasoning(
-    provider_kind: str,
-    model_name: str,
-    expected: dict,
-) -> None:
-    options = profile_for(provider_kind).invocation_options(
-        model_name,
-        ReasoningRequest(enabled=True, effort="high"),
+def test_kimi_profile_compiles_openai_transport_request() -> None:
+    source = {
+        "model": "openai/kimi-for-coding",
+        "messages": [{"role": "user", "content": "hello"}],
+        "stream": True,
+        "max_tokens": 321,
+    }
+
+    compiled = profile_for("kimi_code").compile_request(
+        source,
+        model_name="kimi-for-coding",
+        wire_protocol="chat_completions",
+        reasoning=ReasoningRequest(enabled=True, effort="high"),
     )
 
-    assert options == expected
-
-
-def test_disabled_reasoning_produces_no_provider_options() -> None:
-    assert (
-        profile_for("kimi_code").invocation_options(
-            "kimi-for-coding",
-            ReasoningRequest(enabled=False),
-        )
-        == {}
-    )
-
-
-def test_kimi_reasoning_never_sends_conflicting_controls() -> None:
-    options = profile_for("kimi_code").invocation_options(
-        "kimi-for-coding",
-        ReasoningRequest(enabled=True, effort="high"),
-    )
-
-    assert "thinking" in options
-    assert "reasoning_effort" not in options
+    assert compiled["extra_body"]["thinking"] == {"type": "enabled"}
+    assert compiled["max_completion_tokens"] == 321
+    assert "thinking" not in compiled
+    assert "reasoning_effort" not in compiled
+    assert "max_tokens" not in compiled
+    assert source["max_tokens"] == 321

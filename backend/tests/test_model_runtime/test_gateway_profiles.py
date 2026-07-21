@@ -54,5 +54,8 @@ async def test_gateway_applies_provider_profile_before_backend() -> None:
     async for _ in gateway.invoke(invocation):
         pass
 
-    assert backend.request["thinking"] == {"type": "enabled"}
+    assert backend.request["extra_body"]["thinking"] == {"type": "enabled"}
+    assert backend.request["max_completion_tokens"] == 100
+    assert "thinking" not in backend.request
     assert "reasoning_effort" not in backend.request
+    assert "max_tokens" not in backend.request

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any
 
 from app.services.llm.registry import ModelSpec, ProviderSpec
-from app.services.model_runtime.contracts import ReasoningRequest
+from app.services.model_runtime.contracts import ReasoningRequest, WireProtocol
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,19 @@ class ProviderProfile:
         if not reasoning.enabled:
             return {}
         return {"reasoning_effort": reasoning.effort or "medium"}
+
+    def compile_request(
+        self,
+        request: dict[str, Any],
+        *,
+        model_name: str,
+        wire_protocol: WireProtocol,
+        reasoning: ReasoningRequest,
+    ) -> dict[str, Any]:
+        del wire_protocol
+        compiled = copy.deepcopy(request)
+        compiled.update(self.invocation_options(model_name, reasoning))
+        return compiled
 
 
 def _compose_catalog_url(base_url: str, path: str) -> str:
