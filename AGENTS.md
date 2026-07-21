@@ -176,6 +176,18 @@ rtk bun run test:coverage
 - Treat the PR title as the canonical squash-merge commit message. Normalize it
   unless the user explicitly asks otherwise.
 
+## Releases
+
+- Use bare numeric release tags such as `0.2.0`; never add a `v` prefix.
+- Squash-merged `fix:` and `perf:` PRs drive patch releases, while `feat:` PRs
+  drive minor releases. Breaking changes below `1.0.0` also drive a minor bump.
+- Do not edit `CHANGELOG.md` in ordinary feature or fix PRs. Release Please owns
+  the next release entry; curate it in the Release PR when needed.
+- Never add `automerge` to a Release PR. Merging that PR is the intentional
+  production release gate.
+- Follow `docs/development/releases.md` for the complete release, bootstrap,
+  verification, and recovery SOP.
+
 ## Compacting
 
 When compacting, preserve:

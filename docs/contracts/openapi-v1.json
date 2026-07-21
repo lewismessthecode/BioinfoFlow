@@ -55,6 +55,35 @@
         "title": "AgentActionDecisionRequest",
         "type": "object"
       },
+      "AgentExecutionScope": {
+        "properties": {
+          "mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "manual"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "selected_targets": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AgentExecutionTarget"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Targets"
+          }
+        },
+        "title": "AgentExecutionScope",
+        "type": "object"
+      },
       "AgentExecutionTarget": {
         "properties": {
           "connection_id": {
@@ -247,6 +276,16 @@
             ],
             "title": "Default Model Profile Id"
           },
+          "execution_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentExecutionScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "execution_target": {
             "anyOf": [
               {
@@ -359,6 +398,16 @@
               }
             ],
             "title": "Default Model Profile Id"
+          },
+          "execution_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentExecutionScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "execution_target": {
             "anyOf": [
@@ -489,6 +538,16 @@
               }
             ],
             "title": "Active Skill Names"
+          },
+          "execution_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentExecutionScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "execution_target": {
             "anyOf": [

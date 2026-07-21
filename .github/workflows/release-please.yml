@@ -1,0 +1,165 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      publish_version:
+        description: "Publish images for an existing numeric GitHub Release (bootstrap or recovery only)."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  packages: write
+  pull-requests: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: prepare release
+    runs-on: ubuntu-latest
+    outputs:
+      should_publish: ${{ steps.resolve.outputs.should_publish }}
+      tag_name: ${{ steps.resolve.outputs.tag_name }}
+      version: ${{ steps.resolve.outputs.version }}
+      major_minor: ${{ steps.resolve.outputs.major_minor }}
+      major: ${{ steps.resolve.outputs.major }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Maintain release pull request
+        id: release
+        if: github.event_name != 'workflow_dispatch' || inputs.publish_version == ''
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Run required checks for the release pull request
+        if: steps.release.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PR: ${{ steps.release.outputs.pr }}
+        run: |
+          set -euo pipefail
+
+          head_branch="$(printf '%s' "$RELEASE_PR" | jq -r '.headBranchName')"
+          if [ -z "$head_branch" ] || [ "$head_branch" = "null" ]; then
+            echo "Release Please did not return a release pull request branch."
+            exit 1
+          fi
+
+          gh workflow run ci.yml --ref "$head_branch"
+          echo "Dispatched required CI checks for $head_branch."
+
+      - name: Resolve formal release
+        id: resolve
+        if: steps.release.outputs.release_created == 'true' || inputs.publish_version != ''
+        env:
+          ACTION_TAG: ${{ steps.release.outputs.tag_name }}
+          ACTION_VERSION: ${{ steps.release.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUESTED_VERSION: ${{ inputs.publish_version }}
+        run: |
+          set -euo pipefail
+
+          version="${REQUESTED_VERSION:-$ACTION_VERSION}"
+          tag_name="${REQUESTED_VERSION:-$ACTION_TAG}"
+
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Release version must be a bare numeric semantic version: $version"
+            exit 2
+          fi
+
+          if [ "$tag_name" != "$version" ]; then
+            echo "Release tag must exactly match the numeric version: tag=$tag_name version=$version"
+            exit 2
+          fi
+
+          git fetch origin "refs/tags/${tag_name}:refs/tags/${tag_name}"
+          git rev-parse --verify "refs/tags/${tag_name}^{commit}"
+          gh release view "$tag_name" --repo "$GITHUB_REPOSITORY" >/dev/null
+
+          major="${version%%.*}"
+          remainder="${version#*.}"
+          minor="${remainder%%.*}"
+
+          {
+            echo "should_publish=true"
+            echo "tag_name=$tag_name"
+            echo "version=$version"
+            echo "major_minor=${major}.${minor}"
+            echo "major=$major"
+          } >> "$GITHUB_OUTPUT"
+
+  publish-images:
+    name: publish ${{ matrix.component }} release image
+    needs: release
+    if: needs.release.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            build_args: ""
+          - component: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+            build_args: |-
+              NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
+              NEXT_PUBLIC_AUTH_MODE=personal
+              NEXT_PUBLIC_AUTH_LOCAL_ENABLED=true
+              NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED=false
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.tag_name }}
+
+      - name: Set image name
+        id: image
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          echo "name=ghcr.io/${owner}/bioinfoflow-${COMPONENT}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish formal release image
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          build-args: ${{ matrix.build_args }}
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ needs.release.outputs.version }}
+            ${{ steps.image.outputs.name }}:${{ needs.release.outputs.major_minor }}
+            ${{ steps.image.outputs.name }}:${{ needs.release.outputs.major }}
+            ${{ steps.image.outputs.name }}:latest
+          cache-from: type=gha,scope=release-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.component }}

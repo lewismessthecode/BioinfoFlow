@@ -170,7 +170,7 @@ If the server has NVIDIA GPUs but the readiness drawer still says the backend ca
 
 ### Fast localhost run with published images
 
-Use this path when you want to try the latest `main` release without building images locally:
+Use this path when you want to try the latest formal release without building images locally:
 
 ```bash
 cp .env.example .env
@@ -183,12 +183,18 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-The images are published by `.github/workflows/container-release.yml` after `main` receives backend or frontend code changes. The stack uses:
+Formal images are published by `.github/workflows/release-please.yml` after a
+Release Please PR is intentionally merged. Development images are published by
+`.github/workflows/container-release.yml` after eligible changes reach `main`.
+The stack uses:
 
 - `ghcr.io/lewismessthecode/bioinfoflow-backend:<tag>`
 - `ghcr.io/lewismessthecode/bioinfoflow-frontend:<tag>`
 
-Available tags are `latest`, `main`, and `sha-<12-char-commit>`.
+Formal tags are exact numeric versions such as `0.1.0`, minor aliases such as
+`0.1`, major aliases such as `0`, and `latest`. Development tags are `main` and
+`sha-<12-char-commit>`. Pin both services to the same exact numeric version for
+reproducible deployments.
 
 The published frontend image is fixed at build time to the localhost API URL,
 personal auth mode, local email/password auth, and disabled self-signup. For a

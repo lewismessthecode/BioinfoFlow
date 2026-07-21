@@ -131,7 +131,6 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ${{ needs.detect.outputs.backend_image }}:latest
             ${{ needs.detect.outputs.backend_image }}:main
             ${{ needs.detect.outputs.backend_image }}:sha-${{ needs.detect.outputs.short_sha }}
           cache-from: type=gha,scope=backend
@@ -168,7 +167,6 @@ jobs:
             NEXT_PUBLIC_AUTH_LOCAL_ENABLED=true
             NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED=false
           tags: |
-            ${{ needs.detect.outputs.frontend_image }}:latest
             ${{ needs.detect.outputs.frontend_image }}:main
             ${{ needs.detect.outputs.frontend_image }}:sha-${{ needs.detect.outputs.short_sha }}
           cache-from: type=gha,scope=frontend

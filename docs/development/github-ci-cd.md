@@ -6,9 +6,15 @@ This repository uses GitHub Actions to make worktree branches flow through PRs, 
 
 - `CI` runs on PRs to `main`, pushes to `main`, and manual dispatch.
 - `CodeQL` runs on PRs to `main`, pushes to `main`, weekly schedule, and manual dispatch.
-- `Container Release` publishes backend and frontend Docker images to GHCR after code reaches `main`.
+- `Container Release` publishes development Docker images after eligible code reaches `main`.
+- `Release` maintains the Release Please PR and publishes formal versioned images after that PR is intentionally merged.
 - `PR Automation` opens a PR to `main` when you push a non-main branch.
 - `Auto Merge` queues a squash merge when a reviewed PR has the `automerge` label.
+
+Release Please creates its pull request with `GITHUB_TOKEN`. The `Release`
+workflow explicitly dispatches `CI` against the generated release branch so the
+protected `backend`, `frontend`, and `docker` checks still run. Release PRs must
+not receive the `automerge` label.
 
 ## CI Change Detection
 
@@ -93,19 +99,37 @@ The recommended daily path is still squash merge. Rebase merge remains available
 
 ## Published Images
 
-After a successful merge to `main`, changed images are pushed to:
+Development and formal release images are pushed to:
 
 ```text
 ghcr.io/lewismessthecode/bioinfoflow-backend
 ghcr.io/lewismessthecode/bioinfoflow-frontend
 ```
 
-Each image gets:
+Eligible merges to `main` publish development tags only:
 
 ```text
-latest
 main
 sha-<12-char-sha>
 ```
 
-The release workflow publishes backend and frontend independently. Backend-only changes publish only the backend image, frontend-only changes publish only the frontend image, and changes on both sides publish both images in parallel. Manual `workflow_dispatch` with `publish_images=force` publishes both images; `publish_images=skip` publishes neither.
+The development workflow publishes backend and frontend independently.
+Backend-only changes publish only the backend image, frontend-only changes
+publish only the frontend image, and changes on both sides publish both images
+in parallel. Manual `workflow_dispatch` with `publish_images=force` publishes
+both development images; `publish_images=skip` publishes neither.
+
+Merging a Release Please PR publishes both backend and frontend with the same
+formal version:
+
+```text
+0.2.1
+0.2
+0
+latest
+```
+
+Exact numeric versions identify immutable release source. Minor, major, and
+`latest` aliases advance to the newest formal release. Ordinary merges to
+`main` never update `latest`. See the [Release Maintainer SOP](releases.md) for
+the release procedure and recovery rules.
