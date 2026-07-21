@@ -2,8 +2,8 @@
 
 ## Status
 
-Approved direction in conversation on 2026-07-21. This document is the written
-design review gate before implementation planning.
+Implemented on branch `codex/provider-registry-phase-one`. This document records
+the approved design and the implementation boundary.
 
 ## Objective
 
@@ -192,10 +192,10 @@ responses from `ProviderRegistry`, keeping frontend API compatibility.
 | Fireworks | `https://api.fireworks.ai/inference/v1` | Chat | bundled + `/models` | preserve full `accounts/...` IDs |
 | Qwen | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Chat | China snapshot + `/models` | international endpoint override |
 | DeepSeek | `https://api.deepseek.com/v1` | Chat | bundled + `/models` | thinking and effort translation |
-| xAI | `https://api.x.ai/v1` | Responses preferred, Chat allowed | bundled + `/models` | protocol preference |
+| xAI | `https://api.x.ai/v1` | Chat | bundled + `/models` | xAI routing |
 | Z.AI | `https://api.z.ai/api/paas/v4` | Chat | bundled + `/models` | GLM thinking and effort translation |
-| Kimi Code | `https://api.kimi.com/coding/v1` | Chat | three bundled models + optional `/models` | omit temperature; mutually exclusive thinking/effort |
-| MiniMax | `https://api.minimax.io/anthropic` | Chat via LiteLLM | bundled primary | Anthropic route and M3 reasoning behavior |
+| Kimi Code | `https://api.kimi.com/coding/v1` | Chat | three bundled models | mutually exclusive thinking/effort |
+| MiniMax | `https://api.minimax.io/v1` | Chat via LiteLLM | reviewed snapshot | M3 reasoning split behavior |
 | Hugging Face | `https://router.huggingface.co/v1` | Chat | bundled + `/models` | organization/model IDs |
 | Gemini | `https://generativelanguage.googleapis.com` | Chat via LiteLLM | bundled + native `v1beta/models` | `x-goog-api-key`, thinking config |
 
@@ -273,7 +273,7 @@ models are never marked stale merely because live discovery omitted them.
   "checks": [
     {"name": "configuration", "status": "passed"},
     {"name": "catalog", "status": "passed | failed | skipped"},
-    {"name": "runtime", "status": "passed | failed | not_run"}
+    {"name": "runtime", "status": "passed | failed | skipped"}
   ]
 }
 ```
@@ -291,7 +291,7 @@ boolean reasoning flag with normalized semantics:
 @dataclass(frozen=True)
 class ReasoningRequest:
     enabled: bool
-    effort: Literal["low", "medium", "high", "max"] | None
+    effort: Literal["low", "medium", "high"] | None
 ```
 
 `ModelGateway` asks the profile to produce provider invocation options before
@@ -311,18 +311,9 @@ Hermes-derived behavior to port:
 
 ## Error Taxonomy
 
-Provider errors normalize to:
-
-- `CREDENTIAL_REJECTED`
-- `CREDENTIAL_ENDPOINT_MISMATCH`
-- `ENDPOINT_UNREACHABLE`
-- `CATALOG_UNAVAILABLE`
-- `MODEL_NOT_FOUND`
-- `MODEL_ACCESS_DENIED`
-- `PROTOCOL_UNSUPPORTED`
-- `RATE_LIMITED`
-- `QUOTA_EXHAUSTED`
-- `PROVIDER_UNAVAILABLE`
+Provider errors normalize to a finite public taxonomy including authentication,
+authorization, endpoint mismatch, model not found, rate limit, quota exhausted,
+network, invalid request, and provider failure.
 
 Safe public details may include HTTP status, provider code, retryability,
 request ID, and a provider-specific remediation hint. They never include API
