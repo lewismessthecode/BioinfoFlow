@@ -16,6 +16,7 @@ from app.services.model_runtime.contracts import (
     ModelTarget,
     ModelWarning,
     ReasoningDelta,
+    ReasoningRequest,
     ResponsesContinuation,
     TextDelta,
     TextPart,
@@ -75,7 +76,7 @@ def _invocation(
         ),
         stream=stream,
         max_output_tokens=512,
-        allow_reasoning=True,
+        reasoning=ReasoningRequest(enabled=True),
         continuation=continuation,
     )
 

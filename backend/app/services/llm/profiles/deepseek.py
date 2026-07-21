@@ -4,11 +4,11 @@ from app.services.llm.profiles.base import ProviderProfile
 from app.services.model_runtime.contracts import ReasoningRequest
 
 
-class MiniMaxProfile(ProviderProfile):
+class DeepSeekProfile(ProviderProfile):
     def invocation_options(
         self,
         model_name: str,
         reasoning: ReasoningRequest,
     ) -> dict[str, Any]:
         del model_name
-        return {"reasoning_split": True} if reasoning.enabled else {}
+        return {"thinking": {"type": "enabled"}} if reasoning.enabled else {}

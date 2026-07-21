@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.services.llm.registry import ModelSpec, ProviderSpec
+from app.services.model_runtime.contracts import ReasoningRequest
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,16 @@ class ProviderProfile:
             if model_id:
                 models.append(ModelSpec(model_id, item.get("name") or model_id))
         return tuple(models)
+
+    def invocation_options(
+        self,
+        model_name: str,
+        reasoning: ReasoningRequest,
+    ) -> dict[str, Any]:
+        del model_name
+        if not reasoning.enabled:
+            return {}
+        return {"reasoning_effort": reasoning.effort or "medium"}
 
 
 def _compose_catalog_url(base_url: str, path: str) -> str:
