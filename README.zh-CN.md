@@ -63,7 +63,7 @@ curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/downl
 
 安装器会校验正式版本资产、拉取匹配当前架构的镜像，然后打开
 <http://localhost:3000>。本机版只监听 `127.0.0.1`，持久化数据保存在
-`~/.bioinfoflow/data`，进入 Agent 时不显示 Bioinfoflow 登录页。不要通过反向代理、
+`~/.bioinfoflow`，并在首次安装时写入原生 NGS skills；进入 Agent 时不显示 Bioinfoflow 登录页。不要通过反向代理、
 端口转发或公网 Docker 主机暴露这个无登录的本机模式。
 
 更新、卸载、指定版本、检查校验和以及源码安装说明，见

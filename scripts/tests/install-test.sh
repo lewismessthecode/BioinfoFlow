@@ -33,6 +33,12 @@ setup_case() {
   CALLS="$CASE_DIR/calls"
   mkdir -p "$HOME_DIR" "$BIN_DIR"
   : > "$CALLS"
+  SKILLS_SOURCE="$CASE_DIR/skills-source"
+  SKILLS_ARCHIVE="$CASE_DIR/bioinfoflow-skills.tar.gz"
+  mkdir -p "$SKILLS_SOURCE/ngs-analysis-router" "$SKILLS_SOURCE/ngs-runtime-env"
+  printf '%s\n' '---' 'name: ngs-analysis-router' 'description: Route NGS analyses.' '---' '# Router' > "$SKILLS_SOURCE/ngs-analysis-router/SKILL.md"
+  printf '%s\n' '---' 'name: ngs-runtime-env' 'description: Check NGS runtimes.' '---' '# Runtime' > "$SKILLS_SOURCE/ngs-runtime-env/SKILL.md"
+  (cd "$SKILLS_SOURCE" && tar -czf "$SKILLS_ARCHIVE" .)
 
   cat > "$BIN_DIR/docker" <<'EOF'
 #!/bin/sh
@@ -87,9 +93,14 @@ case "$url" in
     [ "${FAKE_DOWNLOAD_INTERRUPT:-0}" = 0 ] || { printf 'partial' > "$output"; exit 18; }
     cp "$FAKE_COMPOSE_SOURCE" "$output"
     ;;
+  */bioinfoflow-skills.tar.gz)
+    [ "${FAKE_SKILLS_DOWNLOAD_INTERRUPT:-0}" = 0 ] || { printf 'partial' > "$output"; exit 18; }
+    cp "$FAKE_SKILLS_ARCHIVE_SOURCE" "$output"
+    ;;
   */SHA256SUMS)
     printf '%s  install.sh\n' "${FAKE_CHECKSUM_VALUE:-valid}" > "$output"
     printf '%s  docker-compose.local.yml\n' "${FAKE_CHECKSUM_VALUE:-valid}" >> "$output"
+    printf '%s  bioinfoflow-skills.tar.gz\n' "${FAKE_CHECKSUM_VALUE:-valid}" >> "$output"
     ;;
   *) exit 22 ;;
 esac
@@ -148,6 +159,7 @@ run_installer() {
     FAKE_CALLS="$CALLS" \
     FAKE_COMPOSE_SOURCE="$COMPOSE_SOURCE" \
     FAKE_INSTALLER_SOURCE="$INSTALLER" \
+    FAKE_SKILLS_ARCHIVE_SOURCE="$SKILLS_ARCHIVE" \
     BIOINFOFLOW_RELEASE_BASE_URL="https://example.test/releases/download" \
     BIOINFOFLOW_HEALTH_ATTEMPTS=2 \
     BIOINFOFLOW_HEALTH_INTERVAL=0 \
@@ -156,6 +168,28 @@ run_installer() {
     sh -c 'sh "$INSTALLER" ${ARGS:-}' 2>&1)
   STATUS=$?
   set -e
+}
+
+seed_legacy_install() {
+  legacy_root="$HOME_DIR/.bioinfoflow"
+  legacy_data="$legacy_root/data"
+  mkdir -p "$legacy_root/install" "$legacy_data/skills/custom" "$legacy_data/state" "$legacy_data/projects" "$legacy_data/sources"
+  printf '%s\n' 'legacy skill' > "$legacy_data/skills/custom/SKILL.md"
+  printf '%s\n' 'legacy state' > "$legacy_data/state/state.txt"
+  : > "$legacy_data/.managed-by-bioinfoflow"
+  cp "$INSTALLER" "$legacy_root/install/install.sh"
+  cp "$COMPOSE_SOURCE" "$legacy_root/install/docker-compose.local.yml"
+  printf '%s\n' 'v1.0.0' > "$legacy_root/install/VERSION"
+  cat > "$legacy_root/install/.env" <<EOF
+BIOINFOFLOW_HOME=$legacy_data
+BIOINFOFLOW_VERSION=v1.0.0
+BIOINFOFLOW_ARCH=amd64
+IMAGE_REGISTRY=ghcr.io/lewismessthecode
+FRONTEND_PORT=3000
+DOCKER_SOCKET_PATH=/var/run/docker.sock
+BIOINFOFLOW_INSTALL_UID=$(id -u)
+BIOINFOFLOW_INSTALL_GID=$(id -g)
+EOF
 }
 
 test_failure() {
@@ -200,6 +234,46 @@ teardown_case
 setup_case
 run_installer FAKE_ARCH=arm64 ARGS=--no-open
 if [ "$STATUS" -eq 0 ] && assert_contains "$(cat "$HOME_DIR/.bioinfoflow/install/.env")" "BIOINFOFLOW_ARCH=arm64"; then pass "maps arm64 to arm64"; else fail "maps arm64 to arm64"; fi
+teardown_case
+
+setup_case
+run_installer ARGS=--no-open
+if [ "$STATUS" -eq 0 ] && \
+   [ -f "$HOME_DIR/.bioinfoflow/skills/ngs-analysis-router/SKILL.md" ] && \
+   [ -f "$HOME_DIR/.bioinfoflow/skills/ngs-runtime-env/SKILL.md" ] && \
+   grep -q "BIOINFOFLOW_HOME=$HOME_DIR/.bioinfoflow" "$HOME_DIR/.bioinfoflow/install/.env"; then
+  pass "fresh install seeds native NGS skills in the unified home"
+else
+  fail "fresh install seeds native NGS skills in the unified home (status=$STATUS output=$OUTPUT)"
+fi
+teardown_case
+
+setup_case
+run_installer BIOINFOFLOW_VERSION=v1.0.0 ARGS=--no-open
+printf '%s\n' 'user modified skill' > "$HOME_DIR/.bioinfoflow/skills/ngs-analysis-router/SKILL.md"
+: > "$CALLS"
+run_installer BIOINFOFLOW_VERSION=v1.1.0 ARGS="--update --no-open"
+if [ "$STATUS" -eq 0 ] && \
+   grep -q 'user modified skill' "$HOME_DIR/.bioinfoflow/skills/ngs-analysis-router/SKILL.md" && \
+   ! grep -q 'bioinfoflow-skills.tar.gz' "$CALLS"; then
+  pass "update preserves existing skills without downloading the bundle"
+else
+  fail "update preserves existing skills without downloading the bundle (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"
+fi
+teardown_case
+
+setup_case
+mkdir -p "$HOME_DIR/.bioinfoflow/skills/custom-skill"
+printf '%s\n' 'custom skill' > "$HOME_DIR/.bioinfoflow/skills/custom-skill/SKILL.md"
+run_installer ARGS=--no-open
+if [ "$STATUS" -eq 0 ] && \
+   grep -q 'custom skill' "$HOME_DIR/.bioinfoflow/skills/custom-skill/SKILL.md" && \
+   [ ! -e "$HOME_DIR/.bioinfoflow/skills/ngs-analysis-router" ] && \
+   ! grep -q 'bioinfoflow-skills.tar.gz' "$CALLS"; then
+  pass "first install preserves a pre-existing skills directory"
+else
+  fail "first install preserves a pre-existing skills directory (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"
+fi
 teardown_case
 
 test_failure_with_hint "rejects unsupported architectures with recovery" "Unsupported architecture" "amd64 or arm64" FAKE_ARCH=riscv64
@@ -251,7 +325,7 @@ teardown_case
 
 setup_case
 run_installer BIOINFOFLOW_VERSION=v2.0.0 FAKE_PULL_FAIL=1 ARGS=--no-open
-if [ "$STATUS" -ne 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow/install/VERSION" ] && [ ! -e "$HOME_DIR/.bioinfoflow/install/docker-compose.local.yml" ]; then pass "does not commit control files for a failed fresh install"; else fail "does not commit control files for a failed fresh install"; fi
+if [ "$STATUS" -ne 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow/install/VERSION" ] && [ ! -e "$HOME_DIR/.bioinfoflow/install/docker-compose.local.yml" ] && [ ! -e "$HOME_DIR/.bioinfoflow/skills" ]; then pass "does not commit control files or seeded skills for a failed fresh install"; else fail "does not commit control files or seeded skills for a failed fresh install"; fi
 teardown_case
 
 setup_case
@@ -279,6 +353,34 @@ if [ "$STATUS" -eq 0 ] && [ "$(cat "$HOME_DIR/.bioinfoflow/install/VERSION")" = 
 teardown_case
 
 setup_case
+seed_legacy_install
+run_installer BIOINFOFLOW_VERSION=v1.1.0 ARGS="--update --no-open"
+if [ "$STATUS" -eq 0 ] && \
+   [ -f "$HOME_DIR/.bioinfoflow/skills/custom/SKILL.md" ] && \
+   [ -f "$HOME_DIR/.bioinfoflow/state/state.txt" ] && \
+   [ ! -e "$HOME_DIR/.bioinfoflow/data/state" ] && \
+   grep -q "BIOINFOFLOW_HOME=$HOME_DIR/.bioinfoflow" "$HOME_DIR/.bioinfoflow/install/.env"; then
+  pass "update migrates the legacy data subdirectory into the unified home"
+else
+  fail "update migrates the legacy data subdirectory into the unified home (status=$STATUS output=$OUTPUT)"
+fi
+teardown_case
+
+setup_case
+seed_legacy_install
+run_installer BIOINFOFLOW_VERSION=v1.1.0 FAKE_UP_FAIL=1 ARGS="--update --no-open"
+if [ "$STATUS" -ne 0 ] && \
+   [ -f "$HOME_DIR/.bioinfoflow/data/skills/custom/SKILL.md" ] && \
+   [ -f "$HOME_DIR/.bioinfoflow/data/state/state.txt" ] && \
+   [ ! -e "$HOME_DIR/.bioinfoflow/state" ] && \
+   grep -q "BIOINFOFLOW_HOME=$HOME_DIR/.bioinfoflow/data" "$HOME_DIR/.bioinfoflow/install/.env"; then
+  pass "failed update rolls the legacy home migration back"
+else
+  fail "failed update rolls the legacy home migration back (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"
+fi
+teardown_case
+
+setup_case
 run_installer BIOINFOFLOW_VERSION=v1.0.0 ARGS=--no-open
 run_installer FAKE_LATEST_VERSION=v1.2.0 ARGS="--update --no-open"
 if [ "$STATUS" -eq 0 ] && [ "$(cat "$HOME_DIR/.bioinfoflow/install/VERSION")" = v1.2.0 ] && grep -q '/v1.2.0/install.sh' "$CALLS"; then pass "update resolves and downloads the latest release installer"; else fail "update resolves and downloads the latest release installer"; fi
@@ -286,22 +388,22 @@ teardown_case
 
 setup_case
 run_installer ARGS=--no-open
-mkdir -p "$HOME_DIR/.bioinfoflow/data"
-printf 'keep me\n' > "$HOME_DIR/.bioinfoflow/data/user-file"
+mkdir -p "$HOME_DIR/.bioinfoflow"
+printf 'keep me\n' > "$HOME_DIR/.bioinfoflow/user-file"
 : > "$CALLS"
 run_installer ARGS=--uninstall
-if [ "$STATUS" -eq 0 ] && [ -f "$HOME_DIR/.bioinfoflow/data/user-file" ] && [ ! -e "$HOME_DIR/.bioinfoflow/install" ] && grep -q ' stop' "$CALLS" && grep -q ' run --rm --no-deps --entrypoint /bin/chown backend -R ' "$CALLS"; then pass "uninstall preserves host-owned user data"; else fail "uninstall preserves host-owned user data (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"; fi
+if [ "$STATUS" -eq 0 ] && [ -f "$HOME_DIR/.bioinfoflow/user-file" ] && [ ! -e "$HOME_DIR/.bioinfoflow/install" ] && grep -q ' stop' "$CALLS" && grep -q ' run --rm --no-deps --entrypoint /bin/chown backend -R ' "$CALLS"; then pass "uninstall preserves host-owned user data"; else fail "uninstall preserves host-owned user data (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"; fi
 teardown_case
 
 setup_case
 run_installer ARGS=--no-open
 run_installer FAKE_CHOWN_FAIL=1 ARGS=--uninstall
-if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ] && assert_contains "$OUTPUT" "ownership"; then pass "uninstall preserves control and data when ownership handoff fails"; else fail "uninstall preserves control and data when ownership handoff fails (status=$STATUS output=$OUTPUT)"; fi
+if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/.managed-by-bioinfoflow" ] && assert_contains "$OUTPUT" "ownership"; then pass "uninstall preserves control and data when ownership handoff fails"; else fail "uninstall preserves control and data when ownership handoff fails (status=$STATUS output=$OUTPUT)"; fi
 teardown_case
 
 setup_case
 run_installer ARGS=--no-open
-printf 'keep me\n' > "$HOME_DIR/.bioinfoflow/data/user-file"
+printf 'keep me\n' > "$HOME_DIR/.bioinfoflow/user-file"
 rm "$BIN_DIR/docker"
 NO_DOCKER_BIN="$CASE_DIR/no-docker-bin"
 mkdir "$NO_DOCKER_BIN"
@@ -309,13 +411,13 @@ ln -s "$(command -v sh)" "$NO_DOCKER_BIN/sh"
 ln -s "$(command -v rm)" "$NO_DOCKER_BIN/rm"
 ln -s "$(command -v rmdir)" "$NO_DOCKER_BIN/rmdir"
 run_installer PATH="$NO_DOCKER_BIN" ARGS=--uninstall
-if [ "$STATUS" -ne 0 ] && [ -f "$HOME_DIR/.bioinfoflow/data/user-file" ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && assert_contains "$OUTPUT" "Docker is unavailable"; then pass "uninstall preserves control and data when Docker is unavailable"; else fail "uninstall preserves control and data when Docker is unavailable (status=$STATUS output=$OUTPUT)"; fi
+if [ "$STATUS" -ne 0 ] && [ -f "$HOME_DIR/.bioinfoflow/user-file" ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && assert_contains "$OUTPUT" "Docker is unavailable"; then pass "uninstall preserves control and data when Docker is unavailable"; else fail "uninstall preserves control and data when Docker is unavailable (status=$STATUS output=$OUTPUT)"; fi
 teardown_case
 
 setup_case
 run_installer ARGS=--no-open
-mkdir -p "$HOME_DIR/.bioinfoflow/data"
-printf 'delete me\n' > "$HOME_DIR/.bioinfoflow/data/user-file"
+mkdir -p "$HOME_DIR/.bioinfoflow"
+printf 'delete me\n' > "$HOME_DIR/.bioinfoflow/user-file"
 run_installer ARGS=--purge
 if [ "$STATUS" -eq 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow" ]; then pass "purge explicitly removes user data"; else fail "purge explicitly removes user data"; fi
 teardown_case
@@ -323,7 +425,7 @@ teardown_case
 setup_case
 run_installer ARGS=--no-open
 run_installer FAKE_DAEMON_DOWN=1 ARGS=--purge
-if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ] && assert_contains "$OUTPUT" "Docker daemon"; then pass "purge preserves control and data when the Docker daemon is unavailable"; else fail "purge preserves control and data when the Docker daemon is unavailable (status=$STATUS output=$OUTPUT)"; fi
+if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/.managed-by-bioinfoflow" ] && assert_contains "$OUTPUT" "Docker daemon"; then pass "purge preserves control and data when the Docker daemon is unavailable"; else fail "purge preserves control and data when the Docker daemon is unavailable (status=$STATUS output=$OUTPUT)"; fi
 teardown_case
 
 setup_case
@@ -336,26 +438,26 @@ setup_case
 run_installer DOCKER_HOST=unix:///tmp/bioinfoflow-installed.sock ARGS=--no-open
 : > "$CALLS"
 run_installer DOCKER_HOST=unix:///tmp/bioinfoflow-other.sock ARGS=--uninstall
-if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ] && ! grep -q ' down --remove-orphans' "$CALLS" && assert_contains "$OUTPUT" "does not match the installed Docker socket"; then pass "uninstall preserves control and data on local Docker socket mismatch"; else fail "uninstall preserves control and data on local Docker socket mismatch (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"; fi
+if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/.managed-by-bioinfoflow" ] && ! grep -q ' down --remove-orphans' "$CALLS" && assert_contains "$OUTPUT" "does not match the installed Docker socket"; then pass "uninstall preserves control and data on local Docker socket mismatch"; else fail "uninstall preserves control and data on local Docker socket mismatch (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"; fi
 teardown_case
 
 setup_case
 run_installer DOCKER_HOST=unix:///tmp/bioinfoflow/../bioinfoflow-installed.sock ARGS=--no-open
 : > "$CALLS"
 run_installer DOCKER_HOST=unix:///tmp/bioinfoflow-other.sock ARGS=--purge
-if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ] && ! grep -q ' down --remove-orphans' "$CALLS" && assert_contains "$OUTPUT" "does not match the installed Docker socket"; then pass "purge preserves control and data on normalized local Docker socket mismatch"; else fail "purge preserves control and data on normalized local Docker socket mismatch (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"; fi
+if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/.managed-by-bioinfoflow" ] && ! grep -q ' down --remove-orphans' "$CALLS" && assert_contains "$OUTPUT" "does not match the installed Docker socket"; then pass "purge preserves control and data on normalized local Docker socket mismatch"; else fail "purge preserves control and data on normalized local Docker socket mismatch (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"; fi
 teardown_case
 
 setup_case
 run_installer DOCKER_HOST=unix:///tmp/bioinfoflow/../bioinfoflow-installed.sock ARGS=--no-open
 run_installer DOCKER_HOST=unix:///tmp/bioinfoflow-installed.sock ARGS=--uninstall
-if [ "$STATUS" -eq 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ]; then pass "uninstall accepts normalized paths to the installed Docker socket"; else fail "uninstall accepts normalized paths to the installed Docker socket (status=$STATUS output=$OUTPUT)"; fi
+if [ "$STATUS" -eq 0 ] && [ ! -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/.managed-by-bioinfoflow" ]; then pass "uninstall accepts normalized paths to the installed Docker socket"; else fail "uninstall accepts normalized paths to the installed Docker socket (status=$STATUS output=$OUTPUT)"; fi
 teardown_case
 
 setup_case
 run_installer ARGS=--no-open
 run_installer FAKE_DOWN_FAIL=1 ARGS=--uninstall
-if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ] && assert_contains "$OUTPUT" "could not stop"; then pass "uninstall preserves control and data when Compose down fails"; else fail "uninstall preserves control and data when Compose down fails (status=$STATUS output=$OUTPUT)"; fi
+if [ "$STATUS" -ne 0 ] && [ -e "$HOME_DIR/.bioinfoflow/install" ] && [ -f "$HOME_DIR/.bioinfoflow/.managed-by-bioinfoflow" ] && assert_contains "$OUTPUT" "could not stop"; then pass "uninstall preserves control and data when Compose down fails"; else fail "uninstall preserves control and data when Compose down fails (status=$STATUS output=$OUTPUT)"; fi
 teardown_case
 
 setup_case
@@ -392,10 +494,10 @@ if [ "$STATUS" -ne 0 ] && assert_contains "$OUTPUT" "symlink"; then pass "reject
 teardown_case
 
 setup_case
-mkdir -p "$HOME_DIR/.bioinfoflow" "$CASE_DIR/linked-data"
-ln -s "$CASE_DIR/linked-data" "$HOME_DIR/.bioinfoflow/data"
+mkdir -p "$HOME_DIR/.bioinfoflow" "$CASE_DIR/linked-skills"
+ln -s "$CASE_DIR/linked-skills" "$HOME_DIR/.bioinfoflow/skills"
 run_installer ARGS=--no-open
-if [ "$STATUS" -ne 0 ] && assert_contains "$OUTPUT" "symlink"; then pass "rejects a symlinked data directory"; else fail "rejects a symlinked data directory"; fi
+if [ "$STATUS" -ne 0 ] && assert_contains "$OUTPUT" "symlink"; then pass "rejects a symlinked skills directory"; else fail "rejects a symlinked skills directory"; fi
 teardown_case
 
 setup_case
@@ -410,7 +512,7 @@ teardown_case
 
 setup_case
 run_installer ARGS=--no-open
-if [ "$STATUS" -eq 0 ] && [ -f "$HOME_DIR/.bioinfoflow/install/docker-compose.local.yml" ] && [ -f "$HOME_DIR/.bioinfoflow/data/.managed-by-bioinfoflow" ]; then pass "separates control files from managed data"; else fail "separates control files from managed data"; fi
+if [ "$STATUS" -eq 0 ] && [ -f "$HOME_DIR/.bioinfoflow/install/docker-compose.local.yml" ] && [ -f "$HOME_DIR/.bioinfoflow/.managed-by-bioinfoflow" ]; then pass "separates control files from managed data"; else fail "separates control files from managed data"; fi
 teardown_case
 
 if [ -x "$INSTALLER" ] && [ -x "$ROOT/scripts/tests/install-test.sh" ]; then pass "installer scripts are executable"; else fail "installer scripts are executable"; fi
@@ -487,7 +589,8 @@ else
 fi
 
 SPECIAL_COMPOSE=$(docker compose --env-file "$ROOT/scripts/tests/fixtures/local-special-path.env" -f "$COMPOSE_SOURCE" config --format json 2>/dev/null || true)
-if printf '%s' "$SPECIAL_COMPOSE" | jq -e '.services.backend.volumes[] | select(.source == "/tmp/Bioinfoflow Data:Local" and .target == "/tmp/Bioinfoflow Data:Local")' >/dev/null 2>&1; then
+if printf '%s' "$SPECIAL_COMPOSE" | jq -e '.services.backend.volumes[] | select(.source == "/tmp/Bioinfoflow Data:Local/state" and .target == "/tmp/Bioinfoflow Data:Local/state")' >/dev/null 2>&1 && \
+   ! printf '%s' "$SPECIAL_COMPOSE" | jq -e '.services.backend.volumes[] | select(.source == "/tmp/Bioinfoflow Data:Local/install")' >/dev/null 2>&1; then
   pass "Compose renders managed paths containing spaces and colons"
 else
   fail "Compose renders managed paths containing spaces and colons"

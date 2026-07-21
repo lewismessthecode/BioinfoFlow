@@ -12,7 +12,7 @@ environment:
 - the backend mounts the effective local Unix Docker socket
 - control files live in `~/.bioinfoflow/install`
 - persistent state, credentials, projects, and run data live in
-  `~/.bioinfoflow/data`
+  the runtime subdirectories under `~/.bioinfoflow`
 
 This is safe only when the host account and local machine are trusted. Any local
 process or user that can reach the bound ports can use Bioinfoflow without
@@ -28,7 +28,7 @@ For shared or remote use, build from source and configure `personal` or `team`
 auth, explicit secrets, trusted hosts, matching origins, and TLS as described
 below. The localhost installer is not a shortcut for production deployment.
 
-Uninstalling preserves `~/.bioinfoflow/data`; purging explicitly removes it:
+Uninstalling preserves `~/.bioinfoflow`, including native skills; purging explicitly removes it:
 
 ```bash
 ~/.bioinfoflow/install/install.sh --uninstall
@@ -41,7 +41,7 @@ socket whose normalized path matches the socket recorded during installation. A
 missing Docker client, unavailable daemon or Compose plugin, remote or different
 local context, or stop failure leaves control files and data intact. After a
 successful uninstall has removed the managed stack, a separately downloaded
-installer may purge the marked data directory without Docker.
+installer may purge the marked Bioinfoflow home without Docker.
 
 ## Docker Socket
 

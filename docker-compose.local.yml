@@ -7,6 +7,7 @@ services:
       AUTH_MODE: dev
       BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}
       BIOINFOFLOW_HOME_HOST: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}
+      BIOINFOFLOW_SKILLS_ROOT: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/skills
       DATABASE_URL: sqlite+aiosqlite:///${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/state/bioinfoflow.db
       BETTER_AUTH_DB_PATH: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/state/auth/better-auth.db
       CORS_ORIGINS: '["http://localhost:${FRONTEND_PORT:-3000}","http://127.0.0.1:${FRONTEND_PORT:-3000}"]'
@@ -14,8 +15,17 @@ services:
       DOCKER_SOCKET: unix:///var/run/docker.sock
     volumes:
       - type: bind
-        source: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}
-        target: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}
+        source: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/skills
+        target: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/skills
+      - type: bind
+        source: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/state
+        target: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/state
+      - type: bind
+        source: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/projects
+        target: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/projects
+      - type: bind
+        source: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/sources
+        target: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/sources
       - type: bind
         source: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}
         target: /var/run/docker.sock
@@ -40,8 +50,8 @@ services:
       BETTER_AUTH_URL: http://localhost:${FRONTEND_PORT:-3000}
     volumes:
       - type: bind
-        source: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}
-        target: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}
+        source: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/state
+        target: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/state
     depends_on:
       backend:
         condition: service_healthy

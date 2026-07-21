@@ -124,3 +124,19 @@ def test_formal_release_workflow_publishes_numeric_aliases() -> None:
     assert "type=raw,value=${{ inputs.release_major_minor }}" in container_workflow
     assert "type=raw,value=${{ inputs.release_major }}" in container_workflow
     assert "type=raw,value=latest,enable=${{ inputs.release_version != '' }}" in container_workflow
+
+
+def test_formal_release_packages_and_smoke_tests_native_skills() -> None:
+    workflow = read_repo_file(".github/workflows/release.yml")
+
+    assert "bioinfoflow-skills.tar.gz" in workflow
+    assert "tar -czf" in workflow
+    assert "bundled-skills" in workflow
+    assert "sha256sum install.sh docker-compose.local.yml bioinfoflow-skills.tar.gz" in workflow
+    assert "dist/bioinfoflow-skills.tar.gz" in workflow
+    assert 'test -f "$HOME/.bioinfoflow/skills/ngs-analysis-router/SKILL.md"' in workflow
+    assert 'test -f "$HOME/.bioinfoflow/skills/ngs-runtime-env/SKILL.md"' in workflow
+
+    skills_root = REPO_ROOT / "bundled-skills"
+    assert (skills_root / "ngs-analysis-router" / "SKILL.md").is_file()
+    assert (skills_root / "ngs-runtime-env" / "scripts" / "ngs_preflight.py").is_file()
