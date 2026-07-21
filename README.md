@@ -94,7 +94,7 @@ other compatible endpoints remain available in **Settings → AI Providers**.
 
 ### One-line localhost installer
 
-Once the first `v*` release publishes the installer and matching images, the
+Once the first numeric release publishes the installer and matching images, the
 shortest install path will be:
 
 ```bash

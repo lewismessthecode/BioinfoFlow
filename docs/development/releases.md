@@ -56,14 +56,19 @@ the next release entry.
 5. Do not add the `automerge` label. Merge the Release PR intentionally when the
    release is ready.
 6. The `Release` workflow creates the numeric Git tag and GitHub Release, then
-   publishes both backend and frontend formal images.
+   dispatches `Installer Release` for the backend, authenticated frontend, and
+   localhost frontend multi-architecture images. That workflow smoke-tests the
+   localhost installer and attaches `install.sh`, `docker-compose.local.yml`,
+   and `SHA256SUMS` to the same GitHub Release.
 7. Verify the release:
 
    ```bash
    rtk gh release view 0.2.0
    rtk gh run list --workflow release-please.yml --limit 5
+   rtk gh run list --workflow release.yml --limit 5
    rtk docker buildx imagetools inspect ghcr.io/lewismessthecode/bioinfoflow-backend:0.2.0
    rtk docker buildx imagetools inspect ghcr.io/lewismessthecode/bioinfoflow-frontend:0.2.0
+   rtk docker buildx imagetools inspect ghcr.io/lewismessthecode/bioinfoflow-frontend-localhost:0.2.0
    ```
 
 8. For a deployment, pin both images to the same exact version:
@@ -92,16 +97,18 @@ rtk gh workflow run release-please.yml -f publish_version=0.1.0
 ```
 
 The manual workflow input validates that `0.1.0` is a numeric version and that
-the matching GitHub Release and Git tag already exist. It then publishes the
-same formal image tags used by future automatic releases.
+the matching GitHub Release and Git tag already exist. It then dispatches the
+same installer, asset, and formal image workflow used by future automatic releases.
 
 Verify the bootstrap with:
 
 ```bash
 rtk gh release view 0.1.0
 rtk gh run list --workflow release-please.yml --limit 5
+rtk gh run list --workflow release.yml --limit 5
 rtk docker buildx imagetools inspect ghcr.io/lewismessthecode/bioinfoflow-backend:0.1.0
 rtk docker buildx imagetools inspect ghcr.io/lewismessthecode/bioinfoflow-frontend:0.1.0
+rtk docker buildx imagetools inspect ghcr.io/lewismessthecode/bioinfoflow-frontend-localhost:0.1.0
 ```
 
 ## Urgent Patch Release

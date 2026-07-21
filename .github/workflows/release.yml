@@ -1,21 +1,61 @@
-name: Release
+name: Installer Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Existing bare numeric GitHub Release to publish or recover."
+        required: true
+        type: string
 
 permissions:
   contents: write
   packages: write
 
 jobs:
+  resolve:
+    name: resolve numeric release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      major_minor: ${{ steps.version.outputs.major_minor }}
+      major: ${{ steps.version.outputs.major }}
+    steps:
+      - name: Validate release version and source
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          set -euo pipefail
+          version="$RELEASE_VERSION"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Release version must be a bare numeric semantic version: $version"
+            exit 2
+          fi
+          if [ "$GITHUB_REF_NAME" != "$version" ]; then
+            echo "Workflow ref must match the release version: ref=$GITHUB_REF_NAME version=$version"
+            exit 2
+          fi
+          gh release view "$version" --repo "$GITHUB_REPOSITORY" >/dev/null
+          major="${version%%.*}"
+          remainder="${version#*.}"
+          minor="${remainder%%.*}"
+          {
+            echo "version=$version"
+            echo "major_minor=${major}.${minor}"
+            echo "major=$major"
+          } >> "$GITHUB_OUTPUT"
+
   verify:
     name: verify installer release contract
+    needs: resolve
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.version }}
 
       - name: Verify shell behavior
         run: |
@@ -28,8 +68,8 @@ jobs:
           docker compose --env-file scripts/tests/fixtures/local.env -f docker-compose.local.yml config --format json > /tmp/docker-compose.local.rendered.json
           jq -e '.services.frontend.ports[] | select(.host_ip == "127.0.0.1" and .published == "3000" and .target == 3000)' /tmp/docker-compose.local.rendered.json
           jq -e '.services.backend.ports[] | select(.host_ip == "127.0.0.1" and .published == "8000" and .target == 8000)' /tmp/docker-compose.local.rendered.json
-          jq -e '.services.backend.image == "ghcr.io/lewismessthecode/bioinfoflow-backend:v0.0.0-test"' /tmp/docker-compose.local.rendered.json
-          jq -e '.services.frontend.image == "ghcr.io/lewismessthecode/bioinfoflow-frontend-localhost:v0.0.0-test"' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.backend.image == "ghcr.io/lewismessthecode/bioinfoflow-backend:0.0.0-test"' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.frontend.image == "ghcr.io/lewismessthecode/bioinfoflow-frontend-localhost:0.0.0-test"' /tmp/docker-compose.local.rendered.json
           jq -e '.services.backend.environment.AUTH_MODE == "dev"' /tmp/docker-compose.local.rendered.json
           jq -e '.services.frontend.environment.AUTH_MODE == "dev" and .services.frontend.environment.NEXT_PUBLIC_AUTH_MODE == "dev"' /tmp/docker-compose.local.rendered.json
           jq -e '.services.backend.environment.DOCKER_SOCKET == "unix:///var/run/docker.sock"' /tmp/docker-compose.local.rendered.json
@@ -38,15 +78,19 @@ jobs:
 
   package:
     name: package installer assets
-    needs: verify
+    needs:
+      - resolve
+      - verify
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.version }}
 
       - name: Build version-matched installer assets
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
           mkdir dist
@@ -60,20 +104,28 @@ jobs:
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: localhost-installer-${{ github.ref_name }}
+          name: localhost-installer-${{ needs.resolve.outputs.version }}
           path: dist/
           if-no-files-found: error
 
   images:
     name: publish release images
-    needs: verify
+    needs:
+      - resolve
+      - verify
     uses: ./.github/workflows/container-release.yml
     with:
       publish_images: force
+      checkout_ref: ${{ needs.resolve.outputs.version }}
+      release_version: ${{ needs.resolve.outputs.version }}
+      release_major_minor: ${{ needs.resolve.outputs.major_minor }}
+      release_major: ${{ needs.resolve.outputs.major }}
 
   manifests:
     name: verify multiarch manifests
-    needs: images
+    needs:
+      - resolve
+      - images
     runs-on: ubuntu-latest
     steps:
       - name: Set up Docker Buildx
@@ -88,7 +140,7 @@ jobs:
 
       - name: Verify release image platforms
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
           owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
@@ -101,6 +153,7 @@ jobs:
   smoke:
     name: installer smoke (${{ matrix.arch }})
     needs:
+      - resolve
       - images
       - package
     strategy:
@@ -116,7 +169,7 @@ jobs:
       - name: Download installer artifact
         uses: actions/download-artifact@v4
         with:
-          name: localhost-installer-${{ github.ref_name }}
+          name: localhost-installer-${{ needs.resolve.outputs.version }}
           path: dist
 
       - name: Log in to GHCR
@@ -128,7 +181,7 @@ jobs:
 
       - name: Install, health-check, uninstall, and purge
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.version }}
           EXPECTED_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
@@ -162,6 +215,7 @@ jobs:
   assets:
     name: attach installer assets
     needs:
+      - resolve
       - manifests
       - smoke
       - package
@@ -170,7 +224,7 @@ jobs:
       - name: Download installer artifact
         uses: actions/download-artifact@v4
         with:
-          name: localhost-installer-${{ github.ref_name }}
+          name: localhost-installer-${{ needs.resolve.outputs.version }}
           path: dist
 
       - name: Verify release checksums
@@ -179,6 +233,7 @@ jobs:
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.resolve.outputs.version }}
           files: |
             dist/install.sh
             dist/docker-compose.local.yml
