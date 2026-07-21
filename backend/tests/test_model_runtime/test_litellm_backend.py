@@ -10,11 +10,16 @@ import aiohttp
 import httpx
 import litellm
 import pytest
+from litellm.exceptions import UnsupportedParamsError
+from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
+from litellm.utils import get_optional_params
 from openai import AsyncOpenAI
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 from yarl import URL
 
+from app.services.llm.profiles import profile_for
+from app.services.llm.registry import provider_spec_for_kind
 from app.services.model_runtime.backend.litellm import LiteLLMBackend
 from app.services.model_runtime.backend.litellm_network import (
     PublicNetworkHTTPHandler,
@@ -25,6 +30,7 @@ from app.services.model_runtime.backend.litellm_network import (
 from app.services.model_runtime.contracts import (
     ModelInvocation,
     ModelTarget,
+    ReasoningRequest,
     ReasoningDelta,
     ResponseStarted,
     TextDelta,
@@ -33,6 +39,87 @@ from app.services.model_runtime.contracts import (
 from app.services.model_runtime.errors import ModelError
 from app.services.model_runtime.gateway import ModelGateway
 from app.utils.exceptions import PermissionDeniedError
+
+
+@pytest.mark.parametrize(
+    ("provider_kind", "model_name"),
+    [
+        ("openai", "gpt-5"),
+        ("anthropic", "claude-sonnet-4-6"),
+        ("openrouter", "anthropic/claude-sonnet-4-6"),
+        ("fireworks", "accounts/fireworks/models/gpt-oss-120b"),
+        ("qwen", "qwen3-max"),
+        ("deepseek", "deepseek-reasoner"),
+        ("xai", "grok-4.5"),
+        ("zai", "glm-4.7"),
+        ("kimi_code", "kimi-for-coding"),
+        ("minimax", "MiniMax-M3"),
+        ("huggingface", "Qwen/Qwen3-32B"),
+        ("gemini", "gemini-3-pro-preview"),
+    ],
+)
+def test_phase_one_compiled_requests_pass_litellm_parameter_validation(
+    provider_kind: str,
+    model_name: str,
+) -> None:
+    spec = provider_spec_for_kind(provider_kind)
+    assert spec is not None
+    routed_model = f"{spec.runtime.litellm_model_prefix}{model_name}"
+    compiled = profile_for(provider_kind).compile_request(
+        {
+            "model": routed_model,
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": True,
+            "max_tokens": 100,
+        },
+        model_name=model_name,
+        wire_protocol="chat_completions",
+        reasoning=ReasoningRequest(enabled=True, effort="high"),
+    )
+    bare_model, litellm_provider, _, _ = get_llm_provider(
+        routed_model,
+        api_base=spec.endpoint.default_base_url,
+    )
+    optional = dict(compiled)
+    optional.pop("model")
+
+    get_optional_params(
+        model=bare_model,
+        custom_llm_provider=litellm_provider,
+        **optional,
+    )
+
+
+def test_litellm_rejects_old_kimi_thinking_shape_but_accepts_compiled_shape() -> None:
+    with pytest.raises(UnsupportedParamsError, match="does not support parameters"):
+        get_optional_params(
+            model="kimi-for-coding",
+            custom_llm_provider="openai",
+            max_tokens=100,
+            thinking={"type": "enabled"},
+        )
+
+    compiled = profile_for("kimi_code").compile_request(
+        {
+            "model": "openai/kimi-for-coding",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": True,
+            "max_tokens": 100,
+        },
+        model_name="kimi-for-coding",
+        wire_protocol="chat_completions",
+        reasoning=ReasoningRequest(enabled=True, effort="high"),
+    )
+    compiled.pop("model")
+
+    mapped = get_optional_params(
+        model="kimi-for-coding",
+        custom_llm_provider="openai",
+        **compiled,
+    )
+
+    assert mapped["extra_body"]["thinking"] == {"type": "enabled"}
+    assert mapped["max_completion_tokens"] == 100
 
 
 def _response(
