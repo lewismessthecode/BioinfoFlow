@@ -1209,7 +1209,7 @@ class LlmCatalogService:
         self,
         provider: LlmProvider,
     ) -> LlmProvider:
-        updates = _legacy_kimi_china_provider_updates(provider)
+        updates = _legacy_provider_updates(provider)
         if not updates:
             return provider
         return await self.provider_repo.update_all(provider, **updates)
@@ -1248,22 +1248,40 @@ def _provider_model_target_signature(provider: LlmProvider) -> tuple[Any, ...]:
     )
 
 
-def _legacy_kimi_china_provider_updates(provider: LlmProvider) -> dict[str, Any]:
+def _legacy_provider_updates(provider: LlmProvider) -> dict[str, Any]:
     metadata = provider.provider_metadata or {}
     template_id = metadata.get("providerTemplate")
-    if template_id not in {None, "kimi"}:
-        return {}
-    if template_id is None and provider.kind != "kimi":
-        return {}
-    if _provider_base_url_host(provider.base_url) != "api.moonshot.cn":
-        return {}
-    updates: dict[str, Any] = {
-        "kind": "kimi_cn",
-        "provider_metadata": {**metadata, "providerTemplate": "kimi-cn"},
-    }
-    if provider.name == "Kimi":
-        updates["name"] = "Kimi China"
-    return updates
+    host = _provider_base_url_host(provider.base_url)
+    if provider.kind == "grok" or template_id == "grok":
+        return {
+            "kind": "xai",
+            "provider_metadata": {**metadata, "providerTemplate": "xai"},
+        }
+    if host == "api.kimi.com" and (
+        provider.kind == "kimi" or template_id == "kimi"
+    ):
+        return {
+            "name": "Kimi Code" if provider.name == "Kimi" else provider.name,
+            "kind": "kimi_code",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "provider_metadata": {
+                **metadata,
+                "providerTemplate": "kimi-code",
+            },
+        }
+    if host in {"api.moonshot.ai", "api.moonshot.cn"} and (
+        provider.kind in {"kimi", "kimi_cn"}
+        or template_id in {"kimi", "kimi-cn"}
+    ):
+        return {
+            "enabled": False,
+            "provider_metadata": {
+                **metadata,
+                "providerTemplate": "legacy-kimi-platform",
+                "unsupported_reason": "kimi_open_platform_removed",
+            },
+        }
+    return {}
 
 
 def _provider_base_url_host(base_url: str | None) -> str:

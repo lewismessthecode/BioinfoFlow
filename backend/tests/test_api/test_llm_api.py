@@ -306,10 +306,12 @@ async def test_llm_configuration_reconciles_legacy_kimi_cn_provider(
         for item in response.json()["data"]["providers"]
         if item["id"] == str(legacy_provider.id)
     )
-    assert provider["name"] == "Kimi China"
-    assert provider["kind"] == "kimi_cn"
+    assert provider["name"] == "Kimi"
+    assert provider["kind"] == "kimi"
     assert provider["base_url"] == "https://api.moonshot.cn/v1"
-    assert provider["metadata"]["providerTemplate"] == "kimi-cn"
+    assert provider["enabled"] is False
+    assert provider["metadata"]["providerTemplate"] == "legacy-kimi-platform"
+    assert provider["metadata"]["unsupported_reason"] == "kimi_open_platform_removed"
 
 
 @pytest.mark.asyncio
@@ -339,9 +341,10 @@ async def test_llm_configuration_reconciles_kimi_cn_provider_without_template_me
         for item in response.json()["data"]["providers"]
         if item["id"] == str(legacy_provider.id)
     )
-    assert provider["name"] == "Kimi China"
-    assert provider["kind"] == "kimi_cn"
-    assert provider["metadata"]["providerTemplate"] == "kimi-cn"
+    assert provider["name"] == "Kimi"
+    assert provider["kind"] == "kimi"
+    assert provider["enabled"] is False
+    assert provider["metadata"]["providerTemplate"] == "legacy-kimi-platform"
 
 
 @pytest.mark.asyncio
@@ -615,7 +618,7 @@ async def test_failed_provider_probe_keeps_saved_credential_configured(
 
 
 @pytest.mark.asyncio
-async def test_discover_models_hides_stale_provider_models(
+async def test_discover_models_merges_live_models_without_hiding_manual_models(
     async_client,
     db_session,
     monkeypatch,
@@ -634,7 +637,7 @@ async def test_discover_models_hides_stale_provider_models(
             del headers, params
             return httpx.Response(
                 200,
-                json={"data": [{"id": "kimi-current", "object": "model"}]},
+                json={"data": [{"id": "openai-current", "object": "model"}]},
                 request=httpx.Request("GET", url),
             )
 
@@ -643,14 +646,14 @@ async def test_discover_models_hides_stale_provider_models(
         _network_client_factory(FakeAsyncClient),
     )
     provider = LlmProvider(
-        name="Kimi",
-        kind="kimi",
-        base_url="https://api.moonshot.ai/v1",
+        name="OpenAI",
+        kind="openai",
+        base_url="https://api.openai.com/v1",
         scope="user",
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
         enabled=True,
-        provider_metadata={"providerTemplate": "kimi"},
+        provider_metadata={"providerTemplate": "openai"},
     )
     db_session.add(provider)
     await db_session.commit()
@@ -659,8 +662,8 @@ async def test_discover_models_hides_stale_provider_models(
         LlmProviderCredential(
             provider_id=str(provider.id),
             source="stored",
-            encrypted_secret=encrypt_secret("moonshot-ai-key"),
-            masked_hint="sk...ai",
+            encrypted_secret=encrypt_secret("openai-key"),
+            masked_hint="sk...en",
             updated_by="dev",
         )
     )
@@ -669,6 +672,7 @@ async def test_discover_models_hides_stale_provider_models(
         provider_id=str(provider.id),
         model_id="wrong-manual-model",
         display_name="Wrong Manual Model",
+        metadata={"source": "manual"},
     )
 
     response = await async_client.post(
@@ -679,16 +683,20 @@ async def test_discover_models_hides_stale_provider_models(
 
     assert response.status_code == 200
     assert [model["model_id"] for model in response.json()["data"]] == [
-        "kimi-current"
+        "openai-current"
     ]
     assert configuration.status_code == 200
-    assert [model["model_id"] for model in configuration.json()["data"]["models"]] == [
-        "kimi-current"
-    ]
+    assert {model["model_id"] for model in configuration.json()["data"]["models"]} == {
+        "openai-current",
+        "wrong-manual-model",
+    }
     assert listed.status_code == 200
-    assert [model["model_id"] for model in listed.json()["data"]] == ["kimi-current"]
+    assert {model["model_id"] for model in listed.json()["data"]} == {
+        "openai-current",
+        "wrong-manual-model",
+    }
     await db_session.refresh(stale_model)
-    assert stale_model.model_metadata["catalog_status"] == "stale"
+    assert stale_model.model_metadata.get("catalog_status") != "stale"
 
 
 @pytest.mark.asyncio
