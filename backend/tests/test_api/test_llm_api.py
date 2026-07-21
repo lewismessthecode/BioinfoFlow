@@ -129,26 +129,20 @@ async def test_llm_provider_templates_drive_frontend_configuration(async_client)
 
     assert response.status_code == 200
     templates = {item["id"]: item for item in response.json()["data"]}
-    assert {
+    assert set(templates) == {
         "openai",
         "anthropic",
-        "gemini",
-        "grok",
-        "groq",
-        "deepseek",
         "openrouter",
-        "kimi",
-        "kimi-cn",
-        "qwen",
-        "mistral",
-        "cohere",
-        "together",
         "fireworks",
-        "perplexity",
-        "ollama",
-        "vllm",
-        "openai-compatible",
-    }.issubset(templates)
+        "qwen",
+        "deepseek",
+        "xai",
+        "zai",
+        "kimi-code",
+        "minimax",
+        "huggingface",
+        "gemini",
+    }
 
     assert templates["openai"]["fields"] == [
         {
@@ -168,32 +162,22 @@ async def test_llm_provider_templates_drive_frontend_configuration(async_client)
             "placeholder": "Paste API key",
         }
     ]
-    assert templates["kimi"]["fields"] == templates["openai"]["fields"]
-    assert templates["kimi"]["default_base_url"] == "https://api.moonshot.ai/v1"
-    assert templates["kimi"]["docs_url"] == "https://platform.kimi.ai/console/api-keys"
-    assert templates["kimi-cn"]["fields"] == templates["openai"]["fields"]
-    assert templates["kimi-cn"]["default_base_url"] == "https://api.moonshot.cn/v1"
+    assert templates["kimi-code"]["fields"] == templates["openai"]["fields"]
     assert (
-        templates["kimi-cn"]["docs_url"]
-        == "https://platform.kimi.com/console/api-keys"
+        templates["kimi-code"]["default_base_url"]
+        == "https://api.kimi.com/coding/v1"
     )
-    assert templates["qwen"]["fields"] == templates["openai"]["fields"]
-    assert templates["cohere"]["default_base_url"] == (
-        "https://api.cohere.ai/compatibility/v1"
-    )
-    assert templates["together"]["default_base_url"] == "https://api.together.ai/v1"
-    assert templates["perplexity"]["discovery"] == "static"
-    assert [model["id"] for model in templates["perplexity"]["models"]] == [
-        "sonar",
-        "sonar-pro",
-        "sonar-reasoning-pro",
-        "sonar-deep-research",
+    assert templates["kimi-code"]["docs_url"] == "https://www.kimi.com/code/console"
+    assert [model["id"] for model in templates["kimi-code"]["models"]] == [
+        "k3",
+        "kimi-for-coding",
+        "kimi-for-coding-highspeed",
     ]
-    vllm_fields = {field["name"]: field for field in templates["vllm"]["fields"]}
-    assert vllm_fields["base_url"]["default"] == "http://localhost:8000/v1"
-    assert vllm_fields["api_key"]["required"] is False
-    assert vllm_fields["model_id"]["required"] is False
-    assert templates["vllm"]["discovery"] == "openai_models"
+    qwen_fields = {field["name"]: field for field in templates["qwen"]["fields"]}
+    assert qwen_fields["base_url"]["default"] == (
+        "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
+    assert qwen_fields["api_key"]["required"] is True
 
 
 @pytest.mark.asyncio
@@ -2020,6 +2004,36 @@ async def test_provider_setup_with_manual_model_and_discover_false_never_discove
     assert [model["model_id"] for model in response.json()["data"]["models"]] == [
         "manual-model"
     ]
+
+
+@pytest.mark.asyncio
+async def test_provider_setup_is_local_even_when_discover_true(
+    async_client,
+    monkeypatch,
+) -> None:
+    def forbidden_client(**kwargs):
+        del kwargs
+        raise AssertionError("provider setup must not access the network")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        forbidden_client,
+    )
+
+    response = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "kimi-code",
+            "api_key": "sk-kimi-test-placeholder",
+            "discover": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["discovered"] is False
+    assert {
+        model["model_id"] for model in response.json()["data"]["models"]
+    } == {"k3", "kimi-for-coding", "kimi-for-coding-highspeed"}
 
 
 @pytest.mark.asyncio

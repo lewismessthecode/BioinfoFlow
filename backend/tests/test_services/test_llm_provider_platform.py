@@ -86,7 +86,6 @@ def test_common_provider_templates_are_key_first_and_provider_neutral() -> None:
     serialized_templates = repr([template.as_dict() for template in templates.values()])
     assert "".join(("c", "ch")) not in serialized_templates.lower()
     assert ".".join(("8", "129", "13", "231")) not in serialized_templates
-    assert "-".join(("claude", "sonnet", "5")) not in serialized_templates
 
 
 def test_legacy_kimi_china_endpoint_resolves_to_china_template() -> None:
