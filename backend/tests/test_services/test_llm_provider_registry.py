@@ -25,25 +25,61 @@ def test_primary_registry_contains_exact_phase_one_providers() -> None:
 
 
 def test_phase_one_provider_endpoints_match_official_api_roots() -> None:
-    assert get_provider_spec("openai").endpoint.default_base_url == "https://api.openai.com/v1"
-    assert get_provider_spec("anthropic").endpoint.default_base_url == "https://api.anthropic.com"
-    assert get_provider_spec("openrouter").endpoint.default_base_url == "https://openrouter.ai/api/v1"
-    assert get_provider_spec("fireworks").endpoint.default_base_url == "https://api.fireworks.ai/inference/v1"
-    assert get_provider_spec("qwen").endpoint.default_base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    assert get_provider_spec("deepseek").endpoint.default_base_url == "https://api.deepseek.com/v1"
+    assert (
+        get_provider_spec("openai").endpoint.default_base_url
+        == "https://api.openai.com/v1"
+    )
+    assert (
+        get_provider_spec("anthropic").endpoint.default_base_url
+        == "https://api.anthropic.com"
+    )
+    assert (
+        get_provider_spec("openrouter").endpoint.default_base_url
+        == "https://openrouter.ai/api/v1"
+    )
+    assert (
+        get_provider_spec("fireworks").endpoint.default_base_url
+        == "https://api.fireworks.ai/inference/v1"
+    )
+    assert (
+        get_provider_spec("qwen").endpoint.default_base_url
+        == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
+    assert (
+        get_provider_spec("deepseek").endpoint.default_base_url
+        == "https://api.deepseek.com/v1"
+    )
     assert get_provider_spec("xai").endpoint.default_base_url == "https://api.x.ai/v1"
-    assert get_provider_spec("zai").endpoint.default_base_url == "https://api.z.ai/api/paas/v4"
-    assert get_provider_spec("kimi-code").endpoint.default_base_url == "https://api.kimi.com/coding/v1"
-    assert get_provider_spec("minimax").endpoint.default_base_url == "https://api.minimax.io/v1"
-    assert get_provider_spec("huggingface").endpoint.default_base_url == "https://router.huggingface.co/v1"
-    assert get_provider_spec("gemini").endpoint.default_base_url == "https://generativelanguage.googleapis.com"
+    assert (
+        get_provider_spec("zai").endpoint.default_base_url
+        == "https://api.z.ai/api/paas/v4"
+    )
+    assert (
+        get_provider_spec("kimi-code").endpoint.default_base_url
+        == "https://api.kimi.com/coding/v1"
+    )
+    assert (
+        get_provider_spec("minimax").endpoint.default_base_url
+        == "https://api.minimax.io/v1"
+    )
+    assert (
+        get_provider_spec("huggingface").endpoint.default_base_url
+        == "https://router.huggingface.co/v1"
+    )
+    assert (
+        get_provider_spec("gemini").endpoint.default_base_url
+        == "https://generativelanguage.googleapis.com"
+    )
 
 
 def test_qwen_allows_international_endpoint_override() -> None:
     spec = get_provider_spec("qwen")
 
     assert spec.endpoint.base_url_supported is True
-    assert "https://dashscope-intl.aliyuncs.com/compatible-mode/v1" in spec.endpoint.alternative_base_urls
+    assert (
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        in spec.endpoint.alternative_base_urls
+    )
 
 
 def test_kimi_code_has_only_official_coding_models() -> None:

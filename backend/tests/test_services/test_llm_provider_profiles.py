@@ -112,10 +112,13 @@ def test_provider_profiles_translate_normalized_reasoning(
 
 
 def test_disabled_reasoning_produces_no_provider_options() -> None:
-    assert profile_for("kimi_code").invocation_options(
-        "kimi-for-coding",
-        ReasoningRequest(enabled=False),
-    ) == {}
+    assert (
+        profile_for("kimi_code").invocation_options(
+            "kimi-for-coding",
+            ReasoningRequest(enabled=False),
+        )
+        == {}
+    )
 
 
 def test_kimi_reasoning_never_sends_conflicting_controls() -> None:

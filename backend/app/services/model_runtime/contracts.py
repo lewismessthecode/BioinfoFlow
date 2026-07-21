@@ -164,7 +164,9 @@ class ResponsesContinuation:
             "canonical_input_count": self.canonical_input_count,
             "canonical_input_digest": self.canonical_input_digest,
             "output_items": list(self.opaque_output_items()),
-            "target": self.target.to_private_dict() if self.target is not None else None,
+            "target": self.target.to_private_dict()
+            if self.target is not None
+            else None,
         }
 
     @classmethod
@@ -222,7 +224,9 @@ class ResponsesContinuation:
         canonical_parts: tuple[InputPart, ...],
     ) -> ResponsesContinuation:
         if not _valid_digest(self.canonical_input_digest):
-            raise ValueError("Responses continuation is missing its canonical prefix digest.")
+            raise ValueError(
+                "Responses continuation is missing its canonical prefix digest."
+            )
         return ResponsesContinuation(
             response_id=self.response_id,
             canonical_input_count=self.canonical_input_count + len(canonical_parts),

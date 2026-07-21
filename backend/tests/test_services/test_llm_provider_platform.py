@@ -178,12 +178,16 @@ async def test_openai_compatible_environment_bootstrap_persists_explicit_protoco
     await sync_environment_llm_catalog(db_session)
 
     provider = (
-        await db_session.execute(
-            LlmProvider.__table__.select().where(
-                LlmProvider.kind == "openai_compatible"
+        (
+            await db_session.execute(
+                LlmProvider.__table__.select().where(
+                    LlmProvider.kind == "openai_compatible"
+                )
             )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
     assert provider["wire_protocol"] == "responses"
 
 
@@ -203,12 +207,16 @@ async def test_environment_bootstrap_defaults_missing_protocol_to_chat(
     await sync_environment_llm_catalog(db_session)
 
     provider = (
-        await db_session.execute(
-            LlmProvider.__table__.select().where(
-                LlmProvider.kind == "openai_compatible"
+        (
+            await db_session.execute(
+                LlmProvider.__table__.select().where(
+                    LlmProvider.kind == "openai_compatible"
+                )
             )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
     assert provider["wire_protocol"] == "chat_completions"
 
 
@@ -227,10 +235,14 @@ async def test_anthropic_environment_bootstrap_accepts_https_custom_base_url(
     await sync_environment_llm_catalog(db_session)
 
     provider = (
-        await db_session.execute(
-            LlmProvider.__table__.select().where(LlmProvider.kind == "anthropic")
+        (
+            await db_session.execute(
+                LlmProvider.__table__.select().where(LlmProvider.kind == "anthropic")
+            )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
     assert provider["base_url"] == "https://anthropic-gateway.example"
     assert provider["allow_insecure_http"] is False
     assert provider["wire_protocol"] == "chat_completions"
@@ -251,20 +263,28 @@ async def test_kimi_environment_bootstrap_uses_kimi_code_endpoint(
     await sync_environment_llm_catalog(db_session)
 
     provider = (
-        await db_session.execute(
-            LlmProvider.__table__.select().where(LlmProvider.kind == "kimi_code")
+        (
+            await db_session.execute(
+                LlmProvider.__table__.select().where(LlmProvider.kind == "kimi_code")
+            )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
     assert provider["base_url"] == "https://api.kimi.com/coding/v1"
     assert provider["metadata"]["providerTemplate"] == "kimi-code"
 
     credential = (
-        await db_session.execute(
-            LlmProviderCredential.__table__.select().where(
-                LlmProviderCredential.provider_id == provider["id"]
+        (
+            await db_session.execute(
+                LlmProviderCredential.__table__.select().where(
+                    LlmProviderCredential.provider_id == provider["id"]
+                )
             )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
     assert credential["env_var_name"] == "KIMI_API_KEY"
 
 
@@ -282,10 +302,14 @@ async def test_kimi_environment_bootstrap_ignores_legacy_moonshot_key(
     await sync_environment_llm_catalog(db_session)
 
     providers = (
-        await db_session.execute(
-            LlmProvider.__table__.select().where(LlmProvider.kind == "kimi_cn")
+        (
+            await db_session.execute(
+                LlmProvider.__table__.select().where(LlmProvider.kind == "kimi_cn")
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     assert providers == []
 
 
@@ -493,7 +517,9 @@ async def test_simple_vllm_environment_profile_bootstraps_catalog(
 
     providers = [
         provider
-        for provider in (await db_session.execute(LlmProvider.__table__.select())).mappings()
+        for provider in (
+            await db_session.execute(LlmProvider.__table__.select())
+        ).mappings()
         if provider["kind"] == "vllm"
     ]
     assert len(providers) == 1
@@ -505,8 +531,10 @@ async def test_simple_vllm_environment_profile_bootstraps_catalog(
     assert provider["metadata"]["providerTemplate"] == "vllm"
 
     credential = (
-        await db_session.execute(LlmProviderCredential.__table__.select())
-    ).mappings().one()
+        (await db_session.execute(LlmProviderCredential.__table__.select()))
+        .mappings()
+        .one()
+    )
     assert credential["provider_id"] == provider["id"]
     assert credential["source"] == "env"
     assert credential["env_var_name"] == "VLLM_API_KEY"
@@ -550,8 +578,8 @@ async def test_environment_bootstrap_does_not_overwrite_user_configured_provider
     assert user_provider.base_url == "http://ui.example.test/v1"
 
     providers = (
-        await db_session.execute(LlmProvider.__table__.select())
-    ).mappings().all()
+        (await db_session.execute(LlmProvider.__table__.select())).mappings().all()
+    )
     assert any(
         provider["scope"] == "global"
         and provider["base_url"] == "http://env.example.test/v1"
@@ -875,9 +903,9 @@ async def test_removed_moonshot_provider_is_disabled_without_deleting_credential
     await db_session.commit()
 
     reconciled = (await LlmCatalogService(db_session).list_providers(user_id="dev"))[0]
-    saved_credential = await LlmCatalogService(db_session).credential_repo.get_for_provider(
-        str(provider.id)
-    )
+    saved_credential = await LlmCatalogService(
+        db_session
+    ).credential_repo.get_for_provider(str(provider.id))
 
     assert reconciled.enabled is False
     assert reconciled.provider_metadata["providerTemplate"] == "legacy-kimi-platform"

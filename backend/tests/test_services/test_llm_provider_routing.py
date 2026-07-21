@@ -103,7 +103,9 @@ async def test_registry_routing_flows_through_codec_and_gateway(
     backend = CapturingBackend()
     gateway = ModelGateway(backend=backend, codecs=[ChatCompletionsCodec()])
 
-    events = [event async for event in gateway.invoke(_invocation(provider_kind, model_name))]
+    events = [
+        event async for event in gateway.invoke(_invocation(provider_kind, model_name))
+    ]
 
     assert events
     assert backend.requests[0]["model"] == expected_request_model
