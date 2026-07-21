@@ -1,0 +1,8 @@
+{
+  "name": "ngs-analysis",
+  "version": "1.0.3",
+  "source": "OpenAI curated ngs-analysis package",
+  "repository": "https://github.com/openai/openai",
+  "license": "MIT",
+  "native_layout": "bioinfoflow-skills-v1"
+}
