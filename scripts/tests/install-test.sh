@@ -408,7 +408,7 @@ if [ -x "$INSTALLER" ] && [ -x "$ROOT/scripts/tests/install-test.sh" ]; then pas
 
 RELEASE_WORKFLOW="$ROOT/.github/workflows/release.yml"
 if grep -q 'sh -n scripts/install.sh scripts/tests/install-test.sh' "$RELEASE_WORKFLOW" && \
-   grep -q 'shellcheck scripts/install.sh scripts/tests/install-test.sh' "$RELEASE_WORKFLOW" && \
+   grep -q 'shellcheck -e SC2317 scripts/install.sh scripts/tests/install-test.sh' "$RELEASE_WORKFLOW" && \
    grep -q 'sh scripts/tests/install-test.sh' "$RELEASE_WORKFLOW" && \
    grep -q 'docker compose.*docker-compose.local.yml config' "$RELEASE_WORKFLOW" && \
    grep -q 'sha256sum -c SHA256SUMS' "$RELEASE_WORKFLOW" && \
@@ -416,6 +416,15 @@ if grep -q 'sh -n scripts/install.sh scripts/tests/install-test.sh' "$RELEASE_WO
   pass "release workflow verifies installer, Compose, checksums, and multiarch manifests"
 else
   fail "release workflow verifies installer, Compose, checksums, and multiarch manifests"
+fi
+
+# The workflow expression is intentionally matched as a literal string.
+# shellcheck disable=SC2016
+if grep -Fq '[ "$GITHUB_REF_NAME" != "$version" ] && [ "$GITHUB_REF_NAME" != "main" ]' "$RELEASE_WORKFLOW" && \
+   grep -q 'ref:.*needs.resolve.outputs.version' "$RELEASE_WORKFLOW"; then
+  pass "release recovery runs fixed workflow code against immutable tag source"
+else
+  fail "release recovery runs fixed workflow code against immutable tag source"
 fi
 
 if grep -q 'AUTH_MODE == "dev"' "$RELEASE_WORKFLOW" && \
