@@ -35,9 +35,7 @@ class EndpointSpec:
 @dataclass(frozen=True)
 class RuntimeSpec:
     litellm_model_prefix: str
-    supported_wire_protocols: tuple[str, ...] = (
-        LlmWireProtocol.CHAT_COMPLETIONS,
-    )
+    supported_wire_protocols: tuple[str, ...] = (LlmWireProtocol.CHAT_COMPLETIONS,)
     default_wire_protocol: str = LlmWireProtocol.CHAT_COMPLETIONS
     responses_litellm_model_prefix: str | None = None
 

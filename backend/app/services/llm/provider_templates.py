@@ -18,9 +18,7 @@ ProviderDiscovery = Literal[
     "cohere_models",
 ]
 
-_PROVIDER_KIND_PATTERN = re.compile(
-    r"^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*$"
-)
+_PROVIDER_KIND_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*$")
 
 
 def validate_provider_kind(kind: str) -> str:
@@ -40,9 +38,7 @@ def validate_provider_kind(kind: str) -> str:
 @dataclass(frozen=True, kw_only=True)
 class ProviderAdapter:
     kind: str
-    supported_wire_protocols: tuple[str, ...] = (
-        LlmWireProtocol.CHAT_COMPLETIONS,
-    )
+    supported_wire_protocols: tuple[str, ...] = (LlmWireProtocol.CHAT_COMPLETIONS,)
     default_wire_protocol: str = LlmWireProtocol.CHAT_COMPLETIONS
     litellm_model_prefix: str = ""
     responses_litellm_model_prefix: str | None = None
@@ -435,9 +431,7 @@ def _template_from_spec(spec) -> ProviderTemplate:
         kind=spec.kind,
         docs_url=spec.docs_url,
         discovery=(
-            "static"
-            if spec.catalog.strategy == "bundled"
-            else spec.catalog.strategy
+            "static" if spec.catalog.strategy == "bundled" else spec.catalog.strategy
         ),
         default_base_url=spec.endpoint.default_base_url,
         env_api_key_vars=spec.auth.env_vars,
@@ -445,9 +439,7 @@ def _template_from_spec(spec) -> ProviderTemplate:
         supported_wire_protocols=spec.runtime.supported_wire_protocols,
         default_wire_protocol=spec.runtime.default_wire_protocol,
         litellm_model_prefix=spec.runtime.litellm_model_prefix,
-        responses_litellm_model_prefix=(
-            spec.runtime.responses_litellm_model_prefix
-        ),
+        responses_litellm_model_prefix=(spec.runtime.responses_litellm_model_prefix),
         base_url_supported=spec.endpoint.base_url_supported,
         models=tuple(_model_template_from_spec(model) for model in spec.bundled_models),
     )
@@ -580,9 +572,8 @@ def provider_template_for_provider(provider) -> ProviderTemplate | None:
     metadata = getattr(provider, "provider_metadata", None) or {}
     template_id = str(metadata.get("providerTemplate") or "").strip()
     provider_kind = str(getattr(provider, "kind", "") or "")
-    if (
-        _provider_uses_kimi_china_endpoint(provider)
-        and (template_id == "kimi" or (not template_id and provider_kind == "kimi"))
+    if _provider_uses_kimi_china_endpoint(provider) and (
+        template_id == "kimi" or (not template_id and provider_kind == "kimi")
     ):
         return get_provider_template("kimi-cn")
     if template_id:

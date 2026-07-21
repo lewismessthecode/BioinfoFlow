@@ -30,6 +30,8 @@ _PUBLIC_STATUS_FIELDS = (
     "http_status",
     "provider_code",
     "mode",
+    "failed_at",
+    "checks",
 )
 
 

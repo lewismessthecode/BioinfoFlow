@@ -82,7 +82,9 @@ class LlmCatalogService:
             await self._reconcile_provider_catalog_state(provider)
             for provider in providers
         ]
-        return [await self._refresh_provider_test_status(provider) for provider in providers]
+        return [
+            await self._refresh_provider_test_status(provider) for provider in providers
+        ]
 
     async def create_provider(self, data: dict[str, Any]):
         kind, wire_protocol = validate_provider_configuration(
@@ -125,7 +127,9 @@ class LlmCatalogService:
         status = sanitize_provider_test_status(provider.test_status)
         if status is None:
             return provider
-        models = _active_models(await self.model_repo.list_for_provider(str(provider.id)))
+        models = _active_models(
+            await self.model_repo.list_for_provider(str(provider.id))
+        )
         no_model_status = status.get("error_code") == "model_not_configured"
         tested_model_id = status.get("model") or status.get("model_id")
         tested_model = (
@@ -142,13 +146,15 @@ class LlmCatalogService:
             )
         )
         credential = await self.credential_repo.get_for_provider(str(provider.id))
-        if (no_model_status and models) or (
-            not no_model_status and tested_model is None
-        ) or not is_provider_test_status_current(
-            provider.test_status,
-            provider=provider,
-            credential=credential,
-            tested_model=tested_model,
+        if (
+            (no_model_status and models)
+            or (not no_model_status and tested_model is None)
+            or not is_provider_test_status_current(
+                provider.test_status,
+                provider=provider,
+                credential=credential,
+                tested_model=tested_model,
+            )
         ):
             return await self.provider_repo.update_all(provider, test_status=None)
         return provider
@@ -177,7 +183,9 @@ class LlmCatalogService:
                 allow_insecure_http=allow_insecure_http,
             )
         elif template.default_base_url:
-            base_url = normalize_provider_base_url(template.kind, template.default_base_url)
+            base_url = normalize_provider_base_url(
+                template.kind, template.default_base_url
+            )
 
         existing_metadata = provider.provider_metadata if provider is not None else None
         metadata = {
@@ -217,7 +225,9 @@ class LlmCatalogService:
             )
 
         secret = str(data.get("api_key") or "").strip()
-        existing_credential = await self.credential_repo.get_for_provider(str(provider.id))
+        existing_credential = await self.credential_repo.get_for_provider(
+            str(provider.id)
+        )
         if secret:
             provider, credential = await self.upsert_provider_credential(
                 str(provider.id),
@@ -248,7 +258,9 @@ class LlmCatalogService:
             )
         if not models and template.models:
             for model_template in template.models:
-                models.append(await self._upsert_model_from_template(provider, model_template))
+                models.append(
+                    await self._upsert_model_from_template(provider, model_template)
+                )
             await self._mark_missing_provider_models_stale(
                 provider,
                 {model.model_id for model in models},
@@ -327,7 +339,9 @@ class LlmCatalogService:
             user_id=user_id,
             role=role,
         )
-        models = _active_models(await self.model_repo.list_for_provider(str(provider.id)))
+        models = _active_models(
+            await self.model_repo.list_for_provider(str(provider.id))
+        )
         if model_id is not None:
             model = await self.model_repo.get(model_id)
             if (
@@ -339,18 +353,41 @@ class LlmCatalogService:
         else:
             model = models[0] if models else None
         if model is None:
+            error_code = "model_not_configured"
+            error_message = "No model is configured for this provider."
             status = {
                 "success": False,
                 "checked_at": datetime.now(timezone.utc).isoformat(),
                 "wire_protocol": provider.wire_protocol,
                 "model": None,
                 "latency_ms": None,
-                "error_code": "model_not_configured",
-                "error": "No model is configured for this provider.",
+                "error_code": error_code,
+                "error": error_message,
                 "retryable": False,
                 "http_status": None,
                 "provider_code": None,
                 "mode": "live_probe",
+                "failed_at": "configuration",
+                "checks": [
+                    {
+                        "name": "configuration",
+                        "status": "failed",
+                        "error_code": error_code,
+                        "message": error_message,
+                    },
+                    {
+                        "name": "catalog",
+                        "status": "skipped",
+                        "error_code": None,
+                        "message": None,
+                    },
+                    {
+                        "name": "runtime",
+                        "status": "skipped",
+                        "error_code": None,
+                        "message": None,
+                    },
+                ],
             }
             credential = await self.credential_repo.get_for_provider(str(provider.id))
             fingerprint = compute_provider_test_fingerprint(provider, credential, None)
@@ -384,6 +421,27 @@ class LlmCatalogService:
             "model": public_result.get("model_id") or model.model_id,
             "error": public_result.get("error_message"),
             "mode": "live_probe",
+            "failed_at": None if public_result.get("success") else "runtime",
+            "checks": [
+                {
+                    "name": "configuration",
+                    "status": "passed",
+                    "error_code": None,
+                    "message": None,
+                },
+                {
+                    "name": "catalog",
+                    "status": "skipped",
+                    "error_code": None,
+                    "message": None,
+                },
+                {
+                    "name": "runtime",
+                    "status": "passed" if public_result.get("success") else "failed",
+                    "error_code": public_result.get("error_code"),
+                    "message": public_result.get("error_message"),
+                },
+            ],
         }
         fingerprint = compute_provider_test_fingerprint(provider, credential, model)
         internal_status = attach_provider_test_fingerprint(status, fingerprint)
@@ -500,7 +558,9 @@ class LlmCatalogService:
             user_id=user_id,
         )
         credentials = {
-            str(provider.id): await self.credential_repo.get_for_provider(str(provider.id))
+            str(provider.id): await self.credential_repo.get_for_provider(
+                str(provider.id)
+            )
             for provider in providers
         }
         provider_payloads = []
@@ -869,7 +929,9 @@ class LlmCatalogService:
                 continue
             if provider.scope != data.get("scope", "user"):
                 continue
-            provider_workspace_id = str(provider.workspace_id) if provider.workspace_id else None
+            provider_workspace_id = (
+                str(provider.workspace_id) if provider.workspace_id else None
+            )
             if provider_workspace_id != target_workspace_id:
                 continue
             if provider.user_id != target_user_id:
@@ -883,7 +945,9 @@ class LlmCatalogService:
                 return provider
         return None
 
-    async def _upsert_model_from_template_id(self, provider: LlmProvider, model_id: str):
+    async def _upsert_model_from_template_id(
+        self, provider: LlmProvider, model_id: str
+    ):
         return await self._upsert_model_from_discovered(
             provider,
             {
@@ -926,7 +990,9 @@ class LlmCatalogService:
             },
         )
 
-    async def _upsert_model_from_discovered(self, provider: LlmProvider, item: dict[str, Any]):
+    async def _upsert_model_from_discovered(
+        self, provider: LlmProvider, item: dict[str, Any]
+    ):
         existing = await self.model_repo.get_by_provider_model(
             provider_id=str(provider.id),
             model_id=item["model_id"],
@@ -959,8 +1025,7 @@ class LlmCatalogService:
         items: list[dict[str, Any]],
     ):
         models = [
-            await self._upsert_model_from_discovered(provider, item)
-            for item in items
+            await self._upsert_model_from_discovered(provider, item) for item in items
         ]
         await self._mark_missing_provider_models_stale(
             provider,
@@ -1050,7 +1115,10 @@ class LlmCatalogService:
             role=data.get("role"),
         )
         await self._ensure_models_visible(
-            [str(data["primary_model_id"]), *[str(item) for item in data.get("fallback_model_ids") or []]],
+            [
+                str(data["primary_model_id"]),
+                *[str(item) for item in data.get("fallback_model_ids") or []],
+            ],
             workspace_id=data["workspace_id"],
             user_id=data["user_id"],
         )
@@ -1059,7 +1127,9 @@ class LlmCatalogService:
             name=data["name"],
             task_type=data["task_type"],
             primary_model_id=str(data["primary_model_id"]),
-            fallback_model_ids=[str(item) for item in fallback_ids] if fallback_ids else None,
+            fallback_model_ids=[str(item) for item in fallback_ids]
+            if fallback_ids
+            else None,
             reasoning_budget=data.get("reasoning_budget"),
             max_tokens=data.get("max_tokens"),
             prefer_streaming=data.get("prefer_streaming", True),
@@ -1093,7 +1163,10 @@ class LlmCatalogService:
                 user_id=data["user_id"],
             )
             updates["primary_model_id"] = str(updates["primary_model_id"])
-        if "fallback_model_ids" in updates and updates["fallback_model_ids"] is not None:
+        if (
+            "fallback_model_ids" in updates
+            and updates["fallback_model_ids"] is not None
+        ):
             await self._ensure_models_visible(
                 [str(item) for item in updates["fallback_model_ids"]],
                 workspace_id=data["workspace_id"],
@@ -1150,7 +1223,9 @@ class LlmCatalogService:
             user_id=user_id,
             role=role,
         ):
-            raise PermissionDeniedError("LLM model profile is not writable by this user")
+            raise PermissionDeniedError(
+                "LLM model profile is not writable by this user"
+            )
         return profile
 
     async def _ensure_models_visible(
@@ -1257,9 +1332,7 @@ def _legacy_provider_updates(provider: LlmProvider) -> dict[str, Any]:
             "kind": "xai",
             "provider_metadata": {**metadata, "providerTemplate": "xai"},
         }
-    if host == "api.kimi.com" and (
-        provider.kind == "kimi" or template_id == "kimi"
-    ):
+    if host == "api.kimi.com" and (provider.kind == "kimi" or template_id == "kimi"):
         return {
             "name": "Kimi Code" if provider.name == "Kimi" else provider.name,
             "kind": "kimi_code",
@@ -1270,8 +1343,7 @@ def _legacy_provider_updates(provider: LlmProvider) -> dict[str, Any]:
             },
         }
     if host in {"api.moonshot.ai", "api.moonshot.cn"} and (
-        provider.kind in {"kimi", "kimi_cn"}
-        or template_id in {"kimi", "kimi-cn"}
+        provider.kind in {"kimi", "kimi_cn"} or template_id in {"kimi", "kimi-cn"}
     ):
         return {
             "enabled": False,
@@ -1334,9 +1406,7 @@ def _provider_discovery_base_url(provider: LlmProvider) -> str | None:
     template = provider_template_for_provider(provider)
     discovery = template.discovery if template else "openai_models"
     if discovery == "ollama_tags":
-        return normalize_ollama_base_url(
-            provider.base_url or settings.ollama_base_url
-        )
+        return normalize_ollama_base_url(provider.base_url or settings.ollama_base_url)
     if discovery == "cohere_models":
         return _provider_model_discovery_base_url(provider, template)
     return provider.base_url or (template.default_base_url if template else None)
@@ -1535,7 +1605,10 @@ def _openai_models_from_list(payload: Any) -> list[dict[str, Any]]:
 def _display_name_for_openai_model(model_id: str) -> str:
     if "/" in model_id:
         model_id = model_id.rsplit("/", 1)[-1]
-    return " ".join(part.upper() if part.isdigit() else part.capitalize() for part in model_id.replace("_", "-").split("-"))
+    return " ".join(
+        part.upper() if part.isdigit() else part.capitalize()
+        for part in model_id.replace("_", "-").split("-")
+    )
 
 
 def _anthropic_models_from_list(payload: Any) -> list[dict[str, Any]]:
@@ -1557,7 +1630,8 @@ def _anthropic_models_from_list(payload: Any) -> list[dict[str, Any]]:
         models.append(
             {
                 "model_id": model_id,
-                "display_name": display_name or _display_name_for_openai_model(model_id),
+                "display_name": display_name
+                or _display_name_for_openai_model(model_id),
                 "context_length": None,
                 "max_output_tokens": None,
                 "supports_tools": True,
@@ -1594,9 +1668,14 @@ def _gemini_models_from_list(payload: Any) -> list[dict[str, Any]]:
         models.append(
             {
                 "model_id": model_id,
-                "display_name": display_name or _display_name_for_openai_model(model_id),
-                "context_length": context_length if isinstance(context_length, int) else None,
-                "max_output_tokens": max_output if isinstance(max_output, int) else None,
+                "display_name": display_name
+                or _display_name_for_openai_model(model_id),
+                "context_length": context_length
+                if isinstance(context_length, int)
+                else None,
+                "max_output_tokens": max_output
+                if isinstance(max_output, int)
+                else None,
                 "supports_tools": True,
                 "supports_streaming": True,
                 "supports_vision": True,
@@ -1626,7 +1705,9 @@ def _cohere_models_from_list(payload: Any) -> list[dict[str, Any]]:
             context_length = None
         elif isinstance(item, dict):
             model_id = str(item.get("name") or item.get("id") or "").strip()
-            display_name = str(item.get("display_name") or item.get("displayName") or "").strip()
+            display_name = str(
+                item.get("display_name") or item.get("displayName") or ""
+            ).strip()
             endpoints = item.get("endpoints")
             context_length = item.get("context_length") or item.get("contextLength")
         else:
@@ -1639,8 +1720,11 @@ def _cohere_models_from_list(payload: Any) -> list[dict[str, Any]]:
         models.append(
             {
                 "model_id": model_id,
-                "display_name": display_name or _display_name_for_openai_model(model_id),
-                "context_length": context_length if isinstance(context_length, int) else None,
+                "display_name": display_name
+                or _display_name_for_openai_model(model_id),
+                "context_length": context_length
+                if isinstance(context_length, int)
+                else None,
                 "max_output_tokens": None,
                 "supports_tools": True,
                 "supports_streaming": True,
@@ -1655,7 +1739,10 @@ def _cohere_models_from_list(payload: Any) -> list[dict[str, Any]]:
 
 def _model_id_suggests_reasoning(model_id: str) -> bool:
     normalized = model_id.lower()
-    return any(token in normalized for token in ("reason", "thinking", "deepseek-r1", "o1", "o3"))
+    return any(
+        token in normalized
+        for token in ("reason", "thinking", "deepseek-r1", "o1", "o3")
+    )
 
 
 def _tenant_fields_for_scope(
@@ -1675,7 +1762,11 @@ def _tenant_fields_for_scope(
 
 
 def _ensure_can_write_shared_scope(*, scope: str, role: str | None = None) -> None:
-    if settings.auth_is_team and scope in {"global", "workspace"} and role not in ADMIN_ROLES:
+    if (
+        settings.auth_is_team
+        and scope in {"global", "workspace"}
+        and role not in ADMIN_ROLES
+    ):
         raise PermissionDeniedError(
             "Workspace and global LLM catalog entries require owner/admin access"
         )
