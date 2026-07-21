@@ -177,3 +177,68 @@ def test_kimi_k3_maps_medium_effort_to_supported_high_tier() -> None:
         "type": "enabled",
         "effort": "high",
     }
+
+
+@pytest.mark.parametrize(
+    ("provider_kind", "model_name", "expected_path", "expected_value"),
+    [
+        ("openai", "gpt-5", ("reasoning_effort",), "high"),
+        ("anthropic", "claude-sonnet-4-6", ("reasoning_effort",), "high"),
+        (
+            "openrouter",
+            "anthropic/claude-sonnet-4-6",
+            ("reasoning", "effort"),
+            "high",
+        ),
+        ("fireworks", "accounts/fireworks/models/gpt-oss-120b", ("reasoning_effort",), "high"),
+        ("qwen", "qwen3-max", ("extra_body", "enable_thinking"), True),
+        ("deepseek", "deepseek-reasoner", ("thinking", "type"), "enabled"),
+        ("xai", "grok-4.5", ("reasoning_effort",), "high"),
+        ("zai", "glm-4.7", ("extra_body", "thinking", "type"), "enabled"),
+        ("kimi_code", "kimi-for-coding", ("extra_body", "thinking", "type"), "enabled"),
+        ("minimax", "MiniMax-M3", ("extra_body", "reasoning_split"), True),
+        ("gemini", "gemini-3-pro-preview", ("reasoning_effort",), "high"),
+    ],
+)
+def test_phase_one_profiles_compile_reasoning_controls(
+    provider_kind: str,
+    model_name: str,
+    expected_path: tuple[str, ...],
+    expected_value: object,
+) -> None:
+    compiled = profile_for(provider_kind).compile_request(
+        {"model": model_name, "messages": [], "max_tokens": 100},
+        model_name=model_name,
+        wire_protocol="chat_completions",
+        reasoning=ReasoningRequest(enabled=True, effort="high"),
+    )
+
+    value: object = compiled
+    for part in expected_path:
+        assert isinstance(value, dict)
+        value = value[part]
+    assert value == expected_value
+
+
+def test_huggingface_profile_omits_unverified_universal_reasoning_control() -> None:
+    compiled = profile_for("huggingface").compile_request(
+        {"model": "MiniMaxAI/MiniMax-M3", "messages": [], "max_tokens": 100},
+        model_name="MiniMaxAI/MiniMax-M3",
+        wire_protocol="chat_completions",
+        reasoning=ReasoningRequest(enabled=True, effort="high"),
+    )
+
+    assert "reasoning_effort" not in compiled
+    assert "thinking" not in compiled
+
+
+def test_qwen_profile_omits_qwen_controls_for_heterogeneous_dashscope_model() -> None:
+    compiled = profile_for("qwen").compile_request(
+        {"model": "deepseek-v4-pro", "messages": [], "max_tokens": 100},
+        model_name="deepseek-v4-pro",
+        wire_protocol="chat_completions",
+        reasoning=ReasoningRequest(enabled=True, effort="high"),
+    )
+
+    assert "reasoning_effort" not in compiled
+    assert "extra_body" not in compiled

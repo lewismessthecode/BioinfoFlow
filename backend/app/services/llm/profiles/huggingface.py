@@ -6,7 +6,7 @@ from app.services.llm.profiles.base import ProviderProfile
 from app.services.model_runtime.contracts import ReasoningRequest, WireProtocol
 
 
-class ZaiProfile(ProviderProfile):
+class HuggingFaceProfile(ProviderProfile):
     def compile_request(
         self,
         request: dict[str, Any],
@@ -15,14 +15,10 @@ class ZaiProfile(ProviderProfile):
         wire_protocol: WireProtocol,
         reasoning: ReasoningRequest,
     ) -> dict[str, Any]:
-        compiled = super().compile_request(
+        del reasoning
+        return super().compile_request(
             request,
             model_name=model_name,
             wire_protocol=wire_protocol,
             reasoning=ReasoningRequest(enabled=False),
         )
-        compiled["extra_body"] = {
-            **compiled.get("extra_body", {}),
-            "thinking": {"type": "enabled" if reasoning.enabled else "disabled"},
-        }
-        return compiled
