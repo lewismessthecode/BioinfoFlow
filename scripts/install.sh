@@ -169,6 +169,18 @@ stop_installed_or_fail() {
   cleanup_socket_path=${cleanup_endpoint#unix://}
   normalized_cleanup_socket=$(normalize_absolute_path "$cleanup_socket_path") || die_with_hint "effective Docker socket path is not absolute; cannot confirm the installed stack is stopped" "Select the installation's local Docker context, then retry. Control files and data were preserved."
   [ "$normalized_cleanup_socket" = "$normalized_installed_socket" ] || die_with_hint "effective Docker socket $normalized_cleanup_socket does not match the installed Docker socket $normalized_installed_socket" "Select the Docker context used to install Bioinfoflow, then retry. Control files and data were preserved."
+  installed_uid=
+  installed_gid=
+  while IFS= read -r installed_env_line || [ -n "$installed_env_line" ]; do
+    case "$installed_env_line" in
+      BIOINFOFLOW_INSTALL_UID=*) installed_uid=${installed_env_line#BIOINFOFLOW_INSTALL_UID=} ;;
+      BIOINFOFLOW_INSTALL_GID=*) installed_gid=${installed_env_line#BIOINFOFLOW_INSTALL_GID=} ;;
+    esac
+  done < "$ENV_FILE"
+  case "$installed_uid" in ''|*[!0-9]*) die_with_hint "managed environment does not record a valid installer user ID; cannot return data ownership" "Preserve $INSTALL_DIR, restore its generated environment file, then retry." ;; esac
+  case "$installed_gid" in ''|*[!0-9]*) die_with_hint "managed environment does not record a valid installer group ID; cannot return data ownership" "Preserve $INSTALL_DIR, restore its generated environment file, then retry." ;; esac
+  compose stop >/dev/null 2>&1 || die_with_hint "Docker Compose could not stop the installed project before ownership handoff" "Resolve the Compose error and retry. Control files and data were preserved."
+  compose run --rm --no-deps --entrypoint /bin/chown backend -R "$installed_uid:$installed_gid" "$DATA_DIR" >/dev/null 2>&1 || die_with_hint "Docker could not return managed data ownership to the installing user" "Preserve $INSTALL_DIR and $DATA_DIR, resolve the container error, then retry."
   compose down --remove-orphans >/dev/null 2>&1 || die_with_hint "Docker Compose could not stop the installed project" "Resolve the Compose error and retry. Control files and data were preserved."
 }
 
@@ -280,6 +292,8 @@ BIOINFOFLOW_ARCH=$PLATFORM_ARCH
 IMAGE_REGISTRY=$IMAGE_REGISTRY
 FRONTEND_PORT=$FRONTEND_PORT
 DOCKER_SOCKET_PATH=$DOCKER_SOCKET_PATH
+BIOINFOFLOW_INSTALL_UID=$(id -u)
+BIOINFOFLOW_INSTALL_GID=$(id -g)
 EOF
 printf '%s\n' "$REQUESTED_VERSION" > "$TMP_DIR/VERSION"
 chmod 700 "$TMP_DIR/install.sh"
