@@ -107,3 +107,73 @@ def test_kimi_profile_compiles_openai_transport_request() -> None:
     assert "reasoning_effort" not in compiled
     assert "max_tokens" not in compiled
     assert source["max_tokens"] == 321
+
+
+def test_kimi_profile_normalizes_tool_schemas_without_mutating_source() -> None:
+    source = {
+        "model": "openai/kimi-for-coding",
+        "messages": [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {"name": "inspect", "arguments": "{}"},
+                    }
+                ],
+            }
+        ],
+        "stream": True,
+        "max_tokens": 321,
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "inspect",
+                    "description": "Inspect a resource.",
+                    "parameters": {
+                        "type": "object",
+                        "$defs": {
+                            "mode": {"enum": ["fast", "thorough"]},
+                        },
+                        "properties": {
+                            "mode": {"$ref": "#/$defs/mode"},
+                        },
+                    },
+                },
+            }
+        ],
+    }
+
+    compiled = profile_for("kimi_code").compile_request(
+        source,
+        model_name="kimi-for-coding",
+        wire_protocol="chat_completions",
+        reasoning=ReasoningRequest(enabled=True, effort="high"),
+    )
+
+    parameters = compiled["tools"][0]["function"]["parameters"]
+    assert parameters == {
+        "type": "object",
+        "properties": {
+            "mode": {"enum": ["fast", "thorough"], "type": "string"},
+        },
+    }
+    assert "content" not in compiled["messages"][0]
+    assert "$defs" in source["tools"][0]["function"]["parameters"]
+
+
+def test_kimi_k3_maps_medium_effort_to_supported_high_tier() -> None:
+    compiled = profile_for("kimi_code").compile_request(
+        {"model": "openai/k3", "messages": [], "max_tokens": 100},
+        model_name="k3",
+        wire_protocol="chat_completions",
+        reasoning=ReasoningRequest(enabled=True, effort="medium"),
+    )
+
+    assert compiled["extra_body"]["thinking"] == {
+        "type": "enabled",
+        "effort": "high",
+    }
