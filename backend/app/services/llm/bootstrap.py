@@ -17,7 +17,7 @@ from app.services.llm.catalog import LlmCatalogService
 from app.services.llm.provider_templates import (
     ModelTemplate,
     ProviderTemplate,
-    list_provider_templates,
+    list_bootstrap_provider_templates,
     normalize_provider_base_url,
 )
 
@@ -42,7 +42,7 @@ async def sync_environment_llm_catalog(
     catalog_service = LlmCatalogService(session)
     changed = 0
 
-    for template in list_provider_templates():
+    for template in list_bootstrap_provider_templates():
         env_api_key_var = _first_present_env_var(template.env_api_key_vars)
         env_base_url_var = _first_present_env_var(template.env_base_url_vars)
         env_allow_insecure_http = _first_truthy_env_value(

@@ -57,57 +57,31 @@ def test_provider_templates_expose_explicit_supported_and_default_protocols() ->
 
 def test_common_provider_templates_are_key_first_and_provider_neutral() -> None:
     templates = {template.id: template for template in list_provider_templates()}
-    assert {
+    assert set(templates) == {
         "openai",
         "anthropic",
-        "gemini",
-        "deepseek",
-        "grok",
-        "groq",
         "openrouter",
-        "ollama",
-        "vllm",
-        "kimi",
-        "kimi-cn",
-        "qwen",
-        "mistral",
-        "cohere",
-        "together",
         "fireworks",
-        "perplexity",
-        "openai-compatible",
-    }.issubset(templates)
-
-    hosted_key_first = {
-        "openai",
-        "anthropic",
-        "gemini",
+        "qwen",
         "deepseek",
-        "grok",
-        "groq",
-        "openrouter",
-        "kimi",
-        "kimi-cn",
-        "qwen",
-        "mistral",
-        "cohere",
-        "together",
-        "fireworks",
-        "perplexity",
+        "xai",
+        "zai",
+        "kimi-code",
+        "minimax",
+        "huggingface",
+        "gemini",
     }
-    for template_id in hosted_key_first:
-        fields = templates[template_id].as_dict()["fields"]
-        assert [field["name"] for field in fields] == ["api_key"], template_id
-        assert fields[0]["placeholder"] == "Paste API key"
 
-    assert templates["kimi"].env_api_key_vars == ("KIMI_API_KEY",)
-    assert templates["kimi"].default_base_url == "https://api.moonshot.ai/v1"
-    assert templates["kimi-cn"].env_api_key_vars == (
-        "KIMI_CN_API_KEY",
-        "MOONSHOT_CN_API_KEY",
-        "MOONSHOT_API_KEY",
+    for template_id in templates:
+        fields = templates[template_id].as_dict()["fields"]
+        assert fields[-1]["name"] == "api_key", template_id
+        assert fields[-1]["placeholder"] == "Paste API key"
+
+    assert templates["kimi-code"].env_api_key_vars == (
+        "KIMI_API_KEY",
+        "KIMI_CODE_API_KEY",
     )
-    assert templates["kimi-cn"].default_base_url == "https://api.moonshot.cn/v1"
+    assert templates["kimi-code"].default_base_url == "https://api.kimi.com/coding/v1"
 
     serialized_templates = repr([template.as_dict() for template in templates.values()])
     assert "".join(("c", "ch")) not in serialized_templates.lower()
@@ -265,11 +239,11 @@ async def test_anthropic_environment_bootstrap_accepts_https_custom_base_url(
 
 
 @pytest.mark.asyncio
-async def test_kimi_environment_bootstrap_uses_kimi_key_for_global(
+async def test_kimi_environment_bootstrap_uses_kimi_code_endpoint(
     db_session,
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("KIMI_API_KEY", "kimi-global-key")
+    monkeypatch.setenv("KIMI_API_KEY", "kimi-code-key")
     monkeypatch.setattr(
         "app.services.llm.bootstrap.LlmCatalogService.discover_models_unchecked",
         _noop_discovery,
@@ -279,11 +253,11 @@ async def test_kimi_environment_bootstrap_uses_kimi_key_for_global(
 
     provider = (
         await db_session.execute(
-            LlmProvider.__table__.select().where(LlmProvider.kind == "kimi")
+            LlmProvider.__table__.select().where(LlmProvider.kind == "kimi_code")
         )
     ).mappings().one()
-    assert provider["base_url"] == "https://api.moonshot.ai/v1"
-    assert provider["metadata"]["providerTemplate"] == "kimi"
+    assert provider["base_url"] == "https://api.kimi.com/coding/v1"
+    assert provider["metadata"]["providerTemplate"] == "kimi-code"
 
     credential = (
         await db_session.execute(
@@ -296,7 +270,7 @@ async def test_kimi_environment_bootstrap_uses_kimi_key_for_global(
 
 
 @pytest.mark.asyncio
-async def test_kimi_environment_bootstrap_keeps_legacy_moonshot_key_on_china(
+async def test_kimi_environment_bootstrap_ignores_legacy_moonshot_key(
     db_session,
     monkeypatch,
 ) -> None:
@@ -308,22 +282,12 @@ async def test_kimi_environment_bootstrap_keeps_legacy_moonshot_key_on_china(
 
     await sync_environment_llm_catalog(db_session)
 
-    provider = (
+    providers = (
         await db_session.execute(
             LlmProvider.__table__.select().where(LlmProvider.kind == "kimi_cn")
         )
-    ).mappings().one()
-    assert provider["base_url"] == "https://api.moonshot.cn/v1"
-    assert provider["metadata"]["providerTemplate"] == "kimi-cn"
-
-    credential = (
-        await db_session.execute(
-            LlmProviderCredential.__table__.select().where(
-                LlmProviderCredential.provider_id == provider["id"]
-            )
-        )
-    ).mappings().one()
-    assert credential["env_var_name"] == "MOONSHOT_API_KEY"
+    ).mappings().all()
+    assert providers == []
 
 
 @pytest.mark.asyncio
