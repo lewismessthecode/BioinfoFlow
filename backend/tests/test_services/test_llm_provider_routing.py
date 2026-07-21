@@ -88,11 +88,11 @@ def test_kimi_models_route_through_openai_compatibility_by_default() -> None:
         ("mistral", "mistral-test", "openai/mistral-test"),
         ("cohere", "command-test", "openai/command-test"),
         ("together", "llama-test", "openai/llama-test"),
-        ("fireworks", "fireworks-test", "openai/fireworks-test"),
+        ("fireworks", "fireworks-test", "fireworks_ai/fireworks-test"),
         ("perplexity", "sonar-test", "perplexity/sonar-test"),
         ("azure", "deployment-name", "azure/deployment-name"),
         ("azure", "azure/deployment-name", "azure/deployment-name"),
-        ("minimax", "minimax-test", "minimax-test"),
+        ("minimax", "minimax-test", "minimax/minimax-test"),
     ],
 )
 async def test_registry_routing_flows_through_codec_and_gateway(
