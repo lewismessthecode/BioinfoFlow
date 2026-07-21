@@ -25,7 +25,16 @@ _SCHEMA_SINGLE_KEYS = (
     "unevaluatedProperties",
 )
 _SCHEMA_ARRAY_KEYS = ("allOf", "anyOf", "oneOf", "prefixItems")
-_TYPE_INFERENCE_SKIP_KEYS = {"$ref", "allOf", "anyOf", "else", "if", "not", "oneOf", "then"}
+_TYPE_INFERENCE_SKIP_KEYS = {
+    "$ref",
+    "allOf",
+    "anyOf",
+    "else",
+    "if",
+    "not",
+    "oneOf",
+    "then",
+}
 
 
 def normalize_kimi_tool_schema(schema: dict[str, Any]) -> dict[str, Any]:
@@ -65,10 +74,7 @@ def _resolve_node(node: Any, root: dict[str, Any], visiting: set[str]) -> Any:
                 return merged
             return resolved
 
-    return {
-        key: _resolve_node(value, root, visiting)
-        for key, value in node.items()
-    }
+    return {key: _resolve_node(value, root, visiting) for key, value in node.items()}
 
 
 def _resolve_pointer(root: dict[str, Any], ref: str) -> tuple[bool, Any]:
