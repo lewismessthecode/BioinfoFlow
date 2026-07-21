@@ -108,6 +108,21 @@ export function useLlmCatalog() {
       setError(null)
       try {
         const result = await setupLlmProvider(input)
+        setModels((current) =>
+          replaceProviderModels(current, result.provider.id, result.models),
+        )
+        setConfiguration((current) =>
+          current
+            ? {
+                ...current,
+                models: replaceProviderModels(
+                  current.models,
+                  result.provider.id,
+                  result.models,
+                ),
+              }
+            : current,
+        )
         await refresh({ background: true })
         return { ok: true, result }
       } catch (caught) {
@@ -205,8 +220,12 @@ export function useLlmCatalog() {
         await refresh({ background: true })
         return discovered
       } catch (caught) {
-        setError(caught instanceof Error ? caught : new Error("Failed to discover LLM models"))
-        return null
+        const discoveryError =
+          caught instanceof Error
+            ? caught
+            : new Error("Failed to discover LLM models")
+        setError(discoveryError)
+        throw discoveryError
       } finally {
         setPendingMutationCount((count) => Math.max(0, count - 1))
       }

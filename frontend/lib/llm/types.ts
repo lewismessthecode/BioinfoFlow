@@ -89,6 +89,13 @@ export type LlmProviderTestResult = {
   retryable: boolean
   http_status?: number | null
   provider_code?: string | null
+  failed_at?: "configuration" | "catalog" | "runtime" | null
+  checks?: Array<{
+    name: "configuration" | "catalog" | "runtime"
+    status: "passed" | "failed" | "skipped"
+    error_code?: string | null
+    message?: string | null
+  }>
 }
 
 export type LlmProviderDiscovery =
@@ -96,6 +103,7 @@ export type LlmProviderDiscovery =
   | "openai_models"
   | "ollama_tags"
   | "anthropic_models"
+  | "openrouter_models"
   | "gemini_models"
   | "cohere_models"
 
