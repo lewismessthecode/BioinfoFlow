@@ -12,10 +12,11 @@ This repository uses GitHub Actions to make worktree branches flow through PRs, 
 - `PR Automation` opens a PR to `main` when you push a non-main branch.
 - `Auto Merge` queues a squash merge when a reviewed PR has the `automerge` label.
 
-Release Please creates its pull request with `GITHUB_TOKEN`. The `Release`
-workflow explicitly dispatches `CI` against the generated release branch so the
-protected `backend`, `frontend`, and `docker` checks still run. Release PRs must
-not receive the `automerge` label.
+`PR Automation` and Release Please use the optional `PR_AUTOMATION_TOKEN` and
+`RELEASE_PLEASE_TOKEN` repository secrets when configured, falling back to
+`GITHUB_TOKEN`. Prefer narrowly scoped GitHub App or fine-grained user tokens so
+automated pull requests use a trusted identity. Release PRs must not receive the
+`automerge` label.
 
 ## CI Change Detection
 
@@ -40,6 +41,10 @@ The protected `main` branch expects these status checks:
 The `scripts/github/configure-repo.sh` script configures these checks through the GitHub API.
 
 Keep these three check names stable. If the internal CI job graph changes, make the required checks summary jobs rather than changing branch protection for every implementation detail.
+
+The checks are required, but branches do not have to be updated after every
+unrelated merge to `main`. GitHub still blocks conflicting pull requests, while
+independent pull requests avoid unnecessary update-and-rerun cycles.
 
 ## Worktree Flow
 
@@ -66,7 +71,8 @@ If that permission is disabled, `PR Automation` emits a warning and exits succes
 git push
 ```
 
-When `main` moves ahead, rebase inside the worktree:
+When a PR conflicts with `main`, or depends on newly merged code, rebase inside
+the worktree:
 
 ```bash
 git fetch origin main
@@ -80,7 +86,13 @@ After review, add the `automerge` label to let GitHub queue a squash merge once 
 
 CI, CodeQL, dependency update PRs, and branch protection are automated review aids. They catch formatting, test, build, Docker, dependency, and security issues.
 
-They are not a replacement for human code review. GitHub Actions is configured with `can_approve_pull_request_reviews: false`, so automation cannot approve its own PR. On this single-collaborator repository, `scripts/github/configure-repo.sh` defaults to `REQUIRED_APPROVALS=0` to avoid making every PR impossible to merge. After adding collaborators, run:
+They are not a replacement for human code review. GitHub Actions may create pull
+requests, but the repository workflows do not submit approving reviews. Workflow
+execution approval is limited to first-time contributors who are new to GitHub,
+which avoids repeatedly blocking trusted automation. On this single-collaborator
+repository, `scripts/github/configure-repo.sh` defaults to
+`REQUIRED_APPROVALS=0` to avoid making every PR impossible to merge. After adding
+collaborators, run:
 
 ```bash
 REQUIRED_APPROVALS=1 scripts/github/configure-repo.sh lewismessthecode/BioinfoFlow

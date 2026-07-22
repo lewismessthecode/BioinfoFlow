@@ -38,7 +38,16 @@ gh api \
   --input - >/dev/null <<'JSON'
 {
   "default_workflow_permissions": "read",
-  "can_approve_pull_request_reviews": false
+  "can_approve_pull_request_reviews": true
+}
+JSON
+
+gh api \
+  --method PUT \
+  "repos/${REPOSITORY}/actions/permissions/fork-pr-contributor-approval" \
+  --input - >/dev/null <<'JSON'
+{
+  "approval_policy": "first_time_contributors_new_to_github"
 }
 JSON
 
@@ -48,7 +57,7 @@ gh api \
   --input - >/dev/null <<JSON
 {
   "required_status_checks": {
-    "strict": true,
+    "strict": false,
     "contexts": [
       "backend",
       "frontend",
@@ -73,6 +82,7 @@ echo "Done."
 echo
 echo "Required checks: backend, frontend, docker"
 echo "The CI workflow keeps these contexts stable and skips heavy work inside the workflow when a PR does not touch the matching area."
+echo "PR branches do not need to be updated after every unrelated merge to main."
 echo "Required approvals: ${REQUIRED_APPROVALS}"
 echo
 echo "For a team repo, rerun with REQUIRED_APPROVALS=1 after adding collaborators:"
