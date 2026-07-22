@@ -6,6 +6,9 @@ vi.mock("@vercel/analytics/next", () => ({
 }))
 
 vi.mock("agentation", () => ({ Agentation: () => null }))
+vi.mock("next/script", () => ({
+  default: ({ src }: { src: string }) => <script src={src} />,
+}))
 vi.mock("next-intl", () => ({
   NextIntlClientProvider: ({ children }: { children: React.ReactNode }) => children,
 }))
@@ -35,6 +38,7 @@ describe("RootLayout analytics gate", () => {
     )
 
     expect(html).not.toContain('data-testid="vercel-analytics"')
+    expect(html).toContain('src="/runtime-config.js"')
   })
 
   it.each([
