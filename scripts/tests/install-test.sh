@@ -587,6 +587,8 @@ else
   fail "release workflow asserts dev auth and Docker socket Compose contract"
 fi
 
+# Workflow shell expressions are intentionally matched as literal strings.
+# shellcheck disable=SC2016
 if grep -q 'ubuntu-24.04-arm' "$RELEASE_WORKFLOW" && \
    grep -q 'ubuntu-24.04' "$RELEASE_WORKFLOW" && \
    grep -q 'python3 -m http.server' "$RELEASE_WORKFLOW" && \
