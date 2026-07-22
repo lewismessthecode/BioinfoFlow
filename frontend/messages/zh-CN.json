@@ -2054,7 +2054,8 @@
       "online": "在线",
       "offline": "离线",
       "error": "连接异常",
-      "unknown": "未测试"
+      "unknown": "未测试",
+      "connecting": "正在连接…"
     },
     "auth": {
       "password": "密码",
@@ -2072,6 +2073,7 @@
     },
     "actions": {
       "testConnection": "测试连接",
+      "retestConnection": "重新测试连接",
       "testing": "测试中…",
       "editConnection": "编辑连接",
       "runProbe": "运行检查",
@@ -2108,6 +2110,11 @@
       "titleForConnection": "{name} 的命令检查",
       "description": "远程命令输出",
       "placeholder": "运行命令检查后，远程输出会显示在这里。",
+      "running": "正在运行连接检查…",
+      "succeeded": "连接检查已完成。",
+      "timedOut": "连接检查超时。",
+      "exitFailed": "连接检查失败，退出码为 {code}。",
+      "unknownExitCode": "未知",
       "emptyOutput": "命令已完成，没有输出。",
       "failed": "命令检查失败。"
     },

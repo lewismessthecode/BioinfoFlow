@@ -2054,7 +2054,8 @@
       "online": "Online",
       "offline": "Offline",
       "error": "Connection error",
-      "unknown": "Not tested"
+      "unknown": "Not tested",
+      "connecting": "Connecting…"
     },
     "auth": {
       "password": "Password",
@@ -2072,6 +2073,7 @@
     },
     "actions": {
       "testConnection": "Test connection",
+      "retestConnection": "Retest connection",
       "testing": "Testing…",
       "editConnection": "Edit connection",
       "runProbe": "Run check",
@@ -2108,6 +2110,11 @@
       "titleForConnection": "Command check for {name}",
       "description": "Remote command output",
       "placeholder": "Run a command check and the remote output will appear here.",
+      "running": "Running connection check…",
+      "succeeded": "Connection check completed.",
+      "timedOut": "Connection check timed out.",
+      "exitFailed": "Connection check failed with exit code {code}.",
+      "unknownExitCode": "unknown",
       "emptyOutput": "Command completed with no output.",
       "failed": "Command check failed."
     },

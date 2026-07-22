@@ -47,6 +47,12 @@ type UpsertConnectionOptions = {
   select?: boolean
 }
 
+type ProbeFeedbackState = {
+  connectionId: string
+  status: "running" | "success" | "error"
+  message: string
+} | null
+
 type Translate = (key: string, values?: Record<string, string | number>) => string
 
 function parsePort(value: string): number | null {
@@ -92,6 +98,7 @@ export default function ConnectionsPage() {
   const [probeConnectionId, setProbeConnectionId] = useState<string | null>(null)
   const [probeOutputConnectionId, setProbeOutputConnectionId] = useState("")
   const [probeOutput, setProbeOutput] = useState("")
+  const [probeFeedback, setProbeFeedback] = useState<ProbeFeedbackState>(null)
   const [deleteTarget, setDeleteTarget] = useState<RemoteConnection | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const testRequestRef = useRef(0)
@@ -269,37 +276,7 @@ export default function ConnectionsPage() {
     }
   }
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const payload = buildPayload()
-    if (!payload) return
-
-    setIsSaving(true)
-    try {
-      const nextConnection =
-        dialogMode === "edit" && editingConnectionId
-          ? await updateRemoteConnection(editingConnectionId, payload)
-          : await createRemoteConnection(payload)
-
-      upsertConnection(nextConnection)
-      setDialogOpen(false)
-      resetFormState()
-      toast.success(
-        dialogMode === "edit"
-          ? t("toasts.connectionUpdated", { name: nextConnection.name })
-          : t("toasts.connectionAdded", { name: nextConnection.name }),
-      )
-    } catch (error) {
-      const message = error instanceof Error ? error.message : t("form.errors.saveFailed")
-      setFormError(message)
-      setFormErrorField(null)
-      toast.error(message)
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  const handleTestConnection = async (connection: RemoteConnection) => {
+  const verifyConnection = async (connection: RemoteConnection) => {
     const requestId = testRequestRef.current + 1
     testRequestRef.current = requestId
     setTestingConnectionId(connection.id)
@@ -323,12 +300,52 @@ export default function ConnectionsPage() {
     }
   }
 
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const payload = buildPayload()
+    if (!payload) return
+
+    setIsSaving(true)
+    try {
+      const nextConnection =
+        dialogMode === "edit" && editingConnectionId
+          ? await updateRemoteConnection(editingConnectionId, payload)
+          : await createRemoteConnection(payload)
+
+      upsertConnection(nextConnection)
+      setDialogOpen(false)
+      resetFormState()
+      toast.success(
+        dialogMode === "edit"
+          ? t("toasts.connectionUpdated", { name: nextConnection.name })
+          : t("toasts.connectionAdded", { name: nextConnection.name }),
+      )
+      void verifyConnection(nextConnection)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("form.errors.saveFailed")
+      setFormError(message)
+      setFormErrorField(null)
+      toast.error(message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleTestConnection = async (connection: RemoteConnection) => {
+    await verifyConnection(connection)
+  }
+
   const handleRunProbe = async (connection: RemoteConnection) => {
     const requestId = probeRequestRef.current + 1
     probeRequestRef.current = requestId
     setProbeConnectionId(connection.id)
     setProbeOutputConnectionId(connection.id)
     setProbeOutput("")
+    setProbeFeedback({
+      connectionId: connection.id,
+      status: "running",
+      message: t("probe.running"),
+    })
     try {
       const result = await runRemoteConnectionCommand(connection.id, {
         command: "printf bioinfoflow-ok",
@@ -345,11 +362,31 @@ export default function ConnectionsPage() {
       })
       if (probeRequestRef.current === requestId) {
         setProbeOutput((current) => current || result.output || t("probe.emptyOutput"))
+        if (result.timedOut) {
+          setProbeFeedback({
+            connectionId: connection.id,
+            status: "error",
+            message: t("probe.timedOut"),
+          })
+        } else if (result.exitCode !== 0) {
+          setProbeFeedback({
+            connectionId: connection.id,
+            status: "error",
+            message: t("probe.exitFailed", { code: result.exitCode ?? t("probe.unknownExitCode") }),
+          })
+        } else {
+          setProbeFeedback({
+            connectionId: connection.id,
+            status: "success",
+            message: t("probe.succeeded"),
+          })
+        }
       }
     } catch (error) {
       if (probeRequestRef.current !== requestId) return
       const message = error instanceof Error ? error.message : t("probe.failed")
       setProbeOutput(message)
+      setProbeFeedback({ connectionId: connection.id, status: "error", message })
       toast.error(message)
     } finally {
       if (probeRequestRef.current === requestId) {
@@ -404,6 +441,9 @@ export default function ConnectionsPage() {
       setProbeOutputConnectionId("")
       setProbeOutput("")
     }
+    if (probeFeedback?.connectionId === connectionId) {
+      setProbeFeedback(null)
+    }
   }
 
   const appendSkillText = (text: string) => {
@@ -422,6 +462,10 @@ export default function ConnectionsPage() {
     : null
   const editingProbeOutput =
     editingConnection && probeOutputConnectionId === editingConnection.id ? probeOutput : ""
+  const editingProbeFeedback =
+    editingConnection && probeFeedback?.connectionId === editingConnection.id
+      ? { status: probeFeedback.status, message: probeFeedback.message }
+      : null
 
   return (
     <div className="relative h-full overflow-hidden bg-background">
@@ -463,6 +507,7 @@ export default function ConnectionsPage() {
               statusFilter={statusFilter}
               isLoading={isLoadingConnections}
               loadError={connectionsLoadError}
+              testingConnectionId={testingConnectionId}
               onSearchChange={setSearch}
               onStatusFilterChange={setStatusFilter}
               onSelectConnection={setSelectedConnectionId}
@@ -479,6 +524,7 @@ export default function ConnectionsPage() {
         testing={editingConnection ? testingConnectionId === editingConnection.id : false}
         probing={editingConnection ? probeConnectionId === editingConnection.id : false}
         probeOutput={editingProbeOutput}
+        probeFeedback={editingProbeFeedback}
         form={form}
         formError={formError}
         formErrorField={formErrorField}

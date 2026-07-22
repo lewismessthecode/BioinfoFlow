@@ -10,6 +10,7 @@ import {
 import {
   BookOpenText,
   CheckCircle2,
+  CircleAlert,
   FileText,
   KeyRound,
   MoreHorizontal,
@@ -87,6 +88,10 @@ type ConnectionDialogProps = {
   testing: boolean
   probing: boolean
   probeOutput: string
+  probeFeedback: {
+    status: "running" | "success" | "error"
+    message: string
+  } | null
   form: ConnectionFormState
   formError: string | null
   formErrorField: FormErrorField
@@ -107,6 +112,7 @@ export function ConnectionDialog({
   testing,
   probing,
   probeOutput,
+  probeFeedback,
   form,
   formError,
   formErrorField,
@@ -180,7 +186,7 @@ export function ConnectionDialog({
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem disabled={testing} onSelect={() => onTest(connection)}>
                     <RefreshCw className={cn("h-4 w-4", testing && "animate-spin")} />
-                    {testing ? t("actions.testing") : t("actions.testConnection")}
+                    {testing ? t("actions.testing") : t("actions.retestConnection")}
                   </DropdownMenuItem>
                   <DropdownMenuItem disabled={probing} onSelect={() => onRunProbe(connection)}>
                     <Play className="h-4 w-4" />
@@ -207,6 +213,28 @@ export function ConnectionDialog({
             </Button>
           </div>
         </div>
+
+        {probeFeedback ? (
+          <div
+            role={probeFeedback.status === "error" ? "alert" : "status"}
+            aria-live={probeFeedback.status === "error" ? "assertive" : "polite"}
+            className={cn(
+              "mx-3 mt-3 flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm",
+              probeFeedback.status === "running" && "border-primary/20 bg-primary/5 text-primary",
+              probeFeedback.status === "success" && "border-success-border bg-success-muted text-success-foreground",
+              probeFeedback.status === "error" && "border-destructive/25 bg-destructive/10 text-destructive",
+            )}
+          >
+            {probeFeedback.status === "running" ? (
+              <RefreshCw className="h-4 w-4 shrink-0 animate-spin motion-reduce:animate-none" />
+            ) : probeFeedback.status === "success" ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+            ) : (
+              <CircleAlert className="h-4 w-4 shrink-0" />
+            )}
+            <span>{probeFeedback.message}</span>
+          </div>
+        ) : null}
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 [scrollbar-gutter:stable]">
           <div className="grid gap-3">
