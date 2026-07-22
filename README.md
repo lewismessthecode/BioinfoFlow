@@ -57,10 +57,18 @@ The shortest path for a trusted local machine is the release installer:
 curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh
 ```
 
+This always installs the latest tested numeric release, never a floating
+development image. If ports 3000 or 8000 are occupied, the installer reports
+the listening process and you can choose two free ports without stopping it:
+
+```bash
+curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | FRONTEND_PORT=3100 BACKEND_PORT=8100 sh
+```
+
 It verifies the published release assets, pulls the matching architecture, and
 opens <http://localhost:3000>. The localhost stack binds only to `127.0.0.1`,
-stores persistent state and native skills under `~/.bioinfoflow`, and opens the Agent without
-a Bioinfoflow login screen. Do not expose this no-auth localhost mode through a
+stores persistent state and native skills under `~/.bioinfoflow`, and opens the
+Agent without a Bioinfoflow login screen. Do not expose this no-auth localhost mode through a
 reverse proxy, port forward, or public Docker host.
 
 For updates, removal, version selection, checksum inspection, and source-build
