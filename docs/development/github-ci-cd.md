@@ -11,12 +11,19 @@ This repository uses GitHub Actions to make worktree branches flow through PRs, 
 - `Installer Release` publishes three formal multi-architecture images, smoke-tests the localhost installer, and attaches its assets to the GitHub Release.
 - `PR Automation` opens a PR to `main` when you push a non-main branch.
 - `Auto Merge` queues a squash merge when a reviewed PR has the `automerge` label.
+- `Approve Trusted Workflows` approves blocked CI and CodeQL runs only when the
+  pull request and `github-actions` actor both belong to this repository.
 
 `PR Automation` and Release Please use the optional `PR_AUTOMATION_TOKEN` and
 `RELEASE_PLEASE_TOKEN` repository secrets when configured, falling back to
 `GITHUB_TOKEN`. Prefer narrowly scoped GitHub App or fine-grained user tokens so
 automated pull requests use a trusted identity. Release PRs must not receive the
 `automerge` label.
+
+GitHub may still classify a pull request created with `GITHUB_TOKEN` as a
+first-time automated contributor. The approval workflow handles that fallback
+without weakening fork protection: it rejects external head repositories and
+actors other than `github-actions[bot]`.
 
 ## CI Change Detection
 

@@ -130,11 +130,21 @@ def test_formal_release_workflow_publishes_numeric_aliases() -> None:
 def test_repository_configuration_avoids_redundant_pr_reruns() -> None:
     configuration = read_repo_file("scripts/github/configure-repo.sh")
     pr_automation = read_repo_file(".github/workflows/pr-automation.yml")
+    trusted_approval = read_repo_file(
+        ".github/workflows/approve-trusted-workflows.yml"
+    )
 
     assert '"strict": false' in configuration
     assert '"approval_policy": "first_time_contributors_new_to_github"' in configuration
     assert '"can_approve_pull_request_reviews": true' in configuration
     assert "secrets.PR_AUTOMATION_TOKEN || secrets.GITHUB_TOKEN" in pr_automation
+    assert "github.event.workflow_run.conclusion == 'action_required'" in trusted_approval
+    assert (
+        "github.event.workflow_run.head_repository.full_name == github.repository"
+        in trusted_approval
+    )
+    assert "github.event.workflow_run.actor.login == 'github-actions[bot]'" in trusted_approval
+    assert 'gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/approve"' in trusted_approval
 
 
 def test_formal_release_packages_and_smoke_tests_native_skills() -> None:
