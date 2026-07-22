@@ -126,10 +126,19 @@ EOF
 cat > "$BIN_DIR/lsof" <<'EOF'
 #!/bin/sh
 printf 'lsof %s\n' "$*" >> "$FAKE_CALLS"
-case "$*" in
-  *-iTCP:8000*) [ "${FAKE_BACKEND_PORT_BUSY:-0}" = 1 ] || [ "${FAKE_PORTS_BUSY:-0}" = 1 ] ;;
-  *) [ "${FAKE_PORTS_BUSY:-0}" = 1 ] ;;
+port=$(printf '%s\n' "$*" | sed -n 's/.*-iTCP:\([0-9][0-9]*\).*/\1/p')
+busy=0
+case "$port" in
+  8000|8100) [ "${FAKE_BACKEND_PORT_BUSY:-0}" = 0 ] || busy=1 ;;
+  *) [ "${FAKE_FRONTEND_PORT_BUSY:-0}" = 0 ] || busy=1 ;;
 esac
+[ "${FAKE_PORTS_BUSY:-0}" = 0 ] || busy=1
+if [ "$busy" -eq 1 ]; then
+  printf '%s\n' 'COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME'
+  printf 'node    12345 user   21u  IPv4  0x123      0t0  TCP 127.0.0.1:%s (LISTEN)\n' "$port"
+  exit 0
+fi
+exit 1
 EOF
 
   cat > "$BIN_DIR/open" <<'EOF'
@@ -186,6 +195,7 @@ BIOINFOFLOW_VERSION=v1.0.0
 BIOINFOFLOW_ARCH=amd64
 IMAGE_REGISTRY=ghcr.io/lewismessthecode
 FRONTEND_PORT=3000
+BACKEND_PORT=8000
 DOCKER_SOCKET_PATH=/var/run/docker.sock
 BIOINFOFLOW_INSTALL_UID=$(id -u)
 BIOINFOFLOW_INSTALL_GID=$(id -g)
@@ -277,12 +287,41 @@ fi
 teardown_case
 
 test_failure_with_hint "rejects unsupported architectures with recovery" "Unsupported architecture" "amd64 or arm64" FAKE_ARCH=riscv64
-test_failure_with_hint "rejects occupied localhost ports with recovery" "already in use" "FRONTEND_PORT" FAKE_PORTS_BUSY=1
-test_failure_with_hint "requires fixed backend port 8000 to be free" "backend port 8000 is already in use" "Stop the process using port 8000" FAKE_BACKEND_PORT_BUSY=1
+setup_case
+run_installer FAKE_FRONTEND_PORT_BUSY=1 ARGS=--no-open
+if [ "$STATUS" -ne 0 ] && assert_contains "$OUTPUT" "frontend port 3000 is already in use" && assert_contains "$OUTPUT" "node" && assert_contains "$OUTPUT" "12345" && assert_contains "$OUTPUT" "FRONTEND_PORT=3100 BACKEND_PORT=8100" && ! assert_contains "$OUTPUT" "kill -9"; then pass "reports the frontend port owner without killing it"; else fail "reports the frontend port owner without killing it (status=$STATUS output=$OUTPUT)"; fi
+teardown_case
+
+setup_case
+run_installer FAKE_BACKEND_PORT_BUSY=1 ARGS=--no-open
+if [ "$STATUS" -ne 0 ] && assert_contains "$OUTPUT" "backend port 8000 is already in use" && assert_contains "$OUTPUT" "node" && assert_contains "$OUTPUT" "12345" && assert_contains "$OUTPUT" "FRONTEND_PORT=3100 BACKEND_PORT=8100" && ! assert_contains "$OUTPUT" "kill -9"; then pass "reports the backend port owner without killing it"; else fail "reports the backend port owner without killing it (status=$STATUS output=$OUTPUT)"; fi
+teardown_case
+
+test_failure_with_hint "rejects a zero frontend port" "FRONTEND_PORT must be" "1 through 65535" FRONTEND_PORT=0
+test_failure_with_hint "rejects an oversized backend port" "BACKEND_PORT must be" "1 through 65535" BACKEND_PORT=65536
+test_failure_with_hint "rejects a nonnumeric backend port" "BACKEND_PORT must be" "1 through 65535" BACKEND_PORT=eight-thousand
+test_failure_with_hint "rejects identical frontend and backend ports" "must be different" "Choose two free ports" FRONTEND_PORT=8100 BACKEND_PORT=8100
 test_failure_with_hint "keeps interrupted downloads out of place with recovery" "download" "release tag" FAKE_DOWNLOAD_INTERRUPT=1
 test_failure_with_hint "rejects checksum failures with recovery" "checksum" "Do not bypass" FAKE_CHECKSUM_FAIL=1
 test_failure "rejects DOCKER_HOST TCP endpoints" "local Unix" DOCKER_HOST=tcp://docker.example.test:2376
-test_failure_with_hint "rejects unsupported backend port overrides" "backend port is fixed at 8000" "port 8000" BACKEND_PORT=8100
+
+setup_case
+run_installer FRONTEND_PORT=3100 BACKEND_PORT=8100 ARGS=--no-open
+custom_env=$(cat "$HOME_DIR/.bioinfoflow/install/.env" 2>/dev/null || true)
+if [ "$STATUS" -eq 0 ] && assert_contains "$custom_env" "FRONTEND_PORT=3100" && assert_contains "$custom_env" "BACKEND_PORT=8100" && grep -q 'http://127.0.0.1:8100/api/v1/system/ping' "$CALLS" && grep -q 'http://127.0.0.1:3100/' "$CALLS"; then pass "persists and health-checks custom localhost ports"; else fail "persists and health-checks custom localhost ports (status=$STATUS output=$OUTPUT env=$custom_env calls=$(cat "$CALLS"))"; fi
+teardown_case
+
+setup_case
+run_installer BIOINFOFLOW_VERSION=v1.0.0 FRONTEND_PORT=3100 BACKEND_PORT=8100 ARGS=--no-open
+run_installer BIOINFOFLOW_VERSION=v1.1.0 ARGS="--update --no-open"
+updated_env=$(cat "$HOME_DIR/.bioinfoflow/install/.env" 2>/dev/null || true)
+if [ "$STATUS" -eq 0 ] && assert_contains "$updated_env" "FRONTEND_PORT=3100" && assert_contains "$updated_env" "BACKEND_PORT=8100"; then pass "updates preserve installed custom ports by default"; else fail "updates preserve installed custom ports by default (status=$STATUS output=$OUTPUT env=$updated_env)"; fi
+teardown_case
+
+setup_case
+run_installer BIOINFOFLOW_VERSION=1.2.3 FRONTEND_PORT=3100 BACKEND_PORT=8100 ARGS=--no-open
+if [ "$STATUS" -eq 0 ] && assert_contains "$OUTPUT" "Stable release 1.2.3" && assert_contains "$OUTPUT" "Release assets verified" && assert_contains "$OUTPUT" "Downloading container images" && assert_contains "$OUTPUT" "Starting Bioinfoflow" && assert_contains "$OUTPUT" "Backend: http://localhost:8100" && assert_contains "$OUTPUT" "Bioinfoflow: http://localhost:3100" && grep -q 'curl -fsSL ' "$CALLS"; then pass "prints concise stable installation stages"; else fail "prints concise stable installation stages (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"; fi
+teardown_case
 
 setup_case
 PACKAGED_INSTALLER="$CASE_DIR/install-v9.8.7.sh"
@@ -594,6 +633,15 @@ if printf '%s' "$SPECIAL_COMPOSE" | jq -e '.services.backend.volumes[] | select(
   pass "Compose renders managed paths containing spaces and colons"
 else
   fail "Compose renders managed paths containing spaces and colons"
+fi
+
+CUSTOM_PORT_COMPOSE=$(docker compose --env-file "$ROOT/scripts/tests/fixtures/local.env" -f "$COMPOSE_SOURCE" config --format json 2>/dev/null || true)
+if printf '%s' "$CUSTOM_PORT_COMPOSE" | jq -e '.services.backend.ports[] | select(.host_ip == "127.0.0.1" and .published == "8100" and .target == 8000)' >/dev/null 2>&1 && \
+   printf '%s' "$CUSTOM_PORT_COMPOSE" | jq -e '.services.frontend.ports[] | select(.host_ip == "127.0.0.1" and .published == "3100" and .target == 3000)' >/dev/null 2>&1 && \
+   printf '%s' "$CUSTOM_PORT_COMPOSE" | jq -e '.services.frontend.environment.BIOINFOFLOW_PUBLIC_API_BASE_URL == "http://localhost:8100/api/v1"' >/dev/null 2>&1; then
+  pass "Compose renders custom frontend and backend ports"
+else
+  fail "Compose renders custom frontend and backend ports"
 fi
 
 printf '%s passed, %s failed\n' "$PASS" "$FAIL"
