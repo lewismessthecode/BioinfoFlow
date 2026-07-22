@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/product-preview.gif" alt="Bioinfoflow Agent inspecting a workflow, submitting a run, and following its DAG" width="100%" />
+  <img src="assets/landing-preview-en.png" alt="Bioinfoflow landing page showing the local Agent workflow and product dashboard" width="100%" />
 </p>
 
 ## Is Bioinfoflow for you?

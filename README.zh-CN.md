@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/product-preview.gif" alt="Bioinfoflow Agent 检查工作流、提交任务并跟踪 DAG" width="100%" />
+  <img src="assets/landing-preview-zh.png" alt="Bioinfoflow Landing Page，展示本地 Agent 工作流与产品仪表盘" width="100%" />
 </p>
 
 ## 什么时候值得用 Bioinfoflow？
