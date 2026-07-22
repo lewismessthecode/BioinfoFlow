@@ -1,6 +1,6 @@
 "use client"
 
-import { Pencil, Search, Server } from "@/lib/icons"
+import { Pencil, RefreshCw, Search, Server } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ type ConnectionListProps = {
   statusFilter: ConnectionStatusFilter
   isLoading: boolean
   loadError: boolean
+  testingConnectionId: string | null
   onSearchChange: (value: string) => void
   onStatusFilterChange: (filter: ConnectionStatusFilter) => void
   onSelectConnection: (id: string) => void
@@ -37,6 +38,7 @@ export function ConnectionList({
   statusFilter,
   isLoading,
   loadError,
+  testingConnectionId,
   onSearchChange,
   onStatusFilterChange,
   onSelectConnection,
@@ -102,6 +104,7 @@ export function ConnectionList({
           <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3">
             {filteredConnections.map((connection) => {
               const selected = selectedConnection ? connection.id === selectedConnection.id : false
+              const testing = connection.id === testingConnectionId
 
               return (
                 <article
@@ -133,11 +136,17 @@ export function ConnectionList({
                     <span
                       className={cn(
                         "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[11px] font-medium",
-                        statusBorderClassNames[connection.status],
+                        testing
+                          ? "border-primary/20 bg-primary/5 text-primary"
+                          : statusBorderClassNames[connection.status],
                       )}
                     >
-                      <StatusDot status={connection.status} className="h-1.5 w-1.5 shadow-none" />
-                      {t(`status.${connection.status}`)}
+                      {testing ? (
+                        <RefreshCw className="h-3 w-3 animate-spin motion-reduce:animate-none" />
+                      ) : (
+                        <StatusDot status={connection.status} className="h-1.5 w-1.5 shadow-none" />
+                      )}
+                      {testing ? t("status.connecting") : t(`status.${connection.status}`)}
                     </span>
                   </button>
                   <Button

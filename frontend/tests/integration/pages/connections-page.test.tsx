@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react"
+import { act, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { toast } from "sonner"
@@ -271,7 +271,7 @@ describe("ConnectionsPage", () => {
     await clickPanelButton(user, "Add host")
 
     await waitFor(() =>
-      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections", {
+      expect(apiRequestMock).toHaveBeenCalledWith("/connections", {
         method: "POST",
         body: JSON.stringify({
           name: "Live HPC",
@@ -289,6 +289,84 @@ describe("ConnectionsPage", () => {
       }),
     )
     expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+  })
+
+  it("automatically verifies a newly saved SSH connection", async () => {
+    const user = userEvent.setup()
+    let resolveTest: (value: unknown) => void = () => {}
+    apiRequestMock.mockResolvedValueOnce({ data: [] })
+    apiRequestMock.mockResolvedValueOnce({
+      data: {
+        ...liveConnection,
+        auth_method: "password",
+        ssh_alias: null,
+      },
+    })
+    apiRequestMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveTest = resolve
+        }),
+    )
+
+    render(<ConnectionsPage />)
+
+    const drawer = await openAddConnectionPanel(user)
+    await user.type(within(drawer).getByLabelText("Label"), "Live HPC")
+    await user.type(within(drawer).getByLabelText("Address"), "login.live.example.org")
+    await user.type(within(drawer).getByLabelText("Username"), "bioflow")
+    await user.type(within(drawer).getByLabelText("Password"), "secret-password")
+    await clickPanelButton(user, "Add host")
+
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections/live-connection-1/test", {
+        method: "POST",
+      }),
+    )
+    expect(screen.getByText("Connecting…")).toBeInTheDocument()
+
+    resolveTest({
+      data: {
+        status: "online",
+        error: null,
+        checked_at: "2026-06-25T10:11:12Z",
+        connection: {
+          ...liveConnection,
+          auth_method: "password",
+          last_status: "online",
+          last_error: null,
+          last_checked_at: "2026-06-25T10:11:12Z",
+        },
+      },
+    })
+
+    expect(await screen.findByText("Online")).toBeInTheDocument()
+  })
+
+  it("keeps a newly saved host when automatic verification fails", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [] })
+    apiRequestMock.mockResolvedValueOnce({
+      data: {
+        ...liveConnection,
+        auth_method: "password",
+        ssh_alias: null,
+      },
+    })
+    apiRequestMock.mockRejectedValueOnce(new Error("SSH authentication failed"))
+
+    render(<ConnectionsPage />)
+
+    const drawer = await openAddConnectionPanel(user)
+    await user.type(within(drawer).getByLabelText("Label"), "Live HPC")
+    await user.type(within(drawer).getByLabelText("Address"), "login.live.example.org")
+    await user.type(within(drawer).getByLabelText("Username"), "bioflow")
+    await user.type(within(drawer).getByLabelText("Password"), "secret-password")
+    await clickPanelButton(user, "Add host")
+
+    expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("SSH authentication failed"))
+    expect(screen.queryByText("Connecting…")).not.toBeInTheDocument()
   })
 
   it("keeps invalid ports on the client instead of silently replacing them", async () => {
@@ -363,7 +441,7 @@ describe("ConnectionsPage", () => {
     await clickPanelButton(user, "Add host")
 
     await waitFor(() =>
-      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections", {
+      expect(apiRequestMock).toHaveBeenCalledWith("/connections", {
         method: "POST",
         body: JSON.stringify({
           name: "Live HPC",
@@ -403,7 +481,7 @@ describe("ConnectionsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
     await openEditConnectionPanel(user)
-    await clickConnectionAction(user, "Test connection")
+    await clickConnectionAction(user, "Retest connection")
 
     await waitFor(() =>
       expect(apiRequestMock).toHaveBeenLastCalledWith("/connections/live-connection-1/test", {
@@ -428,7 +506,7 @@ describe("ConnectionsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
     await openEditConnectionPanel(user)
-    await clickConnectionAction(user, "Test connection")
+    await clickConnectionAction(user, "Retest connection")
     await user.click(screen.getByRole("button", { name: /^Backup HPC/ }))
 
     resolveTest({
@@ -467,7 +545,7 @@ describe("ConnectionsPage", () => {
 
     expect(screen.getAllByText("No matching connections. Try another name, host, alias, or note.")).not.toHaveLength(0)
     expect(screen.queryByRole("heading", { name: "Backup HPC" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Test connection" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Retest connection" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Edit connection" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Run check" })).not.toBeInTheDocument()
   })
@@ -481,6 +559,19 @@ describe("ConnectionsPage", () => {
         name: "Live HPC Login",
         host: "login2.live.example.org",
         last_status: "unknown",
+      },
+    })
+    apiRequestMock.mockResolvedValueOnce({
+      data: {
+        status: "online",
+        error: null,
+        checked_at: "2026-06-25T10:11:12Z",
+        connection: {
+          ...liveConnection,
+          name: "Live HPC Login",
+          host: "login2.live.example.org",
+          last_status: "online",
+        },
       },
     })
 
@@ -497,7 +588,7 @@ describe("ConnectionsPage", () => {
     await clickPanelButton(user, "Save changes")
 
     await waitFor(() =>
-      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections/live-connection-1", {
+      expect(apiRequestMock).toHaveBeenCalledWith("/connections/live-connection-1", {
         method: "PATCH",
         body: JSON.stringify({
           name: "Live HPC Login",
@@ -512,6 +603,11 @@ describe("ConnectionsPage", () => {
           passphrase: null,
           skill_instructions: "Use /data/live for analysis outputs.",
         }),
+      }),
+    )
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenCalledWith("/connections/live-connection-1/test", {
+        method: "POST",
       }),
     )
     expect(await screen.findByRole("heading", { name: "Live HPC Login" })).toBeInTheDocument()
@@ -536,7 +632,7 @@ describe("ConnectionsPage", () => {
     await clickPanelButton(user, "Save changes")
 
     await waitFor(() =>
-      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections/live-connection-password", {
+      expect(apiRequestMock).toHaveBeenCalledWith("/connections/live-connection-password", {
         method: "PATCH",
         body: JSON.stringify({
           name: "Password HPC",
@@ -612,7 +708,7 @@ describe("ConnectionsPage", () => {
     await clickPanelButton(user, "Add host")
 
     await waitFor(() =>
-      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections", {
+      expect(apiRequestMock).toHaveBeenCalledWith("/connections", {
         method: "POST",
         body: JSON.stringify({
           name: "Key HPC",
@@ -730,6 +826,95 @@ describe("ConnectionsPage", () => {
 
       expect(await screen.findByText("bioinfoflow-ok")).toBeInTheDocument()
       expect(buildWebSocketUrlMock).toHaveBeenCalledWith("/connections/live-connection-1/exec/ws")
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it("keeps run-check progress and completion visible after the action menu closes", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+
+    class ControlledWebSocket {
+      static OPEN = 1
+      static instance: ControlledWebSocket | null = null
+      readyState = ControlledWebSocket.OPEN
+      onopen: (() => void) | null = null
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onclose: (() => void) | null = null
+      onerror: (() => void) | null = null
+
+      constructor(readonly url: string) {
+        ControlledWebSocket.instance = this
+        queueMicrotask(() => this.onopen?.())
+      }
+
+      send() {}
+      close() {}
+    }
+
+    vi.stubGlobal("WebSocket", ControlledWebSocket)
+    try {
+      render(<ConnectionsPage />)
+
+      expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+      await openEditConnectionPanel(user)
+      await clickConnectionAction(user, "Run check")
+
+      expect(await screen.findByText("Running connection check…")).toBeInTheDocument()
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument()
+
+      await act(async () => {
+        ControlledWebSocket.instance?.onmessage?.({
+          data: JSON.stringify({ type: "stdout", data: "bioinfoflow-ok\n" }),
+        } as MessageEvent)
+        ControlledWebSocket.instance?.onmessage?.({
+          data: JSON.stringify({ type: "exit", exit_code: 0 }),
+        } as MessageEvent)
+      })
+
+      expect(await screen.findByText("Connection check completed.")).toBeInTheDocument()
+      expect(screen.getByText("bioinfoflow-ok")).toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it("shows a persistent alert when a run check fails", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+
+    class FailingWebSocket {
+      static OPEN = 1
+      readyState = FailingWebSocket.OPEN
+      onopen: (() => void) | null = null
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onclose: (() => void) | null = null
+      onerror: (() => void) | null = null
+
+      constructor(readonly url: string) {
+        queueMicrotask(() => this.onopen?.())
+        queueMicrotask(() =>
+          this.onmessage?.({
+            data: JSON.stringify({ type: "error", message: "Remote command refused" }),
+          } as MessageEvent),
+        )
+      }
+
+      send() {}
+      close() {}
+    }
+
+    vi.stubGlobal("WebSocket", FailingWebSocket)
+    try {
+      render(<ConnectionsPage />)
+
+      expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+      await openEditConnectionPanel(user)
+      await clickConnectionAction(user, "Run check")
+
+      const alert = await screen.findByRole("alert")
+      expect(alert).toHaveTextContent("Remote command refused")
     } finally {
       vi.unstubAllGlobals()
     }
