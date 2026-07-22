@@ -1444,6 +1444,7 @@
       "product": "产品",
       "workflows": "工作流",
       "features": "功能",
+      "security": "安全",
       "docs": "文档",
       "signIn": "登录",
       "startFree": "免费体验",
@@ -1469,6 +1470,37 @@
       "chatExample": "使用 Parabricks 分析 /data/wgs 中的全基因组测序数据。",
       "planningWorkflow": "规划 GPU 加速工作流中...",
       "workflowDescription": "Parabricks Germline → FASTQ 到 BAM → VCF"
+    },
+    "story": {
+      "eyebrow": "本地运行的生物信息学 Agent",
+      "title": "Bioinfoflow",
+      "titleSuffix": "用自然语言分析生物信息学",
+      "description": "说出你的分析目标，Agent 会准备工作流和参数，确认后即可运行。",
+      "primaryAction": "用 Agent 开始分析",
+      "secondaryAction": "看看如何运行",
+      "reassurance": "运行前由你确认，数据留在自己的环境里。",
+      "stages": {
+        "dashboard": {
+          "label": "仪表盘",
+          "description": "运行前，先看计算环境、任务和最近结果是否就绪。",
+          "alt": "Bioinfoflow 仪表盘，展示系统就绪状态和最近的工作流活动"
+        },
+        "agent": {
+          "label": "Agent",
+          "description": "说出分析目标，Agent 会整理成可检查的执行方案。",
+          "alt": "Bioinfoflow 智能体工作区正在准备生物信息学工作流计划"
+        },
+        "workflows": {
+          "label": "工作流",
+          "description": "选择 nf-core 流程，或接入自己的 Nextflow 和 WDL 工作流。",
+          "alt": "Bioinfoflow 工作流注册表，展示经过验证的流程和本地流程"
+        },
+        "runs": {
+          "label": "运行记录",
+          "description": "状态、日志和结果集中记录，失败后也能接着查、接着跑。",
+          "alt": "Bioinfoflow 运行页面，展示工作流状态和执行历史"
+        }
+      }
     },
     "trustBar": {
       "builtFor": "支持",
@@ -1529,10 +1561,45 @@
         "description": "DAG 可视化、日志流、资源监控。流程跑到哪，一目了然。"
       }
     },
+    "capabilities": {
+      "eyebrow": "从目标到结果",
+      "title": "提出你的分析目标，剩下的交给 Agent",
+      "description": "Bioinfoflow 把工作流、运行和结果串在一起。你只需要查看和确认。",
+      "describe": {
+        "title": "用自然语言描述你的要求",
+        "description": "告诉 Agent 想分析什么、数据在哪里、有哪些限制。",
+        "surface": "Agent",
+        "proof": "分析目标和限制不会丢"
+      },
+      "select": {
+        "title": "找到合适的工作流",
+        "description": "从 nf-core、Nextflow 和 WDL 工作流中选择，运行前再确认版本和参数。",
+        "surface": "工作流",
+        "proof": "版本和参数一目了然"
+      },
+      "execute": {
+        "title": "让数据留在本地",
+        "description": "直接使用工作站、服务器或已接入的计算环境，不必先上传数据。",
+        "surface": "计算环境",
+        "proof": "本地与远程计算环境都能接入"
+      },
+      "recover": {
+        "title": "失败后也有迹可循",
+        "description": "状态、日志和任务记录都在。找到原因后，可以接着处理。",
+        "surface": "运行记录",
+        "proof": "失败不会带走运行记录"
+      },
+      "preserve": {
+        "title": "每个结果都可以复现",
+        "description": "参数、版本、输出和文件都与分析记录关联。",
+        "surface": "工作区",
+        "proof": "结果可追溯到参数与版本"
+      }
+    },
     "hardware": {
-      "badge": "硬件要求",
-      "title": "准备好运行 WGS 了吗？",
-      "subtitle": "检查你的游戏电脑是否能运行专业级基因组分析。",
+      "badge": "本机检查",
+      "title": "这台电脑，能跑 WGS 吗？",
+      "subtitle": "检查显卡、内存和存储是否满足本地分析需求。",
       "gpu": {
         "title": "显卡",
         "spec": "RTX 4090",
@@ -1541,18 +1608,23 @@
       "ram": {
         "title": "内存",
         "spec": "64GB+",
-        "description": "用于基因组数据处理"
+        "description": "处理较大的基因组数据"
       },
       "storage": {
         "title": "存储",
         "spec": "500GB+ SSD",
-        "description": "快速存储用于临时文件"
+        "description": "存放中间文件和分析结果"
       },
       "checkButton": "检查硬件",
       "checking": "检查中...",
       "detected": "检测到 GPU",
+      "diagnostic": {
+        "title": "本机配置",
+        "status": "尚未检查",
+        "note": "只读取本机硬件信息，不会上传数据。"
+      },
       "status": {
-        "ready": "可以运行 WGS！",
+        "ready": "已满足 WGS 运行要求",
         "partial": "可能有限制",
         "notCompatible": "需要 NVIDIA GPU",
         "noGpu": "未检测到 GPU",
@@ -1612,42 +1684,36 @@
       }
     },
     "security": {
-      "badge": "本地优先 · 安全可控",
-      "title": "你的数据，你做主",
-      "subtitle": "专为敏感生物数据设计。合规无忧，安全放心。",
-      "dataNeverLeaves": {
-        "title": "数据不出本地",
-        "description": "默认本地运行，无需上传云端。"
+      "badge": "数据与权限",
+      "title": "数据留在你的环境里",
+      "subtitle": "在本机或自己的服务器上运行。数据放在哪里，始终由你决定。",
+      "boundaryLabel": "运行边界",
+      "boundaryStatus": "由你控制",
+      "dataControl": {
+        "title": "数据不必上传",
+        "description": "直接读取本地目录或已接入的计算环境，不需要先传到托管云端。",
+        "proof": "不会自动改变数据位置"
       },
-      "auditTrails": {
-        "title": "完整审计",
-        "description": "每次运行都有时间戳和溯源记录。"
+      "approval": {
+        "title": "运行前，由你确认",
+        "description": "Agent 先列出计划、参数和运行位置；确认后才会开始。",
+        "proof": "关键操作不会自动执行"
       },
-      "localArtifacts": {
-        "title": "本地存储",
-        "description": "配置、样本表、结果都在你的工作区。"
-      },
-      "secureByDesign": {
-        "title": "安全设计",
-        "description": "符合科研数据合规要求。"
-      },
-      "yourInfrastructure": {
-        "title": "你的基础设施",
-        "description": "HPC、云端、本地工作站，任你选。"
-      },
-      "transparentExecution": {
-        "title": "透明执行",
-        "description": "每一步做了什么、在哪跑、怎么跑，清清楚楚。"
+      "traceability": {
+        "title": "过程和结果都有记录",
+        "description": "状态、参数、日志和结果位置都会保留，方便复查或继续处理。",
+        "proof": "每次运行都有完整记录"
       }
     },
     "cta": {
-      "title": "想试试看？",
-      "subtitle": "几分钟内跑通第一个流程。个人研究者永久免费。",
-      "getStarted": "立即开始",
+      "eyebrow": "从一个分析目标开始",
+      "title": "说出你的目标，Agent 接着做",
+      "subtitle": "工作流、参数和运行位置准备好后，再由你确认。",
+      "getStarted": "开始一次分析",
       "contactUs": "联系我们"
     },
     "footer": {
-      "tagline": "本地优先 · AI 驱动 · 为科研而生。",
+      "tagline": "本地运行，Agent 协作，结果可复现。",
       "copyright": "© {year} Bioinfoflow",
       "bottomTagline": "本地优先的生物信息学平台",
       "product": {

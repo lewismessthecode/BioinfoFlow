@@ -6,6 +6,8 @@
   "scripts": {
     "prebuild": "node scripts/ensure-better-sqlite3-node-abi.mjs",
     "build": "node scripts/with-root-env.mjs build",
+    "capture:landing-product": "bun scripts/capture-landing-product.mjs",
+    "capture:landing-review": "bun scripts/capture-landing-review.mjs",
     "predev": "node scripts/ensure-better-sqlite3-node-abi.mjs",
     "dev": "node scripts/with-root-env.mjs dev",
     "lint": "eslint .",
@@ -15,13 +17,15 @@
     "start": "node scripts/with-root-env.mjs start",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify:landing-visual": "bun scripts/verify-landing-visual.mjs"
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.41.0",
     "@e965/xlsx": "^0.20.3",
+    "@gsap/react": "^2.1.2",
     "@lobehub/icons": "^5.2.0",
     "@radix-ui/react-avatar": "1.1.2",
     "@radix-ui/react-dialog": "1.1.4",
@@ -46,6 +50,7 @@
     "clsx": "^2.1.1",
     "cmdk": "1.0.4",
     "framer-motion": "^12.27.1",
+    "gsap": "^3.15.0",
     "lucide-react": "^0.454.0",
     "next": "16.0.10",
     "next-intl": "^4.1.0",
