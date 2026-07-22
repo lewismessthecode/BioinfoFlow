@@ -104,7 +104,8 @@ def test_formal_release_workflow_publishes_numeric_aliases() -> None:
 
     assert "googleapis/release-please-action@v4" in workflow
     assert "actions: write" in workflow
-    assert 'gh workflow run ci.yml --ref "$head_branch"' in workflow
+    assert "secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN" in workflow
+    assert 'gh workflow run ci.yml --ref "$head_branch"' not in workflow
     assert "publish_version:" in workflow
     assert "include-v-in-tag" not in workflow
     assert (
@@ -124,6 +125,16 @@ def test_formal_release_workflow_publishes_numeric_aliases() -> None:
     assert "type=raw,value=${{ inputs.release_major_minor }}" in container_workflow
     assert "type=raw,value=${{ inputs.release_major }}" in container_workflow
     assert "type=raw,value=latest,enable=${{ inputs.release_version != '' }}" in container_workflow
+
+
+def test_repository_configuration_avoids_redundant_pr_reruns() -> None:
+    configuration = read_repo_file("scripts/github/configure-repo.sh")
+    pr_automation = read_repo_file(".github/workflows/pr-automation.yml")
+
+    assert '"strict": false' in configuration
+    assert '"approval_policy": "first_time_contributors_new_to_github"' in configuration
+    assert '"can_approve_pull_request_reviews": true' in configuration
+    assert "secrets.PR_AUTOMATION_TOKEN || secrets.GITHUB_TOKEN" in pr_automation
 
 
 def test_formal_release_packages_and_smoke_tests_native_skills() -> None:

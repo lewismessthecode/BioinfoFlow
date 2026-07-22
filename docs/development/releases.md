@@ -49,10 +49,9 @@ the next release entry.
 3. Review `CHANGELOG.md` from a user's perspective. Remove internal detail and
    improve unclear wording. Make manual changelog edits only after the release
    contents are stable because later merges to `main` may update the Release PR.
-4. Confirm that backend, frontend, and Docker required checks pass.
-   Release Please dispatches the CI workflow directly for its generated branch,
-   so these checks run even though the pull request was created by
-   `GITHUB_TOKEN`.
+4. Confirm that backend, frontend, and Docker required checks pass. Release
+   Please uses `RELEASE_PLEASE_TOKEN` when configured and otherwise falls back
+   to `GITHUB_TOKEN`; normal pull request CI supplies the required checks.
 5. Do not add the `automerge` label. Merge the Release PR intentionally when the
    release is ready.
 6. The `Release` workflow creates the numeric Git tag and GitHub Release, then
