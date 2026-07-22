@@ -14,6 +14,7 @@ const DEPLOY_MODE = resolveDeployMode()
 const DEMO_PATHS = new Set([
   "/",
   "/demo",
+  "/landing-preview",
   "/auth",
   "/agent",
   "/dashboard",
@@ -41,7 +42,7 @@ function isDemoAllowed(pathname: string): boolean {
 // Auth — paths that bypass authentication
 // ---------------------------------------------------------------------------
 
-const PUBLIC_PATHS = new Set(["/", "/auth"])
+const PUBLIC_PATHS = new Set(["/", "/auth", "/landing-preview"])
 const PUBLIC_PREFIXES = ["/api/auth", "/api/demo-auth", "/demo/"]
 
 function isPublicPath(pathname: string): boolean {

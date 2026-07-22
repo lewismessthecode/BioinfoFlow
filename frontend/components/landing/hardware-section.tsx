@@ -6,13 +6,9 @@ import {
   HardDrive,
   CheckCircle2,
   AlertCircle,
+  Loader2,
 } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
-import {
-  FadeInOnScroll,
-  StaggerContainer,
-  StaggerItem,
-} from "@/components/ui/scroll-animations";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
@@ -157,47 +153,17 @@ export function HardwareSection() {
   };
 
   return (
-    <section id="hardware" className="section-padding">
-      <div className="container mx-auto px-6">
-        <FadeInOnScroll>
-          <div className="text-center mb-14">
-            <span className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-success-border bg-success-muted px-3 py-1 text-xs font-medium text-success-foreground">
-              <Cpu className="w-3 h-3" />
-              {t("badge")}
-            </span>
-            <h2 className="text-3xl md:text-4xl lg:text-5xl font-semibold tracking-tight mb-4">
-              {t("title")}
-            </h2>
-            <p className="text-muted-foreground text-lg md:text-xl max-w-2xl mx-auto">
-              {t("subtitle")}
-            </p>
-          </div>
-        </FadeInOnScroll>
-
-        <StaggerContainer
-          className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto mb-12"
-          staggerDelay={0.1}
-        >
-          {requirements.map((req) => (
-            <StaggerItem key={req.id}>
-              <div className="bg-card border border-border rounded-xl p-6 text-center hover:border-foreground/20 transition-colors duration-200">
-                <div className="w-12 h-12 rounded-lg bg-secondary flex items-center justify-center mx-auto mb-4">
-                  <req.icon className="w-6 h-6" />
-                </div>
-                <h3 className="text-lg font-semibold mb-1">{req.title}</h3>
-                <p className="text-xl font-mono text-foreground mb-2">
-                  {req.spec}
-                </p>
-                <p className="text-muted-foreground text-sm">
-                  {req.description}
-                </p>
-              </div>
-            </StaggerItem>
-          ))}
-        </StaggerContainer>
-
-        <FadeInOnScroll delay={0.3}>
-          <div className="flex flex-col items-center gap-4">
+    <section id="hardware" className="landing-hardware border-y border-border px-5 py-28 md:px-8 md:py-40">
+      <div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-[0.82fr_1.18fr] lg:gap-24">
+        <div className="lg:self-center">
+          <p className="mb-5 text-sm font-medium text-[var(--brand-accent)]">{t("badge")}</p>
+          <h2 className="max-w-lg text-balance text-3xl font-medium tracking-[-0.035em] md:text-5xl">
+            {t("title")}
+          </h2>
+          <p className="mt-5 max-w-lg text-base leading-7 text-muted-foreground">
+            {t("subtitle")}
+          </p>
+          <div className="mt-9 flex flex-col items-start gap-4">
             <Button
               size="lg"
               variant={
@@ -207,39 +173,78 @@ export function HardwareSection() {
                     : "outline"
                   : "default"
               }
-              className="rounded-full px-8 gap-2"
+              className="gap-2 rounded-md px-5 shadow-none active:translate-y-px"
               onClick={handleCheckHardware}
               disabled={checking}
             >
               {checking ? (
                 <>
-                  <span className="animate-spin">⏳</span>
+                  <Loader2 className="size-4 animate-spin" />
                   {t("checking")}
                 </>
               ) : status.checked ? (
                 <>
                   {status.compatible ? (
-                    <CheckCircle2 className="h-4 w-4 text-success" />
+                    <CheckCircle2 className="size-4 text-success" />
                   ) : (
-                    <AlertCircle className="w-4 h-4" />
+                    <AlertCircle className="size-4" />
                   )}
                   {status.message}
                 </>
               ) : (
                 <>
-                  <Cpu className="w-4 h-4" />
+                  <Cpu className="size-4" />
                   {t("checkButton")}
                 </>
               )}
             </Button>
 
             {status.checked && status.gpu && (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground" aria-live="polite">
                 {t("detected")}: <span className="font-mono">{status.gpu}</span>
               </p>
             )}
           </div>
-        </FadeInOnScroll>
+        </div>
+
+        <div className="landing-evidence-panel overflow-hidden rounded-xl border border-border bg-background shadow-[var(--landing-shadow-soft)]">
+          <div className="flex items-center justify-between border-b border-border px-5 py-4">
+            <div className="flex items-center gap-3">
+              <span className="relative flex size-2.5">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-[var(--brand-accent)] opacity-30 motion-reduce:animate-none" />
+                <span className="relative inline-flex size-2.5 rounded-full bg-[var(--brand-accent)]" />
+              </span>
+              <span className="text-sm font-medium">{t("diagnostic.title")}</span>
+            </div>
+            <span className="font-mono text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">
+              {t("diagnostic.status")}
+            </span>
+          </div>
+
+          <div className="grid md:grid-cols-2">
+            {requirements.map((req, index) => (
+              <article
+                key={req.id}
+                className="group min-h-56 border-b border-border p-6 md:p-8 md:odd:border-r md:last:col-span-2 md:last:border-b-0"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex size-11 items-center justify-center rounded-md border border-border bg-secondary/45">
+                    <req.icon className="size-5 text-muted-foreground" />
+                  </div>
+                  <span className="font-mono text-[0.65rem] text-muted-foreground">0{index + 1}</span>
+                </div>
+                <p className="mt-9 font-mono text-2xl tracking-[-0.04em]">{req.spec}</p>
+                <h3 className="mt-4 font-medium">{req.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{req.description}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-2 border-t border-border bg-secondary/30 px-5 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+            <span>{t("diagnostic.note")}</span>
+            <span className="font-mono text-foreground/70">Bioinfoflow / local check</span>
+          </div>
+        </div>
       </div>
     </section>
   );

@@ -1444,6 +1444,7 @@
       "product": "Product",
       "workflows": "Workflows",
       "features": "Features",
+      "security": "Security",
       "docs": "Docs",
       "signIn": "Sign in",
       "startFree": "Start for free",
@@ -1469,6 +1470,37 @@
       "chatExample": "Analyze my whole genome sequencing data from /data/wgs using Parabricks.",
       "planningWorkflow": "Planning GPU-accelerated workflow...",
       "workflowDescription": "Parabricks Germline → FASTQ to BAM → VCF"
+    },
+    "story": {
+      "eyebrow": "A local Agent for bioinformatics",
+      "title": "Bioinfoflow",
+      "titleSuffix": "Bioinformatics in plain language.",
+      "description": "Describe the goal. The Agent prepares the workflow and parameters, ready for your approval.",
+      "primaryAction": "Start with the Agent",
+      "secondaryAction": "See how it runs",
+      "reassurance": "You approve each run. Data stays in your environment.",
+      "stages": {
+        "dashboard": {
+          "label": "Dashboard",
+          "description": "See system readiness, active work, and recent runs before committing compute.",
+          "alt": "Bioinfoflow dashboard showing system readiness and recent workflow activity"
+        },
+        "agent": {
+          "label": "Agent",
+          "description": "Describe the biological objective in plain language and turn it into an inspectable execution plan.",
+          "alt": "Bioinfoflow agent workspace preparing a bioinformatics workflow plan"
+        },
+        "workflows": {
+          "label": "Workflows",
+          "description": "Select validated nf-core pipelines or register local WDL and Nextflow workflows with their configuration visible.",
+          "alt": "Bioinfoflow workflow registry with validated and local pipelines"
+        },
+        "runs": {
+          "label": "Runs",
+          "description": "Follow status, logs, artifacts, and recovery history from one durable run record.",
+          "alt": "Bioinfoflow runs view showing workflow status and execution history"
+        }
+      }
     },
     "trustBar": {
       "builtFor": "Built for",
@@ -1529,10 +1561,45 @@
         "description": "Watch your pipeline execute with DAG visualization, streaming logs, and resource utilization metrics."
       }
     },
+    "capabilities": {
+      "eyebrow": "From goal to result",
+      "title": "Bring the analysis goal. Let the Agent handle the rest.",
+      "description": "Bioinfoflow connects the workflow, run, and result. You stay in the loop to inspect and approve.",
+      "describe": {
+        "title": "Describe what you need",
+        "description": "Tell the Agent the analysis goal, where the data lives, and any constraints.",
+        "surface": "Agent",
+        "proof": "Goals and constraints stay with the analysis"
+      },
+      "select": {
+        "title": "Find the right workflow",
+        "description": "Choose from nf-core, Nextflow, and WDL workflows, then confirm versions and parameters.",
+        "surface": "Workflows",
+        "proof": "Inspect versions and parameters before a run"
+      },
+      "execute": {
+        "title": "Keep data where it is",
+        "description": "Run on a workstation, server, or connected compute environment without uploading data first.",
+        "surface": "Runtime",
+        "proof": "Connect local, server, and remote compute"
+      },
+      "recover": {
+        "title": "Trace what went wrong",
+        "description": "Status, logs, and task history remain available so you can diagnose and continue.",
+        "surface": "Runs",
+        "proof": "Logs and task state persist beyond the session"
+      },
+      "preserve": {
+        "title": "Reproduce every result",
+        "description": "Parameters, versions, outputs, and files stay connected to the analysis record.",
+        "surface": "Workspace",
+        "proof": "Results remain traceable to versions and parameters"
+      }
+    },
     "hardware": {
-      "badge": "Hardware Requirements",
-      "title": "Ready to run WGS?",
-      "subtitle": "Check if your gaming PC can handle professional-grade genome analysis.",
+      "badge": "Local check",
+      "title": "Can this computer run WGS?",
+      "subtitle": "Check whether its GPU, memory, and storage meet local analysis requirements.",
       "gpu": {
         "title": "GPU",
         "spec": "RTX 4090",
@@ -1551,8 +1618,13 @@
       "checkButton": "Check Your Hardware",
       "checking": "Checking...",
       "detected": "Detected GPU",
+      "diagnostic": {
+        "title": "Local configuration",
+        "status": "Not checked",
+        "note": "Only local hardware details are read. No research data is uploaded."
+      },
       "status": {
-        "ready": "Ready for WGS!",
+        "ready": "Meets WGS requirements",
         "partial": "May work with limitations",
         "notCompatible": "NVIDIA GPU required",
         "noGpu": "No GPU detected",
@@ -1612,42 +1684,36 @@
       }
     },
     "security": {
-      "badge": "Local-first security",
-      "title": "Your data, your control",
-      "subtitle": "Built for sensitive biological data. Run analyses without compromising security or compliance.",
-      "dataNeverLeaves": {
-        "title": "Data never leaves",
-        "description": "Your files stay on your machine by default. No cloud uploads required."
+      "badge": "Data and permissions",
+      "title": "Keep data in your environment",
+      "subtitle": "Run on your computer or server. You decide where data lives.",
+      "boundaryLabel": "Run boundary",
+      "boundaryStatus": "You stay in control",
+      "dataControl": {
+        "title": "No upload required",
+        "description": "Read from local directories or connected compute environments without sending data to a hosted cloud first.",
+        "proof": "Data locations do not change automatically"
       },
-      "auditTrails": {
-        "title": "Full audit trails",
-        "description": "Every run logged with complete provenance and timestamps."
+      "approval": {
+        "title": "You approve each run",
+        "description": "The Agent shows the plan, parameters, and run location before anything starts.",
+        "proof": "Runs start only after confirmation"
       },
-      "localArtifacts": {
-        "title": "Local artifacts",
-        "description": "Configs, samplesheets, and results stored in your workspace."
-      },
-      "secureByDesign": {
-        "title": "Secure by design",
-        "description": "Built with research data compliance requirements in mind."
-      },
-      "yourInfrastructure": {
-        "title": "Your infrastructure",
-        "description": "Run on your HPC, cloud, or local workstation."
-      },
-      "transparentExecution": {
-        "title": "Transparent execution",
-        "description": "See exactly what runs, where, and how at every step."
+      "traceability": {
+        "title": "Every step stays recorded",
+        "description": "Status, parameters, logs, and result locations remain available for review or recovery.",
+        "proof": "Run records stay connected to results"
       }
     },
     "cta": {
-      "title": "Ready to try it?",
-      "subtitle": "Run your first pipeline in minutes. Free for individual researchers.",
-      "getStarted": "Get started",
+      "eyebrow": "Start with an analysis goal",
+      "title": "State the goal. The Agent takes it from there.",
+      "subtitle": "Review the workflow, parameters, and run location before anything starts.",
+      "getStarted": "Start an analysis",
       "contactUs": "Contact us"
     },
     "footer": {
-      "tagline": "Local-first, agentic bioinformatics workflows for research teams.",
+      "tagline": "Run locally. Work with an Agent. Reproduce the result.",
       "copyright": "© {year} Bioinfoflow. All rights reserved.",
       "bottomTagline": "Local-first bioinformatics workflows",
       "product": {
