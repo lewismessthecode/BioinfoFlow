@@ -591,10 +591,14 @@ if grep -q 'ubuntu-24.04-arm' "$RELEASE_WORKFLOW" && \
    grep -q 'ubuntu-24.04' "$RELEASE_WORKFLOW" && \
    grep -q 'python3 -m http.server' "$RELEASE_WORKFLOW" && \
    grep -q 'BIOINFOFLOW_RELEASE_BASE_URL=http://127.0.0.1' "$RELEASE_WORKFLOW" && \
+   grep -q 'frontend_port=3100' "$RELEASE_WORKFLOW" && \
+   grep -q 'backend_port=8100' "$RELEASE_WORKFLOW" && \
+   grep -q 'BACKEND_PORT="\$backend_port"' "$RELEASE_WORKFLOW" && \
+   grep -q 'BACKEND_PORT=${backend_port}' "$RELEASE_WORKFLOW" && \
    grep -q 'installer_path=.*install.sh' "$RELEASE_WORKFLOW" && \
    grep -q "sh \"\$installer_path\" --no-open" "$RELEASE_WORKFLOW" && \
    grep -q -- '--uninstall' "$RELEASE_WORKFLOW" && \
-   grep -q 'api/v1/system/ping' "$RELEASE_WORKFLOW"; then
+   grep -q '127.0.0.1:${backend_port}/api/v1/system/ping' "$RELEASE_WORKFLOW"; then
   pass "release workflow smoke-tests the installer on amd64 and arm64"
 else
   fail "release workflow smoke-tests the installer on amd64 and arm64"

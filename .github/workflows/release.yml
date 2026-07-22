@@ -64,12 +64,13 @@ jobs:
       - name: Verify localhost Compose contract
         run: |
           docker compose --env-file scripts/tests/fixtures/local.env -f docker-compose.local.yml config --format json > /tmp/docker-compose.local.rendered.json
-          jq -e '.services.frontend.ports[] | select(.host_ip == "127.0.0.1" and .published == "3000" and .target == 3000)' /tmp/docker-compose.local.rendered.json
-          jq -e '.services.backend.ports[] | select(.host_ip == "127.0.0.1" and .published == "8000" and .target == 8000)' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.frontend.ports[] | select(.host_ip == "127.0.0.1" and .published == "3100" and .target == 3000)' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.backend.ports[] | select(.host_ip == "127.0.0.1" and .published == "8100" and .target == 8000)' /tmp/docker-compose.local.rendered.json
           jq -e '.services.backend.image == "ghcr.io/lewismessthecode/bioinfoflow-backend:0.0.0-test"' /tmp/docker-compose.local.rendered.json
           jq -e '.services.frontend.image == "ghcr.io/lewismessthecode/bioinfoflow-frontend-localhost:0.0.0-test"' /tmp/docker-compose.local.rendered.json
           jq -e '.services.backend.environment.AUTH_MODE == "dev"' /tmp/docker-compose.local.rendered.json
           jq -e '.services.frontend.environment.AUTH_MODE == "dev" and .services.frontend.environment.NEXT_PUBLIC_AUTH_MODE == "dev"' /tmp/docker-compose.local.rendered.json
+          jq -e '.services.frontend.environment.BIOINFOFLOW_PUBLIC_API_BASE_URL == "http://localhost:8100/api/v1"' /tmp/docker-compose.local.rendered.json
           jq -e '.services.backend.environment.DOCKER_SOCKET == "unix:///var/run/docker.sock"' /tmp/docker-compose.local.rendered.json
           jq -e '.services.backend.environment.BIOINFOFLOW_SKILLS_ROOT == "/tmp/bioinfoflow-local-test/skills"' /tmp/docker-compose.local.rendered.json
           jq -e '.services.backend.volumes[] | select(.source == "/tmp/bioinfoflow-local-test/skills" and .target == "/tmp/bioinfoflow-local-test/skills")' /tmp/docker-compose.local.rendered.json
@@ -189,6 +190,7 @@ jobs:
           set -euo pipefail
           asset_port=8765
           frontend_port=3100
+          backend_port=8100
           mkdir -p "serve/${RELEASE_TAG}"
           cp dist/install.sh dist/docker-compose.local.yml dist/bioinfoflow-skills.tar.gz dist/SHA256SUMS "serve/${RELEASE_TAG}/"
           installer_path="serve/${RELEASE_TAG}/install.sh"
@@ -202,14 +204,17 @@ jobs:
           curl --retry 10 --retry-connrefused --retry-delay 1 -fsS "http://127.0.0.1:${asset_port}/${RELEASE_TAG}/SHA256SUMS" >/dev/null
           BIOINFOFLOW_RELEASE_BASE_URL=http://127.0.0.1:${asset_port} \
             FRONTEND_PORT="$frontend_port" \
+            BACKEND_PORT="$backend_port" \
             sh "$installer_path" --no-open
           test "$(sh "$installer_path" --version)" = "$RELEASE_TAG"
           grep -F "BIOINFOFLOW_VERSION=${RELEASE_TAG}" "$HOME/.bioinfoflow/install/.env"
           grep -F "BIOINFOFLOW_ARCH=${EXPECTED_ARCH}" "$HOME/.bioinfoflow/install/.env"
           grep -F "BIOINFOFLOW_HOME=$HOME/.bioinfoflow" "$HOME/.bioinfoflow/install/.env"
+          grep -F "FRONTEND_PORT=${frontend_port}" "$HOME/.bioinfoflow/install/.env"
+          grep -F "BACKEND_PORT=${backend_port}" "$HOME/.bioinfoflow/install/.env"
           test -f "$HOME/.bioinfoflow/skills/ngs-analysis-router/SKILL.md"
           test -f "$HOME/.bioinfoflow/skills/ngs-runtime-env/SKILL.md"
-          curl -fsS "http://127.0.0.1:8000/api/v1/system/ping" >/dev/null
+          curl -fsS "http://127.0.0.1:${backend_port}/api/v1/system/ping" >/dev/null
           curl -fsS "http://127.0.0.1:${frontend_port}/" >/dev/null
           printf '\nsmoke-preserved\n' >> "$HOME/.bioinfoflow/skills/ngs-analysis-router/SKILL.md"
           BIOINFOFLOW_RELEASE_BASE_URL=http://127.0.0.1:${asset_port} \

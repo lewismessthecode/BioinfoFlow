@@ -21,7 +21,21 @@ curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/downl
 
 The installer accepts only a local Unix-socket Docker context, selects the
 matching `amd64` or `arm64` images, verifies the downloaded release assets, and
-waits for the UI and API health checks.
+waits for the UI and API health checks. The `latest/download` URL resolves to a
+tested numeric release and never installs the `main` or `sha-*` development
+images.
+
+If a default port is occupied, the installer prints the listening process and
+exits without stopping it. Choose two different free ports and retry:
+
+```bash
+curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | FRONTEND_PORT=3100 BACKEND_PORT=8100 sh
+```
+
+Environment assignments must apply to `sh`, on the right side of the pipe.
+Putting them before `curl` does not pass them to the installer. Both ports must
+be decimal values from 1 through 65535. The installer persists the selected
+ports and reuses them on update unless they are explicitly overridden.
 
 It manages these paths:
 
@@ -38,9 +52,9 @@ FASTQ inputs under the managed data root. Connect one provider from the Agent
 composer and choose **Check and run the demo workflow** to start a normal Agent
 turn. Bioinfoflow still asks for approval before `runs.submit` executes.
 
-The localhost frontend is built against the API at `127.0.0.1:8000`, so the
-installer requires host port 8000 to be free and rejects `BACKEND_PORT`
-overrides. Use the source-build path for a different API port.
+The localhost frontend receives its public API URL at container runtime, so a
+custom `BACKEND_PORT` works with the same published image for HTTP, event
+streams, and WebSocket connections.
 
 Update to the newest tagged release:
 

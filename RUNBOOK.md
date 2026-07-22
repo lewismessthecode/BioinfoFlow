@@ -16,6 +16,20 @@ and `SHA256SUMS`. Install it with:
 curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh
 ```
 
+The `latest/download` URL resolves to the latest tested numeric GitHub Release;
+it never selects the `main` or `sha-*` development image tags.
+
+If either default port is occupied, the installer prints a bounded `lsof`
+listener record and exits without signaling the process. Select two distinct
+free ports and retry:
+
+```bash
+curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | FRONTEND_PORT=3100 BACKEND_PORT=8100 sh
+```
+
+The selected ports are stored in `~/.bioinfoflow/install/.env` and reused by
+updates and lifecycle operations unless explicitly overridden.
+
 Do not run the repository copy of `scripts/install.sh` directly: release
 packaging embeds the matching version and publishes the checksums it verifies.
 
@@ -70,12 +84,12 @@ curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/downl
 ```
 
 The localhost stack binds the UI and API to `127.0.0.1` and intentionally runs
-with authentication disabled. The API port is fixed at `8000` because the
-published localhost frontend is built against that origin; installation stops
-if port 8000 is occupied. It is for one trusted local machine, not a shared
-server, reverse proxy, or port-forwarded deployment. It also mounts the local
-Docker socket so the Agent and workflow runtime can launch containers. See
-[Security Notes](docs/security.md) before changing that boundary.
+with authentication disabled. The published frontend reads its host-visible API
+URL at container runtime, so changing `BACKEND_PORT` does not rebuild the image.
+It is for one trusted local machine, not a shared server, reverse proxy, or
+port-forwarded deployment. It also mounts the local Docker socket so the Agent
+and workflow runtime can launch containers. See [Security Notes](docs/security.md)
+before changing that boundary.
 
 If you only remember one rule, remember this:
 
