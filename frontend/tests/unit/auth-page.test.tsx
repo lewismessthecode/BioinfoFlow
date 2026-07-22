@@ -179,6 +179,24 @@ describe("AuthPage", () => {
     ).toBeInTheDocument()
   })
 
+  it("returns an active demo visitor to landing when revisiting auth", async () => {
+    process.env.DEPLOY_MODE = "demo"
+    mockGetServerAuthConfig.mockReturnValue({
+      mode: "dev",
+      authEnabled: false,
+      authLocalEnabled: false,
+      authSelfSignupEnabled: false,
+      workspaceName: "Bioinfoflow Team",
+    })
+    mockCookies.mockReturnValue({
+      get: (name: string) =>
+        name === "bioinfoflow_demo_access" ? { value: "guest" } : undefined,
+    })
+
+    await expect(AuthPage()).rejects.toThrow("NEXT_REDIRECT: /")
+    expect(mockRedirect).toHaveBeenCalledWith("/")
+  })
+
   it("renders the demo auth entry when APP_RUNTIME is demo", async () => {
     process.env.APP_RUNTIME = "demo"
     mockGetServerAuthConfig.mockReturnValue({

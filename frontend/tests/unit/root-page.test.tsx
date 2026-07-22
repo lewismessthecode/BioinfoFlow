@@ -40,6 +40,19 @@ describe("RootPage", () => {
     expect(page).toBeTruthy()
   })
 
+  it("keeps the demo landing page reachable after guest access is granted", async () => {
+    process.env.DEPLOY_MODE = "demo"
+    mockCookies.mockReturnValue({
+      get: (name: string) =>
+        name === "bioinfoflow_demo_access" ? { value: "guest" } : undefined,
+    })
+
+    const page = await RootPage()
+
+    expect(mockRedirect).not.toHaveBeenCalled()
+    expect(page).toBeTruthy()
+  })
+
   it("renders the demo landing page when APP_RUNTIME is demo", async () => {
     process.env.APP_RUNTIME = "demo"
     mockCookies.mockReturnValue({ get: () => undefined })

@@ -20,7 +20,7 @@ export default async function AuthPage() {
 
   if (demoMode && !authConfig.authEnabled) {
     if (hasDemoAccess) {
-      redirect("/agent")
+      redirect("/")
     }
 
     return (

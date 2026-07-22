@@ -3,6 +3,7 @@ import { Shield, Sparkles } from "@/lib/icons"
 
 import { Logo } from "@/components/bioinfoflow/logo"
 import { Button } from "@/components/ui/button"
+import { DemoHistoryReplaceLink } from "@/components/auth/demo-history-replace-link"
 
 type DemoAuthScreenProps = {
   t: (key: string) => string
@@ -95,10 +96,10 @@ function DemoProviderButton({
         variantClass,
       ].join(" ")}
     >
-      <Link href={href}>
+      <DemoHistoryReplaceLink href={href}>
         {icon}
         <span>{label}</span>
-      </Link>
+      </DemoHistoryReplaceLink>
     </Button>
   )
 }
