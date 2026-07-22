@@ -40,6 +40,44 @@ say() {
   printf '%s\n' "$*"
 }
 
+stage() {
+  printf '→ %s\n' "$*"
+}
+
+success() {
+  printf '✓ %s\n' "$*"
+}
+
+validate_port() {
+  port_name=$1
+  port_value=$2
+  case "$port_value" in
+    ''|*[!0-9]*) die_with_hint "$port_name must be a decimal port number" "Set $port_name to a value from 1 through 65535 and retry." ;;
+  esac
+  if [ "$port_value" -lt 1 ] 2>/dev/null || [ "$port_value" -gt 65535 ] 2>/dev/null; then
+    die_with_hint "$port_name must be between 1 and 65535" "Set $port_name to a value from 1 through 65535 and retry."
+  fi
+}
+
+report_port_owner() {
+  owner_port=$1
+  owner_details=$(lsof -nP -iTCP:"$owner_port" -sTCP:LISTEN 2>/dev/null || true)
+  [ -z "$owner_details" ] || {
+    printf '\nPort owner:\n' >&2
+    printf '%s\n' "$owner_details" | sed -n '1,6p' >&2
+  }
+}
+
+die_port_in_use() {
+  port_role=$1
+  busy_port=$2
+  printf '%s: %s port %s is already in use\n' "$PROGRAM" "$port_role" "$busy_port" >&2
+  report_port_owner "$busy_port"
+  printf '\nRecovery: Choose two free ports and retry, for example:\n' >&2
+  printf '  curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | FRONTEND_PORT=3100 BACKEND_PORT=8100 sh\n' >&2
+  exit 1
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
@@ -95,11 +133,25 @@ INSTALLED_INSTALLER="$INSTALL_DIR/install.sh"
 HOME_MARKER="$MANAGED_ROOT/.managed-by-bioinfoflow"
 RELEASE_BASE=${BIOINFOFLOW_RELEASE_BASE_URL:-$DEFAULT_RELEASE_BASE}
 LATEST_RELEASE_URL=${BIOINFOFLOW_LATEST_RELEASE_URL:-$DEFAULT_LATEST_RELEASE_URL}
-FRONTEND_PORT=${FRONTEND_PORT:-3000}
-if [ -n "${BACKEND_PORT:-}" ] && [ "$BACKEND_PORT" != 8000 ]; then
-  die_with_hint "backend port is fixed at 8000 for the localhost frontend" "Stop the process using port 8000, unset BACKEND_PORT, and retry."
+REQUESTED_FRONTEND_PORT=${FRONTEND_PORT:-}
+REQUESTED_BACKEND_PORT=${BACKEND_PORT:-}
+if [ -f "$ENV_FILE" ]; then
+  installed_frontend_port=
+  installed_backend_port=
+  while IFS= read -r installed_env_line || [ -n "$installed_env_line" ]; do
+    case "$installed_env_line" in
+      FRONTEND_PORT=*) installed_frontend_port=${installed_env_line#FRONTEND_PORT=} ;;
+      BACKEND_PORT=*) installed_backend_port=${installed_env_line#BACKEND_PORT=} ;;
+    esac
+  done < "$ENV_FILE"
+  [ -n "$REQUESTED_FRONTEND_PORT" ] || REQUESTED_FRONTEND_PORT=$installed_frontend_port
+  [ -n "$REQUESTED_BACKEND_PORT" ] || REQUESTED_BACKEND_PORT=$installed_backend_port
 fi
-BACKEND_PORT=8000
+FRONTEND_PORT=${REQUESTED_FRONTEND_PORT:-3000}
+BACKEND_PORT=${REQUESTED_BACKEND_PORT:-8000}
+validate_port FRONTEND_PORT "$FRONTEND_PORT"
+validate_port BACKEND_PORT "$BACKEND_PORT"
+[ "$FRONTEND_PORT" != "$BACKEND_PORT" ] || die_with_hint "FRONTEND_PORT and BACKEND_PORT must be different" "Choose two free ports and retry."
 IMAGE_REGISTRY=${IMAGE_REGISTRY:-$DEFAULT_REGISTRY}
 HEALTH_ATTEMPTS=${BIOINFOFLOW_HEALTH_ATTEMPTS:-60}
 HEALTH_INTERVAL=${BIOINFOFLOW_HEALTH_INTERVAL:-2}
@@ -225,6 +277,7 @@ case "$DOCKER_ENDPOINT" in
   *) die_with_hint "Docker must use a local Unix socket; effective endpoint is '${DOCKER_ENDPOINT:-unknown}'" "Run 'unset DOCKER_HOST' and 'docker context use default', then retry." ;;
 esac
 case "$DOCKER_SOCKET_PATH" in /*) ;; *) die_with_hint "Docker Unix socket path must be absolute: $DOCKER_SOCKET_PATH" "Run 'unset DOCKER_HOST' and select a local Docker context." ;; esac
+success "Docker is ready"
 
 ARCH=$(uname -m)
 case "$ARCH" in
@@ -232,6 +285,7 @@ case "$ARCH" in
   arm64|aarch64) PLATFORM_ARCH=arm64 ;;
   *) die_with_hint "Unsupported architecture: $ARCH" "Use an amd64 or arm64 host, the architectures published by Bioinfoflow." ;;
 esac
+stage "Stable release $REQUESTED_VERSION for linux/$PLATFORM_ARCH"
 
 show_diagnostics() {
   diagnostic_env=$1
@@ -248,8 +302,8 @@ show_diagnostics() {
 }
 
 if [ ! -f "$COMPOSE_FILE" ] && command -v lsof >/dev/null 2>&1; then
-  if lsof -nP -iTCP:"$FRONTEND_PORT" -sTCP:LISTEN >/dev/null 2>&1; then die_with_hint "frontend port $FRONTEND_PORT is already in use" "Stop the process using it, or retry with FRONTEND_PORT set to a free port."; fi
-  if lsof -nP -iTCP:"$BACKEND_PORT" -sTCP:LISTEN >/dev/null 2>&1; then die_with_hint "backend port $BACKEND_PORT is already in use" "Stop the process using port 8000, then retry."; fi
+  if lsof -nP -iTCP:"$FRONTEND_PORT" -sTCP:LISTEN >/dev/null 2>&1; then die_port_in_use frontend "$FRONTEND_PORT"; fi
+  if lsof -nP -iTCP:"$BACKEND_PORT" -sTCP:LISTEN >/dev/null 2>&1; then die_port_in_use backend "$BACKEND_PORT"; fi
 fi
 
 HAD_PREVIOUS=0
@@ -280,6 +334,7 @@ fi
 if [ "$DRY_RUN" -eq 1 ]; then
   say "Would install Bioinfoflow $REQUESTED_VERSION for linux/$PLATFORM_ARCH in $INSTALL_DIR"
   say "Would use Bioinfoflow home $MANAGED_ROOT"
+  say "Would publish the frontend on port $FRONTEND_PORT and backend on port $BACKEND_PORT"
   [ "$SEED_SKILLS" -eq 0 ] || say "Would seed bundled NGS skills in $SKILLS_DIR"
   exit 0
 fi
@@ -297,18 +352,19 @@ cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT HUP INT TERM
 
 if [ "$ACTION" = update ] && [ "$VERSION_EXPLICIT" -eq 0 ]; then
-  curl -fL --retry 2 --connect-timeout 15 -o "$TMP_DIR/latest-release.json" "$LATEST_RELEASE_URL" || die_with_hint "latest release lookup failed" "Check network access, or retry with --version followed by a known release tag."
+  curl -fsSL --retry 2 --connect-timeout 15 -o "$TMP_DIR/latest-release.json" "$LATEST_RELEASE_URL" || die_with_hint "latest release lookup failed" "Check network access, or retry with --version followed by a known release tag."
   REQUESTED_VERSION=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TMP_DIR/latest-release.json" | sed -n '1p')
   [ -n "$REQUESTED_VERSION" ] || die_with_hint "latest release response did not contain tag_name" "Retry with --version followed by a known release tag."
 fi
 
 ASSET_BASE="$RELEASE_BASE/$REQUESTED_VERSION"
-curl -fL --retry 2 --connect-timeout 15 -o "$TMP_DIR/install.sh" "$ASSET_BASE/install.sh" || die_with_hint "installer download failed" "Check that release tag '$REQUESTED_VERSION' exists and that GitHub releases are reachable."
-curl -fL --retry 2 --connect-timeout 15 -o "$TMP_DIR/docker-compose.local.yml" "$ASSET_BASE/docker-compose.local.yml" || die_with_hint "release asset download failed" "Check that release tag '$REQUESTED_VERSION' exists and retry; partial downloads are discarded."
-curl -fL --retry 2 --connect-timeout 15 -o "$TMP_DIR/SHA256SUMS" "$ASSET_BASE/SHA256SUMS" || die_with_hint "checksum download failed" "Check that release tag '$REQUESTED_VERSION' includes SHA256SUMS and retry."
+stage "Downloading and verifying release assets"
+curl -fsSL --retry 2 --connect-timeout 15 -o "$TMP_DIR/install.sh" "$ASSET_BASE/install.sh" || die_with_hint "installer download failed" "Check that release tag '$REQUESTED_VERSION' exists and that GitHub releases are reachable."
+curl -fsSL --retry 2 --connect-timeout 15 -o "$TMP_DIR/docker-compose.local.yml" "$ASSET_BASE/docker-compose.local.yml" || die_with_hint "release asset download failed" "Check that release tag '$REQUESTED_VERSION' exists and retry; partial downloads are discarded."
+curl -fsSL --retry 2 --connect-timeout 15 -o "$TMP_DIR/SHA256SUMS" "$ASSET_BASE/SHA256SUMS" || die_with_hint "checksum download failed" "Check that release tag '$REQUESTED_VERSION' includes SHA256SUMS and retry."
 if [ "$SEED_SKILLS" -eq 1 ]; then
   command -v tar >/dev/null 2>&1 || die_with_hint "tar is required to install bundled skills" "Install tar and retry."
-  curl -fL --retry 2 --connect-timeout 15 -o "$TMP_DIR/bioinfoflow-skills.tar.gz" "$ASSET_BASE/bioinfoflow-skills.tar.gz" || die_with_hint "skills archive download failed" "Check that release tag '$REQUESTED_VERSION' includes bioinfoflow-skills.tar.gz and retry."
+  curl -fsSL --retry 2 --connect-timeout 15 -o "$TMP_DIR/bioinfoflow-skills.tar.gz" "$ASSET_BASE/bioinfoflow-skills.tar.gz" || die_with_hint "skills archive download failed" "Check that release tag '$REQUESTED_VERSION' includes bioinfoflow-skills.tar.gz and retry."
   sed -n '/[[:space:]]install\.sh$/p; /[[:space:]]docker-compose\.local\.yml$/p; /[[:space:]]bioinfoflow-skills\.tar\.gz$/p' "$TMP_DIR/SHA256SUMS" > "$TMP_DIR/assets.sha256"
   [ "$(sed -n '$=' "$TMP_DIR/assets.sha256")" = 3 ] || die_with_hint "checksum manifest must contain installer, Compose, and skills assets" "Do not bypass verification; retry the same release or choose another published release tag."
 else
@@ -322,6 +378,7 @@ elif command -v shasum >/dev/null 2>&1; then
 else
   die_with_hint "SHA-256 checksum tool is required (sha256sum or shasum)" "Install coreutils, or use the shasum command included with macOS, then retry."
 fi
+success "Release assets verified"
 
 STAGED_SKILLS="$TMP_DIR/skills"
 if [ "$SEED_SKILLS" -eq 1 ]; then
@@ -368,6 +425,7 @@ BIOINFOFLOW_VERSION=$REQUESTED_VERSION
 BIOINFOFLOW_ARCH=$PLATFORM_ARCH
 IMAGE_REGISTRY=$IMAGE_REGISTRY
 FRONTEND_PORT=$FRONTEND_PORT
+BACKEND_PORT=$BACKEND_PORT
 DOCKER_SOCKET_PATH=$DOCKER_SOCKET_PATH
 BIOINFOFLOW_INSTALL_UID=$(id -u)
 BIOINFOFLOW_INSTALL_GID=$(id -g)
@@ -413,7 +471,10 @@ fail_transaction() {
   die "$failure_message"
 }
 
-if ! compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" pull; then
+stage "Downloading container images (the first install may take several minutes)"
+if ! compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" pull > "$TMP_DIR/pull.log" 2>&1; then
+  say "Image download output:" >&2
+  sed -n '1,120p' "$TMP_DIR/pull.log" >&2
   fail_transaction "failed to pull Bioinfoflow images"
 fi
 if [ "$LEGACY_LAYOUT" -eq 1 ]; then
@@ -434,10 +495,14 @@ if [ "$SEED_SKILLS" -eq 1 ]; then
   chmod 700 "$SKILLS_DIR"
   SEEDED_SKILLS_THIS_RUN=1
 fi
-if ! compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" up -d --remove-orphans; then
+stage "Starting Bioinfoflow"
+if ! compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" up -d --remove-orphans > "$TMP_DIR/up.log" 2>&1; then
+  say "Startup output:" >&2
+  sed -n '1,120p' "$TMP_DIR/up.log" >&2
   fail_transaction "failed to start Bioinfoflow"
 fi
 
+stage "Waiting for frontend and backend health checks"
 attempt=1
 while [ "$attempt" -le "$HEALTH_ATTEMPTS" ]; do
   if curl -fsS "http://127.0.0.1:$BACKEND_PORT/api/v1/system/ping" >/dev/null 2>&1 && curl -fsS "http://127.0.0.1:$FRONTEND_PORT/" >/dev/null 2>&1; then
@@ -450,7 +515,9 @@ while [ "$attempt" -le "$HEALTH_ATTEMPTS" ]; do
       rmdir "$LEGACY_DATA_DIR" 2>/dev/null || true
       MIGRATED_LEGACY_THIS_RUN=0
     fi
-    say "Bioinfoflow $REQUESTED_VERSION is ready at http://localhost:$FRONTEND_PORT"
+    success "Bioinfoflow $REQUESTED_VERSION is ready"
+    say "Bioinfoflow: http://localhost:$FRONTEND_PORT"
+    say "Backend: http://localhost:$BACKEND_PORT"
     if [ "$NO_OPEN" -eq 0 ]; then
       if command -v open >/dev/null 2>&1; then open "http://localhost:$FRONTEND_PORT" >/dev/null 2>&1 || true
       elif command -v xdg-open >/dev/null 2>&1; then xdg-open "http://localhost:$FRONTEND_PORT" >/dev/null 2>&1 || true
