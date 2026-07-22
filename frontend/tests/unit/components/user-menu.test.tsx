@@ -9,6 +9,7 @@ const refreshMock = vi.fn()
 const successToastMock = vi.fn()
 const errorToastMock = vi.fn()
 const setModeMock = vi.fn()
+let demoDeployment = false
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -29,6 +30,7 @@ vi.mock("next-intl", () => ({
       lightMode: "Light mode",
       darkMode: "Dark mode",
       settings: "settings",
+      exitDemo: "Exit demo",
       "roles.owner": "roles.owner",
     }
     return copy[key] ?? key
@@ -53,6 +55,10 @@ vi.mock("@/lib/auth-client", () => ({
   authClient: {
     signOut: (...args: unknown[]) => signOutMock(...args),
   },
+}))
+
+vi.mock("@/lib/deploy-mode", () => ({
+  isDemoDeployment: () => demoDeployment,
 }))
 
 vi.mock("@/lib/auth-config", () => ({
@@ -83,10 +89,12 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenuItem: ({
     children,
     onClick,
+    asChild,
   }: {
     children: React.ReactNode
     onClick?: () => void
-  }) => <button onClick={onClick}>{children}</button>,
+    asChild?: boolean
+  }) => asChild ? children : <button onClick={onClick}>{children}</button>,
   DropdownMenuSeparator: () => <hr />,
 }))
 
@@ -108,6 +116,7 @@ const ALICE_VIEWER: ViewerIdentity = {
 describe("UserMenu", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    demoDeployment = false
   })
 
   it("routes the theme toggle through the appearance hook", async () => {
@@ -134,6 +143,17 @@ describe("UserMenu", () => {
     expect(successToastMock).toHaveBeenCalledWith("Logged out")
     expect(replaceMock).toHaveBeenCalledWith("/auth")
     expect(refreshMock).toHaveBeenCalled()
+  })
+
+  it("offers a server-backed exit from the public demo", () => {
+    demoDeployment = true
+
+    render(<UserMenu collapsed={false} />)
+
+    expect(screen.getByRole("link", { name: "Exit demo" })).toHaveAttribute(
+      "href",
+      "/api/demo-auth?action=logout&next=%2F",
+    )
   })
 
   it("centers the avatar trigger when collapsed", () => {

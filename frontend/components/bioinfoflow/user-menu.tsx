@@ -15,6 +15,7 @@ import {
 import { UserAvatar } from "@/components/bioinfoflow/user-avatar"
 import { authClient } from "@/lib/auth-client"
 import { buildAnonymousViewer } from "@/lib/auth-config"
+import { isDemoDeployment } from "@/lib/deploy-mode"
 import { toast } from "sonner"
 import type { ViewerIdentity } from "@/lib/auth-config"
 
@@ -29,6 +30,7 @@ export function UserMenu({ collapsed, viewer }: UserMenuProps) {
   const { mode, resolvedMode, setMode } = useAppearance()
   const router = useRouter()
   const currentViewer = viewer ?? buildAnonymousViewer()
+  const demoDeployment = isDemoDeployment()
   const userName = currentViewer.name || tUserMenu("defaultName")
   const userEmail = currentViewer.email || ""
   const userImage = currentViewer.image || null
@@ -130,7 +132,26 @@ export function UserMenu({ collapsed, viewer }: UserMenuProps) {
           <span>{tUserMenu("settings")}</span>
         </DropdownMenuItem>
 
-        {currentViewer.authEnabled ? (
+        {demoDeployment ? (
+          <>
+            <DropdownMenuSeparator className="mx-1 my-1" />
+
+            <DropdownMenuItem
+              asChild
+              className="mx-0.5 cursor-pointer rounded-[8px] px-2.5 py-2 text-destructive focus:bg-destructive/10 focus:text-destructive"
+            >
+              <a
+                href="/api/demo-auth?action=logout&next=%2F"
+                onClick={(event) => {
+                  event.preventDefault()
+                  window.location.replace(event.currentTarget.href)
+                }}
+              >
+                {tUserMenu("exitDemo")}
+              </a>
+            </DropdownMenuItem>
+          </>
+        ) : currentViewer.authEnabled ? (
           <>
             <DropdownMenuSeparator className="mx-1 my-1" />
 

@@ -68,6 +68,32 @@ try {
     failures.push("desktop product frame did not expand into the pinned product stage")
   }
   await context.close()
+
+  const demoContext = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  const demoPage = await demoContext.newPage()
+  const demoOrigin = new URL(baseURL).origin
+  await demoContext.addCookies([{ name: "NEXT_LOCALE", value: "en", url: demoOrigin }])
+  await demoPage.goto(demoOrigin, { waitUntil: "domcontentloaded" })
+  await demoPage.locator('a[href="/auth"]').first().click()
+  await demoPage.locator('a[href*="provider=guest"]').click()
+  await demoPage.waitForURL(`${demoOrigin}/agent`)
+
+  await demoPage.goBack()
+  await demoPage.waitForURL(`${demoOrigin}/`)
+  const landingHeading = await demoPage.locator("h1").textContent()
+  if (landingHeading?.replace(/\s+/g, " ").trim() !== "Bioinformatics in plain language.") {
+    failures.push("browser back did not return an active demo visitor to landing")
+  }
+
+  await demoPage.goto(`${demoOrigin}/agent`, { waitUntil: "domcontentloaded" })
+  await demoPage.locator('button[aria-label*="User menu"]').click()
+  await demoPage.locator('a[href="/api/demo-auth?action=logout&next=%2F"]').click()
+  await demoPage.waitForURL(`${demoOrigin}/`)
+  const demoCookies = await demoContext.cookies()
+  if (demoCookies.some((cookie) => cookie.name === "bioinfoflow_demo_access" && cookie.value)) {
+    failures.push("exit demo did not clear the demo access cookie")
+  }
+  await demoContext.close()
 } finally {
   await browser.close()
 }
