@@ -5,9 +5,7 @@ import type {
   RuntimeRequestOptions,
   RuntimeRequestResult,
 } from "./types"
-
-const DEFAULT_BASE_URL = "http://localhost:8000/api/v1"
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_BASE_URL
+import { resolvePublicApiBaseUrl } from "./public-config"
 
 export class ApiError extends Error {
   code?: string
@@ -35,7 +33,7 @@ export class ApiError extends Error {
 
 export function buildLiveApiUrl(path: string, params?: RequestParams) {
   const normalized = path.startsWith("/") ? path : `/${path}`
-  const url = new URL(`${API_BASE_URL}${normalized}`)
+  const url = new URL(`${resolvePublicApiBaseUrl()}${normalized}`)
 
   if (params) {
     Object.entries(params).forEach(([key, value]) => {

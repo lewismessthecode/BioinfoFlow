@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ApiError, apiRequest, buildApiUrl, buildWebSocketUrl } from "@/lib/api"
 
 describe("buildApiUrl", () => {
+  afterEach(() => {
+    delete window.__BIOINFOFLOW_RUNTIME_CONFIG__
+  })
+
   it("omits empty params and keeps falsey values that matter", () => {
     const url = new URL(
       buildApiUrl("/projects", {
@@ -22,9 +26,23 @@ describe("buildApiUrl", () => {
     expect(url.searchParams.has("ignored")).toBe(false)
     expect(url.searchParams.has("skipped")).toBe(false)
   })
+
+  it("uses the runtime-configured backend port", () => {
+    window.__BIOINFOFLOW_RUNTIME_CONFIG__ = {
+      apiBaseUrl: "http://localhost:8100/api/v1",
+    }
+
+    expect(buildApiUrl("/projects")).toBe(
+      "http://localhost:8100/api/v1/projects",
+    )
+  })
 })
 
 describe("buildWebSocketUrl", () => {
+  afterEach(() => {
+    delete window.__BIOINFOFLOW_RUNTIME_CONFIG__
+  })
+
   it("converts the configured API base URL into a websocket URL", () => {
     const url = new URL(
       buildWebSocketUrl("/terminal/sessions/session-1/ws", {
@@ -35,6 +53,16 @@ describe("buildWebSocketUrl", () => {
     expect(url.protocol).toBe("ws:")
     expect(url.pathname).toBe("/api/v1/terminal/sessions/session-1/ws")
     expect(url.searchParams.get("project_id")).toBe("project-1")
+  })
+
+  it("uses the runtime-configured backend port", () => {
+    window.__BIOINFOFLOW_RUNTIME_CONFIG__ = {
+      apiBaseUrl: "http://localhost:8100/api/v1",
+    }
+
+    expect(buildWebSocketUrl("/terminal/sessions/session-1/ws")).toBe(
+      "ws://localhost:8100/api/v1/terminal/sessions/session-1/ws",
+    )
   })
 })
 
