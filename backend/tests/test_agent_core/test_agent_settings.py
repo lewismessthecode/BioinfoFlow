@@ -65,7 +65,9 @@ async def test_settings_api_trims_and_clears_custom_instructions(async_client) -
 
 
 @pytest.mark.asyncio
-async def test_settings_api_empty_payload_clears_custom_instructions(async_client) -> None:
+async def test_settings_api_empty_payload_clears_custom_instructions(
+    async_client,
+) -> None:
     await async_client.put(
         "/api/v1/agent/settings",
         json={"custom_instructions": "Persisted instructions"},
@@ -80,7 +82,9 @@ async def test_settings_api_empty_payload_clears_custom_instructions(async_clien
 
 
 @pytest.mark.asyncio
-async def test_settings_api_accepts_exactly_20k_custom_instructions(async_client) -> None:
+async def test_settings_api_accepts_exactly_20k_custom_instructions(
+    async_client,
+) -> None:
     custom_instructions = "x" * 20_000
 
     response = await async_client.put(
@@ -89,9 +93,7 @@ async def test_settings_api_accepts_exactly_20k_custom_instructions(async_client
     )
 
     assert response.status_code == 200
-    assert response.json()["data"] == {
-        "custom_instructions": custom_instructions
-    }
+    assert response.json()["data"] == {"custom_instructions": custom_instructions}
 
 
 @pytest.mark.asyncio
@@ -126,7 +128,9 @@ async def test_new_sessions_freeze_current_custom_instructions(async_client) -> 
     existing = await async_client.get(f"/api/v1/agent/sessions/{first_session['id']}")
     assert existing.status_code == 200
     assert first_instructions in existing.json()["data"]["prompt_snapshot"]["content"]
-    assert next_instructions not in existing.json()["data"]["prompt_snapshot"]["content"]
+    assert (
+        next_instructions not in existing.json()["data"]["prompt_snapshot"]["content"]
+    )
 
     second = await async_client.post("/api/v1/agent/sessions", json={})
     assert second.status_code == 201
@@ -135,7 +139,9 @@ async def test_new_sessions_freeze_current_custom_instructions(async_client) -> 
 
 
 @pytest.mark.asyncio
-async def test_explicit_session_prompt_snapshot_overrides_user_settings(db_session) -> None:
+async def test_explicit_session_prompt_snapshot_overrides_user_settings(
+    db_session,
+) -> None:
     await _workspace(
         db_session,
         workspace_id=DEFAULT_WORKSPACE_ID,

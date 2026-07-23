@@ -43,7 +43,9 @@ class ReadOnlySubagentRunner:
             }
 
         runtime_context = context or {}
-        parent_session = await AgentSessionRepository(self.db).get(runtime_context["session_id"])
+        parent_session = await AgentSessionRepository(self.db).get(
+            runtime_context["session_id"]
+        )
         parent_turn = await AgentTurnRepository(self.db).get(runtime_context["turn_id"])
         if parent_session is None or parent_turn is None:
             raise PermissionDeniedError("Subagent parent context could not be loaded")
@@ -52,7 +54,9 @@ class ReadOnlySubagentRunner:
 
         service = AgentCoreService(self.db)
         child_session = await service.create_session(
-            project_id=str(parent_session.project_id) if parent_session.project_id else None,
+            project_id=str(parent_session.project_id)
+            if parent_session.project_id
+            else None,
             workspace_id=runtime_context["workspace_id"],
             user_id=runtime_context["user_id"],
             title=f"Subagent: {task[:80]}",
@@ -84,7 +88,9 @@ class ReadOnlySubagentRunner:
             session_id=str(child_session.id),
             workspace_id=runtime_context["workspace_id"],
             user_id=runtime_context["user_id"],
-            input_text=_build_subagent_prompt(task=task, context=runtime_context, allowed_tools=tool_names),
+            input_text=_build_subagent_prompt(
+                task=task, context=runtime_context, allowed_tools=tool_names
+            ),
         )
         completed_turn = await service.runtime.run_turn(str(child_turn.id))
         artifacts = await service.list_artifacts_for_turn(
@@ -122,13 +128,21 @@ def _has_runtime_context(context: dict | None) -> bool:
     )
 
 
-def _build_subagent_prompt(*, task: str, context: dict, allowed_tools: list[str]) -> str:
-    payload = {k: v for k, v in context.items() if k not in {"workspace_id", "user_id", "session_id", "turn_id"}}
+def _build_subagent_prompt(
+    *, task: str, context: dict, allowed_tools: list[str]
+) -> str:
+    payload = {
+        k: v
+        for k, v in context.items()
+        if k not in {"workspace_id", "user_id", "session_id", "turn_id"}
+    }
     sections = [f"Task: {task}"]
     if payload:
         sections.append("Context:\n" + json.dumps(payload, indent=2, sort_keys=True))
     if allowed_tools:
-        sections.append("Allowed tools:\n" + "\n".join(f"- {tool}" for tool in allowed_tools))
+        sections.append(
+            "Allowed tools:\n" + "\n".join(f"- {tool}" for tool in allowed_tools)
+        )
     sections.append(
         "Work read-only, use only exposed read-only tools, and return a concise final answer for the parent agent."
     )

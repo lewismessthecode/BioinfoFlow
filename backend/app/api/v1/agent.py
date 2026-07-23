@@ -131,20 +131,15 @@ async def update_settings(
         custom_instructions=payload.custom_instructions.strip(),
     )
     return success_response(
-        _dump(
-            AgentSettingsRead(
-                custom_instructions=user_settings.custom_instructions
-            )
-        ),
+        _dump(AgentSettingsRead(custom_instructions=user_settings.custom_instructions)),
         request=request,
     )
 
 
 def _turn_read(turn) -> AgentTurnRead:
     snapshot = getattr(turn, "model_profile_snapshot", None) or {}
-    model_selection_payload = (
-        snapshot.get("resolved_model_selection")
-        or snapshot.get("requested_model_selection")
+    model_selection_payload = snapshot.get("resolved_model_selection") or snapshot.get(
+        "requested_model_selection"
     )
     if isinstance(model_selection_payload, dict) and snapshot.get("resolved_model_id"):
         model_selection_payload = {
@@ -154,7 +149,9 @@ def _turn_read(turn) -> AgentTurnRead:
     model_selection = normalize_model_selection(model_selection_payload)
     active_skill_names = []
     metadata = snapshot.get("metadata")
-    if isinstance(metadata, dict) and isinstance(metadata.get("active_skill_names"), list):
+    if isinstance(metadata, dict) and isinstance(
+        metadata.get("active_skill_names"), list
+    ):
         active_skill_names = [
             item for item in metadata["active_skill_names"] if isinstance(item, str)
         ]
@@ -165,7 +162,7 @@ def _turn_read(turn) -> AgentTurnRead:
                 AgentModelSelection.model_validate(model_selection)
                 if model_selection
                 else None
-            )
+            ),
         }
     )
 
@@ -227,7 +224,9 @@ async def get_skill(
     del user
     registry = AgentSkillRegistry.from_default_roots()
     skill = registry.get(skill_name)
-    return success_response(_dump(_skill_read(skill, include_body=True)), request=request)
+    return success_response(
+        _dump(_skill_read(skill, include_body=True)), request=request
+    )
 
 
 @router.post("/sessions")
@@ -366,7 +365,9 @@ async def create_turn(
         input_text=payload.input_text,
         input_parts=payload.input_parts,
         active_skill_names=payload.active_skill_names,
-        model_profile_id=str(payload.model_profile_id) if payload.model_profile_id else None,
+        model_profile_id=str(payload.model_profile_id)
+        if payload.model_profile_id
+        else None,
         model_selection=(
             payload.model_selection.model_dump(mode="json", exclude_none=True)
             if payload.model_selection
@@ -597,7 +598,9 @@ async def _token_usage_summary_for_turns(
 def _latest_resolved_model_id(turns: list) -> str | None:
     for turn in reversed(turns):
         snapshot = getattr(turn, "model_profile_snapshot", None)
-        if isinstance(snapshot, dict) and isinstance(snapshot.get("resolved_model_id"), str):
+        if isinstance(snapshot, dict) and isinstance(
+            snapshot.get("resolved_model_id"), str
+        ):
             return snapshot["resolved_model_id"]
     return None
 
@@ -713,7 +716,9 @@ async def get_fs_file(
         path, must_exist=True, allow_directory=False
     )
     if _is_sensitive_fs_path(target):
-        raise PermissionDeniedError(f"File is not available through agent file browsing: {target}")
+        raise PermissionDeniedError(
+            f"File is not available through agent file browsing: {target}"
+        )
     size = _safe_size(target) or 0
     async with aiofiles.open(target, "rb") as handle:
         raw = await handle.read(_FS_FILE_MAX_BYTES + 1)
@@ -753,7 +758,9 @@ async def download_fs_file(
         path, must_exist=True, allow_directory=False
     )
     if _is_sensitive_fs_path(target):
-        raise PermissionDeniedError(f"File is not available through agent file browsing: {target}")
+        raise PermissionDeniedError(
+            f"File is not available through agent file browsing: {target}"
+        )
 
     async def file_iterator():
         async with aiofiles.open(target, "rb") as handle:
@@ -865,15 +872,24 @@ async def list_toolsets(request: Request):
             "toolsets": [
                 {
                     "name": "default",
-                    "tools": [spec.name for spec in exposure.exposed_specs(policy={"name": "default"})],
+                    "tools": [
+                        spec.name
+                        for spec in exposure.exposed_specs(policy={"name": "default"})
+                    ],
                 },
                 {
                     "name": "execution",
-                    "tools": [spec.name for spec in exposure.exposed_specs(policy={"name": "execution"})],
+                    "tools": [
+                        spec.name
+                        for spec in exposure.exposed_specs(policy={"name": "execution"})
+                    ],
                 },
                 {
                     "name": "plan",
-                    "tools": [spec.name for spec in exposure.exposed_specs(policy={"name": "plan"})],
+                    "tools": [
+                        spec.name
+                        for spec in exposure.exposed_specs(policy={"name": "plan"})
+                    ],
                 },
             ]
         },
