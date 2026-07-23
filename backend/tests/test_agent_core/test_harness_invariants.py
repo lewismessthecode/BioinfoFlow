@@ -143,33 +143,52 @@ async def test_session_can_start_without_project_and_keeps_prompt_snapshot(db_se
 
     assert session.project_id is None
     assert session.runtime_mode == "api"
-    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v8"
+    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v9"
     assert session.toolset_policy["name"] == "execution"
 
 
-def test_v8_system_prompt_is_a_compact_provider_neutral_agent_core():
+def test_v9_system_prompt_defines_the_comprehensive_provider_neutral_agent_contract():
     snapshot = default_system_prompt_snapshot()
 
-    assert snapshot.id == "bioinfoflow-agent-v8"
-    assert len(snapshot.content) < 6000
-    assert "You are an agent operating through" in snapshot.content
-    assert "latest user request" in snapshot.content
-    assert "target context" in snapshot.content
-    assert "observe" in snapshot.content.lower()
-    assert "act" in snapshot.content.lower()
-    assert "verify" in snapshot.content.lower()
-    assert "reasonable assumptions" in snapshot.content
-    assert "smallest sufficient dedicated tool" in snapshot.content
-    assert "shell" in snapshot.content
-    assert "schemas and identifiers exactly" in snapshot.content
-    assert "independent read-only work" in snapshot.content
-    assert "Do not repeat unchanged failures" in snapshot.content
-    assert "Approval authorizes an action" in snapshot.content
-    assert "read-back" in snapshot.content
-    assert "Preserve unrelated user changes" in snapshot.content
-    assert "Keep communication concise" in snapshot.content
-    assert "Bioinfoflow platform workflow" not in snapshot.content
-    assert "Before submitting a run" not in snapshot.content
+    assert snapshot.id == "bioinfoflow-agent-v9"
+    nonempty_lines = [line for line in snapshot.content.splitlines() if line.strip()]
+    assert 350 <= len(nonempty_lines) <= 700
+
+    required_sections = (
+        "## Identity and mission",
+        "## Instruction authority",
+        "## Request types and authorization",
+        "## Outcome and completion contract",
+        "## Evidence-first workflow",
+        "## Planning and persistence",
+        "## Tool selection",
+        "## Shell command guidance",
+        "## Parallelism and ordering",
+        "## File and code changes",
+        "## Bioinfoflow platform operations",
+        "## Workflow and run lifecycle",
+        "## Remote execution and target selection",
+        "## Failure recovery",
+        "## Verification",
+        "## Communication",
+        "## Project instructions, skills, and custom instructions",
+    )
+    for section in required_sections:
+        assert section in snapshot.content
+
+    required_guidance = (
+        "`rg`, `rg --files`, `jq`, and `sed` are shell commands",
+        "run them through `bash`",
+        "Prefer a dedicated Bioinfoflow platform tool over shell",
+        "call `remote.connections.list`",
+        "pass its `connection_id`",
+        "Manual mode is a hard target fence",
+        "Submitting a run is not completion",
+        "Approval is not proof of success",
+        "Preserve existing user changes",
+    )
+    for guidance in required_guidance:
+        assert guidance in snapshot.content
 
 
 def test_old_prompt_snapshot_is_returned_verbatim():

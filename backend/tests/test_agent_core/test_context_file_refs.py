@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from app.services.agent_core import service as service_module
+from app.services.agent_core.context.system_prompt import default_system_prompt_snapshot
 from app.utils.exceptions import BadRequestError
 
 
@@ -16,15 +17,45 @@ class _FakeFilesystemPolicy:
         return target
 
 
+def test_custom_instructions_use_the_stable_v9_wrapper_and_preserve_trimmed_text():
+    custom_instructions = (
+        "  Use the internal naming convention.\nKeep sample IDs private.  "
+    )
+
+    content = default_system_prompt_snapshot(custom_instructions).content
+
+    expected_suffix = """\
+## User-provided custom instructions
+The following text was saved by the user for new sessions. Apply it as user
+guidance when it does not conflict with platform safety, permission decisions,
+tool contracts, project instructions, or the user's latest explicit request.
+
+Use the internal naming convention.
+Keep sample IDs private."""
+    assert content.endswith(expected_suffix)
+
+
 def test_generated_session_title_preserves_prompt_language():
-    assert service_module._generated_session_title("新建一个 WGS 流程，包含质控和比对") == "新建一个 WGS 流程，包含质控和比对"
-    assert service_module._generated_session_title("Summarize this very long workflow request with many details") == "Summarize this very long"
+    assert (
+        service_module._generated_session_title("新建一个 WGS 流程，包含质控和比对")
+        == "新建一个 WGS 流程，包含质控和比对"
+    )
+    assert (
+        service_module._generated_session_title(
+            "Summarize this very long workflow request with many details"
+        )
+        == "Summarize this very long"
+    )
 
 
-def test_file_ref_input_parts_expand_into_bounded_transcript_text(tmp_path, monkeypatch):
+def test_file_ref_input_parts_expand_into_bounded_transcript_text(
+    tmp_path, monkeypatch
+):
     workflow = tmp_path / "workflow.wdl"
     workflow.write_text("version 1.0\nworkflow demo {}", encoding="utf-8")
-    monkeypatch.setattr(service_module, "FilesystemPolicy", lambda: _FakeFilesystemPolicy())
+    monkeypatch.setattr(
+        service_module, "FilesystemPolicy", lambda: _FakeFilesystemPolicy()
+    )
 
     parts = service_module._transcript_parts_for_turn(
         input_text="Use the attached workflow.",
@@ -85,7 +116,9 @@ def test_workflow_ref_rejects_unknown_scope():
 
 
 def test_workflow_ref_rejects_client_authored_metadata():
-    with pytest.raises(BadRequestError, match="workflow_ref input part has unsupported fields"):
+    with pytest.raises(
+        BadRequestError, match="workflow_ref input part has unsupported fields"
+    ):
         service_module._transcript_parts_for_turn(
             input_text="Draft a run plan.",
             input_parts=[
@@ -101,7 +134,9 @@ def test_workflow_ref_rejects_client_authored_metadata():
 
 
 def test_workflow_ref_rejects_multiline_ids():
-    with pytest.raises(BadRequestError, match="workflow_ref project_id must be a single line"):
+    with pytest.raises(
+        BadRequestError, match="workflow_ref project_id must be a single line"
+    ):
         service_module._transcript_parts_for_turn(
             input_text="Draft a run plan.",
             input_parts=[
@@ -116,7 +151,9 @@ def test_workflow_ref_rejects_multiline_ids():
 
 
 def test_workflow_ref_rejects_unknown_fields():
-    with pytest.raises(BadRequestError, match="workflow_ref input part has unsupported fields"):
+    with pytest.raises(
+        BadRequestError, match="workflow_ref input part has unsupported fields"
+    ):
         service_module._transcript_parts_for_turn(
             input_text="Draft a run plan.",
             input_parts=[
