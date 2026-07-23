@@ -893,7 +893,7 @@ async def test_transcript_repair_rebuilds_group_before_later_messages(db_session
 
 
 @pytest.mark.asyncio
-async def test_mixed_reads_complete_but_model_waits_for_approval(
+async def test_mixed_reads_stop_at_approval_before_model_continues(
     db_session, monkeypatch
 ):
     calls = 0
@@ -937,7 +937,7 @@ async def test_mixed_reads_complete_but_model_waits_for_approval(
     assert [action.status for action in actions] == [
         AgentActionStatus.COMPLETED,
         AgentActionStatus.WAITING_DECISION,
-        AgentActionStatus.COMPLETED,
+        AgentActionStatus.REQUESTED,
     ]
     batch_actions = await AgentActionRepository(db_session).list_for_batch(
         str(actions[0].tool_batch_id)
@@ -1267,6 +1267,167 @@ async def test_adjacent_reads_overlap_before_approval_barrier(db_session, monkey
         AgentActionStatus.COMPLETED,
     ]
     assert actions[2].status == AgentActionStatus.WAITING_DECISION
+
+
+@pytest.mark.asyncio
+async def test_approval_barrier_defers_later_safe_calls_until_resume(
+    db_session,
+    monkeypatch,
+):
+    read_calls = 0
+
+    async def counted_read(self, input, context):
+        nonlocal read_calls
+        del self, input, context
+        read_calls += 1
+        return {"projects": [], "total_count": 0}
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ListProjectsTool.run",
+        counted_read,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_: None
+    )
+    calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal calls
+        del args, kwargs
+        calls += 1
+        if calls == 1:
+            return _response(
+                tool_calls=[
+                    ("read-before-approval", "projects__list", {}),
+                    (
+                        "approval-barrier",
+                        "bash",
+                        {"command": "python -c 'print(1)'"},
+                    ),
+                    ("read-after-approval", "projects__list", {}),
+                ]
+            )
+        return _response(text="approval batch complete")
+
+    _patch_model_gateway(monkeypatch, fake_completion)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="guarded_auto",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Stop at the approval barrier.",
+    )
+
+    waiting = await service.runtime.run_turn(str(turn.id))
+
+    assert waiting.status == AgentTurnStatus.WAITING_APPROVAL
+    assert read_calls == 1
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions.sort(key=lambda action: action.tool_call_ordinal)
+    assert [action.status for action in actions] == [
+        AgentActionStatus.COMPLETED,
+        AgentActionStatus.WAITING_DECISION,
+        AgentActionStatus.REQUESTED,
+    ]
+
+    approved = await service.decide_action(
+        action_id=str(actions[1].id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+    completed = await service.runtime.resume_turn_after_action(str(approved.id))
+
+    assert completed.status == AgentTurnStatus.COMPLETED
+    assert completed.final_text == "approval batch complete"
+    assert read_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_dynamic_approval_recheck_stops_later_safe_calls(
+    db_session,
+    monkeypatch,
+):
+    read_calls = 0
+
+    async def counted_read(self, input, context):
+        nonlocal read_calls
+        del self, input, context
+        read_calls += 1
+        return {"projects": [], "total_count": 0}
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ListProjectsTool.run",
+        counted_read,
+    )
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="bypass",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Recheck policy at the serial barrier.",
+    )
+    controller = AgentLoopController(db_session)
+    original_resume = controller.executor.resume_action
+    policy_changed = False
+
+    async def tighten_policy_before_resume(**kwargs):
+        nonlocal policy_changed
+        if not policy_changed:
+            policy_changed = True
+            await service.update_session(
+                session_id=str(session.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                updates={"permission_mode": "ask_each_action"},
+            )
+        return await original_resume(**kwargs)
+
+    monkeypatch.setattr(
+        controller.executor,
+        "resume_action",
+        tighten_policy_before_resume,
+    )
+
+    waiting, _signatures, _claimed_batch_id = await controller._execute_tool_calls(
+        agent_session=session,
+        turn=turn,
+        tool_calls=[
+            {"id": "read-before-recheck", "name": "projects__list", "arguments": {}},
+            {
+                "id": "dynamic-approval",
+                "name": "bash",
+                "arguments": {"command": "touch policy-recheck"},
+            },
+            {"id": "read-after-recheck", "name": "projects__list", "arguments": {}},
+        ],
+        provider="openai_compatible",
+        model="batch-model",
+    )
+
+    assert waiting is True
+    assert read_calls == 1
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions.sort(key=lambda action: action.tool_call_ordinal)
+    assert [action.status for action in actions] == [
+        AgentActionStatus.COMPLETED,
+        AgentActionStatus.WAITING_DECISION,
+        AgentActionStatus.REQUESTED,
+    ]
 
 
 @pytest.mark.asyncio
