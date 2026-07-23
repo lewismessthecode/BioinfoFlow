@@ -907,72 +907,59 @@ class AgentLoopController:
             return waiting, signatures, None
         waiting = False
         result_signatures: list[str] = []
-        read_candidates = [
-            item
-            for item in prepared
-            if item[2].status == AgentActionStatus.REQUESTED
-            and self._is_concurrent_read_only_tool(item[1])
-        ]
-        read_results = await asyncio.gather(
-            *[
-                self._execute_tool_call_isolated(
-                    agent_session=agent_session,
-                    turn=turn,
-                    action_id=prepared_result.action_id,
+        for segment in self._ordered_tool_execution_segments(prepared):
+            parallel_results: dict[str, ToolExecutionResult] = {}
+            if self._is_parallel_segment(segment):
+                results = await asyncio.gather(
+                    *[
+                        self._execute_tool_call_isolated(
+                            agent_session=agent_session,
+                            turn=turn,
+                            action_id=prepared_result.action_id,
+                        )
+                        for _tool_call, _tool_name, prepared_result in segment
+                    ]
                 )
-                for _tool_call, _tool_name, prepared_result in read_candidates
-            ]
-        )
-        read_results_by_action = {
-            prepared_result.action_id: result
-            for (_call, _name, prepared_result), result in zip(
-                read_candidates, read_results, strict=True
-            )
-        }
-        for tool_call, tool_name, prepared_result in prepared:
-            turn = await self._renew_turn_lease(turn)
-            if turn is None:
-                current_turn = await self.turns.get_fresh(turn_id)
-                if current_turn is not None and (
-                    current_turn.status == AgentTurnStatus.CANCELLED
-                    or is_interrupt_requested(current_turn)
-                ):
-                    raise asyncio.CancelledError
-                raise asyncio.CancelledError(LEASE_LOSS_CANCELLATION)
-            read_result = read_results_by_action.get(prepared_result.action_id)
-            if read_result is not None:
-                result_signatures.append(_tool_result_signature(tool_name, read_result))
-                await self._append_tool_result(
-                    agent_session=agent_session,
-                    turn=turn,
-                    tool_name=tool_name,
-                    tool_call_id=tool_call.get("id"),
-                    action_id=prepared_result.action_id,
-                    batch_id=batch_id,
-                    result=read_result,
-                )
-                continue
-            if prepared_result.requires_resume:
-                waiting = True
-                continue
-            result = prepared_result
-            if prepared_result.status == AgentActionStatus.REQUESTED:
-                result = await self.executor.resume_action(
-                    action_id=prepared_result.action_id,
-                    context=context,
-                    require_resume_marker=False,
-                )
-            result_signatures.append(_tool_result_signature(tool_name, result))
-            if result.status in TERMINAL_ACTION_STATUSES:
-                await self._append_tool_result(
-                    agent_session=agent_session,
-                    turn=turn,
-                    tool_name=tool_name,
-                    tool_call_id=tool_call.get("id"),
-                    action_id=prepared_result.action_id,
-                    batch_id=batch_id,
-                    result=result,
-                )
+                parallel_results = {
+                    prepared_result.action_id: result
+                    for (_call, _name, prepared_result), result in zip(
+                        segment, results, strict=True
+                    )
+                }
+
+            for tool_call, tool_name, prepared_result in segment:
+                turn = await self._renew_turn_lease(turn)
+                if turn is None:
+                    current_turn = await self.turns.get_fresh(turn_id)
+                    if current_turn is not None and (
+                        current_turn.status == AgentTurnStatus.CANCELLED
+                        or is_interrupt_requested(current_turn)
+                    ):
+                        raise asyncio.CancelledError
+                    raise asyncio.CancelledError(LEASE_LOSS_CANCELLATION)
+                result = parallel_results.get(prepared_result.action_id)
+                if result is None:
+                    if prepared_result.requires_resume:
+                        waiting = True
+                        continue
+                    result = prepared_result
+                    if prepared_result.status == AgentActionStatus.REQUESTED:
+                        result = await self.executor.resume_action(
+                            action_id=prepared_result.action_id,
+                            context=context,
+                            require_resume_marker=False,
+                        )
+                result_signatures.append(_tool_result_signature(tool_name, result))
+                if result.status in TERMINAL_ACTION_STATUSES:
+                    await self._append_tool_result(
+                        agent_session=agent_session,
+                        turn=turn,
+                        tool_name=tool_name,
+                        tool_call_id=tool_call.get("id"),
+                        action_id=prepared_result.action_id,
+                        batch_id=batch_id,
+                        result=result,
+                    )
         state = await self.tool_batches.settle(batch_id)
         claimed_batch_id: str | None = None
         if state == "ready":
@@ -1600,12 +1587,41 @@ class AgentLoopController:
                 commit=commit,
             )
 
-    def _is_concurrent_read_only_tool(self, tool_name: str) -> bool:
-        spec = self.registry.get(tool_name).spec
+    def _ordered_tool_execution_segments(
+        self,
+        prepared: list[tuple[dict[str, Any], str, ToolExecutionResult]],
+    ) -> list[list[tuple[dict[str, Any], str, ToolExecutionResult]]]:
+        segments: list[list[tuple[dict[str, Any], str, ToolExecutionResult]]] = []
+        parallel_segment: list[tuple[dict[str, Any], str, ToolExecutionResult]] = []
+        for item in prepared:
+            if self._is_parallel_candidate(item):
+                parallel_segment.append(item)
+                continue
+            if parallel_segment:
+                segments.append(parallel_segment)
+                parallel_segment = []
+            segments.append([item])
+        if parallel_segment:
+            segments.append(parallel_segment)
+        return segments
+
+    def _is_parallel_candidate(
+        self,
+        item: tuple[dict[str, Any], str, ToolExecutionResult],
+    ) -> bool:
+        _tool_call, tool_name, prepared_result = item
         return (
-            spec.risk_level == "read"
-            and not spec.write_scope
-            and spec.interaction is None
+            prepared_result.status == AgentActionStatus.REQUESTED
+            and not prepared_result.requires_resume
+            and self.registry.get(tool_name).spec.parallel_safe
+        )
+
+    def _is_parallel_segment(
+        self,
+        segment: list[tuple[dict[str, Any], str, ToolExecutionResult]],
+    ) -> bool:
+        return bool(segment) and all(
+            self._is_parallel_candidate(item) for item in segment
         )
 
     async def _checkpoint_loop_state(
