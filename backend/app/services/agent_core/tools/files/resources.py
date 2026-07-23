@@ -271,7 +271,7 @@ class ApplyPatchTool:
                 else:
                     path.unlink()
                     summaries.append({"op": op, "path": str(path)})
-        except OSError as exc:
+        except Exception as exc:  # noqa: BLE001 - rollback every apply-phase failure
             rollback_errors = _restore_patch_targets(attempted)
             detail = f": {exc}"
             if rollback_errors:
