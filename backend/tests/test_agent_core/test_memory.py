@@ -12,6 +12,7 @@ from app.services.agent_core.tools import (
     AgentToolDispatcher,
     build_default_tool_registry,
 )
+from app.utils.exceptions import PermissionDeniedError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -108,8 +109,10 @@ async def test_memory_service_records_proposal_accept_and_reject_events(db_sessi
 
 
 @pytest.mark.asyncio
-async def test_memory_tools_run_through_action_ledger(db_session):
-    core, project, session, turn = await _memory_context(db_session)
+async def test_memory_tools_remain_registered_but_hidden_from_normal_execution(
+    db_session,
+):
+    _core, project, session, turn = await _memory_context(db_session)
     dispatcher = AgentToolDispatcher(db_session, build_default_tool_registry())
     context = AgentToolContext(
         db=db_session,
@@ -119,38 +122,27 @@ async def test_memory_tools_run_through_action_ledger(db_session):
         turn_id=str(turn.id),
     )
 
-    proposed = await dispatcher.dispatch(
-        tool_name="memory.propose",
-        input={
-            "project_id": str(project.id),
-            "scope": "project",
-            "type": "validated_preset",
-            "content": {"workflow": "rna-seq", "genome": "hg38"},
-            "confidence": 80,
-        },
-        context=context,
-    )
-    assert proposed.status == "completed"
-    assert proposed.permission_decision["decision"] == "allow"
-    memory_id = proposed.result["memory"]["id"]
+    registry = build_default_tool_registry()
+    assert {"memory.propose", "memory.list"} <= registry.names()
 
-    listed = await dispatcher.dispatch(
-        tool_name="memory.list",
-        input={"project_id": str(project.id), "status": "proposed"},
-        context=context,
-    )
-    assert listed.status == "completed"
-    assert [item["id"] for item in listed.result["memories"]] == [memory_id]
-
-    events = await core.list_events_for_turn(
-        turn_id=str(turn.id),
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-    )
-    event_types = [event.type for event in events]
-    assert "action.completed" in event_types
-    assert "memory.proposed" in event_types
-    assert "memory.read" in event_types
+    with pytest.raises(PermissionDeniedError, match="not exposed"):
+        await dispatcher.dispatch(
+            tool_name="memory.propose",
+            input={
+                "project_id": str(project.id),
+                "scope": "project",
+                "type": "validated_preset",
+                "content": {"workflow": "rna-seq", "genome": "hg38"},
+                "confidence": 80,
+            },
+            context=context,
+        )
+    with pytest.raises(PermissionDeniedError, match="not exposed"):
+        await dispatcher.dispatch(
+            tool_name="memory.list",
+            input={"project_id": str(project.id), "status": "proposed"},
+            context=context,
+        )
 
 
 @pytest.mark.asyncio

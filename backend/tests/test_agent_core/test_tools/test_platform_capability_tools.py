@@ -61,12 +61,16 @@ async def _context(
 
 
 @pytest.mark.asyncio
-async def test_write_tool_asks_for_approval_in_default_session(db_session):
+async def test_patch_tool_asks_for_approval_in_default_session(db_session):
     dispatcher, context = await _context(db_session, permission_mode="guarded_auto")
 
     result = await dispatcher.dispatch(
-        tool_name="files.write",
-        input={"path": "agent-scratch.txt", "content": "hello"},
+        tool_name="files.apply_patch",
+        input={
+            "operations": [
+                {"op": "create", "path": "agent-scratch.txt", "content": "hello"}
+            ]
+        },
         context=context,
         permission_mode="guarded_auto",
     )
@@ -76,7 +80,9 @@ async def test_write_tool_asks_for_approval_in_default_session(db_session):
 
 
 @pytest.mark.asyncio
-async def test_workflows_create_wraps_service_and_emits_workflow_artifact(db_session, monkeypatch):
+async def test_workflows_create_wraps_service_and_emits_workflow_artifact(
+    db_session, monkeypatch
+):
     dispatcher, context = await _context(db_session)
 
     fake_workflow = SimpleNamespace(
@@ -122,7 +128,9 @@ async def test_workflows_create_wraps_service_and_emits_workflow_artifact(db_ses
 
 
 @pytest.mark.asyncio
-async def test_runs_submit_wraps_compiler_and_emits_run_artifact(db_session, monkeypatch):
+async def test_runs_submit_wraps_compiler_and_emits_run_artifact(
+    db_session, monkeypatch
+):
     dispatcher, context = await _context(db_session)
 
     fake_run = SimpleNamespace(
@@ -473,7 +481,9 @@ async def test_images_pull_tool_rejects_registry_id_for_members(
 
 
 @pytest.mark.asyncio
-async def test_update_tools_reject_fields_outside_public_mutation_schemas(db_session, monkeypatch):
+async def test_update_tools_reject_fields_outside_public_mutation_schemas(
+    db_session, monkeypatch
+):
     dispatcher, context = await _context(db_session)
     project_id = str(uuid4())
     workflow_id = str(uuid4())
@@ -559,7 +569,9 @@ async def test_update_tools_reject_fields_outside_public_mutation_schemas(db_ses
 
 
 @pytest.mark.asyncio
-async def test_workflow_mutation_tools_require_admin_in_team_mode(db_session, monkeypatch):
+async def test_workflow_mutation_tools_require_admin_in_team_mode(
+    db_session, monkeypatch
+):
     monkeypatch.setattr(settings, "auth_enabled", True)
     monkeypatch.setattr(settings, "auth_mode", "team")
     dispatcher, context = await _context(db_session)
@@ -610,7 +622,11 @@ async def test_workflow_mutation_tools_require_admin_in_team_mode(db_session, mo
 
     created = await dispatcher.dispatch(
         tool_name="workflows.create",
-        input={"source": "local", "content": "version 1.0\nworkflow hello {}", "file_name": "hello.wdl"},
+        input={
+            "source": "local",
+            "content": "version 1.0\nworkflow hello {}",
+            "file_name": "hello.wdl",
+        },
         context=context,
         permission_mode="bypass",
     )

@@ -15,7 +15,9 @@ from app.models.llm import LlmModel, LlmProvider
 from app.models.workspace import Workspace
 from app.repositories.agent_core_repo import AgentActionRepository, AgentTurnRepository
 from app.services.agent_core import AgentCoreService
-from app.services.agent_core.execution_target import session_metadata_with_execution_target
+from app.services.agent_core.execution_target import (
+    session_metadata_with_execution_target,
+)
 from app.services.model_runtime.gateway import ModelGateway
 from app.utils.exceptions import ConflictError
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -434,7 +436,7 @@ async def test_resume_completed_action_does_not_skip_current_pending_observation
         nonlocal model_calls
         model_calls += 1
         if model_calls == 1:
-            return _completion(tool_name="plugins__list")
+            return _completion(tool_name="projects__list")
         if model_calls == 2:
             return _completion(
                 tool_name="bash",
@@ -459,7 +461,7 @@ async def test_resume_completed_action_does_not_skip_current_pending_observation
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
-        input_text="List plugins, then request approval for a command.",
+        input_text="List projects, then request approval for a command.",
     )
 
     waiting_turn = await service.runtime.run_turn(str(turn.id))
@@ -485,7 +487,9 @@ async def test_resume_completed_action_does_not_skip_current_pending_observation
     )
     fresh_turn = await AgentTurnRepository(db_session).get_fresh(str(turn.id))
     fresh_actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
-    fresh_pending = next(action for action in fresh_actions if action.id == pending_action.id)
+    fresh_pending = next(
+        action for action in fresh_actions if action.id == pending_action.id
+    )
 
     assert {
         "resume_status": stale_resume_result.status,
