@@ -120,7 +120,7 @@ class RemoteConnectionService:
         *,
         workspace_id: str,
     ) -> RemoteConnection:
-        _validate_explicit_jump_credentials(data, existing=None)
+        _validate_explicit_jump_fields(data, existing=None)
         data = _credential_payload(data, existing=None)
         validate_remote_connection_auth_fields(
             auth_method=data.get("auth_method", RemoteConnectionAuthMethod.PASSWORD),
@@ -153,7 +153,7 @@ class RemoteConnectionService:
         connection: RemoteConnection,
         data: dict,
     ) -> RemoteConnection:
-        _validate_explicit_jump_credentials(data, existing=connection)
+        _validate_explicit_jump_fields(data, existing=connection)
         data = _credential_payload(data, existing=connection)
         next_auth_method = data.get("auth_method", connection.auth_method)
         validate_remote_connection_auth_fields(
@@ -361,7 +361,7 @@ def _credential_payload(
     return next_data
 
 
-def _validate_explicit_jump_credentials(
+def _validate_explicit_jump_fields(
     data: dict,
     *,
     existing: RemoteConnection | None,
@@ -371,6 +371,10 @@ def _validate_explicit_jump_credentials(
         existing.auth_method if existing is not None else RemoteConnectionAuthMethod.PASSWORD,
     )
     if auth_method != RemoteConnectionAuthMethod.JUMP:
+        if data.get("jump_connection_id") is not None:
+            raise ValidationError(
+                f"jump_connection_id must be empty when auth_method is {auth_method}"
+            )
         return
     credential_fields = ("password", "private_key", "passphrase", "ssh_alias", "key_path")
     if any(data.get(field) is not None for field in credential_fields):
