@@ -309,6 +309,27 @@ async def test_remote_connection_direct_auth_rejects_jump_id(async_client):
 
 
 @pytest.mark.asyncio
+async def test_remote_connection_direct_auth_patch_rejects_jump_id(async_client):
+    jump_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    jump_id = jump_resp.json()["data"]["id"]
+    direct_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Direct Login"),
+    )
+    direct_id = direct_resp.json()["data"]["id"]
+
+    response = await async_client.patch(
+        f"/api/v1/connections/{direct_id}",
+        json={"jump_connection_id": jump_id},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_remote_connection_jump_auth_rejects_direct_credentials(async_client):
     jump_resp = await async_client.post(
         "/api/v1/connections",
