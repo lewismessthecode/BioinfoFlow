@@ -11,7 +11,7 @@ from app.database import get_alembic_head_revision
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 PR125_HEAD = "0045_agent_turn_owner_token"
-EXPECTED_HEAD = "0051_agent_tool_batch_timestamp_defaults"
+EXPECTED_HEAD = "0052_agent_user_custom_instructions"
 
 
 def _run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:

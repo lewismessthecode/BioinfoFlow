@@ -1070,7 +1070,7 @@ async def test_remote_exec_bypass_runs_literal_inline_filter_pipeline_without_ap
     remote_tool.executor = executor
     command = (
         "phoenixcli --no-interactive task list --output json --page-size 100 "
-        "2>&1 | python3 -c \"import sys,json; "
+        '2>&1 | python3 -c "import sys,json; '
         "data=json.load(sys.stdin); print(len(data.get('data', [])))\""
     )
 
@@ -1088,9 +1088,7 @@ async def test_remote_exec_bypass_runs_literal_inline_filter_pipeline_without_ap
 
     assert result.status == "completed"
     assert executor.calls[0]["connection"].id == str(selected.id)
-    assert executor.calls[0]["command"].startswith(
-        "cd /mnt/nas1/.bioinfoflow && "
-    )
+    assert executor.calls[0]["command"].startswith("cd /mnt/nas1/.bioinfoflow && ")
 
 
 @pytest.mark.asyncio
@@ -1361,9 +1359,9 @@ async def test_remote_read_file_bypass_runs_data_path_outside_root_without_appro
     assert result.status == "completed"
     assert result.result["path"] == path
     assert result.result["content"] == "sample-a\n"
-    assert "remote path is outside the remote project" not in executor.calls[0][
-        "command"
-    ]
+    assert (
+        "remote path is outside the remote project" not in executor.calls[0]["command"]
+    )
 
 
 @pytest.mark.asyncio
@@ -1453,9 +1451,9 @@ async def test_remote_read_file_approved_data_path_outside_root_resumes_successf
     assert resumed.status == "completed"
     assert resumed.result["path"] == path
     assert resumed.result["content"] == "sample-a\n"
-    assert "remote path is outside the remote project" not in executor.calls[0][
-        "command"
-    ]
+    assert (
+        "remote path is outside the remote project" not in executor.calls[0]["command"]
+    )
 
 
 @pytest.mark.asyncio
@@ -2451,13 +2449,8 @@ def test_remote_ssh_toolset_exposure_hides_local_and_platform_tools():
         "remote.read_file",
         "remote.list_dir",
     } <= execution_tools
-    assert {
-        "skills.list",
-        "skills.load",
-        "plugins.list",
-        "web.search",
-        "web.fetch",
-    } <= execution_tools
+    assert {"skills.load", "web.search", "web.fetch"} <= execution_tools
+    assert {"skills.list", "plugins.list"}.isdisjoint(execution_tools)
     assert {"todo_write", "ask_user"} <= execution_tools
 
     assert "remote.exec" not in plan_tools
