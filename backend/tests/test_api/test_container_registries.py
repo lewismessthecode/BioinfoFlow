@@ -91,9 +91,7 @@ async def test_container_registry_default_is_global_singleton(async_client):
 
     list_resp = await async_client.get("/api/v1/container-registries")
     assert list_resp.status_code == 200
-    defaults = [
-        item for item in list_resp.json()["data"] if item["is_default"]
-    ]
+    defaults = [item for item in list_resp.json()["data"] if item["is_default"]]
     assert defaults == [second]
 
     get_first_resp = await async_client.get(
@@ -108,6 +106,15 @@ async def test_container_registry_test_uses_env_credential_availability(
     async_client,
     monkeypatch,
 ):
+    from app.services import container_registry_service
+
+    class FakeDockerService:
+        async def test_registry(self, endpoint, *, auth_config=None):
+            assert endpoint == "https://registry.example.test"
+            assert auth_config == {"username": "robot", "password": "secret"}
+            return None
+
+    monkeypatch.setattr(container_registry_service, "DockerService", FakeDockerService)
     monkeypatch.setenv("BIO_REGISTRY_USER", "robot")
     monkeypatch.setenv("BIO_REGISTRY_PASSWORD", "secret")
     create_resp = await async_client.post(
@@ -136,9 +143,7 @@ async def test_container_registry_test_uses_env_credential_availability(
     assert result["error"] is None
     assert result["checked_at"] is not None
 
-    get_resp = await async_client.get(
-        f"/api/v1/container-registries/{registry['id']}"
-    )
+    get_resp = await async_client.get(f"/api/v1/container-registries/{registry['id']}")
     assert get_resp.status_code == 200
     refreshed = get_resp.json()["data"]
     assert refreshed["last_status"] == "ok"

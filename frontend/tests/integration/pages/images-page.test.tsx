@@ -265,7 +265,7 @@ describe("ImagesPage", () => {
     expect(screen.getByText("images.details.title")).toBeInTheDocument()
     expect(screen.getAllByText("ghcr.io/demo/tool:1.0.0").length).toBeGreaterThan(0)
     expect(screen.getByText("docker pull ghcr.io/demo/tool:1.0.0")).toBeInTheDocument()
-    expect(screen.getByText("pull exploded")).toBeInTheDocument()
+    expect(screen.getAllByText("pull exploded")).toHaveLength(2)
     expect(toastInfoMock).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByTestId("image-details-copy-name"))

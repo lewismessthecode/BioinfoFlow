@@ -20,7 +20,11 @@ from app.services.docker_service import (
     qualified_image_reference,
 )
 from app.utils.authorization import can_access_project
-from app.utils.exceptions import PermissionDeniedError
+from app.utils.exceptions import ConfigurationError, PermissionDeniedError
+from app.utils.logging import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class DockerUnavailableError(RuntimeError):
@@ -125,11 +129,19 @@ class ImageService:
             user_id=user_id,
         )
         if registry_id:
-            target = await ContainerRegistryService(self.session).resolve_image_target(
+            registry_service = ContainerRegistryService(self.session)
+            material = await registry_service.resolve_auth_material(registry_id)
+            target = await registry_service.resolve_image_target(
                 registry_id=registry_id,
                 name=name,
                 tag=tag,
             )
+            if target.registry_id is not None and material.endpoint.startswith("http://"):
+                configuration_error = await self.docker.registry_configuration_error(
+                    material.endpoint
+                )
+                if configuration_error:
+                    raise ConfigurationError(configuration_error)
             name = target.name
             tag = target.tag
             registry = target.registry
@@ -372,6 +384,13 @@ class ImageService:
                     progress = next_progress
                     await self._update_progress(repo, image_id, progress, project_id)
         except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "image.pull.failed",
+                image_id=str(image_id),
+                image=qualified_image_reference(name, tag, registry),
+                registry=registry,
+                error=str(exc),
+            )
             await self._mark_pull_failed(repo, image_id, str(exc), project_id)
             return
 

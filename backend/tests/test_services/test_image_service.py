@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from unittest.mock import Mock
 
 import pytest
 
@@ -14,7 +15,7 @@ from app.services.image_service import (
     ImageDeleteConflictError,
     ImageService,
 )
-from app.utils.exceptions import PermissionDeniedError
+from app.utils.exceptions import ConfigurationError, PermissionDeniedError
 
 
 @pytest.mark.asyncio
@@ -131,7 +132,14 @@ async def test_image_service_pull_task_marks_failed_when_pull_raises(
                 yield progress
             raise RuntimeError("pull exploded")
 
+    pull_failed = Mock()
     monkeypatch.setattr(image_service, "DockerService", FakeDockerService)
+    monkeypatch.setattr(
+        image_service,
+        "logger",
+        type("FakeLogger", (), {"exception": pull_failed})(),
+        raising=False,
+    )
 
     service = ImageService(db_session)
     repo = ImageRepository(db_session)
@@ -149,6 +157,52 @@ async def test_image_service_pull_task_marks_failed_when_pull_raises(
     assert stored is not None
     assert stored.status == ImageStatus.FAILED.value
     assert stored.error_message == "pull exploded"
+    pull_failed.assert_called_once()
+    assert pull_failed.call_args.args[0] == "image.pull.failed"
+    assert pull_failed.call_args.kwargs["image_id"] == str(image.id)
+    assert pull_failed.call_args.kwargs["error"] == "pull exploded"
+
+
+@pytest.mark.asyncio
+async def test_image_service_rejects_http_registry_missing_from_docker_configuration(
+    db_session,
+    monkeypatch,
+):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    registry = await ContainerRegistryService(db_session).create_registry(
+        {
+            "name": "Harbor HTTP",
+            "endpoint": "http://10.227.4.56:80",
+            "namespace": "pipeline-dev",
+            "insecure": True,
+            "credential_source": "none",
+            "updated_by": "user-1",
+        }
+    )
+
+    class FakeDockerService:
+        async def is_available(self) -> bool:
+            return True
+
+        async def registry_configuration_error(self, endpoint: str):
+            assert endpoint == "http://10.227.4.56:80"
+            return "Docker must trust this HTTP registry via insecure-registries"
+
+    monkeypatch.setattr(image_service, "DockerService", FakeDockerService)
+    service = ImageService(db_session)
+
+    with pytest.raises(ConfigurationError, match="insecure-registries"):
+        await service.pull_image(
+            name="oseq-report",
+            tag="V4.0.0",
+            registry_id=str(registry.id),
+        )
+
+    images, _ = await ImageRepository(db_session).list(limit=20)
+    assert "10.227.4.56:80/pipeline-dev/oseq-report:V4.0.0" not in {
+        image.full_name for image in images
+    }
 
 
 @pytest.mark.asyncio
@@ -423,7 +477,8 @@ async def test_image_service_pull_respects_explicit_registry_with_registry_id(
     registry = await ContainerRegistryService(db_session).create_registry(
         {
             "name": "Harbor Bio",
-            "endpoint": "https://harbor.example.test",
+            "endpoint": "http://harbor.example.test",
+            "insecure": True,
             "namespace": "bio",
             "credential_source": "stored",
             "username": "robot-user",
@@ -436,6 +491,11 @@ async def test_image_service_pull_respects_explicit_registry_with_registry_id(
     class FakeDockerService:
         async def is_available(self) -> bool:
             return True
+
+        async def registry_configuration_error(self, endpoint: str):
+            raise AssertionError(
+                f"unused selected registry should not be checked: {endpoint}"
+            )
 
     def fake_submit(func, *args, **kwargs):
         captured["func"] = func

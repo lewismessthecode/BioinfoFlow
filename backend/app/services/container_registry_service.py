@@ -16,7 +16,7 @@ from app.models.container_registry import (
 )
 from app.repositories.container_registry_repo import ContainerRegistryRepository
 from app.repositories.project_repo import ProjectRepository
-from app.services.docker_service import normalize_registry
+from app.services.docker_service import DockerService, normalize_registry
 from app.services.llm.credentials import (
     decrypt_secret,
     encrypt_secret,
@@ -109,12 +109,14 @@ class ContainerRegistryService:
     async def test_registry(self, registry_id: str) -> dict[str, Any]:
         registry = await self.get_registry(registry_id)
         checked_at = datetime.now(timezone.utc)
-        error = self._availability_error(await self.resolve_auth_material(registry_id))
-        status = (
-            ContainerRegistryStatus.ERROR
-            if error
-            else ContainerRegistryStatus.OK
-        )
+        material = await self.resolve_auth_material(registry_id)
+        error = self._availability_error(material)
+        if error is None:
+            error = await DockerService().test_registry(
+                material.endpoint,
+                auth_config=_auth_config_from_material(material),
+            )
+        status = ContainerRegistryStatus.ERROR if error else ContainerRegistryStatus.OK
         registry = await self.registry_repo.update_all(
             registry,
             last_status=status,

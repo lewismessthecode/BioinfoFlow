@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import os
 import re
 from dataclasses import dataclass
@@ -86,6 +87,77 @@ class DockerService:
                 return False
 
         return await asyncio.to_thread(_ping)
+
+    async def registry_configuration_error(self, endpoint: str) -> str | None:
+        parsed = urlparse(endpoint)
+        if parsed.scheme != "http":
+            return None
+        registry = normalize_registry(endpoint)
+
+        def _check() -> str | None:
+            try:
+                info = self.client.info()
+            except Exception as exc:  # noqa: BLE001
+                return f"Unable to inspect Docker registry configuration: {exc}"
+            config = info.get("RegistryConfig") or {}
+            index = (config.get("IndexConfigs") or {}).get(registry) or {}
+            if index.get("Secure") is False:
+                return None
+            hostname = parsed.hostname
+            if hostname:
+                try:
+                    address = ipaddress.ip_address(hostname)
+                except ValueError:
+                    # Docker resolves registry hostnames in the daemon's network
+                    # namespace, which may differ from the backend container. A
+                    # hostname may therefore be covered by an insecure CIDR even
+                    # though this process cannot prove which address Docker uses.
+                    return None
+                for value in config.get("InsecureRegistryCIDRs") or []:
+                    try:
+                        if address in ipaddress.ip_network(value, strict=False):
+                            return None
+                    except ValueError:
+                        continue
+            return (
+                f'Docker is not configured to allow the HTTP registry "{registry}". '
+                "Add it to Docker's insecure-registries and restart Docker."
+            )
+
+        return await asyncio.to_thread(_check)
+
+    async def test_registry(
+        self,
+        endpoint: str,
+        *,
+        auth_config: dict[str, Any] | None = None,
+    ) -> str | None:
+        configuration_error = await self.registry_configuration_error(endpoint)
+        if configuration_error:
+            return configuration_error
+        registry = normalize_registry(endpoint)
+        if auth_config:
+
+            def _login() -> None:
+                self.client.login(
+                    username=auth_config.get("username"),
+                    password=auth_config.get("password"),
+                    registry=registry,
+                    reauth=True,
+                )
+
+            try:
+                await asyncio.to_thread(_login)
+            except Exception as exc:  # noqa: BLE001
+                return f"Registry authentication failed: {exc}"
+            return None
+
+        # Without credentials there is no repository-scoped Docker API call that
+        # can probe a registry. A direct HTTP request would use the backend
+        # container's network rather than the Docker daemon's pull boundary and
+        # can reject registries that Docker can reach. Configuration validation is
+        # therefore the strongest reliable preflight; the pull reports reachability.
+        return None
 
     async def check_nvidia_runtime(self) -> bool:
         """Check if Docker NVIDIA runtime is available."""

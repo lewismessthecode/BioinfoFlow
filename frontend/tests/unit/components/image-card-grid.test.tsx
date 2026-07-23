@@ -183,6 +183,39 @@ describe("ImageCardsGrid", () => {
     expect(onDeleteLocal).toHaveBeenCalledWith(failedImage)
   })
 
+  it("shows the pull failure reason directly on a failed image card", () => {
+    const failureReason =
+      'Docker is not configured to allow the HTTP registry "10.227.4.56:80".'
+
+    render(
+      <ImageCardsGrid
+        images={[
+          {
+            ...image,
+            id: "img-failed",
+            name: "pipeline-dev/oseq-report",
+            full_name: "10.227.4.56:80/pipeline-dev/oseq-report:V4.0.0",
+            tag: "V4.0.0",
+            registry: "10.227.4.56:80",
+            status: "failed",
+            error_message: failureReason,
+          },
+        ]}
+        tImages={(key) => key}
+        tCommon={(key) => key}
+        onPull={vi.fn()}
+        onViewDetails={vi.fn()}
+        onCopyName={vi.fn()}
+        onCopyPullCommand={vi.fn()}
+        onDeleteLocal={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole("alert", { name: "card.pullError" })).toHaveTextContent(
+      failureReason,
+    )
+  })
+
   it("clears the selected visible version when switching a selected multi-version card", () => {
     const onToggleSelection = vi.fn()
     const oneZero = {
