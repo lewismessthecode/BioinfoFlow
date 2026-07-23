@@ -78,6 +78,7 @@ vi.mock("next-intl", () => ({
       "agent.customInstructions.description": "Add context for new sessions.",
       "agent.customInstructions.newSessionsOnly": "Changes apply only to new sessions.",
       "agent.customInstructions.placeholder": "Add context...",
+      "agent.customInstructions.loading": "Loading custom instructions...",
       "agent.customInstructions.save": "Save instructions",
       "agent.customInstructions.saving": "Saving...",
       "agent.customInstructions.clear": "Clear",
