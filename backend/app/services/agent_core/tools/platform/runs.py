@@ -6,7 +6,7 @@ from app.schemas.run import RunCreate
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.services.run_compiler import RunCompiler
 from app.services.run_service import RunService
-from app.utils.exceptions import NotFoundError
+from app.utils.exceptions import BadRequestError, NotFoundError
 
 
 class ListRunsTool:
@@ -36,7 +36,9 @@ class ListRunsTool:
         audit="List workflow runs.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         service = RunService(context.db)
         runs, pagination = await service.list_runs(
             limit=int(input.get("limit") or 20),
@@ -76,7 +78,9 @@ class GetRunLogsTool:
         audit="Read workflow run logs.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         service = RunService(context.db)
         return await service.get_logs(
             str(input["run_id"]),
@@ -107,7 +111,9 @@ class GetRunTool:
         audit="Read workflow run.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         run = await RunService(context.db).get_run(
             str(input["run_id"]),
             user_id=context.user_id,
@@ -150,7 +156,9 @@ class SubmitRunTool:
         timeout_seconds=120,
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         payload = RunCreate.model_validate(
             {
                 "project_id": str(input["project_id"]),
@@ -190,7 +198,9 @@ class CancelRunTool:
         artifact_policy={"type": "run"},
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         run = await RunService(context.db).cancel_run(
             str(input["run_id"]),
             user_id=context.user_id,
@@ -223,7 +233,9 @@ class RetryRunTool:
         timeout_seconds=120,
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         run = await RunService(context.db).retry_run(
             str(input["run_id"]),
             user_id=context.user_id,
@@ -259,7 +271,9 @@ class ResumeRunTool:
         timeout_seconds=120,
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         run = await RunService(context.db).resume_run(
             str(input["run_id"]),
             config_overrides=input.get("config_overrides"),
@@ -291,7 +305,9 @@ class CleanupRunTool:
         rollback_hint="Cleaned runtime work files cannot be restored automatically.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         result = await RunService(context.db).cleanup_run(
             str(input["run_id"]),
             user_id=context.user_id,
@@ -328,7 +344,9 @@ class DeleteRunTool:
         rollback_hint="Deleted run records cannot be restored automatically.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         run_id = str(input["run_id"])
         await RunService(context.db).delete_run(
             run_id,
@@ -359,7 +377,9 @@ class RunOutputsTool:
         audit="List run outputs.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         outputs = await RunService(context.db).list_outputs(
             str(input["run_id"]),
             user_id=context.user_id,
@@ -388,7 +408,9 @@ class RunDagTool:
         audit="Read run DAG.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         dag = await RunService(context.db).get_dag(
             str(input["run_id"]),
             user_id=context.user_id,
@@ -417,13 +439,75 @@ class RunAuditTool:
         audit="Read run audit trail.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         audit = await RunService(context.db).get_run_audit(
             str(input["run_id"]),
             user_id=context.user_id,
             workspace_id=context.workspace_id,
         )
         return {"audit": audit}
+
+
+class InspectRunTool:
+    spec = AgentToolSpec(
+        name="runs.inspect",
+        description=(
+            "Inspect one run using a bounded summary, logs, outputs, dag, or audit "
+            "view. Inspection reports current evidence only: a submitted or queued "
+            "run is not complete until its status and requested outputs are verified."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "run_id": {"type": "string"},
+                "view": {
+                    "type": "string",
+                    "enum": ["summary", "logs", "outputs", "dag", "audit"],
+                },
+                "tail": {"type": "integer", "minimum": 0, "maximum": 10000},
+                "task": {"type": "string"},
+            },
+            "required": ["run_id", "view"],
+            "additionalProperties": False,
+        },
+        output_schema={
+            "type": "object",
+            "properties": {
+                "view": {"type": "string"},
+                "data": {"type": "object"},
+            },
+            "required": ["view", "data"],
+        },
+        risk_level="read",
+        read_scope=["runs", "logs"],
+        audit="Inspect one workflow run through a selected read-only view.",
+        parallel_safe=True,
+    )
+
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
+        view = str(input["view"])
+        tools = {
+            "summary": GetRunTool,
+            "logs": GetRunLogsTool,
+            "outputs": RunOutputsTool,
+            "dag": RunDagTool,
+            "audit": RunAuditTool,
+        }
+        tool_type = tools.get(view)
+        if tool_type is None:
+            raise BadRequestError(f"Unsupported run inspection view: {view}")
+        selected_input: dict[str, Any] = {"run_id": str(input["run_id"])}
+        if view == "logs":
+            if "tail" in input:
+                selected_input["tail"] = input["tail"]
+            if "task" in input:
+                selected_input["task"] = input["task"]
+        data = await tool_type().run(selected_input, context)
+        return {"view": view, "data": data}
 
 
 def _run_payload(run) -> dict:

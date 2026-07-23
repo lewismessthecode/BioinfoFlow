@@ -21,7 +21,9 @@ from app.services.image_service import ImageService
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
-async def _tool_context(db_session) -> tuple[AgentToolDispatcher, AgentToolContext, dict]:
+async def _tool_context(
+    db_session,
+) -> tuple[AgentToolDispatcher, AgentToolContext, dict]:
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     project = Project(
         name="Resource Project",
@@ -89,7 +91,13 @@ async def _tool_context(db_session) -> tuple[AgentToolDispatcher, AgentToolConte
     return (
         AgentToolDispatcher(db_session, build_default_tool_registry()),
         context,
-        {"project": project, "workflow": workflow, "image": image, "run": run, "core": core},
+        {
+            "project": project,
+            "workflow": workflow,
+            "image": image,
+            "run": run,
+            "core": core,
+        },
     )
 
 
@@ -161,7 +169,9 @@ async def test_project_workflow_tools_wrap_binding_service(db_session):
     )
 
     assert bind.status == "completed"
-    assert listed.result["groups"][0]["pinned_workflow"]["id"] == str(resources["workflow"].id)
+    assert listed.result["groups"][0]["pinned_workflow"]["id"] == str(
+        resources["workflow"].id
+    )
     assert pinned.result == {
         "project_id": str(resources["project"].id),
         "pinned_workflow_id": str(resources["workflow"].id),
@@ -176,7 +186,9 @@ async def test_project_workflow_tools_wrap_binding_service(db_session):
 @pytest.mark.asyncio
 async def test_project_workflow_tools_reject_foreign_workspace_project(db_session):
     dispatcher, context, resources = await _tool_context(db_session)
-    foreign_workspace = Workspace(id="foreign-workspace", name="Foreign", slug="foreign")
+    foreign_workspace = Workspace(
+        id="foreign-workspace", name="Foreign", slug="foreign"
+    )
     foreign_project = Project(
         name="Foreign Project",
         description="Not in agent workspace",
@@ -221,7 +233,9 @@ async def test_project_workflow_tools_reject_foreign_workspace_project(db_sessio
 
 
 @pytest.mark.asyncio
-async def test_workflow_read_tools_return_form_spec_dag_and_source(db_session, monkeypatch, tmp_path):
+async def test_workflow_read_tools_return_form_spec_dag_and_source(
+    db_session, monkeypatch, tmp_path
+):
     dispatcher, context, resources = await _tool_context(db_session)
 
     def fake_resolve_source_path(self, workflow):
@@ -236,32 +250,108 @@ async def test_workflow_read_tools_return_form_spec_dag_and_source(db_session, m
 
     workflow_id = str(resources["workflow"].id)
     get_result = await dispatcher.dispatch(
-        tool_name="workflows.get",
-        input={"workflow_id": workflow_id},
+        tool_name="workflows.inspect",
+        input={"workflow_id": workflow_id, "view": "summary"},
         context=context,
     )
     form_spec = await dispatcher.dispatch(
-        tool_name="workflows.form_spec",
-        input={"workflow_id": workflow_id},
+        tool_name="workflows.inspect",
+        input={"workflow_id": workflow_id, "view": "form_spec"},
         context=context,
     )
     dag = await dispatcher.dispatch(
-        tool_name="workflows.dag",
-        input={"workflow_id": workflow_id},
+        tool_name="workflows.inspect",
+        input={"workflow_id": workflow_id, "view": "dag"},
         context=context,
     )
     source = await dispatcher.dispatch(
-        tool_name="workflows.source",
-        input={"workflow_id": workflow_id, "limit": 1},
+        tool_name="workflows.inspect",
+        input={"workflow_id": workflow_id, "view": "source", "limit": 1},
         context=context,
     )
 
-    assert get_result.result["workflow"]["id"] == workflow_id
-    assert form_spec.result["form_spec"]["fields"] == []
-    assert dag.result["dag"] == {"nodes": [], "edges": []}
-    assert source.result["source"]["content"] == "workflow { }"
-    assert source.result["source"]["line_count"] == 2
-    assert source.result["source"]["truncated"] is True
+    assert get_result.result["data"]["workflow"]["id"] == workflow_id
+    assert form_spec.result["data"]["form_spec"]["fields"] == []
+    assert dag.result["data"]["dag"] == {"nodes": [], "edges": []}
+    assert source.result["data"]["source"]["content"] == "workflow { }"
+    assert source.result["data"]["source"]["line_count"] == 2
+    assert source.result["data"]["source"]["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_inspect_tools_route_views_through_stable_wrappers(
+    db_session, monkeypatch
+):
+    dispatcher, context, resources = await _tool_context(db_session)
+
+    async def fake_run_view(self, input, context):
+        return {"selected": self.spec.name, "id": input["run_id"]}
+
+    async def fake_workflow_view(self, input, context):
+        return {"selected": self.spec.name, "id": input["workflow_id"]}
+
+    run_tool_types = (
+        "GetRunTool",
+        "GetRunLogsTool",
+        "RunOutputsTool",
+        "RunDagTool",
+        "RunAuditTool",
+    )
+    workflow_tool_types = (
+        "GetWorkflowTool",
+        "WorkflowSourceTool",
+        "WorkflowDagTool",
+        "WorkflowFormSpecTool",
+    )
+    for tool_type in run_tool_types:
+        monkeypatch.setattr(
+            f"app.services.agent_core.tools.platform.runs.{tool_type}.run",
+            fake_run_view,
+        )
+    for tool_type in workflow_tool_types:
+        monkeypatch.setattr(
+            f"app.services.agent_core.tools.platform.workflows.{tool_type}.run",
+            fake_workflow_view,
+        )
+
+    run_id = resources["run"].run_id
+    expected_run_tools = {
+        "summary": "runs.get",
+        "logs": "runs.logs",
+        "outputs": "runs.outputs",
+        "dag": "runs.dag",
+        "audit": "runs.audit",
+    }
+    for view, selected in expected_run_tools.items():
+        result = await dispatcher.dispatch(
+            tool_name="runs.inspect",
+            input={"run_id": run_id, "view": view, "tail": 25},
+            context=context,
+        )
+        assert result.status == "completed"
+        assert result.result == {
+            "view": view,
+            "data": {"selected": selected, "id": run_id},
+        }
+
+    workflow_id = str(resources["workflow"].id)
+    expected_workflow_tools = {
+        "summary": "workflows.get",
+        "source": "workflows.source",
+        "dag": "workflows.dag",
+        "form_spec": "workflows.form_spec",
+    }
+    for view, selected in expected_workflow_tools.items():
+        result = await dispatcher.dispatch(
+            tool_name="workflows.inspect",
+            input={"workflow_id": workflow_id, "view": view, "limit": 25},
+            context=context,
+        )
+        assert result.status == "completed"
+        assert result.result == {
+            "view": view,
+            "data": {"selected": selected, "id": workflow_id},
+        }
 
 
 @pytest.mark.asyncio
@@ -283,14 +373,14 @@ async def test_workflow_source_caps_nested_content(db_session, monkeypatch, tmp_
     )
 
     result = await dispatcher.dispatch(
-        tool_name="workflows.source",
-        input={"workflow_id": str(resources["workflow"].id)},
+        tool_name="workflows.inspect",
+        input={"workflow_id": str(resources["workflow"].id), "view": "source"},
         context=context,
     )
 
     assert result.status == "completed"
-    assert result.result["source"]["content"] == "abcde\n[truncated]"
-    assert result.result["source"]["truncated"] is True
+    assert result.result["data"]["source"]["content"] == "abcde\n[truncated]"
+    assert result.result["data"]["source"]["truncated"] is True
 
 
 @pytest.mark.asyncio
@@ -448,35 +538,43 @@ async def test_run_evidence_tools_wrap_run_service(db_session, monkeypatch):
         assert run_id == "run-resource-1"
         return [{"event": "created"}]
 
-    monkeypatch.setattr("app.services.agent_core.tools.platform.runs.RunService.list_outputs", fake_outputs)
-    monkeypatch.setattr("app.services.agent_core.tools.platform.runs.RunService.get_dag", fake_dag)
-    monkeypatch.setattr("app.services.agent_core.tools.platform.runs.RunService.get_run_audit", fake_audit)
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.runs.RunService.list_outputs",
+        fake_outputs,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.runs.RunService.get_dag", fake_dag
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.runs.RunService.get_run_audit",
+        fake_audit,
+    )
 
     get_result = await dispatcher.dispatch(
-        tool_name="runs.get",
-        input={"run_id": "run-resource-1"},
+        tool_name="runs.inspect",
+        input={"run_id": "run-resource-1", "view": "summary"},
         context=context,
     )
     outputs = await dispatcher.dispatch(
-        tool_name="runs.outputs",
-        input={"run_id": "run-resource-1"},
+        tool_name="runs.inspect",
+        input={"run_id": "run-resource-1", "view": "outputs"},
         context=context,
     )
     dag = await dispatcher.dispatch(
-        tool_name="runs.dag",
-        input={"run_id": "run-resource-1"},
+        tool_name="runs.inspect",
+        input={"run_id": "run-resource-1", "view": "dag"},
         context=context,
     )
     audit = await dispatcher.dispatch(
-        tool_name="runs.audit",
-        input={"run_id": "run-resource-1"},
+        tool_name="runs.inspect",
+        input={"run_id": "run-resource-1", "view": "audit"},
         context=context,
     )
 
-    assert get_result.result["run"]["run_id"] == "run-resource-1"
-    assert outputs.result["outputs"]["files"][0]["path"] == "results/out.txt"
-    assert dag.result["dag"]["nodes"][0]["id"] == "align"
-    assert audit.result["audit"] == [{"event": "created"}]
+    assert get_result.result["data"]["run"]["run_id"] == "run-resource-1"
+    assert outputs.result["data"]["outputs"]["files"][0]["path"] == "results/out.txt"
+    assert dag.result["data"]["dag"]["nodes"][0]["id"] == "align"
+    assert audit.result["data"]["audit"] == [{"event": "created"}]
 
 
 @pytest.mark.asyncio
@@ -523,16 +621,18 @@ async def test_scheduler_tools_return_status_and_resources(db_session, monkeypat
 
 
 @pytest.mark.asyncio
-async def test_run_logs_tool_returns_empty_logs_for_non_terminal_running_run(db_session):
+async def test_run_logs_tool_returns_empty_logs_for_non_terminal_running_run(
+    db_session,
+):
     dispatcher, context, resources = await _tool_context(db_session)
     resources["run"].status = RunStatus.RUNNING.value
     await db_session.commit()
 
     result = await dispatcher.dispatch(
-        tool_name="runs.logs",
-        input={"run_id": "run-resource-1", "tail": 20},
+        tool_name="runs.inspect",
+        input={"run_id": "run-resource-1", "view": "logs", "tail": 20},
         context=context,
     )
 
     assert result.status == "completed"
-    assert result.result == {"logs": []}
+    assert result.result == {"view": "logs", "data": {"logs": []}}

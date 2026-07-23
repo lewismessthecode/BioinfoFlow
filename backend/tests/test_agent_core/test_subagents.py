@@ -50,7 +50,9 @@ async def _workspace(db_session) -> Workspace:
     return workspace
 
 
-async def _seed_catalog_model(db_session, *, model_id: str = "subagent-model") -> LlmModel:
+async def _seed_catalog_model(
+    db_session, *, model_id: str = "subagent-model"
+) -> LlmModel:
     provider = LlmProvider(
         name=f"{model_id} provider",
         kind="openai_compatible",
@@ -82,12 +84,12 @@ async def test_read_only_subagent_accepts_read_only_tools():
     result = await ReadOnlySubagentRunner(build_default_tool_registry()).analyze(
         task="Summarize available project context.",
         context={"project_id": "project-1"},
-        allowed_tools=["projects.list", "skills.list"],
+        allowed_tools=["projects.list", "skills.load"],
     )
 
     assert result["mode"] == "read_only"
     assert result["task"] == "Summarize available project context."
-    assert result["allowed_tools"] == ["projects.list", "skills.list"]
+    assert result["allowed_tools"] == ["projects.list", "skills.load"]
     assert result["write_handoff_required"] is True
 
 
@@ -150,7 +152,7 @@ async def test_read_only_subagent_can_run_delegated_child_turn(db_session, monke
             "turn_id": str(parent_turn.id),
             "project_id": None,
         },
-        allowed_tools=["projects.list", "skills.list"],
+        allowed_tools=["projects.list", "skills.load"],
     )
 
     assert result["mode"] == "delegated_read_only"
@@ -167,13 +169,13 @@ async def test_read_only_subagent_can_run_delegated_child_turn(db_session, monke
     }
     assert child_session.toolset_policy == {
         "name": "default",
-        "allowed_tools": ["projects.list", "skills.list"],
+        "allowed_tools": ["projects.list", "skills.load"],
     }
     assert child_session.prompt_snapshot == parent_session.prompt_snapshot
     assert ToolsetExposure(build_default_tool_registry()).exposed_names(
         policy=child_session.toolset_policy,
         role="worker",
-    ) == {"projects.list", "skills.list"}
+    ) == {"projects.list", "skills.load"}
 
 
 @pytest.mark.asyncio

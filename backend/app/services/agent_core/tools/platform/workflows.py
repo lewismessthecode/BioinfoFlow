@@ -57,7 +57,9 @@ class ListWorkflowsTool:
         audit="List registered workflows.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         service = WorkflowService(context.db)
         workflows, pagination = await service.list_workflows(
             limit=int(input.get("limit") or 20),
@@ -65,10 +67,7 @@ class ListWorkflowsTool:
             source=input.get("source"),
         )
         return {
-            "workflows": [
-                workflow_payload(workflow)
-                for workflow in workflows
-            ],
+            "workflows": [workflow_payload(workflow) for workflow in workflows],
             "total_count": pagination.total_count or 0,
         }
 
@@ -93,8 +92,12 @@ class GetWorkflowTool:
         audit="Read workflow details.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
-        workflow = await WorkflowService(context.db).get_workflow(str(input["workflow_id"]))
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
+        workflow = await WorkflowService(context.db).get_workflow(
+            str(input["workflow_id"])
+        )
         if workflow is None:
             raise NotFoundError("Workflow not found")
         return {"workflow": workflow_payload(workflow)}
@@ -139,7 +142,9 @@ class CreateWorkflowTool:
         timeout_seconds=120,
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         await _require_workflow_mutation_access(context)
         service = WorkflowService(context.db)
         payload = {key: value for key, value in input.items() if value is not None}
@@ -175,7 +180,9 @@ class UpdateWorkflowTool:
         artifact_policy={"type": "workflow"},
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         await _require_workflow_mutation_access(context)
         service = WorkflowService(context.db)
         workflow = await service.get_workflow(str(input["workflow_id"]))
@@ -215,7 +222,9 @@ class DeleteWorkflowTool:
         rollback_hint="Recreate the workflow from its source if needed.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         await _require_workflow_mutation_access(context)
         workflow_id = str(input["workflow_id"])
         service = WorkflowService(context.db)
@@ -246,7 +255,9 @@ class WorkflowFormSpecTool:
         audit="Read workflow form spec.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         service = WorkflowService(context.db)
         workflow = await service.get_workflow(str(input["workflow_id"]))
         if workflow is None:
@@ -275,8 +286,12 @@ class WorkflowDagTool:
         audit="Read workflow DAG.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
-        workflow = await WorkflowService(context.db).get_workflow(str(input["workflow_id"]))
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
+        workflow = await WorkflowService(context.db).get_workflow(
+            str(input["workflow_id"])
+        )
         if workflow is None:
             raise NotFoundError("Workflow not found")
         if not workflow.schema_json:
@@ -312,7 +327,9 @@ class WorkflowSourceTool:
         audit="Read workflow source.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         service = WorkflowService(context.db)
         workflow = await service.get_workflow(str(input["workflow_id"]))
         if workflow is None:
@@ -338,6 +355,61 @@ class WorkflowSourceTool:
                 "truncated": capped_content != selected or offset + limit < len(lines),
             }
         }
+
+
+class InspectWorkflowTool:
+    spec = AgentToolSpec(
+        name="workflows.inspect",
+        description=(
+            "Inspect one workflow using a bounded summary, source, dag, or "
+            "form_spec view. This is read-only and does not create, update, submit, "
+            "or prove completion of a workflow run."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "workflow_id": {"type": "string"},
+                "view": {
+                    "type": "string",
+                    "enum": ["summary", "source", "dag", "form_spec"],
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 2000},
+            },
+            "required": ["workflow_id", "view"],
+            "additionalProperties": False,
+        },
+        output_schema={
+            "type": "object",
+            "properties": {
+                "view": {"type": "string"},
+                "data": {"type": "object"},
+            },
+            "required": ["view", "data"],
+        },
+        risk_level="read",
+        read_scope=["workflows"],
+        audit="Inspect one workflow through a selected read-only view.",
+        parallel_safe=True,
+    )
+
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
+        view = str(input["view"])
+        tools = {
+            "summary": GetWorkflowTool,
+            "source": WorkflowSourceTool,
+            "dag": WorkflowDagTool,
+            "form_spec": WorkflowFormSpecTool,
+        }
+        tool_type = tools.get(view)
+        if tool_type is None:
+            raise BadRequestError(f"Unsupported workflow inspection view: {view}")
+        selected_input: dict[str, Any] = {"workflow_id": str(input["workflow_id"])}
+        if view == "source" and "limit" in input:
+            selected_input["limit"] = input["limit"]
+        data = await tool_type().run(selected_input, context)
+        return {"view": view, "data": data}
 
 
 def _value(value) -> str:

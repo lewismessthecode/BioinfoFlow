@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
+import importlib.util
 import json
 import sys
 from collections.abc import AsyncIterator
@@ -31,6 +33,7 @@ from app.services.agent_core.execution_target import (
 )
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
+from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.executor import AgentToolExecutor
 from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.services.model_runtime.contracts import (
@@ -594,18 +597,11 @@ def test_platform_tool_exposure_keeps_read_tools_available_and_mutations_gated()
         "projects.get",
         "projects.workflows.list",
         "workflows.list",
-        "workflows.get",
-        "workflows.form_spec",
-        "workflows.dag",
-        "workflows.source",
+        "workflows.inspect",
         "images.list",
         "images.get",
         "runs.list",
-        "runs.get",
-        "runs.logs",
-        "runs.outputs",
-        "runs.dag",
-        "runs.audit",
+        "runs.inspect",
         "scheduler.status",
         "scheduler.resources",
     }
@@ -636,6 +632,69 @@ def test_platform_tool_exposure_keeps_read_tools_available_and_mutations_gated()
     assert mutating_tools.isdisjoint(plan_tools)
     assert mutating_tools.isdisjoint(default_tools)
     assert mutating_tools <= execution_tools
+
+
+def test_normal_execution_exposes_small_capability_surface_but_keeps_compatibility_registered():
+    registry = build_default_tool_registry()
+    exposed = ToolsetExposure(registry).exposed_names(
+        policy={"name": "execution"},
+        execution_scope={"mode": "auto"},
+    )
+
+    assert {
+        "files.apply_patch",
+        "task",
+        "skills.load",
+        "runs.inspect",
+        "workflows.inspect",
+    } <= exposed
+    assert {
+        "files.write",
+        "files.edit",
+        "subagent.analyze",
+        "skills.list",
+        "plugins.list",
+        "memory.list",
+        "memory.propose",
+        "runs.get",
+        "runs.logs",
+        "runs.outputs",
+        "runs.dag",
+        "runs.audit",
+        "workflows.get",
+        "workflows.form_spec",
+        "workflows.dag",
+        "workflows.source",
+    }.isdisjoint(exposed)
+    assert {
+        "files.write",
+        "subagent.analyze",
+        "memory.list",
+        "runs.get",
+        "workflows.get",
+    } <= registry.names()
+
+
+def test_default_tool_providers_are_deterministic_and_registry_rejects_duplicates():
+    assert (
+        importlib.util.find_spec("app.services.agent_core.tools.providers") is not None
+    )
+    provider_module = importlib.import_module("app.services.agent_core.tools.providers")
+    default_tool_providers = provider_module.default_tool_providers
+    provider_names = [
+        [tool.spec.name for tool in provider.tools()]
+        for provider in default_tool_providers()
+    ]
+    assert provider_names == [
+        [tool.spec.name for tool in provider.tools()]
+        for provider in default_tool_providers()
+    ]
+
+    registry = AgentToolRegistry()
+    first_tool = next(iter(default_tool_providers()[0].tools()))
+    registry.register(first_tool)
+    with pytest.raises(BadRequestError, match="already registered"):
+        registry.register_many([first_tool])
 
 
 @pytest.mark.asyncio
@@ -857,7 +916,7 @@ async def test_loop_refreshes_permission_context_before_each_model_iteration(
                 yield ToolCallDelta(
                     index=0,
                     call_id="tool-call-refresh",
-                    name="memory.list",
+                    name="projects.list",
                     arguments_delta="{}",
                 )
                 yield CompletionMetadata(
