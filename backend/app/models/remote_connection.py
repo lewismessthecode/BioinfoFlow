@@ -22,8 +22,9 @@ class RemoteConnectionAuthMethod:
     SSH_CONFIG = "ssh_config"
     KEY_FILE = "key_file"
     AGENT = "agent"
+    JUMP = "jump"
 
-    VALUES = (PASSWORD, PRIVATE_KEY, SSH_CONFIG, KEY_FILE, AGENT)
+    VALUES = (PASSWORD, PRIVATE_KEY, SSH_CONFIG, KEY_FILE, AGENT, JUMP)
 
 
 class RemoteConnectionStatus:
@@ -48,7 +49,7 @@ class RemoteConnection(Base, UUIDMixin, TimestampMixin):
             name="ck_remote_connections_port_range",
         ),
         CheckConstraint(
-            "auth_method IN ('password', 'private_key', 'ssh_config', 'key_file', 'agent')",
+            "auth_method IN ('password', 'private_key', 'ssh_config', 'key_file', 'agent', 'jump')",
             name="ck_remote_connections_auth_method",
         ),
         CheckConstraint(
@@ -76,6 +77,11 @@ class RemoteConnection(Base, UUIDMixin, TimestampMixin):
     encrypted_password: Mapped[str | None] = mapped_column(Text, nullable=True)
     encrypted_private_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     encrypted_passphrase: Mapped[str | None] = mapped_column(Text, nullable=True)
+    jump_connection_id: Mapped[str | None] = mapped_column(
+        ForeignKey("remote_connections.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     skill_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_status: Mapped[str] = mapped_column(
         String(20),
