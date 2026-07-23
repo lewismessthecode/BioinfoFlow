@@ -907,6 +907,7 @@ class AgentLoopController:
             return waiting, signatures, None
         waiting = False
         result_signatures: list[str] = []
+        approval_barrier_hit = False
         for segment in self._ordered_tool_execution_segments(prepared):
             parallel_results: dict[str, ToolExecutionResult] = {}
             if self._is_parallel_segment(segment):
@@ -941,7 +942,8 @@ class AgentLoopController:
                 if result is None:
                     if prepared_result.requires_resume:
                         waiting = True
-                        continue
+                        approval_barrier_hit = True
+                        break
                     result = prepared_result
                     if prepared_result.status == AgentActionStatus.REQUESTED:
                         result = await self.executor.resume_action(
@@ -949,6 +951,13 @@ class AgentLoopController:
                             context=context,
                             require_resume_marker=False,
                         )
+                    if (
+                        result.requires_resume
+                        or result.status == AgentActionStatus.WAITING_DECISION
+                    ):
+                        waiting = True
+                        approval_barrier_hit = True
+                        break
                 result_signatures.append(_tool_result_signature(tool_name, result))
                 if result.status in TERMINAL_ACTION_STATUSES:
                     await self._append_tool_result(
@@ -960,6 +969,8 @@ class AgentLoopController:
                         batch_id=batch_id,
                         result=result,
                     )
+            if approval_barrier_hit:
+                break
         state = await self.tool_batches.settle(batch_id)
         claimed_batch_id: str | None = None
         if state == "ready":
