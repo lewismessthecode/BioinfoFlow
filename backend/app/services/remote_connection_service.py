@@ -190,7 +190,8 @@ class RemoteConnectionService:
             workspace_id=str(connection.workspace_id),
             connection=connection,
         )
-        if _changes_remote_target(connection, data):
+        target_changed = _changes_remote_target(connection, data)
+        if target_changed:
             data = {
                 **data,
                 "last_status": RemoteConnectionStatus.UNKNOWN,
@@ -198,6 +199,11 @@ class RemoteConnectionService:
                 "last_checked_at": None,
             }
         try:
+            if target_changed:
+                await self.repo.invalidate_jump_dependents(
+                    str(connection.id),
+                    workspace_id=str(connection.workspace_id),
+                )
             return await self.repo.update_all(connection, **data)
         except IntegrityError as exc:
             await self.repo.session.rollback()

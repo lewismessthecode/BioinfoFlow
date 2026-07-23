@@ -527,6 +527,45 @@ async def test_remote_connection_switching_jump_auth_clears_credentials_and_stat
 
 
 @pytest.mark.asyncio
+async def test_remote_connection_editing_jump_host_invalidates_dependent_status(
+    db_session,
+):
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    service = RemoteConnectionService(db_session)
+    jump_host = await service.create_connection(
+        _connection_payload(name="Bastion", auth_method="agent", key_path=None),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    target = await service.create_connection(
+        _connection_payload(
+            name="Target",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=str(jump_host.id),
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    await service.repo.record_test_result(
+        target,
+        status="online",
+        error="previous error",
+        checked_at=target.created_at,
+    )
+
+    await service.update_connection(jump_host, {"host": "new-bastion.example.org"})
+    target = await service.get_connection(
+        str(target.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+
+    assert target is not None
+    assert target.last_status == "unknown"
+    assert target.last_error is None
+    assert target.last_checked_at is None
+
+
+@pytest.mark.asyncio
 async def test_remote_connection_service_enforces_auth_method_fields(db_session):
     from app.services.remote_connection_service import RemoteConnectionService
 
