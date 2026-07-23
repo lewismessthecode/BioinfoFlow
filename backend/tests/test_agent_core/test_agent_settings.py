@@ -65,6 +65,36 @@ async def test_settings_api_trims_and_clears_custom_instructions(async_client) -
 
 
 @pytest.mark.asyncio
+async def test_settings_api_empty_payload_clears_custom_instructions(async_client) -> None:
+    await async_client.put(
+        "/api/v1/agent/settings",
+        json={"custom_instructions": "Persisted instructions"},
+    )
+
+    cleared = await async_client.put("/api/v1/agent/settings", json={})
+
+    assert cleared.status_code == 200
+    assert cleared.json()["data"] == {"custom_instructions": ""}
+    persisted = await async_client.get("/api/v1/agent/settings")
+    assert persisted.json()["data"] == {"custom_instructions": ""}
+
+
+@pytest.mark.asyncio
+async def test_settings_api_accepts_exactly_20k_custom_instructions(async_client) -> None:
+    custom_instructions = "x" * 20_000
+
+    response = await async_client.put(
+        "/api/v1/agent/settings",
+        json={"custom_instructions": custom_instructions},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "custom_instructions": custom_instructions
+    }
+
+
+@pytest.mark.asyncio
 async def test_settings_api_rejects_custom_instructions_over_20k(async_client) -> None:
     response = await async_client.put(
         "/api/v1/agent/settings",
