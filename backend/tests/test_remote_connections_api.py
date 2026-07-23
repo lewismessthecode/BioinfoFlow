@@ -257,6 +257,255 @@ async def test_remote_connection_validation_enforces_auth_method_fields(async_cl
 
 
 @pytest.mark.asyncio
+async def test_remote_connection_creates_and_serializes_jump_auth(async_client):
+    jump_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    assert jump_resp.status_code == 201
+    jump_id = jump_resp.json()["data"]["id"]
+
+    target_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            name="Internal HPC",
+            host="internal.example.org",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=jump_id,
+        ),
+    )
+
+    assert target_resp.status_code == 201
+    target = target_resp.json()["data"]
+    assert target["auth_method"] == "jump"
+    assert target["jump_connection_id"] == jump_id
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_jump_auth_requires_jump_id(async_client):
+    response = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(auth_method="jump", key_path=None),
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_direct_auth_rejects_jump_id(async_client):
+    jump_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    jump_id = jump_resp.json()["data"]["id"]
+
+    response = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(jump_connection_id=jump_id),
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_jump_auth_rejects_direct_credentials(async_client):
+    jump_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    jump_id = jump_resp.json()["data"]["id"]
+
+    response = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=jump_id,
+            password="must-not-be-used",
+        ),
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_rejects_self_jump_reference(async_client):
+    connection_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(auth_method="agent", key_path=None),
+    )
+    connection_id = connection_resp.json()["data"]["id"]
+
+    response = await async_client.patch(
+        f"/api/v1/connections/{connection_id}",
+        json={"auth_method": "jump", "jump_connection_id": connection_id},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_rejects_cross_workspace_jump_reference(
+    async_client,
+    app,
+):
+    _override_user(app, _auth_user(user_id="user-2", workspace_id=OTHER_WORKSPACE_ID))
+    try:
+        jump_resp = await async_client.post(
+            "/api/v1/connections",
+            json=_connection_payload(name="Other Bastion", auth_method="agent", key_path=None),
+        )
+    finally:
+        _clear_user_overrides(app)
+    jump_id = jump_resp.json()["data"]["id"]
+
+    response = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=jump_id,
+        ),
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_rejects_nested_jump_reference(async_client):
+    direct_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    direct_id = direct_resp.json()["data"]["id"]
+    jump_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            name="First Target",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=direct_id,
+        ),
+    )
+    jump_id = jump_resp.json()["data"]["id"]
+
+    response = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            name="Nested Target",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=jump_id,
+        ),
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_referenced_jump_host_cannot_be_deleted_or_converted(
+    async_client,
+):
+    host_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    host_id = host_resp.json()["data"]["id"]
+    alternate_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Alternate", auth_method="agent", key_path=None),
+    )
+    alternate_id = alternate_resp.json()["data"]["id"]
+    target_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            name="Internal HPC",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=host_id,
+        ),
+    )
+    assert target_resp.status_code == 201
+
+    edit_resp = await async_client.patch(
+        f"/api/v1/connections/{host_id}",
+        json={"name": "Bastion Updated"},
+    )
+    convert_resp = await async_client.patch(
+        f"/api/v1/connections/{host_id}",
+        json={"auth_method": "jump", "jump_connection_id": alternate_id},
+    )
+    delete_resp = await async_client.delete(f"/api/v1/connections/{host_id}")
+
+    assert edit_resp.status_code == 200
+    assert convert_resp.status_code == 422
+    assert delete_resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_switching_jump_auth_clears_credentials_and_status(
+    db_session,
+):
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    service = RemoteConnectionService(db_session)
+    first_jump = await service.create_connection(
+        _connection_payload(name="Bastion", auth_method="agent", key_path=None),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    second_jump = await service.create_connection(
+        _connection_payload(name="Alternate", auth_method="agent", key_path=None),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    target = await service.create_connection(
+        _connection_payload(
+            name="Target",
+            auth_method="private_key",
+            key_path=None,
+            private_key="private-key",
+            passphrase="passphrase",
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    await service.repo.record_test_result(
+        target,
+        status="online",
+        error=None,
+        checked_at=target.created_at,
+    )
+
+    target = await service.update_connection(
+        target,
+        {"auth_method": "jump", "jump_connection_id": str(first_jump.id)},
+    )
+    assert target.encrypted_password is None
+    assert target.encrypted_private_key is None
+    assert target.encrypted_passphrase is None
+    assert target.ssh_alias is None
+    assert target.key_path is None
+    assert target.last_status == "unknown"
+    assert target.last_checked_at is None
+
+    await service.repo.record_test_result(
+        target,
+        status="online",
+        error=None,
+        checked_at=target.updated_at,
+    )
+    target = await service.update_connection(
+        target,
+        {"jump_connection_id": str(second_jump.id)},
+    )
+    assert target.last_status == "unknown"
+    assert target.last_checked_at is None
+    assert str(target.jump_connection_id) == str(second_jump.id)
+
+    target = await service.update_connection(target, {"auth_method": "agent"})
+    assert target.jump_connection_id is None
+
+
+@pytest.mark.asyncio
 async def test_remote_connection_service_enforces_auth_method_fields(db_session):
     from app.services.remote_connection_service import RemoteConnectionService
 

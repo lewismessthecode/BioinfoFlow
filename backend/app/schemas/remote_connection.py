@@ -13,6 +13,7 @@ RemoteConnectionAuthMethod = Literal[
     "ssh_config",
     "key_file",
     "agent",
+    "jump",
 ]
 RemoteConnectionStatus = Literal["unknown", "online", "offline", "error"]
 
@@ -30,6 +31,7 @@ class RemoteConnectionBase(BaseModel):
     password: str | None = Field(default=None, max_length=2000)
     private_key: str | None = Field(default=None, max_length=20000)
     passphrase: str | None = Field(default=None, max_length=2000)
+    jump_connection_id: UUID | None = None
     skill_instructions: str | None = None
 
     @field_validator("name", "host", "username", mode="before")
@@ -66,6 +68,8 @@ class RemoteConnectionBase(BaseModel):
             key_path=self.key_path,
             password=self.password,
             private_key=self.private_key,
+            passphrase=self.passphrase,
+            jump_connection_id=self.jump_connection_id,
         )
         return self
 
@@ -87,6 +91,7 @@ class RemoteConnectionUpdate(BaseModel):
     password: str | None = Field(default=None, max_length=2000)
     private_key: str | None = Field(default=None, max_length=20000)
     passphrase: str | None = Field(default=None, max_length=2000)
+    jump_connection_id: UUID | None = None
     skill_instructions: str | None = None
 
     @field_validator("name", "host", "username", mode="before")
@@ -125,7 +130,20 @@ def _validate_auth_method_fields(
     key_path: str | None,
     password: str | None = None,
     private_key: str | None = None,
+    passphrase: str | None = None,
+    jump_connection_id: UUID | str | None = None,
 ) -> None:
+    if auth_method == "jump" and not jump_connection_id:
+        raise ValueError("jump_connection_id is required when auth_method is jump")
+    if auth_method != "jump" and jump_connection_id:
+        raise ValueError(
+            f"jump_connection_id must be empty when auth_method is {auth_method}"
+        )
+    if auth_method == "jump" and any(
+        value is not None
+        for value in (ssh_alias, key_path, password, private_key, passphrase)
+    ):
+        raise ValueError("direct credentials must be empty when auth_method is jump")
     if auth_method == "password" and not password:
         raise ValueError("password is required when auth_method is password")
     if auth_method == "private_key" and not private_key:
@@ -147,6 +165,8 @@ def validate_remote_connection_auth_fields(
     key_path: str | None,
     password: str | None = None,
     private_key: str | None = None,
+    passphrase: str | None = None,
+    jump_connection_id: UUID | str | None = None,
 ) -> None:
     """Validate a complete persisted remote auth configuration."""
     try:
@@ -156,6 +176,8 @@ def validate_remote_connection_auth_fields(
             key_path=key_path,
             password=password,
             private_key=private_key,
+            passphrase=passphrase,
+            jump_connection_id=jump_connection_id,
         )
     except ValueError as exc:
         from app.utils.exceptions import ValidationError
@@ -173,6 +195,7 @@ class RemoteConnectionRead(BaseModel):
     auth_method: RemoteConnectionAuthMethod
     ssh_alias: str | None = None
     key_path: str | None = None
+    jump_connection_id: UUID | None = None
     skill_instructions: str | None = None
     last_status: RemoteConnectionStatus
     last_error: str | None = None
