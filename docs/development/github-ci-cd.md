@@ -1,4 +1,4 @@
-# GitHub CI/CD and PR Automation
+# GitHub CI/CD
 
 This repository uses GitHub Actions to make worktree branches flow through PRs, checks, review, and squash merge.
 
@@ -9,21 +9,14 @@ This repository uses GitHub Actions to make worktree branches flow through PRs, 
 - `Container Release` publishes development Docker images after eligible code reaches `main`.
 - `Release` maintains the Release Please PR and dispatches the installer/image release after that PR is intentionally merged.
 - `Installer Release` publishes three formal multi-architecture images, smoke-tests the localhost installer, and attaches its assets to the GitHub Release.
-- `PR Automation` opens a PR to `main` when you push a non-main branch.
 - `Auto Merge` queues a squash merge when a reviewed PR has the `automerge` label.
-- `Approve Trusted Workflows` approves blocked CI and CodeQL runs only when the
-  pull request and `github-actions` actor both belong to this repository.
 
-`PR Automation` and Release Please use the optional `PR_AUTOMATION_TOKEN` and
-`RELEASE_PLEASE_TOKEN` repository secrets when configured, falling back to
-`GITHUB_TOKEN`. Prefer narrowly scoped GitHub App or fine-grained user tokens so
-automated pull requests use a trusted identity. Release PRs must not receive the
-`automerge` label.
-
-GitHub may still classify a pull request created with `GITHUB_TOKEN` as a
-first-time automated contributor. The approval workflow handles that fallback
-without weakening fork protection: it rejects external head repositories and
-actors other than `github-actions[bot]`.
+Pull requests are created explicitly by the developer, Codex client, or another
+authenticated publishing client. A GitHub Actions workflow must not create an
+ordinary development PR with `GITHUB_TOKEN`, because GitHub suppresses recursive
+workflow events and required checks may never be produced. Release Please is the
+only bot-created PR path; the Release workflow explicitly dispatches CI for its
+release branch. Release PRs must not receive the `automerge` label.
 
 ## CI Change Detection
 
@@ -34,6 +27,9 @@ Heavy work is skipped inside the workflow instead:
 - `backend checks` runs only when PR changes touch `backend/` or shared env defaults.
 - `frontend lint`, `frontend test`, and `frontend build` run in parallel only when PR changes touch `frontend/` or shared env defaults.
 - `docker build` runs only when Dockerfiles, compose files, dependency locks/manifests, or the CI/release workflows change.
+- `installer checks` runs for installer scripts, installer tests, localhost
+  Compose, and bundled skills.
+- `workflow checks` runs Actionlint for every GitHub Actions workflow change.
 - Pushes to `main` and manual dispatches run the full CI path.
 - Docs-only PRs still get successful `backend`, `frontend`, and `docker` checks, but the expensive jobs are skipped.
 
@@ -49,9 +45,8 @@ The `scripts/github/configure-repo.sh` script configures these checks through th
 
 Keep these three check names stable. If the internal CI job graph changes, make the required checks summary jobs rather than changing branch protection for every implementation detail.
 
-The checks are required, but branches do not have to be updated after every
-unrelated merge to `main`. GitHub still blocks conflicting pull requests, while
-independent pull requests avoid unnecessary update-and-rerun cycles.
+Required checks use strict mode. If `main` advances, the PR branch must be
+updated and CI must validate the exact state that will be merged.
 
 ## Worktree Flow
 
@@ -70,13 +65,18 @@ git commit -m "feat: add auth flow"
 git push -u origin feature/auth
 ```
 
-GitHub Actions opens a PR from `feature/auth` to `main` when the repository allows Actions to create pull requests. The PR title is normalized to the Conventional Commits format and is treated as the future squash-merge title. Existing open PRs for the same branch are updated if the latest commit provides a better conventional title.
-
-If that permission is disabled, `PR Automation` emits a warning and exits successfully; create the PR manually once, then every later push to the same branch updates the PR and reruns CI:
+Create the PR explicitly with a Conventional Commits title. The PR title is the
+future squash-merge commit message:
 
 ```bash
-git push
+gh pr create \
+  --base main \
+  --head feature/auth \
+  --title "feat: add auth flow" \
+  --body-file /path/to/pr-body.md
 ```
+
+Later pushes to the same branch update the PR and rerun CI.
 
 When a PR conflicts with `main`, or depends on newly merged code, rebase inside
 the worktree:
@@ -93,11 +93,9 @@ After review, add the `automerge` label to let GitHub queue a squash merge once 
 
 CI, CodeQL, dependency update PRs, and branch protection are automated review aids. They catch formatting, test, build, Docker, dependency, and security issues.
 
-They are not a replacement for human code review. GitHub Actions may create pull
-requests, but the repository workflows do not submit approving reviews. Workflow
-execution approval is limited to first-time contributors who are new to GitHub,
-which avoids repeatedly blocking trusted automation. On this single-collaborator
-repository, `scripts/github/configure-repo.sh` defaults to
+They are not a replacement for human code review. Repository workflows do not
+submit approving reviews. On this single-collaborator repository,
+`scripts/github/configure-repo.sh` defaults to
 `REQUIRED_APPROVALS=0` to avoid making every PR impossible to merge. After adding
 collaborators, run:
 

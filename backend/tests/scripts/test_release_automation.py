@@ -105,7 +105,7 @@ def test_formal_release_workflow_publishes_numeric_aliases() -> None:
     assert "googleapis/release-please-action@v4" in workflow
     assert "actions: write" in workflow
     assert "secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN" in workflow
-    assert 'gh workflow run ci.yml --ref "$head_branch"' not in workflow
+    assert 'gh workflow run ci.yml --ref "$head_branch"' in workflow
     assert "publish_version:" in workflow
     assert "include-v-in-tag" not in workflow
     assert (
@@ -127,24 +127,51 @@ def test_formal_release_workflow_publishes_numeric_aliases() -> None:
     assert "type=raw,value=latest,enable=${{ inputs.release_version != '' }}" in container_workflow
 
 
-def test_repository_configuration_avoids_redundant_pr_reruns() -> None:
+def test_pull_request_delivery_is_explicit_and_strict() -> None:
     configuration = read_repo_file("scripts/github/configure-repo.sh")
-    pr_automation = read_repo_file(".github/workflows/pr-automation.yml")
-    trusted_approval = read_repo_file(
-        ".github/workflows/approve-trusted-workflows.yml"
-    )
+    release_workflow = read_repo_file(".github/workflows/release-please.yml")
 
-    assert '"strict": false' in configuration
+    assert '"strict": true' in configuration
     assert '"approval_policy": "first_time_contributors_new_to_github"' in configuration
-    assert '"can_approve_pull_request_reviews": true' in configuration
-    assert "secrets.PR_AUTOMATION_TOKEN || secrets.GITHUB_TOKEN" in pr_automation
-    assert "github.event.workflow_run.conclusion == 'action_required'" in trusted_approval
-    assert (
-        "github.event.workflow_run.head_repository.full_name == github.repository"
-        in trusted_approval
-    )
-    assert "github.event.workflow_run.actor.login == 'github-actions[bot]'" in trusted_approval
-    assert 'gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/approve"' in trusted_approval
+    assert '"can_approve_pull_request_reviews": false' in configuration
+    assert not (REPO_ROOT / ".github/workflows/pr-automation.yml").exists()
+    assert not (REPO_ROOT / ".github/workflows/approve-trusted-workflows.yml").exists()
+    assert 'gh workflow run ci.yml --ref "$head_branch"' in release_workflow
+
+
+def test_ci_delivery_gate_fails_closed_and_covers_release_inputs() -> None:
+    workflow = read_repo_file(".github/workflows/ci.yml")
+
+    assert "installer_changed:" in workflow
+    assert "workflows_changed:" in workflow
+    assert "scripts/install.sh" in workflow
+    assert "scripts/tests/" in workflow
+    assert "bundled-skills/" in workflow
+    assert "docker-compose.local.yml" in workflow
+    assert "^\\.github/workflows/" in workflow
+    assert "go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7" in workflow
+    assert 'if [ "$BACKEND_CHANGED" = "true" ] && [ "$BACKEND_RESULT" != "success" ]; then' in workflow
+    assert 'if [ "$FRONTEND_CHANGED" = "true" ] && [ "$result" != "success" ]; then' in workflow
+    assert 'if [ "$DOCKER_CHANGED" = "true" ] && [ "$DOCKER_RESULT" != "success" ]; then' in workflow
+    assert 'if [ "$INSTALLER_CHANGED" = "true" ] && [ "$INSTALLER_RESULT" != "success" ]; then' in workflow
+    assert 'if [ "$WORKFLOWS_CHANGED" = "true" ] && [ "$WORKFLOWS_RESULT" != "success" ]; then' in workflow
+
+
+def test_installer_release_uses_only_the_immutable_numeric_tag() -> None:
+    workflow = read_repo_file(".github/workflows/release.yml")
+
+    assert '[ "$GITHUB_REF_NAME" != "$version" ]' in workflow
+    assert "main recovery workflow" not in workflow
+    assert workflow.count("ref: ${{ needs.resolve.outputs.version }}") >= 2
+    assert "permissions:\n  contents: read\n" in workflow
+    assert "assets:\n    name: attach installer assets" in workflow
+    assert "      contents: write" in workflow
+
+
+def test_release_pull_requests_cannot_be_auto_merged() -> None:
+    workflow = read_repo_file(".github/workflows/auto-merge.yml")
+
+    assert "!startsWith(github.event.pull_request.head.ref, 'release-please--')" in workflow
 
 
 def test_formal_release_packages_and_smoke_tests_native_skills() -> None:

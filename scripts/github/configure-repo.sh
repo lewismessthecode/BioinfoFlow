@@ -38,7 +38,7 @@ gh api \
   --input - >/dev/null <<'JSON'
 {
   "default_workflow_permissions": "read",
-  "can_approve_pull_request_reviews": true
+  "can_approve_pull_request_reviews": false
 }
 JSON
 
@@ -57,7 +57,7 @@ gh api \
   --input - >/dev/null <<JSON
 {
   "required_status_checks": {
-    "strict": false,
+    "strict": true,
     "contexts": [
       "backend",
       "frontend",
@@ -82,7 +82,7 @@ echo "Done."
 echo
 echo "Required checks: backend, frontend, docker"
 echo "The CI workflow keeps these contexts stable and skips heavy work inside the workflow when a PR does not touch the matching area."
-echo "PR branches do not need to be updated after every unrelated merge to main."
+echo "PR branches must be current with main before merge so CI validates the merged state."
 echo "Required approvals: ${REQUIRED_APPROVALS}"
 echo
 echo "For a team repo, rerun with REQUIRED_APPROVALS=1 after adding collaborators:"

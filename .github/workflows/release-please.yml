@@ -16,7 +16,6 @@ permissions:
   actions: write
   contents: write
   issues: write
-  packages: write
   pull-requests: write
 
 concurrency:
@@ -47,6 +46,21 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      - name: Dispatch CI for release pull request
+        if: steps.release.outputs.prs != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PRS: ${{ steps.release.outputs.prs }}
+        run: |
+          set -euo pipefail
+          head_branch="$(printf '%s' "$RELEASE_PRS" | jq -r '.[0].headBranchName // empty')"
+          if [ -z "$head_branch" ]; then
+            echo "Release Please did not return a release pull request branch."
+            exit 1
+          fi
+          gh workflow run ci.yml --ref "$head_branch"
+          echo "Dispatched CI for release pull request branch $head_branch."
 
       - name: Resolve formal release
         id: resolve
