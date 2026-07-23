@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, select, update
 
 from app.models.remote_connection import RemoteConnection
 from app.repositories.base import BaseRepository
@@ -59,6 +59,26 @@ class RemoteConnectionRepository(BaseRepository[RemoteConnection]):
             )
         )
         return bool(await self.session.scalar(stmt))
+
+    async def invalidate_jump_dependents(
+        self,
+        connection_id: str,
+        *,
+        workspace_id: str,
+    ) -> None:
+        stmt = (
+            update(self.model)
+            .where(
+                self.model.jump_connection_id == connection_id,
+                self.model.workspace_id == workspace_id,
+            )
+            .values(
+                last_status="unknown",
+                last_error=None,
+                last_checked_at=None,
+            )
+        )
+        await self.session.execute(stmt)
 
     async def record_test_result(
         self,
