@@ -7,9 +7,12 @@ import pytest
 
 from app.models.llm import LlmModel, LlmProvider
 from app.models.workspace import Workspace
+from app.repositories.agent_user_settings_repo import AgentUserSettingsRepository
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.subagents import ReadOnlySubagentRunner
 from app.services.agent_core.tools import build_default_tool_registry
+from app.services.agent_core.tools.specs import AgentToolContext
+from app.services.agent_core.tools.subagents import SubagentAnalyzeTool
 from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.services.model_runtime.gateway import ModelGateway
 from app.utils.exceptions import PermissionDeniedError
@@ -124,6 +127,10 @@ async def test_read_only_subagent_can_run_delegated_child_turn(db_session, monke
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
     )
+    parent_session = await service.session_repo.update_all(
+        parent_session,
+        prompt_snapshot={"id": "frozen-parent", "content": "Frozen parent prompt"},
+    )
     parent_turn = await service.create_turn_record(
         session_id=str(parent_session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -162,7 +169,72 @@ async def test_read_only_subagent_can_run_delegated_child_turn(db_session, monke
         "name": "default",
         "allowed_tools": ["projects.list", "skills.list"],
     }
+    assert child_session.prompt_snapshot == parent_session.prompt_snapshot
     assert ToolsetExposure(build_default_tool_registry()).exposed_names(
         policy=child_session.toolset_policy,
         role="worker",
     ) == {"projects.list", "skills.list"}
+
+
+@pytest.mark.asyncio
+async def test_subagent_analyze_tool_inherits_frozen_parent_prompt_snapshot(
+    db_session, monkeypatch
+):
+    async def fake_completion(*args, **kwargs):
+        class FakeMessage:
+            content = "Tool child answer."
+            tool_calls = None
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        return FakeResponse()
+
+    _install_fake_completion(monkeypatch, fake_completion)
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="subagent-tool-model")
+
+    service = AgentCoreService(db_session)
+    parent_session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    frozen_snapshot = {
+        "id": "frozen-parent",
+        "content": "Frozen parent prompt for subagent.analyze",
+    }
+    parent_session = await service.session_repo.update_all(
+        parent_session,
+        prompt_snapshot=frozen_snapshot,
+    )
+    await AgentUserSettingsRepository(db_session).upsert(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        custom_instructions="Current settings must not replace the frozen prompt.",
+    )
+    parent_turn = await service.create_turn_record(
+        session_id=str(parent_session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Parent turn.",
+    )
+
+    result = await SubagentAnalyzeTool().run(
+        {"task": "Inspect the backend", "allowed_tools": []},
+        AgentToolContext(
+            db=db_session,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            session_id=str(parent_session.id),
+            turn_id=str(parent_turn.id),
+        ),
+    )
+
+    child_session = await service.session_repo.get(result["child_session_id"])
+    assert child_session is not None
+    assert child_session.prompt_snapshot == frozen_snapshot

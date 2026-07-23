@@ -7,6 +7,7 @@ import pytest
 
 from app.models.llm import LlmModel, LlmProvider
 from app.models.workspace import Workspace
+from app.repositories.agent_user_settings_repo import AgentUserSettingsRepository
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.tools.specs import AgentToolContext
 from app.services.agent_core.tools.subagents import TaskTool
@@ -89,6 +90,19 @@ async def test_task_tool_runs_read_only_worker_subrun(db_session, monkeypatch):
     parent_session = await core.create_session(
         project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
     )
+    frozen_snapshot = {
+        "id": "frozen-parent",
+        "content": "Frozen parent prompt for task tool",
+    }
+    parent_session = await core.session_repo.update_all(
+        parent_session,
+        prompt_snapshot=frozen_snapshot,
+    )
+    await AgentUserSettingsRepository(db_session).upsert(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        custom_instructions="Current settings must not replace the frozen prompt.",
+    )
     parent_turn = await core.create_turn_record(
         session_id=str(parent_session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -118,3 +132,4 @@ async def test_task_tool_runs_read_only_worker_subrun(db_session, monkeypatch):
         "parent_session_id": str(parent_session.id),
         "parent_turn_id": str(parent_turn.id),
     }
+    assert child_session.prompt_snapshot == frozen_snapshot

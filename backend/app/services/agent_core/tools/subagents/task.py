@@ -83,6 +83,7 @@ class TaskTool:
                 "task_objective": objective,
             },
             lineage={"parent_session_id": context.session_id, "parent_turn_id": context.turn_id},
+            prompt_snapshot=parent_session.prompt_snapshot,
         )
         child_session = await service.session_repo.update_with_policy_version(
             child_session,

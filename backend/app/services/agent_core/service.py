@@ -18,6 +18,7 @@ from app.repositories.agent_core_repo import (
     AgentTurnRepository,
     AgentToolCallBatchRepository,
 )
+from app.repositories.agent_user_settings_repo import AgentUserSettingsRepository
 from app.repositories.project_repo import ProjectRepository
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.execution_target import (
@@ -62,6 +63,9 @@ from app.utils.exceptions import (
 )
 
 
+_PROMPT_SNAPSHOT_UNSET = object()
+
+
 class AgentCoreService:
     def __init__(self, session: AsyncSession):
         self.db = session
@@ -71,6 +75,7 @@ class AgentCoreService:
         self.action_repo = AgentActionRepository(session)
         self.tool_batch_repo = AgentToolCallBatchRepository(session)
         self.artifact_repo = AgentArtifactRepository(session)
+        self.settings_repo = AgentUserSettingsRepository(session)
         self.project_repo = ProjectRepository(session)
         self.ledger = AgentEventLedger(session)
         self.runtime = AgentCoreRuntime(session)
@@ -93,6 +98,7 @@ class AgentCoreService:
         metadata: dict | None = None,
         lineage: dict | None = None,
         toolset_policy: dict | None = None,
+        prompt_snapshot: dict | None | object = _PROMPT_SNAPSHOT_UNSET,
     ):
         project = None
         if project_id is not None:
@@ -105,6 +111,11 @@ class AgentCoreService:
         metadata = _metadata_with_remote_project(metadata, project)
         metadata = session_metadata_with_execution_target(metadata, execution_target)
         metadata = session_metadata_with_execution_scope(metadata, execution_scope)
+        if prompt_snapshot is _PROMPT_SNAPSHOT_UNSET:
+            user_settings = await self.settings_repo.get(workspace_id, user_id)
+            prompt_snapshot = default_system_prompt_snapshot(
+                user_settings.custom_instructions if user_settings is not None else None
+            ).as_dict()
 
         return await self.session_repo.create(
             project_id=str(project_id) if project_id else None,
@@ -116,7 +127,7 @@ class AgentCoreService:
             automation_mode=automation_mode,
             default_model_profile_id=default_model_profile_id,
             runtime_mode="api",
-            prompt_snapshot=default_system_prompt_snapshot().as_dict(),
+            prompt_snapshot=prompt_snapshot,
             toolset_policy=toolset_policy or EXECUTION_TOOLSET_POLICY,
             context_policy={
                 "memory": "accepted_project_scope",

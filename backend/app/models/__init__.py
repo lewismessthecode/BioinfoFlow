@@ -1,4 +1,5 @@
 from app.models.base import Base, GUID, TimestampMixin, UUIDMixin
+from app.models.agent_user_settings import AgentUserSettings
 from app.models.agent_core import (
     AgentAction,
     AgentActionStatus,
@@ -54,6 +55,7 @@ __all__ = [
     "GUID",
     "TimestampMixin",
     "UUIDMixin",
+    "AgentUserSettings",
     "AgentSession",
     "AgentSessionStatus",
     "AgentTurn",
