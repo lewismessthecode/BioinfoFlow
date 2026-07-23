@@ -477,7 +477,8 @@ async def test_image_service_pull_respects_explicit_registry_with_registry_id(
     registry = await ContainerRegistryService(db_session).create_registry(
         {
             "name": "Harbor Bio",
-            "endpoint": "https://harbor.example.test",
+            "endpoint": "http://harbor.example.test",
+            "insecure": True,
             "namespace": "bio",
             "credential_source": "stored",
             "username": "robot-user",
@@ -490,6 +491,11 @@ async def test_image_service_pull_respects_explicit_registry_with_registry_id(
     class FakeDockerService:
         async def is_available(self) -> bool:
             return True
+
+        async def registry_configuration_error(self, endpoint: str):
+            raise AssertionError(
+                f"unused selected registry should not be checked: {endpoint}"
+            )
 
     def fake_submit(func, *args, **kwargs):
         captured["func"] = func

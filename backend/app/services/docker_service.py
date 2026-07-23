@@ -9,7 +9,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 import docker
-import httpx
 from docker.errors import APIError, ImageNotFound
 
 from app.config import settings
@@ -109,14 +108,17 @@ class DockerService:
                 try:
                     address = ipaddress.ip_address(hostname)
                 except ValueError:
-                    address = None
-                if address is not None:
-                    for value in config.get("InsecureRegistryCIDRs") or []:
-                        try:
-                            if address in ipaddress.ip_network(value, strict=False):
-                                return None
-                        except ValueError:
-                            continue
+                    # Docker resolves registry hostnames in the daemon's network
+                    # namespace, which may differ from the backend container. A
+                    # hostname may therefore be covered by an insecure CIDR even
+                    # though this process cannot prove which address Docker uses.
+                    return None
+                for value in config.get("InsecureRegistryCIDRs") or []:
+                    try:
+                        if address in ipaddress.ip_network(value, strict=False):
+                            return None
+                    except ValueError:
+                        continue
             return (
                 f'Docker is not configured to allow the HTTP registry "{registry}". '
                 "Add it to Docker's insecure-registries and restart Docker."
@@ -150,15 +152,12 @@ class DockerService:
                 return f"Registry authentication failed: {exc}"
             return None
 
-        probe_url = f"{endpoint.rstrip('/')}/v2/"
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(probe_url)
-        except httpx.RequestError as exc:
-            return f"Registry is unreachable: {exc}"
-        if response.status_code in {200, 401}:
-            return None
-        return f"Registry probe failed with HTTP {response.status_code}"
+        # Without credentials there is no repository-scoped Docker API call that
+        # can probe a registry. A direct HTTP request would use the backend
+        # container's network rather than the Docker daemon's pull boundary and
+        # can reject registries that Docker can reach. Configuration validation is
+        # therefore the strongest reliable preflight; the pull reports reachability.
+        return None
 
     async def check_nvidia_runtime(self) -> bool:
         """Check if Docker NVIDIA runtime is available."""

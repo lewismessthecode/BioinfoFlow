@@ -131,17 +131,17 @@ class ImageService:
         if registry_id:
             registry_service = ContainerRegistryService(self.session)
             material = await registry_service.resolve_auth_material(registry_id)
-            if material.endpoint.startswith("http://"):
-                configuration_error = await self.docker.registry_configuration_error(
-                    material.endpoint
-                )
-                if configuration_error:
-                    raise ConfigurationError(configuration_error)
             target = await registry_service.resolve_image_target(
                 registry_id=registry_id,
                 name=name,
                 tag=tag,
             )
+            if target.registry_id is not None and material.endpoint.startswith("http://"):
+                configuration_error = await self.docker.registry_configuration_error(
+                    material.endpoint
+                )
+                if configuration_error:
+                    raise ConfigurationError(configuration_error)
             name = target.name
             tag = target.tag
             registry = target.registry

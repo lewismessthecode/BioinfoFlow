@@ -5,7 +5,6 @@ import time
 from types import SimpleNamespace
 
 import pytest
-import httpx
 from docker.errors import APIError, ImageNotFound
 
 from app.services.docker_service import DockerService, _split_tag
@@ -262,11 +261,22 @@ async def test_registry_configuration_error_accepts_configured_http_registry():
 
 
 @pytest.mark.asyncio
-async def test_registry_probe_accepts_standard_auth_challenge_without_credentials(
-    monkeypatch,
-):
-    from app.services import docker_service
+async def test_registry_configuration_error_does_not_reject_hostname_with_insecure_cidrs():
+    service = _service_with_client(_FakeImages())
+    service._client.info = lambda: {  # type: ignore[attr-defined]
+        "RegistryConfig": {
+            "InsecureRegistryCIDRs": ["10.227.0.0/16"],
+            "IndexConfigs": {},
+        }
+    }
 
+    error = await service.registry_configuration_error("http://harbor.internal:5000")
+
+    assert error is None
+
+
+@pytest.mark.asyncio
+async def test_registry_test_without_credentials_avoids_backend_network_probe():
     service = _service_with_client(_FakeImages())
     service._client.info = lambda: {  # type: ignore[attr-defined]
         "RegistryConfig": {
@@ -274,18 +284,6 @@ async def test_registry_probe_accepts_standard_auth_challenge_without_credential
             "IndexConfigs": {},
         }
     }
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        assert str(request.url) == "http://10.227.4.56/v2/"
-        return httpx.Response(401, request=request)
-
-    transport = httpx.MockTransport(handler)
-    real_client = httpx.AsyncClient
-
-    def fake_client(*args, **kwargs):
-        return real_client(transport=transport, timeout=kwargs.get("timeout"))
-
-    monkeypatch.setattr(docker_service.httpx, "AsyncClient", fake_client)
 
     error = await service.test_registry("http://10.227.4.56:80")
 
