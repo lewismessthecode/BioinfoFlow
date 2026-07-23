@@ -104,7 +104,7 @@ class AgentSettingsRead(BaseModel):
 
 
 class AgentSettingsUpdate(BaseModel):
-    custom_instructions: str = Field(max_length=20_000)
+    custom_instructions: str = Field(default="", max_length=20_000)
 
 
 class AgentSessionCreate(BaseModel):
