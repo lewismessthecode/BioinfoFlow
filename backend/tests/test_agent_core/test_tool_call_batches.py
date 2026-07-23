@@ -66,7 +66,6 @@ async def _seed_runtime(db_session) -> None:
     db_session.add(provider)
     await db_session.commit()
 
-
     await db_session.refresh(provider)
     db_session.add(
         LlmModel(
@@ -559,7 +558,9 @@ async def test_decision_during_running_resume_is_durably_drained_once(
     assert model_calls == 2
     async with maker() as observer:
         persisted = await AgentActionRepository(observer).list_for_turn(str(turn.id))
-    assert [item.status for item in sorted(persisted, key=lambda i: i.tool_call_ordinal)] == [
+    assert [
+        item.status for item in sorted(persisted, key=lambda i: i.tool_call_ordinal)
+    ] == [
         AgentActionStatus.COMPLETED,
         AgentActionStatus.COMPLETED,
     ]
@@ -1428,6 +1429,68 @@ async def test_dynamic_approval_recheck_stops_later_safe_calls(
         AgentActionStatus.WAITING_DECISION,
         AgentActionStatus.REQUESTED,
     ]
+
+
+@pytest.mark.asyncio
+async def test_parallel_result_approval_stops_later_serial_segment(
+    db_session,
+    monkeypatch,
+):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="bypass",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Honor approvals returned by parallel execution.",
+    )
+    controller = AgentLoopController(db_session)
+    serial_calls = 0
+
+    async def parallel_result(**kwargs):
+        return ToolExecutionResult(
+            action_id=kwargs["action_id"],
+            status=AgentActionStatus.WAITING_DECISION,
+            requires_resume=True,
+        )
+
+    async def observe_serial(**kwargs):
+        nonlocal serial_calls
+        serial_calls += 1
+        return ToolExecutionResult(
+            action_id=kwargs["action_id"],
+            status=AgentActionStatus.COMPLETED,
+            result={"todos": []},
+        )
+
+    monkeypatch.setattr(controller, "_execute_tool_call_isolated", parallel_result)
+    monkeypatch.setattr(controller.executor, "resume_action", observe_serial)
+
+    waiting, _signatures, _claimed_batch_id = await controller._execute_tool_calls(
+        agent_session=session,
+        turn=turn,
+        tool_calls=[
+            {"id": "parallel-approval", "name": "projects__list", "arguments": {}},
+            {
+                "id": "later-serial",
+                "name": "todo_write",
+                "arguments": {
+                    "todos": [{"content": "must wait", "status": "in_progress"}]
+                },
+            },
+        ],
+        provider="openai_compatible",
+        model="batch-model",
+    )
+
+    assert waiting is True
+    assert serial_calls == 0
 
 
 @pytest.mark.asyncio
