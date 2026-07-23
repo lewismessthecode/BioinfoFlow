@@ -799,6 +799,7 @@ export default function SettingsPageClient({
                     description: t("agent.customInstructions.description"),
                     newSessionsOnly: t("agent.customInstructions.newSessionsOnly"),
                     placeholder: t("agent.customInstructions.placeholder"),
+                    loading: t("agent.customInstructions.loading"),
                     save: t("agent.customInstructions.save"),
                     saving: t("agent.customInstructions.saving"),
                     clear: t("agent.customInstructions.clear"),

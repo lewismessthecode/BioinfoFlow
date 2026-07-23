@@ -2293,6 +2293,7 @@
         "description": "Add platform conventions, environment details, and other context the agent should receive.",
         "newSessionsOnly": "Changes apply only to new sessions. Existing sessions keep the instructions they started with.",
         "placeholder": "Add platform conventions, environment details, or other context...",
+        "loading": "Loading custom instructions...",
         "save": "Save instructions",
         "saving": "Saving...",
         "clear": "Clear",

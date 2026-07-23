@@ -15,6 +15,7 @@ type AgentCustomInstructionsLabels = {
   description: string
   newSessionsOnly: string
   placeholder: string
+  loading: string
   save: string
   saving: string
   clear: string
@@ -82,13 +83,23 @@ export function AgentCustomInstructions({
         <p className="text-[13px] leading-5 text-muted-foreground">
           {labels.description}
         </p>
-        <p className="text-[13px] font-medium leading-5 text-muted-foreground">
+        <p
+          id="agent-custom-instructions-help"
+          className="text-[13px] font-medium leading-5 text-muted-foreground"
+        >
           {labels.newSessionsOnly}
         </p>
       </div>
 
+      {loading ? (
+        <p role="status" className="text-[13px] text-muted-foreground">
+          {labels.loading}
+        </p>
+      ) : null}
+
       <Textarea
         id="agent-custom-instructions"
+        aria-describedby="agent-custom-instructions-help agent-custom-instructions-count"
         value={instructions}
         onChange={(event) => {
           setInstructions(event.target.value)
@@ -102,7 +113,10 @@ export function AgentCustomInstructions({
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="text-xs tabular-nums text-muted-foreground">
+        <span
+          id="agent-custom-instructions-count"
+          className="text-xs tabular-nums text-muted-foreground"
+        >
           {instructions.length.toLocaleString()} /{" "}
           {AGENT_CUSTOM_INSTRUCTIONS_MAX_LENGTH.toLocaleString()}
         </span>

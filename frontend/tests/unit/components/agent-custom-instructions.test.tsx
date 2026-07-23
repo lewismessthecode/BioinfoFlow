@@ -13,6 +13,7 @@ const labels = {
   description: "Add context the agent should receive when a new session starts.",
   newSessionsOnly: "Changes apply only to new sessions.",
   placeholder: "Add platform conventions, environment details, or other context...",
+  loading: "Loading custom instructions...",
   save: "Save instructions",
   saving: "Saving...",
   clear: "Clear",
@@ -53,6 +54,7 @@ describe("AgentCustomInstructions", () => {
     })
     expect(textarea).toHaveValue("Use the validated production reference.")
     expect(screen.getByText("Changes apply only to new sessions.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Save instructions" })).toBeDisabled()
 
     fireEvent.change(textarea, {
       target: { value: "Use the staging reference first." },
@@ -70,6 +72,39 @@ describe("AgentCustomInstructions", () => {
 
     resolveSave?.()
     await waitFor(() => expect(textarea).not.toBeDisabled())
+    expect(screen.getByRole("button", { name: "Save instructions" })).toBeDisabled()
+  })
+
+  it("announces loading and associates textarea help and character count", async () => {
+    let resolveLoad: (() => void) | undefined
+    apiRequestMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLoad = () =>
+            resolve({ data: { custom_instructions: "" }, meta: undefined })
+        }),
+    )
+
+    render(<AgentCustomInstructions labels={labels} />)
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading custom instructions...")
+    const textarea = screen.getByRole("textbox", { name: "Custom instructions" })
+    expect(textarea).toBeDisabled()
+    expect(textarea).toHaveAttribute(
+      "aria-describedby",
+      "agent-custom-instructions-help agent-custom-instructions-count",
+    )
+    expect(screen.getByText("Changes apply only to new sessions.")).toHaveAttribute(
+      "id",
+      "agent-custom-instructions-help",
+    )
+    expect(screen.getByText("0 / 20,000")).toHaveAttribute(
+      "id",
+      "agent-custom-instructions-count",
+    )
+
+    resolveLoad?.()
+    await waitFor(() => expect(screen.queryByText("Loading custom instructions...")).toBeNull())
   })
 
   it("clears instructions by saving an empty string", async () => {
