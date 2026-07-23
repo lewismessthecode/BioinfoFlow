@@ -33,8 +33,10 @@ class ExecuteShellTool:
         name="bash",
         description=(
             "Run a shell command via bash. Supports pipes, globs, redirects, and "
-            "&& chains. Use it for ls, cat, grep, rg, find, git, and docker instead "
-            "of asking the user. Dangerous commands are gated for approval."
+            "&& chains. rg/rg --files, jq, and sed are ordinary commands executed "
+            "inside this tool; grep and glob also have focused read tools. Prefer "
+            "structured Bioinfoflow platform tools for projects, workflows, runs, "
+            "images, and remote connections. Dangerous commands require approval."
         ),
         input_schema={
             "type": "object",

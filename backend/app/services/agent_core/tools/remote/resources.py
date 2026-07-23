@@ -146,7 +146,9 @@ class RemoteConnectionsListTool:
         name="remote.connections.list",
         description=(
             "List SSH-backed remote connections available in the current workspace. "
-            "Returns ids, host/user details, status, and skill guidance."
+            "In auto target mode, call this before choosing a machine, then copy the "
+            "returned opaque connection_id exactly into a remote operation. In manual "
+            "mode, only user-selected connections are returned."
         ),
         input_schema={
             "type": "object",
@@ -201,8 +203,9 @@ class RemoteExecTool:
     spec = AgentToolSpec(
         name="remote.exec",
         description=(
-            "Run a short SSH diagnostic command on a selected remote connection. "
-            "Use for commands such as hostname, uname, df, module avail, or nextflow -version."
+            "Run a bounded SSH command on a selected remote connection. In auto mode, "
+            "first use remote.connections.list and copy its opaque connection_id; in "
+            "manual mode, stay within the user-selected target fence."
         ),
         input_schema={
             "type": "object",
@@ -294,7 +297,8 @@ class RemoteReadFileTool:
         name="remote.read_file",
         description=(
             "Read bounded text from a file on a selected SSH remote connection. "
-            "The path is shell-quoted and output is capped."
+            "Copy an opaque connection_id from remote.connections.list in auto mode; "
+            "manual mode permits only user-selected targets. Output is capped."
         ),
         input_schema={
             "type": "object",
@@ -389,7 +393,8 @@ class RemoteListDirTool:
         name="remote.list_dir",
         description=(
             "List a remote directory on a selected SSH connection. Returns a bounded "
-            "set of parsed entries plus the command observation."
+            "set of entries. Copy the opaque connection_id from remote.connections.list "
+            "in auto mode; manual mode permits only user-selected targets."
         ),
         input_schema={
             "type": "object",
@@ -577,8 +582,7 @@ async def _resolve_claimed_remote_target(
             )
             if (
                 snapshot.get("remote_identity") != boundary.remote_identity
-                or snapshot.get("resource_revisions")
-                != boundary.resource_revisions
+                or snapshot.get("resource_revisions") != boundary.resource_revisions
                 or claimed_root != boundary.effective_root
             ):
                 raise PermissionDeniedError(
@@ -587,7 +591,10 @@ async def _resolve_claimed_remote_target(
             return connection, claimed_root
         return connection, await _remote_working_directory(context, connection.id)
 
-    if not isinstance(execution_target, dict) or execution_target.get("type") != "remote_ssh":
+    if (
+        not isinstance(execution_target, dict)
+        or execution_target.get("type") != "remote_ssh"
+    ):
         raise PermissionDeniedError("Authorized remote execution target is unavailable")
     claimed_connection_id = str(execution_target.get("connection_id") or "")
     if not claimed_connection_id:
@@ -598,7 +605,9 @@ async def _resolve_claimed_remote_target(
         and requested_connection_id.strip()
         and requested_connection_id.strip() != claimed_connection_id
     ):
-        raise PermissionDeniedError("Remote connection differs from the authorized target")
+        raise PermissionDeniedError(
+            "Remote connection differs from the authorized target"
+        )
 
     resolver = resolver_factory(context.db)
     try:
@@ -871,8 +880,8 @@ def _assess_structured_remote_path(
             for root in target.read_roots
         )
     absolute_path = normalized.startswith("/")
-    unbounded_relative = (
-        not absolute_path and (not target.read_roots or not target.working_directory)
+    unbounded_relative = not absolute_path and (
+        not target.read_roots or not target.working_directory
     )
     requires_explicit = unbounded_relative or dynamic_or_traversal or protected
     if requires_explicit:

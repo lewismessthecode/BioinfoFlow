@@ -36,6 +36,26 @@ _REMOTE_SSH_TARGET_NEUTRAL_TOOLS = frozenset(
     }
 )
 _REMOTE_SSH_TARGET_PREFIXES = ("remote.", "skills.", "web.")
+_MODEL_HIDDEN_TOOLS = frozenset(
+    {
+        "files.edit",
+        "files.write",
+        "memory.list",
+        "memory.propose",
+        "plugins.list",
+        "runs.audit",
+        "runs.dag",
+        "runs.get",
+        "runs.logs",
+        "runs.outputs",
+        "skills.list",
+        "subagent.analyze",
+        "workflows.dag",
+        "workflows.form_spec",
+        "workflows.get",
+        "workflows.source",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -100,11 +120,14 @@ class ToolsetExposure:
             names = {
                 spec.name
                 for spec in specs
-                if spec.name.startswith(("bio.", "runs.", "workflows.", "images.", "projects."))
+                if spec.name.startswith(
+                    ("bio.", "runs.", "workflows.", "images.", "projects.")
+                )
                 and spec.risk_level == "read"
             }
         else:
             names = set(read_only)
+        names -= _MODEL_HIDDEN_TOOLS
         allowed_tools = policy.get("allowed_tools")
         if isinstance(allowed_tools, list) and allowed_tools:
             names &= {str(name) for name in allowed_tools}
@@ -116,10 +139,10 @@ class ToolsetExposure:
         )
         if is_remote_ssh_execution_target(execution_target) or remote_only_scope:
             names &= {
-                spec.name
-                for spec in specs
-                if _is_remote_ssh_compatible_tool(spec)
+                spec.name for spec in specs if _is_remote_ssh_compatible_tool(spec)
             }
+        elif execution_scope is not None and not scope_allows_remote:
+            names = {name for name in names if not name.startswith("remote.")}
         elif execution_target is not None and not scope_allows_remote:
             names = {name for name in names if not name.startswith("remote.")}
         return names
