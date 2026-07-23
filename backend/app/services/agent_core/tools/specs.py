@@ -63,5 +63,7 @@ class AgentToolContext:
 class AgentTool(Protocol):
     spec: AgentToolSpec
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         """Run the tool through typed platform/domain service boundaries."""

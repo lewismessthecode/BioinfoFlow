@@ -49,7 +49,9 @@ class ListProjectsTool:
         audit="List projects in the current workspace.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         service = ProjectService(context.db)
         projects, pagination = await service.list_projects(
             workspace_id=context.workspace_id,
@@ -57,10 +59,7 @@ class ListProjectsTool:
             search=input.get("search"),
         )
         return {
-            "projects": [
-                _project_payload(project)
-                for project in projects
-            ],
+            "projects": [_project_payload(project) for project in projects],
             "total_count": pagination.total_count or 0,
         }
 
@@ -86,7 +85,9 @@ class GetProjectTool:
         audit="Read project details.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         project = await ProjectService(context.db).get_project(
             str(input["project_id"]),
             workspace_id=context.workspace_id,
@@ -125,7 +126,9 @@ class CreateProjectTool:
         artifact_policy={"type": "project"},
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         payload = {key: value for key, value in input.items() if value is not None}
         if (
             payload.get("external_root_path")
@@ -178,7 +181,9 @@ class UpdateProjectTool:
         artifact_policy={"type": "project"},
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         service = ProjectService(context.db)
         project = await service.get_project(
             str(input["project_id"]),
@@ -233,10 +238,14 @@ class DeleteProjectTool:
         rollback_hint="Deleted project metadata cannot be restored automatically.",
     )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         project_id = str(input["project_id"])
         service = ProjectService(context.db)
-        project = await service.get_project(project_id, workspace_id=context.workspace_id)
+        project = await service.get_project(
+            project_id, workspace_id=context.workspace_id
+        )
         if project is None:
             raise NotFoundError("Project not found")
         if project.is_default:

@@ -11,9 +11,7 @@ from app.repositories.base import BaseRepository
 class AgentUserSettingsRepository(BaseRepository[AgentUserSettings]):
     model = AgentUserSettings
 
-    async def get(
-        self, workspace_id: str, user_id: str
-    ) -> AgentUserSettings | None:
+    async def get(self, workspace_id: str, user_id: str) -> AgentUserSettings | None:
         statement = (
             select(self.model)
             .where(
@@ -32,9 +30,7 @@ class AgentUserSettingsRepository(BaseRepository[AgentUserSettings]):
         custom_instructions: str,
     ) -> AgentUserSettings:
         dialect_name = self.session.bind.dialect.name
-        insert = (
-            postgresql_insert if dialect_name == "postgresql" else sqlite_insert
-        )
+        insert = postgresql_insert if dialect_name == "postgresql" else sqlite_insert
         statement = insert(self.model).values(
             workspace_id=workspace_id,
             user_id=user_id,

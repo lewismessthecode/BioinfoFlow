@@ -111,7 +111,10 @@ async def test_task_tool_runs_read_only_worker_subrun(db_session, monkeypatch):
     )
 
     result = await TaskTool().run(
-        {"objective": "Summarize the repo layout", "description": "Focus on the backend."},
+        {
+            "objective": "Summarize the repo layout",
+            "description": "Focus on the backend.",
+        },
         AgentToolContext(
             db=db_session,
             workspace_id=DEFAULT_WORKSPACE_ID,

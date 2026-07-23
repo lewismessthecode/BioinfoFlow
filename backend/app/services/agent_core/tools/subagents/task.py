@@ -56,7 +56,9 @@ class TaskTool:
             raise BadRequestError("objective must be non-empty")
         description = str(input.get("description") or "").strip()
 
-        parent_session = await AgentSessionRepository(context.db).get(context.session_id)
+        parent_session = await AgentSessionRepository(context.db).get(
+            context.session_id
+        )
         parent_turn = await AgentTurnRepository(context.db).get(context.turn_id)
         if parent_session is None or parent_turn is None:
             raise BadRequestError("parent agent context could not be loaded")
@@ -65,7 +67,9 @@ class TaskTool:
 
         service = AgentCoreService(context.db)
         child_session = await service.create_session(
-            project_id=str(parent_session.project_id) if parent_session.project_id else None,
+            project_id=str(parent_session.project_id)
+            if parent_session.project_id
+            else None,
             workspace_id=context.workspace_id,
             user_id=context.user_id,
             title=f"Task: {objective[:80]}",
@@ -82,7 +86,10 @@ class TaskTool:
                 "parent_turn_id": context.turn_id,
                 "task_objective": objective,
             },
-            lineage={"parent_session_id": context.session_id, "parent_turn_id": context.turn_id},
+            lineage={
+                "parent_session_id": context.session_id,
+                "parent_turn_id": context.turn_id,
+            },
             prompt_snapshot=parent_session.prompt_snapshot,
         )
         child_session = await service.session_repo.update_with_policy_version(

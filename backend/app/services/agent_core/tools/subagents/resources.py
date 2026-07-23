@@ -54,7 +54,9 @@ class SubagentAnalyzeTool:
         task = str(input["task"]).strip()
         if not task:
             raise BadRequestError("task must be non-empty")
-        parent_session = await AgentSessionRepository(context.db).get(context.session_id)
+        parent_session = await AgentSessionRepository(context.db).get(
+            context.session_id
+        )
         parent_turn = await AgentTurnRepository(context.db).get(context.turn_id)
         if parent_session is None or parent_turn is None:
             raise BadRequestError("parent agent context could not be loaded")
@@ -63,7 +65,9 @@ class SubagentAnalyzeTool:
 
         service = AgentCoreService(context.db)
         child_session = await service.create_session(
-            project_id=str(parent_session.project_id) if parent_session.project_id else None,
+            project_id=str(parent_session.project_id)
+            if parent_session.project_id
+            else None,
             workspace_id=context.workspace_id,
             user_id=context.user_id,
             title=f"Subagent: {task[:80]}",
@@ -80,7 +84,10 @@ class SubagentAnalyzeTool:
                 "parent_turn_id": context.turn_id,
                 "subagent_task": task,
             },
-            lineage={"parent_session_id": context.session_id, "parent_turn_id": context.turn_id},
+            lineage={
+                "parent_session_id": context.session_id,
+                "parent_turn_id": context.turn_id,
+            },
             prompt_snapshot=parent_session.prompt_snapshot,
         )
         child_session = await service.session_repo.update_with_policy_version(
@@ -118,12 +125,18 @@ class SubagentAnalyzeTool:
         }
 
 
-def _build_subagent_prompt(*, task: str, task_context: dict, allowed_tools: list[str]) -> str:
+def _build_subagent_prompt(
+    *, task: str, task_context: dict, allowed_tools: list[str]
+) -> str:
     sections = [f"Task: {task}"]
     if task_context:
-        sections.append("Context:\n" + json.dumps(task_context, indent=2, sort_keys=True))
+        sections.append(
+            "Context:\n" + json.dumps(task_context, indent=2, sort_keys=True)
+        )
     if allowed_tools:
-        sections.append("Allowed tools:\n" + "\n".join(f"- {tool}" for tool in allowed_tools))
+        sections.append(
+            "Allowed tools:\n" + "\n".join(f"- {tool}" for tool in allowed_tools)
+        )
     sections.append(
         "Work read-only, use only exposed read-only tools, and return a concise final answer for the parent agent."
     )
