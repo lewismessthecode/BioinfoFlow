@@ -144,24 +144,38 @@ async def test_apply_patch_rejects_create_over_existing_file(
 
 
 @pytest.mark.asyncio
-async def test_apply_patch_rolls_back_prior_mutation_when_later_write_fails(
+async def test_apply_patch_rolls_back_attempted_operations_with_original_modes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(settings, "bioinfoflow_home", str(tmp_path))
     monkeypatch.setattr(settings, "repo_root", str(tmp_path))
-    target = tmp_path / "target.txt"
-    target.write_text("before\n", encoding="utf-8")
+    replaced = tmp_path / "replaced.txt"
+    deleted = tmp_path / "executable.sh"
+    failing = tmp_path / "failing.txt"
+    untouched = tmp_path / "untouched.txt"
+    replaced.write_text("replace before\n", encoding="utf-8")
+    deleted.write_text("#!/bin/sh\necho before\n", encoding="utf-8")
+    deleted.chmod(0o755)
+    failing.write_text("fail before\n", encoding="utf-8")
+    untouched.write_text("untouched before\n", encoding="utf-8")
     original_write_text = Path.write_text
+    original_write_bytes = Path.write_bytes
+    restored_paths: list[Path] = []
     calls = 0
 
-    def fail_second_write(self, data, *args, **kwargs):
+    def fail_third_write(self, data, *args, **kwargs):
         nonlocal calls
         calls += 1
-        if calls == 2:
+        if calls == 3:
             raise OSError("simulated disk failure")
         return original_write_text(self, data, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "write_text", fail_second_write)
+    def record_restore(self, data):
+        restored_paths.append(self)
+        return original_write_bytes(self, data)
+
+    monkeypatch.setattr(Path, "write_text", fail_third_write)
+    monkeypatch.setattr(Path, "write_bytes", record_restore)
 
     with pytest.raises(RuntimeError, match="file patch apply failed"):
         await _tool().run(
@@ -170,9 +184,22 @@ async def test_apply_patch_rolls_back_prior_mutation_when_later_write_fails(
                     {"op": "create", "path": "created.txt", "content": "new\n"},
                     {
                         "op": "replace",
-                        "path": "target.txt",
-                        "old_text": "before",
-                        "new_text": "after",
+                        "path": "replaced.txt",
+                        "old_text": "replace before",
+                        "new_text": "replace after",
+                    },
+                    {"op": "delete", "path": "executable.sh"},
+                    {
+                        "op": "replace",
+                        "path": "failing.txt",
+                        "old_text": "fail before",
+                        "new_text": "fail after",
+                    },
+                    {
+                        "op": "replace",
+                        "path": "untouched.txt",
+                        "old_text": "untouched before",
+                        "new_text": "untouched after",
                     },
                 ]
             },
@@ -180,4 +207,9 @@ async def test_apply_patch_rolls_back_prior_mutation_when_later_write_fails(
         )
 
     assert not (tmp_path / "created.txt").exists()
-    assert target.read_text(encoding="utf-8") == "before\n"
+    assert replaced.read_text(encoding="utf-8") == "replace before\n"
+    assert deleted.read_text(encoding="utf-8") == "#!/bin/sh\necho before\n"
+    assert deleted.stat().st_mode & 0o777 == 0o755
+    assert failing.read_text(encoding="utf-8") == "fail before\n"
+    assert untouched.read_text(encoding="utf-8") == "untouched before\n"
+    assert untouched not in restored_paths
