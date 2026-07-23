@@ -2287,6 +2287,18 @@
             "description": "Keep the active response running and send your draft after it finishes."
           }
         }
+      },
+      "customInstructions": {
+        "label": "Custom instructions",
+        "description": "Add platform conventions, environment details, and other context the agent should receive.",
+        "newSessionsOnly": "Changes apply only to new sessions. Existing sessions keep the instructions they started with.",
+        "placeholder": "Add platform conventions, environment details, or other context...",
+        "save": "Save instructions",
+        "saving": "Saving...",
+        "clear": "Clear",
+        "saved": "Custom instructions saved.",
+        "saveFailed": "Couldn't save custom instructions.",
+        "loadFailed": "Couldn't load custom instructions."
       }
     },
     "title": "AI Providers",

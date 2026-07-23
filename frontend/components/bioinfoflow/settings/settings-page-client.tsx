@@ -15,6 +15,7 @@ import { ContainerRegistriesPanel } from "@/components/bioinfoflow/settings/cont
 import { LlmCatalogPanel } from "@/components/bioinfoflow/settings/llm-catalog-panel"
 import { MembersPanel } from "@/components/bioinfoflow/settings/members-panel"
 import { AvatarSettingsPanel } from "@/components/bioinfoflow/settings/avatar-settings-panel"
+import { AgentCustomInstructions } from "@/components/bioinfoflow/settings/agent-custom-instructions"
 import {
   appearancePresetIds,
   appearancePresets,
@@ -737,6 +738,7 @@ export default function SettingsPageClient({
                   </div>
                 </SettingsRow>
               </SettingsGroup>
+
             </>
           )}
 
@@ -788,6 +790,23 @@ export default function SettingsPageClient({
                     })}
                   </fieldset>
                 </SettingsRow>
+              </SettingsGroup>
+
+              <SettingsGroup>
+                <AgentCustomInstructions
+                  labels={{
+                    label: t("agent.customInstructions.label"),
+                    description: t("agent.customInstructions.description"),
+                    newSessionsOnly: t("agent.customInstructions.newSessionsOnly"),
+                    placeholder: t("agent.customInstructions.placeholder"),
+                    save: t("agent.customInstructions.save"),
+                    saving: t("agent.customInstructions.saving"),
+                    clear: t("agent.customInstructions.clear"),
+                    saved: t("agent.customInstructions.saved"),
+                    saveFailed: t("agent.customInstructions.saveFailed"),
+                    loadFailed: t("agent.customInstructions.loadFailed"),
+                  }}
+                />
               </SettingsGroup>
             </>
           )}

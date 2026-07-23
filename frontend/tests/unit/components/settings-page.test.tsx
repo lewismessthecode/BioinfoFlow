@@ -74,6 +74,16 @@ vi.mock("next-intl", () => ({
       "agent.turnPolicy.options.interrupt.description": "Stop the active response first.",
       "agent.turnPolicy.options.queue.label": "Queue for next turn",
       "agent.turnPolicy.options.queue.description": "Send your draft after it finishes.",
+      "agent.customInstructions.label": "Custom instructions",
+      "agent.customInstructions.description": "Add context for new sessions.",
+      "agent.customInstructions.newSessionsOnly": "Changes apply only to new sessions.",
+      "agent.customInstructions.placeholder": "Add context...",
+      "agent.customInstructions.save": "Save instructions",
+      "agent.customInstructions.saving": "Saving...",
+      "agent.customInstructions.clear": "Clear",
+      "agent.customInstructions.saved": "Custom instructions saved.",
+      "agent.customInstructions.saveFailed": "Couldn't save custom instructions.",
+      "agent.customInstructions.loadFailed": "Couldn't load custom instructions.",
       title: "AI Providers",
       subtitle: "Configure providers",
       apiKey: "API Key",
@@ -474,6 +484,12 @@ describe("SettingsPage", () => {
           meta: undefined,
         }
       }
+      if (path === "/agent/settings" && !options?.method) {
+        return {
+          data: { custom_instructions: "Use approved platform conventions." },
+          meta: undefined,
+        }
+      }
       throw new Error(`Unexpected path: ${path}`)
     })
   })
@@ -802,7 +818,7 @@ describe("SettingsPage", () => {
     expect(screen.queryByText("Members Panel")).not.toBeInTheDocument()
   })
 
-  it("persists the agent active-turn policy from settings", () => {
+  it("persists the agent active-turn policy from settings", async () => {
     window.history.replaceState(null, "", "/settings?section=agent")
     render(
       <SettingsPageClient
@@ -823,9 +839,10 @@ describe("SettingsPage", () => {
 
     expect(screen.getByRole("radio", { name: /Queue for next turn/ })).toBeChecked()
     expect(window.localStorage.getItem(AGENT_TURN_POLICY_STORAGE_KEY)).toBe("queue")
+    await screen.findByRole("textbox", { name: "Custom instructions" })
   })
 
-  it("opens the agent defaults section from the settings deep link", () => {
+  it("opens the agent defaults section with custom instructions from the settings deep link", async () => {
     window.history.replaceState(null, "", "/settings?section=agent")
 
     render(
@@ -843,6 +860,10 @@ describe("SettingsPage", () => {
 
     expect(screen.getByText("Choose how Bioinfoflow handles active messages.")).toBeInTheDocument()
     expect(screen.getByRole("radio", { name: /Interrupt current turn/ })).toBeChecked()
+    expect(await screen.findByRole("textbox", { name: "Custom instructions" })).toHaveValue(
+      "Use approved platform conventions.",
+    )
+    expect(screen.getByText("Changes apply only to new sessions.")).toBeInTheDocument()
   })
 })
 

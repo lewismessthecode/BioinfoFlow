@@ -2287,6 +2287,18 @@
             "description": "保留当前回复继续运行，等它结束后再发送你的草稿。"
           }
         }
+      },
+      "customInstructions": {
+        "label": "自定义指令",
+        "description": "补充平台规范、环境信息，以及智能助手需要了解的其他上下文。",
+        "newSessionsOnly": "更改仅对新会话生效。已有会话会继续使用创建时的指令。",
+        "placeholder": "填写平台规范、环境信息或其他上下文……",
+        "save": "保存指令",
+        "saving": "保存中...",
+        "clear": "清空",
+        "saved": "自定义指令已保存。",
+        "saveFailed": "无法保存自定义指令。",
+        "loadFailed": "无法加载自定义指令。"
       }
     },
     "title": "AI 服务商",
