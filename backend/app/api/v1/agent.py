@@ -33,11 +33,14 @@ from app.schemas.agent_core import (
     AgentSessionCreate,
     AgentSessionRead,
     AgentSessionUpdate,
+    AgentSettingsRead,
+    AgentSettingsUpdate,
     AgentSkillRead,
     AgentTokenUsageSummary,
     AgentTurnCreate,
     AgentTurnRead,
 )
+from app.repositories.agent_user_settings_repo import AgentUserSettingsRepository
 from app.repositories.llm_repo import LlmModelRepository
 from app.services.agent_core import AgentCoreService, AgentMemoryService
 from app.services.agent_core.execution_target import (
@@ -87,8 +90,53 @@ def _session_read(session) -> AgentSessionRead:
                 AgentModelSelection.model_validate(model_selection)
                 if model_selection
                 else None
-            )
+            ),
         }
+    )
+
+
+@router.get("/settings")
+async def get_settings(
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    user_settings = await AgentUserSettingsRepository(db).get(
+        user.workspace_id, user.id
+    )
+    return success_response(
+        _dump(
+            AgentSettingsRead(
+                custom_instructions=(
+                    user_settings.custom_instructions
+                    if user_settings is not None
+                    else ""
+                )
+            )
+        ),
+        request=request,
+    )
+
+
+@router.put("/settings")
+async def update_settings(
+    payload: AgentSettingsUpdate,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    user_settings = await AgentUserSettingsRepository(db).upsert(
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+        custom_instructions=payload.custom_instructions.strip(),
+    )
+    return success_response(
+        _dump(
+            AgentSettingsRead(
+                custom_instructions=user_settings.custom_instructions
+            )
+        ),
+        request=request,
     )
 
 

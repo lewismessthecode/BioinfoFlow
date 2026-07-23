@@ -72,8 +72,19 @@ class SystemPromptSnapshot:
         return {"id": self.id, "content": self.content}
 
 
-def default_system_prompt_snapshot() -> SystemPromptSnapshot:
-    return SystemPromptSnapshot(id=PROMPT_SNAPSHOT_ID, content=_SYSTEM_PROMPT)
+def default_system_prompt_snapshot(
+    custom_instructions: str | None = None,
+) -> SystemPromptSnapshot:
+    content = _SYSTEM_PROMPT
+    normalized_instructions = (custom_instructions or "").strip()
+    if normalized_instructions:
+        content += (
+            "\n\nUser-provided custom instructions:\n"
+            "--- BEGIN CUSTOM INSTRUCTIONS ---\n"
+            f"{normalized_instructions}\n"
+            "--- END CUSTOM INSTRUCTIONS ---\n"
+        )
+    return SystemPromptSnapshot(id=PROMPT_SNAPSHOT_ID, content=content)
 
 
 def snapshot_version(snapshot_id: str | None) -> int:
@@ -87,18 +98,14 @@ def snapshot_version(snapshot_id: str | None) -> int:
 def resolve_system_prompt_prefix(stored_snapshot: dict | None) -> str:
     """Return the effective stable system-prompt prefix for a session.
 
-    Sessions persist the prompt snapshot at creation time. When a session's
-    stored snapshot is older than the current default (lower trailing version),
-    prefer the live default so prompt fixes reach existing sessions without a
-    migration. Newer or equal stored snapshots are used verbatim.
+    Sessions persist the prompt snapshot at creation time. Stored nonempty
+    content is immutable and must be used verbatim, irrespective of snapshot
+    version. Empty legacy snapshots use the current default.
     """
     current = default_system_prompt_snapshot()
     if not stored_snapshot:
         return current.content
-    stored_id = stored_snapshot.get("id")
     stored_content = str(stored_snapshot.get("content") or "")
     if not stored_content:
-        return current.content
-    if snapshot_version(stored_id) < snapshot_version(current.id):
         return current.content
     return stored_content

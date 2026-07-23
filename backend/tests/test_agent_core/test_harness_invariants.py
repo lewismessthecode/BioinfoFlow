@@ -172,12 +172,12 @@ def test_v8_system_prompt_is_a_compact_provider_neutral_agent_core():
     assert "Before submitting a run" not in snapshot.content
 
 
-def test_old_prompt_snapshot_resolves_to_live_v8_prompt():
+def test_old_prompt_snapshot_is_returned_verbatim():
     resolved = resolve_system_prompt_prefix(
         {"id": "bioinfoflow-agent-v6", "content": "old prompt"}
     )
 
-    assert resolved == default_system_prompt_snapshot().content
+    assert resolved == "old prompt"
 
 
 @pytest.mark.asyncio

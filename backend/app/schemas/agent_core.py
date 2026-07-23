@@ -99,6 +99,14 @@ class AgentSkillRead(BaseModel):
     body: str | None = None
 
 
+class AgentSettingsRead(BaseModel):
+    custom_instructions: str = ""
+
+
+class AgentSettingsUpdate(BaseModel):
+    custom_instructions: str = Field(max_length=20_000)
+
+
 class AgentSessionCreate(BaseModel):
     project_id: UUID | None = None
     title: str | None = None
