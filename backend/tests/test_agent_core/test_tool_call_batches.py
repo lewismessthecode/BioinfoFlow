@@ -24,10 +24,13 @@ from app.repositories.agent_core_repo import (
 )
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
+from app.services.agent_core.core.loop import AgentLoopController
 from app.services.agent_core.ownership import TurnOwnership, TurnOwnershipLostError
 from app.services.agent_core.transcript import AgentTranscriptStore, tool_calls_part
 from app.services.agent_core.tools.batches import ToolCallBatchCoordinator
 from app.services.agent_core.tools.execution import ExecuteShellTool
+from app.services.agent_core.tools.executor import ToolExecutionResult
+from app.services.agent_core.tools.specs import AgentToolSpec
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ModelInvocation,
@@ -213,6 +216,142 @@ def _ownership(session: AsyncSession, *, turn_id: str, token: str) -> TurnOwners
         owner_token=token,
         lease_duration=timedelta(minutes=1),
     )
+
+
+def _test_tool_spec(**overrides) -> AgentToolSpec:
+    values = {
+        "name": "test.read",
+        "description": "Test tool.",
+        "input_schema": {"type": "object"},
+        "output_schema": {"type": "object"},
+        "risk_level": "read",
+    }
+    values.update(overrides)
+    return AgentToolSpec(**values)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"risk_level": "act_low", "parallel_safe": True}, "read-only"),
+        ({"write_scope": ["workspace"], "parallel_safe": True}, "write scope"),
+        (
+            {"interaction": "user_input", "parallel_safe": True},
+            "interaction",
+        ),
+    ],
+)
+def test_parallel_safe_tool_metadata_rejects_unsafe_specs(overrides, message):
+    with pytest.raises(ValueError, match=message):
+        _test_tool_spec(**overrides)
+
+
+def test_ordered_tool_segments_keep_approval_and_interaction_as_barriers(db_session):
+    controller = AgentLoopController(db_session)
+    requested = ToolExecutionResult(action_id="requested", status="requested")
+    approval = ToolExecutionResult(
+        action_id="approval",
+        status="waiting_decision",
+        requires_resume=True,
+    )
+    prepared = [
+        ({"id": "read-1"}, "projects.list", requested),
+        ({"id": "read-2"}, "projects.get", requested),
+        ({"id": "approval"}, "projects.list", approval),
+        ({"id": "read-3"}, "projects.list", requested),
+        ({"id": "interaction"}, "ask_user", requested),
+        ({"id": "read-4"}, "projects.list", requested),
+    ]
+
+    segments = controller._ordered_tool_execution_segments(prepared)
+
+    assert [[item[0]["id"] for item in segment] for segment in segments] == [
+        ["read-1", "read-2"],
+        ["approval"],
+        ["read-3"],
+        ["interaction"],
+        ["read-4"],
+    ]
+
+
+@pytest.mark.asyncio
+async def test_tool_batch_parallelizes_only_adjacent_safe_calls(
+    db_session,
+    monkeypatch,
+):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="bypass",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Preserve tool-call barriers.",
+    )
+    controller = AgentLoopController(db_session)
+    events: list[str] = []
+    safe_call_count = 0
+    original_isolated = controller._execute_tool_call_isolated
+    original_resume = controller.executor.resume_action
+
+    async def observe_isolated(**kwargs):
+        nonlocal safe_call_count
+        ordinal = safe_call_count
+        safe_call_count += 1
+        events.append(f"safe-{ordinal}-start")
+        result = await original_isolated(**kwargs)
+        events.append(f"safe-{ordinal}-end")
+        return result
+
+    async def observe_serial(**kwargs):
+        events.append("serial-start")
+        result = await original_resume(**kwargs)
+        events.append("serial-end")
+        return result
+
+    monkeypatch.setattr(controller, "_execute_tool_call_isolated", observe_isolated)
+    monkeypatch.setattr(controller.executor, "resume_action", observe_serial)
+
+    await controller._execute_tool_calls(
+        agent_session=session,
+        turn=turn,
+        tool_calls=[
+            {"id": "read-before", "name": "projects__list", "arguments": {}},
+            {
+                "id": "serial",
+                "name": "todo_write",
+                "arguments": {
+                    "todos": [{"content": "barrier", "status": "in_progress"}]
+                },
+            },
+            {"id": "read-after", "name": "projects__list", "arguments": {}},
+        ],
+        provider="openai_compatible",
+        model="batch-model",
+    )
+
+    assert events == [
+        "safe-0-start",
+        "safe-0-end",
+        "serial-start",
+        "serial-end",
+        "safe-1-start",
+        "safe-1-end",
+    ]
+
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
+    assert [
+        message.message_metadata["tool_call_id"]
+        for message in messages
+        if message.role == "tool"
+    ] == ["read-before", "serial", "read-after"]
 
 
 @pytest.mark.asyncio
@@ -1061,7 +1200,7 @@ async def test_empty_ordinary_turn_has_no_continuation_state_error(
 
 
 @pytest.mark.asyncio
-async def test_reads_overlap_across_non_read_sibling(db_session, monkeypatch):
+async def test_adjacent_reads_overlap_before_approval_barrier(db_session, monkeypatch):
     started = 0
     both_started = asyncio.Event()
 
@@ -1092,12 +1231,12 @@ async def test_reads_overlap_across_non_read_sibling(db_session, monkeypatch):
         return _response(
             tool_calls=[
                 ("overlap-1", "projects__list", {}),
+                ("overlap-2", "projects__list", {}),
                 (
                     "approval-between",
                     "bash",
                     {"command": "python -c 'print(1)'"},
                 ),
-                ("overlap-2", "projects__list", {}),
             ]
         )
 
@@ -1123,10 +1262,11 @@ async def test_reads_overlap_across_non_read_sibling(db_session, monkeypatch):
     assert started == 2
     actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
     actions.sort(key=lambda action: action.tool_call_ordinal)
-    assert [actions[0].status, actions[2].status] == [
+    assert [actions[0].status, actions[1].status] == [
         AgentActionStatus.COMPLETED,
         AgentActionStatus.COMPLETED,
     ]
+    assert actions[2].status == AgentActionStatus.WAITING_DECISION
 
 
 @pytest.mark.asyncio

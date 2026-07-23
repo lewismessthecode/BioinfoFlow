@@ -44,6 +44,7 @@ class ListProjectsTool:
             "required": ["projects", "total_count"],
         },
         risk_level="read",
+        parallel_safe=True,
         read_scope=["projects"],
         audit="List projects in the current workspace.",
     )
@@ -80,6 +81,7 @@ class GetProjectTool:
             "required": ["project"],
         },
         risk_level="read",
+        parallel_safe=True,
         read_scope=["projects"],
         audit="Read project details.",
     )
