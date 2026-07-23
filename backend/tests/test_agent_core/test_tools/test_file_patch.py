@@ -213,3 +213,39 @@ async def test_apply_patch_rolls_back_attempted_operations_with_original_modes(
     assert failing.read_text(encoding="utf-8") == "fail before\n"
     assert untouched.read_text(encoding="utf-8") == "untouched before\n"
     assert untouched not in restored_paths
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_rolls_back_non_os_write_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(tmp_path))
+    monkeypatch.setattr(settings, "repo_root", str(tmp_path))
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second.txt"
+    first.write_text("first before\n", encoding="utf-8")
+    second.write_text("second before\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="file patch apply failed"):
+        await _tool().run(
+            {
+                "operations": [
+                    {
+                        "op": "replace",
+                        "path": "first.txt",
+                        "old_text": "first before",
+                        "new_text": "first after",
+                    },
+                    {
+                        "op": "replace",
+                        "path": "second.txt",
+                        "old_text": "second before",
+                        "new_text": "\ud800",
+                    },
+                ]
+            },
+            _context(),
+        )
+
+    assert first.read_text(encoding="utf-8") == "first before\n"
+    assert second.read_text(encoding="utf-8") == "second before\n"
