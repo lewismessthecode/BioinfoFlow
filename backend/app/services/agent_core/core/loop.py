@@ -951,13 +951,13 @@ class AgentLoopController:
                             context=context,
                             require_resume_marker=False,
                         )
-                    if (
-                        result.requires_resume
-                        or result.status == AgentActionStatus.WAITING_DECISION
-                    ):
-                        waiting = True
-                        approval_barrier_hit = True
-                        break
+                if (
+                    result.requires_resume
+                    or result.status == AgentActionStatus.WAITING_DECISION
+                ):
+                    waiting = True
+                    approval_barrier_hit = True
+                    break
                 result_signatures.append(_tool_result_signature(tool_name, result))
                 if result.status in TERMINAL_ACTION_STATUSES:
                     await self._append_tool_result(
