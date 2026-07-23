@@ -338,6 +338,16 @@ function ImageRepositoryCard({
           </Button>
         }
       >
+        {image.status === "failed" && image.error_message ? (
+          <p
+            role="alert"
+            aria-label={tImages("card.pullError")}
+            className="mt-3 line-clamp-2 break-all text-xs leading-5 text-destructive"
+            title={image.error_message}
+          >
+            {image.error_message}
+          </p>
+        ) : null}
         <div className="mt-3 flex min-w-0 items-center gap-2">
           {hasMultipleVersions ? (
             <Select value={image.id} onValueChange={handleVersionChange}>

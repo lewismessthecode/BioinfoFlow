@@ -1226,6 +1226,7 @@
       "versionActions": "Actions for {tag}"
     },
     "card": {
+      "pullError": "Pull error",
       "versionCount": "{count, plural, one {# version} other {# versions}}"
     },
     "selection": {

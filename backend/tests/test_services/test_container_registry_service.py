@@ -83,6 +83,45 @@ async def test_registry_service_resolves_env_auth_material(db_session, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_registry_service_reports_docker_runtime_configuration_error(
+    db_session,
+    monkeypatch,
+):
+    from app.services import container_registry_service
+    from app.services.container_registry_service import ContainerRegistryService
+
+    class FakeDockerService:
+        async def test_registry(self, endpoint, *, auth_config=None):
+            assert endpoint == "http://10.227.4.56:80"
+            assert auth_config is None
+            return (
+                'Docker is not configured to allow the HTTP registry "10.227.4.56:80". '
+                "Add it to Docker's insecure-registries and restart Docker."
+            )
+
+    monkeypatch.setattr(container_registry_service, "DockerService", FakeDockerService)
+    service = ContainerRegistryService(db_session)
+    registry = await service.create_registry(
+        {
+            "name": "Harbor HTTP",
+            "endpoint": "http://10.227.4.56:80",
+            "insecure": True,
+            "credential_source": "none",
+            "updated_by": "user-1",
+        }
+    )
+
+    result = await service.test_registry(str(registry.id))
+
+    assert result["success"] is False
+    assert result["status"] == "error"
+    assert "insecure-registries" in result["error"]
+    refreshed = await service.get_registry(str(registry.id))
+    assert refreshed.last_status == "error"
+    assert refreshed.last_error == result["error"]
+
+
+@pytest.mark.asyncio
 async def test_registry_service_resolves_project_override_before_global_default(
     db_session,
 ):

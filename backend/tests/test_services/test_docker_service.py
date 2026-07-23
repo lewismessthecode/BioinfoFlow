@@ -5,6 +5,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+import httpx
 from docker.errors import APIError, ImageNotFound
 
 from app.services.docker_service import DockerService, _split_tag
@@ -154,9 +155,7 @@ async def test_inspect_image_returns_none_for_missing_images():
 
 @pytest.mark.asyncio
 async def test_delete_image_returns_false_when_docker_rejects_delete():
-    service = _service_with_client(
-        _FakeImages(remove_error=APIError("delete failed"))
-    )
+    service = _service_with_client(_FakeImages(remove_error=APIError("delete failed")))
 
     deleted = await service.delete_image("ghcr.io/demo/tool:1.2.3", force=True)
 
@@ -226,3 +225,68 @@ async def test_pull_image_forwards_auth_config_to_docker_api():
         "decode": True,
         "auth_config": {"username": "bioinfoflow", "password": "secret"},
     }
+
+
+@pytest.mark.asyncio
+async def test_registry_configuration_error_rejects_untrusted_http_registry():
+    service = _service_with_client(_FakeImages())
+    service._client.info = lambda: {  # type: ignore[attr-defined]
+        "RegistryConfig": {
+            "InsecureRegistryCIDRs": ["127.0.0.0/8"],
+            "IndexConfigs": {},
+        }
+    }
+
+    error = await service.registry_configuration_error("http://10.227.4.56:80")
+
+    assert error is not None
+    assert '"10.227.4.56:80"' in error
+    assert "insecure-registries" in error
+
+
+@pytest.mark.asyncio
+async def test_registry_configuration_error_accepts_configured_http_registry():
+    service = _service_with_client(_FakeImages())
+    service._client.info = lambda: {  # type: ignore[attr-defined]
+        "RegistryConfig": {
+            "InsecureRegistryCIDRs": ["127.0.0.0/8"],
+            "IndexConfigs": {
+                "10.227.4.56:80": {"Name": "10.227.4.56:80", "Secure": False}
+            },
+        }
+    }
+
+    error = await service.registry_configuration_error("http://10.227.4.56:80")
+
+    assert error is None
+
+
+@pytest.mark.asyncio
+async def test_registry_probe_accepts_standard_auth_challenge_without_credentials(
+    monkeypatch,
+):
+    from app.services import docker_service
+
+    service = _service_with_client(_FakeImages())
+    service._client.info = lambda: {  # type: ignore[attr-defined]
+        "RegistryConfig": {
+            "InsecureRegistryCIDRs": ["10.227.4.56/32"],
+            "IndexConfigs": {},
+        }
+    }
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "http://10.227.4.56/v2/"
+        return httpx.Response(401, request=request)
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+
+    def fake_client(*args, **kwargs):
+        return real_client(transport=transport, timeout=kwargs.get("timeout"))
+
+    monkeypatch.setattr(docker_service.httpx, "AsyncClient", fake_client)
+
+    error = await service.test_registry("http://10.227.4.56:80")
+
+    assert error is None

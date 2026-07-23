@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import os
 import re
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import docker
+import httpx
 from docker.errors import APIError, ImageNotFound
 
 from app.config import settings
@@ -86,6 +88,77 @@ class DockerService:
                 return False
 
         return await asyncio.to_thread(_ping)
+
+    async def registry_configuration_error(self, endpoint: str) -> str | None:
+        parsed = urlparse(endpoint)
+        if parsed.scheme != "http":
+            return None
+        registry = normalize_registry(endpoint)
+
+        def _check() -> str | None:
+            try:
+                info = self.client.info()
+            except Exception as exc:  # noqa: BLE001
+                return f"Unable to inspect Docker registry configuration: {exc}"
+            config = info.get("RegistryConfig") or {}
+            index = (config.get("IndexConfigs") or {}).get(registry) or {}
+            if index.get("Secure") is False:
+                return None
+            hostname = parsed.hostname
+            if hostname:
+                try:
+                    address = ipaddress.ip_address(hostname)
+                except ValueError:
+                    address = None
+                if address is not None:
+                    for value in config.get("InsecureRegistryCIDRs") or []:
+                        try:
+                            if address in ipaddress.ip_network(value, strict=False):
+                                return None
+                        except ValueError:
+                            continue
+            return (
+                f'Docker is not configured to allow the HTTP registry "{registry}". '
+                "Add it to Docker's insecure-registries and restart Docker."
+            )
+
+        return await asyncio.to_thread(_check)
+
+    async def test_registry(
+        self,
+        endpoint: str,
+        *,
+        auth_config: dict[str, Any] | None = None,
+    ) -> str | None:
+        configuration_error = await self.registry_configuration_error(endpoint)
+        if configuration_error:
+            return configuration_error
+        registry = normalize_registry(endpoint)
+        if auth_config:
+
+            def _login() -> None:
+                self.client.login(
+                    username=auth_config.get("username"),
+                    password=auth_config.get("password"),
+                    registry=registry,
+                    reauth=True,
+                )
+
+            try:
+                await asyncio.to_thread(_login)
+            except Exception as exc:  # noqa: BLE001
+                return f"Registry authentication failed: {exc}"
+            return None
+
+        probe_url = f"{endpoint.rstrip('/')}/v2/"
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(probe_url)
+        except httpx.RequestError as exc:
+            return f"Registry is unreachable: {exc}"
+        if response.status_code in {200, 401}:
+            return None
+        return f"Registry probe failed with HTTP {response.status_code}"
 
     async def check_nvidia_runtime(self) -> bool:
         """Check if Docker NVIDIA runtime is available."""

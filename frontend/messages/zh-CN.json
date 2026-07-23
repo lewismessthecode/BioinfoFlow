@@ -1226,6 +1226,7 @@
       "versionActions": "{tag} 的操作"
     },
     "card": {
+      "pullError": "拉取错误",
       "versionCount": "{count} 个版本"
     },
     "selection": {
