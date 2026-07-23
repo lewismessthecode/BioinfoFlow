@@ -570,13 +570,14 @@ fi
 
 # The workflow expression is intentionally matched as a literal string.
 # shellcheck disable=SC2016
-if grep -Fq '[ "$GITHUB_REF_NAME" != "$version" ] && [ "$GITHUB_REF_NAME" != "main" ]' "$RELEASE_WORKFLOW" && \
+if grep -Fq '[ "$GITHUB_REF_NAME" != "$version" ]' "$RELEASE_WORKFLOW" && \
+   ! grep -q 'main recovery workflow' "$RELEASE_WORKFLOW" && \
    grep -q 'checkout_ref:.*needs.resolve.outputs.version' "$RELEASE_WORKFLOW" && \
-   [ "$(grep -c '^[[:space:]]*ref:.*needs.resolve.outputs.version' "$RELEASE_WORKFLOW" || true)" -eq 0 ] && \
+   [ "$(grep -c '^[[:space:]]*ref:.*needs.resolve.outputs.version' "$RELEASE_WORKFLOW" || true)" -ge 2 ] && \
    grep -q 'gh release upload.*RELEASE_TAG.*--clobber' "$RELEASE_WORKFLOW"; then
-  pass "release recovery packages fixed main assets while images use immutable tag source"
+  pass "release recovery uses immutable tag source for installer and images"
 else
-  fail "release recovery packages fixed main assets while images use immutable tag source"
+  fail "release recovery uses immutable tag source for installer and images"
 fi
 
 if grep -q 'AUTH_MODE == "dev"' "$RELEASE_WORKFLOW" && \

@@ -9,8 +9,7 @@ on:
         type: string
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   resolve:
@@ -33,8 +32,8 @@ jobs:
             echo "Release version must be a bare numeric semantic version: $version"
             exit 2
           fi
-          if [ "$GITHUB_REF_NAME" != "$version" ] && [ "$GITHUB_REF_NAME" != "main" ]; then
-            echo "Workflow ref must be the release version or main recovery workflow: ref=$GITHUB_REF_NAME version=$version"
+          if [ "$GITHUB_REF_NAME" != "$version" ]; then
+            echo "Workflow ref must exactly match the immutable release version: ref=$GITHUB_REF_NAME version=$version"
             exit 2
           fi
           gh release view "$version" --repo "$GITHUB_REPOSITORY" >/dev/null
@@ -54,6 +53,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.version }}
 
       - name: Verify shell behavior
         run: |
@@ -89,6 +90,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.version }}
 
       - name: Build version-matched installer assets
         env:
@@ -116,6 +119,9 @@ jobs:
     needs:
       - resolve
       - verify
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/container-release.yml
     with:
       publish_images: force
@@ -130,6 +136,9 @@ jobs:
       - resolve
       - images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -168,6 +177,9 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Download installer artifact
         uses: actions/download-artifact@v4
@@ -237,6 +249,8 @@ jobs:
       - smoke
       - package
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download installer artifact
         uses: actions/download-artifact@v4
