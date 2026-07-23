@@ -141,3 +141,43 @@ async def test_apply_patch_rejects_create_over_existing_file(
         )
 
     assert target.read_text(encoding="utf-8") == "keep\n"
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_rolls_back_prior_mutation_when_later_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(tmp_path))
+    monkeypatch.setattr(settings, "repo_root", str(tmp_path))
+    target = tmp_path / "target.txt"
+    target.write_text("before\n", encoding="utf-8")
+    original_write_text = Path.write_text
+    calls = 0
+
+    def fail_second_write(self, data, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("simulated disk failure")
+        return original_write_text(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_second_write)
+
+    with pytest.raises(RuntimeError, match="file patch apply failed"):
+        await _tool().run(
+            {
+                "operations": [
+                    {"op": "create", "path": "created.txt", "content": "new\n"},
+                    {
+                        "op": "replace",
+                        "path": "target.txt",
+                        "old_text": "before",
+                        "new_text": "after",
+                    },
+                ]
+            },
+            _context(),
+        )
+
+    assert not (tmp_path / "created.txt").exists()
+    assert target.read_text(encoding="utf-8") == "before\n"

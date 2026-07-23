@@ -240,32 +240,45 @@ class ApplyPatchTool:
             seen_paths.add(path)
             prepared.append(prepared_operation)
 
+        originals = {
+            operation["path"]: (
+                operation["path"].read_bytes() if operation["path"].exists() else None
+            )
+            for operation in prepared
+        }
         summaries: list[dict[str, Any]] = []
-        for operation in prepared:
-            op = operation["op"]
-            path = operation["path"]
-            if op == "create":
-                content = operation["content"]
-                path.write_text(content, encoding="utf-8")
-                summaries.append(
-                    {
-                        "op": op,
-                        "path": str(path),
-                        "bytes_written": len(content.encode("utf-8")),
-                    }
-                )
-            elif op == "replace":
-                path.write_text(operation["updated"], encoding="utf-8")
-                summaries.append(
-                    {
-                        "op": op,
-                        "path": str(path),
-                        "replacements": operation["replacements"],
-                    }
-                )
-            else:
-                path.unlink()
-                summaries.append({"op": op, "path": str(path)})
+        try:
+            for operation in prepared:
+                op = operation["op"]
+                path = operation["path"]
+                if op == "create":
+                    content = operation["content"]
+                    path.write_text(content, encoding="utf-8")
+                    summaries.append(
+                        {
+                            "op": op,
+                            "path": str(path),
+                            "bytes_written": len(content.encode("utf-8")),
+                        }
+                    )
+                elif op == "replace":
+                    path.write_text(operation["updated"], encoding="utf-8")
+                    summaries.append(
+                        {
+                            "op": op,
+                            "path": str(path),
+                            "replacements": operation["replacements"],
+                        }
+                    )
+                else:
+                    path.unlink()
+                    summaries.append({"op": op, "path": str(path)})
+        except OSError as exc:
+            rollback_errors = _restore_patch_targets(originals)
+            detail = f": {exc}"
+            if rollback_errors:
+                detail += f"; rollback errors: {'; '.join(rollback_errors)}"
+            raise RuntimeError(f"file patch apply failed{detail}") from exc
         return {"operations": summaries}
 
 
@@ -315,6 +328,20 @@ def _prepare_patch_operation(operation: dict[str, Any]) -> dict[str, Any]:
         "updated": updated,
         "replacements": replacements,
     }
+
+
+def _restore_patch_targets(originals: dict[Path, bytes | None]) -> list[str]:
+    errors: list[str] = []
+    for path, original in reversed(originals.items()):
+        try:
+            if original is None:
+                if path.exists():
+                    path.unlink()
+            else:
+                path.write_bytes(original)
+        except OSError as exc:
+            errors.append(f"{path}: {exc}")
+    return errors
 
 
 def _resolve_path(
