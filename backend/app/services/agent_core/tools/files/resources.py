@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import stat
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -240,17 +242,13 @@ class ApplyPatchTool:
             seen_paths.add(path)
             prepared.append(prepared_operation)
 
-        originals = {
-            operation["path"]: (
-                operation["path"].read_bytes() if operation["path"].exists() else None
-            )
-            for operation in prepared
-        }
         summaries: list[dict[str, Any]] = []
+        attempted: list[tuple[Path, _PatchTargetSnapshot]] = []
         try:
             for operation in prepared:
                 op = operation["op"]
                 path = operation["path"]
+                attempted.append((path, _snapshot_patch_target(path)))
                 if op == "create":
                     content = operation["content"]
                     path.write_text(content, encoding="utf-8")
@@ -274,7 +272,7 @@ class ApplyPatchTool:
                     path.unlink()
                     summaries.append({"op": op, "path": str(path)})
         except OSError as exc:
-            rollback_errors = _restore_patch_targets(originals)
+            rollback_errors = _restore_patch_targets(attempted)
             detail = f": {exc}"
             if rollback_errors:
                 detail += f"; rollback errors: {'; '.join(rollback_errors)}"
@@ -330,15 +328,34 @@ def _prepare_patch_operation(operation: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _restore_patch_targets(originals: dict[Path, bytes | None]) -> list[str]:
+@dataclass(frozen=True, slots=True)
+class _PatchTargetSnapshot:
+    content: bytes | None
+    mode: int | None
+
+
+def _snapshot_patch_target(path: Path) -> _PatchTargetSnapshot:
+    if not path.exists():
+        return _PatchTargetSnapshot(content=None, mode=None)
+    return _PatchTargetSnapshot(
+        content=path.read_bytes(),
+        mode=stat.S_IMODE(path.stat().st_mode),
+    )
+
+
+def _restore_patch_targets(
+    attempted: list[tuple[Path, _PatchTargetSnapshot]],
+) -> list[str]:
     errors: list[str] = []
-    for path, original in reversed(originals.items()):
+    for path, original in reversed(attempted):
         try:
-            if original is None:
+            if original.content is None:
                 if path.exists():
                     path.unlink()
             else:
-                path.write_bytes(original)
+                path.write_bytes(original.content)
+                if original.mode is not None:
+                    path.chmod(original.mode)
         except OSError as exc:
             errors.append(f"{path}: {exc}")
     return errors
