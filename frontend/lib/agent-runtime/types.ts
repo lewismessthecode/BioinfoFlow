@@ -162,6 +162,16 @@ export type AgentRuntimeTurn = {
   completed_at?: string | null
 }
 
+export type AgentRuntimeSteerResult = {
+  steer_id: string
+  turn_id: string
+  delivery: "pending"
+}
+
+export type AgentRuntimeSteerOutcome =
+  | { kind: "accepted"; result: AgentRuntimeSteerResult }
+  | { kind: "sealed" }
+
 export type AgentRuntimeEvent = {
   id: string
   session_id: string

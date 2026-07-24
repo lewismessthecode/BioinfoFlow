@@ -70,8 +70,8 @@ vi.mock("next-intl", () => ({
       "agent.description": "Choose how Bioinfoflow handles active messages.",
       "agent.turnPolicy.label": "During active responses",
       "agent.turnPolicy.description": "Apply this behavior while the current turn runs.",
-      "agent.turnPolicy.options.interrupt.label": "Interrupt current turn",
-      "agent.turnPolicy.options.interrupt.description": "Stop the active response first.",
+      "agent.turnPolicy.options.steer.label": "Guide current response",
+      "agent.turnPolicy.options.steer.description": "Add this message to the active response.",
       "agent.turnPolicy.options.queue.label": "Queue for next turn",
       "agent.turnPolicy.options.queue.description": "Send your draft after it finishes.",
       "agent.customInstructions.label": "Custom instructions",
@@ -834,7 +834,7 @@ describe("SettingsPage", () => {
       />,
     )
 
-    expect(screen.getByRole("radio", { name: /Interrupt current turn/ })).toBeChecked()
+    expect(screen.getByRole("radio", { name: /Guide current response/ })).toBeChecked()
 
     fireEvent.click(screen.getByRole("radio", { name: /Queue for next turn/ }))
 
@@ -860,7 +860,7 @@ describe("SettingsPage", () => {
     )
 
     expect(screen.getByText("Choose how Bioinfoflow handles active messages.")).toBeInTheDocument()
-    expect(screen.getByRole("radio", { name: /Interrupt current turn/ })).toBeChecked()
+    expect(screen.getByRole("radio", { name: /Guide current response/ })).toBeChecked()
     expect(await screen.findByRole("textbox", { name: "Custom instructions" })).toHaveValue(
       "Use approved platform conventions.",
     )

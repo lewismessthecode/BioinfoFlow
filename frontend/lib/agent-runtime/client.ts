@@ -1,4 +1,4 @@
-import { apiRequest, buildApiUrl } from "@/lib/api"
+import { ApiError, apiRequest, buildApiUrl } from "@/lib/api"
 import type { ProjectWorkflowGroup, Workflow } from "@/lib/types"
 import { buildHubWorkflowGroups } from "@/lib/workflow-groups"
 import {
@@ -19,6 +19,8 @@ import type {
   AgentRuntimeArtifact,
   AgentRuntimeInputPart,
   AgentRuntimeSession,
+  AgentRuntimeSteerOutcome,
+  AgentRuntimeSteerResult,
   AgentRuntimeSkill,
   AgentRuntimeStatePayload,
   AgentRuntimeTurn,
@@ -267,6 +269,39 @@ export const interruptAgentRuntimeTurn = async (turnId: string) => {
     { method: "POST" },
   )
   return response.data
+}
+
+export const steerAgentRuntimeTurn = async (
+  turnId: string,
+  input: {
+    inputText: string
+    inputParts?: AgentRuntimeInputPart[] | null
+    activeSkillNames?: string[] | null
+    metadata?: Record<string, unknown> | null
+  },
+): Promise<AgentRuntimeSteerOutcome> => {
+  try {
+    const response = await apiRequest<AgentRuntimeSteerResult>(
+      `/agent/turns/${turnId}/steer`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          input_text: input.inputText,
+          input_parts: agentRuntimeInputPartsForRequest(input.inputParts),
+          ...(input.activeSkillNames?.length
+            ? { active_skill_names: input.activeSkillNames }
+            : {}),
+          metadata: input.metadata,
+        }),
+      },
+    )
+    return { kind: "accepted", result: response.data }
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409) {
+      return { kind: "sealed" }
+    }
+    throw error
+  }
 }
 
 export const decideAgentRuntimeAction = async (

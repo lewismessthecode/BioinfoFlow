@@ -2293,9 +2293,9 @@
         "label": "During active responses",
         "description": "Apply this behavior when you send a message before the current turn finishes.",
         "options": {
-          "interrupt": {
-            "label": "Interrupt current turn",
-            "description": "Stop the active response first, then send your new message as the next turn."
+          "steer": {
+            "label": "Guide current response",
+            "description": "Add this message to the active response at the next safe step."
           },
           "queue": {
             "label": "Queue for next turn",

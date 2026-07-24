@@ -70,7 +70,7 @@ type SettingsPageClientProps = {
   }
 }
 
-const AGENT_TURN_POLICIES: AgentTurnPolicy[] = ["interrupt", "queue"]
+const AGENT_TURN_POLICIES: AgentTurnPolicy[] = ["steer", "queue"]
 
 function SettingsSectionHeader({
   title,
