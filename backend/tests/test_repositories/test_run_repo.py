@@ -43,3 +43,61 @@ async def test_mark_failed_does_not_overwrite_terminal_run(db_session):
     assert updated is None
     assert run.status == RunStatus.COMPLETED.value
     assert run.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_search_context_runs_is_server_paginated_and_project_ranked(db_session):
+    current_project = await create_project(
+        db_session,
+        name=f"Current {uuid4()}",
+        storage_mode="managed",
+    )
+    other_project = await create_project(
+        db_session,
+        name=f"Other {uuid4()}",
+        storage_mode="managed",
+    )
+    workflow = await create_workflow(
+        db_session,
+        name="searchable-rnaseq",
+        engine=WorkflowEngine.NEXTFLOW,
+        content="workflow { }\n",
+    )
+    runs = [
+        Run(
+            run_id=f"search-run-{index:04d}",
+            project_id=str(
+                current_project.id if index % 10 == 0 else other_project.id
+            ),
+            workflow_id=str(workflow.id),
+            status=RunStatus.COMPLETED.value,
+            config={"label": f"cohort {index}"},
+            samples_count=0,
+            tasks_total=0,
+            tasks_completed=0,
+        )
+        for index in range(1001)
+    ]
+    db_session.add_all(runs)
+    await db_session.commit()
+    repo = RunRepository(db_session)
+
+    first, pagination = await repo.search_context(
+        workspace_id=str(current_project.workspace_id),
+        query="searchable-rnaseq",
+        current_project_id=str(current_project.id),
+        limit=20,
+    )
+    second, _ = await repo.search_context(
+        workspace_id=str(current_project.workspace_id),
+        query="searchable-rnaseq",
+        current_project_id=str(current_project.id),
+        limit=20,
+        cursor=pagination.next_cursor,
+    )
+
+    assert len(first) == 20
+    assert pagination.has_more is True
+    assert pagination.next_cursor
+    assert all(str(run.project_id) == str(current_project.id) for run in first)
+    assert {run.run_id for run in first}.isdisjoint({run.run_id for run in second})

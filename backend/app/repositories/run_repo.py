@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import String, case, cast, delete, func, or_, select, update
+from sqlalchemy.orm import selectinload
 
 from app.models.project import Project
 from app.models.run import Run, RunStatus
 from app.scheduler.models import ScheduledTask
 from app.repositories.base import BaseRepository
 from app.schemas.common import Pagination
+from app.models.workflow import Workflow
+from app.utils.pagination import decode_cursor, encode_cursor
 
 RUN_ACTIVE_STATUSES = (
     RunStatus.PENDING.value,
@@ -52,6 +55,76 @@ class RunRepository(BaseRepository[Run]):
         stmt = select(self.model).where(self.model.run_id == run_id)
         result = await self.session.execute(stmt)
         return result.scalars().first()
+
+    async def search_context(
+        self,
+        *,
+        workspace_id: str,
+        query: str,
+        current_project_id: str | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> tuple[list[Run], Pagination]:
+        escaped = (
+            query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        pattern = f"%{escaped}%"
+        stmt = (
+            select(self.model)
+            .join(Project, Project.id == self.model.project_id)
+            .outerjoin(Workflow, Workflow.id == self.model.workflow_id)
+            .where(Project.workspace_id == workspace_id)
+            .options(
+                selectinload(self.model.project),
+                selectinload(self.model.workflow),
+            )
+        )
+        if query:
+            stmt = stmt.where(
+                or_(
+                    self.model.run_id.ilike(pattern, escape="\\"),
+                    self.model.nextflow_run_name.ilike(pattern, escape="\\"),
+                    self.model.status.ilike(pattern, escape="\\"),
+                    Workflow.name.ilike(pattern, escape="\\"),
+                    cast(self.model.config, String).ilike(pattern, escape="\\"),
+                )
+            )
+        total_count = await self.session.scalar(
+            select(func.count()).select_from(stmt.order_by(None).subquery())
+        )
+        offset = 0
+        if cursor:
+            try:
+                offset = max(int(decode_cursor(cursor).get("offset") or 0), 0)
+            except (ValueError, TypeError, KeyError) as exc:
+                raise ValueError("Invalid run search cursor") from exc
+        project_rank = (
+            case((self.model.project_id == current_project_id, 0), else_=1)
+            if current_project_id
+            else 0
+        )
+        result = await self.session.execute(
+            stmt.order_by(
+                project_rank,
+                self.model.created_at.desc(),
+                self.model.id.desc(),
+            )
+            .offset(offset)
+            .limit(limit + 1)
+        )
+        items = list(result.scalars().unique().all())
+        has_more = len(items) > limit
+        items = items[:limit]
+        return items, Pagination(
+            limit=limit,
+            has_more=has_more,
+            next_cursor=(
+                encode_cursor({"offset": offset + len(items)})
+                if has_more
+                else None
+            ),
+            total_count=total_count or 0,
+        )
 
     async def get_replay_by_intent(
         self,
