@@ -146,7 +146,13 @@ class AgentCoreRuntime:
                     ownership=ownership,
                 )
             except TurnOwnershipLostError:
-                return await self.turn_repo.get(str(turn.id))
+                return await self._read_turn_after_ownership_loss(str(turn.id))
+
+    async def _read_turn_after_ownership_loss(self, turn_id: str):
+        await self.turn_repo.session.rollback()
+        turn = await self.turn_repo.get_fresh(turn_id)
+        await self.turn_repo.session.commit()
+        return turn
 
     async def _run_claimed_turn(self, *, turn, session, ownership: TurnOwnership):
         turn_id = str(turn.id)
@@ -285,7 +291,7 @@ class AgentCoreRuntime:
                     ownership=ownership,
                 )
             except TurnOwnershipLostError:
-                return await self.turn_repo.get(str(turn.id))
+                return await self._read_turn_after_ownership_loss(str(turn.id))
 
     async def _resume_claimed_turn(
         self,

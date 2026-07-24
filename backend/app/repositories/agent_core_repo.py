@@ -791,6 +791,7 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         turn_id: str,
         *,
         expected_owner_token: str,
+        commit: bool = True,
         **data: object,
     ) -> tuple[AgentTurn | None, bool]:
         result = await self.session.execute(
@@ -804,7 +805,10 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             .execution_options(synchronize_session=False)
         )
         updated = result.rowcount == 1
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         return await self.get_fresh(turn_id), updated
 
     async def queue_waiting_for_resume(

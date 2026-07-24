@@ -10,6 +10,7 @@ from app.config import settings
 from app.models.agent_core import (
     AgentActionStatus,
     AgentToolCallBatchStatus,
+    AgentTurn,
     AgentTurnStatus,
 )
 from app.models.llm import LlmModel, LlmProvider
@@ -45,7 +46,7 @@ from app.services.model_runtime.contracts import (
 )
 from app.services.model_runtime.gateway import ModelGateway
 from app.schemas.agent_core import AgentActionRead
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -1920,14 +1921,15 @@ async def test_heartbeat_lease_loss_fences_running_tool_until_recovery(
             AgentCoreService(execution_session).runtime.run_turn(str(turn.id))
         )
         await asyncio.wait_for(entered.wait(), timeout=2)
-        replacement = await AgentTurnRepository(takeover_session).get_fresh(
-            str(turn.id)
+        await takeover_session.execute(
+            update(AgentTurn)
+            .where(AgentTurn.id == turn.id)
+            .values(
+                owner_token="replacement-owner",
+                lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
+            )
         )
-        await AgentTurnRepository(takeover_session).update_all(
-            replacement,
-            owner_token="replacement-owner",
-            lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
-        )
+        await takeover_session.commit()
 
         fenced_turn = await asyncio.wait_for(execution, timeout=2)
         actions = await AgentActionRepository(takeover_session).list_for_turn(
@@ -1936,17 +1938,18 @@ async def test_heartbeat_lease_loss_fences_running_tool_until_recovery(
         assert fenced_turn.owner_token == "replacement-owner"
         assert len(actions) == 1
         assert actions[0].status == AgentActionStatus.RUNNING
+        action_id = str(actions[0].id)
 
-        replacement = await AgentTurnRepository(takeover_session).get_fresh(
-            str(turn.id)
+        await takeover_session.rollback()
+        await takeover_session.execute(
+            update(AgentTurn)
+            .where(AgentTurn.id == turn.id)
+            .values(lease_until=datetime.now(timezone.utc) - timedelta(seconds=1))
         )
-        await AgentTurnRepository(takeover_session).update_all(
-            replacement,
-            lease_until=datetime.now(timezone.utc) - timedelta(seconds=1),
-        )
+        await takeover_session.commit()
         summary = await AgentCoreService(takeover_session).recover_orphaned_turns()
         reconciled_action = await AgentActionRepository(takeover_session).get_fresh(
-            str(actions[0].id)
+            action_id
         )
         reconciled_turn = await AgentTurnRepository(takeover_session).get_fresh(
             str(turn.id)

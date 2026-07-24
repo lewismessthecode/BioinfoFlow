@@ -2152,26 +2152,21 @@ class AgentLoopController:
             }
             else None,
         )
+        publish_terminal_event = event_type is not None
         if self.ownership is None:
-            updated = await self.turns.update_all(turn, **values)
+            if publish_terminal_event:
+                updated = await self.turns.update_all_pending(turn, **values)
+            else:
+                updated = await self.turns.update_all(turn, **values)
         else:
             updated, owned = await self.turns.update_owned(
                 str(turn.id),
                 expected_owner_token=self.ownership.owner_token,
+                commit=not publish_terminal_event,
                 **values,
             )
             if not owned or updated is None:
                 raise TurnOwnershipLostError("Agent turn ownership was replaced")
-        if status in {
-            AgentTurnStatus.COMPLETED,
-            AgentTurnStatus.FAILED,
-            AgentTurnStatus.CANCELLED,
-        }:
-            await self._cancel_pending_steers(
-                session_id=str(updated.session_id),
-                turn_id=str(updated.id),
-                reason=result.termination_reason,
-            )
         if result.termination_reason == "assistant_final":
             payload = {"final_text": result.final_text}
         elif result.termination_reason in {"interrupted", "cancelled", "no_progress"}:
@@ -2198,6 +2193,11 @@ class AgentLoopController:
             AgentTurnStatus.FAILED,
             AgentTurnStatus.CANCELLED,
         }:
+            await self._cancel_pending_steers(
+                session_id=str(updated.session_id),
+                turn_id=str(updated.id),
+                reason=result.termination_reason,
+            )
             await self.sessions.release_active_turn(
                 str(updated.session_id),
                 str(updated.id),
