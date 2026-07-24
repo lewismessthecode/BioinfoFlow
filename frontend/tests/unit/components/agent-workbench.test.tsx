@@ -48,7 +48,10 @@ vi.mock("next-intl", () => ({
       thinking: "Thinking",
       "statusLine.running": "Working...",
       "responseActions.copy": "Copy response",
+      "responseActions.copied": "Copied",
+      "responseActions.copyFailed": "Copy failed",
       "responseActions.retry": "Retry response",
+      "responseActions.retrying": "Regenerating...",
       showThinking: "Show thinking",
       hideThinking: "Hide thinking",
       toolCalls: "Tool calls",
@@ -1617,6 +1620,11 @@ describe("AgentWorkbench", () => {
     )
     expect(screen.getAllByText("Analyze these FASTQ files.")).toHaveLength(2)
     expect(screen.getByText("Working on it...")).toBeInTheDocument()
+    const retryingButton = screen.getByRole("button", { name: "Regenerating..." })
+    expect(retryingButton).toBeDisabled()
+
+    fireEvent.click(retryingButton)
+    expect(send).toHaveBeenCalledTimes(1)
   })
 
   it("preserves workflow token display metadata when retrying a completed turn", async () => {

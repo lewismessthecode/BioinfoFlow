@@ -20,7 +20,10 @@ vi.mock("next-intl", () => ({
       "statusLine.thinking": "Thinking...",
       "statusLine.running": "Working...",
       "responseActions.copy": "Copy response",
+      "responseActions.copied": "Copied",
+      "responseActions.copyFailed": "Copy failed",
       "responseActions.retry": "Retry response",
+      "responseActions.retrying": "Regenerating...",
       approve: "Approve",
       reject: "Reject",
       "sidecar.needsDecision": "Needs your decision",
@@ -702,6 +705,59 @@ describe("AgentTranscript", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retry response" }))
     expect(onRetryTurn).toHaveBeenCalledWith(baseTurn)
+  })
+
+  it("falls back to DOM copy and confirms success when Clipboard API is unavailable", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    })
+    const execCommand = vi.fn().mockReturnValue(true)
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: execCommand,
+    })
+    renderTranscript({
+      events: [
+        event("event-text", 1, "assistant.text.completed", {
+          message_id: "message-1",
+          content: "Fallback clipboard text.",
+        }),
+      ],
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy response" }))
+
+    await waitFor(() => {
+      expect(execCommand).toHaveBeenCalledWith("copy")
+      expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument()
+    })
+    expect(document.querySelector("textarea[data-agent-copy-fallback]")).toBeNull()
+  })
+
+  it("reports clipboard failure instead of swallowing it", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    })
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
+    })
+    renderTranscript({
+      events: [
+        event("event-text", 1, "assistant.text.completed", {
+          message_id: "message-1",
+          content: "Blocked clipboard text.",
+        }),
+      ],
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy response" }))
+
+    expect(
+      await screen.findByRole("button", { name: "Copy failed" }),
+    ).toBeInTheDocument()
   })
 
   it("does not show completed response actions while the turn is running", () => {

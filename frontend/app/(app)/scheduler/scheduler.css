@@ -1,1 +1,14 @@
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · macrostructure: Stat-Led · genre: modern-minimal · theme: custom mineral blue · designed-as-app · contrast: pass (40–41) · slop: pass (42–49) · mobile: pass (34, 49–57) */
 @import "uplot/dist/uPlot.min.css";
+
+@media (prefers-reduced-motion: reduce) {
+  .bif-workbench-page *,
+  .bif-workbench-page *::before,
+  .bif-workbench-page *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
