@@ -14,6 +14,7 @@ from app.api.v1.project_workflows import router as project_workflows_router
 from app.api.v1.projects import router as projects_router
 from app.api.v1.runs import router as runs_router
 from app.api.v1.scheduler import router as scheduler_router
+from app.api.v1.speech import router as speech_router
 from app.api.v1.stats import router as stats_router
 from app.api.v1.storage import router as storage_router
 from app.api.v1.system import router as system_router
@@ -35,6 +36,7 @@ api_router.include_router(batch_router)
 api_router.include_router(runs_router)
 api_router.include_router(notifications_router)
 api_router.include_router(scheduler_router)
+api_router.include_router(speech_router)
 api_router.include_router(agent_router)
 api_router.include_router(llm_router)
 api_router.include_router(stats_router)

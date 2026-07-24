@@ -1,13 +1,11 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
-import { Gauge } from "@/lib/icons"
-import {
-  CardContent,
-  CardHeader,
-  CardRoot,
-} from "@/components/bioinfoflow/card/card-base"
+import { ArrowRight, Gauge } from "@/lib/icons"
+import { CardRoot } from "@/components/bioinfoflow/card/card-base"
+import { Button } from "@/components/ui/button"
 import type {
   ResourceStreamConnectionState,
   ResourceStreamFrame,
@@ -110,29 +108,36 @@ export function ResourceMonitor({
       : samples.length === 0
         ? "pending"
         : "ready"
+  const activeRunCount = latestFrame?.active_runs.length ?? 0
 
   return (
     <>
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <CardRoot variant="workbench">
-          <CardHeader
-            title={t("resources")}
-            badge={<LiveStatus connectionState={connectionState} label={trustText} />}
-            action={
-              <button
-                type="button"
-                onClick={() => setDrawerOpen(true)}
-                className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3 text-xs font-medium text-foreground transition-[background-color,transform] hover:bg-muted active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Gauge className="h-3.5 w-3.5" aria-hidden="true" />
-                {t("advanced.button")}
-                <kbd className="ml-0.5 rounded border border-border bg-muted px-1.5 py-[1px] font-mono text-[10px] text-muted-foreground">
-                  t
-                </kbd>
-              </button>
-            }
-          />
-          <CardContent className="grid gap-4 !pt-0">
+      <CardRoot
+        variant="workbench"
+        data-layout="flat-sections"
+        className="grid overflow-hidden lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]"
+      >
+        <section className="min-w-0 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <h2 className="text-sm font-medium text-foreground">{t("resources")}</h2>
+              <LiveStatus connectionState={connectionState} label={trustText} />
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setDrawerOpen(true)}
+              className="shrink-0 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Gauge className="h-3.5 w-3.5" aria-hidden="true" />
+              {t("advanced.button")}
+              <kbd className="ml-0.5 rounded border border-border bg-muted px-1.5 py-[1px] font-mono text-[10px] text-muted-foreground">
+                t
+              </kbd>
+            </Button>
+          </div>
+          <div className="mt-5 grid gap-4">
             {capacityState === "ready" ? (
               <PressureHero
                 pressure={pressure}
@@ -147,19 +152,32 @@ export function ResourceMonitor({
               <SnapshotMetric label={t("charts.diskIo")} value={diskCur} />
               <SnapshotMetric label={t("charts.gpuFree")} value={gpuCur} />
             </div>
-          </CardContent>
-        </CardRoot>
+          </div>
+        </section>
 
-        <CardRoot variant="workbench">
-          <CardHeader
-            title={t("activeRuns.title")}
-            badge={
-              <span className="rounded-lg border border-border bg-muted px-2 py-0.5 font-mono text-[11px] text-foreground">
-                {t("activeRuns.count", { count: latestFrame?.active_runs.length ?? 0 })}
-              </span>
-            }
-          />
-          <CardContent className="!pt-0">
+        <section className="min-w-0 border-t border-border/70 p-5 lg:border-l lg:border-t-0">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <h2 className="text-sm font-medium text-foreground">
+                {t("activeRuns.title")}
+              </h2>
+              {activeRunCount > 0 ? (
+                <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
+                  {t("activeRuns.count", { count: activeRunCount })}
+                </span>
+              ) : null}
+            </div>
+            <Button variant="ghost" size="sm" asChild>
+              <Link
+                href="/runs?scope=all"
+                className="shrink-0 gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                {t("activeRuns.viewAll")}
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            </Button>
+          </div>
+          <div className="mt-5">
             <ActiveRunsList
               runs={latestFrame?.active_runs ?? []}
               cpuPercent={cpuPercent}
@@ -170,9 +188,9 @@ export function ResourceMonitor({
                 setHighlightedRunId((prev) => (prev === id ? null : id))
               }
             />
-          </CardContent>
-        </CardRoot>
-      </div>
+          </div>
+        </section>
+      </CardRoot>
 
       <AdvancedDrawer open={drawerOpen} onOpenChange={setDrawerOpen} />
     </>

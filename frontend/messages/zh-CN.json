@@ -1932,19 +1932,20 @@
     "activeRuns": {
       "title": "正在运行",
       "count": "{count} 个活动任务",
+      "viewAll": "查看全部",
       "empty": "当前没有正在执行的 run。",
       "emptyStates": {
         "idle": {
-          "title": "当前空闲",
-          "body": "没有正在执行或排队的 run；新 run 分派后会出现在这里。"
+          "title": "暂无运行任务",
+          "body": "worker 开始执行任务后，会在这里显示资源占用。"
         },
         "queued": {
-          "title": "等待分派",
-          "body": "队列里已有 run，但当前还没有 worker 开始执行。"
+          "title": "任务正在等待 worker",
+          "body": "worker 领取队列任务后，会立即显示在这里。"
         },
         "disconnected": {
-          "title": "实时流已断开",
-          "body": "重新连接资源流后，才能看到当前正在执行的 run。"
+          "title": "实时状态暂不可用",
+          "body": "重新连接资源流后，将刷新当前运行任务。"
         }
       },
       "unknownWorkflow": "未知 workflow",
@@ -2666,6 +2667,15 @@
     "attach": "添加附件或上下文",
     "send": "发送消息",
     "stop": "停止回复",
+    "voice": {
+      "start": "开始语音输入",
+      "stop": "停止录音",
+      "recording": "正在听 {time}",
+      "transcribing": "正在转写…",
+      "unavailable": "语音输入暂不可用",
+      "failed": "无法转写这段录音。",
+      "cancelled": "已取消语音录制。"
+    },
     "pendingResponse": "正在处理...",
     "steer": {
       "pending": "将在当前步骤结束后参考",

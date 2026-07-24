@@ -1932,19 +1932,20 @@
     "activeRuns": {
       "title": "Running now",
       "count": "{count} active",
+      "viewAll": "View all",
       "empty": "No runs currently dispatched.",
       "emptyStates": {
         "idle": {
-          "title": "Idle",
-          "body": "No runs are executing or waiting; newly dispatched runs will appear here."
+          "title": "No runs in progress",
+          "body": "Runs appear here after a worker starts executing them."
         },
         "queued": {
-          "title": "Waiting to dispatch",
-          "body": "Runs are queued, but no worker has started executing one yet."
+          "title": "Runs are waiting for a worker",
+          "body": "Queued runs appear here as soon as a worker claims them."
         },
         "disconnected": {
-          "title": "Live stream disconnected",
-          "body": "Reconnect the resource stream to see currently executing runs."
+          "title": "Live status unavailable",
+          "body": "Reconnect the resource stream to refresh the active run list."
         }
       },
       "unknownWorkflow": "unknown workflow",
@@ -2666,6 +2667,15 @@
     "attach": "Attach or add context",
     "send": "Send message",
     "stop": "Stop response",
+    "voice": {
+      "start": "Start voice input",
+      "stop": "Stop recording",
+      "recording": "Listening {time}",
+      "transcribing": "Transcribing...",
+      "unavailable": "Voice input is unavailable",
+      "failed": "Could not transcribe the recording.",
+      "cancelled": "Voice recording cancelled."
+    },
     "pendingResponse": "Working on it...",
     "steer": {
       "pending": "Will be considered after the current step",

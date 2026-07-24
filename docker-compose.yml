@@ -28,6 +28,12 @@ services:
       DOCKER_SOCKET: unix:///var/run/docker.sock
       BIOINFOFLOW_GPU_MODE: ${BIOINFOFLOW_GPU_MODE:-auto}
       BIOINFOFLOW_GPU_DEVICES: ${BIOINFOFLOW_GPU_DEVICES:-all}
+      ASR_PROVIDER: ${ASR_PROVIDER:-}
+      ASR_BASE_URL: ${ASR_BASE_URL:-}
+      ASR_API_KEY: ${ASR_API_KEY:-}
+      ASR_MODEL: ${ASR_MODEL:-}
+      ASR_LANGUAGE: ${ASR_LANGUAGE:-zh}
+      ASR_CONTEXT_TERMS: ${ASR_CONTEXT_TERMS:-["Bioinfoflow","Nextflow","MiniWDL","FASTQ"]}
     # The agent bash tool can be OS-sandboxed with bubblewrap (AGENT_SANDBOX_ENABLED=true).
     # bwrap inside Docker needs an unprivileged user namespace; if the host
     # restricts that, add `security_opt: ["seccomp:unconfined"]` (and/or
@@ -67,4 +73,43 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    restart: unless-stopped
+
+  asr-funasr:
+    profiles: ["voice-funasr"]
+    gpus: all
+    build:
+      context: ./deploy/voice/funasr
+    environment:
+      ASR_MODEL: ${ASR_MODEL:-FunAudioLLM/Fun-ASR-Nano-2512}
+      ASR_DEVICE: ${ASR_DEVICE:-cpu}
+      MODELSCOPE_CACHE: /models/modelscope
+      HF_HOME: /models/huggingface
+    volumes:
+      - ${BIOINFOFLOW_HOME:-${PWD}/data}/models/asr:/models
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    restart: unless-stopped
+
+  asr-whisper:
+    profiles: ["voice-whisper"]
+    build:
+      context: ./deploy/voice/whisper
+    environment:
+      ASR_MODEL: ${ASR_MODEL:-large-v3-turbo}
+      ASR_DEVICE: ${ASR_DEVICE:-cpu}
+      ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-int8}
+      HF_HOME: /models/huggingface
+    volumes:
+      - ${BIOINFOFLOW_HOME:-${PWD}/data}/models/asr:/models
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
     restart: unless-stopped

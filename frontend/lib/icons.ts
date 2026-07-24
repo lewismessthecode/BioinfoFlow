@@ -101,6 +101,7 @@ export {
   Menu,
   MessageCircle,
   MessageSquare,
+  Mic,
   Microscope,
   Monitor,
   Moon,
