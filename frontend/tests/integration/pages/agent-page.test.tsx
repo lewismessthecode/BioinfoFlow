@@ -381,6 +381,22 @@ describe("AgentPage", () => {
     })
   })
 
+  it("mounts immediately when navigation already supplied matching conversation context", () => {
+    getAgentRuntimeSessionMock.mockReturnValue(new Promise(() => {}))
+
+    renderAppPage(<AgentSessionPage />, {
+      projectContext: {
+        selectedProjectId: "project-2",
+        conversationProjectId: "project-2",
+        activeConversationId: "session-9",
+      },
+    })
+
+    expect(screen.getByTestId("agent-workbench")).toHaveTextContent(
+      "agent-workbench:project-2|session:session-9|workspace:on",
+    )
+  })
+
   it("leaves project restoration to the workspace shell instead of restoring inside AgentPage", async () => {
     localStorage.setItem("bioinfoflow:last-used-project", "project-9")
     workspaceShellMock.mockReturnValue({

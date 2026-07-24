@@ -348,14 +348,16 @@ export const buildAgentFsDownloadUrl = (
 
 export const getAgentRuntimeState = async (
   sessionId: string,
-  options?: { eventLimit?: number },
+  options?: { eventLimit?: number; eventView?: "full" | "transcript" },
 ) => {
+  const params = {
+    ...(options?.eventLimit ? { event_limit: options.eventLimit } : {}),
+    ...(options?.eventView ? { event_view: options.eventView } : {}),
+  }
   const response = await apiRequest<AgentRuntimeStatePayload>(
     `/agent/sessions/${sessionId}/state`,
     {
-      params: options?.eventLimit
-        ? { event_limit: options.eventLimit }
-        : undefined,
+      params: Object.keys(params).length ? params : undefined,
     },
   )
   return response.data
