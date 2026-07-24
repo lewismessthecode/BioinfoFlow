@@ -27,6 +27,7 @@ async def test_attachment_upload_preview_and_delete_api(async_client) -> None:
     assert uploaded.status_code == 201
     attachment = uploaded.json()["data"][0]
     assert attachment["kind"] == "image"
+    assert attachment["source"] == "clipboard"
     assert attachment["mime_type"] == "image/png"
 
     preview = await async_client.get(
@@ -44,6 +45,35 @@ async def test_attachment_upload_preview_and_delete_api(async_client) -> None:
         f"/api/v1/agent/attachments/{attachment['id']}/preview"
     )
     assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_image_upload_preserves_the_explicit_picker_source(async_client) -> None:
+    created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["id"]
+
+    uploaded = await async_client.post(
+        f"/api/v1/agent/sessions/{session_id}/attachments",
+        data={"kind": "image", "source": "upload"},
+        files={"files": ("figure.png", PNG_1X1, "image/png")},
+    )
+
+    assert uploaded.status_code == 201
+    assert uploaded.json()["data"][0]["source"] == "upload"
+
+
+@pytest.mark.asyncio
+async def test_image_upload_rejects_an_unknown_source(async_client) -> None:
+    created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["id"]
+
+    uploaded = await async_client.post(
+        f"/api/v1/agent/sessions/{session_id}/attachments",
+        data={"kind": "image", "source": "remote-copy"},
+        files={"files": ("figure.png", PNG_1X1, "image/png")},
+    )
+
+    assert uploaded.status_code == 400
 
 
 @pytest.mark.asyncio

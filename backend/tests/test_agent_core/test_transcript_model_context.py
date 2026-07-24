@@ -104,6 +104,36 @@ async def test_image_ref_stays_out_of_transcript_base64_and_resolves_for_model(
 
 
 @pytest.mark.asyncio
+async def test_image_model_context_rejects_a_derivative_path_outside_attachment_root(
+    db_session,
+    tmp_path,
+) -> None:
+    session = await _session(db_session)
+    attachment = await _image_attachment(db_session, session)
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(b"secret")
+    attachment.attachment_metadata = {
+        **(attachment.attachment_metadata or {}),
+        "model_relpath": str(outside),
+    }
+    await db_session.commit()
+    service = AgentCoreService(db_session)
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Inspect.",
+        input_parts=[{"type": "image_ref", "attachment_id": str(attachment.id)}],
+    )
+
+    with pytest.raises(NotFoundError, match="escapes its storage root"):
+        await AgentContextAssembler(db_session).model_context(
+            agent_session=session,
+            turn=turn,
+        )
+
+
+@pytest.mark.asyncio
 async def test_stale_attachment_fails_before_turn_is_created(db_session) -> None:
     session = await _session(db_session)
     service = AgentCoreService(db_session)

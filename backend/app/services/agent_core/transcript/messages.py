@@ -15,6 +15,7 @@ from app.services.model_runtime.contracts import (
     ToolResultPart,
 )
 from app.models.agent_core import AgentAttachmentStatus
+from app.path_layout import safe_join
 from app.repositories.agent_core_repo import AgentAttachmentRepository
 from app.services.agent_core.attachments import AgentAttachmentService
 from app.utils.exceptions import NotFoundError
@@ -183,7 +184,14 @@ async def model_input_parts_from_message_async(
             model_mime_type, str
         ):
             raise NotFoundError("Attachment image metadata is invalid")
-        model_path = attachment_service.validated_root(attachment) / model_relpath
+        try:
+            model_path = safe_join(
+                attachment_service.validated_root(attachment),
+                model_relpath,
+                escape_message="Attachment image derivative escapes its storage root",
+            )
+        except PermissionError as exc:
+            raise NotFoundError(str(exc)) from None
         if not model_path.is_file() or model_path.is_symlink():
             raise NotFoundError("Attachment image is not available")
         detail = part.get("detail")
