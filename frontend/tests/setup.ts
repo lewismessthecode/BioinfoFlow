@@ -67,6 +67,13 @@ function ensureStorage(name: "localStorage" | "sessionStorage") {
 ensureStorage("localStorage")
 ensureStorage("sessionStorage")
 
+if (typeof Range !== "undefined" && !Range.prototype.getClientRects) {
+  Range.prototype.getClientRects = () => [] as unknown as DOMRectList
+}
+if (typeof Range !== "undefined" && !Range.prototype.getBoundingClientRect) {
+  Range.prototype.getBoundingClientRect = () => new DOMRect()
+}
+
 afterEach(() => {
   cleanup()
 })
