@@ -12,6 +12,7 @@ from app.services.model_runtime import contracts as runtime_contracts
 from app.services.model_runtime.codecs.responses import ResponsesCodec
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
+    ImagePart,
     ModelInvocation,
     ModelTarget,
     ModelWarning,
@@ -28,6 +29,43 @@ from app.services.model_runtime.contracts import (
 )
 from app.services.model_runtime.errors import ModelError
 from app.services.model_runtime.gateway import ModelGateway
+
+
+def test_encode_request_groups_adjacent_user_text_and_image() -> None:
+    invocation = _invocation()
+
+    request = ResponsesCodec().encode_request(
+        ModelInvocation(
+            target=invocation.target,
+            instructions=invocation.instructions,
+            input_items=(
+                TextPart(text="Inspect this screenshot."),
+                ImagePart(
+                    mime_type="image/png",
+                    data="cG5nLWJ5dGVz",
+                    sha256="a" * 64,
+                    detail="high",
+                ),
+            ),
+            tools=(),
+            stream=False,
+            max_output_tokens=invocation.max_output_tokens,
+        )
+    )
+
+    assert request["input"] == [
+        {
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": "Inspect this screenshot."},
+                {
+                    "type": "input_image",
+                    "image_url": "data:image/png;base64,cG5nLWJ5dGVz",
+                    "detail": "high",
+                },
+            ],
+        }
+    ]
 
 
 FIXTURES = Path(__file__).parent / "fixtures/responses"
