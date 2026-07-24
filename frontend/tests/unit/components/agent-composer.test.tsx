@@ -176,6 +176,24 @@ const composerModels = [
 ]
 
 describe("AgentComposer", () => {
+  it("shows separate send and stop controls while a response is running", () => {
+    render(
+      <AgentComposer
+        value="Add one more constraint"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Stop response" })).toBeEnabled()
+  })
+
   beforeEach(() => {
     apiRequestMock.mockReset()
     apiRequestMock.mockReturnValue(new Promise(() => {}))

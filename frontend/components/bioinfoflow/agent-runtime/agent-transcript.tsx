@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
   AlertTriangle,
   Brain,
+  Check,
   CheckCircle2,
   ChevronDown,
   CircleDashed,
   Copy,
+  Loader2,
   RotateCcw,
 } from "@/lib/icons"
 import { useLocale, useTranslations } from "next-intl"
@@ -44,11 +46,13 @@ export function AgentTranscript({
   timeline,
   onDecision,
   onRetryTurn,
+  responseActionsBusy = false,
   eventWindowLimited = false,
 }: {
   timeline: AgentRuntimeTimelineEntry[]
   onDecision?: AgentDecisionHandler
   onRetryTurn?: AgentRetryHandler
+  responseActionsBusy?: boolean
   eventWindowLimited?: boolean
 }) {
   const t = useTranslations("agentRuntime")
@@ -139,6 +143,7 @@ export function AgentTranscript({
                       text={responseText}
                       turn={entry.turn}
                       onRetryTurn={onRetryTurn}
+                      busy={responseActionsBusy}
                     />
                   ) : null}
                 </div>
@@ -317,7 +322,12 @@ function workflowTokenForInputPart(
 function userMessageInlinePartsFromTurn(turn: AgentRuntimeTurn): UserMessageDisplayPart[] {
   const metadata = turn.model_profile_snapshot?.metadata
   if (!isRecord(metadata)) return []
-  const inputDisplay = metadata.input_display
+  return userMessageInlinePartsFromInputDisplay(metadata.input_display)
+}
+
+function userMessageInlinePartsFromInputDisplay(
+  inputDisplay: unknown,
+): UserMessageDisplayPart[] {
   if (!isRecord(inputDisplay)) return []
   const inlineParts = inputDisplay.inline_parts
   if (!Array.isArray(inlineParts)) return []
@@ -457,6 +467,50 @@ function TranscriptSegment({
       return <ActivityGroup group={segment.activityGroup} />
     case "decision":
       return <InlineApprovalCard decision={segment.decision} onDecision={onDecision} />
+    case "user_steer": {
+      const displayParts = userMessageInlinePartsFromInputDisplay(
+        segment.steer.inputDisplay,
+      )
+      return (
+        <div className="flex justify-end" data-testid="agent-user-steer-shell">
+          <div
+            className="flex max-w-[76%] flex-col items-end gap-1.5"
+            data-testid="agent-user-steer"
+          >
+            <div className="max-w-full rounded-lg border border-border/60 bg-muted/35 px-3.5 py-2.5 text-[15px] leading-6 text-foreground">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                {(displayParts.length
+                  ? displayParts
+                  : [
+                      {
+                        type: "text" as const,
+                        key: "steer-text:fallback",
+                        text: segment.steer.text,
+                      },
+                    ]
+                ).map((part) =>
+                  part.type === "text" ? (
+                    <span
+                      key={part.key}
+                      className="min-w-0 whitespace-pre-wrap break-words"
+                    >
+                      {part.text}
+                    </span>
+                  ) : (
+                    <UserMessageTokenSpan key={part.key} token={part} />
+                  ),
+                )}
+              </div>
+            </div>
+            {segment.steer.status !== "delivered" ? (
+              <span className="px-0.5 text-right text-[11px] leading-4 text-muted-foreground/70">
+                {t(`steer.${segment.steer.status}`)}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      )
+    }
     case "turn_error":
       return (
         <div className="flex items-start gap-2 rounded-lg border border-border/55 bg-muted/[0.18] px-3 py-2 text-sm leading-6 text-muted-foreground">
@@ -583,24 +637,54 @@ function ResponseActionBar({
   text,
   turn,
   onRetryTurn,
+  busy,
 }: {
   text: string
   turn: AgentRuntimeTurn
   onRetryTurn?: AgentRetryHandler
+  busy: boolean
 }) {
   const t = useTranslations("agentRuntime")
   const locale = useLocale()
   const [now] = useState(() => new Date())
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle")
+  const copyResetTimerRef = useRef<number | null>(null)
   const copyLabel = t("responseActions.copy")
+  const copiedLabel = t("responseActions.copied")
+  const copyFailedLabel = t("responseActions.copyFailed")
   const retryLabel = t("responseActions.retry")
+  const retryingLabel = t("responseActions.retrying")
   const completedAt = turn.completed_at ?? turn.updated_at
   const timestamp = formatTranscriptMessageDateTime(completedAt, locale, now)
   const absoluteTimestamp = formatAbsoluteDateTime(completedAt, locale)
   const timestampDateTime = dateTimeAttribute(completedAt)
 
-  const copyResponse = useCallback(() => {
-    void navigator.clipboard?.writeText(text)
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current)
+      }
+    }
+  }, [])
+
+  const copyResponse = useCallback(async () => {
+    const copied = await copyTextToClipboard(text)
+    setCopyState(copied ? "copied" : "failed")
+    if (copyResetTimerRef.current !== null) {
+      window.clearTimeout(copyResetTimerRef.current)
+    }
+    copyResetTimerRef.current = window.setTimeout(() => {
+      setCopyState("idle")
+      copyResetTimerRef.current = null
+    }, 1800)
   }, [text])
+  const currentCopyLabel =
+    copyState === "copied"
+      ? copiedLabel
+      : copyState === "failed"
+        ? copyFailedLabel
+        : copyLabel
+  const currentRetryLabel = busy ? retryingLabel : retryLabel
 
   return (
     <div
@@ -612,29 +696,40 @@ function ResponseActionBar({
           <button
             type="button"
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label={copyLabel}
-            title={copyLabel}
-            onClick={copyResponse}
+            aria-label={currentCopyLabel}
+            title={currentCopyLabel}
+            onClick={() => void copyResponse()}
           >
-            <Copy className="h-3.5 w-3.5" />
+            {copyState === "copied" ? (
+              <Check className="h-3.5 w-3.5" />
+            ) : copyState === "failed" ? (
+              <AlertTriangle className="h-3.5 w-3.5" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" />
+            )}
           </button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">{copyLabel}</TooltipContent>
+        <TooltipContent side="bottom">{currentCopyLabel}</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
             type="button"
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
-            aria-label={retryLabel}
-            title={retryLabel}
-            disabled={!onRetryTurn}
+            aria-label={currentRetryLabel}
+            title={currentRetryLabel}
+            aria-busy={busy}
+            disabled={!onRetryTurn || busy}
             onClick={() => onRetryTurn?.(turn)}
           >
-            <RotateCcw className="h-3.5 w-3.5" />
+            {busy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3.5 w-3.5" />
+            )}
           </button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">{retryLabel}</TooltipContent>
+        <TooltipContent side="bottom">{currentRetryLabel}</TooltipContent>
       </Tooltip>
       {timestamp ? (
         <time
@@ -649,6 +744,35 @@ function ResponseActionBar({
       ) : null}
     </div>
   )
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // Self-hosted HTTP origins and browser policies can reject the async API.
+  }
+
+  const textarea = document.createElement("textarea")
+  textarea.value = text
+  textarea.readOnly = true
+  textarea.dataset.agentCopyFallback = ""
+  textarea.style.position = "fixed"
+  textarea.style.opacity = "0"
+  textarea.style.pointerEvents = "none"
+  document.body.appendChild(textarea)
+  textarea.select()
+  textarea.setSelectionRange(0, text.length)
+  try {
+    return document.execCommand?.("copy") === true
+  } catch {
+    return false
+  } finally {
+    textarea.remove()
+  }
 }
 
 function liveTurnStatusLabel(

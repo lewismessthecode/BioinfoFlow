@@ -60,9 +60,7 @@ class TestSystemStats:
             {"runs": {"total": 5}, "workflows": {"total": 1}, "projects": {"total": 1}}
         )
         with patch(f"{_S}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(
-                app, ["--output", "json", "system", "stats"]
-            )
+            result = runner.invoke(app, ["--output", "json", "system", "stats"])
         parsed = json.loads(result.stdout)
         assert parsed["data"]["runs"]["total"] == 5
 
@@ -80,9 +78,7 @@ class TestSchedulerStatus:
             }
         )
         with patch(f"{_S}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(
-                app, ["system", "scheduler-status"]
-            )
+            result = runner.invoke(app, ["system", "scheduler-status"])
         assert result.exit_code == 0
         assert "persistent" in result.stdout
 
@@ -100,9 +96,7 @@ class TestSchedulerResources:
             }
         )
         with patch(f"{_S}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(
-                app, ["system", "scheduler-resources"]
-            )
+            result = runner.invoke(app, ["system", "scheduler-resources"])
         assert result.exit_code == 0
         assert "6/8" in result.stdout
 
@@ -111,15 +105,29 @@ class TestGpu:
     def test_gpu(self, runner: CliRunner) -> None:
         resp = make_envelope(
             {
-                "available": False,
-                "nvidia_smi_found": False,
-                "docker_nvidia_runtime": False,
-                "parabricks_compatible": False,
-                "recommendation": "Install NVIDIA drivers",
-                "gpus": [],
+                "available": True,
+                "mode": "manual",
+                "state": "ready",
+                "detected_count": 2,
+                "selected_count": 1,
+                "selected_gpu_uuids": ["GPU-b"],
+                "nvidia_smi_found": True,
+                "docker_nvidia_runtime": True,
+                "parabricks_compatible": True,
+                "recommendation": "Manual selection is ready",
+                "gpus": [
+                    {
+                        "name": "NVIDIA H20",
+                        "uuid": "GPU-b",
+                        "selected": True,
+                        "memory_total_mb": 97871,
+                    }
+                ],
             }
         )
         with patch(f"{_S}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(app, ["system", "gpu"])
         assert result.exit_code == 0
-        assert "Install NVIDIA" in result.stdout
+        assert "manual" in result.stdout
+        assert "1/2" in result.stdout
+        assert "GPU-b" in result.stdout

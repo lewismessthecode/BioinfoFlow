@@ -15,6 +15,7 @@ from app.services.agent_temporal_context import (
     render_temporal_context,
 )
 from app.services.agent_core.ownership import TurnOwnershipLostError
+from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.transcript.messages import parts_to_text, text_part
 
 
@@ -141,6 +142,39 @@ class AgentTranscriptStore:
 
     async def list_messages(self, session_id: str):
         return await self.messages.list_for_session(session_id)
+
+    async def deliver_pending_steers(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        expected_owner_token: str,
+    ):
+        delivered, owned = await self.messages.deliver_pending_steers(
+            session_id=session_id,
+            turn_id=turn_id,
+            expected_owner_token=expected_owner_token,
+            received_event_type=AgentEventType.TURN_STEER_RECEIVED,
+            delivered_event_type=AgentEventType.TURN_STEER_DELIVERED,
+        )
+        if not owned:
+            raise TurnOwnershipLostError("Agent turn ownership was replaced")
+        return delivered
+
+    async def cancel_pending_steers(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        reason: str,
+    ):
+        return await self.messages.cancel_pending_steers(
+            session_id=session_id,
+            turn_id=turn_id,
+            received_event_type=AgentEventType.TURN_STEER_RECEIVED,
+            cancelled_event_type=AgentEventType.TURN_STEER_CANCELLED,
+            reason=reason,
+        )
 
     async def find_committed_tool_result(
         self,

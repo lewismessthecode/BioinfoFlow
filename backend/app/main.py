@@ -36,6 +36,7 @@ from app.utils.logging import (
     get_logger,
 )
 from app.utils.responses import error_response
+from app.services.gpu_service import get_gpu_service
 
 
 configure_logging(settings.debug)
@@ -62,7 +63,10 @@ async def lifespan(app: FastAPI):
     logger.info("startup.workspace.ready")
     scheduler: RunScheduler | None = None
     monitor: ResourceMonitor | None = None
-    monitor = ResourceMonitor(sample_interval=30.0)
+    monitor = ResourceMonitor(
+        sample_interval=settings.scheduler_resource_sample_interval,
+        gpu_service=get_gpu_service(),
+    )
     scheduler = RunScheduler(
         config=SchedulerConfig.from_settings(settings),
         backend=LocalBackend(),

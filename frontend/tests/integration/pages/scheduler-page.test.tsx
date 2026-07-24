@@ -89,7 +89,13 @@ describe("SchedulerPage", () => {
             total_slots: 4,
             used_slots: 1,
             available_slots: 3,
-            active_runs: [],
+            active_runs: [
+              {
+                run_id: "run_cf98a16392500148e90ae91cc55d1db",
+                workflow_name: "rnaseq_quant",
+                weight: 1,
+              },
+            ],
           },
           meta: undefined,
         }
@@ -111,6 +117,9 @@ describe("SchedulerPage", () => {
       expect(screen.getByText("scheduler.resourceSnapshotPending")).toBeInTheDocument()
       expect(screen.getByText("scheduler.activeRuns.title")).toBeInTheDocument()
       expect(screen.getByText("scheduler.advanced.button")).toBeInTheDocument()
+      expect(screen.getByText("scheduler.activeRuns.cpuShare")).toBeInTheDocument()
+      expect(screen.getByText("rnaseq_quant")).toBeInTheDocument()
+      expect(screen.getByText(/UTC$/)).toBeInTheDocument()
     })
   })
 

@@ -625,29 +625,30 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
               summary={tokenUsageSummary}
               compact={compactControls}
             />
-            {isRunning ? (
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              {isRunning ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 rounded-[10px] border-border/70 bg-card"
+                  onClick={onStop}
+                  aria-label={t("stop")}
+                >
+                  <Square className="h-3.5 w-3.5" />
+                </Button>
+              ) : null}
               <Button
                 type="button"
-                variant="outline"
                 size="icon"
-                className="ml-auto h-8 w-8 shrink-0 rounded-[10px] border-border/70 bg-card"
-                onClick={onStop}
-                aria-label={t("stop")}
-              >
-                <Square className="h-3.5 w-3.5" />
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                size="icon"
-                className="ml-auto h-8 w-8 shrink-0 rounded-[10px] bg-primary text-primary-foreground shadow-none hover:bg-primary/88 focus-visible:ring-primary/25"
+                className="h-8 w-8 shrink-0 rounded-[10px] bg-primary text-primary-foreground shadow-none hover:bg-primary/88 focus-visible:ring-primary/25"
                 onClick={onSubmit}
                 disabled={!canSubmit}
                 aria-label={t("send")}
               >
                 <Send className="h-3.5 w-3.5" />
               </Button>
-            )}
+            </div>
           </div>
         </div>
       </div>

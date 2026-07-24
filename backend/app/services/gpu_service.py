@@ -7,13 +7,26 @@ Detects NVIDIA GPUs and Apple Silicon, and checks compatibility for Parabricks W
 from __future__ import annotations
 
 import asyncio
+import os
 import platform
 import re
 import shutil
+import time
 from dataclasses import dataclass
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from app.config import settings
+from app.services.docker_service import DockerService
+from app.services.gpu_policy import GpuDeviceRef, resolve_gpu_policy
+from app.services.gpu_probe import (
+    DockerGpuProbe,
+    GpuDockerUnavailable,
+    GpuProbeError,
+    GpuToolkitUnavailable,
+    ProbedGpu,
+)
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -31,6 +44,8 @@ class GpuInfo:
     cuda_version: str | None
     compute_capability: str | None
     gpu_type: str = "NVIDIA"  # "NVIDIA" or "Apple Silicon"
+    uuid: str = ""
+    selected: bool = False
 
 
 @dataclass
@@ -47,6 +62,19 @@ class GpuStatus:
     parabricks_compatible: bool
     recommendation: str
     error: str | None = None
+    mode: str = "auto"
+    state: str = "ready"
+    container_toolkit_available: bool = False
+    selected_gpu_uuids: tuple[str, ...] = ()
+    stale: bool = False
+
+    @property
+    def detected_count(self) -> int:
+        return len(self.gpus)
+
+    @property
+    def selected_count(self) -> int:
+        return len(self.selected_gpu_uuids)
 
 
 # Minimum VRAM required for Parabricks low-memory mode (16GB)
@@ -71,11 +99,54 @@ def _find_nvidia_smi() -> str | None:
 class GpuService:
     """Service for detecting and checking GPU capabilities."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        probe: Any | None = None,
+        mode: str | None = None,
+        selectors: str | None = None,
+        cache_seconds: float | None = None,
+    ) -> None:
         self._nvidia_smi = _find_nvidia_smi()
+        self._mode = mode or settings.bioinfoflow_gpu_mode
+        self._selectors = selectors or settings.bioinfoflow_gpu_devices
+        self._cache_seconds = (
+            cache_seconds
+            if cache_seconds is not None
+            else settings.gpu_inventory_cache_seconds
+        )
+        self._status_lock = asyncio.Lock()
+        self._cached_status: GpuStatus | None = None
+        self._cached_at = 0.0
+        if probe is not None:
+            self._probe = probe
+        elif platform.system() == "Linux" and Path("/.dockerenv").exists():
+            self._probe = DockerGpuProbe(
+                client=DockerService().client,
+                hostname=os.getenv("HOSTNAME"),
+                timeout=settings.gpu_probe_timeout_seconds,
+            )
+        else:
+            self._probe = None
 
     async def get_status(self) -> GpuStatus:
         """Get comprehensive GPU status for the system."""
+        if self._mode.strip().lower() == "disabled":
+            return GpuStatus(
+                available=False,
+                detected=False,
+                nvidia_smi_found=False,
+                docker_nvidia_runtime=False,
+                runtime_visible_to_backend=False,
+                usable_for_gpu_workflows=False,
+                gpus=[],
+                parabricks_compatible=False,
+                recommendation="GPU discovery is disabled. Set BIOINFOFLOW_GPU_MODE=auto or manual and recreate the backend to enable it.",
+                mode="disabled",
+                state="disabled",
+            )
+        if self._probe is not None:
+            return await self._get_cached_probed_status()
         if not self._nvidia_smi:
             docker_nvidia = await self._check_docker_nvidia()
             # Check for Apple Silicon on macOS
@@ -179,6 +250,146 @@ class GpuService:
                 recommendation="GPU detection failed. Check NVIDIA drivers.",
                 error=str(e),
             )
+
+    async def _get_cached_probed_status(self) -> GpuStatus:
+        now = time.monotonic()
+        if (
+            self._cached_status is not None
+            and now - self._cached_at < self._cache_seconds
+        ):
+            return self._cached_status
+        async with self._status_lock:
+            now = time.monotonic()
+            if (
+                self._cached_status is not None
+                and now - self._cached_at < self._cache_seconds
+            ):
+                return self._cached_status
+            refreshed = await self._get_probed_status()
+            if refreshed.state in {"ready", "no_gpus", "policy_invalid"}:
+                self._cached_status = refreshed
+                self._cached_at = now
+                return refreshed
+            if (
+                self._cached_status is not None
+                and self._cached_status.state == "ready"
+                and now - self._cached_at < self._cache_seconds * 2
+            ):
+                return replace(
+                    self._cached_status,
+                    stale=True,
+                    error=refreshed.error,
+                    recommendation=refreshed.recommendation,
+                )
+            return refreshed
+
+    async def _get_probed_status(self) -> GpuStatus:
+        try:
+            devices: list[ProbedGpu] = await self._probe.inventory()
+        except GpuDockerUnavailable as exc:
+            return self._probe_failure_status("docker_unavailable", exc)
+        except GpuToolkitUnavailable as exc:
+            return self._probe_failure_status("toolkit_unavailable", exc)
+        except GpuProbeError as exc:
+            return self._probe_failure_status("probe_failed", exc)
+
+        references = tuple(
+            GpuDeviceRef(index=device.index, uuid=device.uuid) for device in devices
+        )
+        policy = resolve_gpu_policy(self._mode, self._selectors, references)
+        selected = set(policy.selected_uuids)
+        gpus = [
+            GpuInfo(
+                index=device.index,
+                name=device.name,
+                memory_total_mb=device.memory_total_mb,
+                memory_free_mb=device.memory_free_mb,
+                driver_version=device.driver_version,
+                cuda_version=None,
+                compute_capability=device.compute_capability,
+                uuid=device.uuid,
+                selected=device.uuid in selected,
+            )
+            for device in devices
+        ]
+        state = policy.state if devices else "no_gpus"
+        usable = bool(selected) and state == "ready"
+        compatible = usable and any(
+            gpu.selected and gpu.memory_total_mb >= PARABRICKS_MIN_VRAM_MB
+            for gpu in gpus
+        )
+        if state == "policy_invalid":
+            recommendation = (
+                "BIOINFOFLOW_GPU_DEVICES does not match the detected GPU UUIDs. "
+                "Update .env and recreate the backend."
+            )
+        elif not devices:
+            recommendation = (
+                "Docker returned no NVIDIA GPUs. CPU workflows remain available."
+            )
+        elif self._mode == "manual":
+            recommendation = f"Manual GPU policy selected {len(selected)} of {len(gpus)} detected GPUs."
+        else:
+            recommendation = (
+                f"Automatic GPU discovery selected all {len(gpus)} detected GPUs."
+            )
+        return GpuStatus(
+            available=bool(gpus),
+            detected=bool(gpus),
+            nvidia_smi_found=bool(gpus),
+            docker_nvidia_runtime=bool(gpus),
+            runtime_visible_to_backend=bool(gpus),
+            usable_for_gpu_workflows=usable,
+            gpus=gpus,
+            parabricks_compatible=compatible,
+            recommendation=recommendation,
+            error=policy.error,
+            mode=policy.mode,
+            state=state,
+            container_toolkit_available=bool(gpus),
+            selected_gpu_uuids=policy.selected_uuids,
+        )
+
+    def _probe_failure_status(self, state: str, error: Exception) -> GpuStatus:
+        recommendations = {
+            "docker_unavailable": "Docker is unavailable to the backend. Check the Docker socket and recreate the backend.",
+            "toolkit_unavailable": "Docker could not allocate an NVIDIA GPU. Install or configure NVIDIA Container Toolkit, then recreate the backend.",
+            "probe_failed": "The NVIDIA GPU probe failed. Check the backend logs and host driver health.",
+        }
+        return GpuStatus(
+            available=False,
+            detected=False,
+            nvidia_smi_found=False,
+            docker_nvidia_runtime=False,
+            runtime_visible_to_backend=False,
+            usable_for_gpu_workflows=False,
+            gpus=[],
+            parabricks_compatible=False,
+            recommendation=recommendations[state],
+            error=str(error),
+            mode=self._mode,
+            state=state,
+        )
+
+    def selected_visible_devices(self) -> str | None:
+        mode = self._mode.strip().lower()
+        if mode == "disabled":
+            return None
+        if self._probe is not None:
+            if (
+                self._cached_status is None
+                or self._cached_status.state != "ready"
+                or time.monotonic() - self._cached_at >= self._cache_seconds * 2
+            ):
+                return None
+            if mode == "manual":
+                return ",".join(self._cached_status.selected_gpu_uuids) or None
+            if mode == "auto" and self._cached_status.selected_gpu_uuids:
+                return "all"
+            return None
+        if mode == "manual":
+            return None
+        return "all" if self._nvidia_smi else None
 
     async def _detect_gpus(self) -> list[GpuInfo]:
         """Detect NVIDIA GPUs using nvidia-smi."""

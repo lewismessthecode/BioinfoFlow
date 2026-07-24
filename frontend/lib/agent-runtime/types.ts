@@ -162,6 +162,16 @@ export type AgentRuntimeTurn = {
   completed_at?: string | null
 }
 
+export type AgentRuntimeSteerResult = {
+  steer_id: string
+  turn_id: string
+  delivery: "pending"
+}
+
+export type AgentRuntimeSteerOutcome =
+  | { kind: "accepted"; result: AgentRuntimeSteerResult }
+  | { kind: "sealed" }
+
 export type AgentRuntimeEvent = {
   id: string
   session_id: string
@@ -367,11 +377,22 @@ export type AgentRuntimeTurnErrorSegment = AgentRuntimeSegmentBase & {
   message: string | null
 }
 
+export type AgentRuntimeUserSteerSegment = AgentRuntimeSegmentBase & {
+  kind: "user_steer"
+  steer: {
+    id: string
+    text: string
+    status: "pending" | "delivered" | "cancelled"
+    inputDisplay?: Record<string, unknown> | null
+  }
+}
+
 export type AgentRuntimeTranscriptSegment =
   | AgentRuntimeAssistantTextSegment
   | AgentRuntimeAssistantThinkingSegment
   | AgentRuntimeActivityGroupSegment
   | AgentRuntimeDecisionSegment
+  | AgentRuntimeUserSteerSegment
   | AgentRuntimeTurnErrorSegment
 
 export type AgentRuntimeTimelineEntry = {

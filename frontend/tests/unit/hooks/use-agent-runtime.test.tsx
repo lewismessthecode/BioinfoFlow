@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   createAgentRuntimeSession: vi.fn(),
   createAgentRuntimeTurn: vi.fn(),
   interruptAgentRuntimeTurn: vi.fn(),
+  steerAgentRuntimeTurn: vi.fn(),
   subscribeAgentRuntimeEvents: vi.fn(),
   getAgentRuntimeState: vi.fn(),
   listAgentRuntimeSessions: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock("@/lib/agent-runtime", async (importOriginal) => {
     decideAgentRuntimeAction: vi.fn(),
     getAgentRuntimeState: mocks.getAgentRuntimeState,
     interruptAgentRuntimeTurn: mocks.interruptAgentRuntimeTurn,
+    steerAgentRuntimeTurn: mocks.steerAgentRuntimeTurn,
     listAgentRuntimeSessions: mocks.listAgentRuntimeSessions,
     subscribeAgentRuntimeEvents: mocks.subscribeAgentRuntimeEvents,
     updateAgentRuntimeSessionMetadata: mocks.updateAgentRuntimeSessionMetadata,
@@ -103,6 +105,10 @@ describe("useAgentRuntime", () => {
     mocks.interruptAgentRuntimeTurn.mockResolvedValue({
       ...turn,
       status: "cancelled",
+    })
+    mocks.steerAgentRuntimeTurn.mockResolvedValue({
+      kind: "accepted",
+      result: { steer_id: "steer-1", turn_id: "turn-1", delivery: "pending" },
     })
   })
 
@@ -1784,6 +1790,41 @@ describe("useAgentRuntime", () => {
     })
 
     expect(mocks.interruptAgentRuntimeTurn).toHaveBeenCalledWith("turn-1")
+  })
+
+  it("steers the latest active turn and refreshes accepted state", async () => {
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session,
+      turns: [
+        { ...turn, id: "turn-older", status: "waiting_approval" },
+        { ...turn, id: "turn-latest", status: "running" },
+      ],
+      events: [],
+    })
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(result.current.state.turns).toHaveLength(2))
+    const callsBefore = mocks.getAgentRuntimeState.mock.calls.length
+
+    await act(async () => {
+      await result.current.steer("Use uv.", {
+        inputParts: [{ type: "text", text: "Use uv." }],
+        activeSkillNames: ["python"],
+        metadata: { input_display: { inline_parts: [] } },
+      })
+    })
+
+    expect(mocks.steerAgentRuntimeTurn).toHaveBeenCalledWith("turn-latest", {
+      inputText: "Use uv.",
+      inputParts: [{ type: "text", text: "Use uv." }],
+      activeSkillNames: ["python"],
+      metadata: { input_display: { inline_parts: [] } },
+    })
+    expect(mocks.getAgentRuntimeState.mock.calls.length).toBeGreaterThan(callsBefore)
   })
 })
 

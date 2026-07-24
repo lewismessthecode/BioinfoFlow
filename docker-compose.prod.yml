@@ -36,6 +36,8 @@ services:
       DATABASE_URL: sqlite+aiosqlite:///${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/bioinfoflow.db
       BETTER_AUTH_DB_PATH: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/auth/better-auth.db
       DOCKER_SOCKET: unix:///var/run/docker.sock
+      BIOINFOFLOW_GPU_MODE: ${BIOINFOFLOW_GPU_MODE:-auto}
+      BIOINFOFLOW_GPU_DEVICES: ${BIOINFOFLOW_GPU_DEVICES:-all}
     volumes:
       - ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}:${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
       - /var/run/docker.sock:/var/run/docker.sock

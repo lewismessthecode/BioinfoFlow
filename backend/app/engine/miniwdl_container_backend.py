@@ -11,6 +11,11 @@ from app.engine.miniwdl_mounts import (
     configured_run_mounts,
     configured_shared_mounts,
 )
+from app.services.gpu_service import get_gpu_service
+
+
+def selected_gpu_visible_devices() -> str | None:
+    return get_gpu_service().selected_visible_devices()
 
 
 class BioinfoflowSwarmContainer(SwarmContainer):
@@ -90,7 +95,12 @@ class BioinfoflowSwarmContainer(SwarmContainer):
             if not isinstance(env, dict):
                 env = {}
                 self.runtime_values["env"] = env
-            env.setdefault("NVIDIA_VISIBLE_DEVICES", "all")
+            visible_devices = selected_gpu_visible_devices()
+            if not visible_devices:
+                raise RuntimeError(
+                    "GPU workflow requested, but Bioinfoflow GPU policy exposes no devices"
+                )
+            env["NVIDIA_VISIBLE_DEVICES"] = visible_devices
             env.setdefault("NVIDIA_DRIVER_CAPABILITIES", "compute,utility")
             resources["generic_resources"] = {"NVIDIA-GPU": 1}
             logger.log(

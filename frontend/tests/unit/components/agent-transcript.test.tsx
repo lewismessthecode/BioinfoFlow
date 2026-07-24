@@ -20,7 +20,10 @@ vi.mock("next-intl", () => ({
       "statusLine.thinking": "Thinking...",
       "statusLine.running": "Working...",
       "responseActions.copy": "Copy response",
+      "responseActions.copied": "Copied",
+      "responseActions.copyFailed": "Copy failed",
       "responseActions.retry": "Retry response",
+      "responseActions.retrying": "Regenerating...",
       approve: "Approve",
       reject: "Reject",
       "sidecar.needsDecision": "Needs your decision",
@@ -77,6 +80,8 @@ vi.mock("next-intl", () => ({
       "turnStatus.completed": "Done",
       "turnStatus.failed": "Failed",
       "turnStatus.cancelled": "Cancelled",
+      "steer.pending": "Will be considered after the current step",
+      "steer.cancelled": "Not processed because the response stopped",
       scrollToBottom: "Jump to latest",
       "sources.title": "Sources",
       "sources.open": "Open sources",
@@ -209,6 +214,49 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("First finding")).toBeInTheDocument()
     expect(screen.getByText("Second finding")).toBeInTheDocument()
     expect(screen.getByText("nextflow log")).toBeInTheDocument()
+  })
+
+  it("renders steering guidance inside the active turn timeline", () => {
+    renderTranscript({
+      events: [
+        event("steer-received", 2, "turn.steer.received", {
+          steer_id: "steer-1",
+          input_text: "Use the project virtualenv.",
+        }),
+      ],
+    })
+
+    const steer = screen.getByTestId("agent-user-steer")
+    expect(steer).toHaveTextContent("Use the project virtualenv.")
+    expect(steer).toHaveTextContent("Will be considered after the current step")
+  })
+
+  it("preserves inline skill and workflow tokens in steering guidance", () => {
+    renderTranscript({
+      events: [
+        event("steer-received", 2, "turn.steer.received", {
+          steer_id: "steer-1",
+          input_text: "Check this workflow",
+          input_display: {
+            inline_parts: [
+              { type: "skill", name: "rna-seq" },
+              { type: "workflow", workflow_id: "workflow-1", name: "Deaf_20", version: "1.0" },
+              { type: "text", text: "Check this workflow" },
+            ],
+          },
+        }),
+      ],
+    })
+
+    const steer = screen.getByTestId("agent-user-steer")
+    expect(
+      within(steer).getByText("/rna-seq").closest("[data-token-kind]"),
+    ).toHaveAttribute(
+      "data-token-kind",
+      "skill",
+    )
+    expect(within(steer).getByText("@Deaf_20")).toBeInTheDocument()
+    expect(within(steer).getByText("1.0")).toBeInTheDocument()
   })
 
   it("renders selected skill and workflow tokens in the user bubble", () => {
@@ -657,6 +705,59 @@ describe("AgentTranscript", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retry response" }))
     expect(onRetryTurn).toHaveBeenCalledWith(baseTurn)
+  })
+
+  it("falls back to DOM copy and confirms success when Clipboard API is unavailable", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    })
+    const execCommand = vi.fn().mockReturnValue(true)
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: execCommand,
+    })
+    renderTranscript({
+      events: [
+        event("event-text", 1, "assistant.text.completed", {
+          message_id: "message-1",
+          content: "Fallback clipboard text.",
+        }),
+      ],
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy response" }))
+
+    await waitFor(() => {
+      expect(execCommand).toHaveBeenCalledWith("copy")
+      expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument()
+    })
+    expect(document.querySelector("textarea[data-agent-copy-fallback]")).toBeNull()
+  })
+
+  it("reports clipboard failure instead of swallowing it", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    })
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
+    })
+    renderTranscript({
+      events: [
+        event("event-text", 1, "assistant.text.completed", {
+          message_id: "message-1",
+          content: "Blocked clipboard text.",
+        }),
+      ],
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy response" }))
+
+    expect(
+      await screen.findByRole("button", { name: "Copy failed" }),
+    ).toBeInTheDocument()
   })
 
   it("does not show completed response actions while the turn is running", () => {

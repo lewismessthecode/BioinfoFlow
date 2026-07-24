@@ -12,6 +12,7 @@ import {
   interruptAgentRuntimeTurn,
   listAgentRuntimeSessions,
   subscribeAgentRuntimeEvents,
+  steerAgentRuntimeTurn,
   updateAgentRuntimeSessionMetadata,
   updateAgentRuntimeSessionMode,
   updateAgentRuntimeSessionPermissionMode,
@@ -505,6 +506,41 @@ export function useAgentRuntime(
     return turn
   }, [state.turns])
 
+  const steer = useCallback(
+    async (
+      text: string,
+      options?: {
+        inputParts?: AgentRuntimeInputPart[] | null
+        activeSkillNames?: string[] | null
+        metadata?: Record<string, unknown> | null
+      },
+    ) => {
+      const running = [...state.turns]
+        .reverse()
+        .find((turn) => INTERRUPTIBLE_TURN_STATUSES.has(turn.status))
+      if (!running) return null
+      try {
+        const outcome = await steerAgentRuntimeTurn(running.id, {
+          inputText: text,
+          inputParts: options?.inputParts,
+          activeSkillNames: options?.activeSkillNames,
+          metadata: options?.metadata,
+        })
+        if (outcome.kind === "accepted") {
+          await refreshState(running.session_id)
+        }
+        return outcome
+      } catch (error) {
+        dispatch({
+          type: "error",
+          message: error instanceof Error ? error.message : "Failed to guide response",
+        })
+        return null
+      }
+    },
+    [refreshState, state.turns],
+  )
+
   const decideAction = useCallback(
     async (
       actionId: string,
@@ -755,6 +791,7 @@ export function useAgentRuntime(
     refreshSessions,
     refreshState,
     send,
+    steer,
     interrupt,
     decideAction,
   }
