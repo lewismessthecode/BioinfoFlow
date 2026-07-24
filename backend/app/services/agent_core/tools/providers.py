@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.services.agent_core.tools.execution import ExecuteShellTool
+from app.services.agent_core.tools.attachments import (
+    AttachmentReadTool,
+    AttachmentSearchTool,
+)
 from app.services.agent_core.tools.files import (
     ApplyPatchTool,
     EditFileTool,
@@ -88,6 +92,8 @@ def default_tool_providers() -> tuple[AgentToolProvider, ...]:
     return (
         StaticAgentToolProvider(
             (
+                AttachmentSearchTool(),
+                AttachmentReadTool(),
                 ReadFileTool(),
                 ApplyPatchTool(),
                 WriteFileTool(),
