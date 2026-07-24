@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 import shutil
 from typing import Any
@@ -67,6 +68,32 @@ class AgentAttachmentService:
     def __init__(self, db) -> None:
         self.db = db
         self.repo = AgentAttachmentRepository(db)
+
+    async def cleanup_orphans(self, *, cutoff: datetime | None = None) -> int:
+        effective_cutoff = cutoff or (
+            datetime.now(timezone.utc)
+            - timedelta(seconds=settings.agent_attachment_orphan_ttl_seconds)
+        )
+        storage_paths = await self.repo.delete_orphans_before(effective_cutoff)
+        attachments_root = agent_attachments_root()
+        for storage_path in storage_paths:
+            try:
+                attachment_root = safe_join(
+                    attachments_root,
+                    storage_path,
+                    escape_message="Attachment cleanup path escapes its root",
+                )
+            except PermissionError:
+                continue
+            shutil.rmtree(attachment_root, ignore_errors=True)
+            try:
+                attachment_root.parent.rmdir()
+            except OSError:
+                pass
+        return len(storage_paths)
+
+    def delete_session_files(self, session_id: str) -> None:
+        shutil.rmtree(agent_session_attachments_root(session_id), ignore_errors=True)
 
     async def ingest_files(
         self,

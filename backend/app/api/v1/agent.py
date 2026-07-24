@@ -351,6 +351,7 @@ async def upload_attachments(
         user_id=user.id,
     )
     service = AgentAttachmentService(db)
+    await service.cleanup_orphans()
     if kind == "folder":
         attachment = await service.ingest_folder(
             agent_session=session,
