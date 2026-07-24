@@ -63,6 +63,13 @@ class AgentMessageStatus:
     SUPERSEDED = "superseded"
 
 
+class AgentAttachmentStatus:
+    PROCESSING = "processing"
+    READY = "ready"
+    ERROR = "error"
+    PENDING_DELETE = "pending_delete"
+
+
 class AgentSession(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "agent_sessions"
 
@@ -133,6 +140,49 @@ class AgentSession(Base, UUIDMixin, TimestampMixin):
         back_populates="session",
         cascade="all, delete-orphan",
     )
+    attachments = relationship(
+        "AgentAttachment",
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+
+
+class AgentAttachment(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "agent_attachments"
+
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    mime_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    file_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    image_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    image_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default=AgentAttachmentStatus.PROCESSING,
+        index=True,
+    )
+    attachment_metadata: Mapped[dict | None] = mapped_column(
+        "metadata", JSON, nullable=True
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    session = relationship("AgentSession", back_populates="attachments")
+    workspace = relationship("Workspace")
 
 
 class AgentTurn(Base, UUIDMixin, TimestampMixin):

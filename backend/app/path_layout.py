@@ -39,6 +39,22 @@ def auth_root() -> Path:
     return state_root() / "auth"
 
 
+def agent_attachments_root() -> Path:
+    return state_root() / "agent_core" / "attachments"
+
+
+def agent_session_attachments_root(session_id: str) -> Path:
+    safe_session_id = safe_path_name(session_id, field_name="agent session id")
+    return agent_attachments_root() / safe_session_id
+
+
+def agent_attachment_root(session_id: str, attachment_id: str) -> Path:
+    safe_attachment_id = safe_path_name(
+        attachment_id, field_name="agent attachment id"
+    )
+    return agent_session_attachments_root(session_id) / safe_attachment_id
+
+
 def workflows_root() -> Path:
     return settings.workflow_registry_root.resolve()
 

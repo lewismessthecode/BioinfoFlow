@@ -3,6 +3,8 @@ from app.models.agent_user_settings import AgentUserSettings
 from app.models.agent_core import (
     AgentAction,
     AgentActionStatus,
+    AgentAttachment,
+    AgentAttachmentStatus,
     AgentArtifact,
     AgentEvent,
     AgentEventVisibility,
@@ -66,6 +68,8 @@ __all__ = [
     "AgentMessageStatus",
     "AgentAction",
     "AgentActionStatus",
+    "AgentAttachment",
+    "AgentAttachmentStatus",
     "AgentToolCallBatch",
     "AgentToolCallBatchStatus",
     "AgentArtifact",
