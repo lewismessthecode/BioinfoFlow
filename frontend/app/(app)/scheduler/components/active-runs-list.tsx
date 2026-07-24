@@ -53,7 +53,6 @@ export function ActiveRunsList({
       {runs.map((r) => {
         const share = (r.weight || 1) / totalWeight
         const cpuShare = cpuPercent == null ? 0 : Math.round(share * cpuPercent)
-        const barPct = Math.max(2, Math.round(share * 100))
         const active = highlightedRunId === r.run_id
 
         return (
@@ -62,7 +61,7 @@ export function ActiveRunsList({
             type="button"
             onClick={() => onToggleHighlight(r.run_id)}
             aria-pressed={active}
-            className={`grid w-full grid-cols-[minmax(0,1fr)_64px] items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+            className={`grid min-h-16 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-lg border px-4 py-3 text-left transition-[background-color,border-color,transform] hover:bg-muted/50 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${
               active
                 ? "border-foreground/20 bg-muted/45"
                 : "border-border/70 bg-card"
@@ -75,15 +74,14 @@ export function ActiveRunsList({
               <span className="mt-1 block truncate font-mono text-[11px] text-muted-foreground">
                 {r.run_id}
               </span>
-              <span className="mt-2 block h-1 rounded-full bg-muted">
-                <span
-                  className="block h-full rounded-full bg-muted-foreground/50 transition-[width] duration-300"
-                  style={{ width: `${barPct}%` }}
-                />
-              </span>
             </span>
-            <span className="text-right font-mono text-sm text-muted-foreground">
-              {cpuShare}%
+            <span className="text-right">
+              <span className="block text-[11px] text-muted-foreground">
+                {t("activeRuns.cpuShare")}
+              </span>
+              <span className="mt-1 block font-mono text-sm font-medium tabular-nums text-foreground">
+                {cpuShare}%
+              </span>
             </span>
           </button>
         )

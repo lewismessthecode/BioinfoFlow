@@ -1833,7 +1833,7 @@
     "subtitle": "Dispatch queue, resource pressure, and active workload in one operations view.",
     "mode": "Mode",
     "configuredMode": "Configured Mode",
-    "configuredModeLabel": "Configured mode:",
+    "configuredModeLabel": "Mode:",
     "workers": "Workers",
     "queueDepth": "Queue Depth",
     "tasks": "Tasks",
@@ -1846,10 +1846,10 @@
     "memory": "Memory",
     "disk": "Disk",
     "gpu": "GPU",
-    "snapshot": "Snapshot",
+    "snapshot": "Last updated",
     "utilization": "Utilization",
     "noGpu": "No GPU detected",
-    "autoRefresh": "Updates every 30s",
+    "autoRefresh": "Auto-updates every 30s",
     "refreshDescription": "Counts are refreshed on a timer, not streamed live.",
     "resourceUnavailable": "Unavailable",
     "resourceSnapshotPending": "Waiting for the first sample",
@@ -1863,14 +1863,14 @@
       "failed": "Tasks that ended in failure and may need investigation or retry."
     },
     "status": {
-      "activeTitle": "Persistent scheduler is active",
-      "activeBody": "New runs are being written to the scheduler queue and claimed by workers from persistent state.",
+      "activeTitle": "Scheduler online",
+      "activeBody": "New runs enter the persistent queue and are claimed by the next available worker.",
       "fallbackTitle": "Persistent mode is configured, but fallback is active",
       "fallbackBody": "The app is serving runs without an active persistent scheduler instance, so queue visibility and recovery features are limited.",
-      "persistentBadge": "persistent",
+      "persistentBadge": "Persistent queue",
       "fallbackBadge": "fallback",
-      "ready": "ready",
-      "attention": "attention"
+      "ready": "Ready",
+      "attention": "Needs attention"
     },
     "guidance": {
       "title": "How to use this page",
@@ -1894,12 +1894,12 @@
       "loadFailed": "Couldn't load scheduler status. Check that the backend is running."
     },
     "pressure": {
-      "label": "Capacity status",
-      "healthy": "healthy",
-      "moderate": "moderate",
-      "saturated": "saturated",
+      "label": "Available capacity",
+      "healthy": "Available",
+      "moderate": "Limited",
+      "saturated": "At capacity",
       "messages": {
-        "healthy": "Resources are available for new dispatches.",
+        "healthy": "Resources are available. New runs can start.",
         "moderate": "Dispatch may slow if CPU or memory continues rising.",
         "saturated": "Hold new dispatches until pressure drops."
       },
@@ -1911,8 +1911,8 @@
       }
     },
     "activeRuns": {
-      "title": "Active workload",
-      "count": "{count} running",
+      "title": "Running now",
+      "count": "{count} active",
       "empty": "No runs currently dispatched.",
       "emptyStates": {
         "idle": {
@@ -1928,7 +1928,8 @@
           "body": "Reconnect the resource stream to see currently executing runs."
         }
       },
-      "unknownWorkflow": "unknown workflow"
+      "unknownWorkflow": "unknown workflow",
+      "cpuShare": "Est. CPU"
     },
     "charts": {
       "trendsTitle": "Resource trends",
@@ -1938,17 +1939,17 @@
       "gpuFree": "GPU free"
     },
     "advanced": {
-      "button": "Advanced",
-      "drawerTitle": "Advanced · btop process view",
-      "drawerMeta": "Live process stream · btop",
+      "button": "Open monitor",
+      "drawerTitle": "System monitor",
+      "drawerMeta": "btop · backend runtime",
       "comingSoon": "Terminal view is coming soon",
       "comingSoonBody": "This pane will embed the live btop process view once the pty bridge ships. Until then, use the default panel for pressure and run-level attribution.",
       "connecting": "Connecting to btop…",
       "connected": "Connected",
       "disconnected": "Disconnected",
       "exited": "btop exited",
-      "unavailable": "btop was not found by the backend service",
-      "unavailableBody": "Set BTOP_BIN or make sure the service PATH includes btop, then reopen this drawer.",
+      "unavailable": "btop is missing from the backend runtime",
+      "unavailableBody": "Update the Bioinfoflow image and try again. Custom deployments can also set BTOP_BIN.",
       "attemptedPaths": "Checked: {paths}",
       "retry": "Reconnect"
     },
