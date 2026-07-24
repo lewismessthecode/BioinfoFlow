@@ -6,6 +6,7 @@ from typing import Any
 
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
+    ImagePart,
     ModelEvent,
     ModelInvocation,
     ModelWarning,
@@ -59,23 +60,23 @@ class ResponsesCodec:
             if continuation is not None
             else 0
         )
+        pending_user_parts: list[TextPart | ImagePart] = []
         for item in invocation.input_items[canonical_input_count:]:
+            if isinstance(item, ImagePart) or (
+                isinstance(item, TextPart) and item.phase is None
+            ):
+                pending_user_parts.append(item)
+                continue
+
+            _flush_user_parts(input_items, pending_user_parts)
             if isinstance(item, TextPart):
-                if item.phase is None:
-                    input_items.append(
-                        {
-                            "role": "user",
-                            "content": [{"type": "input_text", "text": item.text}],
-                        }
-                    )
-                else:
-                    input_items.append(
-                        {
-                            "role": "assistant",
-                            "content": item.text,
-                            "phase": item.phase,
-                        }
-                    )
+                input_items.append(
+                    {
+                        "role": "assistant",
+                        "content": item.text,
+                        "phase": item.phase,
+                    }
+                )
             elif isinstance(item, ToolCallPart):
                 input_items.append(
                     {
@@ -97,6 +98,7 @@ class ResponsesCodec:
                         "output": item.output,
                     }
                 )
+        _flush_user_parts(input_items, pending_user_parts)
 
         request: dict[str, Any] = {
             "model": invocation.target.resolved_model_name(),
@@ -522,6 +524,28 @@ def _argument_text(value: Any) -> str:
     if isinstance(value, Mapping):
         return json.dumps(value, separators=(",", ":"), default=str)
     return ""
+
+
+def _flush_user_parts(
+    input_items: list[dict[str, Any]],
+    pending: list[TextPart | ImagePart],
+) -> None:
+    if not pending:
+        return
+    content: list[dict[str, Any]] = []
+    for part in pending:
+        if isinstance(part, TextPart):
+            content.append({"type": "input_text", "text": part.text})
+            continue
+        image: dict[str, Any] = {
+            "type": "input_image",
+            "image_url": f"data:{part.mime_type};base64,{part.data}",
+        }
+        if part.detail is not None:
+            image["detail"] = part.detail
+        content.append(image)
+    input_items.append({"role": "user", "content": content})
+    pending.clear()
 
 
 def _jsonable(value: Any) -> Any:

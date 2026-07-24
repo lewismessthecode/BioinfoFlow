@@ -9,6 +9,7 @@ import pytest
 from app.services.model_runtime.codecs.chat_completions import ChatCompletionsCodec
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
+    ImagePart,
     ModelInvocation,
     ModelTarget,
     ReasoningDelta,
@@ -20,6 +21,43 @@ from app.services.model_runtime.contracts import (
     ToolResultPart,
     UsageReport,
 )
+
+
+def test_encode_request_groups_adjacent_user_text_and_image() -> None:
+    invocation = _invocation()
+
+    request = ChatCompletionsCodec().encode_request(
+        ModelInvocation(
+            target=invocation.target,
+            instructions=invocation.instructions,
+            input_items=(
+                TextPart(text="Inspect this screenshot."),
+                ImagePart(
+                    mime_type="image/png",
+                    data="cG5nLWJ5dGVz",
+                    sha256="a" * 64,
+                    detail="high",
+                ),
+            ),
+            tools=(),
+            stream=False,
+            max_output_tokens=invocation.max_output_tokens,
+        )
+    )
+
+    assert request["messages"][1] == {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Inspect this screenshot."},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "data:image/png;base64,cG5nLWJ5dGVz",
+                    "detail": "high",
+                },
+            },
+        ],
+    }
 
 
 def _invocation(*, stream: bool = False) -> ModelInvocation:

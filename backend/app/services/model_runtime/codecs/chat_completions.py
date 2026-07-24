@@ -6,6 +6,7 @@ from typing import Any
 
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
+    ImagePart,
     ModelEvent,
     ModelInvocation,
     ReasoningDelta,
@@ -26,11 +27,19 @@ class ChatCompletionsCodec:
         messages: list[dict[str, Any]] = []
         if invocation.instructions:
             messages.append({"role": "system", "content": invocation.instructions})
+        pending_user_parts: list[TextPart | ImagePart] = []
         for item in invocation.input_items:
+            if isinstance(item, ImagePart) or (
+                isinstance(item, TextPart) and item.phase is None
+            ):
+                pending_user_parts.append(item)
+                continue
+
+            _flush_user_parts(messages, pending_user_parts)
             if isinstance(item, TextPart):
                 messages.append(
                     {
-                        "role": "assistant" if item.phase is not None else "user",
+                        "role": "assistant",
                         "content": item.text,
                     }
                 )
@@ -54,6 +63,7 @@ class ChatCompletionsCodec:
                         "content": item.output,
                     }
                 )
+        _flush_user_parts(messages, pending_user_parts)
 
         request: dict[str, Any] = {
             "model": invocation.target.resolved_model_name(),
@@ -153,6 +163,30 @@ class ChatCompletionsCodec:
             )
         finally:
             await aclose_async_iterator(response)
+
+
+def _flush_user_parts(
+    messages: list[dict[str, Any]],
+    pending: list[TextPart | ImagePart],
+) -> None:
+    if not pending:
+        return
+    if len(pending) == 1 and isinstance(pending[0], TextPart):
+        content: str | list[dict[str, Any]] = pending[0].text
+    else:
+        content = []
+        for part in pending:
+            if isinstance(part, TextPart):
+                content.append({"type": "text", "text": part.text})
+                continue
+            image_url: dict[str, Any] = {
+                "url": f"data:{part.mime_type};base64,{part.data}",
+            }
+            if part.detail is not None:
+                image_url["detail"] = part.detail
+            content.append({"type": "image_url", "image_url": image_url})
+    messages.append({"role": "user", "content": content})
+    pending.clear()
 
 
 def _encode_tool_call(item: ToolCallPart) -> dict[str, Any]:

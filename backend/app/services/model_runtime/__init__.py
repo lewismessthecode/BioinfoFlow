@@ -1,5 +1,6 @@
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
+    ImagePart,
     ModelEvent,
     ModelInvocation,
     ModelTarget,
@@ -23,6 +24,7 @@ from app.services.model_runtime.codecs.responses import ResponsesCodec
 
 __all__ = [
     "CompletionMetadata",
+    "ImagePart",
     "ModelError",
     "ModelErrorCategory",
     "ModelEvent",

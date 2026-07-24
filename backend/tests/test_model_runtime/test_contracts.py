@@ -24,6 +24,36 @@ from app.services.model_runtime.contracts import (
 from app.services.model_runtime.errors import ModelError
 
 
+def test_image_parts_use_sha256_for_canonical_digest() -> None:
+    first = runtime_contracts.ImagePart(
+        mime_type="image/png",
+        data="cG5nLWJ5dGVz",
+        sha256="a" * 64,
+        detail="high",
+    )
+    same_image_different_encoding = runtime_contracts.ImagePart(
+        mime_type="image/png",
+        data="ZGlmZmVyZW50LWJhc2U2NA==",
+        sha256="a" * 64,
+        detail="high",
+    )
+    different_image = runtime_contracts.ImagePart(
+        mime_type="image/png",
+        data="cG5nLWJ5dGVz",
+        sha256="b" * 64,
+        detail="high",
+    )
+
+    assert runtime_contracts.canonical_input_prefix_digest(
+        (first,)
+    ) == runtime_contracts.canonical_input_prefix_digest(
+        (same_image_different_encoding,)
+    )
+    assert runtime_contracts.canonical_input_prefix_digest(
+        (first,)
+    ) != runtime_contracts.canonical_input_prefix_digest((different_image,))
+
+
 def test_model_runtime_exposes_its_stable_public_surface() -> None:
     from app.services import model_runtime
 

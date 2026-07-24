@@ -12,12 +12,21 @@ Phase: TypeAlias = Literal["commentary", "final_answer"]
 WireProtocol: TypeAlias = Literal["chat_completions", "responses"]
 NetworkAccessPolicy: TypeAlias = Literal["public_only", "unrestricted"]
 ReasoningEffort: TypeAlias = Literal["low", "medium", "high"]
+ImageDetail: TypeAlias = Literal["auto", "low", "high", "original"]
 
 
 @dataclass(frozen=True)
 class TextPart:
     text: str
     phase: Phase | None = None
+
+
+@dataclass(frozen=True)
+class ImagePart:
+    mime_type: str
+    data: str
+    sha256: str
+    detail: ImageDetail | None = None
 
 
 @dataclass(frozen=True)
@@ -239,7 +248,7 @@ class ResponsesContinuation:
         )
 
 
-InputPart: TypeAlias = TextPart | ToolCallPart | ToolResultPart
+InputPart: TypeAlias = TextPart | ImagePart | ToolCallPart | ToolResultPart
 
 
 _CANONICAL_INPUT_DIGEST_DOMAIN = b"bioinfoflow-canonical-input-prefix.v1"
@@ -270,6 +279,13 @@ def _advance_canonical_input_digest(
 def _canonical_input_payload(item: InputPart) -> bytes:
     if isinstance(item, TextPart):
         payload = {"type": "text", "text": item.text, "phase": item.phase}
+    elif isinstance(item, ImagePart):
+        payload = {
+            "type": "image",
+            "mime_type": item.mime_type,
+            "sha256": item.sha256,
+            "detail": item.detail,
+        }
     elif isinstance(item, ToolCallPart):
         payload = {
             "type": "tool_call",
