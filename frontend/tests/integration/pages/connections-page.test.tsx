@@ -8,6 +8,11 @@ import { ApiError, apiRequest, buildWebSocketUrl } from "@/lib/api"
 import type { RemoteConnection } from "@/lib/demo-connections"
 import enMessages from "@/messages/en.json"
 
+HTMLElement.prototype.hasPointerCapture = vi.fn(() => false)
+HTMLElement.prototype.setPointerCapture = vi.fn()
+HTMLElement.prototype.releasePointerCapture = vi.fn()
+Element.prototype.scrollIntoView = vi.fn()
+
 function readMessage(namespace: string, key: string, params?: Record<string, string | number>) {
   const path = `${namespace}.${key}`.split(".")
   let value: unknown = enMessages
@@ -102,6 +107,7 @@ const liveConnection: RemoteConnection = {
   port: 2222,
   username: "bioflow",
   auth_method: "ssh_config",
+  jump_connection_id: null,
   ssh_alias: "live-hpc",
   key_path: "",
   status: "unknown",
@@ -115,6 +121,7 @@ const secondConnection: RemoteConnection = {
   port: 22,
   username: "bioflow",
   auth_method: "agent",
+  jump_connection_id: null,
   ssh_alias: "",
   key_path: "",
   status: "unknown",
@@ -128,10 +135,25 @@ const passwordConnection: RemoteConnection = {
   port: 22,
   username: "bioflow",
   auth_method: "password",
+  jump_connection_id: null,
   ssh_alias: "",
   key_path: "",
   status: "unknown",
   skill_instructions: "Use /password/live for checks.",
+}
+
+const jumpConnection: RemoteConnection = {
+  id: "live-connection-jump",
+  name: "HALOS",
+  host: "halos.internal",
+  port: 22,
+  username: "halos-user",
+  auth_method: "jump",
+  jump_connection_id: liveConnection.id,
+  ssh_alias: "",
+  key_path: "",
+  status: "unknown",
+  skill_instructions: "Use HALOS for protected analysis workloads.",
 }
 
 describe("ConnectionsPage", () => {
@@ -218,7 +240,7 @@ describe("ConnectionsPage", () => {
     expect(card).not.toHaveTextContent(/Jun 25|10:11|18:11/)
   })
 
-  it("lets long SSH connection identities wrap instead of truncating them", async () => {
+  it("keeps long SSH connection identities inside the fixed card text area", async () => {
     const longConnection = {
       ...liveConnection,
       name: "Very long simulation login node label for production sequencing cluster sz01",
@@ -237,10 +259,196 @@ describe("ConnectionsPage", () => {
       `${longConnection.username}@${longConnection.host}`,
     )
 
-    expect(title).toHaveClass("break-words")
-    expect(title).not.toHaveClass("truncate")
-    expect(identity).toHaveClass("break-all")
-    expect(identity).not.toHaveClass("truncate")
+    expect(title).toHaveClass("truncate")
+    expect(identity).toHaveClass("truncate")
+  })
+
+  it("keeps selected and connecting cards on stable geometry", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+    apiRequestMock.mockImplementationOnce(() => new Promise(() => {}))
+
+    render(<ConnectionsPage />)
+
+    const cardButton = await screen.findByRole("button", { name: /^Live HPC/ })
+    await user.click(cardButton)
+    await openEditConnectionPanel(user)
+    await clickConnectionAction(user, "Retest connection")
+
+    const article = cardButton.closest("article")
+    expect(article).toHaveClass("box-border", "h-[108px]", "ring-inset")
+    expect(cardButton).toHaveClass("grid-cols-[44px_minmax(0,1fr)_6rem]")
+    expect(within(cardButton).getByText("Connecting…").closest("span")).toHaveClass(
+      "w-24",
+      "justify-center",
+    )
+  })
+
+  it("offers direct and jump routes while excluding jump and edited candidates", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({
+      data: [liveConnection, secondConnection, jumpConnection],
+    })
+
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+    await openEditConnectionPanel(user)
+    const panel = getConnectionPanel()
+    expect(within(panel).getByText("Connection route")).toBeInTheDocument()
+    expect(within(panel).getByRole("button", { name: /Direct/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+
+    await user.click(within(panel).getByRole("button", { name: /Via jump host/ }))
+    const selector = within(panel).getByRole("combobox", { name: "Saved jump host" })
+    selector.focus()
+    await user.keyboard("{ArrowDown}")
+    expect(await screen.findByRole("option", { name: "Backup HPC" })).toBeInTheDocument()
+    expect(screen.queryByRole("option", { name: "Live HPC" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("option", { name: "HALOS" })).not.toBeInTheDocument()
+    expect(within(panel).queryByText("Authentication")).not.toBeInTheDocument()
+    expect(within(panel).getByText(/logs into that host first/)).toBeInTheDocument()
+  })
+
+  it("shows an accessible empty state when no direct jump candidates exist", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [jumpConnection] })
+
+    render(<ConnectionsPage />)
+
+    await openAddConnectionPanel(user)
+    await user.click(within(getConnectionPanel()).getByRole("button", { name: /Via jump host/ }))
+
+    expect(within(getConnectionPanel()).getByText("No direct connections are available as jump hosts.")).toBeInTheDocument()
+    expect(within(getConnectionPanel()).queryByRole("combobox", { name: "Saved jump host" })).not.toBeInTheDocument()
+  })
+
+  it("requires a saved jump host before saving", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+
+    render(<ConnectionsPage />)
+
+    const panel = await openAddConnectionPanel(user)
+    await user.click(within(panel).getByRole("button", { name: /Via jump host/ }))
+    await user.type(within(panel).getByLabelText("Address"), "halos.internal")
+    await clickPanelButton(user, "Add host")
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Select a saved jump host.")
+    expect(within(panel).getByRole("combobox", { name: "Saved jump host" })).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    )
+    expect(apiRequestMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("saves HALOS through Simulation environment with cleared direct credentials", async () => {
+    const user = userEvent.setup()
+    const simulationEnvironment = { ...liveConnection, name: "Simulation environment" }
+    apiRequestMock.mockResolvedValueOnce({ data: [simulationEnvironment] })
+    apiRequestMock.mockResolvedValueOnce({ data: jumpConnection })
+
+    render(<ConnectionsPage />)
+
+    const panel = await openAddConnectionPanel(user)
+    await user.type(within(panel).getByLabelText("Label"), "HALOS")
+    await user.type(within(panel).getByLabelText("Address"), "halos.internal")
+    await user.type(within(panel).getByLabelText("Username"), "halos-user")
+    await user.click(within(panel).getByRole("button", { name: /Via jump host/ }))
+    const selector = within(panel).getByRole("combobox", { name: "Saved jump host" })
+    selector.focus()
+    await user.keyboard("{ArrowDown}{Enter}")
+    await clickPanelButton(user, "Add host")
+
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenCalledWith("/connections", {
+        method: "POST",
+        body: JSON.stringify({
+          name: "HALOS",
+          host: "halos.internal",
+          port: 22,
+          username: "halos-user",
+          auth_method: "jump",
+          jump_connection_id: liveConnection.id,
+          ssh_alias: null,
+          key_path: null,
+          password: null,
+          private_key: null,
+          passphrase: null,
+          skill_instructions: null,
+        }),
+      }),
+    )
+  })
+
+  it("hydrates and patches an existing jump connection", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection, jumpConnection] })
+    apiRequestMock.mockResolvedValueOnce({ data: jumpConnection })
+
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByRole("heading", { name: "HALOS" })).toBeInTheDocument()
+    const panel = await openEditConnectionPanel(user, "HALOS")
+    expect(within(panel).getByRole("button", { name: /Via jump host/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+    expect(within(panel).getByRole("combobox", { name: "Saved jump host" })).toHaveTextContent(
+      "Live HPC",
+    )
+    await clickPanelButton(user, "Save changes")
+
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenCalledWith("/connections/live-connection-jump", {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: "HALOS",
+          host: "halos.internal",
+          port: 22,
+          username: "halos-user",
+          auth_method: "jump",
+          jump_connection_id: liveConnection.id,
+          ssh_alias: null,
+          key_path: null,
+          password: null,
+          private_key: null,
+          passphrase: null,
+          skill_instructions: "Use HALOS for protected analysis workloads.",
+        }),
+      }),
+    )
+  })
+
+  it("clears the jump id and restores password requirements when switching to direct", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection, jumpConnection] })
+
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByRole("heading", { name: "HALOS" })).toBeInTheDocument()
+    const panel = await openEditConnectionPanel(user, "HALOS")
+    await user.click(within(panel).getByRole("button", { name: /^Direct/ }))
+    expect(within(panel).getByLabelText("Password")).toBeInTheDocument()
+    await clickPanelButton(user, "Save changes")
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter the SSH password.")
+    expect(apiRequestMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("shows resolved jump route metadata on the target card and includes it in search", async () => {
+    const user = userEvent.setup()
+    const simulationEnvironment = { ...liveConnection, name: "Simulation environment" }
+    apiRequestMock.mockResolvedValueOnce({ data: [simulationEnvironment, jumpConnection] })
+
+    render(<ConnectionsPage />)
+
+    const targetCard = await screen.findByRole("button", { name: /^HALOS/ })
+    expect(targetCard).toHaveTextContent("halos-user@halos.internal")
+    expect(targetCard).toHaveTextContent("via Simulation environment")
+    await user.type(screen.getByLabelText("Search connections…"), "simulation environment")
+    expect(screen.getByRole("button", { name: /^HALOS/ })).toBeInTheDocument()
   })
 
   it("saves new connections through the backend", async () => {
@@ -279,6 +487,7 @@ describe("ConnectionsPage", () => {
           port: 2222,
           username: "bioflow",
           auth_method: "password",
+          jump_connection_id: null,
           ssh_alias: null,
           key_path: null,
           password: "secret-password",
@@ -449,6 +658,7 @@ describe("ConnectionsPage", () => {
           port: 22,
           username: "bioflow",
           auth_method: "ssh_config",
+          jump_connection_id: null,
           ssh_alias: "live-hpc",
           key_path: null,
           password: null,
@@ -596,6 +806,7 @@ describe("ConnectionsPage", () => {
           port: 2222,
           username: "bioflow",
           auth_method: "ssh_config",
+          jump_connection_id: null,
           ssh_alias: "live-hpc",
           key_path: null,
           password: null,
@@ -640,6 +851,7 @@ describe("ConnectionsPage", () => {
           port: 22,
           username: "bioflow",
           auth_method: "password",
+          jump_connection_id: null,
           ssh_alias: null,
           key_path: null,
           password: null,
@@ -716,6 +928,7 @@ describe("ConnectionsPage", () => {
           port: 22,
           username: "bioflow",
           auth_method: "key_file",
+          jump_connection_id: null,
           ssh_alias: null,
           key_path: "~/.ssh/id_ed25519",
           password: null,

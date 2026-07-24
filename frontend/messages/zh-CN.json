@@ -2138,6 +2138,18 @@
       "key_file": "使用 backend 容器内可见的私钥路径。",
       "agent": "使用 backend 容器环境里的 SSH_AUTH_SOCK。"
     },
+    "route": {
+      "label": "连接路由",
+      "direct": "直接连接",
+      "jump": "通过跳板主机",
+      "selector": "已保存的跳板主机",
+      "placeholder": "选择已保存的主机",
+      "helper": "Bioinfoflow 会先登录该主机，再使用它本机的 SSH 密钥或配置连接目标主机。",
+      "noCandidates": "没有可用作跳板主机的直接连接。"
+    },
+    "card": {
+      "via": "通过 {name}"
+    },
     "actions": {
       "testConnection": "测试连接",
       "retestConnection": "重新测试连接",
@@ -2194,6 +2206,7 @@
         "privateKeyRequired": "请粘贴或上传私钥。",
         "sshAliasRequired": "请填写 SSH 配置 Host。",
         "keyPathRequired": "请填写 backend 可见的密钥文件路径。",
+        "jumpConnectionRequired": "请选择已保存的跳板主机。",
         "saveFailed": "无法保存连接。"
       },
       "placeholders": {
