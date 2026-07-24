@@ -62,6 +62,7 @@ export const searchAgentRuntimeContext = async (input: {
   projectId?: string | null
   sessionId?: string | null
   cursor?: string | null
+  signal?: AbortSignal
 }) => {
   const params: Record<string, string> = { q: input.query }
   if (input.scope) params.scope = input.scope
@@ -70,7 +71,7 @@ export const searchAgentRuntimeContext = async (input: {
   if (input.cursor) params.cursor = input.cursor
   const response = await apiRequest<AgentRuntimeContextSearchResponse>(
     "/agent/context/search",
-    { params },
+    { params, signal: input.signal },
   )
   return response.data
 }

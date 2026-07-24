@@ -43,6 +43,8 @@ import type {
   AgentMode,
   AgentPermissionMode,
   AgentRuntimeFileRefPart,
+  AgentRuntimeContextSearchItem,
+  AgentRuntimeContextSearchResponse,
   AgentRuntimeSkill,
   AgentRuntimeWorkflowMention,
   AgentTokenUsageSummary,
@@ -99,6 +101,13 @@ type AgentComposerProps = {
   workflowMentionsError?: string | null
   onAddWorkflowMention?: (mention: AgentRuntimeWorkflowMention) => void
   onRemoveWorkflowMention?: (workflowId: string) => void
+  activeContextMentions?: AgentRuntimeContextSearchItem[]
+  onSearchContext?: (
+    query: string,
+    options?: { signal?: AbortSignal },
+  ) => Promise<AgentRuntimeContextSearchResponse>
+  onAddContextMention?: (mention: AgentRuntimeContextSearchItem) => void
+  onRemoveContextMention?: (id: string) => void
   tokenUsageSummary?: AgentTokenUsageSummary | null
   executionSelection?: ExecutionTargetSelection
   currentExecutionTargetLabel?: string | null
@@ -115,6 +124,7 @@ type AgentComposerProps = {
 export type AgentComposerInlineToken =
   | { kind: "skill"; skill: AgentRuntimeSkill }
   | { kind: "workflow"; workflow: AgentRuntimeWorkflowMention }
+  | { kind: "context"; context: AgentRuntimeContextSearchItem }
 
 const agentModeOptions: AgentMode[] = ["execution", "plan"]
 
@@ -158,6 +168,10 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       workflowMentionsError = null,
       onAddWorkflowMention,
       onRemoveWorkflowMention,
+      activeContextMentions = [],
+      onSearchContext,
+      onAddContextMention,
+      onRemoveContextMention,
       tokenUsageSummary,
       executionSelection,
       currentExecutionTargetLabel,
@@ -179,6 +193,10 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     const hasReadyAttachment = attachments.some(
       (attachment) => attachment.status === "ready",
     )
+    const hasStructuredContext =
+      contextAttachments.length > 0 ||
+      activeWorkflowMentions.length > 0 ||
+      activeContextMentions.length > 0
     const textareaRef = useRef<HTMLTextAreaElement | null>(null)
     const fileInputRef = useRef<HTMLInputElement | null>(null)
     const folderInputRef = useRef<HTMLInputElement | null>(null)
@@ -226,7 +244,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       !disabled &&
       !voiceBusy &&
       !attachmentPending &&
-      (value.trim().length > 0 || hasReadyAttachment)
+      (value.trim().length > 0 || hasReadyAttachment || hasStructuredContext)
     useEffect(() => {
       if (voiceState !== "recording") return
       const cancelOnEscape = (event: KeyboardEvent) => {
@@ -241,6 +259,11 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     const [attachSubmenu, setAttachSubmenu] = useState(false)
     const [previewAttachment, setPreviewAttachment] =
       useState<AgentComposerAttachment | null>(null)
+    const [contextOptions, setContextOptions] = useState<
+      AgentRuntimeContextSearchItem[]
+    >([])
+    const [contextLoading, setContextLoading] = useState(false)
+    const [contextError, setContextError] = useState<string | null>(null)
     const isCenterPresentation = presentation === "center"
     const animatedPlaceholder = useAnimatedPlaceholder({
       enabled:
@@ -281,8 +304,12 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             workflow,
           })),
           ...activeSkills.map((skill) => ({ kind: "skill" as const, skill })),
+          ...activeContextMentions.map((context) => ({
+            kind: "context" as const,
+            context,
+          })),
         ],
-      [activeComposerTokens, activeSkills, activeWorkflowMentions],
+      [activeComposerTokens, activeContextMentions, activeSkills, activeWorkflowMentions],
     )
     const skillOptions = useMemo(
       () =>
@@ -314,10 +341,12 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     )
     const commandOptions: ComposerCommandOption[] = useMemo(
       () =>
-        commandToken?.kind === "workflow"
+        commandToken?.kind === "context"
+          ? contextOptions.map((context) => ({ kind: "context", context }))
+          : commandToken?.kind === "workflow"
           ? workflowMentionOptions.map((workflow) => ({ kind: "workflow", workflow }))
           : skillOptions.map((skill) => ({ kind: "skill", skill })),
-      [commandToken?.kind, skillOptions, workflowMentionOptions],
+      [commandToken?.kind, contextOptions, skillOptions, workflowMentionOptions],
     )
     const visibleHighlightedCommandIndex = commandOptions.length
       ? Math.min(highlightedCommandIndex, commandOptions.length - 1)
@@ -337,14 +366,23 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       setCommandMenuOpen(false)
       setCommandToken(null)
       setHighlightedCommandIndex(0)
+      setContextOptions([])
+      setContextLoading(false)
+      setContextError(null)
     }, [])
 
     const updateCommandMenu = useCallback(
       (textarea: HTMLTextAreaElement) => {
-        const token = composerCommandTokenAt(textarea.value, textarea.selectionStart ?? textarea.value.length)
+        const token = composerCommandTokenAt(
+          textarea.value,
+          textarea.selectionStart ?? textarea.value.length,
+          Boolean(onSearchContext),
+        )
         const canHandleToken =
           token?.kind === "skill"
             ? Boolean(onAddActiveSkill)
+            : token?.kind === "context"
+              ? Boolean(onAddContextMention && onSearchContext)
             : token?.kind === "workflow"
               ? Boolean(onAddWorkflowMention)
               : false
@@ -356,7 +394,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
         setHighlightedCommandIndex(0)
         setCommandMenuOpen(true)
       },
-      [closeCommandMenu, disabled, onAddActiveSkill, onAddWorkflowMention],
+      [closeCommandMenu, disabled, onAddActiveSkill, onAddContextMention, onAddWorkflowMention, onSearchContext],
     )
 
     const selectSkill = useCallback(
@@ -365,7 +403,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
         const token = commandToken?.kind === "skill"
           ? commandToken
           : textarea
-            ? composerCommandTokenAt(value, textarea.selectionStart ?? value.length)
+            ? composerCommandTokenAt(value, textarea.selectionStart ?? value.length, Boolean(onSearchContext))
             : null
         if (!token) return
         const nextValue = `${value.slice(0, token.start)}${value.slice(token.end)}`
@@ -377,7 +415,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           textarea?.setSelectionRange(token.start, token.start)
         })
       },
-      [closeCommandMenu, commandToken, onAddActiveSkill, onChange, value],
+      [closeCommandMenu, commandToken, onAddActiveSkill, onChange, onSearchContext, value],
     )
 
     const selectWorkflowMention = useCallback(
@@ -386,7 +424,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
         const token = commandToken?.kind === "workflow"
           ? commandToken
           : textarea
-            ? composerCommandTokenAt(value, textarea.selectionStart ?? value.length)
+            ? composerCommandTokenAt(value, textarea.selectionStart ?? value.length, Boolean(onSearchContext))
             : null
         if (!token) return
         const nextValue = `${value.slice(0, token.start)}${value.slice(token.end)}`
@@ -398,8 +436,30 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           textarea?.setSelectionRange(token.start, token.start)
         })
       },
-      [closeCommandMenu, commandToken, onAddWorkflowMention, onChange, value],
+      [closeCommandMenu, commandToken, onAddWorkflowMention, onChange, onSearchContext, value],
     )
+
+    const selectContextMention = useCallback(
+      (context: AgentRuntimeContextSearchItem) => {
+        const textarea = textareaRef.current
+        const token = commandToken?.kind === "context"
+          ? commandToken
+          : textarea
+            ? composerCommandTokenAt(
+                value,
+                textarea.selectionStart ?? value.length,
+                true,
+              )
+            : null
+        if (!token) return
+        onChange(`${value.slice(0, token.start)}${value.slice(token.end)}`)
+        onAddContextMention?.(context)
+        closeCommandMenu()
+        window.requestAnimationFrame(() => {
+          textarea?.focus()
+          textarea?.setSelectionRange(token.start, token.start)
+        })
+      }, [closeCommandMenu, commandToken, onAddContextMention, onChange, value])
 
     const selectCommandOption = useCallback(
       (option: ComposerCommandOption) => {
@@ -407,9 +467,13 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           selectSkill(option.skill)
           return
         }
+        if (option.kind === "context") {
+          selectContextMention(option.context)
+          return
+        }
         selectWorkflowMention(option.workflow)
       },
-      [selectSkill, selectWorkflowMention],
+      [selectContextMention, selectSkill, selectWorkflowMention],
     )
 
     const removePreviousInlineToken = useCallback(() => {
@@ -419,13 +483,45 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
         onRemoveActiveSkill?.(lastToken.skill.name)
         return true
       }
+      if (lastToken.kind === "context") {
+        onRemoveContextMention?.(lastToken.context.id)
+        return true
+      }
       onRemoveWorkflowMention?.(lastToken.workflow.id)
       return true
     }, [
       onRemoveActiveSkill,
+      onRemoveContextMention,
       onRemoveWorkflowMention,
       visibleComposerTokens,
     ])
+
+    useEffect(() => {
+      if (commandToken?.kind !== "context" || !onSearchContext) return
+      const controller = new AbortController()
+      const timer = window.setTimeout(() => {
+        setContextLoading(true)
+        setContextError(null)
+        void onSearchContext(commandToken.query, { signal: controller.signal })
+          .then((response) => {
+            if (controller.signal.aborted) return
+            setContextOptions(Array.isArray(response.results) ? response.results : [])
+            setContextLoading(false)
+          })
+          .catch((error: unknown) => {
+            if (controller.signal.aborted) return
+            setContextOptions([])
+            setContextLoading(false)
+            setContextError(
+              error instanceof Error ? error.message : "Context search failed",
+            )
+          })
+      }, 150)
+      return () => {
+        window.clearTimeout(timer)
+        controller.abort()
+      }
+    }, [commandToken, onSearchContext])
 
     useEffect(() => {
       const textarea = textareaRef.current
@@ -476,6 +572,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
               disabled={disabled}
               onRemoveActiveSkill={onRemoveActiveSkill}
               onRemoveWorkflowMention={onRemoveWorkflowMention}
+              onRemoveContextMention={onRemoveContextMention}
             />
           <textarea
             ref={textareaRef}
@@ -570,8 +667,8 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
               id={commandMenuId}
               token={commandToken}
               options={commandOptions}
-              loading={commandToken.kind === "workflow" ? workflowMentionsLoading : skillsLoading}
-              error={commandToken.kind === "workflow" ? workflowMentionsError : skillsError}
+              loading={commandToken.kind === "context" ? contextLoading : commandToken.kind === "workflow" ? workflowMentionsLoading : skillsLoading}
+              error={commandToken.kind === "context" ? contextError : commandToken.kind === "workflow" ? workflowMentionsError : skillsError}
               highlightedIndex={visibleHighlightedCommandIndex}
               onHover={setHighlightedCommandIndex}
               onSelect={selectCommandOption}
@@ -893,7 +990,7 @@ function needsVoiceBoundarySpace(left?: string, right?: string) {
 }
 
 type ComposerCommandToken = {
-  kind: "skill" | "workflow"
+  kind: "skill" | "workflow" | "context"
   start: number
   end: number
   query: string
@@ -902,6 +999,7 @@ type ComposerCommandToken = {
 type ComposerCommandOption =
   | { kind: "skill"; skill: AgentRuntimeSkill }
   | { kind: "workflow"; workflow: AgentRuntimeWorkflowMention }
+  | { kind: "context"; context: AgentRuntimeContextSearchItem }
 
 function ComposerCommandMenu({
   id,
@@ -924,13 +1022,15 @@ function ComposerCommandMenu({
 }) {
   const t = useTranslations("agentRuntime")
   const isWorkflow = token.kind === "workflow"
+  const isContext = token.kind === "context"
+  const namespace = isContext ? "contextSearch" : isWorkflow ? "workflows" : "skills"
   const statusText = error
-    ? t(isWorkflow ? "workflows.loadFailed" : "skills.loadFailed")
+    ? error
     : loading
-      ? t(isWorkflow ? "workflows.loading" : "skills.loading")
+      ? t(`${namespace}.loading`)
       : token.query
-        ? t(isWorkflow ? "workflows.noMatches" : "skills.noMatches")
-        : t(isWorkflow ? "workflows.empty" : "skills.empty")
+        ? t(`${namespace}.noMatches`)
+        : t(`${namespace}.empty`)
 
   return (
     <div
@@ -941,13 +1041,13 @@ function ComposerCommandMenu({
       )}
       data-testid="agent-command-menu"
       role="listbox"
-      aria-label={t(isWorkflow ? "workflows.menuTitle" : "skills.menuTitle")}
+      aria-label={t(`${namespace}.menuTitle`)}
     >
       <div
         className="px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70"
-        data-testid={isWorkflow ? "agent-workflow-menu" : "agent-skill-menu"}
+        data-testid={isContext ? "agent-context-menu" : isWorkflow ? "agent-workflow-menu" : "agent-skill-menu"}
       >
-        {t(isWorkflow ? "workflows.menuTitle" : "skills.menuTitle")}
+        {t(`${namespace}.menuTitle`)}
       </div>
       {options.length ? (
         <div className="grid gap-1">
@@ -969,6 +1069,8 @@ function ComposerCommandMenu({
             >
               {option.kind === "skill" ? (
                 <SkillCommandOptionContent skill={option.skill} />
+              ) : option.kind === "context" ? (
+                <ContextCommandOptionContent context={option.context} />
               ) : (
                 <WorkflowCommandOptionContent workflow={option.workflow} />
               )}
@@ -978,12 +1080,34 @@ function ComposerCommandMenu({
       ) : (
         <div
           className="px-2.5 py-3 text-sm text-muted-foreground"
-          data-testid={isWorkflow ? "agent-workflow-menu-empty" : "agent-skill-menu-empty"}
+          data-testid={isContext ? "agent-context-menu-empty" : isWorkflow ? "agent-workflow-menu-empty" : "agent-skill-menu-empty"}
         >
           {statusText}
         </div>
       )}
     </div>
+  )
+}
+
+function ContextCommandOptionContent({
+  context,
+}: {
+  context: AgentRuntimeContextSearchItem
+}) {
+  return (
+    <span className="grid min-w-0 gap-0.5">
+      <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+        <span className="min-w-0 truncate">@{context.label}</span>
+        <span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+          {context.kind}
+        </span>
+      </span>
+      {context.detail ? (
+        <span className="truncate text-xs text-muted-foreground">
+          {context.detail}
+        </span>
+      ) : null}
+    </span>
   )
 }
 
@@ -1025,14 +1149,20 @@ function WorkflowCommandOptionContent({
 }
 
 function commandOptionKey(option: ComposerCommandOption) {
-  return option.kind === "skill" ? `skill:${option.skill.name}` : `workflow:${option.workflow.id}`
+  if (option.kind === "skill") return `skill:${option.skill.name}`
+  if (option.kind === "context") return `context:${option.context.id}`
+  return `workflow:${option.workflow.id}`
 }
 
 function commandOptionId(menuId: string, index: number) {
   return `${menuId}-option-${index}`
 }
 
-function composerCommandTokenAt(value: string, cursor: number): ComposerCommandToken | null {
+function composerCommandTokenAt(
+  value: string,
+  cursor: number,
+  useContextSearch = false,
+): ComposerCommandToken | null {
   let start = cursor
   while (start > 0 && !/\s/.test(value[start - 1])) start -= 1
   const token = value.slice(start, cursor)
@@ -1040,7 +1170,12 @@ function composerCommandTokenAt(value: string, cursor: number): ComposerCommandT
   if (marker !== "/" && marker !== "@") return null
   const query = token.slice(1)
   if (!/^[A-Za-z0-9._-]*$/.test(query)) return null
-  return { kind: marker === "/" ? "skill" : "workflow", start, end: cursor, query }
+  return {
+    kind: marker === "/" ? "skill" : useContextSearch ? "context" : "workflow",
+    start,
+    end: cursor,
+    query,
+  }
 }
 
 function skillMatchesQuery(skill: AgentRuntimeSkill, query: string) {
@@ -1082,11 +1217,13 @@ function ComposerInlineTokens({
   disabled,
   onRemoveActiveSkill,
   onRemoveWorkflowMention,
+  onRemoveContextMention,
 }: {
   tokens: AgentComposerInlineToken[]
   disabled: boolean
   onRemoveActiveSkill?: (name: string) => void
   onRemoveWorkflowMention?: (workflowId: string) => void
+  onRemoveContextMention?: (id: string) => void
 }) {
   const t = useTranslations("agentRuntime")
   if (!tokens.length) return null
@@ -1110,6 +1247,29 @@ function ComposerInlineTokens({
                 onClick={() => onRemoveActiveSkill?.(token.skill.name)}
                 disabled={disabled}
                 aria-label={t("skills.remove", { name: token.skill.name })}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )
+        }
+        if (token.kind === "context") {
+          return (
+            <span
+              key={`context:${token.context.id}`}
+              className={cn(composerInlineTokenClassName, "max-w-[16rem]")}
+              role="group"
+              aria-label={`@${token.context.label}`}
+            >
+              <span className="min-w-0 truncate" translate="no">
+                @{token.context.label}
+              </span>
+              <button
+                type="button"
+                className="-mr-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/35"
+                onClick={() => onRemoveContextMention?.(token.context.id)}
+                disabled={disabled}
+                aria-label={t("contextSearch.remove", { name: token.context.label })}
               >
                 <X className="h-3 w-3" />
               </button>

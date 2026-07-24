@@ -27,6 +27,7 @@ import {
 import { useTranslations } from "next-intl"
 
 import { AgentComposer, type AgentComposerInlineToken } from "./agent-composer"
+import type { AgentComposerAttachment } from "./attachment-strip"
 import { ConnectModelDialog } from "./connect-model-dialog"
 import { AgentEnvironmentCard } from "./agent-environment-card"
 import { AgentTabbedPanel, type AgentTabbedPanelTab } from "./agent-tabbed-panel"
@@ -59,10 +60,17 @@ import { useLlmSettings } from "@/hooks/use-llm-settings"
 import { useIsMobile } from "@/hooks/use-media-query"
 import {
   buildAgentRuntimeTimeline,
+  agentRuntimeAttachmentPreviewUrl,
+  deleteAgentRuntimeAttachment,
   deriveTodoDisplayItems,
   listAgentRuntimeSessionArtifacts,
   listAgentRuntimeSkills,
   listAgentRuntimeWorkflowMentions,
+  searchAgentRuntimeContext,
+  uploadAgentRuntimeAttachment,
+  type AgentRuntimeAttachment,
+  type AgentRuntimeContextSearchItem,
+  type AgentRuntimeContextSearchScope,
   type AgentRuntimeArtifact,
   type AgentExecutionScope,
   type AgentRuntimeFileRefPart,
@@ -151,6 +159,12 @@ type PendingSubmission = {
   optimisticSteerEventId?: string
 }
 
+type DraftComposerAttachment = AgentComposerAttachment & {
+  files: File[]
+  relativePaths?: string[]
+  source: "upload" | "clipboard"
+}
+
 type WorkflowMentionLoadState = {
   scopeKey: string
   workflows: AgentRuntimeWorkflowMention[]
@@ -169,6 +183,13 @@ type AgentInputDisplayPart =
       version?: string | null
     }
   | { type: "skill"; name: string }
+  | {
+      type: "context"
+      id: string
+      kind: "file" | "directory" | "workflow" | "run"
+      label: string
+      detail?: string | null
+    }
 
 type ActiveComposerTokenKey =
   | { kind: "skill"; name: string }
@@ -212,6 +233,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [input, setInput] = useState("")
     const [connectModelOpen, setConnectModelOpen] = useState(false)
     const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
+    const [draftAttachments, setDraftAttachments] = useState<
+      DraftComposerAttachment[]
+    >([])
+    const cancelledLocalAttachmentIdsRef = useRef(new Set<string>())
     const [availableSkills, setAvailableSkills] = useState<AgentRuntimeSkill[]>([])
     const [activeSkillNames, setActiveSkillNames] = useState<string[]>([])
     const [activeComposerTokenKeys, setActiveComposerTokenKeys] = useState<
@@ -228,6 +253,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         error: null,
       }))
     const [activeWorkflowMentions, setActiveWorkflowMentions] = useState<AgentRuntimeWorkflowMention[]>([])
+    const [activeContextMentions, setActiveContextMentions] = useState<
+      AgentRuntimeContextSearchItem[]
+    >([])
     const demoStarterContext =
       firstRun?.ready && firstRun.starter_context?.project_id === projectId
         ? firstRun.starter_context
@@ -302,9 +330,18 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             availableSkills.find((skill) => skill.name === name) ??
             fallbackAgentRuntimeSkill(name),
         }))
-      return [...tokens, ...missingWorkflows, ...missingSkills]
+      return [
+        ...tokens,
+        ...missingWorkflows,
+        ...missingSkills,
+        ...activeContextMentions.map((context) => ({
+          kind: "context" as const,
+          context,
+        })),
+      ]
     }, [
       activeComposerTokenKeys,
+      activeContextMentions,
       activeSkillNames,
       availableSkills,
       scopedActiveWorkflowMentions,
@@ -373,6 +410,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       permissionUpdate,
       retryPermissionModeUpdate,
       setActiveSessionId,
+      ensureSession,
       send,
       steer,
       interrupt,
@@ -631,8 +669,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setActiveSessionId(null)
           setInput("")
           setContextAttachments([])
+          setDraftAttachments([])
           setActiveSkillNames([])
           setActiveWorkflowMentions([])
+          setActiveContextMentions([])
           setActiveComposerTokenKeys([])
           setExecutionSelectionOverride(null)
           setHasSubmittedDraft(false)
@@ -818,6 +858,37 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       )
     }, [])
 
+    const addContextMention = useCallback(
+      (mention: AgentRuntimeContextSearchItem) => {
+        setActiveContextMentions((current) =>
+          current.some((item) => item.id === mention.id)
+            ? current
+            : [...current, mention],
+        )
+      },
+      [],
+    )
+
+    const removeContextMention = useCallback((id: string) => {
+      setActiveContextMentions((current) =>
+        current.filter((item) => item.id !== id),
+      )
+    }, [])
+
+    const searchComposerContext = useCallback(
+      (query: string, options?: { signal?: AbortSignal }) => {
+        const request = contextSearchRequest(query)
+        return searchAgentRuntimeContext({
+          query: request.query,
+          scope: request.scope,
+          projectId: projectId ?? null,
+          sessionId: state.session?.id ?? null,
+          signal: options?.signal,
+        })
+      },
+      [projectId, state.session?.id],
+    )
+
     const fillStarterSuggestion = useCallback((prompt: string) => {
       setInput(prompt)
       window.requestAnimationFrame(() => {
@@ -825,6 +896,140 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         textareaRef.current?.setSelectionRange(prompt.length, prompt.length)
       })
     }, [])
+
+    const uploadDraftAttachments = useCallback(
+      async (
+        kind: "file" | "folder" | "image",
+        files: File[],
+        relativePaths?: string[],
+        source: "upload" | "clipboard" = "upload",
+      ) => {
+        if (!files.length) return
+        const localId = `local-attachment-${crypto.randomUUID()}`
+        const placeholder: DraftComposerAttachment = {
+          id: localId,
+          filename:
+            kind === "folder"
+              ? relativePaths?.[0]?.split("/")[0] || files[0]?.name || "Folder"
+              : files[0]?.name || "Attachment",
+          kind,
+          status: "uploading",
+          files,
+          relativePaths,
+          source,
+        }
+        setDraftAttachments((current) => [...current, placeholder])
+        try {
+          const session = await ensureSession()
+          const uploaded = await uploadAgentRuntimeAttachment({
+            sessionId: session.id,
+            kind,
+            files,
+            relativePaths,
+            source,
+          })
+          if (cancelledLocalAttachmentIdsRef.current.delete(localId)) {
+            await Promise.allSettled(
+              uploaded.map((item) => deleteAgentRuntimeAttachment(item.id)),
+            )
+            return
+          }
+          setDraftAttachments((current) =>
+            current.flatMap((attachment) =>
+              attachment.id === localId
+                ? uploaded.map((item) =>
+                    draftAttachmentFromRuntime(item, files, relativePaths, source),
+                  )
+                : [attachment],
+            ),
+          )
+        } catch (error) {
+          if (cancelledLocalAttachmentIdsRef.current.delete(localId)) return
+          setDraftAttachments((current) =>
+            current.map((attachment) =>
+              attachment.id === localId
+                ? {
+                    ...attachment,
+                    status: "error",
+                    error:
+                      error instanceof Error ? error.message : t("attachments.uploadFailed"),
+                  }
+                : attachment,
+            ),
+          )
+        }
+      },
+      [ensureSession, t],
+    )
+
+    const addFiles = useCallback(
+      (files: File[]) => {
+        const images = files.filter((file) => file.type.startsWith("image/"))
+        const regularFiles = files.filter((file) => !file.type.startsWith("image/"))
+        if (regularFiles.length) void uploadDraftAttachments("file", regularFiles)
+        for (const image of images) void uploadDraftAttachments("image", [image])
+      },
+      [uploadDraftAttachments],
+    )
+
+    const removeDraftAttachment = useCallback(
+      (attachment: AgentComposerAttachment) => {
+        const current = draftAttachments.find((item) => item.id === attachment.id)
+        if (!current) return
+        if (current.id.startsWith("local-attachment-")) {
+          cancelledLocalAttachmentIdsRef.current.add(current.id)
+          setDraftAttachments((items) =>
+            items.filter((item) => item.id !== current.id),
+          )
+          return
+        }
+        setDraftAttachments((items) =>
+          items.map((item) =>
+            item.id === current.id ? { ...item, status: "deleting" } : item,
+          ),
+        )
+        void deleteAgentRuntimeAttachment(current.id)
+          .then(() => {
+            setDraftAttachments((items) =>
+              items.filter((item) => item.id !== current.id),
+            )
+          })
+          .catch((error: unknown) => {
+            setDraftAttachments((items) =>
+              items.map((item) =>
+                item.id === current.id
+                  ? {
+                      ...item,
+                      status: "error",
+                      error:
+                        error instanceof Error
+                          ? error.message
+                          : t("attachments.removeFailed"),
+                    }
+                  : item,
+              ),
+            )
+          })
+      },
+      [draftAttachments, t],
+    )
+
+    const retryDraftAttachment = useCallback(
+      (attachment: AgentComposerAttachment) => {
+        const current = draftAttachments.find((item) => item.id === attachment.id)
+        if (!current) return
+        setDraftAttachments((items) =>
+          items.filter((item) => item.id !== current.id),
+        )
+        void uploadDraftAttachments(
+          current.kind,
+          current.files,
+          current.relativePaths,
+          current.source,
+        )
+      },
+      [draftAttachments, uploadDraftAttachments],
+    )
 
     const handleExecutionSelectionChange = useCallback(
       (selection: ExecutionTargetSelection) => {
@@ -846,7 +1051,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         optimisticTurnOverride?: AgentRuntimeTurn,
       ) => {
         const trimmedText = text.trim()
-        if (!trimmedText) return
+        if (!trimmedText && !inputParts.some(isStructuredInputPart)) return
         setHasSubmittedDraft(true)
         const nextOptimisticTurn =
           optimisticTurnOverride ??
@@ -906,7 +1111,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         modelSelection = selectedModel,
       ) => {
         const trimmedText = text.trim()
-        if (!trimmedText) return
+        if (!trimmedText && !inputParts.some(isStructuredInputPart)) return
         const executionScope = executionScopeForSelection(executionSelection)
         if (!hasActiveTurn) {
           sendTurn(
@@ -1216,8 +1421,27 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     ])
 
     const submit = () => {
-      if (!input.trim()) return
+      const readyDraftAttachments = draftAttachments.filter(
+        (attachment) => attachment.status === "ready",
+      )
+      if (
+        !input.trim() &&
+        !readyDraftAttachments.length &&
+        !contextAttachments.length &&
+        !scopedActiveWorkflowMentions.length &&
+        !activeContextMentions.length
+      ) return
       if (!selectedModel) {
+        setConnectModelOpen(true)
+        return
+      }
+      const selectedModelInfo = models
+        .find((group) => group.provider === selectedModel.provider)
+        ?.models.find((model) => model.id === selectedModel.model)
+      if (
+        readyDraftAttachments.some((attachment) => attachment.kind === "image") &&
+        selectedModelInfo?.supports_vision === false
+      ) {
         setConnectModelOpen(true)
         return
       }
@@ -1227,12 +1451,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         label: t("workflowContext.label"),
       })
       const text = workflowInput.text
-      if (!text) return
       const inputParts: AgentRuntimeInputPart[] = [
-        { type: "text", text },
+        ...(text ? [{ type: "text" as const, text }] : []),
         ...scopedActiveWorkflowMentions.map(workflowMentionInputPart),
         ...workflowInput.workflowParts,
         ...contextAttachments,
+        ...activeContextMentions.map((mention) => mention.input_part),
+        ...readyDraftAttachments.map(draftAttachmentInputPart),
       ]
       const activeSkillNamesSnapshot = [...activeSkillNames]
       const inputDisplayParts = inputDisplayPartsForSubmission({
@@ -1251,19 +1476,23 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       )
       setInput("")
       setContextAttachments([])
+      setDraftAttachments([])
       setActiveSkillNames([])
       setActiveWorkflowMentions([])
+      setActiveContextMentions([])
       setActiveComposerTokenKeys([])
     }
 
     const retryTurn = useCallback(
       (turn: AgentRuntimeTurn) => {
         const text = turn.input_text.trim()
-        if (!text) return
         const inputParts =
           turn.input_parts && turn.input_parts.length
             ? retryInputPartsForTurn(turn)
-            : [{ type: "text" as const, text }]
+            : text
+              ? [{ type: "text" as const, text }]
+              : []
+        if (!text && !inputParts.some(isStructuredInputPart)) return
         submitTurn(
           text,
           inputParts,
@@ -1561,6 +1790,18 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         onSelectModel={(model) => void setSelectedModel(model)}
         contextAttachments={contextAttachments}
         onRemoveContextAttachment={removeContextAttachment}
+        attachments={draftAttachments}
+        onAddFiles={addFiles}
+        onAddFolder={(files, relativePaths) =>
+          void uploadDraftAttachments("folder", files, relativePaths)
+        }
+        onPasteImages={(files) =>
+          files.forEach((file) =>
+            void uploadDraftAttachments("image", [file], undefined, "clipboard"),
+          )
+        }
+        onRemoveAttachment={removeDraftAttachment}
+        onRetryAttachment={retryDraftAttachment}
         availableSkills={availableSkills}
         activeSkillNames={activeSkillNames}
         activeComposerTokens={activeComposerTokens}
@@ -1574,6 +1815,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         workflowMentionsError={workflowMentionsError}
         onAddWorkflowMention={addWorkflowMention}
         onRemoveWorkflowMention={removeWorkflowMention}
+        activeContextMentions={activeContextMentions}
+        onSearchContext={searchComposerContext}
+        onAddContextMention={addContextMention}
+        onRemoveContextMention={removeContextMention}
         tokenUsageSummary={state.session?.token_usage_summary}
         executionSelection={executionSelection}
         currentExecutionTargetLabel={
@@ -2166,6 +2411,15 @@ function inputDisplayPartsForSubmission({
       ]
   ).map((token): AgentInputDisplayPart => {
     if (token.kind === "skill") return { type: "skill", name: token.skill.name }
+    if (token.kind === "context") {
+      return {
+        type: "context",
+        id: token.context.id,
+        kind: token.context.kind,
+        label: token.context.label,
+        detail: token.context.detail,
+      }
+    }
     return {
       type: "workflow",
       workflow_id: token.workflow.id,
@@ -2214,6 +2468,48 @@ function workflowMentionInputPart(
   }
 }
 
+function draftAttachmentFromRuntime(
+  attachment: AgentRuntimeAttachment,
+  files: File[],
+  relativePaths: string[] | undefined,
+  source: "upload" | "clipboard",
+): DraftComposerAttachment {
+  return {
+    id: attachment.id,
+    filename: attachment.filename,
+    kind: attachment.kind,
+    status: attachment.status === "ready" ? "ready" : "error",
+    previewUrl:
+      attachment.kind === "image"
+        ? agentRuntimeAttachmentPreviewUrl(attachment.id)
+        : null,
+    error: attachment.error_message ?? null,
+    files,
+    relativePaths,
+    source,
+  }
+}
+
+function draftAttachmentInputPart(
+  attachment: DraftComposerAttachment,
+): AgentRuntimeInputPart {
+  if (attachment.kind === "image") {
+    return {
+      type: "image_ref",
+      attachment_id: attachment.id,
+      detail: "high",
+    }
+  }
+  if (attachment.kind === "folder") {
+    return { type: "directory_ref", attachment_id: attachment.id }
+  }
+  return { type: "file_ref", attachment_id: attachment.id }
+}
+
+function isStructuredInputPart(part: AgentRuntimeInputPart) {
+  return "type" in part ? part.type !== "text" : "kind" in part
+}
+
 function inputDisplayMetadataFromInputParts(
   inputParts: AgentRuntimeInputPart[],
   activeSkillNames: string[] = [],
@@ -2260,6 +2556,20 @@ function normalizeInputDisplayParts(inputDisplayParts?: AgentInputDisplayPart[] 
     if (part.type === "skill") {
       const name = part.name.trim()
       return name ? [{ type: "skill", name }] : []
+    }
+    if (part.type === "context") {
+      const label = part.label.trim()
+      return label
+        ? [
+            {
+              type: "context",
+              id: part.id,
+              kind: part.kind,
+              label,
+              detail: part.detail?.trim() || null,
+            },
+          ]
+        : []
     }
     const name = part.name.trim()
     if (!name) return []
@@ -2353,6 +2663,28 @@ function inputDisplayPartFromMetadata(item: unknown): AgentInputDisplayPart[] {
     return typeof item.name === "string" && item.name.trim()
       ? [{ type: "skill", name: item.name.trim() }]
       : []
+  }
+  if (item.type === "context") {
+    const kind = item.kind
+    if (
+      typeof item.id !== "string" ||
+      !item.id.trim() ||
+      typeof item.label !== "string" ||
+      !item.label.trim() ||
+      (kind !== "file" &&
+        kind !== "directory" &&
+        kind !== "workflow" &&
+        kind !== "run")
+    ) {
+      return []
+    }
+    return [{
+      type: "context",
+      id: item.id.trim(),
+      kind,
+      label: item.label.trim(),
+      detail: nullableString(item.detail),
+    }]
   }
   if (item.type !== "workflow" || typeof item.name !== "string" || !item.name.trim()) {
     return []
@@ -2506,6 +2838,17 @@ function fallbackAgentRuntimeSkill(name: string): AgentRuntimeSkill {
     description: name,
     tags: [],
   }
+}
+
+function contextSearchRequest(query: string): {
+  query: string
+  scope: AgentRuntimeContextSearchScope
+} {
+  const normalized = query.trim().toLowerCase()
+  if (normalized === "file") return { query: "", scope: "file" }
+  if (normalized === "run") return { query: "", scope: "run" }
+  if (normalized === "workflow") return { query: "", scope: "workflow" }
+  return { query, scope: "mixed" }
 }
 
 function maxSidecarWidthForWorkbench(width: number) {
