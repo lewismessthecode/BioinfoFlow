@@ -13,6 +13,15 @@ describe("auth config", () => {
     delete process.env.NEXT_PUBLIC_AUTH_MODE
   })
 
+  it("defaults to dev mode when auth configuration is absent", async () => {
+    const { clientAuthConfig, getServerAuthConfig } = await loadConfigModule()
+
+    expect(getServerAuthConfig().mode).toBe("dev")
+    expect(getServerAuthConfig().authEnabled).toBe(false)
+    expect(clientAuthConfig.mode).toBe("dev")
+    expect(clientAuthConfig.authEnabled).toBe(false)
+  })
+
   it("defaults to personal mode when auth is enabled", async () => {
     process.env.AUTH_ENABLED = "true"
 

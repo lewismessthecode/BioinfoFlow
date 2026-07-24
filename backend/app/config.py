@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     # Auth (Better Auth shared DB)
     better_auth_db_path: str = ""
     auth_mode: str = ""
-    auth_enabled: bool = True
+    auth_enabled: bool = False
 
     # Database (SQLite MVP)
     database_url: str = ""

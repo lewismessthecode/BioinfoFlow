@@ -73,7 +73,9 @@ uses Uvicorn's loopback default.
 When neither the modern nor legacy auth variables are present, frontend auth
 configuration resolves to dev mode. Explicit values remain authoritative.
 `bun run dev` injects `--hostname 127.0.0.1` unless the caller explicitly
-provides a hostname, keeping passwordless development loopback-only.
+provides a hostname, keeping passwordless development loopback-only. A direct
+frontend image build also defaults its baked auth mode to dev; release builds
+that explicitly request personal or dev mode remain unchanged.
 
 ### Source Docker Compose defaults
 
@@ -110,4 +112,3 @@ provider credentials.
 - Backend pytest and Ruff checks.
 - Frontend lint, tests, i18n lint, and dead-code lint where affected.
 - Markdown diff check and `git diff --check`.
-

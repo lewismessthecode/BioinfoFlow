@@ -37,7 +37,7 @@ COPY . .
 # Build-time env vars — baked into the JS bundle by Next.js.
 # Changing these requires a rebuild (docker compose up -d --build).
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
-ARG NEXT_PUBLIC_AUTH_MODE=personal
+ARG NEXT_PUBLIC_AUTH_MODE=dev
 ARG NEXT_PUBLIC_AUTH_LOCAL_ENABLED=true
 ARG NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED=false
 
