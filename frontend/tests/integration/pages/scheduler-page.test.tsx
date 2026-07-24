@@ -116,6 +116,7 @@ describe("SchedulerPage", () => {
       // The live monitor waits for the first resource sample before showing pressure.
       expect(screen.getByText("scheduler.resourceSnapshotPending")).toBeInTheDocument()
       expect(screen.getByText("scheduler.activeRuns.title")).toBeInTheDocument()
+      expect(screen.getByText("scheduler.activeRuns.viewAll")).toBeInTheDocument()
       expect(screen.getByText("scheduler.advanced.button")).toBeInTheDocument()
       expect(screen.getByText("scheduler.activeRuns.cpuShare")).toBeInTheDocument()
       expect(screen.getByText("rnaseq_quant")).toBeInTheDocument()
@@ -159,6 +160,12 @@ describe("SchedulerPage", () => {
       expect(screen.getByText("scheduler.status.fallbackBody")).toBeInTheDocument()
       // Fallback mode should not present missing resource samples as healthy capacity.
       expect(screen.getByText("scheduler.resourcesUnavailable")).toBeInTheDocument()
+      expect(
+        screen.getByText("scheduler.activeRuns.emptyStates.disconnected.title")
+      ).toBeInTheDocument()
+      expect(screen.getByTestId("active-runs-empty-state")).not.toHaveClass(
+        "border-dashed"
+      )
     })
   })
 })
