@@ -485,6 +485,13 @@ export default function ConnectionsPage() {
     (connection) =>
       connection.auth_method !== "jump" && connection.id !== editingConnectionId,
   )
+  const jumpRouteUnavailable = Boolean(
+    editingConnection &&
+      editingConnection.auth_method !== "jump" &&
+      connections.some(
+        (connection) => connection.jump_connection_id === editingConnection.id,
+      ),
+  )
 
   return (
     <div className="relative h-full overflow-hidden bg-background">
@@ -549,6 +556,7 @@ export default function ConnectionsPage() {
         formErrorField={formErrorField}
         isSaving={isSaving}
         jumpCandidates={jumpCandidates}
+        jumpRouteUnavailable={jumpRouteUnavailable}
         onOpenChange={handleDialogOpenChange}
         onSubmit={handleSubmit}
         onFormChange={setForm}

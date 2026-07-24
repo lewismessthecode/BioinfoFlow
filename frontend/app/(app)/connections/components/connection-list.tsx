@@ -133,12 +133,18 @@ export function ConnectionList({
                     </div>
 
                     <div className="min-w-0">
-                      <h2 className="truncate text-sm font-semibold tracking-tight text-foreground">{connection.name}</h2>
-                      <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                      <h2 title={connection.name} className="truncate text-sm font-semibold tracking-tight text-foreground">{connection.name}</h2>
+                      <p
+                        title={`${connection.username}@${connection.host}`}
+                        className="mt-1 truncate font-mono text-xs text-muted-foreground"
+                      >
                         {connection.username}@{connection.host}
                       </p>
                       {jumpConnectionName ? (
-                        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                        <p
+                          title={t("card.via", { name: jumpConnectionName })}
+                          className="mt-0.5 truncate text-[11px] text-muted-foreground"
+                        >
                           {t("card.via", { name: jumpConnectionName })}
                         </p>
                       ) : null}

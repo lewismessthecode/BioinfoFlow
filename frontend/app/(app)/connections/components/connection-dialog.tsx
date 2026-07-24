@@ -6,6 +6,8 @@ import {
   type FormEvent,
   type ReactNode,
   type SetStateAction,
+  useEffect,
+  useRef,
 } from "react"
 import {
   BookOpenText,
@@ -107,6 +109,7 @@ type ConnectionDialogProps = {
   formErrorField: FormErrorField
   isSaving: boolean
   jumpCandidates: RemoteConnection[]
+  jumpRouteUnavailable: boolean
   onOpenChange: (open: boolean) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onFormChange: Dispatch<SetStateAction<ConnectionFormState>>
@@ -129,6 +132,7 @@ export function ConnectionDialog({
   formErrorField,
   isSaving,
   jumpCandidates,
+  jumpRouteUnavailable,
   onOpenChange,
   onSubmit,
   onFormChange,
@@ -141,6 +145,18 @@ export function ConnectionDialog({
   const tCommon = useTranslations("common")
   const usesAdvancedAuth = advancedAuthMethods.includes(form.auth_method)
   const usesJumpHost = form.auth_method === "jump"
+  const directAuthMethodRef = useRef<Exclude<RemoteConnectionAuthMethod, "jump"> | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      directAuthMethodRef.current = null
+      return
+    }
+
+    const initialAuthMethod = connection?.auth_method ?? "password"
+    directAuthMethodRef.current =
+      initialAuthMethod === "jump" ? null : initialAuthMethod
+  }, [connection, open])
 
   const handlePrivateKeyFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -172,15 +188,15 @@ export function ConnectionDialog({
       if (route === "direct" && current.auth_method !== "jump") return current
       if (route === "jump" && current.auth_method === "jump") return current
 
+      if (route === "jump") {
+        directAuthMethodRef.current = current.auth_method
+      }
+
       return {
         ...current,
-        auth_method: route === "jump" ? "jump" : "password",
+        auth_method:
+          route === "jump" ? "jump" : directAuthMethodRef.current ?? "password",
         jump_connection_id: "",
-        ssh_alias: "",
-        key_path: "",
-        password: "",
-        private_key: "",
-        passphrase: "",
       }
     })
   }
@@ -314,7 +330,11 @@ export function ConnectionDialog({
                   <Label className="text-xs font-medium text-muted-foreground">
                     {t("route.label")}
                   </Label>
-                  <div aria-label={t("route.label")} className="grid grid-cols-2 gap-2">
+                  <div
+                    role="group"
+                    aria-label={t("route.label")}
+                    className="grid grid-cols-2 gap-2"
+                  >
                     <AuthMethodButton
                       selected={!usesJumpHost}
                       title={t("route.direct")}
@@ -324,8 +344,14 @@ export function ConnectionDialog({
                       selected={usesJumpHost}
                       title={t("route.jump")}
                       onSelect={() => selectRoute("jump")}
+                      disabled={jumpRouteUnavailable}
                     />
                   </div>
+                  {jumpRouteUnavailable ? (
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {t("route.usedAsJumpHost")}
+                    </p>
+                  ) : null}
                 </div>
 
                 <Field label={t("fields.username")} htmlFor="connection-username">
@@ -610,19 +636,22 @@ function AuthMethodButton({
   title,
   description,
   onSelect,
+  disabled = false,
 }: {
   selected: boolean
   title: string
   description?: string
   onSelect: () => void
+  disabled?: boolean
 }) {
   return (
     <button
       type="button"
       aria-pressed={selected}
       onClick={onSelect}
+      disabled={disabled}
       className={cn(
-        "inline-flex min-h-10 items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors hover:border-foreground/20 hover:bg-muted/30",
+        "inline-flex min-h-10 items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors hover:border-foreground/20 hover:bg-muted/30 disabled:cursor-not-allowed disabled:opacity-50",
         selected ? "border-foreground/40 bg-muted/40 text-foreground" : "border-border/60 bg-transparent text-muted-foreground",
       )}
     >

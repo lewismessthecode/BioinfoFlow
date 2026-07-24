@@ -2145,7 +2145,8 @@
       "selector": "已保存的跳板主机",
       "placeholder": "选择已保存的主机",
       "helper": "Bioinfoflow 会先登录该主机，再使用它本机的 SSH 密钥或配置连接目标主机。",
-      "noCandidates": "没有可用作跳板主机的直接连接。"
+      "noCandidates": "没有可用作跳板主机的直接连接。",
+      "usedAsJumpHost": "此连接正被用作跳板主机。请先更新依赖它的连接，再更改连接路由。"
     },
     "card": {
       "via": "通过 {name}"

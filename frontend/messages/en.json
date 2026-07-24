@@ -2145,7 +2145,8 @@
       "selector": "Saved jump host",
       "placeholder": "Select a saved host",
       "helper": "Bioinfoflow logs into that host first and uses its local SSH key/config to reach the target.",
-      "noCandidates": "No direct connections are available as jump hosts."
+      "noCandidates": "No direct connections are available as jump hosts.",
+      "usedAsJumpHost": "This connection is used as a jump host. Update dependent connections before changing its route."
     },
     "card": {
       "via": "via {name}"
