@@ -836,6 +836,50 @@ async def test_remote_connections_list_reads_workspace_database_connections(db_s
 
 
 @pytest.mark.asyncio
+async def test_database_remote_connection_resolver_stitches_selected_jump_connection(
+    db_session,
+):
+    service = RemoteConnectionService(db_session)
+    jump = await service.create_connection(
+        {
+            "name": "Bastion",
+            "host": "bastion.example.org",
+            "port": 22,
+            "username": "jump-user",
+            "auth_method": "password",
+            "password": "jump-secret",
+        },
+        workspace_id="workspace-1",
+    )
+    target = await service.create_connection(
+        {
+            "name": "Phoenix",
+            "host": "10.32.5.1",
+            "port": 22,
+            "username": "phoenix",
+            "auth_method": "jump",
+            "jump_connection_id": str(jump.id),
+        },
+        workspace_id="workspace-1",
+    )
+    agent_session = await _create_agent_session(
+        db_session,
+        remote_connection_id=str(target.id),
+    )
+
+    resolved = await DatabaseRemoteConnectionResolver(db_session).get(
+        str(target.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_id=str(agent_session.id),
+    )
+
+    assert resolved.jump_connection is not None
+    assert resolved.jump_connection.id == str(jump.id)
+    assert resolved.jump_connection.password == "jump-secret"
+
+
+@pytest.mark.asyncio
 async def test_remote_tools_require_explicit_selected_connection(db_session):
     service = RemoteConnectionService(db_session)
     await service.create_connection(

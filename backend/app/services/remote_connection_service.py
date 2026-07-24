@@ -42,12 +42,14 @@ class RemoteConnectionTestResult:
 class RemoteConnectionTester(Protocol):
     async def test(
         self,
-        connection: RemoteConnection,
+        connection: RemoteConnectionConfig,
     ) -> RemoteConnectionTestResult: ...
 
 
 class UnavailableRemoteConnectionTester:
-    async def test(self, connection: RemoteConnection) -> RemoteConnectionTestResult:
+    async def test(
+        self, connection: RemoteConnectionConfig
+    ) -> RemoteConnectionTestResult:
         del connection
         return RemoteConnectionTestResult(
             status=RemoteConnectionStatus.ERROR,
@@ -59,10 +61,12 @@ class SshRemoteConnectionTester:
     def __init__(self, executor: SshRemoteExecutor | None = None) -> None:
         self.executor = executor or SshRemoteExecutor()
 
-    async def test(self, connection: RemoteConnection) -> RemoteConnectionTestResult:
+    async def test(
+        self, connection: RemoteConnectionConfig
+    ) -> RemoteConnectionTestResult:
         try:
             result = await self.executor.run(
-                remote_connection_config_from_model(connection),
+                connection,
                 "printf bioinfoflow-ok",
                 timeout_seconds=10,
                 output_limit=2000,
@@ -76,7 +80,9 @@ class SshRemoteConnectionTester:
             return RemoteConnectionTestResult(status=RemoteConnectionStatus.ONLINE)
         return RemoteConnectionTestResult(
             status=RemoteConnectionStatus.ERROR,
-            error=(result.stderr or result.stdout or "SSH connection test failed").strip(),
+            error=(
+                result.stderr or result.stdout or "SSH connection test failed"
+            ).strip(),
         )
 
 
@@ -219,7 +225,9 @@ class RemoteConnectionService:
             raise ConflictError(
                 "Remote connection is used as a jump host by one or more connections"
             )
-        has_projects = await ProjectRepository(self.repo.session).has_remote_connection_projects(
+        has_projects = await ProjectRepository(
+            self.repo.session
+        ).has_remote_connection_projects(
             str(connection.id),
             workspace_id=str(connection.workspace_id),
         )
@@ -247,7 +255,9 @@ class RemoteConnectionService:
             connection.jump_connection_id if connection is not None else None,
         )
         if connection is not None and str(connection.id) == str(jump_connection_id):
-            raise ValidationError("A remote connection cannot use itself as a jump host")
+            raise ValidationError(
+                "A remote connection cannot use itself as a jump host"
+            )
         jump_connection = await self.repo.get_jump_for_workspace(
             str(jump_connection_id),
             workspace_id=workspace_id,
@@ -261,7 +271,9 @@ class RemoteConnectionService:
         self,
         connection: RemoteConnection,
     ) -> tuple[RemoteConnection, datetime]:
-        result = await self.tester.test(connection)
+        result = await self.tester.test(
+            await self.resolve_connection_config(connection)
+        )
         if result.status not in RemoteConnectionStatus.VALUES:
             raise ValidationError(
                 "Remote connection tester returned an unsupported status",
@@ -276,9 +288,31 @@ class RemoteConnectionService:
         )
         return updated, updated.last_checked_at or checked_at
 
+    async def resolve_connection_config(
+        self,
+        connection: RemoteConnection,
+    ) -> RemoteConnectionConfig:
+        jump_config = None
+        if connection.auth_method == RemoteConnectionAuthMethod.JUMP:
+            jump = await self.repo.get_jump_for_workspace(
+                str(connection.jump_connection_id),
+                workspace_id=str(connection.workspace_id),
+            )
+            if jump is None:
+                raise ValidationError(
+                    "Jump connection must exist in the same workspace"
+                )
+            jump_config = remote_connection_config_from_model(jump)
+        return remote_connection_config_from_model(
+            connection,
+            jump_connection=jump_config,
+        )
+
 
 def remote_connection_config_from_model(
     connection: RemoteConnection,
+    *,
+    jump_connection: RemoteConnectionConfig | None = None,
 ) -> RemoteConnectionConfig:
     key_path = (
         connection.key_path
@@ -315,6 +349,7 @@ def remote_connection_config_from_model(
         ),
         status=connection.last_status,
         skill_summary=connection.skill_instructions,
+        jump_connection=jump_connection,
     )
 
 
@@ -329,7 +364,9 @@ def _credential_payload(
     passphrase = next_data.pop("passphrase", None)
     auth_method = next_data.get(
         "auth_method",
-        existing.auth_method if existing is not None else RemoteConnectionAuthMethod.PASSWORD,
+        existing.auth_method
+        if existing is not None
+        else RemoteConnectionAuthMethod.PASSWORD,
     )
 
     if auth_method == RemoteConnectionAuthMethod.PASSWORD:
@@ -374,7 +411,9 @@ def _validate_explicit_jump_fields(
 ) -> None:
     auth_method = data.get(
         "auth_method",
-        existing.auth_method if existing is not None else RemoteConnectionAuthMethod.PASSWORD,
+        existing.auth_method
+        if existing is not None
+        else RemoteConnectionAuthMethod.PASSWORD,
     )
     if auth_method != RemoteConnectionAuthMethod.JUMP:
         if data.get("jump_connection_id") is not None:
@@ -382,9 +421,17 @@ def _validate_explicit_jump_fields(
                 f"jump_connection_id must be empty when auth_method is {auth_method}"
             )
         return
-    credential_fields = ("password", "private_key", "passphrase", "ssh_alias", "key_path")
+    credential_fields = (
+        "password",
+        "private_key",
+        "passphrase",
+        "ssh_alias",
+        "key_path",
+    )
     if any(data.get(field) is not None for field in credential_fields):
-        raise ValidationError("Direct credentials must be empty when auth_method is jump")
+        raise ValidationError(
+            "Direct credentials must be empty when auth_method is jump"
+        )
 
 
 def _remote_test_error_message(exc: Exception) -> str:

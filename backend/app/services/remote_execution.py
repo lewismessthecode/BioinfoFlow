@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import os
+import shlex
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,9 +35,10 @@ class RemoteConnectionConfig:
     status: str = "unknown"
     skill_summary: str | None = None
     extra_ssh_options: dict[str, str] = field(default_factory=dict)
+    jump_connection: RemoteConnectionConfig | None = None
 
     def summary(self) -> dict[str, str | None]:
-        return {
+        summary = {
             "id": self.id,
             "name": self.name,
             "host": self.host,
@@ -44,6 +46,10 @@ class RemoteConnectionConfig:
             "status": self.status,
             "skill_summary": self.skill_summary,
         }
+        if self.jump_connection is not None:
+            summary["jump_connection_id"] = self.jump_connection.id
+            summary["jump_connection_name"] = self.jump_connection.name
+        return summary
 
     @property
     def display_target(self) -> str:
@@ -127,25 +133,13 @@ class SshRemoteExecutor:
         *,
         connect_timeout_seconds: int,
     ) -> list[str]:
-        if not command.strip():
-            raise BadRequestError("remote command must be a non-empty string")
-        target = connection.ssh_target
-        if not target.strip():
-            raise BadRequestError("remote connection target must be configured")
-
-        argv = [self.ssh_bin]
-        if connection.ssh_config_path:
-            argv.extend(["-F", connection.ssh_config_path])
-        if connection.key_path:
-            argv.extend(["-i", connection.key_path])
-        if connection.port is not None and not connection.ssh_alias:
-            argv.extend(["-p", str(connection.port)])
-        argv.extend(["-o", "BatchMode=yes"])
-        argv.extend(["-o", f"ConnectTimeout={connect_timeout_seconds}"])
-        for key, value in sorted(connection.extra_ssh_options.items()):
-            argv.extend(["-o", f"{key}={value}"])
-        argv.extend(["--", target, command])
-        return argv
+        return _build_ssh_argv(
+            self.ssh_bin,
+            connection,
+            command,
+            connect_timeout_seconds=connect_timeout_seconds,
+            interactive=False,
+        )
 
     def build_interactive_argv(
         self,
@@ -154,26 +148,13 @@ class SshRemoteExecutor:
         *,
         connect_timeout_seconds: int,
     ) -> list[str]:
-        if not command.strip():
-            raise BadRequestError("remote command must be a non-empty string")
-        target = connection.ssh_target
-        if not target.strip():
-            raise BadRequestError("remote connection target must be configured")
-
-        argv = [self.ssh_bin]
-        if connection.ssh_config_path:
-            argv.extend(["-F", connection.ssh_config_path])
-        if connection.key_path:
-            argv.extend(["-i", connection.key_path])
-        if connection.port is not None and not connection.ssh_alias:
-            argv.extend(["-p", str(connection.port)])
-        argv.extend(["-tt"])
-        argv.extend(["-o", "BatchMode=yes"])
-        argv.extend(["-o", f"ConnectTimeout={connect_timeout_seconds}"])
-        for key, value in sorted(connection.extra_ssh_options.items()):
-            argv.extend(["-o", f"{key}={value}"])
-        argv.extend(["--", target, command])
-        return argv
+        return _build_ssh_argv(
+            self.ssh_bin,
+            connection,
+            command,
+            connect_timeout_seconds=connect_timeout_seconds,
+            interactive=True,
+        )
 
     async def run(
         self,
@@ -187,6 +168,11 @@ class SshRemoteExecutor:
             raise BadRequestError("timeout_seconds must be >= 1")
         if output_limit < 1:
             raise BadRequestError("output_limit must be >= 1")
+        connection, command = _resolve_jump_route(
+            connection,
+            command,
+            connect_timeout_seconds=timeout_seconds,
+        )
         if _uses_stored_credential(connection):
             return await self.async_executor.run(
                 connection,
@@ -249,6 +235,11 @@ class SshRemoteExecutor:
             raise BadRequestError("timeout_seconds must be >= 1")
         if output_limit < 1:
             raise BadRequestError("output_limit must be >= 1")
+        connection, command = _resolve_jump_route(
+            connection,
+            command,
+            connect_timeout_seconds=timeout_seconds,
+        )
         if _uses_stored_credential(connection):
             async for frame in self.async_executor.stream(
                 connection,
@@ -284,7 +275,10 @@ class SshRemoteExecutor:
 
         try:
             while True:
-                if not wait_task.done() and asyncio.get_running_loop().time() >= deadline:
+                if (
+                    not wait_task.done()
+                    and asyncio.get_running_loop().time() >= deadline
+                ):
                     timed_out = True
                     with contextlib.suppress(ProcessLookupError):
                         process.kill()
@@ -651,6 +645,75 @@ def _limit_text(value: str, output_limit: int) -> tuple[str, bool]:
 
 def _uses_stored_credential(connection: RemoteConnectionConfig) -> bool:
     return bool(connection.password or connection.private_key)
+
+
+def build_inner_ssh_command(
+    connection: RemoteConnectionConfig,
+    command: str,
+    *,
+    connect_timeout_seconds: int,
+    interactive: bool = False,
+) -> str:
+    return shlex.join(
+        _build_ssh_argv(
+            "ssh",
+            connection,
+            command,
+            connect_timeout_seconds=connect_timeout_seconds,
+            interactive=interactive,
+        )
+    )
+
+
+def _resolve_jump_route(
+    connection: RemoteConnectionConfig,
+    command: str,
+    *,
+    connect_timeout_seconds: int,
+) -> tuple[RemoteConnectionConfig, str]:
+    if not command.strip():
+        raise BadRequestError("remote command must be a non-empty string")
+    jump_connection = connection.jump_connection
+    if jump_connection is None:
+        return connection, command
+    if jump_connection.jump_connection is not None:
+        raise BadRequestError("Nested jump connections are not supported")
+    return jump_connection, build_inner_ssh_command(
+        connection,
+        command,
+        connect_timeout_seconds=connect_timeout_seconds,
+    )
+
+
+def _build_ssh_argv(
+    ssh_bin: str,
+    connection: RemoteConnectionConfig,
+    command: str,
+    *,
+    connect_timeout_seconds: int,
+    interactive: bool,
+) -> list[str]:
+    if not command.strip():
+        raise BadRequestError("remote command must be a non-empty string")
+    target = connection.ssh_target
+    if not target.strip():
+        raise BadRequestError("remote connection target must be configured")
+
+    argv = [ssh_bin]
+    if connection.ssh_config_path:
+        argv.extend(["-F", connection.ssh_config_path])
+    if connection.key_path:
+        argv.extend(["-i", connection.key_path])
+    if connection.port is not None and not connection.ssh_alias:
+        argv.extend(["-p", str(connection.port)])
+    if interactive:
+        argv.append("-tt")
+    argv.extend(["-o", "BatchMode=yes"])
+    argv.extend(["-o", f"ConnectTimeout={connect_timeout_seconds}"])
+    for key, value in sorted(connection.extra_ssh_options.items()):
+        argv.extend(["-o", f"{key}={value}"])
+    argv.extend(["--", target, command])
+    return argv
 
 
 def _format_target(host: str, username: str | None) -> str:

@@ -375,7 +375,9 @@ async def test_remote_connection_rejects_cross_workspace_jump_reference(
     try:
         jump_resp = await async_client.post(
             "/api/v1/connections",
-            json=_connection_payload(name="Other Bastion", auth_method="agent", key_path=None),
+            json=_connection_payload(
+                name="Other Bastion", auth_method="agent", key_path=None
+            ),
         )
     finally:
         _clear_user_overrides(app)
@@ -579,6 +581,97 @@ async def test_remote_connection_service_enforces_auth_method_fields(db_session)
 
 
 @pytest.mark.asyncio
+async def test_remote_connection_service_resolves_jump_credentials_without_summary_leak(
+    db_session,
+):
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    service = RemoteConnectionService(db_session)
+    jump = await service.create_connection(
+        _connection_payload(
+            name="Bastion",
+            host="bastion.example.org",
+            auth_method="password",
+            key_path=None,
+            password="jump-secret",
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    target = await service.create_connection(
+        _connection_payload(
+            name="Phoenix",
+            host="10.32.5.1",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=str(jump.id),
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+
+    config = await service.resolve_connection_config(target)
+
+    assert config.jump_connection is not None
+    assert config.jump_connection.id == str(jump.id)
+    assert config.jump_connection.password == "jump-secret"
+    assert config.summary()["jump_connection_id"] == str(jump.id)
+    assert config.summary()["jump_connection_name"] == "Bastion"
+    assert "password" not in config.summary()
+    assert "jump_connection" not in config.summary()
+
+
+@pytest.mark.asyncio
+async def test_jump_connection_test_and_browse_receive_resolved_config(
+    async_client,
+    monkeypatch,
+):
+    jump_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    jump_id = jump_resp.json()["data"]["id"]
+    target_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            name="Phoenix",
+            host="10.32.5.1",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=jump_id,
+        ),
+    )
+    target_id = target_resp.json()["data"]["id"]
+    calls = []
+
+    from app.services.remote_execution import RemoteCommandResult
+
+    async def fake_run(self, connection, command, *, timeout_seconds, output_limit):
+        calls.append(connection)
+        stdout = "bioinfoflow-ok" if command == "printf bioinfoflow-ok" else ""
+        return RemoteCommandResult(
+            exit_code=0,
+            stdout=stdout,
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+
+    monkeypatch.setattr("app.services.remote_execution.SshRemoteExecutor.run", fake_run)
+
+    test_response = await async_client.post(f"/api/v1/connections/{target_id}/test")
+    browse_response = await async_client.get(
+        f"/api/v1/connections/{target_id}/directories"
+    )
+
+    assert test_response.status_code == 200
+    assert browse_response.status_code == 200
+    assert len(calls) == 2
+    assert all(call.jump_connection is not None for call in calls)
+    assert all(call.jump_connection.id == jump_id for call in calls)
+
+
+@pytest.mark.asyncio
 async def test_remote_connection_routes_reject_malformed_ids(async_client):
     response = await async_client.get("/api/v1/connections/not-a-uuid")
     assert response.status_code == 422
@@ -703,7 +796,9 @@ async def test_remote_connection_test_uses_ssh_executor_by_default(
 
 
 @pytest.mark.asyncio
-async def test_remote_directory_browse_uses_bounded_ssh_command(async_client, monkeypatch):
+async def test_remote_directory_browse_uses_bounded_ssh_command(
+    async_client, monkeypatch
+):
     create_resp = await async_client.post(
         "/api/v1/connections",
         json=_connection_payload(auth_method="agent", key_path=None),
@@ -786,7 +881,9 @@ def test_remote_directory_command_does_not_block_on_fifo(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_remote_connection_delete_conflicts_when_used_by_remote_project(async_client):
+async def test_remote_connection_delete_conflicts_when_used_by_remote_project(
+    async_client,
+):
     create_resp = await async_client.post(
         "/api/v1/connections",
         json=_connection_payload(auth_method="agent", key_path=None),
@@ -894,3 +991,66 @@ def test_remote_connection_websocket_requires_admin_in_team_mode(
             websocket.receive_json()
 
     assert exc_info.value.code == 4403
+
+
+def test_remote_connection_websocket_receives_resolved_jump_config(
+    remote_connection_test_client,
+    monkeypatch,
+):
+    client, session_maker = remote_connection_test_client
+
+    async def create_connections():
+        from app.services.remote_connection_service import RemoteConnectionService
+
+        async with session_maker() as session:
+            service = RemoteConnectionService(session)
+            jump = await service.create_connection(
+                _connection_payload(
+                    name="Bastion",
+                    auth_method="agent",
+                    key_path=None,
+                ),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+            )
+            target = await service.create_connection(
+                _connection_payload(
+                    name="Phoenix",
+                    host="10.32.5.1",
+                    auth_method="jump",
+                    key_path=None,
+                    jump_connection_id=str(jump.id),
+                ),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+            )
+            return target, jump
+
+    target, jump = asyncio.run(create_connections())
+    calls = []
+
+    async def fake_stream(
+        self,
+        connection,
+        command,
+        *,
+        timeout_seconds,
+        output_limit,
+    ):
+        from app.services.remote_execution import RemoteOutputFrame
+
+        calls.append(connection)
+        yield RemoteOutputFrame(type="exit", exit_code=0)
+
+    monkeypatch.setattr(
+        "app.services.remote_execution.SshRemoteExecutor.stream",
+        fake_stream,
+    )
+
+    with client.websocket_connect(
+        f"/api/v1/connections/{target.id}/exec/ws"
+    ) as websocket:
+        websocket.send_json({"command": "hostname"})
+        assert websocket.receive_json()["exit_code"] == 0
+
+    assert len(calls) == 1
+    assert calls[0].jump_connection is not None
+    assert calls[0].jump_connection.id == str(jump.id)
