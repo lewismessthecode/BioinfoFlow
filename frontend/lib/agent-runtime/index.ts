@@ -1,6 +1,7 @@
 export * from "./activity-groups"
 export * from "./artifacts"
 export * from "./client"
+export * from "./composer-document"
 export * from "./event-stream"
 export * from "./execution-target"
 export * from "./reducer"
