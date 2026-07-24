@@ -472,6 +472,12 @@ export default function ConnectionsPage() {
     }))
   }
 
+  const clearJumpConnectionError = () => {
+    if (formErrorField !== "jump_connection_id") return
+    setFormError(null)
+    setFormErrorField(null)
+  }
+
   const editingConnection = editingConnectionId
     ? connections.find((connection) => connection.id === editingConnectionId) ?? null
     : null
@@ -557,6 +563,7 @@ export default function ConnectionsPage() {
         isSaving={isSaving}
         jumpCandidates={jumpCandidates}
         jumpRouteUnavailable={jumpRouteUnavailable}
+        onClearJumpConnectionError={clearJumpConnectionError}
         onOpenChange={handleDialogOpenChange}
         onSubmit={handleSubmit}
         onFormChange={setForm}

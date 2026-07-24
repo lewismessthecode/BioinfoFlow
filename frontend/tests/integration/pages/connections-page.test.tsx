@@ -344,6 +344,55 @@ describe("ConnectionsPage", () => {
     expect(within(panel).getByLabelText("Passphrase")).toHaveValue("draft-passphrase")
   })
 
+  it("preserves the direct draft when a pending retest replaces the connection object", async () => {
+    const user = userEvent.setup()
+    let resolveTest: (value: unknown) => void = () => {}
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection, secondConnection] })
+    apiRequestMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveTest = resolve
+        }),
+    )
+
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+    const panel = await openEditConnectionPanel(user)
+    await clickConnectionAction(user, "Retest connection")
+    await user.click(within(panel).getByRole("button", { name: /^Private key/ }))
+    await user.type(within(panel).getByLabelText("Private key"), "pending-retest-key")
+    await user.type(within(panel).getByLabelText("Passphrase"), "pending-retest-passphrase")
+    await user.click(within(panel).getByRole("button", { name: /Via jump host/ }))
+
+    await act(async () => {
+      resolveTest({
+        data: {
+          status: "online",
+          error: null,
+          checked_at: "2026-06-25T10:11:12Z",
+          connection: {
+            ...liveConnection,
+            last_status: "online",
+            last_error: null,
+            last_checked_at: "2026-06-25T10:11:12Z",
+          },
+        },
+      })
+    })
+    expect(await screen.findAllByText("Online")).not.toHaveLength(0)
+
+    await user.click(within(panel).getByRole("button", { name: /^Direct/ }))
+    expect(within(panel).getByRole("button", { name: /^Private key/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+    expect(within(panel).getByLabelText("Private key")).toHaveValue("pending-retest-key")
+    expect(within(panel).getByLabelText("Passphrase")).toHaveValue(
+      "pending-retest-passphrase",
+    )
+  })
+
   it("prevents converting a direct connection that is used as a jump host", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockResolvedValueOnce({ data: [liveConnection, jumpConnection] })
@@ -390,6 +439,11 @@ describe("ConnectionsPage", () => {
       "true",
     )
     expect(apiRequestMock).toHaveBeenCalledTimes(1)
+
+    const selector = within(panel).getByRole("combobox", { name: "Saved jump host" })
+    selector.focus()
+    await user.keyboard("{ArrowDown}{Enter}")
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   })
 
   it("saves HALOS through Simulation environment with cleared direct credentials", async () => {

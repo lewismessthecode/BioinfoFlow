@@ -110,6 +110,7 @@ type ConnectionDialogProps = {
   isSaving: boolean
   jumpCandidates: RemoteConnection[]
   jumpRouteUnavailable: boolean
+  onClearJumpConnectionError: () => void
   onOpenChange: (open: boolean) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onFormChange: Dispatch<SetStateAction<ConnectionFormState>>
@@ -133,6 +134,7 @@ export function ConnectionDialog({
   isSaving,
   jumpCandidates,
   jumpRouteUnavailable,
+  onClearJumpConnectionError,
   onOpenChange,
   onSubmit,
   onFormChange,
@@ -156,7 +158,9 @@ export function ConnectionDialog({
     const initialAuthMethod = connection?.auth_method ?? "password"
     directAuthMethodRef.current =
       initialAuthMethod === "jump" ? null : initialAuthMethod
-  }, [connection, open])
+    // Status refreshes replace the connection object; only a new drawer session resets the draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connection?.id, mode, open])
 
   const handlePrivateKeyFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -199,6 +203,7 @@ export function ConnectionDialog({
         jump_connection_id: "",
       }
     })
+    if (route === "direct") onClearJumpConnectionError()
   }
 
   if (!open) return null
@@ -369,9 +374,10 @@ export function ConnectionDialog({
                       <Field label={t("route.selector")} htmlFor="connection-jump-host">
                         <Select
                           value={form.jump_connection_id || undefined}
-                          onValueChange={(value) =>
+                          onValueChange={(value) => {
                             onFormChange((current) => ({ ...current, jump_connection_id: value }))
-                          }
+                            onClearJumpConnectionError()
+                          }}
                         >
                           <SelectTrigger
                             id="connection-jump-host"
