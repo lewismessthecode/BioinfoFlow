@@ -802,6 +802,142 @@ async def test_agent_session_state_can_limit_large_event_payload(async_client, d
 
 
 @pytest.mark.asyncio
+async def test_public_event_views_filter_visibility_before_limit_and_project_types(
+    async_client,
+    db_session,
+):
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"title": "Public event boundary"},
+    )
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+    turn = await AgentCoreService(db_session).create_turn_record(
+        session_id=session["id"],
+        workspace_id=session["workspace_id"],
+        user_id=session["user_id"],
+        input_text="Verify the public event contract.",
+    )
+    for seq, visibility in [(2, "audit"), (3, "internal")]:
+        db_session.add(
+            AgentEvent(
+                session_id=session["id"],
+                turn_id=str(turn.id),
+                seq=seq,
+                type="model.warning",
+                payload={"secret": visibility},
+                visibility=visibility,
+                schema_version=1,
+            )
+        )
+    db_session.add(
+        AgentEvent(
+            session_id=session["id"],
+            turn_id=str(turn.id),
+            seq=4,
+            type="turn.started",
+            payload={"worker": "primary"},
+            visibility="user",
+            schema_version=1,
+        )
+    )
+    db_session.add(
+        AgentEvent(
+            session_id=session["id"],
+            turn_id=str(turn.id),
+            seq=5,
+            type="extension.private_progress",
+            payload={"detail": "not part of public v1"},
+            visibility="user",
+            schema_version=1,
+        )
+    )
+    await db_session.commit()
+
+    state = await async_client.get(
+        f"/api/v1/agent/sessions/{session['id']}/state"
+        "?event_view=public&event_limit=1"
+    )
+    assert state.status_code == 200
+    assert state.json()["data"]["events"] == [
+        {
+            **state.json()["data"]["events"][0],
+            "seq": 4,
+            "type": "turn.lifecycle",
+            "payload": {"worker": "primary", "status": "started"},
+            "visibility": "user",
+            "schema_version": 1,
+        }
+    ]
+
+    turn_events = await async_client.get(
+        f"/api/v1/agent/turns/{turn.id}/events?event_view=public"
+    )
+    assert turn_events.status_code == 200
+    assert [event["type"] for event in turn_events.json()["data"]] == [
+        "turn.lifecycle",
+        "turn.lifecycle",
+    ]
+    assert [event["seq"] for event in turn_events.json()["data"]] == [1, 4]
+
+
+@pytest.mark.asyncio
+async def test_public_event_stream_uses_projected_names_and_hides_non_user_events(
+    async_client,
+    db_session,
+):
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"title": "Public event stream"},
+    )
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+    turn = await AgentCoreService(db_session).create_turn_record(
+        session_id=session["id"],
+        workspace_id=session["workspace_id"],
+        user_id=session["user_id"],
+        input_text="Stream safely.",
+    )
+    db_session.add_all(
+        [
+            AgentEvent(
+                session_id=session["id"],
+                turn_id=str(turn.id),
+                seq=2,
+                type="permission.policy_updated",
+                payload={"secret": True},
+                visibility="audit",
+                schema_version=1,
+            ),
+            AgentEvent(
+                session_id=session["id"],
+                turn_id=str(turn.id),
+                seq=3,
+                type="assistant.text.delta",
+                payload={"message_id": "message-1", "content": "Hi"},
+                visibility="user",
+                schema_version=1,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    stream_lines: list[str] = []
+    async with async_client.stream(
+        "GET",
+        f"/api/v1/agent/sessions/{session['id']}/stream"
+        "?after_seq=1&follow=false&event_view=public",
+    ) as stream:
+        assert stream.status_code == 200
+        async for line in stream.aiter_lines():
+            stream_lines.append(line)
+
+    assert "event: assistant.content" in stream_lines
+    assert "event: permission.policy_updated" not in stream_lines
+    assert not any('"secret":true' in line for line in stream_lines)
+
+
+@pytest.mark.asyncio
 async def test_agent_session_state_transcript_view_drops_superseded_stream_deltas(
     async_client,
     db_session,

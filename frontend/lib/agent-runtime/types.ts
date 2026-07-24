@@ -271,6 +271,16 @@ export type AgentRuntimeEvent = {
   updated_at: string
 }
 
+export type AgentPublicEventType =
+  | "turn.lifecycle"
+  | "turn.steering"
+  | "model.lifecycle"
+  | "assistant.content"
+  | "assistant.tool_call"
+  | "action.lifecycle"
+  | "artifact.created"
+  | "memory.lifecycle"
+
 export type AgentRuntimeTextBlockStatus =
   | "streaming"
   | "completed"

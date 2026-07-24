@@ -909,13 +909,20 @@ class AgentCoreService:
         workspace_id: str,
         user_id: str,
         after_seq: int = 0,
+        visibility: str | None = None,
+        event_types: frozenset[str] | set[str] | None = None,
     ):
         await self.require_turn(
             turn_id=turn_id,
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        return await self.event_repo.list_for_turn(turn_id=turn_id, after_seq=after_seq)
+        return await self.event_repo.list_for_turn(
+            turn_id=turn_id,
+            after_seq=after_seq,
+            visibility=visibility,
+            event_types=event_types,
+        )
 
     async def list_events_for_session(
         self,
@@ -926,6 +933,8 @@ class AgentCoreService:
         after_seq: int = 0,
         limit: int | None = None,
         transcript_view: bool = False,
+        visibility: str | None = None,
+        event_types: frozenset[str] | set[str] | None = None,
     ):
         await self.require_session(
             session_id=session_id,
@@ -936,6 +945,8 @@ class AgentCoreService:
             session_id=session_id,
             after_seq=after_seq,
             limit=None if transcript_view else limit,
+            visibility=visibility,
+            event_types=event_types,
         )
         if not transcript_view:
             return events
@@ -1589,7 +1600,9 @@ def _normalized_execution_scope(metadata: Any) -> tuple[Any, ...] | None:
     return (str(scope.get("mode") or ""), normalized_targets)
 
 
-def _normalized_toolset(policy: Any) -> tuple[str, tuple[str, ...] | None]:
+def _normalized_toolset(
+    policy: Any,
+) -> tuple[str, tuple[str, ...] | None, tuple[str, ...] | None]:
     source = policy if isinstance(policy, dict) else {}
     name = str(source.get("name") or "default").strip().lower()
     allowed_tools = source.get("allowed_tools")
@@ -1598,7 +1611,13 @@ def _normalized_toolset(policy: Any) -> tuple[str, tuple[str, ...] | None]:
         if isinstance(allowed_tools, list) and allowed_tools
         else None
     )
-    return name, normalized_allowed
+    capabilities = source.get("capabilities")
+    normalized_capabilities = (
+        tuple(sorted({str(item) for item in capabilities if str(item)}))
+        if isinstance(capabilities, list) and capabilities
+        else None
+    )
+    return name, normalized_allowed, normalized_capabilities
 
 
 async def _remote_boundary_fingerprint(

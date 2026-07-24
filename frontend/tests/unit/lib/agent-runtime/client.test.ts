@@ -42,12 +42,34 @@ describe("agent runtime client", () => {
     })
   })
 
-  it("requests the transcript event view for conversation state", async () => {
-    await getAgentRuntimeState("session-1", { eventView: "transcript" })
+  it("requests and normalizes the public event view for conversation state", async () => {
+    apiRequestMock.mockResolvedValueOnce({
+      data: {
+        session: { id: "session-1" },
+        turns: [],
+        events: [
+          {
+            id: "event-1",
+            session_id: "session-1",
+            turn_id: "turn-1",
+            seq: 1,
+            type: "turn.lifecycle",
+            payload: { status: "started" },
+            visibility: "user",
+            schema_version: 1,
+            created_at: "2026-07-24T00:00:00Z",
+            updated_at: "2026-07-24T00:00:00Z",
+          },
+        ],
+      },
+    })
+
+    const state = await getAgentRuntimeState("session-1", { eventView: "public" })
 
     expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1/state", {
-      params: { event_view: "transcript" },
+      params: { event_view: "public" },
     })
+    expect(state.events[0].type).toBe("turn.started")
   })
 
   it("uploads folder files with repeated relative paths", async () => {

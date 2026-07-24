@@ -155,6 +155,13 @@ def _bounded_toolset(policy: Any) -> dict[str, Any]:
             for tool_name in allowed_tools[:128]
             if isinstance(tool_name, str) and tool_name
         ]
+    capabilities = source.get("capabilities")
+    if isinstance(capabilities, list):
+        bounded["capabilities"] = [
+            str(capability)[:80]
+            for capability in capabilities[:32]
+            if isinstance(capability, str) and capability
+        ]
     return bounded
 
 

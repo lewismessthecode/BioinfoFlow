@@ -2444,11 +2444,15 @@ def test_default_registry_registers_remote_tools_with_expected_exposure():
         "remote.list_dir",
     }.issubset(names)
     assert "remote.exec" not in exposure.exposed_names(policy={"name": "default"})
-    assert "remote.connections.list" in exposure.exposed_names(
+    assert "remote.connections.list" not in exposure.exposed_names(
         policy={"name": "default"}
     )
-    assert "remote.read_file" in exposure.exposed_names(policy={"name": "default"})
-    assert "remote.list_dir" in exposure.exposed_names(policy={"name": "default"})
+    assert "remote.read_file" not in exposure.exposed_names(
+        policy={"name": "default"}
+    )
+    assert "remote.list_dir" not in exposure.exposed_names(
+        policy={"name": "default"}
+    )
     assert registry.get("remote.exec").spec.risk_level == "act_high"
     assert registry.get("remote.read_file").spec.risk_level == "read"
     assert registry.get("remote.read_file").spec.write_scope == []

@@ -1,5 +1,9 @@
 import { buildApiUrl } from "@/lib/api"
 import { connectEventSource } from "@/lib/runtime/event-source-connection"
+import {
+  normalizePublicAgentEvent,
+  PUBLIC_AGENT_EVENT_TYPES,
+} from "./public-events"
 import type { AgentRuntimeEvent } from "./types"
 
 const INITIAL_BACKOFF = 1000
@@ -18,6 +22,7 @@ export function subscribeAgentRuntimeEvents(options: {
     url: () =>
       buildApiUrl(`/agent/sessions/${options.sessionId}/stream`, {
         after_seq: cursor,
+        event_view: "public",
       }),
     eventSourceInit: { withCredentials: true },
     initialBackoffMs: INITIAL_BACKOFF,
@@ -32,55 +37,18 @@ export function subscribeAgentRuntimeEvents(options: {
       source.addEventListener("ready", () => {
         options.onReady?.()
       })
-      source.onmessage = (message) => {
+      const consume = (message: MessageEvent) => {
         const event = parseEvent(message as MessageEvent)
         if (!event) return
         cursor = Math.max(cursor, event.seq)
-        options.onEvent(event)
+        const normalized = normalizePublicAgentEvent(event)
+        if (normalized) options.onEvent(normalized)
       }
+      source.onmessage = consume
       const bindKnownEvent = (eventName: string) => {
-        source.addEventListener(eventName, (message) => {
-          const event = parseEvent(message as MessageEvent)
-          if (!event) return
-          cursor = Math.max(cursor, event.seq)
-          options.onEvent(event)
-        })
+        source.addEventListener(eventName, consume)
       }
-      for (const eventName of [
-        "turn.created",
-        "turn.started",
-        "turn.completed",
-        "turn.failed",
-        "turn.cancelled",
-        "turn.interrupted",
-        "turn.no_progress",
-        "turn.recovery.enqueued",
-        "turn.recovery.failed",
-        "model.selected",
-        "model.retrying",
-        "model.fallback",
-        "assistant.text.delta",
-        "assistant.thinking.summary",
-        "assistant.thinking.delta",
-        "assistant.thinking.completed",
-        "assistant.text.completed",
-        "assistant.tool_call.started",
-        "assistant.tool_call.delta",
-        "assistant.tool_call.completed",
-        "action.requested",
-        "action.risk_assessed",
-        "action.waiting_decision",
-        "action.decision_recorded",
-        "action.started",
-        "action.completed",
-        "action.failed",
-        "action.cancelled",
-        "artifact.created",
-        "memory.read",
-        "memory.proposed",
-        "memory.written",
-        "memory.rejected",
-      ]) {
+      for (const eventName of PUBLIC_AGENT_EVENT_TYPES) {
         bindKnownEvent(eventName)
       }
     },

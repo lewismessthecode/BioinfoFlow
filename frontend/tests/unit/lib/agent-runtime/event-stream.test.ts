@@ -59,14 +59,14 @@ class MockEventSource {
   }
 }
 
-function event(seq: number, type = "assistant.text.delta"): AgentRuntimeEvent {
+function event(seq: number, type = "assistant.content"): AgentRuntimeEvent {
   return {
     id: `event-${seq}`,
     session_id: "session-1",
     turn_id: "turn-1",
     seq,
     type,
-    payload: { text: `chunk-${seq}` },
+    payload: { kind: "text", phase: "delta", text: `chunk-${seq}` },
     visibility: "user",
     schema_version: 1,
     created_at: "2026-07-11T00:00:00Z",
@@ -100,19 +100,28 @@ describe("subscribeAgentRuntimeEvents", () => {
     const url = new URL(source.url)
 
     expect(url.pathname).toBe("/api/v1/agent/sessions/session/id/stream")
-    expect(Object.fromEntries(url.searchParams)).toEqual({ after_seq: "4" })
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      after_seq: "4",
+      event_view: "public",
+    })
     expect(source.options).toEqual({ withCredentials: true })
 
     source.emitNamed("ready")
     source.emitMessage(event(5))
-    source.emitNamed("assistant.text.delta", event(6))
+    source.emitNamed("assistant.content", event(6))
     source.emitMessage("{bad-json")
-    source.emitNamed("assistant.text.delta", "{bad-json")
+    source.emitNamed("assistant.content", "{bad-json")
 
     expect(onReady).toHaveBeenCalledOnce()
     expect(onEvent).toHaveBeenCalledTimes(2)
-    expect(onEvent).toHaveBeenNthCalledWith(1, event(5))
-    expect(onEvent).toHaveBeenNthCalledWith(2, event(6))
+    expect(onEvent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ seq: 5, type: "assistant.text.delta" }),
+    )
+    expect(onEvent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ seq: 6, type: "assistant.text.delta" }),
+    )
 
     unsubscribe()
   })
@@ -126,7 +135,10 @@ describe("subscribeAgentRuntimeEvents", () => {
     const firstSource = MockEventSource.instances[0]
 
     firstSource.emitMessage(event(9))
-    firstSource.emitNamed("turn.started", event(7, "turn.started"))
+    firstSource.emitNamed(
+      "turn.lifecycle",
+      event(7, "turn.lifecycle"),
+    )
     firstSource.error(MockEventSource.OPEN)
     vi.advanceTimersByTime(1000)
 

@@ -52,6 +52,10 @@ from app.services.agent_core.execution_target import (
     session_execution_scope_from_metadata,
     session_execution_target_from_metadata,
 )
+from app.services.agent_core.events import (
+    PUBLIC_DURABLE_EVENT_TYPES,
+    project_public_event,
+)
 from app.services.agent_core.skills import AgentSkillRegistry
 from app.services.agent_core.metrics import agent_metrics
 from app.utils.logging import get_logger
@@ -178,6 +182,11 @@ def _turn_read(turn) -> AgentTurnRead:
 
 def _event_read(event) -> AgentEventRead:
     return AgentEventRead.model_validate(event)
+
+
+def _dump_event(event, *, public: bool = False) -> dict | None:
+    dumped = _dump(_event_read(event))
+    return project_public_event(dumped) if public else dumped
 
 
 def _action_read(action) -> AgentActionRead:
@@ -598,7 +607,7 @@ async def get_session_state(
     session_id: str,
     request: Request,
     event_limit: int | None = Query(default=None, ge=1, le=5000),
-    event_view: Literal["full", "transcript"] = Query(default="full"),
+    event_view: Literal["full", "transcript", "public"] = Query(default="full"),
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -618,7 +627,9 @@ async def get_session_state(
         workspace_id=user.workspace_id,
         user_id=user.id,
         limit=event_limit,
-        transcript_view=event_view == "transcript",
+        transcript_view=event_view in {"transcript", "public"},
+        visibility="user",
+        event_types=PUBLIC_DURABLE_EVENT_TYPES if event_view == "public" else None,
     )
     token_usage_summary = await _token_usage_summary_for_turns(
         turns,
@@ -633,7 +644,12 @@ async def get_session_state(
         {
             "session": _dump(session_read),
             "turns": [_dump(_turn_read(turn)) for turn in turns],
-            "events": [_dump(_event_read(event)) for event in events],
+            "events": [
+                dumped
+                for event in events
+                if (dumped := _dump_event(event, public=event_view == "public"))
+                is not None
+            ],
         },
         request=request,
     )
@@ -1042,6 +1058,7 @@ async def list_turn_events(
     turn_id: str,
     request: Request,
     after_seq: int = Query(default=0, ge=0),
+    event_view: Literal["full", "public"] = Query(default="full"),
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1051,9 +1068,16 @@ async def list_turn_events(
         workspace_id=user.workspace_id,
         user_id=user.id,
         after_seq=after_seq,
+        visibility="user",
+        event_types=PUBLIC_DURABLE_EVENT_TYPES if event_view == "public" else None,
     )
     return success_response(
-        [_dump(_event_read(event)) for event in events],
+        [
+            dumped
+            for event in events
+            if (dumped := _dump_event(event, public=event_view == "public"))
+            is not None
+        ],
         request=request,
     )
 
@@ -1064,6 +1088,7 @@ async def stream_session_events(
     session_id: str,
     after_seq: int = Query(default=0, ge=0),
     follow: bool = Query(default=True),
+    event_view: Literal["full", "public"] = Query(default="full"),
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1090,9 +1115,18 @@ async def stream_session_events(
                     workspace_id=user.workspace_id,
                     user_id=user.id,
                     after_seq=cursor,
+                    visibility="user",
+                    event_types=(
+                        PUBLIC_DURABLE_EVENT_TYPES
+                        if event_view == "public"
+                        else None
+                    ),
                 )
             for event in events:
-                payload = _dump(_event_read(event))
+                payload = _dump_event(event, public=event_view == "public")
+                if payload is None:
+                    cursor = max(cursor, int(event.seq))
+                    continue
                 cursor = max(cursor, int(payload["seq"]))
                 yield f"id: {payload['id']}\n"
                 yield f"event: {payload['type']}\n"

@@ -687,7 +687,7 @@ describe("useAgentRuntime", () => {
 
     await waitFor(() =>
       expect(mocks.getAgentRuntimeState).toHaveBeenCalledWith("session-1", {
-        eventView: "transcript",
+        eventView: "public",
       }),
     )
   })
@@ -1068,7 +1068,7 @@ describe("useAgentRuntime", () => {
 
     await waitFor(() =>
       expect(mocks.getAgentRuntimeState).toHaveBeenCalledWith("session-1", {
-        eventView: "transcript",
+        eventView: "public",
       }),
     )
 
