@@ -243,7 +243,7 @@ describe("ConnectionsPage", () => {
   it("keeps long SSH connection identities inside the fixed card text area", async () => {
     const longConnection = {
       ...liveConnection,
-      name: "Very long simulation login node label for production sequencing cluster sz01",
+      name: "华东生产测序集群超长登录节点名称 simulation login node sz01",
       username: "bioinformatics-production-user",
       host: "extremely-long-login-node-name-for-production-sequencing-cluster.example.org",
     }
@@ -252,7 +252,7 @@ describe("ConnectionsPage", () => {
     render(<ConnectionsPage />)
 
     const card = await screen.findByRole("button", {
-      name: /^Very long simulation login node label/,
+      name: /^华东生产测序集群超长登录节点名称/,
     })
     const title = within(card).getByRole("heading", { name: longConnection.name })
     const identity = within(card).getByText(
@@ -261,6 +261,11 @@ describe("ConnectionsPage", () => {
 
     expect(title).toHaveClass("truncate")
     expect(identity).toHaveClass("truncate")
+    expect(title).toHaveAttribute("title", longConnection.name)
+    expect(identity).toHaveAttribute(
+      "title",
+      `${longConnection.username}@${longConnection.host}`,
+    )
   })
 
   it("keeps selected and connecting cards on stable geometry", async () => {
@@ -287,7 +292,11 @@ describe("ConnectionsPage", () => {
   it("offers direct and jump routes while excluding jump and edited candidates", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockResolvedValueOnce({
-      data: [liveConnection, secondConnection, jumpConnection],
+      data: [
+        liveConnection,
+        secondConnection,
+        { ...jumpConnection, jump_connection_id: secondConnection.id },
+      ],
     })
 
     render(<ConnectionsPage />)
@@ -296,6 +305,7 @@ describe("ConnectionsPage", () => {
     await openEditConnectionPanel(user)
     const panel = getConnectionPanel()
     expect(within(panel).getByText("Connection route")).toBeInTheDocument()
+    expect(within(panel).getByRole("group", { name: "Connection route" })).toBeInTheDocument()
     expect(within(panel).getByRole("button", { name: /Direct/ })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -310,6 +320,44 @@ describe("ConnectionsPage", () => {
     expect(screen.queryByRole("option", { name: "HALOS" })).not.toBeInTheDocument()
     expect(within(panel).queryByText("Authentication")).not.toBeInTheDocument()
     expect(within(panel).getByText(/logs into that host first/)).toBeInTheDocument()
+  })
+
+  it("restores a direct private-key draft after exploring the jump route", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+
+    render(<ConnectionsPage />)
+
+    const panel = await openAddConnectionPanel(user)
+    await user.click(within(panel).getByRole("button", { name: /^Private key/ }))
+    await user.type(within(panel).getByLabelText("Private key"), "private-key-draft")
+    await user.type(within(panel).getByLabelText("Passphrase"), "draft-passphrase")
+
+    await user.click(within(panel).getByRole("button", { name: /Via jump host/ }))
+    await user.click(within(panel).getByRole("button", { name: /^Direct/ }))
+
+    expect(within(panel).getByRole("button", { name: /^Private key/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+    expect(within(panel).getByLabelText("Private key")).toHaveValue("private-key-draft")
+    expect(within(panel).getByLabelText("Passphrase")).toHaveValue("draft-passphrase")
+  })
+
+  it("prevents converting a direct connection that is used as a jump host", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection, jumpConnection] })
+
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+    const panel = await openEditConnectionPanel(user)
+    expect(within(panel).getByRole("button", { name: /Via jump host/ })).toBeDisabled()
+    expect(
+      within(panel).getByText(
+        "This connection is used as a jump host. Update dependent connections before changing its route.",
+      ),
+    ).toBeInTheDocument()
   })
 
   it("shows an accessible empty state when no direct jump candidates exist", async () => {
@@ -449,6 +497,30 @@ describe("ConnectionsPage", () => {
     expect(targetCard).toHaveTextContent("via Simulation environment")
     await user.type(screen.getByLabelText("Search connections…"), "simulation environment")
     expect(screen.getByRole("button", { name: /^HALOS/ })).toBeInTheDocument()
+  })
+
+  it("exposes the full truncated jump route as a title", async () => {
+    const longJumpName = "上海生信模拟环境超长跳板主机名称 Simulation environment"
+    const longIdentity = "halos-production-user@halos-production-login.internal.example.org"
+    apiRequestMock.mockResolvedValueOnce({
+      data: [
+        { ...liveConnection, name: longJumpName },
+        {
+          ...jumpConnection,
+          username: "halos-production-user",
+          host: "halos-production-login.internal.example.org",
+        },
+      ],
+    })
+
+    render(<ConnectionsPage />)
+
+    const targetCard = await screen.findByRole("button", { name: /^HALOS/ })
+    expect(within(targetCard).getByText(longIdentity)).toHaveAttribute("title", longIdentity)
+    expect(within(targetCard).getByText(`via ${longJumpName}`)).toHaveAttribute(
+      "title",
+      `via ${longJumpName}`,
+    )
   })
 
   it("saves new connections through the backend", async () => {
