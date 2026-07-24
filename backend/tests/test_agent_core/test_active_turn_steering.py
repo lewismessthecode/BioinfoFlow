@@ -10,6 +10,7 @@ from app.repositories.agent_core_repo import (
 )
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.transcript import AgentTranscriptStore, parts_to_text
 from app.utils.exceptions import ConflictError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -143,3 +144,86 @@ async def test_steer_sealed_turn_api_returns_conflict(async_client, db_session):
     )
 
     assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_pending_steers_are_delivered_fifo(db_session):
+    service, turn = await _running_turn(db_session)
+    turn = await service.turn_repo.update_all(turn, owner_token="owner-1")
+    for text in ("First", "Second"):
+        await service.steer_turn(
+            turn_id=str(turn.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text=text,
+        )
+
+    delivered = await AgentTranscriptStore(db_session).deliver_pending_steers(
+        session_id=str(turn.session_id),
+        turn_id=str(turn.id),
+        expected_owner_token="owner-1",
+    )
+
+    assert [parts_to_text(item.content_parts) for item in delivered] == [
+        "First",
+        "Second",
+    ]
+    assert all(item.status == AgentMessageStatus.COMMITTED for item in delivered)
+    assert [item.ordering_index for item in delivered] == sorted(
+        item.ordering_index for item in delivered
+    )
+
+    events = await AgentEventRepository(db_session).list_for_turn(
+        turn_id=str(turn.id)
+    )
+    delivered_events = [
+        event
+        for event in events
+        if event.type == AgentEventType.TURN_STEER_DELIVERED
+    ]
+    assert [event.payload["input_text"] for event in delivered_events] == [
+        "First",
+        "Second",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cancelled_turn_supersedes_pending_steers(db_session):
+    service, turn = await _running_turn(db_session)
+    steer = await service.steer_turn(
+        turn_id=str(turn.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Do not lose this silently.",
+    )
+
+    cancelled = await service.cancel_turn(
+        turn_id=str(turn.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    assert cancelled.accepts_steer is False
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(turn.session_id)
+    )
+    pending = next(
+        message
+        for message in messages
+        if (message.message_metadata or {}).get("steer_id") == str(steer.steer_id)
+    )
+    assert pending.status == AgentMessageStatus.SUPERSEDED
+    events = await AgentEventRepository(db_session).list_for_turn(
+        turn_id=str(turn.id)
+    )
+    cancelled_event = next(
+        event
+        for event in events
+        if event.type == AgentEventType.TURN_STEER_CANCELLED
+    )
+    assert cancelled_event.payload == {
+        "steer_id": str(steer.steer_id),
+        "input_text": "Do not lose this silently.",
+        "delivery": "cancelled",
+        "reason": "cancelled",
+    }

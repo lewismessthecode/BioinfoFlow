@@ -55,7 +55,11 @@ from app.services.agent_core.skills import (
 )
 from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
 from app.services.agent_core.tools.batches import ToolCallBatchCoordinator
-from app.services.agent_core.transcript import AgentTranscriptStore, text_part
+from app.services.agent_core.transcript import (
+    AgentTranscriptStore,
+    parts_to_text,
+    text_part,
+)
 from app.utils.exceptions import (
     BadRequestError,
     ConflictError,
@@ -732,6 +736,27 @@ class AgentCoreService:
             return await self.turn_repo.get_fresh(turn_id)
 
         messages = await self.transcript.list_messages(session_id)
+        for message in messages:
+            metadata = message.message_metadata or {}
+            if (
+                message.status != "draft"
+                or message.role != "user"
+                or metadata.get("kind") != "steer"
+            ):
+                continue
+            message.status = "superseded"
+            await self.ledger.append(
+                session_id=session_id,
+                turn_id=turn_id,
+                type=AgentEventType.TURN_STEER_CANCELLED,
+                payload={
+                    "steer_id": metadata.get("steer_id"),
+                    "input_text": parts_to_text(message.content_parts),
+                    "delivery": "cancelled",
+                    "reason": termination_reason,
+                },
+                commit=False,
+            )
         existing_action_results = {
             str((message.message_metadata or {}).get("action_id"))
             for message in messages
@@ -1080,6 +1105,7 @@ class AgentCoreService:
         if len(batches) > 1 and any(batch.batch_ordinal is None for batch in batches):
             turn = await update_recovery_turn(
                 status=AgentTurnStatus.FAILED,
+                accepts_steer=False,
                 termination_reason="model_failed",
                 error_code="recovery_ambiguous_tool_batches",
                 error_message="Legacy tool batches cannot be ordered safely for recovery.",
@@ -1124,6 +1150,7 @@ class AgentCoreService:
                 await self._cancel_open_actions(turn_id, cancelled_at=now)
                 turn = await update_recovery_turn(
                     status=AgentTurnStatus.FAILED,
+                    accepts_steer=False,
                     termination_reason="model_failed",
                     error_code="recovery_inflight_action",
                     error_message=(
@@ -1303,6 +1330,7 @@ class AgentCoreService:
             await self._cancel_open_actions(turn_id, cancelled_at=now)
             turn = await update_recovery_turn(
                 status=AgentTurnStatus.FAILED,
+                accepts_steer=False,
                 termination_reason="model_failed",
                 error_code="recovery_inflight_action",
                 error_message="Agent process stopped while a tool action was running.",

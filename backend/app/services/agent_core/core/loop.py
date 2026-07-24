@@ -471,7 +471,11 @@ class AgentLoopController:
                         repeated_tool_call_count,
                     ),
                 )
-                if no_progress_detected(
+                delivered_steers = await self._deliver_pending_steers(
+                    session_id=str(agent_session.id),
+                    turn_id=str(turn.id),
+                )
+                if not delivered_steers and no_progress_detected(
                     previous_tool_call_signatures,
                     tool_call_signatures,
                     previous_tool_results=previous_tool_result_signatures,
@@ -650,9 +654,10 @@ class AgentLoopController:
                     error_message="Agent session could not be loaded.",
                 )
             agent_session = fresh_session
+            active_session_id = str(agent_session.id)
             await self.transcript.append_parts(
-                session_id=str(agent_session.id),
-                turn_id=str(turn.id),
+                session_id=active_session_id,
+                turn_id=turn_id,
                 role="assistant",
                 parts=parts,
                 metadata=metadata_with_responses_continuation(
@@ -665,6 +670,32 @@ class AgentLoopController:
                     else None
                 ),
             )
+            if await self._deliver_pending_steers(
+                session_id=active_session_id,
+                turn_id=turn_id,
+            ):
+                if active_continuation_batch_id is not None:
+                    await self.tool_batches.mark_terminal(
+                        active_continuation_batch_id
+                    )
+                    active_continuation_batch_id = None
+                continue
+            if self._execution_owner_token is not None:
+                sealed = await self._seal_steering_if_idle(
+                    turn_id=turn_id,
+                )
+                if not sealed:
+                    if await self._deliver_pending_steers(
+                        session_id=active_session_id,
+                        turn_id=turn_id,
+                    ):
+                        if active_continuation_batch_id is not None:
+                            await self.tool_batches.mark_terminal(
+                                active_continuation_batch_id
+                            )
+                            active_continuation_batch_id = None
+                        continue
+                    await self._ensure_owned()
             if active_continuation_batch_id is not None:
                 await self.tool_batches.mark_terminal(active_continuation_batch_id)
                 active_continuation_batch_id = None
@@ -685,6 +716,63 @@ class AgentLoopController:
             error_code="iteration_budget_exhausted",
             error_message="Agent turn exhausted its iteration budget.",
         )
+
+    async def _deliver_pending_steers(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> list:
+        if self._execution_owner_token is None:
+            return []
+        session_factory = async_sessionmaker(
+            bind=self.db.bind,
+            expire_on_commit=False,
+            class_=AsyncSession,
+        )
+        async with session_factory() as boundary_session:
+            return await AgentTranscriptStore(
+                boundary_session
+            ).deliver_pending_steers(
+                session_id=session_id,
+                turn_id=turn_id,
+                expected_owner_token=self._execution_owner_token,
+            )
+
+    async def _seal_steering_if_idle(self, *, turn_id: str) -> bool:
+        if self._execution_owner_token is None:
+            return True
+        session_factory = async_sessionmaker(
+            bind=self.db.bind,
+            expire_on_commit=False,
+            class_=AsyncSession,
+        )
+        async with session_factory() as boundary_session:
+            return await AgentTurnRepository(
+                boundary_session
+            ).seal_steering_if_idle(
+                turn_id=turn_id,
+                expected_owner_token=self._execution_owner_token,
+            )
+
+    async def _cancel_pending_steers(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        reason: str,
+    ) -> None:
+        session_factory = async_sessionmaker(
+            bind=self.db.bind,
+            expire_on_commit=False,
+            class_=AsyncSession,
+        )
+        async with session_factory() as boundary_session:
+            await AgentTranscriptStore(boundary_session).cancel_pending_steers(
+                session_id=session_id,
+                turn_id=turn_id,
+                reason=reason,
+            )
 
     async def _session_for_expected_target(
         self,
@@ -2031,6 +2119,12 @@ class AgentLoopController:
         )
         values = dict(
             status=status,
+            accepts_steer=status
+            not in {
+                AgentTurnStatus.COMPLETED,
+                AgentTurnStatus.FAILED,
+                AgentTurnStatus.CANCELLED,
+            },
             final_text=result.final_text,
             token_usage=result.token_usage,
             termination_reason=result.termination_reason,
@@ -2068,6 +2162,16 @@ class AgentLoopController:
             )
             if not owned or updated is None:
                 raise TurnOwnershipLostError("Agent turn ownership was replaced")
+        if status in {
+            AgentTurnStatus.COMPLETED,
+            AgentTurnStatus.FAILED,
+            AgentTurnStatus.CANCELLED,
+        }:
+            await self._cancel_pending_steers(
+                session_id=str(updated.session_id),
+                turn_id=str(updated.id),
+                reason=result.termination_reason,
+            )
         if result.termination_reason == "assistant_final":
             payload = {"final_text": result.final_text}
         elif result.termination_reason in {"interrupted", "cancelled", "no_progress"}:
