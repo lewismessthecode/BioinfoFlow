@@ -97,7 +97,7 @@ def test_ws_sends_unavailable_message_when_btop_missing() -> None:
     """End-to-end WS fallback: server → error frame → close 4404.
 
     Regressed against the user-facing failure mode where btop is not
-    installed on the host. The frontend reads ``code == 'btop_unavailable'``
+    installed in the backend runtime. The frontend reads ``code == 'btop_unavailable'``
     and renders install instructions instead of a generic error.
     """
     client = TestClient(app)
