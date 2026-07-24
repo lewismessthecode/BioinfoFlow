@@ -1547,6 +1547,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 timeline={transcriptTimeline}
                 onDecision={decideActionWithFocus}
                 onRetryTurn={retryTurn}
+                responseActionsBusy={hasActiveTurn}
                 eventWindowLimited={eventWindowLimited}
               />
             </>
