@@ -2268,7 +2268,7 @@ def test_remote_project_paths_cannot_escape_working_directory():
     "path",
     ["/etc/passwd", "~/.ssh/config", "$HOME/.ssh/config", "../outside.txt"],
 )
-def test_unbounded_structured_remote_paths_require_explicit_approval(tool, path):
+def test_unbounded_structured_remote_paths_are_audited_but_allowed_in_bypass(tool, path):
     target = CommandTargetProfile(
         kind="remote_ssh",
         trust_domain="cluster.example.org",
@@ -2289,12 +2289,12 @@ def test_unbounded_structured_remote_paths_require_explicit_approval(tool, path)
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
 @pytest.mark.parametrize("tool", [RemoteReadFileTool(), RemoteListDirTool()])
-def test_unbounded_structured_relative_path_requires_explicit_approval(tool):
+def test_unbounded_structured_relative_path_is_audited_but_allowed_in_bypass(tool):
     target = CommandTargetProfile(
         kind="remote_ssh",
         trust_domain="cluster.example.org",
@@ -2315,12 +2315,12 @@ def test_unbounded_structured_relative_path_requires_explicit_approval(tool):
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
 @pytest.mark.parametrize("tool", [RemoteReadFileTool(), RemoteListDirTool()])
-def test_runtime_selected_remote_path_requires_explicit_approval(tool):
+def test_runtime_selected_remote_path_is_audited_but_allowed_in_bypass(tool):
     target = CommandTargetProfile(
         kind="local",
         trust_domain="local-machine",
@@ -2340,7 +2340,7 @@ def test_runtime_selected_remote_path_requires_explicit_approval(tool):
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 

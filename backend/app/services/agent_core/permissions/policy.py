@@ -47,6 +47,13 @@ class PermissionPolicy:
                 risk_level=risk.level,
             )
 
+        if permission_mode == "bypass":
+            return PermissionDecision(
+                decision="allow",
+                reasons=["bypass mode auto-approves non-hard-blocked actions"],
+                risk_level=risk.level,
+            )
+
         if risk.requires_explicit_approval:
             return PermissionDecision(
                 decision="ask",
@@ -58,13 +65,6 @@ class PermissionPolicy:
             return PermissionDecision(
                 decision="ask",
                 reasons=["ask_each_action requires approval for side effects"],
-                risk_level=risk.level,
-            )
-
-        if permission_mode == "bypass":
-            return PermissionDecision(
-                decision="allow",
-                reasons=["bypass mode allows non-critical actions"],
                 risk_level=risk.level,
             )
 

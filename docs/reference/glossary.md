@@ -109,13 +109,13 @@ the local OS sandbox and from SSH account authority.
 
 ### Full Access
 
-The UI name for `bypass` permission mode. It skips ordinary risk approvals on
-the selected target. High-confidence catastrophic matches remain hard denied,
-while protected-resource writes, indirect command forms, and sandbox opt-out can
-still require explicit approval. Classification is not complete confinement;
-the true execution boundary is an enabled local OS sandbox or the remote account
-and server controls. Explicit user or plan interactions and workspace policy
-remain independent.
+The UI name for `bypass` permission mode. It auto-approves every action on the
+selected target unless the action is hard blocked. Protected-resource writes,
+indirect command forms, and sandbox opt-out requests remain risk-classified and
+audited but do not prompt. High-confidence catastrophic matches remain hard
+denied. Classification is not complete confinement; the true execution boundary
+is an enabled local OS sandbox or the remote account and server controls.
+Explicit user or plan interactions and workspace policy remain independent.
 
 ### Permission Policy Version
 

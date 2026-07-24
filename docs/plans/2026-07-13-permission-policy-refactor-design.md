@@ -362,10 +362,11 @@ existing bounded/redacted action records.
 
 ## Security Boundary Statement
 
-“Full access” means Bioinfoflow does not request ordinary risk approvals for the
-selected target. High-confidence catastrophic matches remain hard denied, and
-protected or indirect operations can still require explicit approval. It does
-not grant new workspace/admin or SSH privileges and does not disable a configured
-operating-system sandbox. Local OS enforcement or the remote account and server
-policy is the true security boundary. The UI and documentation must use this
-definition consistently.
+“Full access” means Bioinfoflow does not request risk approvals for the selected
+target. High-confidence catastrophic matches remain hard denied, while
+protected, indirect, and sandbox-opt-out operations are still classified and
+audited but auto-approved. It does not grant new workspace/admin or SSH
+privileges and does not disable a configured operating-system sandbox by itself.
+Local OS enforcement or the remote account and server policy is the true
+security boundary. This section reflects the superseding bypass semantics from
+the 2026-07-24 implementation plan.

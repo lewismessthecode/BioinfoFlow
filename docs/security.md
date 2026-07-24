@@ -179,14 +179,15 @@ The sandbox and approval policy are separate controls:
 - SSH commands are constrained by the remote Unix account, sudo/ACL policy,
   scheduler policy, and server configuration, not by the local sandbox
 
-"Full access" (`bypass`) skips ordinary risk prompts for the selected target.
-It does not disable an active local sandbox or bypass remote account authority.
+"Full access" (`bypass`) skips all risk prompts for the selected target. It
+auto-approves elevated actions, protected-resource writes, indirect command
+forms, and sandbox opt-out requests, while preserving their risk audit data. It
+does not itself disable an active local sandbox or bypass remote account
+authority; an opt-out request can only succeed when server configuration allows
+unsandboxed execution.
 High-confidence matches for catastrophic operations, including recognized root
 filesystem destruction, unsafe block-device writes or formats, direct host
 shutdown/reboot, and fork-bomb forms, are hard denied even in Full access.
-Dynamic or indirect command forms that cannot be proved safe require explicit
-approval, as do sandbox opt-out and writes to protected credentials, SSH
-configuration, sudoers, shell startup files, and permission-policy resources.
 
 Command classification is a policy and review aid, not complete shell
 confinement: obfuscated programs and runtime-generated arguments cannot all be

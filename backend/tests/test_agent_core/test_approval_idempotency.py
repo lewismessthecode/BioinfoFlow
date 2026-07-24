@@ -741,10 +741,16 @@ async def test_requested_action_rechecks_fresh_policy_before_side_effect_claim(
 
 
 @pytest.mark.asyncio
-async def test_requested_action_requires_real_user_approval_when_risk_demands_it(
+async def test_requested_action_bypass_executes_when_risk_requests_explicit_approval(
     db_session, monkeypatch
 ):
     session, turn = await _seed_session_turn(db_session)
+    session = await AgentCoreService(db_session).update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"permission_mode": "bypass"},
+    )
     action = await AgentActionRepository(db_session).create(
         session_id=str(session.id),
         turn_id=str(turn.id),
@@ -768,14 +774,20 @@ async def test_requested_action_requires_real_user_approval_when_risk_demands_it
             requires_explicit_approval=True,
         )
 
-    async def forbidden_run(self, input, context):
+    async def record_run(self, input, context):
         del self, input, context
         nonlocal side_effects
         side_effects += 1
-        return {}
+        return {
+            "exit_code": 0,
+            "stdout": "",
+            "stderr": "",
+            "cwd": "/tmp",
+            "command": "touch explicit-approval",
+        }
 
     monkeypatch.setattr(ExecuteShellTool, "assess_risk", require_explicit_approval)
-    monkeypatch.setattr(ExecuteShellTool, "run", forbidden_run)
+    monkeypatch.setattr(ExecuteShellTool, "run", record_run)
     result = await AgentToolDispatcher(
         db_session, build_default_tool_registry()
     ).resume_action(
@@ -789,8 +801,10 @@ async def test_requested_action_requires_real_user_approval_when_risk_demands_it
         ),
     )
 
-    assert result.status == AgentActionStatus.WAITING_DECISION
-    assert side_effects == 0
+    assert result.status == AgentActionStatus.COMPLETED
+    assert side_effects == 1
+    assert result.permission_decision["decision"] == "allow"
+    assert result.permission_decision["requires_explicit_approval"] is True
 
 
 @pytest.mark.asyncio

@@ -860,9 +860,7 @@ class AgentToolExecutor:
                 expected_turn_owner_token=context.expected_owner_token,
             )
 
-        requires_approval = (
-            fresh_decision.decision == "ask" or current_risk.requires_explicit_approval
-        )
+        requires_approval = fresh_decision.decision == "ask"
         if requires_approval and not explicitly_approved:
             permission_decision = {
                 **fresh_decision.as_dict(),
