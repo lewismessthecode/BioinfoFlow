@@ -2665,6 +2665,15 @@
     "attach": "Attach or add context",
     "send": "Send message",
     "stop": "Stop response",
+    "voice": {
+      "start": "Start voice input",
+      "stop": "Stop recording",
+      "recording": "Listening {time}",
+      "transcribing": "Transcribing...",
+      "unavailable": "Voice input is unavailable",
+      "failed": "Could not transcribe the recording.",
+      "cancelled": "Voice recording cancelled."
+    },
     "pendingResponse": "Working on it...",
     "steer": {
       "pending": "Will be considered after the current step",
