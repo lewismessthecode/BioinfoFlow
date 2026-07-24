@@ -299,6 +299,20 @@ AgentInputPart = Annotated[
 AGENT_INPUT_PARTS_ADAPTER = TypeAdapter(list[AgentInputPart])
 
 
+class AgentContextSearchItem(BaseModel):
+    id: str
+    kind: Literal["file", "directory", "workflow", "run"]
+    label: str
+    detail: str | None = None
+    input_part: dict
+
+
+class AgentContextSearchRead(BaseModel):
+    results: list[AgentContextSearchItem] = Field(default_factory=list)
+    counts: dict[str, int] = Field(default_factory=dict)
+    next_cursor: str | None = None
+
+
 class AgentTurnCreate(BaseModel):
     input_text: str
     input_parts: list[dict] | None = None

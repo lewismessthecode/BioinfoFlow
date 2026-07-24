@@ -23,6 +23,7 @@ from app.schemas.agent_core import (
     AgentActionDecisionRequest,
     AgentActionRead,
     AgentAttachmentRead,
+    AgentContextSearchRead,
     AgentArtifactRead,
     AgentExecutionScope,
     AgentExecutionTarget,
@@ -46,6 +47,7 @@ from app.repositories.agent_user_settings_repo import AgentUserSettingsRepositor
 from app.repositories.llm_repo import LlmModelRepository
 from app.services.agent_core import AgentCoreService, AgentMemoryService
 from app.services.agent_core.attachments import AgentAttachmentService
+from app.services.agent_core.context_picker import AgentContextPicker
 from app.services.agent_core.execution_target import (
     session_execution_scope_from_metadata,
     session_execution_target_from_metadata,
@@ -233,6 +235,32 @@ async def get_skill(
     skill = registry.get(skill_name)
     return success_response(
         _dump(_skill_read(skill, include_body=True)), request=request
+    )
+
+
+@router.get("/context/search")
+async def search_context(
+    request: Request,
+    q: str = Query(default="", max_length=500),
+    scope: str = Query(default="mixed"),
+    project_id: str | None = Query(default=None),
+    session_id: str | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await AgentContextPicker(db).search(
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+        query=q,
+        scope=scope,
+        project_id=project_id,
+        session_id=session_id,
+        cursor=cursor,
+    )
+    return success_response(
+        _dump(AgentContextSearchRead.model_validate(result)),
+        request=request,
     )
 
 
