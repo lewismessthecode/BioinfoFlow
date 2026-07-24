@@ -1,23 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
+  agentRuntimeAttachmentPreviewUrl,
   createAgentRuntimeSession,
   createAgentRuntimeTurn,
+  deleteAgentRuntimeAttachment,
   getAgentRuntimeState,
+  searchAgentRuntimeContext,
   steerAgentRuntimeTurn,
   updateAgentRuntimeSessionPermissionMode,
   updateAgentRuntimeSessionMetadata,
+  uploadAgentRuntimeAttachment,
 } from "@/lib/agent-runtime/client"
 
-const apiRequestMock = vi.hoisted(() => vi.fn())
+const { apiRequestMock, buildApiUrlMock } = vi.hoisted(() => ({
+  apiRequestMock: vi.fn(),
+  buildApiUrlMock: vi.fn(() => "http://test/preview"),
+}))
 
 vi.mock("@/lib/api", () => ({
   apiRequest: apiRequestMock,
-  buildApiUrl: vi.fn(),
+  buildApiUrl: buildApiUrlMock,
 }))
 
 describe("agent runtime client", () => {
   beforeEach(() => {
+    buildApiUrlMock.mockClear()
     apiRequestMock.mockResolvedValue({
       data: {
         id: "turn-1",
@@ -39,6 +47,62 @@ describe("agent runtime client", () => {
 
     expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1/state", {
       params: { event_view: "transcript" },
+    })
+  })
+
+  it("uploads folder files with repeated relative paths", async () => {
+    apiRequestMock.mockResolvedValueOnce({ data: [] })
+    const first = new File(["a"], "a.txt", { type: "text/plain" })
+    const second = new File(["b"], "b.txt", { type: "text/plain" })
+
+    await uploadAgentRuntimeAttachment({
+      sessionId: "session-1",
+      kind: "folder",
+      files: [first, second],
+      relativePaths: ["folder/a.txt", "folder/sub/b.txt"],
+    })
+
+    const [path, options] = apiRequestMock.mock.calls[0]
+    expect(path).toBe("/agent/sessions/session-1/attachments")
+    expect(options.method).toBe("POST")
+    expect(options.body).toBeInstanceOf(FormData)
+    expect((options.body as FormData).getAll("relative_paths")).toEqual([
+      "folder/a.txt",
+      "folder/sub/b.txt",
+    ])
+    expect((options.body as FormData).getAll("files")).toEqual([first, second])
+  })
+
+  it("builds preview, delete, and context search requests", async () => {
+    apiRequestMock.mockResolvedValue({ data: { results: [], counts: {} } })
+
+    expect(agentRuntimeAttachmentPreviewUrl("attachment-1")).toBe(
+      "http://test/preview",
+    )
+    await deleteAgentRuntimeAttachment("attachment-1")
+    await searchAgentRuntimeContext({
+      query: "failed",
+      scope: "run",
+      projectId: "project-1",
+      sessionId: "session-1",
+      cursor: "cursor-1",
+    })
+
+    expect(buildApiUrlMock).toHaveBeenCalledWith(
+      "/agent/attachments/attachment-1/preview",
+    )
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "/agent/attachments/attachment-1",
+      { method: "DELETE" },
+    )
+    expect(apiRequestMock).toHaveBeenCalledWith("/agent/context/search", {
+      params: {
+        q: "failed",
+        scope: "run",
+        project_id: "project-1",
+        session_id: "session-1",
+        cursor: "cursor-1",
+      },
     })
   })
 

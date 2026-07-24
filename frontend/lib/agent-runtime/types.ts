@@ -116,8 +116,49 @@ export type AgentRuntimeFileRefPart = {
   includeContent?: boolean
 }
 
+export type AgentRuntimeStructuredFileRefPart = {
+  type: "file_ref"
+  attachment_id?: string | null
+  project_id?: string | null
+  path?: string | null
+  label?: string | null
+  include_content?: boolean
+  display_label?: string | null
+}
+
+export type AgentRuntimeDirectoryRefPart = {
+  type: "directory_ref"
+  attachment_id?: string | null
+  project_id?: string | null
+  path?: string | null
+  label?: string | null
+  display_label?: string | null
+}
+
+export type AgentRuntimeImageRefPart = {
+  type: "image_ref"
+  attachment_id: string
+  detail?: "auto" | "low" | "high" | "original"
+  display_label?: string | null
+}
+
+export type AgentRuntimeRunRefPart = {
+  type: "run_ref"
+  run_id: string
+  display_label?: string | null
+}
+
 export type AgentRuntimeWorkflowRefPart = {
   kind: "workflow_ref"
+  workflow_id?: string | null
+  project_id?: string | null
+  scope?: "project" | "global"
+  display_name?: string | null
+  display_version?: string | null
+}
+
+export type AgentRuntimeStructuredWorkflowRefPart = {
+  type: "workflow_ref"
   workflow_id?: string | null
   project_id?: string | null
   scope?: "project" | "global"
@@ -133,7 +174,52 @@ export type AgentRuntimeTextInputPart = {
 export type AgentRuntimeInputPart =
   | AgentRuntimeTextInputPart
   | AgentRuntimeFileRefPart
+  | AgentRuntimeStructuredFileRefPart
+  | AgentRuntimeDirectoryRefPart
+  | AgentRuntimeImageRefPart
+  | AgentRuntimeRunRefPart
   | AgentRuntimeWorkflowRefPart
+  | AgentRuntimeStructuredWorkflowRefPart
+
+export type AgentRuntimeAttachment = {
+  id: string
+  session_id: string
+  workspace_id: string
+  user_id: string
+  kind: "file" | "folder" | "image"
+  source: "upload" | "clipboard"
+  filename: string
+  mime_type?: string | null
+  size_bytes: number
+  file_count?: number | null
+  image_width?: number | null
+  image_height?: number | null
+  status: "processing" | "ready" | "error" | "pending_delete"
+  metadata?: Record<string, unknown> | null
+  error_message?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type AgentRuntimeContextSearchScope =
+  | "mixed"
+  | "file"
+  | "workflow"
+  | "run"
+
+export type AgentRuntimeContextSearchItem = {
+  id: string
+  kind: "file" | "directory" | "workflow" | "run"
+  label: string
+  detail?: string | null
+  input_part: AgentRuntimeInputPart
+}
+
+export type AgentRuntimeContextSearchResponse = {
+  results: AgentRuntimeContextSearchItem[]
+  counts: Record<string, number>
+  next_cursor?: string | null
+}
 
 export type AgentRuntimeTurn = {
   id: string
