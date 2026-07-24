@@ -10,6 +10,7 @@ export type ResolvedAgentExecutionTarget =
 
 type SessionExecutionTargetSource = {
   execution_target?: AgentExecutionTarget | null
+  execution_scope?: AgentExecutionScope | null
   metadata?: Record<string, unknown> | null
 }
 
