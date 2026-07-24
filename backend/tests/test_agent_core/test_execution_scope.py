@@ -152,7 +152,7 @@ def test_manual_remote_only_multi_scope_exposes_only_remote_compatible_tools():
     assert "files.write" not in names
 
 
-def test_remote_connection_discovery_is_exposed_for_auto_and_manual_remote_scopes():
+def test_remote_connection_discovery_is_exposed_only_when_remote_is_selected():
     exposure = ToolsetExposure(build_default_tool_registry())
 
     auto_names = exposure.exposed_names(
@@ -169,7 +169,7 @@ def test_remote_connection_discovery_is_exposed_for_auto_and_manual_remote_scope
         },
     )
 
-    assert "remote.connections.list" in auto_names
+    assert "remote.connections.list" not in auto_names
     assert "remote.connections.list" in manual_names
 
 

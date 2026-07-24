@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 
@@ -44,6 +45,187 @@ class AgentEventType:
     MEMORY_PROPOSED = "memory.proposed"
     MEMORY_WRITTEN = "memory.written"
     MEMORY_REJECTED = "memory.rejected"
+
+
+class PublicAgentEventType:
+    TURN_LIFECYCLE = "turn.lifecycle"
+    TURN_STEERING = "turn.steering"
+    MODEL_LIFECYCLE = "model.lifecycle"
+    ASSISTANT_CONTENT = "assistant.content"
+    ASSISTANT_TOOL_CALL = "assistant.tool_call"
+    ACTION_LIFECYCLE = "action.lifecycle"
+    ARTIFACT_CREATED = "artifact.created"
+    MEMORY_LIFECYCLE = "memory.lifecycle"
+
+
+_PUBLIC_EVENT_PROJECTIONS: dict[str, tuple[str, dict[str, str]]] = {
+    AgentEventType.TURN_CREATED: (
+        PublicAgentEventType.TURN_LIFECYCLE,
+        {"status": "created"},
+    ),
+    AgentEventType.TURN_STARTED: (
+        PublicAgentEventType.TURN_LIFECYCLE,
+        {"status": "started"},
+    ),
+    AgentEventType.TURN_COMPLETED: (
+        PublicAgentEventType.TURN_LIFECYCLE,
+        {"status": "completed"},
+    ),
+    AgentEventType.TURN_FAILED: (
+        PublicAgentEventType.TURN_LIFECYCLE,
+        {"status": "failed"},
+    ),
+    AgentEventType.TURN_CANCELLED: (
+        PublicAgentEventType.TURN_LIFECYCLE,
+        {"status": "cancelled"},
+    ),
+    AgentEventType.TURN_INTERRUPTED: (
+        PublicAgentEventType.TURN_LIFECYCLE,
+        {"status": "interrupted"},
+    ),
+    AgentEventType.TURN_NO_PROGRESS: (
+        PublicAgentEventType.TURN_LIFECYCLE,
+        {"status": "no_progress"},
+    ),
+    AgentEventType.TURN_RECOVERY_ENQUEUED: (
+        PublicAgentEventType.TURN_LIFECYCLE,
+        {"status": "recovery_enqueued"},
+    ),
+    AgentEventType.TURN_RECOVERY_FAILED: (
+        PublicAgentEventType.TURN_LIFECYCLE,
+        {"status": "recovery_failed"},
+    ),
+    AgentEventType.TURN_STEER_RECEIVED: (
+        PublicAgentEventType.TURN_STEERING,
+        {"status": "received"},
+    ),
+    AgentEventType.TURN_STEER_DELIVERED: (
+        PublicAgentEventType.TURN_STEERING,
+        {"status": "delivered"},
+    ),
+    AgentEventType.TURN_STEER_CANCELLED: (
+        PublicAgentEventType.TURN_STEERING,
+        {"status": "cancelled"},
+    ),
+    AgentEventType.MODEL_SELECTED: (
+        PublicAgentEventType.MODEL_LIFECYCLE,
+        {"status": "selected"},
+    ),
+    AgentEventType.MODEL_RETRYING: (
+        PublicAgentEventType.MODEL_LIFECYCLE,
+        {"status": "retrying"},
+    ),
+    AgentEventType.MODEL_FALLBACK: (
+        PublicAgentEventType.MODEL_LIFECYCLE,
+        {"status": "fallback"},
+    ),
+    AgentEventType.MODEL_WARNING: (
+        PublicAgentEventType.MODEL_LIFECYCLE,
+        {"status": "warning"},
+    ),
+    AgentEventType.ASSISTANT_TEXT_DELTA: (
+        PublicAgentEventType.ASSISTANT_CONTENT,
+        {"kind": "text", "phase": "delta"},
+    ),
+    AgentEventType.ASSISTANT_TEXT_COMPLETED: (
+        PublicAgentEventType.ASSISTANT_CONTENT,
+        {"kind": "text", "phase": "completed"},
+    ),
+    AgentEventType.ASSISTANT_THINKING_DELTA: (
+        PublicAgentEventType.ASSISTANT_CONTENT,
+        {"kind": "thinking", "phase": "delta"},
+    ),
+    AgentEventType.ASSISTANT_THINKING_COMPLETED: (
+        PublicAgentEventType.ASSISTANT_CONTENT,
+        {"kind": "thinking", "phase": "completed"},
+    ),
+    AgentEventType.ASSISTANT_THINKING_SUMMARY: (
+        PublicAgentEventType.ASSISTANT_CONTENT,
+        {"kind": "thinking", "phase": "summary"},
+    ),
+    AgentEventType.ASSISTANT_TOOL_CALL_STARTED: (
+        PublicAgentEventType.ASSISTANT_TOOL_CALL,
+        {"phase": "started"},
+    ),
+    AgentEventType.ASSISTANT_TOOL_CALL_DELTA: (
+        PublicAgentEventType.ASSISTANT_TOOL_CALL,
+        {"phase": "delta"},
+    ),
+    AgentEventType.ASSISTANT_TOOL_CALL_COMPLETED: (
+        PublicAgentEventType.ASSISTANT_TOOL_CALL,
+        {"phase": "completed"},
+    ),
+    AgentEventType.ACTION_REQUESTED: (
+        PublicAgentEventType.ACTION_LIFECYCLE,
+        {"status": "requested"},
+    ),
+    AgentEventType.ACTION_RISK_ASSESSED: (
+        PublicAgentEventType.ACTION_LIFECYCLE,
+        {"status": "risk_assessed"},
+    ),
+    AgentEventType.ACTION_WAITING_DECISION: (
+        PublicAgentEventType.ACTION_LIFECYCLE,
+        {"status": "waiting_decision"},
+    ),
+    AgentEventType.ACTION_DECISION_RECORDED: (
+        PublicAgentEventType.ACTION_LIFECYCLE,
+        {"status": "decision_recorded"},
+    ),
+    AgentEventType.ACTION_STARTED: (
+        PublicAgentEventType.ACTION_LIFECYCLE,
+        {"status": "started"},
+    ),
+    AgentEventType.ACTION_COMPLETED: (
+        PublicAgentEventType.ACTION_LIFECYCLE,
+        {"status": "completed"},
+    ),
+    AgentEventType.ACTION_FAILED: (
+        PublicAgentEventType.ACTION_LIFECYCLE,
+        {"status": "failed"},
+    ),
+    AgentEventType.ACTION_CANCELLED: (
+        PublicAgentEventType.ACTION_LIFECYCLE,
+        {"status": "cancelled"},
+    ),
+    AgentEventType.ARTIFACT_CREATED: (PublicAgentEventType.ARTIFACT_CREATED, {}),
+    AgentEventType.MEMORY_READ: (
+        PublicAgentEventType.MEMORY_LIFECYCLE,
+        {"status": "read"},
+    ),
+    AgentEventType.MEMORY_PROPOSED: (
+        PublicAgentEventType.MEMORY_LIFECYCLE,
+        {"status": "proposed"},
+    ),
+    AgentEventType.MEMORY_WRITTEN: (
+        PublicAgentEventType.MEMORY_LIFECYCLE,
+        {"status": "written"},
+    ),
+    AgentEventType.MEMORY_REJECTED: (
+        PublicAgentEventType.MEMORY_LIFECYCLE,
+        {"status": "rejected"},
+    ),
+}
+PUBLIC_DURABLE_EVENT_TYPES = frozenset(_PUBLIC_EVENT_PROJECTIONS)
+
+
+def project_public_event(event: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Project a durable user event onto the stable public transport protocol."""
+    if event.get("visibility") != "user":
+        return None
+    projection = _PUBLIC_EVENT_PROJECTIONS.get(str(event.get("type") or ""))
+    if projection is None:
+        return None
+    public_type, discriminators = projection
+    payload = event.get("payload")
+    public_payload = dict(payload) if isinstance(payload, dict) else {}
+    public_payload.update(discriminators)
+    return {
+        **event,
+        "type": public_type,
+        "payload": public_payload,
+        "visibility": "user",
+        "schema_version": 1,
+    }
 
 
 _DELTA_COMPLETION_TYPES = {
@@ -96,4 +278,10 @@ def _stream_event_key(event: Any) -> tuple[str, str, str] | None:
     return str(event.turn_id or ""), family, identifier
 
 
-__all__ = ["AgentEventType", "compact_transcript_events"]
+__all__ = [
+    "AgentEventType",
+    "PublicAgentEventType",
+    "PUBLIC_DURABLE_EVENT_TYPES",
+    "compact_transcript_events",
+    "project_public_event",
+]

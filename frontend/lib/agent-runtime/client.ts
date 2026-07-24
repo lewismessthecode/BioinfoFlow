@@ -30,6 +30,7 @@ import type {
   AgentRuntimeWorkflowMention,
   AgentRuntimeWorkflowRefPart,
 } from "./types"
+import { normalizePublicAgentEvent } from "./public-events"
 
 export const uploadAgentRuntimeAttachment = async (input: {
   sessionId: string
@@ -414,7 +415,7 @@ export const buildAgentFsDownloadUrl = (
 
 export const getAgentRuntimeState = async (
   sessionId: string,
-  options?: { eventLimit?: number; eventView?: "full" | "transcript" },
+  options?: { eventLimit?: number; eventView?: "full" | "transcript" | "public" },
 ) => {
   const params = {
     ...(options?.eventLimit ? { event_limit: options.eventLimit } : {}),
@@ -426,7 +427,13 @@ export const getAgentRuntimeState = async (
       params: Object.keys(params).length ? params : undefined,
     },
   )
-  return response.data
+  if (options?.eventView !== "public") return response.data
+  return {
+    ...response.data,
+    events: response.data.events
+      .map(normalizePublicAgentEvent)
+      .filter((event): event is NonNullable<typeof event> => event !== null),
+  }
 }
 
 export const listAgentRuntimeSessionArtifacts = async (sessionId: string) => {

@@ -595,9 +595,18 @@ def test_platform_tool_exposure_keeps_read_tools_available_and_mutations_gated()
     registry = build_default_tool_registry()
     exposure = ToolsetExposure(registry)
 
-    plan_tools = exposure.exposed_names(policy={"name": "plan"})
-    default_tools = exposure.exposed_names(policy={"name": "default"})
-    execution_tools = exposure.exposed_names(policy={"name": "execution"})
+    plan_tools = exposure.exposed_names(
+        policy={"name": "plan", "capabilities": ["bioinfo.read"]}
+    )
+    default_tools = exposure.exposed_names(
+        policy={"name": "default", "capabilities": ["bioinfo.read"]}
+    )
+    execution_tools = exposure.exposed_names(
+        policy={
+            "name": "execution",
+            "capabilities": ["bioinfo.read", "bioinfo.manage"],
+        }
+    )
 
     read_tools = {
         "projects.list",
@@ -648,31 +657,25 @@ def test_normal_execution_exposes_small_capability_surface_but_keeps_compatibili
         execution_scope={"mode": "auto"},
     )
 
-    assert {
+    assert exposed == {
+        "ask_user",
+        "attachments.read",
+        "attachments.search",
+        "bash",
         "files.apply_patch",
-        "task",
-        "skills.load",
+        "files.read",
+        "glob",
+        "grep",
+        "projects.list",
         "runs.inspect",
+        "skills.load",
+        "task",
+        "todo_write",
+        "web.fetch",
+        "web.search",
         "workflows.inspect",
-    } <= exposed
-    assert {
-        "files.write",
-        "files.edit",
-        "subagent.analyze",
-        "skills.list",
-        "plugins.list",
-        "memory.list",
-        "memory.propose",
-        "runs.get",
-        "runs.logs",
-        "runs.outputs",
-        "runs.dag",
-        "runs.audit",
-        "workflows.get",
-        "workflows.form_spec",
-        "workflows.dag",
-        "workflows.source",
-    }.isdisjoint(exposed)
+    }
+    assert len(exposed) == 16
     assert {
         "files.write",
         "subagent.analyze",

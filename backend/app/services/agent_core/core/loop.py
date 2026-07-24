@@ -893,6 +893,7 @@ class AgentLoopController:
                     commit_action=False,
                     role=_tool_role(agent_session),
                     execution_target=execution_target_from_session(agent_session),
+                    require_model_exposure=True,
                 )
                 prepared.append((tool_call, tool_name, result))
             if not await self.sessions.policy_version_matches(
