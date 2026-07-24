@@ -35,7 +35,7 @@ _REMOTE_SSH_TARGET_NEUTRAL_TOOLS = frozenset(
         "todo_write",
     }
 )
-_REMOTE_SSH_TARGET_PREFIXES = ("remote.", "skills.", "web.")
+_REMOTE_SSH_TARGET_PREFIXES = ("attachments.", "remote.", "skills.", "web.")
 _MODEL_HIDDEN_TOOLS = frozenset(
     {
         "files.edit",
