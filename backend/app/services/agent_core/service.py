@@ -20,6 +20,7 @@ from app.repositories.agent_core_repo import (
 )
 from app.repositories.agent_user_settings_repo import AgentUserSettingsRepository
 from app.repositories.project_repo import ProjectRepository
+from app.schemas.agent_core import AgentTurnSteerRead
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.execution_target import (
     normalize_execution_scope,
@@ -54,7 +55,11 @@ from app.services.agent_core.skills import (
 )
 from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
 from app.services.agent_core.tools.batches import ToolCallBatchCoordinator
-from app.services.agent_core.transcript import AgentTranscriptStore, text_part
+from app.services.agent_core.transcript import (
+    AgentTranscriptStore,
+    parts_to_text,
+    text_part,
+)
 from app.utils.exceptions import (
     BadRequestError,
     ConflictError,
@@ -614,6 +619,58 @@ class AgentCoreService:
         )
         return turn
 
+    async def steer_turn(
+        self,
+        *,
+        turn_id: str,
+        workspace_id: str,
+        user_id: str,
+        input_text: str,
+        input_parts: list[dict] | None = None,
+        active_skill_names: list[str] | None = None,
+        metadata: dict | None = None,
+    ) -> AgentTurnSteerRead:
+        turn = await self.require_turn(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        steer_id = uuid4()
+        normalized_active_skill_names = _validated_active_skill_names(
+            active_skill_names
+        )
+        message_metadata = {
+            **(metadata or {}),
+            "kind": "steer",
+            "steer_id": str(steer_id),
+        }
+        if normalized_active_skill_names:
+            message_metadata["active_skill_names"] = normalized_active_skill_names
+        accepted = await self.turn_repo.accept_steer(
+            turn_id=str(turn.id),
+            steer_id=str(steer_id),
+            content_parts=_transcript_parts_for_turn(
+                input_text=input_text,
+                input_parts=input_parts,
+            ),
+            message_metadata=message_metadata,
+            event_type=AgentEventType.TURN_STEER_RECEIVED,
+            event_payload={
+                "input_text": input_text,
+                "delivery": "pending",
+                "input_display": message_metadata.get("input_display"),
+            },
+        )
+        if accepted is None:
+            raise ConflictError(
+                "This turn no longer accepts guidance; send it as a new turn"
+            )
+        return AgentTurnSteerRead(
+            steer_id=steer_id,
+            turn_id=turn.id,
+            delivery="pending",
+        )
+
     async def cancel_turn(
         self,
         *,
@@ -679,6 +736,27 @@ class AgentCoreService:
             return await self.turn_repo.get_fresh(turn_id)
 
         messages = await self.transcript.list_messages(session_id)
+        for message in messages:
+            metadata = message.message_metadata or {}
+            if (
+                message.status != "draft"
+                or message.role != "user"
+                or metadata.get("kind") != "steer"
+            ):
+                continue
+            message.status = "superseded"
+            await self.ledger.append(
+                session_id=session_id,
+                turn_id=turn_id,
+                type=AgentEventType.TURN_STEER_CANCELLED,
+                payload={
+                    "steer_id": metadata.get("steer_id"),
+                    "input_text": parts_to_text(message.content_parts),
+                    "delivery": "cancelled",
+                    "reason": termination_reason,
+                },
+                commit=False,
+            )
         existing_action_results = {
             str((message.message_metadata or {}).get("action_id"))
             for message in messages
@@ -1027,6 +1105,7 @@ class AgentCoreService:
         if len(batches) > 1 and any(batch.batch_ordinal is None for batch in batches):
             turn = await update_recovery_turn(
                 status=AgentTurnStatus.FAILED,
+                accepts_steer=False,
                 termination_reason="model_failed",
                 error_code="recovery_ambiguous_tool_batches",
                 error_message="Legacy tool batches cannot be ordered safely for recovery.",
@@ -1071,6 +1150,7 @@ class AgentCoreService:
                 await self._cancel_open_actions(turn_id, cancelled_at=now)
                 turn = await update_recovery_turn(
                     status=AgentTurnStatus.FAILED,
+                    accepts_steer=False,
                     termination_reason="model_failed",
                     error_code="recovery_inflight_action",
                     error_message=(
@@ -1250,6 +1330,7 @@ class AgentCoreService:
             await self._cancel_open_actions(turn_id, cancelled_at=now)
             turn = await update_recovery_turn(
                 status=AgentTurnStatus.FAILED,
+                accepts_steer=False,
                 termination_reason="model_failed",
                 error_code="recovery_inflight_action",
                 error_message="Agent process stopped while a tool action was running.",

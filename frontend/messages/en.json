@@ -344,7 +344,18 @@
     "parabricksCompatible": "Parabricks Compatible",
     "noGpuDetected": "No GPU detected",
     "gpu": {
-      "nvidiaRuntimeVisible": "NVIDIA runtime visible"
+      "nvidiaRuntimeVisible": "NVIDIA runtime visible",
+      "ready": "Ready for GPU workflows",
+      "policyAuto": "Automatic · using {selected} of {detected} GPUs",
+      "policyManual": "Manual · using {selected} of {detected} GPUs",
+      "policyDisabled": "GPU discovery disabled",
+      "stale": "Showing the last successful GPU inventory",
+      "stateDisabled": "Automatic discovery is disabled in the backend environment.",
+      "stateDockerUnavailable": "Docker is unavailable to the backend.",
+      "stateToolkitUnavailable": "NVIDIA Container Toolkit is unavailable or cannot allocate a GPU.",
+      "stateNoGpus": "Docker did not report any NVIDIA GPUs.",
+      "statePolicyInvalid": "The configured GPU selection does not match detected devices.",
+      "stateProbeFailed": "The GPU probe failed; check backend logs and host driver health."
     },
     "narrativeEmpty": "No runs yet. Review system readiness below before starting the first analysis.",
     "narrativeAllComplete": "All {total} runs completed successfully",
@@ -418,7 +429,13 @@
           "detail": {
             "ready": "GPU is ready for accelerated workflows: {names}",
             "visible": "{count} GPU(s) are available: {names}. They are used only when a workflow needs acceleration.",
-            "runtimeHidden": "This host supports GPU work, but the container does not have GPU access yet. Enable the GPU compose override when a workflow needs it. {recommendation}",
+            "disabled": "Automatic GPU discovery is disabled. Set BIOINFOFLOW_GPU_MODE=auto and recreate the backend to enable it.",
+            "dockerUnavailable": "Docker is unavailable to the backend, so GPU capability cannot be checked. CPU workflows remain available.",
+            "toolkitUnavailable": "Docker cannot allocate an NVIDIA GPU. Install NVIDIA Container Toolkit, then recreate the backend.",
+            "noGpus": "Docker is available, but no NVIDIA GPUs were detected. CPU workflows remain available.",
+            "policyInvalid": "The configured GPU selection does not match the detected devices. Update BIOINFOFLOW_GPU_DEVICES and recreate the backend.",
+            "probeFailed": "The GPU probe failed. Check backend logs and host driver health; CPU workflows remain available.",
+            "runtimeHidden": "This host supports GPU work, but the container cannot access it yet. Check NVIDIA Container Toolkit and recreate the backend. {recommendation}",
             "hostOnly": "NVIDIA tools are available on the host, but the container cannot see GPUs yet. CPU workflows can run now. {recommendation}",
             "error": "GPU status is unavailable for now. CPU workflows can run now. Details: {error}",
             "cpuOnly": "GPU is not enabled. CPU workflows can run now."
@@ -1833,7 +1850,7 @@
     "subtitle": "Dispatch queue, resource pressure, and active workload in one operations view.",
     "mode": "Mode",
     "configuredMode": "Configured Mode",
-    "configuredModeLabel": "Configured mode:",
+    "configuredModeLabel": "Mode:",
     "workers": "Workers",
     "queueDepth": "Queue Depth",
     "tasks": "Tasks",
@@ -1846,10 +1863,10 @@
     "memory": "Memory",
     "disk": "Disk",
     "gpu": "GPU",
-    "snapshot": "Snapshot",
+    "snapshot": "Last updated",
     "utilization": "Utilization",
     "noGpu": "No GPU detected",
-    "autoRefresh": "Updates every 30s",
+    "autoRefresh": "Auto-updates every 30s",
     "refreshDescription": "Counts are refreshed on a timer, not streamed live.",
     "resourceUnavailable": "Unavailable",
     "resourceSnapshotPending": "Waiting for the first sample",
@@ -1863,14 +1880,14 @@
       "failed": "Tasks that ended in failure and may need investigation or retry."
     },
     "status": {
-      "activeTitle": "Persistent scheduler is active",
-      "activeBody": "New runs are being written to the scheduler queue and claimed by workers from persistent state.",
+      "activeTitle": "Scheduler online",
+      "activeBody": "New runs enter the persistent queue and are claimed by the next available worker.",
       "fallbackTitle": "Persistent mode is configured, but fallback is active",
       "fallbackBody": "The app is serving runs without an active persistent scheduler instance, so queue visibility and recovery features are limited.",
-      "persistentBadge": "persistent",
+      "persistentBadge": "Persistent queue",
       "fallbackBadge": "fallback",
-      "ready": "ready",
-      "attention": "attention"
+      "ready": "Ready",
+      "attention": "Needs attention"
     },
     "guidance": {
       "title": "How to use this page",
@@ -1894,12 +1911,12 @@
       "loadFailed": "Couldn't load scheduler status. Check that the backend is running."
     },
     "pressure": {
-      "label": "Capacity status",
-      "healthy": "healthy",
-      "moderate": "moderate",
-      "saturated": "saturated",
+      "label": "Available capacity",
+      "healthy": "Available",
+      "moderate": "Limited",
+      "saturated": "At capacity",
       "messages": {
-        "healthy": "Resources are available for new dispatches.",
+        "healthy": "Resources are available. New runs can start.",
         "moderate": "Dispatch may slow if CPU or memory continues rising.",
         "saturated": "Hold new dispatches until pressure drops."
       },
@@ -1911,8 +1928,8 @@
       }
     },
     "activeRuns": {
-      "title": "Active workload",
-      "count": "{count} running",
+      "title": "Running now",
+      "count": "{count} active",
       "empty": "No runs currently dispatched.",
       "emptyStates": {
         "idle": {
@@ -1928,7 +1945,8 @@
           "body": "Reconnect the resource stream to see currently executing runs."
         }
       },
-      "unknownWorkflow": "unknown workflow"
+      "unknownWorkflow": "unknown workflow",
+      "cpuShare": "Est. CPU"
     },
     "charts": {
       "trendsTitle": "Resource trends",
@@ -1938,17 +1956,17 @@
       "gpuFree": "GPU free"
     },
     "advanced": {
-      "button": "Advanced",
-      "drawerTitle": "Advanced · btop process view",
-      "drawerMeta": "Live process stream · btop",
+      "button": "Open monitor",
+      "drawerTitle": "System monitor",
+      "drawerMeta": "btop · backend runtime",
       "comingSoon": "Terminal view is coming soon",
       "comingSoonBody": "This pane will embed the live btop process view once the pty bridge ships. Until then, use the default panel for pressure and run-level attribution.",
       "connecting": "Connecting to btop…",
       "connected": "Connected",
       "disconnected": "Disconnected",
       "exited": "btop exited",
-      "unavailable": "btop was not found by the backend service",
-      "unavailableBody": "Set BTOP_BIN or make sure the service PATH includes btop, then reopen this drawer.",
+      "unavailable": "btop is missing from the backend runtime",
+      "unavailableBody": "Update the Bioinfoflow image and try again. Custom deployments can also set BTOP_BIN.",
       "attemptedPaths": "Checked: {paths}",
       "retry": "Reconnect"
     },
@@ -2138,6 +2156,19 @@
       "key_file": "Use a private-key path that exists inside the backend container.",
       "agent": "Use SSH_AUTH_SOCK from the backend container environment."
     },
+    "route": {
+      "label": "Connection route",
+      "direct": "Direct",
+      "jump": "Via jump host",
+      "selector": "Saved jump host",
+      "placeholder": "Select a saved host",
+      "helper": "Bioinfoflow logs into that host first and uses its local SSH key/config to reach the target.",
+      "noCandidates": "No direct connections are available as jump hosts.",
+      "usedAsJumpHost": "This connection is used as a jump host. Update dependent connections before changing its route."
+    },
+    "card": {
+      "via": "via {name}"
+    },
     "actions": {
       "testConnection": "Test connection",
       "retestConnection": "Retest connection",
@@ -2194,6 +2225,7 @@
         "privateKeyRequired": "Paste or upload a private key.",
         "sshAliasRequired": "Enter an SSH config Host.",
         "keyPathRequired": "Enter a backend-visible key file path.",
+        "jumpConnectionRequired": "Select a saved jump host.",
         "saveFailed": "Could not save the connection."
       },
       "placeholders": {
@@ -2279,9 +2311,9 @@
         "label": "During active responses",
         "description": "Apply this behavior when you send a message before the current turn finishes.",
         "options": {
-          "interrupt": {
-            "label": "Interrupt current turn",
-            "description": "Stop the active response first, then send your new message as the next turn."
+          "steer": {
+            "label": "Guide current response",
+            "description": "Add this message to the active response at the next safe step."
           },
           "queue": {
             "label": "Queue for next turn",
@@ -2291,9 +2323,9 @@
       },
       "customInstructions": {
         "label": "Custom instructions",
-        "description": "Add platform conventions, environment details, and other context the agent should receive.",
-        "newSessionsOnly": "Changes apply only to new sessions. Existing sessions keep the instructions they started with.",
-        "placeholder": "Add platform conventions, environment details, or other context...",
+        "description": "Add lasting context for new conversations.",
+        "newSessionsOnly": "New conversations only.",
+        "placeholder": "Add context...",
         "loading": "Loading custom instructions...",
         "save": "Save instructions",
         "saving": "Saving...",
@@ -2633,6 +2665,10 @@
     "send": "Send message",
     "stop": "Stop response",
     "pendingResponse": "Working on it...",
+    "steer": {
+      "pending": "Will be considered after the current step",
+      "cancelled": "Not processed because the response stopped"
+    },
     "scrollToBottom": "Jump to latest",
     "recentActivityWindow": "Showing recent activity",
     "thinking": "Thinking",
@@ -2643,7 +2679,10 @@
     },
     "responseActions": {
       "copy": "Copy response",
-      "retry": "Retry response"
+      "copied": "Copied",
+      "copyFailed": "Copy failed",
+      "retry": "Retry response",
+      "retrying": "Regenerating..."
     },
     "tokenUsage": {
       "label": "Tokens",

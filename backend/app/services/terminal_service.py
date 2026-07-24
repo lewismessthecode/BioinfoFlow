@@ -22,7 +22,9 @@ from app.services.remote_execution import (
     AsyncSshRemoteExecutor,
     RemoteConnectionConfig,
     SshRemoteExecutor,
+    build_inner_ssh_command,
 )
+from app.utils.exceptions import BadRequestError
 
 
 class TerminalNotInteractiveError(RuntimeError):
@@ -145,9 +147,21 @@ class DefaultRemoteTerminalFactory:
         env: dict[str, str],
     ) -> TerminalTransport:
         command = _remote_shell_command(remote_root_path)
-        if connection.password or connection.private_key:
-            client_cm = self.async_executor._connect(
+        outer_connection = connection
+        if connection.jump_connection is not None:
+            if connection.jump_connection.jump_connection is not None:
+                raise BadRequestError("Nested jump connections are not supported")
+            command = build_inner_ssh_command(
                 connection,
+                command,
+                connect_timeout_seconds=self.connect_timeout_seconds,
+                interactive=True,
+            )
+            outer_connection = connection.jump_connection
+
+        if outer_connection.password or outer_connection.private_key:
+            client_cm = self.async_executor._connect(
+                outer_connection,
                 self.connect_timeout_seconds,
             )
             client = await client_cm.__aenter__()
@@ -170,7 +184,7 @@ class DefaultRemoteTerminalFactory:
             )
 
         argv = self.ssh_executor.build_interactive_argv(
-            connection,
+            outer_connection,
             command,
             connect_timeout_seconds=self.connect_timeout_seconds,
         )
@@ -342,7 +356,9 @@ class TerminalSessionManager:
 
             async with self._lock:
                 existing_id = self._project_index.get(project_id)
-                existing = self._sessions_by_id.get(existing_id) if existing_id else None
+                existing = (
+                    self._sessions_by_id.get(existing_id) if existing_id else None
+                )
                 if existing and self._is_live_session(existing):
                     existing.last_touched = asyncio.get_running_loop().time()
                     snapshot = self._snapshot(existing)
@@ -351,7 +367,9 @@ class TerminalSessionManager:
                 else:
                     if existing:
                         self._evict_session_locked(existing)
-                    session.reader_task = asyncio.create_task(self._read_output(session))
+                    session.reader_task = asyncio.create_task(
+                        self._read_output(session)
+                    )
                     self._sessions_by_id[session.id] = session
                     self._project_index[project_id] = session.id
                     self._ensure_cleanup_task()
@@ -410,9 +428,7 @@ class TerminalSessionManager:
             )
         else:
             candidate = str(
-                self._resolve_safe_directory(
-                    session.root_path, relative_path or "."
-                )
+                self._resolve_safe_directory(session.root_path, relative_path or ".")
             )
         session.cwd = str(candidate)
         await self.send_input(session_id, f"cd {shlex.quote(str(candidate))}\n")

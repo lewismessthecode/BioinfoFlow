@@ -144,7 +144,9 @@ async def _run_checks(cli_ctx: CliContext) -> dict[str, Any]:
                 f"mode={data.get('mode', '?')}, queue={data.get('queue_depth', '?')}",
             )
         except (ConnectionFailed, ApiError) as exc:
-            detail = "not reachable" if isinstance(exc, ConnectionFailed) else exc.message
+            detail = (
+                "not reachable" if isinstance(exc, ConnectionFailed) else exc.message
+            )
             results["scheduler"] = _result(
                 "fail",
                 detail,
@@ -164,7 +166,9 @@ async def _run_checks(cli_ctx: CliContext) -> dict[str, Any]:
                 "available" if available else "not detected",
             )
         except (ConnectionFailed, ApiError) as exc:
-            detail = "not reachable" if isinstance(exc, ConnectionFailed) else exc.message
+            detail = (
+                "not reachable" if isinstance(exc, ConnectionFailed) else exc.message
+            )
             results["gpu"] = _result("warn", detail)
     else:
         results["gpu"] = _result("skip", "requires backend")
@@ -258,21 +262,58 @@ def _readiness_detail(check_id: str, check: dict[str, Any]) -> tuple[str, str | 
             "Bind a workflow to a project before submitting a run.",
         )
     if check_id == "gpu":
+        state = str(facts.get("state") or "")
         if facts.get("usable_for_gpu_workflows"):
             gpu_names = ", ".join(facts.get("gpu_names") or [])
             return f"GPU workflows are ready ({gpu_names or 'GPU visible'})", None
-        if facts.get("runtime_visible_to_backend") and int(facts.get("gpu_count") or 0) > 0:
+        if (
+            facts.get("runtime_visible_to_backend")
+            and int(facts.get("gpu_count") or 0) > 0
+        ):
             gpu_names = ", ".join(facts.get("gpu_names") or [])
             return (
                 f"GPU visible to backend ({gpu_names or 'optional capability'})",
                 "GPU is optional unless your workflow requires acceleration.",
             )
+        if state == "disabled":
+            return (
+                "GPU discovery is disabled",
+                "Set BIOINFOFLOW_GPU_MODE=auto and recreate the backend to enable it.",
+            )
+        if state == "docker_unavailable":
+            return (
+                "Docker GPU capability could not be checked",
+                "Restore backend access to the local Docker socket.",
+            )
+        if state == "toolkit_unavailable":
+            return (
+                "Docker cannot allocate an NVIDIA GPU",
+                "Install NVIDIA Container Toolkit, verify 'docker run --rm --gpus all ...', then recreate the backend.",
+            )
+        if state == "no_gpus":
+            return (
+                "Docker reported no NVIDIA GPUs",
+                "Check 'nvidia-smi -L' on the host; CPU workflows can still run.",
+            )
+        if state == "policy_invalid":
+            return (
+                "GPU selection is invalid",
+                "Update BIOINFOFLOW_GPU_DEVICES with detected UUIDs and recreate the backend.",
+            )
+        if state == "probe_failed":
+            return "GPU probe failed", "Check backend logs and host driver health."
         if facts.get("docker_nvidia_runtime"):
             return (
                 "NVIDIA runtime detected on host, but GPU is not exposed to backend",
-                str(facts.get("recommendation") or "Enable the GPU compose override."),
+                str(
+                    facts.get("recommendation")
+                    or "Check NVIDIA Container Toolkit and recreate the backend."
+                ),
             )
-        return "No GPU is visible to the backend", "CPU workflows can still run normally."
+        return (
+            "No GPU is visible to the backend",
+            "CPU workflows can still run normally.",
+        )
     return "", None
 
 

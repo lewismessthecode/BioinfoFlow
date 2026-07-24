@@ -50,6 +50,15 @@ export type SystemHealth = {
 
 export type GpuInfo = {
   available: boolean;
+  detected?: boolean;
+  mode?: "auto" | "manual" | "disabled" | string;
+  state?: string;
+  detected_count?: number;
+  selected_count?: number;
+  selected_gpu_uuids?: string[];
+  container_toolkit_available?: boolean;
+  usable_for_gpu_workflows?: boolean;
+  stale?: boolean;
   nvidia_smi_found?: boolean;
   docker_nvidia_runtime?: boolean;
   parabricks_compatible: boolean;
@@ -57,7 +66,9 @@ export type GpuInfo = {
   error?: string | null;
   gpus: Array<{
     index: number;
+    uuid?: string;
     name: string;
+    selected?: boolean;
     memory_total_mb: number;
     memory_free_mb: number;
     driver_version?: string | null;

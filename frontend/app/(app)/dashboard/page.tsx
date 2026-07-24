@@ -20,8 +20,7 @@ import {
 import { DashboardSkeleton } from "./components/dashboard-skeleton";
 import { StatCards } from "./components/stat-cards";
 import { RecentActivity } from "./components/recent-activity";
-import { SystemStatus } from "./components/system-status";
-import { SchedulerSummary } from "./components/scheduler-summary";
+import { OperationsOverview } from "./components/operations-overview";
 import { ReadinessCenter } from "./components/readiness-center";
 
 export default function DashboardPage() {
@@ -137,25 +136,11 @@ export default function DashboardPage() {
 
           <StatCards stats={stats} />
 
-          <div
-            className={
-              schedulerStatus
-                ? "grid items-stretch gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,0.75fr)]"
-                : "grid items-start gap-4"
-            }
-          >
-            <div className="min-w-0 h-full">
-              <SystemStatus
-                health={health}
-                gpuInfo={gpuInfo}
-              />
-            </div>
-            {schedulerStatus && (
-              <div className="min-w-0 h-full">
-                <SchedulerSummary schedulerStatus={schedulerStatus} />
-              </div>
-            )}
-          </div>
+          <OperationsOverview
+            health={health}
+            gpuInfo={gpuInfo}
+            schedulerStatus={schedulerStatus}
+          />
 
           <div className="min-w-0">
             <RecentActivity recentRuns={stats?.recent_runs} />

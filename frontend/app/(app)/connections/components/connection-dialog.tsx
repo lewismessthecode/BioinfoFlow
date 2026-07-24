@@ -6,6 +6,8 @@ import {
   type FormEvent,
   type ReactNode,
   type SetStateAction,
+  useEffect,
+  useRef,
 } from "react"
 import {
   BookOpenText,
@@ -33,6 +35,13 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import type { RemoteConnection, RemoteConnectionAuthMethod } from "@/lib/demo-connections"
 import { cn } from "@/lib/utils"
@@ -45,6 +54,7 @@ export type ConnectionFormState = {
   port: string
   username: string
   auth_method: RemoteConnectionAuthMethod
+  jump_connection_id: string
   ssh_alias: string
   key_path: string
   password: string
@@ -61,6 +71,7 @@ export type FormErrorField =
   | "key_path"
   | "password"
   | "private_key"
+  | "jump_connection_id"
   | null
 
 export const initialConnectionForm: ConnectionFormState = {
@@ -69,6 +80,7 @@ export const initialConnectionForm: ConnectionFormState = {
   port: "22",
   username: "",
   auth_method: "password",
+  jump_connection_id: "",
   ssh_alias: "",
   key_path: "",
   password: "",
@@ -96,6 +108,9 @@ type ConnectionDialogProps = {
   formError: string | null
   formErrorField: FormErrorField
   isSaving: boolean
+  jumpCandidates: RemoteConnection[]
+  jumpRouteUnavailable: boolean
+  onClearJumpConnectionError: () => void
   onOpenChange: (open: boolean) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onFormChange: Dispatch<SetStateAction<ConnectionFormState>>
@@ -117,6 +132,9 @@ export function ConnectionDialog({
   formError,
   formErrorField,
   isSaving,
+  jumpCandidates,
+  jumpRouteUnavailable,
+  onClearJumpConnectionError,
   onOpenChange,
   onSubmit,
   onFormChange,
@@ -128,6 +146,21 @@ export function ConnectionDialog({
   const t = useTranslations("connections")
   const tCommon = useTranslations("common")
   const usesAdvancedAuth = advancedAuthMethods.includes(form.auth_method)
+  const usesJumpHost = form.auth_method === "jump"
+  const directAuthMethodRef = useRef<Exclude<RemoteConnectionAuthMethod, "jump"> | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      directAuthMethodRef.current = null
+      return
+    }
+
+    const initialAuthMethod = connection?.auth_method ?? "password"
+    directAuthMethodRef.current =
+      initialAuthMethod === "jump" ? null : initialAuthMethod
+    // Status refreshes replace the connection object; only a new drawer session resets the draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connection?.id, mode, open])
 
   const handlePrivateKeyFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -145,12 +178,32 @@ export function ConnectionDialog({
     onFormChange((current) => ({
       ...current,
       auth_method: method,
+      jump_connection_id: "",
       ssh_alias: method === "ssh_config" ? current.ssh_alias : "",
       key_path: method === "key_file" ? current.key_path : "",
       password: method === "password" ? current.password : "",
       private_key: method === "private_key" ? current.private_key : "",
       passphrase: method === "private_key" ? current.passphrase : "",
     }))
+  }
+
+  const selectRoute = (route: "direct" | "jump") => {
+    onFormChange((current) => {
+      if (route === "direct" && current.auth_method !== "jump") return current
+      if (route === "jump" && current.auth_method === "jump") return current
+
+      if (route === "jump") {
+        directAuthMethodRef.current = current.auth_method
+      }
+
+      return {
+        ...current,
+        auth_method:
+          route === "jump" ? "jump" : directAuthMethodRef.current ?? "password",
+        jump_connection_id: "",
+      }
+    })
+    if (route === "direct") onClearJumpConnectionError()
   }
 
   if (!open) return null
@@ -278,6 +331,34 @@ export function ConnectionDialog({
 
             <PanelSection title={t("sections.credentials")} icon={<KeyRound className="h-4 w-4" />}>
               <div className="grid gap-3">
+                <div className="grid gap-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    {t("route.label")}
+                  </Label>
+                  <div
+                    role="group"
+                    aria-label={t("route.label")}
+                    className="grid grid-cols-2 gap-2"
+                  >
+                    <AuthMethodButton
+                      selected={!usesJumpHost}
+                      title={t("route.direct")}
+                      onSelect={() => selectRoute("direct")}
+                    />
+                    <AuthMethodButton
+                      selected={usesJumpHost}
+                      title={t("route.jump")}
+                      onSelect={() => selectRoute("jump")}
+                      disabled={jumpRouteUnavailable}
+                    />
+                  </div>
+                  {jumpRouteUnavailable ? (
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {t("route.usedAsJumpHost")}
+                    </p>
+                  ) : null}
+                </div>
+
                 <Field label={t("fields.username")} htmlFor="connection-username">
                   <Input
                     id="connection-username"
@@ -287,6 +368,44 @@ export function ConnectionDialog({
                   />
                 </Field>
 
+                {usesJumpHost ? (
+                  <div className="grid gap-2">
+                    {jumpCandidates.length > 0 ? (
+                      <Field label={t("route.selector")} htmlFor="connection-jump-host">
+                        <Select
+                          value={form.jump_connection_id || undefined}
+                          onValueChange={(value) => {
+                            onFormChange((current) => ({ ...current, jump_connection_id: value }))
+                            onClearJumpConnectionError()
+                          }}
+                        >
+                          <SelectTrigger
+                            id="connection-jump-host"
+                            className="w-full"
+                            aria-invalid={formErrorField === "jump_connection_id"}
+                            aria-describedby={
+                              formErrorField === "jump_connection_id" ? "connection-form-error" : undefined
+                            }
+                          >
+                            <SelectValue placeholder={t("route.placeholder")} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {jumpCandidates.map((candidate) => (
+                              <SelectItem key={candidate.id} value={candidate.id}>
+                                {candidate.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    ) : (
+                      <p role="status" className="rounded-md border border-dashed border-border/60 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                        {t("route.noCandidates")}
+                      </p>
+                    )}
+                    <p className="text-xs leading-5 text-muted-foreground">{t("route.helper")}</p>
+                  </div>
+                ) : (
                 <div className="grid gap-1.5">
                   <Label className="text-xs font-medium text-muted-foreground">{t("fields.auth")}</Label>
                   <div aria-label={t("fields.auth")} className="grid gap-2">
@@ -301,8 +420,9 @@ export function ConnectionDialog({
                     ))}
                   </div>
                 </div>
+                )}
 
-                {form.auth_method === "password" ? (
+                {!usesJumpHost && form.auth_method === "password" ? (
                   <Field label={t("fields.password")} htmlFor="connection-password">
                     <Input
                       id="connection-password"
@@ -317,7 +437,7 @@ export function ConnectionDialog({
                   </Field>
                 ) : null}
 
-                {form.auth_method === "private_key" ? (
+                {!usesJumpHost && form.auth_method === "private_key" ? (
                   <div className="grid gap-3">
                     <Field label={t("fields.privateKey")} htmlFor="connection-private-key">
                       <Textarea
@@ -350,7 +470,7 @@ export function ConnectionDialog({
                   </div>
                 ) : null}
 
-                <details
+                {!usesJumpHost ? <details
                   open={usesAdvancedAuth ? true : undefined}
                   className="group grid gap-3 border-t border-border/60 pt-3"
                 >
@@ -368,7 +488,7 @@ export function ConnectionDialog({
                       />
                     ))}
                   </div>
-                </details>
+                </details> : null}
 
                 {form.auth_method === "ssh_config" ? (
                   <Field label={t("fields.sshAlias")} htmlFor="connection-ssh-alias">
@@ -522,19 +642,22 @@ function AuthMethodButton({
   title,
   description,
   onSelect,
+  disabled = false,
 }: {
   selected: boolean
   title: string
   description?: string
   onSelect: () => void
+  disabled?: boolean
 }) {
   return (
     <button
       type="button"
       aria-pressed={selected}
       onClick={onSelect}
+      disabled={disabled}
       className={cn(
-        "inline-flex min-h-10 items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors hover:border-foreground/20 hover:bg-muted/30",
+        "inline-flex min-h-10 items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors hover:border-foreground/20 hover:bg-muted/30 disabled:cursor-not-allowed disabled:opacity-50",
         selected ? "border-foreground/40 bg-muted/40 text-foreground" : "border-border/60 bg-transparent text-muted-foreground",
       )}
     >

@@ -186,6 +186,19 @@ class AgentTurnCreate(BaseModel):
     metadata: dict | None = None
 
 
+class AgentTurnSteer(BaseModel):
+    input_text: str = Field(min_length=1)
+    input_parts: list[dict] | None = None
+    active_skill_names: list[str] | None = None
+    metadata: dict | None = None
+
+
+class AgentTurnSteerRead(BaseModel):
+    steer_id: UUID
+    turn_id: UUID
+    delivery: Literal["pending"] = "pending"
+
+
 class AgentTurnRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

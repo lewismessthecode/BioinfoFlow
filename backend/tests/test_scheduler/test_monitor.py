@@ -10,6 +10,35 @@ from app.scheduler.monitor import ResourceMonitor
 from app.scheduler.resources import SystemResources
 
 
+class FakeGpuService:
+    async def get_status(self):
+        return SimpleNamespace(
+            gpus=[
+                SimpleNamespace(selected=False, memory_free_mb=64000),
+                SimpleNamespace(selected=True, memory_free_mb=49152),
+            ]
+        )
+
+
+@pytest.mark.asyncio
+async def test_resource_monitor_uses_selected_shared_gpu_inventory(monkeypatch):
+    base = SystemResources(
+        cpu_count=8,
+        cpu_available=6.0,
+        memory_total_gb=32.0,
+        memory_available_gb=20.0,
+        disk_total_gb=200.0,
+        disk_available_gb=150.0,
+    )
+    monitor = ResourceMonitor(workspace_path="/tmp", gpu_service=FakeGpuService())
+    monkeypatch.setattr(monitor, "_sample_system_sync", lambda: base)
+
+    snapshot = await monitor._sample()
+
+    assert snapshot.gpu_count == 1
+    assert snapshot.gpu_memory_gb == 48.0
+
+
 def test_resource_monitor_samples_system_resources(monkeypatch):
     gib = 1024**3
     sampled_at = datetime(2026, 3, 18, 12, 0, tzinfo=timezone.utc)
@@ -21,6 +50,7 @@ def test_resource_monitor_samples_system_resources(monkeypatch):
         "app.scheduler.monitor.psutil.disk_usage",
         lambda path: SimpleNamespace(total=500 * gib, free=120 * gib),
     )
+
     def _cpu_count_stub(logical=True):
         del logical
         return 16

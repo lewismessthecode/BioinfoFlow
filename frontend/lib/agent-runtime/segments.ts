@@ -44,6 +44,7 @@ export function buildTurnSegments(
     sortedEvents,
     sortedDecisionResolverEvents,
   )
+  const steerSegments = buildSteerSegments(turn.id, sortedEvents)
   const errorSegment = buildTurnErrorSegment(turn, sortedEvents)
 
   return compactActivitySegments(
@@ -68,9 +69,60 @@ export function buildTurnSegments(
       })),
       ...activitySegments,
       ...decisionSegments,
+      ...steerSegments,
       ...(errorSegment ? [errorSegment] : []),
     ].sort(compareSegments),
   )
+}
+
+function buildSteerSegments(
+  turnId: string,
+  events: AgentRuntimeEvent[],
+): AgentRuntimeTranscriptSegment[] {
+  const byId = new Map<
+    string,
+    Extract<AgentRuntimeTranscriptSegment, { kind: "user_steer" }>
+  >()
+  for (const event of events) {
+    if (
+      event.type !== "turn.steer.received" &&
+      event.type !== "turn.steer.delivered" &&
+      event.type !== "turn.steer.cancelled"
+    ) {
+      continue
+    }
+    const steerId = stringValue(event.payload.steer_id)
+    if (!steerId) continue
+    const existing = byId.get(steerId)
+    const status =
+      event.type === "turn.steer.delivered"
+        ? "delivered"
+        : event.type === "turn.steer.cancelled"
+          ? "cancelled"
+          : "pending"
+    if (existing) {
+      existing.seqEnd = Math.max(existing.seqEnd, event.seq)
+      existing.status = status
+      existing.steer.status = status
+      existing.steer.text = stringValue(event.payload.input_text) ?? existing.steer.text
+      continue
+    }
+    byId.set(steerId, {
+      id: `steer:${turnId}:${steerId}`,
+      turnId,
+      kind: "user_steer",
+      seqStart: event.seq,
+      seqEnd: event.seq,
+      status,
+      steer: {
+        id: steerId,
+        text: stringValue(event.payload.input_text) ?? "",
+        status,
+        inputDisplay: recordValue(event.payload.input_display),
+      },
+    })
+  }
+  return [...byId.values()]
 }
 
 function buildTextBlocks(
@@ -574,8 +626,10 @@ function segmentPriority(kind: AgentRuntimeTranscriptSegment["kind"]) {
       return 2
     case "decision":
       return 3
-    case "turn_error":
+    case "user_steer":
       return 4
+    case "turn_error":
+      return 5
   }
 }
 

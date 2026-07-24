@@ -332,6 +332,79 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def accept_steer(
+        self,
+        *,
+        turn_id: str,
+        steer_id: str,
+        content_parts: list[dict],
+        message_metadata: dict,
+        event_type: str,
+        event_payload: dict,
+    ) -> AgentMessage | None:
+        """Persist guidance only while the active turn still accepts it."""
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status.in_(
+                    [
+                        AgentTurnStatus.QUEUED,
+                        AgentTurnStatus.RUNNING,
+                        AgentTurnStatus.WAITING_USER,
+                        AgentTurnStatus.WAITING_APPROVAL,
+                    ]
+                ),
+                self.model.accepts_steer.is_(True),
+            )
+            .values(accepts_steer=True)
+            .returning(self.model.session_id)
+            .execution_options(synchronize_session=False)
+        )
+        session_id = result.scalar_one_or_none()
+        if session_id is None:
+            await self.session.rollback()
+            return None
+
+        event_seq = int(
+            await self.session.scalar(
+                select(func.max(AgentEvent.seq)).where(
+                    AgentEvent.session_id == session_id
+                )
+            )
+            or 0
+        ) + 1
+        message = AgentMessage(
+            session_id=session_id,
+            turn_id=UUID(turn_id),
+            role="user",
+            content_parts=content_parts,
+            message_metadata=message_metadata,
+            status=AgentMessageStatus.DRAFT,
+            ordering_index=0,
+        )
+        self.session.add_all(
+            [
+                message,
+                AgentEvent(
+                    session_id=session_id,
+                    turn_id=UUID(turn_id),
+                    seq=event_seq,
+                    type=event_type,
+                    payload={**event_payload, "steer_id": steer_id},
+                    visibility="user",
+                    schema_version=1,
+                ),
+            ]
+        )
+        try:
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        await self.session.refresh(message)
+        return message
+
     async def list_recoverable(self) -> list[AgentTurn]:
         """List recovery candidates, including actively leased running turns.
 
@@ -354,6 +427,35 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def seal_steering_if_idle(
+        self,
+        *,
+        turn_id: str,
+        expected_owner_token: str,
+    ) -> bool:
+        pending_steer_exists = exists(
+            select(AgentMessage.id).where(
+                AgentMessage.turn_id == self.model.id,
+                AgentMessage.role == "user",
+                AgentMessage.status == AgentMessageStatus.DRAFT,
+            )
+        )
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status == AgentTurnStatus.RUNNING,
+                self.model.owner_token == expected_owner_token,
+                self.model.accepts_steer.is_(True),
+                ~pending_steer_exists,
+            )
+            .values(accepts_steer=False)
+            .execution_options(synchronize_session=False)
+        )
+        sealed = result.rowcount == 1
+        await self.session.commit()
+        return sealed
 
     async def create_with_session_claim(
         self,
@@ -689,6 +791,7 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         turn_id: str,
         *,
         expected_owner_token: str,
+        commit: bool = True,
         **data: object,
     ) -> tuple[AgentTurn | None, bool]:
         result = await self.session.execute(
@@ -702,7 +805,10 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             .execution_options(synchronize_session=False)
         )
         updated = result.rowcount == 1
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         return await self.get_fresh(turn_id), updated
 
     async def queue_waiting_for_resume(
@@ -750,6 +856,7 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
     ) -> bool:
         values = {
             "status": AgentTurnStatus.CANCELLED,
+            "accepts_steer": False,
             "termination_reason": termination_reason,
             "completed_at": func.now(),
             "loop_state": {"termination_reason": termination_reason},
@@ -896,6 +1003,202 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def deliver_pending_steers(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        expected_owner_token: str,
+        received_event_type: str,
+        delivered_event_type: str,
+    ) -> tuple[list[AgentMessage], bool]:
+        ensure_clean_owned_publication_session(self.session)
+        try:
+            if not await _fence_owned_turn(
+                self.session,
+                turn_id=turn_id,
+                expected_owner_token=expected_owner_token,
+            ):
+                await self.session.rollback()
+                return [], False
+            result = await self.session.execute(
+                select(self.model)
+                .where(
+                    self.model.session_id == session_id,
+                    self.model.turn_id == turn_id,
+                    self.model.role == "user",
+                    self.model.status == AgentMessageStatus.DRAFT,
+                )
+                .order_by(self.model.created_at, self.model.id)
+            )
+            pending = list(result.scalars().all())
+            if not pending:
+                await self.session.rollback()
+                return [], True
+            received_result = await self.session.execute(
+                select(AgentEvent)
+                .where(
+                    AgentEvent.session_id == session_id,
+                    AgentEvent.turn_id == turn_id,
+                    AgentEvent.type == received_event_type,
+                )
+                .order_by(AgentEvent.seq)
+            )
+            received_order = {
+                str(event.payload.get("steer_id")): position
+                for position, event in enumerate(received_result.scalars().all())
+            }
+            pending.sort(
+                key=lambda message: received_order.get(
+                    str((message.message_metadata or {}).get("steer_id")),
+                    len(received_order),
+                )
+            )
+
+            ordering_index = int(
+                await self.session.scalar(
+                    select(func.max(self.model.ordering_index)).where(
+                        self.model.session_id == session_id,
+                        self.model.status == AgentMessageStatus.COMMITTED,
+                    )
+                )
+                or 0
+            )
+            event_seq = int(
+                await self.session.scalar(
+                    select(func.max(AgentEvent.seq)).where(
+                        AgentEvent.session_id == session_id
+                    )
+                )
+                or 0
+            )
+            for message in pending:
+                ordering_index += 1
+                event_seq += 1
+                message.status = AgentMessageStatus.COMMITTED
+                message.ordering_index = ordering_index
+                metadata = message.message_metadata or {}
+                self.session.add(
+                    AgentEvent(
+                        session_id=session_id,
+                        turn_id=UUID(turn_id),
+                        seq=event_seq,
+                        type=delivered_event_type,
+                        payload={
+                            "steer_id": metadata.get("steer_id"),
+                            "input_text": "".join(
+                                str(part.get("text") or "")
+                                for part in message.content_parts or []
+                                if part.get("type") == "text"
+                            ),
+                            "delivery": "delivered",
+                        },
+                        visibility="user",
+                        schema_version=1,
+                    )
+                )
+            if not await _fence_owned_turn(
+                self.session,
+                turn_id=turn_id,
+                expected_owner_token=expected_owner_token,
+            ):
+                await self.session.rollback()
+                return [], False
+            await self.session.commit()
+            return pending, True
+        except Exception:
+            await self.session.rollback()
+            raise
+
+    async def cancel_pending_steers(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        received_event_type: str,
+        cancelled_event_type: str,
+        reason: str,
+    ) -> list[AgentMessage]:
+        terminal = await self.session.scalar(
+            select(AgentTurn.id).where(
+                AgentTurn.id == turn_id,
+                AgentTurn.status.in_(
+                    [
+                        AgentTurnStatus.COMPLETED,
+                        AgentTurnStatus.FAILED,
+                        AgentTurnStatus.CANCELLED,
+                    ]
+                ),
+                AgentTurn.accepts_steer.is_(False),
+            )
+        )
+        if terminal is None:
+            return []
+        result = await self.session.execute(
+            select(self.model).where(
+                self.model.session_id == session_id,
+                self.model.turn_id == turn_id,
+                self.model.role == "user",
+                self.model.status == AgentMessageStatus.DRAFT,
+            )
+        )
+        pending = list(result.scalars().all())
+        if not pending:
+            return []
+        received_result = await self.session.execute(
+            select(AgentEvent)
+            .where(
+                AgentEvent.session_id == session_id,
+                AgentEvent.turn_id == turn_id,
+                AgentEvent.type == received_event_type,
+            )
+            .order_by(AgentEvent.seq)
+        )
+        received_order = {
+            str(event.payload.get("steer_id")): position
+            for position, event in enumerate(received_result.scalars().all())
+        }
+        pending.sort(
+            key=lambda message: received_order.get(
+                str((message.message_metadata or {}).get("steer_id")),
+                len(received_order),
+            )
+        )
+        event_seq = int(
+            await self.session.scalar(
+                select(func.max(AgentEvent.seq)).where(
+                    AgentEvent.session_id == session_id
+                )
+            )
+            or 0
+        )
+        for message in pending:
+            event_seq += 1
+            message.status = AgentMessageStatus.SUPERSEDED
+            metadata = message.message_metadata or {}
+            self.session.add(
+                AgentEvent(
+                    session_id=session_id,
+                    turn_id=UUID(turn_id),
+                    seq=event_seq,
+                    type=cancelled_event_type,
+                    payload={
+                        "steer_id": metadata.get("steer_id"),
+                        "input_text": "".join(
+                            str(part.get("text") or "")
+                            for part in message.content_parts or []
+                            if part.get("type") == "text"
+                        ),
+                        "delivery": "cancelled",
+                        "reason": reason,
+                    },
+                    visibility="user",
+                    schema_version=1,
+                )
+            )
+        await self.session.commit()
+        return pending
 
     async def list_committed_for_session(self, session_id: str) -> list[AgentMessage]:
         stmt = (

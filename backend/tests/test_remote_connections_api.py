@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from starlette.websockets import WebSocketDisconnect
 
@@ -257,6 +258,317 @@ async def test_remote_connection_validation_enforces_auth_method_fields(async_cl
 
 
 @pytest.mark.asyncio
+async def test_remote_connection_creates_and_serializes_jump_auth(async_client):
+    jump_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    assert jump_resp.status_code == 201
+    jump_id = jump_resp.json()["data"]["id"]
+
+    target_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            name="Internal HPC",
+            host="internal.example.org",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=jump_id,
+        ),
+    )
+
+    assert target_resp.status_code == 201
+    target = target_resp.json()["data"]
+    assert target["auth_method"] == "jump"
+    assert target["jump_connection_id"] == jump_id
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_jump_auth_requires_jump_id(async_client):
+    response = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(auth_method="jump", key_path=None),
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_direct_auth_rejects_jump_id(async_client):
+    jump_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    jump_id = jump_resp.json()["data"]["id"]
+
+    response = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(jump_connection_id=jump_id),
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_direct_auth_patch_rejects_jump_id(async_client):
+    jump_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    jump_id = jump_resp.json()["data"]["id"]
+    direct_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Direct Login"),
+    )
+    direct_id = direct_resp.json()["data"]["id"]
+
+    response = await async_client.patch(
+        f"/api/v1/connections/{direct_id}",
+        json={"jump_connection_id": jump_id},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_jump_auth_rejects_direct_credentials(async_client):
+    jump_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    jump_id = jump_resp.json()["data"]["id"]
+
+    response = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=jump_id,
+            password="must-not-be-used",
+        ),
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_rejects_self_jump_reference(async_client):
+    connection_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(auth_method="agent", key_path=None),
+    )
+    connection_id = connection_resp.json()["data"]["id"]
+
+    response = await async_client.patch(
+        f"/api/v1/connections/{connection_id}",
+        json={"auth_method": "jump", "jump_connection_id": connection_id},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_rejects_cross_workspace_jump_reference(
+    async_client,
+    app,
+):
+    _override_user(app, _auth_user(user_id="user-2", workspace_id=OTHER_WORKSPACE_ID))
+    try:
+        jump_resp = await async_client.post(
+            "/api/v1/connections",
+            json=_connection_payload(
+                name="Other Bastion", auth_method="agent", key_path=None
+            ),
+        )
+    finally:
+        _clear_user_overrides(app)
+    jump_id = jump_resp.json()["data"]["id"]
+
+    response = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=jump_id,
+        ),
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_rejects_nested_jump_reference(async_client):
+    direct_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    direct_id = direct_resp.json()["data"]["id"]
+    jump_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            name="First Target",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=direct_id,
+        ),
+    )
+    jump_id = jump_resp.json()["data"]["id"]
+
+    response = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            name="Nested Target",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=jump_id,
+        ),
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_referenced_jump_host_cannot_be_deleted_or_converted(
+    async_client,
+):
+    host_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    host_id = host_resp.json()["data"]["id"]
+    alternate_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Alternate", auth_method="agent", key_path=None),
+    )
+    alternate_id = alternate_resp.json()["data"]["id"]
+    target_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            name="Internal HPC",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=host_id,
+        ),
+    )
+    assert target_resp.status_code == 201
+
+    edit_resp = await async_client.patch(
+        f"/api/v1/connections/{host_id}",
+        json={"name": "Bastion Updated"},
+    )
+    convert_resp = await async_client.patch(
+        f"/api/v1/connections/{host_id}",
+        json={"auth_method": "jump", "jump_connection_id": alternate_id},
+    )
+    delete_resp = await async_client.delete(f"/api/v1/connections/{host_id}")
+
+    assert edit_resp.status_code == 200
+    assert convert_resp.status_code == 422
+    assert delete_resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_switching_jump_auth_clears_credentials_and_status(
+    db_session,
+):
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    service = RemoteConnectionService(db_session)
+    first_jump = await service.create_connection(
+        _connection_payload(name="Bastion", auth_method="agent", key_path=None),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    second_jump = await service.create_connection(
+        _connection_payload(name="Alternate", auth_method="agent", key_path=None),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    target = await service.create_connection(
+        _connection_payload(
+            name="Target",
+            auth_method="private_key",
+            key_path=None,
+            private_key="private-key",
+            passphrase="passphrase",
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    await service.repo.record_test_result(
+        target,
+        status="online",
+        error=None,
+        checked_at=target.created_at,
+    )
+
+    target = await service.update_connection(
+        target,
+        {"auth_method": "jump", "jump_connection_id": str(first_jump.id)},
+    )
+    assert target.encrypted_password is None
+    assert target.encrypted_private_key is None
+    assert target.encrypted_passphrase is None
+    assert target.ssh_alias is None
+    assert target.key_path is None
+    assert target.last_status == "unknown"
+    assert target.last_checked_at is None
+
+    await service.repo.record_test_result(
+        target,
+        status="online",
+        error=None,
+        checked_at=target.updated_at,
+    )
+    target = await service.update_connection(
+        target,
+        {"jump_connection_id": str(second_jump.id)},
+    )
+    assert target.last_status == "unknown"
+    assert target.last_checked_at is None
+    assert str(target.jump_connection_id) == str(second_jump.id)
+
+    target = await service.update_connection(target, {"auth_method": "agent"})
+    assert target.jump_connection_id is None
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_editing_jump_host_invalidates_dependent_status(
+    db_session,
+):
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    service = RemoteConnectionService(db_session)
+    jump_host = await service.create_connection(
+        _connection_payload(name="Bastion", auth_method="agent", key_path=None),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    target = await service.create_connection(
+        _connection_payload(
+            name="Target",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=str(jump_host.id),
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    await service.repo.record_test_result(
+        target,
+        status="online",
+        error="previous error",
+        checked_at=target.created_at,
+    )
+
+    await service.update_connection(jump_host, {"host": "new-bastion.example.org"})
+    target = await service.get_connection(
+        str(target.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+
+    assert target is not None
+    assert target.last_status == "unknown"
+    assert target.last_error is None
+    assert target.last_checked_at is None
+
+
+@pytest.mark.asyncio
 async def test_remote_connection_service_enforces_auth_method_fields(db_session):
     from app.services.remote_connection_service import RemoteConnectionService
 
@@ -267,6 +579,196 @@ async def test_remote_connection_service_enforces_auth_method_fields(db_session)
             _connection_payload(auth_method="key_file", key_path=None),
             workspace_id=DEFAULT_WORKSPACE_ID,
         )
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_service_resolves_jump_credentials_without_summary_leak(
+    db_session,
+):
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    service = RemoteConnectionService(db_session)
+    jump = await service.create_connection(
+        _connection_payload(
+            name="Bastion",
+            host="bastion.example.org",
+            auth_method="password",
+            key_path=None,
+            password="jump-secret",
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    target = await service.create_connection(
+        _connection_payload(
+            name="Phoenix",
+            host="10.32.5.1",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=str(jump.id),
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+
+    config = await service.resolve_connection_config(target)
+
+    assert config.jump_connection is not None
+    assert config.jump_connection.id == str(jump.id)
+    assert config.jump_connection.password == "jump-secret"
+    assert config.summary()["jump_connection_id"] == str(jump.id)
+    assert config.summary()["jump_connection_name"] == "Bastion"
+    assert "password" not in config.summary()
+    assert "jump_connection" not in config.summary()
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_resolver_rejects_persisted_nested_jump(db_session):
+    from app.models.remote_connection import RemoteConnection
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    service = RemoteConnectionService(db_session)
+    outer_jump = await service.create_connection(
+        _connection_payload(name="Outer Bastion", auth_method="agent", key_path=None),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    referenced_jump = await service.create_connection(
+        _connection_payload(
+            name="Referenced Bastion", auth_method="agent", key_path=None
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    target = await service.create_connection(
+        _connection_payload(
+            name="Phoenix",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=str(referenced_jump.id),
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    await db_session.execute(
+        update(RemoteConnection)
+        .where(RemoteConnection.id == referenced_jump.id)
+        .values(
+            auth_method="jump",
+            jump_connection_id=str(outer_jump.id),
+        )
+    )
+    await db_session.commit()
+
+    with pytest.raises(ValidationError, match="Nested jump"):
+        await service.resolve_connection_config(target)
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_resolver_rejects_direct_jump_with_route_residue(
+    db_session,
+):
+    from app.models.remote_connection import RemoteConnection
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    service = RemoteConnectionService(db_session)
+    outer_jump = await service.create_connection(
+        _connection_payload(name="Outer Bastion", auth_method="agent", key_path=None),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    referenced_jump = await service.create_connection(
+        _connection_payload(
+            name="Referenced Bastion", auth_method="agent", key_path=None
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    target = await service.create_connection(
+        _connection_payload(
+            name="Phoenix",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=str(referenced_jump.id),
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    await db_session.execute(
+        update(RemoteConnection)
+        .where(RemoteConnection.id == referenced_jump.id)
+        .values(jump_connection_id=str(outer_jump.id))
+    )
+    await db_session.commit()
+
+    with pytest.raises(ValidationError, match="direct connection"):
+        await service.resolve_connection_config(target)
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_resolver_rejects_persisted_self_jump(db_session):
+    from app.models.remote_connection import RemoteConnection
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    service = RemoteConnectionService(db_session)
+    target = await service.create_connection(
+        _connection_payload(name="Phoenix", auth_method="agent", key_path=None),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    await db_session.execute(
+        update(RemoteConnection)
+        .where(RemoteConnection.id == target.id)
+        .values(auth_method="jump", jump_connection_id=str(target.id))
+    )
+    await db_session.commit()
+    await db_session.refresh(target)
+
+    with pytest.raises(ValidationError, match="itself"):
+        await service.resolve_connection_config(target)
+
+
+@pytest.mark.asyncio
+async def test_jump_connection_test_and_browse_receive_resolved_config(
+    async_client,
+    monkeypatch,
+):
+    jump_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(name="Bastion", auth_method="agent", key_path=None),
+    )
+    jump_id = jump_resp.json()["data"]["id"]
+    target_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            name="Phoenix",
+            host="10.32.5.1",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=jump_id,
+        ),
+    )
+    target_id = target_resp.json()["data"]["id"]
+    calls = []
+
+    from app.services.remote_execution import RemoteCommandResult
+
+    async def fake_run(self, connection, command, *, timeout_seconds, output_limit):
+        calls.append(connection)
+        stdout = "bioinfoflow-ok" if command == "printf bioinfoflow-ok" else ""
+        return RemoteCommandResult(
+            exit_code=0,
+            stdout=stdout,
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+
+    monkeypatch.setattr("app.services.remote_execution.SshRemoteExecutor.run", fake_run)
+
+    test_response = await async_client.post(f"/api/v1/connections/{target_id}/test")
+    browse_response = await async_client.get(
+        f"/api/v1/connections/{target_id}/directories"
+    )
+
+    assert test_response.status_code == 200
+    assert browse_response.status_code == 200
+    assert len(calls) == 2
+    assert all(call.jump_connection is not None for call in calls)
+    assert all(call.jump_connection.id == jump_id for call in calls)
 
 
 @pytest.mark.asyncio
@@ -394,7 +896,9 @@ async def test_remote_connection_test_uses_ssh_executor_by_default(
 
 
 @pytest.mark.asyncio
-async def test_remote_directory_browse_uses_bounded_ssh_command(async_client, monkeypatch):
+async def test_remote_directory_browse_uses_bounded_ssh_command(
+    async_client, monkeypatch
+):
     create_resp = await async_client.post(
         "/api/v1/connections",
         json=_connection_payload(auth_method="agent", key_path=None),
@@ -477,7 +981,9 @@ def test_remote_directory_command_does_not_block_on_fifo(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_remote_connection_delete_conflicts_when_used_by_remote_project(async_client):
+async def test_remote_connection_delete_conflicts_when_used_by_remote_project(
+    async_client,
+):
     create_resp = await async_client.post(
         "/api/v1/connections",
         json=_connection_payload(auth_method="agent", key_path=None),
@@ -585,3 +1091,66 @@ def test_remote_connection_websocket_requires_admin_in_team_mode(
             websocket.receive_json()
 
     assert exc_info.value.code == 4403
+
+
+def test_remote_connection_websocket_receives_resolved_jump_config(
+    remote_connection_test_client,
+    monkeypatch,
+):
+    client, session_maker = remote_connection_test_client
+
+    async def create_connections():
+        from app.services.remote_connection_service import RemoteConnectionService
+
+        async with session_maker() as session:
+            service = RemoteConnectionService(session)
+            jump = await service.create_connection(
+                _connection_payload(
+                    name="Bastion",
+                    auth_method="agent",
+                    key_path=None,
+                ),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+            )
+            target = await service.create_connection(
+                _connection_payload(
+                    name="Phoenix",
+                    host="10.32.5.1",
+                    auth_method="jump",
+                    key_path=None,
+                    jump_connection_id=str(jump.id),
+                ),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+            )
+            return target, jump
+
+    target, jump = asyncio.run(create_connections())
+    calls = []
+
+    async def fake_stream(
+        self,
+        connection,
+        command,
+        *,
+        timeout_seconds,
+        output_limit,
+    ):
+        from app.services.remote_execution import RemoteOutputFrame
+
+        calls.append(connection)
+        yield RemoteOutputFrame(type="exit", exit_code=0)
+
+    monkeypatch.setattr(
+        "app.services.remote_execution.SshRemoteExecutor.stream",
+        fake_stream,
+    )
+
+    with client.websocket_connect(
+        f"/api/v1/connections/{target.id}/exec/ws"
+    ) as websocket:
+        websocket.send_json({"command": "hostname"})
+        assert websocket.receive_json()["exit_code"] == 0
+
+    assert len(calls) == 1
+    assert calls[0].jump_connection is not None
+    assert calls[0].jump_connection.id == str(jump.id)

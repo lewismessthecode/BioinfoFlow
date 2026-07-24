@@ -3,11 +3,6 @@
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Gauge, ArrowRight } from "@/lib/icons";
-import {
-  CardRoot,
-  CardContent,
-  CardHeader,
-} from "@/components/bioinfoflow/card";
 import type { SchedulerStatus } from "@/lib/types";
 
 type SchedulerSummaryProps = {
@@ -20,23 +15,18 @@ export function SchedulerSummary({ schedulerStatus }: SchedulerSummaryProps) {
   return (
     <Link
       href="/scheduler"
-      className="group block h-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-2"
+      data-dashboard-section="scheduler"
+      data-testid="dashboard-scheduler-section"
+      className="group block min-w-0 border-t border-border/70 p-5 transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 xl:border-l xl:border-t-0"
     >
-      <CardRoot variant="workbench" className="flex h-full flex-1 flex-col transition-colors group-hover:bg-muted/30">
-        <CardHeader
-          title={tDashboard("schedulerCard.title")}
-          icon={Gauge}
-          className="border-b-0 !pb-2"
-          action={
-            <span
-              className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors group-hover:text-foreground"
-              aria-hidden="true"
-            >
-              <ArrowRight className="size-3.5" />
-            </span>
-          }
-        />
-        <CardContent className="flex flex-1 flex-col justify-between gap-4 !pt-0">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-foreground">
+          <Gauge className="size-3.5 text-muted-foreground/80" />
+          <h2 className="text-sm font-medium">{tDashboard("schedulerCard.title")}</h2>
+        </div>
+        <ArrowRight className="size-3.5 text-muted-foreground transition-colors group-hover:text-foreground" aria-hidden="true" />
+      </div>
+      <div className="mt-4 flex flex-col justify-between gap-4">
           <div>
             <p className="text-xs font-medium text-muted-foreground">
               {tDashboard("schedulerCard.queueDepth")}
@@ -71,8 +61,7 @@ export function SchedulerSummary({ schedulerStatus }: SchedulerSummaryProps) {
               </span>
             </span>
           </div>
-        </CardContent>
-      </CardRoot>
+      </div>
     </Link>
   );
 }

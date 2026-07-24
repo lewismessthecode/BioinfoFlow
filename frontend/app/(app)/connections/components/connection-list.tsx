@@ -49,6 +49,9 @@ export function ConnectionList({
   const onlineCount = connections.filter((connection) => connection.status === "online").length
   const attentionCount = connections.filter((connection) => connection.status === "error" || connection.status === "offline").length
   const agentOrConfigCount = connections.filter((connection) => connection.auth_method !== "key_file").length
+  const connectionNamesById = new Map(
+    connections.map((connection) => [connection.id, connection.name]),
+  )
 
   return (
     <section className="flex min-h-0 flex-col overflow-hidden">
@@ -105,14 +108,17 @@ export function ConnectionList({
             {filteredConnections.map((connection) => {
               const selected = selectedConnection ? connection.id === selectedConnection.id : false
               const testing = connection.id === testingConnectionId
+              const jumpConnectionName = connection.jump_connection_id
+                ? connectionNamesById.get(connection.jump_connection_id)
+                : undefined
 
               return (
                 <article
                   key={connection.id}
                   className={cn(
-                    "group relative min-h-[108px] rounded-2xl border bg-background px-4 py-3.5 transition-colors hover:bg-muted/35",
+                    "group relative box-border h-[108px] rounded-2xl border bg-background px-4 py-3.5 transition-colors hover:bg-muted/35",
                     selected
-                      ? "border-primary/30 bg-primary/[0.025] ring-1 ring-primary/15"
+                      ? "border-primary/30 bg-primary/[0.025] ring-1 ring-inset ring-primary/15"
                       : "border-border/60",
                   )}
                 >
@@ -120,22 +126,33 @@ export function ConnectionList({
                     type="button"
                     onClick={() => onSelectConnection(connection.id)}
                     aria-current={selected ? "true" : undefined}
-                    className="grid h-full w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3.5 pr-11 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="grid h-full w-full grid-cols-[44px_minmax(0,1fr)_6rem] items-center gap-3.5 pr-11 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
                     <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-background text-foreground", selected && "border-primary/25 bg-primary/5 text-primary")}>
                       <Server className="h-4 w-4" />
                     </div>
 
                     <div className="min-w-0">
-                      <h2 className="break-words text-sm font-semibold tracking-tight text-foreground">{connection.name}</h2>
-                      <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                      <h2 title={connection.name} className="truncate text-sm font-semibold tracking-tight text-foreground">{connection.name}</h2>
+                      <p
+                        title={`${connection.username}@${connection.host}`}
+                        className="mt-1 truncate font-mono text-xs text-muted-foreground"
+                      >
                         {connection.username}@{connection.host}
                       </p>
+                      {jumpConnectionName ? (
+                        <p
+                          title={t("card.via", { name: jumpConnectionName })}
+                          className="mt-0.5 truncate text-[11px] text-muted-foreground"
+                        >
+                          {t("card.via", { name: jumpConnectionName })}
+                        </p>
+                      ) : null}
                     </div>
 
                     <span
                       className={cn(
-                        "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[11px] font-medium",
+                        "inline-flex h-6 w-24 shrink-0 items-center justify-center gap-1.5 rounded-full border px-2 text-[11px] font-medium",
                         testing
                           ? "border-primary/20 bg-primary/5 text-primary"
                           : statusBorderClassNames[connection.status],

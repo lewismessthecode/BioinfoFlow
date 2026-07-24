@@ -69,6 +69,7 @@ function formFromConnection(connection: RemoteConnection): ConnectionFormState {
     port: String(connection.port),
     username: connection.username,
     auth_method: connection.auth_method,
+    jump_connection_id: connection.jump_connection_id ?? "",
     ssh_alias: connection.ssh_alias,
     key_path: connection.key_path,
     password: "",
@@ -133,6 +134,9 @@ export default function ConnectionsPage() {
 
   const filteredConnections = useMemo(() => {
     const query = search.trim().toLowerCase()
+    const connectionNamesById = new Map(
+      connections.map((connection) => [connection.id, connection.name]),
+    )
 
     return connections.filter((connection) => {
       const matchesStatus = statusFilter === "all" || connection.status === statusFilter
@@ -145,6 +149,9 @@ export default function ConnectionsPage() {
         connection.username,
         connection.ssh_alias,
         connection.skill_instructions,
+        connection.jump_connection_id
+          ? connectionNamesById.get(connection.jump_connection_id) ?? ""
+          : "",
       ].some((value) => value.toLowerCase().includes(query))
     })
   }, [connections, search, statusFilter])
@@ -186,6 +193,13 @@ export default function ConnectionsPage() {
   }
 
   const buildPayload = (): RemoteConnectionCreateInput | null => {
+    const jumpConnectionId = form.jump_connection_id.trim()
+    if (form.auth_method === "jump" && !jumpConnectionId) {
+      setFormError(t("form.errors.jumpConnectionRequired"))
+      setFormErrorField("jump_connection_id")
+      return null
+    }
+
     const sshAlias = form.ssh_alias.trim()
     if (form.auth_method === "ssh_config" && !sshAlias) {
       setFormError(t("form.errors.sshAliasRequired"))
@@ -248,6 +262,7 @@ export default function ConnectionsPage() {
       port,
       username: form.username.trim() || t("form.defaultUsername"),
       auth_method: form.auth_method,
+      jump_connection_id: form.auth_method === "jump" ? jumpConnectionId : null,
       ssh_alias: form.auth_method === "ssh_config" ? sshAlias : null,
       key_path: form.auth_method === "key_file" ? keyPath : null,
       password: form.auth_method === "password" && !preservesStoredPassword ? password : null,
@@ -457,6 +472,12 @@ export default function ConnectionsPage() {
     }))
   }
 
+  const clearJumpConnectionError = () => {
+    if (formErrorField !== "jump_connection_id") return
+    setFormError(null)
+    setFormErrorField(null)
+  }
+
   const editingConnection = editingConnectionId
     ? connections.find((connection) => connection.id === editingConnectionId) ?? null
     : null
@@ -466,6 +487,17 @@ export default function ConnectionsPage() {
     editingConnection && probeFeedback?.connectionId === editingConnection.id
       ? { status: probeFeedback.status, message: probeFeedback.message }
       : null
+  const jumpCandidates = connections.filter(
+    (connection) =>
+      connection.auth_method !== "jump" && connection.id !== editingConnectionId,
+  )
+  const jumpRouteUnavailable = Boolean(
+    editingConnection &&
+      editingConnection.auth_method !== "jump" &&
+      connections.some(
+        (connection) => connection.jump_connection_id === editingConnection.id,
+      ),
+  )
 
   return (
     <div className="relative h-full overflow-hidden bg-background">
@@ -529,6 +561,9 @@ export default function ConnectionsPage() {
         formError={formError}
         formErrorField={formErrorField}
         isSaving={isSaving}
+        jumpCandidates={jumpCandidates}
+        jumpRouteUnavailable={jumpRouteUnavailable}
+        onClearJumpConnectionError={clearJumpConnectionError}
         onOpenChange={handleDialogOpenChange}
         onSubmit={handleSubmit}
         onFormChange={setForm}

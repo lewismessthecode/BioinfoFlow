@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
 
 import asyncssh
 import pytest
@@ -10,7 +11,9 @@ from app.services.remote_execution import (
     RemoteConnectionConfig,
     SshRemoteExecutor,
     _TofuHostKeyClient,
+    build_inner_ssh_command,
 )
+from app.utils.exceptions import BadRequestError
 
 
 class _FakeStream:
@@ -177,6 +180,253 @@ async def test_ssh_executor_uses_asyncssh_for_password_connections():
     assert client.commands == ["hostname"]
     assert result.exit_code == 0
     assert result.stdout == "ok\n"
+
+
+@pytest.mark.asyncio
+async def test_ssh_executor_routes_through_asyncssh_jump_connection():
+    captured: dict[str, object] = {}
+    client = _FakeAsyncSshClient(_FakeAsyncSshResult(stdout="phoenix\n"))
+
+    def connect_factory(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return client
+
+    jump = RemoteConnectionConfig(
+        id="jump-1",
+        name="Bastion",
+        host="bastion.example.org",
+        username="jump-user",
+        password="jump-secret",
+    )
+    target = RemoteConnectionConfig(
+        id="target-1",
+        name="Phoenix",
+        host="10.32.5.1",
+        username="phoenix",
+        port=22,
+        jump_connection=jump,
+    )
+    executor = SshRemoteExecutor(
+        async_executor=AsyncSshRemoteExecutor(connect_factory=connect_factory)
+    )
+
+    result = await executor.run(
+        target,
+        "hostname",
+        timeout_seconds=5,
+        output_limit=100,
+    )
+
+    assert captured["args"] == ("bastion.example.org",)
+    assert captured["kwargs"]["username"] == "jump-user"
+    assert captured["kwargs"]["password"] == "jump-secret"
+    assert client.commands == [
+        "ssh -p 22 -o BatchMode=yes -o ConnectTimeout=5 -- phoenix@10.32.5.1 hostname"
+    ]
+    assert result.stdout == "phoenix\n"
+
+
+@pytest.mark.asyncio
+async def test_ssh_executor_routes_through_system_ssh_jump_connection():
+    captured: dict[str, object] = {}
+
+    async def process_factory(*argv, **kwargs):
+        captured["argv"] = list(argv)
+        captured["kwargs"] = kwargs
+        return _FakeProcess(stdout=[b"phoenix\n"])
+
+    jump = RemoteConnectionConfig(
+        id="jump-1",
+        name="Bastion",
+        host="bastion.example.org",
+        username="jump-user",
+        key_path="/keys/jump",
+    )
+    target = RemoteConnectionConfig(
+        id="target-1",
+        name="Phoenix",
+        host="10.32.5.1",
+        username="phoenix",
+        port=22,
+        jump_connection=jump,
+    )
+
+    result = await SshRemoteExecutor(process_factory=process_factory).run(
+        target,
+        "hostname",
+        timeout_seconds=5,
+        output_limit=100,
+    )
+
+    assert captured["argv"] == [
+        "ssh",
+        "-i",
+        "/keys/jump",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=5",
+        "--",
+        "jump-user@bastion.example.org",
+        "ssh -p 22 -o BatchMode=yes -o ConnectTimeout=5 -- phoenix@10.32.5.1 hostname",
+    ]
+    assert result.stdout == "phoenix\n"
+
+
+@pytest.mark.asyncio
+async def test_ssh_executor_stream_routes_through_jump_and_preserves_frames():
+    client = _FakeAsyncSshClient(
+        _FakeAsyncSshResult(stdout="out\n", stderr="warn\n", exit_status=7)
+    )
+    jump = RemoteConnectionConfig(
+        id="jump-1",
+        name="Bastion",
+        host="bastion.example.org",
+        username="jump-user",
+        password="jump-secret",
+    )
+    target = RemoteConnectionConfig(
+        id="target-1",
+        name="Phoenix",
+        host="10.32.5.1",
+        username="phoenix",
+        jump_connection=jump,
+    )
+    executor = SshRemoteExecutor(
+        async_executor=AsyncSshRemoteExecutor(connect_factory=lambda *_a, **_kw: client)
+    )
+
+    frames = [
+        frame
+        async for frame in executor.stream(
+            target,
+            "hostname",
+            timeout_seconds=5,
+            output_limit=100,
+        )
+    ]
+
+    assert [(frame.type, frame.data, frame.exit_code) for frame in frames] == [
+        ("stdout", "out\n", None),
+        ("stderr", "warn\n", None),
+        ("exit", None, 7),
+    ]
+    assert client.commands == [
+        "ssh -o BatchMode=yes -o ConnectTimeout=5 -- phoenix@10.32.5.1 hostname"
+    ]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf hello world",
+        "printf '%s' \"quoted value\"",
+        "printf safe; touch /tmp/must-not-run-locally",
+        "printf $(touch /tmp/must-not-run-locally)",
+        "printf '$(touch /tmp/must-not-run-locally)'",
+    ],
+)
+def test_inner_ssh_command_round_trips_adversarial_remote_commands(command):
+    connection = RemoteConnectionConfig(
+        id="target-1",
+        name="Dash target",
+        host="-internal.example.org",
+        username="-phoenix",
+        port=2222,
+    )
+
+    inner_command = build_inner_ssh_command(
+        connection,
+        command,
+        connect_timeout_seconds=5,
+    )
+
+    assert shlex.split(inner_command) == [
+        "ssh",
+        "-p",
+        "2222",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=5",
+        "--",
+        "-phoenix@-internal.example.org",
+        command,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ssh_executor_jump_stream_preserves_truncation_frame():
+    client = _FakeAsyncSshClient(_FakeAsyncSshResult(stdout="abcdef"))
+    target = RemoteConnectionConfig(
+        id="target-1",
+        name="Phoenix",
+        host="10.32.5.1",
+        username="phoenix",
+        jump_connection=RemoteConnectionConfig(
+            id="jump-1",
+            name="Bastion",
+            host="bastion.example.org",
+            password="jump-secret",
+        ),
+    )
+    executor = SshRemoteExecutor(
+        async_executor=AsyncSshRemoteExecutor(connect_factory=lambda *_a, **_kw: client)
+    )
+
+    frames = [
+        frame
+        async for frame in executor.stream(
+            target,
+            "hostname",
+            timeout_seconds=5,
+            output_limit=3,
+        )
+    ]
+
+    assert [(frame.type, frame.data) for frame in frames] == [
+        ("stdout", "abc"),
+        ("truncated", "remote output truncated after 3 bytes"),
+        ("exit", None),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ssh_executor_rejects_nested_runtime_jump_config():
+    direct = RemoteConnectionConfig(id="direct", name="Direct", host="direct")
+    nested = RemoteConnectionConfig(
+        id="nested", name="Nested", host="nested", jump_connection=direct
+    )
+    target = RemoteConnectionConfig(
+        id="target", name="Target", host="target", jump_connection=nested
+    )
+
+    with pytest.raises(BadRequestError, match="Nested jump"):
+        await SshRemoteExecutor().run(
+            target,
+            "hostname",
+            timeout_seconds=5,
+            output_limit=100,
+        )
+
+
+@pytest.mark.asyncio
+async def test_ssh_executor_rejects_empty_jump_command():
+    target = RemoteConnectionConfig(
+        id="target",
+        name="Target",
+        host="target",
+        jump_connection=RemoteConnectionConfig(id="jump", name="Jump", host="jump"),
+    )
+
+    with pytest.raises(BadRequestError, match="non-empty"):
+        await SshRemoteExecutor().run(
+            target,
+            "  ",
+            timeout_seconds=5,
+            output_limit=100,
+        )
 
 
 def test_asyncssh_tofu_host_key_client_pins_first_key(tmp_path):

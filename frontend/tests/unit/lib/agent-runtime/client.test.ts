@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
   createAgentRuntimeSession,
   createAgentRuntimeTurn,
+  steerAgentRuntimeTurn,
   updateAgentRuntimeSessionPermissionMode,
   updateAgentRuntimeSessionMetadata,
 } from "@/lib/agent-runtime/client"
@@ -51,6 +52,33 @@ describe("agent runtime client", () => {
         remote_connection_id: "connection-1",
         connection_id: "connection-1",
       },
+    })
+  })
+
+  it("posts steering guidance with transcript display metadata", async () => {
+    apiRequestMock.mockResolvedValueOnce({
+      data: { steer_id: "steer-1", turn_id: "turn-1", delivery: "pending" },
+    })
+
+    const outcome = await steerAgentRuntimeTurn("turn-1", {
+      inputText: "Use the project virtualenv.",
+      inputParts: [{ type: "text", text: "Use the project virtualenv." }],
+      activeSkillNames: ["python"],
+      metadata: { input_display: { inline_parts: [] } },
+    })
+
+    expect(apiRequestMock).toHaveBeenCalledWith("/agent/turns/turn-1/steer", {
+      method: "POST",
+      body: JSON.stringify({
+        input_text: "Use the project virtualenv.",
+        input_parts: [{ type: "text", text: "Use the project virtualenv." }],
+        active_skill_names: ["python"],
+        metadata: { input_display: { inline_parts: [] } },
+      }),
+    })
+    expect(outcome).toEqual({
+      kind: "accepted",
+      result: { steer_id: "steer-1", turn_id: "turn-1", delivery: "pending" },
     })
   })
 

@@ -8,6 +8,7 @@ export type RemoteConnectionAuthMethod =
   | "ssh_config"
   | "key_file"
   | "agent"
+  | "jump"
 
 export type RemoteConnection = {
   id: string
@@ -16,6 +17,7 @@ export type RemoteConnection = {
   port: number
   username: string
   auth_method: RemoteConnectionAuthMethod
+  jump_connection_id?: string | null
   ssh_alias: string
   key_path: string
   status: RemoteConnectionStatus
@@ -77,6 +79,7 @@ export type RemoteConnectionCreateInput = {
   port: number
   username: string
   auth_method: RemoteConnectionAuthMethod
+  jump_connection_id?: string | null
   ssh_alias?: string | null
   key_path?: string | null
   password?: string | null
@@ -267,6 +270,7 @@ function normalizeRemoteConnection(connection: RemoteConnection): RemoteConnecti
   return {
     ...connection,
     status,
+    jump_connection_id: authMethod === "jump" ? connection.jump_connection_id ?? null : null,
     ssh_alias: authMethod === "ssh_config" ? connection.ssh_alias ?? "" : "",
     key_path: authMethod === "key_file" ? connection.key_path ?? "" : "",
     skill_instructions: connection.skill_instructions ?? "",
@@ -282,6 +286,7 @@ export const demoConnectionNodes: RemoteConnection[] = [
     port: 22,
     username: "bioflow",
     auth_method: "key_file",
+    jump_connection_id: null,
     ssh_alias: "",
     key_path: "~/.ssh/bioflow_sim_ed25519",
     status: "online",
@@ -295,6 +300,7 @@ export const demoConnectionNodes: RemoteConnection[] = [
     port: 22,
     username: "bioflow",
     auth_method: "ssh_config",
+    jump_connection_id: null,
     ssh_alias: "bioflow-test-sz03",
     key_path: "~/.ssh/bioflow_test-cert.pub",
     status: "online",
@@ -308,6 +314,7 @@ export const demoConnectionNodes: RemoteConnection[] = [
     port: 22,
     username: "odp-user",
     auth_method: "agent",
+    jump_connection_id: null,
     ssh_alias: "",
     key_path: "",
     status: "offline",

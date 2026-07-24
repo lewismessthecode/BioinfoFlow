@@ -241,6 +241,9 @@ describe("DashboardPage", () => {
     expect(screen.getByText("dashboard.schedulerCard.states.queued")).toBeInTheDocument()
     expect(screen.getByText("dashboard.schedulerCard.states.dispatched")).toBeInTheDocument()
     expect(screen.getByText("dashboard.schedulerCard.states.completed")).toBeInTheDocument()
+    const operations = screen.getByTestId("dashboard-operations-overview")
+    expect(operations).toHaveAttribute("data-layout", "flat-sections")
+    expect(operations.querySelectorAll("[data-dashboard-section]")).toHaveLength(3)
   })
 
   it("surfaces readiness guidance when first-run setup is blocked", async () => {

@@ -33,6 +33,7 @@ from app.services.agent_core.core.runtime_strategy import (
 )
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
+from app.services.agent_core.ownership import TurnOwnership
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.tools.executor import ToolExecutionResult
 from app.services.llm.credentials import (
@@ -95,6 +96,24 @@ class BlockingFinalGateway:
         await self.release.wait()
         yield TextDelta(text=self.text, phase="final_answer")
         yield CompletionMetadata(response_id="resp-blocking", finish_reason="stop")
+
+
+class SteeringFinalGateway:
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.invocations: list[ModelInvocation] = []
+
+    async def invoke(self, invocation: ModelInvocation) -> AsyncIterator[ModelEvent]:
+        self.invocations.append(invocation)
+        if len(self.invocations) == 1:
+            self.started.set()
+            await self.release.wait()
+            yield TextDelta(text="Initial answer.")
+            yield CompletionMetadata(response_id="resp-initial", finish_reason="stop")
+            return
+        yield TextDelta(text="Revised with guidance.")
+        yield CompletionMetadata(response_id="resp-revised", finish_reason="stop")
 
 
 class PartialFailureGateway:
@@ -293,6 +312,7 @@ async def test_team_member_agent_invocation_rejects_hostname_resolving_private(
     ).run_turn(str(turn.id))
 
     assert failed.status == "failed"
+    assert failed.accepts_steer is False
     assert failed.error_code == "model_selection_missing"
     assert gateway.invocations == []
 
@@ -578,6 +598,71 @@ async def test_normal_turn_runs_through_injected_model_gateway(db_session) -> No
 
 
 @pytest.mark.asyncio
+async def test_text_only_turn_continues_after_streamed_steer(db_session) -> None:
+    session, turn = await _turn(db_session, input_text="Draft an answer.")
+    session_id = str(session.id)
+    owner_token = "steering-owner"
+    turn = await AgentTurnRepository(db_session).update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+        owner_token=owner_token,
+    )
+    gateway = SteeringFinalGateway()
+    ownership = TurnOwnership(
+        bind=db_session.bind,
+        turn_id=str(turn.id),
+        owner_token=owner_token,
+        lease_duration=timedelta(minutes=5),
+    )
+    controller = AgentLoopController(
+        db_session,
+        model_gateway=gateway,
+        ownership=ownership,
+    )
+
+    run_task = asyncio.create_task(
+        controller.run_turn(
+            turn_id=str(turn.id),
+            target=_target(),
+            capabilities=RuntimeCapabilities(supports_tools=False),
+            strategy=RuntimeStrategy(allow_tools=False),
+        )
+    )
+    await gateway.started.wait()
+    steer_session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    async with steer_session_factory() as steer_session:
+        await AgentCoreService(steer_session).steer_turn(
+            turn_id=str(turn.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="Also explain the tradeoff.",
+        )
+    gateway.release.set()
+    result = await run_task
+
+    assert result.termination_reason == "assistant_final"
+    assert result.final_text == "Revised with guidance."
+    assert len(gateway.invocations) == 2
+    assert [item.text for item in gateway.invocations[1].input_items[-2:]] == [
+        "Initial answer.",
+        "Also explain the tradeoff.",
+    ]
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        session_id
+    )
+    assert [message.role for message in messages] == [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_partial_model_failure_is_marked_unsafe_for_fallback(db_session) -> None:
     _session, turn = await _turn(db_session, input_text="Stream a response.")
     gateway = PartialFailureGateway()
@@ -841,6 +926,123 @@ async def test_tool_call_result_continues_through_gateway(db_session) -> None:
         isinstance(item, ToolResultPart) and item.call_id == "call-projects"
         for item in gateway.invocations[1].input_items
     )
+
+
+@pytest.mark.asyncio
+async def test_tool_turn_delivers_steer_after_tool_result(
+    db_session,
+    monkeypatch,
+) -> None:
+    _session, turn = await _turn(
+        db_session,
+        input_text="Inspect the projects, then explain.",
+    )
+    owner_token = "tool-steering-owner"
+    turn = await AgentTurnRepository(db_session).update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+        owner_token=owner_token,
+    )
+    gateway = FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="call-steered-projects",
+                name="projects__list",
+                arguments_delta="{}",
+            ),
+            CompletionMetadata(
+                response_id="resp-steered-tool",
+                finish_reason="tool_calls",
+            ),
+        ),
+        (
+            TextDelta(text="Explained with the added constraint."),
+            CompletionMetadata(
+                response_id="resp-steered-final",
+                finish_reason="stop",
+            ),
+        ),
+    )
+    ownership = TurnOwnership(
+        bind=db_session.bind,
+        turn_id=str(turn.id),
+        owner_token=owner_token,
+        lease_duration=timedelta(minutes=5),
+    )
+    controller = AgentLoopController(
+        db_session,
+        model_gateway=gateway,
+        ownership=ownership,
+    )
+    tool_started = asyncio.Event()
+    tool_release = asyncio.Event()
+    tool_completed = asyncio.Event()
+
+    async def blocking_resume_action(*, action_id, **kwargs):
+        del kwargs
+        tool_started.set()
+        await tool_release.wait()
+        tool_completed.set()
+        return ToolExecutionResult(
+            action_id=action_id,
+            status=AgentActionStatus.COMPLETED,
+            result={"projects": []},
+        )
+
+    monkeypatch.setattr(controller.executor, "resume_action", blocking_resume_action)
+
+    async def blocking_isolated_execution(*, action_id, **kwargs):
+        return await blocking_resume_action(action_id=action_id, **kwargs)
+
+    monkeypatch.setattr(
+        controller,
+        "_execute_tool_call_isolated",
+        blocking_isolated_execution,
+    )
+    run_task = asyncio.create_task(
+        controller.run_turn(
+            turn_id=str(turn.id),
+            target=_target(),
+            capabilities=RuntimeCapabilities(supports_tools=True),
+            strategy=RuntimeStrategy(allow_tools=True),
+        )
+    )
+    await asyncio.wait_for(tool_started.wait(), timeout=2)
+    steer_session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    async with steer_session_factory() as steer_session:
+        steer = await AgentCoreService(steer_session).steer_turn(
+            turn_id=str(turn.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="Focus on reproducibility.",
+        )
+    assert steer.delivery == "pending"
+    assert not tool_completed.is_set()
+
+    tool_release.set()
+    result = await asyncio.wait_for(run_task, timeout=5)
+
+    assert tool_completed.is_set()
+    assert result.termination_reason == "assistant_final"
+    assert len(gateway.invocations) == 2
+    follow_up_items = gateway.invocations[1].input_items
+    tool_result_index = next(
+        index
+        for index, item in enumerate(follow_up_items)
+        if isinstance(item, ToolResultPart)
+        and item.call_id == "call-steered-projects"
+    )
+    steer_index = next(
+        index
+        for index, item in enumerate(follow_up_items)
+        if isinstance(item, TextPart) and item.text == "Focus on reproducibility."
+    )
+    assert tool_result_index < steer_index
 
 
 @pytest.mark.asyncio

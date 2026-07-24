@@ -10,8 +10,8 @@ vi.mock("@/lib/api", () => ({
 
 const labels = {
   label: "Custom instructions",
-  description: "Add context the agent should receive when a new session starts.",
-  newSessionsOnly: "Changes apply only to new sessions.",
+  description: "Add lasting context for new conversations.",
+  newSessionsOnly: "New conversations only.",
   placeholder: "Add platform conventions, environment details, or other context...",
   loading: "Loading custom instructions...",
   save: "Save instructions",
@@ -27,6 +27,23 @@ describe("AgentCustomInstructions", () => {
 
   beforeEach(() => {
     apiRequestMock.mockReset()
+  })
+
+  it("renders as a flat settings-row control with compact helper text", async () => {
+    apiRequestMock.mockResolvedValueOnce({
+      data: { custom_instructions: "" },
+      meta: undefined,
+    })
+
+    render(<AgentCustomInstructions labels={labels} />)
+
+    const form = screen.getByTestId("agent-custom-instructions")
+    expect(form).toHaveAttribute("data-layout", "flat")
+    expect(form).not.toHaveClass("rounded-xl", "border", "bg-card")
+    const count = await screen.findByText("0 / 20,000")
+    expect(count.parentElement).toHaveTextContent(
+      "New conversations only.·0 / 20,000",
+    )
   })
 
   it("loads and saves the single custom-instructions textarea", async () => {
@@ -53,7 +70,7 @@ describe("AgentCustomInstructions", () => {
       name: "Custom instructions",
     })
     expect(textarea).toHaveValue("Use the validated production reference.")
-    expect(screen.getByText("Changes apply only to new sessions.")).toBeInTheDocument()
+    expect(screen.getByText("New conversations only.")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Save instructions" })).toBeDisabled()
 
     fireEvent.change(textarea, {
@@ -94,7 +111,7 @@ describe("AgentCustomInstructions", () => {
       "aria-describedby",
       "agent-custom-instructions-help agent-custom-instructions-count",
     )
-    expect(screen.getByText("Changes apply only to new sessions.")).toHaveAttribute(
+    expect(screen.getByText("New conversations only.")).toHaveAttribute(
       "id",
       "agent-custom-instructions-help",
     )

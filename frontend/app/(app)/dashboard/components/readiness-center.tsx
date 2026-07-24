@@ -102,6 +102,9 @@ function descriptionForCheck(
           names: gpuFacts.names,
         });
       }
+      if (["disabled", "dockerUnavailable", "toolkitUnavailable", "noGpus", "policyInvalid", "probeFailed"].includes(gpuFacts.state)) {
+        return tDashboard(`readiness.checks.gpu.detail.${gpuFacts.state}`);
+      }
       if (gpuFacts.state === "runtimeHidden") {
         return tDashboard("readiness.checks.gpu.detail.runtimeHidden", {
           recommendation: gpuFacts.recommendation,

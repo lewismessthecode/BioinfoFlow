@@ -109,7 +109,11 @@ def system_gpu(ctx: typer.Context) -> None:
     resp = cli_ctx.run(api_get(cli_ctx, "/system/gpu"))
     data = resp.data or {}
     fields = {
+        "Mode": str(data.get("mode", "auto")),
+        "State": str(data.get("state", "unknown")),
         "Available": str(data.get("available", False)),
+        "Selected": f"{data.get('selected_count', 0)}/{data.get('detected_count', 0)}",
+        "Visible Devices": ",".join(data.get("selected_gpu_uuids") or []) or "none",
         "nvidia-smi": str(data.get("nvidia_smi_found", False)),
         "Docker NVIDIA": str(data.get("docker_nvidia_runtime", False)),
         "Parabricks OK": str(data.get("parabricks_compatible", False)),
@@ -117,7 +121,9 @@ def system_gpu(ctx: typer.Context) -> None:
     }
     gpus = data.get("gpus", [])
     for i, gpu in enumerate(gpus):
+        selection = "selected" if gpu.get("selected", True) else "not selected"
         fields[f"GPU {i}"] = (
-            f"{gpu.get('name', '?')} ({gpu.get('memory_total_mb', '?')} MB)"
+            f"{gpu.get('name', '?')} [{gpu.get('uuid', '?')}] "
+            f"({gpu.get('memory_total_mb', '?')} MB, {selection})"
         )
     r.detail(fields, title="GPU Status", raw=resp)
