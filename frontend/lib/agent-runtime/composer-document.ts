@@ -24,11 +24,6 @@ export type ComposerDocumentChange = {
   insert: string
 }
 
-export const emptyComposerDocument = (): ComposerDocument => ({
-  text: "",
-  mentions: [],
-})
-
 export function insertComposerMention(
   document: ComposerDocument,
   mention: ComposerMention,
@@ -107,12 +102,6 @@ export function composerDocumentInputParts(
   const trailingText = document.text.slice(cursor)
   if (trailingText) parts.push({ type: "text", text: trailingText })
   return parts
-}
-
-export function composerDocumentHasSendableContent(
-  document: ComposerDocument,
-): boolean {
-  return document.text.trim().length > 0 || document.mentions.length > 0
 }
 
 function clamp(value: number, minimum: number, maximum: number) {
