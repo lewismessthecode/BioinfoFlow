@@ -200,7 +200,7 @@ class AgentAttachmentService:
         preview_relpath = metadata.get("preview_relpath")
         if not isinstance(preview_relpath, str):
             raise NotFoundError("Attachment preview is not available")
-        root = self._validated_attachment_root(attachment)
+        root = self.validated_root(attachment)
         path = safe_join(
             root,
             preview_relpath,
@@ -224,7 +224,7 @@ class AgentAttachmentService:
         )
         if attachment is None:
             raise NotFoundError("Attachment not found")
-        root = self._validated_attachment_root(attachment)
+        root = self.validated_root(attachment)
         await self.repo.mark_pending_delete(
             attachment_id,
             session_id=str(attachment.session_id),
@@ -345,7 +345,7 @@ class AgentAttachmentService:
             shutil.rmtree(final_root, ignore_errors=True)
             raise
 
-    def _validated_attachment_root(self, attachment: AgentAttachment) -> Path:
+    def validated_root(self, attachment: AgentAttachment) -> Path:
         expected = agent_attachment_root(
             str(attachment.session_id), str(attachment.id)
         ).resolve()

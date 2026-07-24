@@ -375,6 +375,65 @@ async def test_model_context_preserves_each_assistant_phase_from_canonical_parts
 
 
 @pytest.mark.asyncio
+async def test_compaction_does_not_supersede_image_reference_messages(db_session):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    session = await service.session_repo.update_all(
+        session,
+        compression_state={
+            "enabled": True,
+            "threshold_chars": 40,
+            "preserve_recent_messages": 1,
+        },
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="old image",
+    )
+    messages = AgentMessageRepository(db_session)
+    first = (await messages.list_for_session(str(session.id)))[0]
+    await messages.update_all(
+        first,
+        content_parts=[
+            text_part("old image context"),
+            {
+                "type": "image_ref",
+                "attachment_id": "image-1",
+                "mime_type": "image/png",
+                "sha256": "a" * 64,
+                "detail": "high",
+            },
+        ],
+    )
+    await AgentTranscriptStore(db_session).append_text(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="assistant",
+        text="new reply" * 20,
+    )
+
+    await AgentContextAssembler(db_session)._compact_if_needed(
+        agent_session=session,
+        turn=turn,
+    )
+    stored = await messages.list_for_session(str(session.id))
+
+    image_message = next(
+        message
+        for message in stored
+        if any(part.get("type") == "image_ref" for part in message.content_parts)
+    )
+    assert image_message.status == "committed"
+
+
+@pytest.mark.asyncio
 async def test_active_skill_body_is_added_to_current_turn_context(db_session):
     await _workspace(db_session)
     root = skills_root()

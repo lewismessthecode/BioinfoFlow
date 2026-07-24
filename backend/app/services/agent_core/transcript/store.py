@@ -320,7 +320,11 @@ class AgentTranscriptStore:
         preserve_start = len(committed) - preserve_recent_messages
         while preserve_start > 0 and committed[preserve_start].role == "tool":
             preserve_start -= 1
-        summary_candidates = committed[:preserve_start]
+        summary_candidates = [
+            message
+            for message in committed[:preserve_start]
+            if not self._contains_image_reference(message)
+        ]
         if not summary_candidates:
             return None
         if len(summary_candidates) == 1 and self._is_compaction_summary(
@@ -480,6 +484,12 @@ class AgentTranscriptStore:
     def _is_compaction_summary(self, message: Any) -> bool:
         metadata = getattr(message, "message_metadata", None) or {}
         return metadata.get("kind") == "compaction_summary"
+
+    def _contains_image_reference(self, message: Any) -> bool:
+        return any(
+            isinstance(part, dict) and part.get("type") == "image_ref"
+            for part in message.content_parts or []
+        )
 
     def _truncate_text(self, text: str, limit: int) -> str:
         if len(text) <= limit:
