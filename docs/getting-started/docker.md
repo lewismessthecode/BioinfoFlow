@@ -168,6 +168,50 @@ Start the stack:
 docker compose up -d --build
 ```
 
+### Optional voice dictation sidecar
+
+The main stack does not contain a speech model. Voice dictation is enabled only
+when the backend can reach a separate OpenAI-compatible transcription service.
+The source Compose file includes two opt-in services, and downloads only the
+profile you start.
+
+For Chinese on a Linux NVIDIA GPU, add this to `.env`:
+
+```env
+ASR_PROVIDER=funasr
+ASR_BASE_URL=http://asr-funasr:8000
+ASR_MODEL=FunAudioLLM/Fun-ASR-Nano-2512
+ASR_DEVICE=cuda
+ASR_LANGUAGE=zh
+```
+
+Then start Fun-ASR with the application:
+
+```bash
+docker compose --profile voice-funasr up -d --build asr-funasr backend frontend
+```
+
+For a CPU host or broader multilingual recognition, use:
+
+```env
+ASR_PROVIDER=whisper
+ASR_BASE_URL=http://asr-whisper:8000
+ASR_MODEL=large-v3-turbo
+ASR_DEVICE=cpu
+ASR_COMPUTE_TYPE=int8
+ASR_LANGUAGE=zh
+```
+
+```bash
+docker compose --profile voice-whisper up -d --build asr-whisper backend frontend
+```
+
+Do not start both profiles for normal use. The model cache lives under
+`BIOINFOFLOW_HOME/models/asr`, and the first start can take several minutes.
+The release localhost installer currently does not include these local model
+sidecars. See [Voice Dictation Deployment](../deployment/voice-dictation.md)
+for cloud endpoints, health checks, switching, and troubleshooting.
+
 ### NVIDIA GPU discovery
 
 No separate Compose file or GPU-specific image is required. With the default
