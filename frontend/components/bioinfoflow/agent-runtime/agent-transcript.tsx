@@ -238,7 +238,7 @@ function UserMessageBubble({ turn }: { turn: AgentRuntimeTurn }) {
       </div>
       {timestamp ? (
         <time
-          dateTime={timestampDateTime}
+          dateTime={timestampDateTime ?? undefined}
           title={absoluteTimestamp ?? timestamp}
           className="block px-0.5 text-right text-[11px] font-normal leading-none text-muted-foreground/64"
           data-testid="agent-user-message-timestamp"
@@ -804,7 +804,7 @@ function ResponseActionBar({
       </Tooltip>
       {timestamp ? (
         <time
-          dateTime={timestampDateTime}
+          dateTime={timestampDateTime ?? undefined}
           title={absoluteTimestamp ?? timestamp}
           className="ml-1 text-[11px] leading-none text-muted-foreground/64"
           data-testid="assistant-response-timestamp"

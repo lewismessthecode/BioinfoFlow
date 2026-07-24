@@ -295,7 +295,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       [activeWorkflowMentions, projectId],
     )
     const activeComposerTokens = useMemo<AgentComposerInlineToken[]>(() => {
-      const tokens = activeComposerTokenKeys.flatMap((token) => {
+      const tokens = activeComposerTokenKeys.flatMap<AgentComposerInlineToken>((token) => {
         if (token.kind === "skill") {
           if (!activeSkillNames.includes(token.name)) return []
           return [
@@ -313,11 +313,11 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         return workflow ? [{ kind: "workflow" as const, workflow }] : []
       })
       const orderedKeys = new Set(
-        tokens.map((token) =>
-          token.kind === "skill"
-            ? `skill:${token.skill.name}`
-            : `workflow:${token.workflow.id}`,
-        ),
+        tokens.map((token) => {
+          if (token.kind === "skill") return `skill:${token.skill.name}`
+          if (token.kind === "workflow") return `workflow:${token.workflow.id}`
+          return `context:${token.context.id}`
+        }),
       )
       const missingWorkflows = scopedActiveWorkflowMentions
         .filter((workflow) => !orderedKeys.has(`workflow:${workflow.id}`))
@@ -2549,41 +2549,43 @@ function inputDisplayMetadataFromInputParts(
 
 function normalizeInputDisplayParts(inputDisplayParts?: AgentInputDisplayPart[] | null) {
   if (!inputDisplayParts?.length) return []
-  return inputDisplayParts.flatMap((part) => {
+  const normalized: Array<Record<string, unknown>> = []
+  for (const part of inputDisplayParts) {
     if (part.type === "text") {
-      return part.text ? [{ type: "text", text: part.text }] : []
+      if (part.text) normalized.push({ type: "text", text: part.text })
+      continue
     }
     if (part.type === "skill") {
       const name = part.name.trim()
-      return name ? [{ type: "skill", name }] : []
+      if (name) normalized.push({ type: "skill", name })
+      continue
     }
     if (part.type === "context") {
       const label = part.label.trim()
-      return label
-        ? [
-            {
-              type: "context",
-              id: part.id,
-              kind: part.kind,
-              label,
-              detail: part.detail?.trim() || null,
-            },
-          ]
-        : []
+      if (label) {
+        normalized.push({
+          type: "context",
+          id: part.id,
+          kind: part.kind,
+          label,
+          detail: part.detail?.trim() || null,
+        })
+      }
+      continue
     }
     const name = part.name.trim()
-    if (!name) return []
-    return [
-      {
+    if (name) {
+      normalized.push({
         type: "workflow",
         workflow_id: part.workflow_id ?? null,
         project_id: part.project_id ?? null,
         scope: part.scope,
         name,
         version: part.version?.trim() || null,
-      },
-    ]
-  })
+      })
+    }
+  }
+  return normalized
 }
 
 type WorkflowInputDisplayMetadata = {

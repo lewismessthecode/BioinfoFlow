@@ -28,6 +28,7 @@ import type {
   AgentRuntimeStatePayload,
   AgentRuntimeTurn,
   AgentRuntimeWorkflowMention,
+  AgentRuntimeWorkflowRefPart,
 } from "./types"
 
 export const uploadAgentRuntimeAttachment = async (input: {
@@ -299,8 +300,8 @@ function agentRuntimeInputPartsForRequest(
   return inputParts.map((part) => {
     const discriminator = "type" in part ? part.type : "kind" in part ? part.kind : null
     if (discriminator === "text") return part
-    if (discriminator === "workflow_ref" && "kind" in part) {
-      const requestPart: AgentRuntimeInputPart = { kind: "workflow_ref" }
+    if ("kind" in part && part.kind === "workflow_ref") {
+      const requestPart: AgentRuntimeWorkflowRefPart = { kind: "workflow_ref" }
       if (Object.hasOwn(part, "workflow_id")) {
         requestPart.workflow_id = part.workflow_id ?? null
       }
