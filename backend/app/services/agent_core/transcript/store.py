@@ -13,10 +13,14 @@ from app.services.agent_temporal_context import (
     latest_temporal_context,
     message_metadata_with_temporal_context,
     render_temporal_context,
+    temporal_context_from_message_metadata,
 )
 from app.services.agent_core.ownership import TurnOwnershipLostError
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.transcript.messages import parts_to_text, text_part
+
+
+_ACTIVE_REQUEST_MAX_CHARS = 12_000
 
 
 class AgentTranscriptStore:
@@ -326,15 +330,18 @@ class AgentTranscriptStore:
 
         insert_before = committed[preserve_start].ordering_index
         temporal_context = latest_temporal_context(summary_candidates)
+        continuity_state = self._continuity_state(committed)
         summary_text = self._build_summary(
             summary_candidates,
             temporal_context=temporal_context,
+            continuity_state=continuity_state,
         )
         superseded_message_ids = [str(message.id) for message in summary_candidates]
         summary_metadata = message_metadata_with_temporal_context(
             {
                 "kind": "compaction_summary",
                 "supersedes": superseded_message_ids,
+                "continuity_state": continuity_state,
             },
             temporal_context,
         )
@@ -381,18 +388,91 @@ class AgentTranscriptStore:
         messages: list[Any],
         *,
         temporal_context: dict[str, str] | None = None,
+        continuity_state: dict[str, Any] | None = None,
     ) -> str:
         lines: list[str] = []
         if temporal_context is not None:
             lines.extend([render_temporal_context(temporal_context), ""])
-        lines.append("Conversation summary for continuity:")
+        lines.extend(
+            [
+                "Conversation summary for continuity:",
+                "The message digest below is historical reference. The active user "
+                "request and task checklist at the end are authoritative for "
+                "continuing the current work.",
+            ]
+        )
         for message in messages:
             text = parts_to_text(message.content_parts or [])
             if message.role == "tool":
                 lines.append(f"- tool: {self._truncate_text(text, 240)}")
             else:
                 lines.append(f"- {message.role}: {self._truncate_text(text, 240)}")
+        state = continuity_state or {}
+        active_request = state.get("active_user_request")
+        if isinstance(active_request, str) and active_request:
+            lines.extend(["", "## Active user request", active_request])
+        active_todos = state.get("active_todos")
+        if isinstance(active_todos, list):
+            lines.extend(["", "## Active task checklist"])
+            if not active_todos:
+                lines.append("- (none)")
+            for todo in active_todos:
+                if not isinstance(todo, dict):
+                    continue
+                content = str(todo.get("content") or "").strip()
+                if not content:
+                    continue
+                status = str(todo.get("status") or "pending")
+                marker = {
+                    "completed": "[x]",
+                    "in_progress": "[~]",
+                }.get(status, "[ ]")
+                lines.append(f"- {marker} {content}")
         return "\n".join(lines)
+
+    def _continuity_state(self, messages: list[Any]) -> dict[str, Any]:
+        state: dict[str, Any] = {}
+        for message in messages:
+            metadata = getattr(message, "message_metadata", None) or {}
+            prior_state = metadata.get("continuity_state")
+            if self._is_compaction_summary(message) and isinstance(prior_state, dict):
+                prior_request = prior_state.get("active_user_request")
+                prior_todos = prior_state.get("active_todos")
+                if isinstance(prior_request, str) and prior_request:
+                    state["active_user_request"] = prior_request
+                if isinstance(prior_todos, list):
+                    state["active_todos"] = prior_todos
+
+            text = parts_to_text(message.content_parts or [])
+            if message.role == "user" and text:
+                temporal_context = temporal_context_from_message_metadata(metadata)
+                if temporal_context is not None:
+                    prefix = render_temporal_context(temporal_context)
+                    if text.startswith(prefix):
+                        text = text[len(prefix) :].lstrip()
+                state["active_user_request"] = self._truncate_text(
+                    text,
+                    _ACTIVE_REQUEST_MAX_CHARS,
+                )
+            if message.role == "tool" and metadata.get("tool") == "todo_write":
+                todos = self._todo_state_from_tool_result(text)
+                if todos is not None:
+                    state["active_todos"] = todos
+        return state
+
+    def _todo_state_from_tool_result(self, text: str) -> list[Any] | None:
+        try:
+            payload = json.loads(text)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        result = payload.get("result")
+        if isinstance(result, dict):
+            todos = result.get("todos")
+        else:
+            todos = payload.get("todos")
+        return todos if isinstance(todos, list) else None
 
     def _message_size(self, message: Any) -> int:
         return len(json.dumps(message.content_parts or [], default=str))
