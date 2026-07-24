@@ -109,7 +109,9 @@ async def test_nextflow_adapter_build_command_includes_revision(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_nextflow_adapter_build_command_routes_nextflow_log_to_audit_dir(tmp_path):
+async def test_nextflow_adapter_build_command_routes_nextflow_log_to_audit_dir(
+    tmp_path,
+):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     adapter = NextflowAdapter()
@@ -157,7 +159,34 @@ async def test_nextflow_adapter_pre_submit_enables_docker_when_available(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_nextflow_adapter_pre_submit_disables_docker_when_unavailable(monkeypatch):
+async def test_gpu_profile_adds_selected_nvidia_visibility(monkeypatch):
+    class FakeDockerService:
+        async def is_available(self) -> bool:
+            return True
+
+    monkeypatch.setattr(nextflow_module, "DockerService", FakeDockerService)
+    monkeypatch.setattr(
+        nextflow_module,
+        "selected_gpu_visible_devices",
+        lambda: "GPU-b",
+        raising=False,
+    )
+    adapter = NextflowAdapter()
+
+    updated = await adapter.pre_submit(
+        _nextflow_config(pipeline="parabricks/main.nf", profile="consumer_gpu"),
+        "/tmp/workspace",
+    )
+
+    overrides = updated["request"]["config_overrides"]
+    assert overrides["env.NVIDIA_VISIBLE_DEVICES"] == "'GPU-b'"
+    assert overrides["env.NVIDIA_DRIVER_CAPABILITIES"] == "'compute,utility'"
+
+
+@pytest.mark.asyncio
+async def test_nextflow_adapter_pre_submit_disables_docker_when_unavailable(
+    monkeypatch,
+):
     class FakeDockerService:
         async def is_available(self) -> bool:
             return False
@@ -165,7 +194,9 @@ async def test_nextflow_adapter_pre_submit_disables_docker_when_unavailable(monk
     monkeypatch.setattr(nextflow_module, "DockerService", FakeDockerService)
     adapter = NextflowAdapter()
 
-    updated = await adapter.pre_submit(_nextflow_config(profile="docker"), "/tmp/workspace")
+    updated = await adapter.pre_submit(
+        _nextflow_config(profile="docker"), "/tmp/workspace"
+    )
 
     overrides = updated["request"]["config_overrides"]
     assert overrides["docker.enabled"] is False

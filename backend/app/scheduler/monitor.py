@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import subprocess
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import psutil
@@ -23,11 +24,13 @@ class ResourceMonitor:
         self,
         sample_interval: float = 30.0,
         workspace_path: str = "/",
+        gpu_service=None,
     ) -> None:
         self._interval = sample_interval
         self._workspace_path = workspace_path
         self._latest: SystemResources | None = None
         self._task: asyncio.Task | None = None
+        self._gpu_service = gpu_service
 
     async def start(self) -> None:
         if self._task is not None and not self._task.done():
@@ -60,9 +63,29 @@ class ResourceMonitor:
                 logger.exception("scheduler.resource_monitor.sample_failed")
 
     async def _sample(self) -> SystemResources:
-        return await asyncio.to_thread(self._sample_sync)
+        if self._gpu_service is None:
+            return await asyncio.to_thread(self._sample_sync)
+        base = await asyncio.to_thread(self._sample_system_sync)
+        status = await self._gpu_service.get_status()
+        selected = [gpu for gpu in status.gpus if getattr(gpu, "selected", False)]
+        return replace(
+            base,
+            gpu_count=len(selected),
+            gpu_memory_gb=round(
+                sum(gpu.memory_free_mb for gpu in selected) / 1024.0, 1
+            ),
+        )
 
     def _sample_sync(self) -> SystemResources:
+        base = self._sample_system_sync()
+        gpu_count, gpu_memory_gb = self._detect_gpu()
+        return replace(
+            base,
+            gpu_count=gpu_count,
+            gpu_memory_gb=round(gpu_memory_gb, 1),
+        )
+
+    def _sample_system_sync(self) -> SystemResources:
         mem = psutil.virtual_memory()
         disk = psutil.disk_usage(self._workspace_path)
         cpu_count = psutil.cpu_count(logical=True) or 1
@@ -71,7 +94,6 @@ class ResourceMonitor:
         except (AttributeError, OSError):
             load_avg = 0.0
         cpu_available = max(0.0, float(cpu_count) - float(load_avg))
-        gpu_count, gpu_memory_gb = self._detect_gpu()
         gib = 1024**3
         return SystemResources(
             cpu_count=cpu_count,
@@ -80,8 +102,6 @@ class ResourceMonitor:
             memory_available_gb=round(mem.available / gib, 1),
             disk_total_gb=round(disk.total / gib, 1),
             disk_available_gb=round(disk.free / gib, 1),
-            gpu_count=gpu_count,
-            gpu_memory_gb=round(gpu_memory_gb, 1),
             sampled_at=_utc_now(),
         )
 

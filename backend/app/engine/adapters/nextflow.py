@@ -15,10 +15,16 @@ from app.engine.adapter import EngineAdapter
 from app.engine.backend import EngineEvent, EngineEventType
 from app.path_layout import nextflow_work_dir
 from app.services.docker_service import DockerService
+from app.services.gpu_service import get_gpu_service
 from app.utils.logging import get_logger
 from app.utils.process import terminate_process_tree
 
 logger = get_logger(__name__)
+
+
+def selected_gpu_visible_devices() -> str | None:
+    return get_gpu_service().selected_visible_devices()
+
 
 GPU_PIPELINE_PATTERNS = [
     "parabricks",
@@ -220,6 +226,17 @@ class NextflowAdapter(EngineAdapter):
         if docker_available:
             overrides.setdefault("docker.enabled", True)
             overrides.setdefault("docker.pull", True)
+            pipeline = str(
+                updated.get("pipeline") or updated.get("workflow_path") or ""
+            )
+            if profile == "consumer_gpu" or is_gpu_pipeline(pipeline):
+                visible_devices = selected_gpu_visible_devices()
+                if not visible_devices:
+                    raise RuntimeError(
+                        "GPU workflow requested, but Bioinfoflow GPU policy exposes no devices"
+                    )
+                overrides["env.NVIDIA_VISIBLE_DEVICES"] = repr(visible_devices)
+                overrides["env.NVIDIA_DRIVER_CAPABILITIES"] = repr("compute,utility")
         else:
             overrides["docker.enabled"] = False
             runtime["docker_available"] = False
@@ -345,7 +362,9 @@ def _format_override_value(value) -> str:
 
 
 def _write_overrides(path: Path, overrides: dict) -> None:
-    lines = [f"{key} = {_format_override_value(value)}" for key, value in overrides.items()]
+    lines = [
+        f"{key} = {_format_override_value(value)}" for key, value in overrides.items()
+    ]
     path.write_text("\n".join(lines), encoding="utf-8")
 
 

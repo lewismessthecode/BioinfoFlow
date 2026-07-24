@@ -4,12 +4,78 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy import insert
+from types import SimpleNamespace
 
 from app.config import settings
 from app.models.llm import LlmProvider, LlmProviderCredential
 from app.models.project import Project
 from app.models.project_workflow_binding import ProjectWorkflowBinding
 from app.models.workflow import Workflow
+
+
+@pytest.mark.asyncio
+async def test_gpu_status_exposes_policy_counts_and_uuid_selection(
+    async_client, monkeypatch
+):
+    class MockGpuService:
+        async def get_status(self):
+            return SimpleNamespace(
+                available=True,
+                detected=True,
+                nvidia_smi_found=True,
+                docker_nvidia_runtime=True,
+                runtime_visible_to_backend=True,
+                usable_for_gpu_workflows=True,
+                parabricks_compatible=True,
+                recommendation="Manual GPU policy selected 1 of 2 detected GPUs.",
+                error=None,
+                mode="manual",
+                state="ready",
+                container_toolkit_available=True,
+                detected_count=2,
+                selected_count=1,
+                selected_gpu_uuids=("GPU-b",),
+                stale=False,
+                gpus=[
+                    SimpleNamespace(
+                        index=0,
+                        uuid="GPU-a",
+                        name="NVIDIA H20",
+                        selected=False,
+                        memory_total_mb=97871,
+                        memory_free_mb=96000,
+                        driver_version="550.54",
+                        cuda_version=None,
+                        compute_capability="9.0",
+                        gpu_type="NVIDIA",
+                    ),
+                    SimpleNamespace(
+                        index=1,
+                        uuid="GPU-b",
+                        name="NVIDIA H20",
+                        selected=True,
+                        memory_total_mb=97871,
+                        memory_free_mb=95000,
+                        driver_version="550.54",
+                        cuda_version=None,
+                        compute_capability="9.0",
+                        gpu_type="NVIDIA",
+                    ),
+                ],
+            )
+
+    monkeypatch.setattr("app.api.v1.system.get_gpu_service", lambda: MockGpuService())
+
+    response = await async_client.get("/api/v1/system/gpu")
+    data = response.json()["data"]
+
+    assert data["mode"] == "manual"
+    assert data["state"] == "ready"
+    assert data["detected_count"] == 2
+    assert data["selected_count"] == 1
+    assert data["selected_gpu_uuids"] == ["GPU-b"]
+    assert data["gpus"][1]["uuid"] == "GPU-b"
+    assert data["gpus"][1]["selected"] is True
 
 
 @pytest.mark.asyncio
