@@ -1284,6 +1284,63 @@ async def test_agent_core_streams_text_and_reasoning_events(async_client, monkey
 
 
 @pytest.mark.asyncio
+async def test_terminal_status_and_event_are_visible_before_steer_cleanup(
+    async_client,
+    monkeypatch,
+):
+    cleanup_started = asyncio.Event()
+    release_cleanup = asyncio.Event()
+
+    async def pause_steer_cleanup(self, *, session_id, turn_id, reason):
+        cleanup_started.set()
+        await release_cleanup.wait()
+
+    monkeypatch.setattr(
+        "app.services.agent_core.core.loop.AgentLoopController._cancel_pending_steers",
+        pause_steer_cleanup,
+    )
+
+    async def fake_completion(*args, **kwargs):
+        async def stream():
+            yield {"choices": [{"delta": {"content": "Atomic completion."}}]}
+
+        return stream()
+
+    _install_fake_completion(monkeypatch, fake_completion)
+    model = await _create_llm_model(async_client)
+    project_id = await _create_project(async_client)
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "project_id": project_id,
+            "title": "Atomic terminal publication",
+            "model_selection": {"model_id": model["id"]},
+        },
+    )
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+
+    create_turn = await async_client.post(
+        f"/api/v1/agent/sessions/{session['id']}/turns",
+        json={"input_text": "Finish atomically."},
+    )
+    assert create_turn.status_code == 202
+    turn_id = create_turn.json()["data"]["id"]
+
+    await asyncio.wait_for(cleanup_started.wait(), timeout=2)
+    try:
+        turn_response = await async_client.get(f"/api/v1/agent/turns/{turn_id}")
+        assert turn_response.status_code == 200
+        assert turn_response.json()["data"]["status"] == "completed"
+
+        events_response = await async_client.get(f"/api/v1/agent/turns/{turn_id}/events")
+        assert events_response.status_code == 200
+        assert _event_types(events_response.json()["data"])[-1] == "turn.completed"
+    finally:
+        release_cleanup.set()
+
+
+@pytest.mark.asyncio
 async def test_agent_core_emits_tool_call_lifecycle_events(async_client, monkeypatch):
     completion_calls: list[dict] = []
 

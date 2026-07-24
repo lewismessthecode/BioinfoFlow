@@ -80,6 +80,8 @@ vi.mock("next-intl", () => ({
       "turnStatus.completed": "Done",
       "turnStatus.failed": "Failed",
       "turnStatus.cancelled": "Cancelled",
+      "steer.pending": "Will be considered after the current step",
+      "steer.cancelled": "Not processed because the response stopped",
       scrollToBottom: "Jump to latest",
       "sources.title": "Sources",
       "sources.open": "Open sources",
@@ -212,6 +214,49 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("First finding")).toBeInTheDocument()
     expect(screen.getByText("Second finding")).toBeInTheDocument()
     expect(screen.getByText("nextflow log")).toBeInTheDocument()
+  })
+
+  it("renders steering guidance inside the active turn timeline", () => {
+    renderTranscript({
+      events: [
+        event("steer-received", 2, "turn.steer.received", {
+          steer_id: "steer-1",
+          input_text: "Use the project virtualenv.",
+        }),
+      ],
+    })
+
+    const steer = screen.getByTestId("agent-user-steer")
+    expect(steer).toHaveTextContent("Use the project virtualenv.")
+    expect(steer).toHaveTextContent("Will be considered after the current step")
+  })
+
+  it("preserves inline skill and workflow tokens in steering guidance", () => {
+    renderTranscript({
+      events: [
+        event("steer-received", 2, "turn.steer.received", {
+          steer_id: "steer-1",
+          input_text: "Check this workflow",
+          input_display: {
+            inline_parts: [
+              { type: "skill", name: "rna-seq" },
+              { type: "workflow", workflow_id: "workflow-1", name: "Deaf_20", version: "1.0" },
+              { type: "text", text: "Check this workflow" },
+            ],
+          },
+        }),
+      ],
+    })
+
+    const steer = screen.getByTestId("agent-user-steer")
+    expect(
+      within(steer).getByText("/rna-seq").closest("[data-token-kind]"),
+    ).toHaveAttribute(
+      "data-token-kind",
+      "skill",
+    )
+    expect(within(steer).getByText("@Deaf_20")).toBeInTheDocument()
+    expect(within(steer).getByText("1.0")).toBeInTheDocument()
   })
 
   it("renders selected skill and workflow tokens in the user bubble", () => {

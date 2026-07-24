@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import json
 from typing import Any
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.models.agent_core import AgentActionStatus, AgentTurnStatus
@@ -146,9 +146,16 @@ class AgentCoreRuntime:
                     ownership=ownership,
                 )
             except TurnOwnershipLostError:
-                return await self.turn_repo.get(str(turn.id))
+                return await self._read_turn_after_ownership_loss(str(turn.id))
+
+    async def _read_turn_after_ownership_loss(self, turn_id: str):
+        await self.turn_repo.session.rollback()
+        turn = await self.turn_repo.get_fresh(turn_id)
+        await self.turn_repo.session.commit()
+        return turn
 
     async def _run_claimed_turn(self, *, turn, session, ownership: TurnOwnership):
+        turn_id = str(turn.id)
         await ownership.ensure_current()
         await self.ledger.append(
             session_id=str(turn.session_id),
@@ -184,13 +191,13 @@ class AgentCoreRuntime:
             ownership=ownership,
         )
         result = await self._drain_durable_resume_intents(
-            turn_id=str(turn.id),
+            turn_id=turn_id,
             session=session,
             resolved=resolved,
             result=result,
             ownership=ownership,
         )
-        fresh_turn = await self.turn_repo.get(str(turn.id))
+        fresh_turn = await self.turn_repo.get(turn_id)
         if fresh_turn is None:
             return None
         completed = await AgentLoopController(
@@ -284,7 +291,7 @@ class AgentCoreRuntime:
                     ownership=ownership,
                 )
             except TurnOwnershipLostError:
-                return await self.turn_repo.get(str(turn.id))
+                return await self._read_turn_after_ownership_loss(str(turn.id))
 
     async def _resume_claimed_turn(
         self,
@@ -296,6 +303,7 @@ class AgentCoreRuntime:
         session,
         ownership: TurnOwnership,
     ):
+        turn_id = str(turn.id)
         await ownership.ensure_current()
         await self.ledger.append(
             session_id=str(turn.session_id),
@@ -340,13 +348,13 @@ class AgentCoreRuntime:
             ownership=ownership,
         )
         result = await self._drain_durable_resume_intents(
-            turn_id=str(turn.id),
+            turn_id=turn_id,
             session=session,
             resolved=resolved,
             result=result,
             ownership=ownership,
         )
-        fresh_turn = await self.turn_repo.get(str(turn.id))
+        fresh_turn = await self.turn_repo.get(turn_id)
         if fresh_turn is None:
             return None
         completed = await AgentLoopController(
@@ -1005,6 +1013,7 @@ class AgentCoreRuntime:
         completed_at = datetime.now(timezone.utc)
         values = {
             "status": AgentTurnStatus.FAILED,
+            "accepts_steer": False,
             "final_text": None,
             "completed_at": completed_at,
             "termination_reason": "model_failed",
@@ -1025,6 +1034,17 @@ class AgentCoreRuntime:
             )
             if not updated or turn is None:
                 raise TurnOwnershipLostError("Agent turn ownership was replaced")
+        session_factory = async_sessionmaker(
+            bind=self.turn_repo.session.bind,
+            expire_on_commit=False,
+            class_=AsyncSession,
+        )
+        async with session_factory() as boundary_session:
+            await AgentTranscriptStore(boundary_session).cancel_pending_steers(
+                session_id=str(turn.session_id),
+                turn_id=str(turn.id),
+                reason="model_failed",
+            )
         await self._release_active_if_terminal(turn)
         await self.ledger.append(
             session_id=str(turn.session_id),

@@ -322,7 +322,12 @@ function workflowTokenForInputPart(
 function userMessageInlinePartsFromTurn(turn: AgentRuntimeTurn): UserMessageDisplayPart[] {
   const metadata = turn.model_profile_snapshot?.metadata
   if (!isRecord(metadata)) return []
-  const inputDisplay = metadata.input_display
+  return userMessageInlinePartsFromInputDisplay(metadata.input_display)
+}
+
+function userMessageInlinePartsFromInputDisplay(
+  inputDisplay: unknown,
+): UserMessageDisplayPart[] {
   if (!isRecord(inputDisplay)) return []
   const inlineParts = inputDisplay.inline_parts
   if (!Array.isArray(inlineParts)) return []
@@ -462,6 +467,50 @@ function TranscriptSegment({
       return <ActivityGroup group={segment.activityGroup} />
     case "decision":
       return <InlineApprovalCard decision={segment.decision} onDecision={onDecision} />
+    case "user_steer": {
+      const displayParts = userMessageInlinePartsFromInputDisplay(
+        segment.steer.inputDisplay,
+      )
+      return (
+        <div className="flex justify-end" data-testid="agent-user-steer-shell">
+          <div
+            className="flex max-w-[76%] flex-col items-end gap-1.5"
+            data-testid="agent-user-steer"
+          >
+            <div className="max-w-full rounded-lg border border-border/60 bg-muted/35 px-3.5 py-2.5 text-[15px] leading-6 text-foreground">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                {(displayParts.length
+                  ? displayParts
+                  : [
+                      {
+                        type: "text" as const,
+                        key: "steer-text:fallback",
+                        text: segment.steer.text,
+                      },
+                    ]
+                ).map((part) =>
+                  part.type === "text" ? (
+                    <span
+                      key={part.key}
+                      className="min-w-0 whitespace-pre-wrap break-words"
+                    >
+                      {part.text}
+                    </span>
+                  ) : (
+                    <UserMessageTokenSpan key={part.key} token={part} />
+                  ),
+                )}
+              </div>
+            </div>
+            {segment.steer.status !== "delivered" ? (
+              <span className="px-0.5 text-right text-[11px] leading-4 text-muted-foreground/70">
+                {t(`steer.${segment.steer.status}`)}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      )
+    }
     case "turn_error":
       return (
         <div className="flex items-start gap-2 rounded-lg border border-border/55 bg-muted/[0.18] px-3 py-2 text-sm leading-6 text-muted-foreground">

@@ -77,19 +77,14 @@ export function AgentCustomInstructions({
   const disabled = loading || saving
 
   return (
-    <div className="space-y-3 px-5 py-5 sm:px-6">
-      <div className="space-y-1">
-        <Label htmlFor="agent-custom-instructions">{labels.label}</Label>
-        <p className="text-[13px] leading-5 text-muted-foreground">
-          {labels.description}
-        </p>
-        <p
-          id="agent-custom-instructions-help"
-          className="text-[13px] font-medium leading-5 text-muted-foreground"
-        >
-          {labels.newSessionsOnly}
-        </p>
-      </div>
+    <div
+      data-testid="agent-custom-instructions"
+      data-layout="flat"
+      className="w-full space-y-3 lg:w-[440px]"
+    >
+      <Label htmlFor="agent-custom-instructions" className="sr-only">
+        {labels.label}
+      </Label>
 
       {loading ? (
         <p role="status" className="text-[13px] text-muted-foreground">
@@ -113,13 +108,19 @@ export function AgentCustomInstructions({
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span
-          id="agent-custom-instructions-count"
-          className="text-xs tabular-nums text-muted-foreground"
-        >
-          {instructions.length.toLocaleString()} /{" "}
-          {AGENT_CUSTOM_INSTRUCTIONS_MAX_LENGTH.toLocaleString()}
-        </span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <span id="agent-custom-instructions-help">{labels.newSessionsOnly}</span>
+          <span aria-hidden="true" className="text-border">
+            ·
+          </span>
+          <span
+            id="agent-custom-instructions-count"
+            className="tabular-nums"
+          >
+            {instructions.length.toLocaleString()} /{" "}
+            {AGENT_CUSTOM_INSTRUCTIONS_MAX_LENGTH.toLocaleString()}
+          </span>
+        </div>
         <div className="flex items-center gap-2">
           <Button
             type="button"

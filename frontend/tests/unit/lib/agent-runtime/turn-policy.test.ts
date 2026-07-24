@@ -13,26 +13,33 @@ describe("agent turn policy preference", () => {
     window.localStorage.clear()
   })
 
-  it("defaults to interrupt for Codex-style active turn handling", () => {
+  it("defaults to steering for continuous active turn handling", () => {
     expect(readAgentTurnPolicy()).toBe(DEFAULT_AGENT_TURN_POLICY)
-    expect(DEFAULT_AGENT_TURN_POLICY).toBe("interrupt")
+    expect(DEFAULT_AGENT_TURN_POLICY).toBe("steer")
   })
 
-  it("persists queue and interrupt policies", () => {
+  it("persists queue and steering policies", () => {
     writeAgentTurnPolicy("queue")
 
     expect(window.localStorage.getItem(AGENT_TURN_POLICY_STORAGE_KEY)).toBe("queue")
     expect(readAgentTurnPolicy()).toBe("queue")
 
-    writeAgentTurnPolicy("interrupt")
+    writeAgentTurnPolicy("steer")
 
-    expect(readAgentTurnPolicy()).toBe("interrupt")
+    expect(readAgentTurnPolicy()).toBe("steer")
+  })
+
+  it("migrates the legacy interrupt preference to steer", () => {
+    window.localStorage.setItem(AGENT_TURN_POLICY_STORAGE_KEY, "interrupt")
+
+    expect(readAgentTurnPolicy()).toBe("steer")
+    expect(window.localStorage.getItem(AGENT_TURN_POLICY_STORAGE_KEY)).toBe("steer")
   })
 
   it("ignores invalid stored values", () => {
     window.localStorage.setItem(AGENT_TURN_POLICY_STORAGE_KEY, "parallel")
 
     expect(isAgentTurnPolicy("parallel")).toBe(false)
-    expect(readAgentTurnPolicy()).toBe("interrupt")
+    expect(readAgentTurnPolicy()).toBe("steer")
   })
 })

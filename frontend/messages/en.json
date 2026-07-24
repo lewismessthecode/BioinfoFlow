@@ -2311,9 +2311,9 @@
         "label": "During active responses",
         "description": "Apply this behavior when you send a message before the current turn finishes.",
         "options": {
-          "interrupt": {
-            "label": "Interrupt current turn",
-            "description": "Stop the active response first, then send your new message as the next turn."
+          "steer": {
+            "label": "Guide current response",
+            "description": "Add this message to the active response at the next safe step."
           },
           "queue": {
             "label": "Queue for next turn",
@@ -2323,9 +2323,9 @@
       },
       "customInstructions": {
         "label": "Custom instructions",
-        "description": "Add platform conventions, environment details, and other context the agent should receive.",
-        "newSessionsOnly": "Changes apply only to new sessions. Existing sessions keep the instructions they started with.",
-        "placeholder": "Add platform conventions, environment details, or other context...",
+        "description": "Add lasting context for new conversations.",
+        "newSessionsOnly": "New conversations only.",
+        "placeholder": "Add context...",
         "loading": "Loading custom instructions...",
         "save": "Save instructions",
         "saving": "Saving...",
@@ -2665,6 +2665,10 @@
     "send": "Send message",
     "stop": "Stop response",
     "pendingResponse": "Working on it...",
+    "steer": {
+      "pending": "Will be considered after the current step",
+      "cancelled": "Not processed because the response stopped"
+    },
     "scrollToBottom": "Jump to latest",
     "recentActivityWindow": "Showing recent activity",
     "thinking": "Thinking",

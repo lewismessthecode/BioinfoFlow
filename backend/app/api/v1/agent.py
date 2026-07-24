@@ -39,6 +39,7 @@ from app.schemas.agent_core import (
     AgentTokenUsageSummary,
     AgentTurnCreate,
     AgentTurnRead,
+    AgentTurnSteer,
 )
 from app.repositories.agent_user_settings_repo import AgentUserSettingsRepository
 from app.repositories.llm_repo import LlmModelRepository
@@ -437,6 +438,27 @@ async def cancel_turn(
         user_id=user.id,
     )
     return success_response(_dump(_turn_read(turn)), request=request)
+
+
+@router.post("/turns/{turn_id}/steer")
+async def steer_turn(
+    turn_id: str,
+    payload: AgentTurnSteer,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AgentCoreService(db)
+    result = await service.steer_turn(
+        turn_id=turn_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+        input_text=payload.input_text,
+        input_parts=payload.input_parts,
+        active_skill_names=payload.active_skill_names,
+        metadata=payload.metadata,
+    )
+    return success_response(_dump(result), request=request)
 
 
 @router.post("/turns/{turn_id}/interrupt")
