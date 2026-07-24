@@ -5,8 +5,8 @@ when you are developing Bioinfoflow or configuring a shared deployment.
 
 ## Prerequisites
 
-- Docker Engine or Docker Desktop with Compose
-- At least one AI provider: use an API key for a hosted provider, or configure an endpoint and model for Ollama, vLLM, or another OpenAI-compatible service.
+- Docker Engine or Docker Desktop with Docker Compose 2.24 or newer
+- An AI provider is needed only when you use the Agent; connect one from the UI after startup.
 
 ## Localhost Installer
 

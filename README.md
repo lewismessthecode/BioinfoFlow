@@ -48,8 +48,8 @@ or deliberately connected remote resources.
 
 ## Install and run the first analysis
 
-Requirements: macOS or Linux, Docker Engine or Docker Desktop with Compose, and
-an `amd64` or `arm64` machine.
+Requirements: macOS or Linux, Docker Engine or Docker Desktop with Docker
+Compose 2.24 or newer, and an `amd64` or `arm64` machine.
 
 The shortest path for a trusted local machine is the release installer:
 
