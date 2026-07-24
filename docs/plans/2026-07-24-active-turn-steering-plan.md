@@ -13,7 +13,7 @@
 ### Task 1: Persist the steer acceptance contract
 
 **Files:**
-- Create: `backend/alembic/versions/0053_agent_turn_steering.py`
+- Create: `backend/alembic/versions/0054_agent_turn_steering.py`
 - Modify: `backend/app/models/agent_core.py`
 - Modify: `backend/tests/test_migrations/test_agent_permission_upgrade_compatibility.py`
 - Test: `backend/tests/test_agent_core/test_active_turn_steering.py`
@@ -47,8 +47,9 @@ Expected: FAIL because `AgentTurn` has no `accepts_steer` field.
 - [ ] **Step 3: Add the schema field and migration**
 
 Add a non-null boolean `accepts_steer` column with Python and server defaults of
-true. Migration `0053_agent_turn_steering` revises
-`0052_agent_user_custom_instructions`. Update `EXPECTED_HEAD` to the new revision.
+true. Migration `0054_agent_turn_steering` revises the latest main-branch
+migration, `0053_remote_connection_jump_host`. Update `EXPECTED_HEAD` to the new
+revision.
 
 - [ ] **Step 4: Run the focused test and migration tests**
 
@@ -59,7 +60,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-rtk git add backend/alembic/versions/0053_agent_turn_steering.py backend/app/models/agent_core.py backend/tests/test_migrations/test_agent_permission_upgrade_compatibility.py backend/tests/test_agent_core/test_active_turn_steering.py
+rtk git add backend/alembic/versions/0054_agent_turn_steering.py backend/app/models/agent_core.py backend/tests/test_migrations/test_agent_permission_upgrade_compatibility.py backend/tests/test_agent_core/test_active_turn_steering.py
 rtk git commit -m "feat: add active turn steering state"
 ```
 
