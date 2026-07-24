@@ -61,6 +61,26 @@ If the key is encrypted, also enter its passphrase. Bioinfoflow stores the key
 and passphrase encrypted and uses them from memory; you do not need to make a
 `~/.ssh/...` path available inside the backend container.
 
+### Via A Saved Jump Host
+
+Use this when Bioinfoflow can reach and authenticate to a saved Remote
+Connection, but the final target is reachable only from that host. Select **Via
+jump host** and choose an existing direct connection in the same workspace.
+
+This is session-level chained SSH, not OpenSSH `ProxyJump`. Bioinfoflow
+authenticates only to the saved jump connection. After that outer session is
+established, it runs the jump host's local `ssh` command for the target host.
+The target login therefore uses the jump host's own OpenSSH environment,
+including its `~/.ssh/config`, `ssh-agent`, private keys, and `known_hosts`
+policy. Target private keys stay on the jump host; Bioinfoflow does not copy
+them or introduce SSH agent forwarding.
+
+The initial implementation supports exactly one direct jump connection. A
+connection using jump mode cannot be selected as another connection's jump
+host. The same resolved route is used for connection tests, streamed probes,
+remote directory and file browsing, AgentCore remote tools, and remote project
+terminals.
+
 ### Host Skill
 
 The Host Skill field tells the agent how to use this server after connecting.
@@ -88,7 +108,12 @@ browser and not necessarily your host shell.
 
 Use this when the backend user already has a working `~/.ssh/config` entry.
 
-Bioinfoflow passes the alias as the SSH target. The `Host` entry owns details such as `HostName`, `User`, `Port`, `IdentityFile`, and `ProxyJump`. The host, user, and port fields in Bioinfoflow are saved as readable metadata only.
+Bioinfoflow passes the alias as the SSH target. The `Host` entry owns details
+such as `HostName`, `User`, `Port`, `IdentityFile`, and, if the administrator
+deliberately configures it, OpenSSH `ProxyJump`. The host, user, and port fields
+in Bioinfoflow are saved as readable metadata only. This advanced alias behavior
+is separate from Bioinfoflow's **Via jump host** mode, which opens an outer SSH
+session and runs a second SSH command on that host.
 
 Example:
 
@@ -231,3 +256,17 @@ If a test fails, check the backend environment first:
 - Advanced backend SSH methods use system `ssh` and require the target host to
   accept `BatchMode=yes` SSH commands. Remote project terminals also require
   PTY allocation on the target host.
+
+For a connection using **Via jump host**, troubleshoot the two sessions in
+order:
+
+1. Test the saved jump connection itself in Bioinfoflow.
+2. Log in to that jump host and run a noninteractive target test such as:
+
+   ```bash
+   ssh -o BatchMode=yes user@target 'printf bioinfoflow-ok'
+   ```
+
+The second command must succeed using the jump host's local SSH config, agent,
+keys, and host-key policy. Fix target authentication or `known_hosts` on the
+jump host rather than adding target credentials to Bioinfoflow.

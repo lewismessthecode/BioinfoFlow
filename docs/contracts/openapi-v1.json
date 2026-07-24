@@ -523,6 +523,18 @@
         "title": "AgentSessionUpdate",
         "type": "object"
       },
+      "AgentSettingsUpdate": {
+        "properties": {
+          "custom_instructions": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Custom Instructions",
+            "type": "string"
+          }
+        },
+        "title": "AgentSettingsUpdate",
+        "type": "object"
+      },
       "AgentTurnCreate": {
         "properties": {
           "active_skill_names": {
@@ -2413,7 +2425,8 @@
               "private_key",
               "ssh_config",
               "key_file",
-              "agent"
+              "agent",
+              "jump"
             ],
             "title": "Auth Method",
             "type": "string"
@@ -2423,6 +2436,18 @@
             "minLength": 1,
             "title": "Host",
             "type": "string"
+          },
+          "jump_connection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jump Connection Id"
           },
           "key_path": {
             "anyOf": [
@@ -2534,7 +2559,8 @@
                   "private_key",
                   "ssh_config",
                   "key_file",
-                  "agent"
+                  "agent",
+                  "jump"
                 ],
                 "type": "string"
               },
@@ -2556,6 +2582,18 @@
               }
             ],
             "title": "Host"
+          },
+          "jump_connection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jump Connection Id"
           },
           "key_path": {
             "anyOf": [
@@ -4206,6 +4244,62 @@
         ]
       }
     },
+    "/api/v1/agent/settings": {
+      "get": {
+        "operationId": "get_settings_api_v1_agent_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Settings",
+        "tags": [
+          "agent"
+        ]
+      },
+      "put": {
+        "operationId": "update_settings_api_v1_agent_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Settings",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/v1/agent/skills": {
       "get": {
         "operationId": "list_skills_api_v1_agent_skills_get",
@@ -5519,6 +5613,25 @@
         "summary": "Write File",
         "tags": [
           "files"
+        ]
+      }
+    },
+    "/api/v1/first-run/bootstrap": {
+      "post": {
+        "operationId": "bootstrap_first_run_api_v1_first_run_bootstrap_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Bootstrap First Run",
+        "tags": [
+          "first-run"
         ]
       }
     },

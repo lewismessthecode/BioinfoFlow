@@ -111,7 +111,18 @@ Security expectations:
 - make key files and `SSH_AUTH_SOCK` available only to the backend environment
   that needs them when using advanced backend SSH methods
 - use SSH config aliases for `HostName`, `User`, `Port`, `IdentityFile`, and
-  `ProxyJump` when possible
+  administrator-managed OpenSSH routing when appropriate
+- treat Bioinfoflow's saved jump-host mode as two SSH sessions, not OpenSSH
+  `ProxyJump`: Bioinfoflow authenticates only to the saved direct jump
+  connection, then the jump host's local `ssh` authenticates to the target
+- keep target private keys on the jump host; the inner SSH session uses that
+  host's `~/.ssh/config`, agent, keys, and OpenSSH host-key policy, including its
+  local `known_hosts`, and Bioinfoflow does not introduce agent forwarding
+- grant jump-host access carefully: a compromised jump host, or an account with
+  authority to change its SSH config, keys, agent, or host-key records, can
+  control or impersonate the inner target route within that account's authority
+- remember that saved jump routes support one direct hop only and are reused by
+  tests, probes, remote browsing, Agent tools, and remote project terminals
 - treat `remote.exec` as a remote shell with the selected SSH account's actual
   authority; Bioinfoflow assesses each command dynamically, but does not add an
   OS sandbox to an arbitrary SSH host
