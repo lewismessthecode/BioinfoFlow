@@ -24,6 +24,9 @@ container. The backend image installs `procps` but not `btop`, so a host-level
    as an estimated CPU share.
 6. Stop the active-runs panel from stretching into unused vertical space.
 7. Update English and Chinese copy and the scheduler integration test.
+8. Align the live-capacity and active-runs area with the Dashboard flat-section
+   pattern: one shared surface, a single divider, compact header actions, and a
+   left-aligned empty state without nested dashed cards.
 
 ## Verification
 

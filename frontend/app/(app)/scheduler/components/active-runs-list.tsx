@@ -1,6 +1,7 @@
 "use client"
 
 import { useTranslations } from "next-intl"
+import { Clock, Play, WifiOff } from "@/lib/icons"
 import type {
   ActiveRun,
   ResourceStreamConnectionState,
@@ -26,22 +27,33 @@ export function ActiveRunsList({
   const t = useTranslations("scheduler")
 
   if (runs.length === 0) {
-    const state =
+    const state: "disconnected" | "queued" | "idle" =
       connectionState === "disconnected"
         ? "disconnected"
         : queueDepth > 0
           ? "queued"
           : "idle"
+    const EmptyIcon =
+      state === "disconnected" ? WifiOff : state === "queued" ? Clock : Play
 
     return (
-      <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-center">
-        <span className="mx-auto block h-2 w-2 rounded-full bg-muted-foreground/50" />
-        <p className="mt-3 text-sm font-medium text-foreground">
-          {t(`activeRuns.emptyStates.${state}.title`)}
-        </p>
-        <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-muted-foreground">
-          {t(`activeRuns.emptyStates.${state}.body`)}
-        </p>
+      <div
+        data-testid="active-runs-empty-state"
+        className="border-t border-border/70 py-5"
+      >
+        <div className="flex items-start gap-3">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted/35 text-muted-foreground">
+            <EmptyIcon className="size-3.5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 pt-0.5">
+            <p className="text-sm font-medium text-foreground">
+              {t(`activeRuns.emptyStates.${state}.title`)}
+            </p>
+            <p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">
+              {t(`activeRuns.emptyStates.${state}.body`)}
+            </p>
+          </div>
+        </div>
       </div>
     )
   }
@@ -49,7 +61,7 @@ export function ActiveRunsList({
   const totalWeight = runs.reduce((acc, r) => acc + (r.weight || 1), 0)
 
   return (
-    <div className="space-y-2">
+    <div className="overflow-hidden rounded-lg border border-border/70">
       {runs.map((r) => {
         const share = (r.weight || 1) / totalWeight
         const cpuShare = cpuPercent == null ? 0 : Math.round(share * cpuPercent)
@@ -61,10 +73,10 @@ export function ActiveRunsList({
             type="button"
             onClick={() => onToggleHighlight(r.run_id)}
             aria-pressed={active}
-            className={`grid min-h-16 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-lg border px-4 py-3 text-left transition-[background-color,border-color,transform] hover:bg-muted/50 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${
+            className={`grid min-h-16 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-border/70 px-4 py-3 text-left transition-[background-color,transform] last:border-b-0 hover:bg-muted/35 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 ${
               active
-                ? "border-foreground/20 bg-muted/45"
-                : "border-border/70 bg-card"
+                ? "bg-muted/45"
+                : "bg-card"
             }`}
           >
             <span className="min-w-0">
