@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
   createAgentRuntimeSession,
   createAgentRuntimeTurn,
+  getAgentRuntimeState,
   steerAgentRuntimeTurn,
   updateAgentRuntimeSessionPermissionMode,
   updateAgentRuntimeSessionMetadata,
@@ -30,6 +31,14 @@ describe("agent runtime client", () => {
         created_at: "2026-06-08T00:00:00Z",
         updated_at: "2026-06-08T00:00:00Z",
       },
+    })
+  })
+
+  it("requests the transcript event view for conversation state", async () => {
+    await getAgentRuntimeState("session-1", { eventView: "transcript" })
+
+    expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1/state", {
+      params: { event_view: "transcript" },
     })
   })
 

@@ -17,20 +17,30 @@ type RouteProjectContext = {
 }
 
 export default function AgentSessionPage() {
-  const {
-    selectedProjectId,
-    setSelectedProjectId,
-    conversationProjectId,
-    setConversationProjectId,
-    setActiveConversationId,
-  } = useProjectContext()
   const params = useParams<{ sessionId: string }>()
   const sessionId = useMemo(() => {
     const value = params.sessionId
     return Array.isArray(value) ? value[0] : value
   }, [params.sessionId])
+
+  return <ResolvedAgentSessionPage key={sessionId} sessionId={sessionId} />
+}
+
+function ResolvedAgentSessionPage({ sessionId }: { sessionId: string }) {
+  const {
+    selectedProjectId,
+    setSelectedProjectId,
+    conversationProjectId,
+    setConversationProjectId,
+    activeConversationId,
+    setActiveConversationId,
+  } = useProjectContext()
   const [routeProjectContext, setRouteProjectContext] =
-    useState<RouteProjectContext | null>(null)
+    useState<RouteProjectContext | null>(() =>
+      activeConversationId === sessionId && conversationProjectId
+        ? { sessionId, selectedProjectId, conversationProjectId }
+        : null,
+    )
 
   useEffect(() => {
     setActiveConversationId(sessionId)

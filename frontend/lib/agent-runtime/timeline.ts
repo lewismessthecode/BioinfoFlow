@@ -20,9 +20,16 @@ export function buildAgentRuntimeTimeline(
       a.created_at.localeCompare(b.created_at) ||
       a.id.localeCompare(b.id),
   )
+  const eventsByTurn = new Map<string, AgentRuntimeEvent[]>()
+  for (const event of sortedEvents) {
+    if (!event.turn_id) continue
+    const turnEvents = eventsByTurn.get(event.turn_id)
+    if (turnEvents) turnEvents.push(event)
+    else eventsByTurn.set(event.turn_id, [event])
+  }
 
   return turns.map((turn) => {
-    const turnEvents = sortedEvents.filter((event) => event.turn_id === turn.id)
+    const turnEvents = eventsByTurn.get(turn.id) ?? []
     const segments = buildTurnSegments(turn, turnEvents, sortedEvents)
     const textBlocks = textBlocksFromSegments(segments)
     const thinkingBlocks = thinkingBlocksFromSegments(segments)

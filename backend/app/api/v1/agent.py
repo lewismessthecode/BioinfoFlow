@@ -4,7 +4,7 @@ import asyncio
 import json
 import mimetypes
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Literal
 from urllib.parse import quote
 
 import aiofiles
@@ -482,6 +482,7 @@ async def get_session_state(
     session_id: str,
     request: Request,
     event_limit: int | None = Query(default=None, ge=1, le=5000),
+    event_view: Literal["full", "transcript"] = Query(default="full"),
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -501,6 +502,7 @@ async def get_session_state(
         workspace_id=user.workspace_id,
         user_id=user.id,
         limit=event_limit,
+        transcript_view=event_view == "transcript",
     )
     token_usage_summary = await _token_usage_summary_for_turns(
         turns,

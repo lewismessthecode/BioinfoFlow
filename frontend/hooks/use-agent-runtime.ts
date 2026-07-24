@@ -259,7 +259,9 @@ export function useAgentRuntime(
     stateRefreshSequenceRef.current = sequence
     dispatch({ type: "loading" })
     try {
-      const payload = await getAgentRuntimeState(sessionId)
+      const payload = await getAgentRuntimeState(sessionId, {
+        eventView: "transcript",
+      })
       if (activeSessionIdRef.current !== sessionId) return
       if (stateRefreshSequenceRef.current !== sequence) return
       setEventWindow({
@@ -311,7 +313,6 @@ export function useAgentRuntime(
       afterSeq: streamCursorRef.current,
       onReady: () => {
         setStreamSignal({ sessionId: activeSessionId, status: "connected" })
-        void refreshState(activeSessionId)
       },
       onError: () => {
         setStreamSignal({ sessionId: activeSessionId, status: "reconnecting" })

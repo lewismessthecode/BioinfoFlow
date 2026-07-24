@@ -21,7 +21,7 @@ from app.repositories.agent_core_repo import (
 from app.repositories.agent_user_settings_repo import AgentUserSettingsRepository
 from app.repositories.project_repo import ProjectRepository
 from app.schemas.agent_core import AgentTurnSteerRead
-from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.events import AgentEventType, compact_transcript_events
 from app.services.agent_core.execution_target import (
     normalize_execution_scope,
     execution_target_from_session,
@@ -908,17 +908,22 @@ class AgentCoreService:
         user_id: str,
         after_seq: int = 0,
         limit: int | None = None,
+        transcript_view: bool = False,
     ):
         await self.require_session(
             session_id=session_id,
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        return await self.event_repo.list_for_session(
+        events = await self.event_repo.list_for_session(
             session_id=session_id,
             after_seq=after_seq,
-            limit=limit,
+            limit=None if transcript_view else limit,
         )
+        if not transcript_view:
+            return events
+        compacted = compact_transcript_events(events)
+        return compacted[-limit:] if limit is not None else compacted
 
     async def decide_action(
         self,

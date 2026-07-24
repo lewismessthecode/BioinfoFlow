@@ -92,4 +92,28 @@ describe("active turn steering timeline", () => {
       expect.objectContaining({ steer: expect.objectContaining({ status: "cancelled" }) }),
     ])
   })
+
+  it("groups events by turn without rescanning every event for every turn", () => {
+    let turnIdReads = 0
+    const turns = Array.from({ length: 40 }, (_, index) => ({
+      ...turn,
+      id: `turn-${index}`,
+    }))
+    const events = Array.from({ length: 400 }, (_, index) => {
+      const item = event(`event-${index}`, index + 1, "turn.started", {})
+      const turnId = `turn-${index % turns.length}`
+      return Object.defineProperty(item, "turn_id", {
+        configurable: true,
+        enumerable: true,
+        get() {
+          turnIdReads += 1
+          return turnId
+        },
+      })
+    })
+
+    buildAgentRuntimeTimeline(turns, events)
+
+    expect(turnIdReads).toBeLessThan(events.length * 4)
+  })
 })
