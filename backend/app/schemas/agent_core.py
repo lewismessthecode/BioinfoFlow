@@ -48,6 +48,9 @@ RiskLevel = Literal[
 ]
 ActionDecision = Literal["approve", "reject", "modify", "answer"]
 MemoryStatus = Literal["proposed", "accepted", "rejected", "disabled"]
+AttachmentKind = Literal["file", "folder", "image"]
+AttachmentSource = Literal["upload", "clipboard"]
+AttachmentStatus = Literal["processing", "ready", "error", "pending_delete"]
 
 
 class AgentModelSelection(BaseModel):
@@ -171,6 +174,31 @@ class AgentSessionRead(BaseModel):
     metadata: dict | None = Field(default=None, validation_alias="session_metadata")
     pending_strategy: Literal["future_only", "approve_pending_tools"] | None = None
     pending_reconciliation: AgentPendingReconciliation | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentAttachmentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    session_id: UUID
+    workspace_id: UUID
+    user_id: str
+    kind: AttachmentKind
+    source: AttachmentSource
+    filename: str
+    mime_type: str | None = None
+    size_bytes: int
+    file_count: int | None = None
+    image_width: int | None = None
+    image_height: int | None = None
+    status: AttachmentStatus
+    metadata: dict | None = Field(
+        default=None,
+        validation_alias="attachment_metadata",
+    )
+    error_message: str | None = None
     created_at: datetime
     updated_at: datetime
 

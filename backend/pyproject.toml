@@ -40,6 +40,8 @@ dependencies = [
   "aiofiles>=25.1.0",
   "hermes-agent @ git+https://github.com/NousResearch/hermes-agent.git@7ad47ace51ef28ad613e5f7152a9d0401061636e",
   "asyncssh>=2.24.0",
+  "pillow>=12.3.0",
+  "pypdf>=6.14.2",
 ]
 
 [dependency-groups]

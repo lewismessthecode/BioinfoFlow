@@ -81,6 +81,21 @@ class AgentAttachmentRepository(BaseRepository[AgentAttachment]):
             )
         )
 
+    async def get_owned_for_user(
+        self,
+        attachment_id: str,
+        *,
+        workspace_id: str,
+        user_id: str,
+    ) -> AgentAttachment | None:
+        return await self.session.scalar(
+            select(self.model).where(
+                self.model.id == attachment_id,
+                self.model.workspace_id == workspace_id,
+                self.model.user_id == user_id,
+            )
+        )
+
     async def list_for_session(
         self,
         *,
@@ -122,6 +137,28 @@ class AgentAttachmentRepository(BaseRepository[AgentAttachment]):
         attachment = result.scalar_one_or_none()
         await self.session.commit()
         return attachment
+
+    async def delete_owned(
+        self,
+        attachment_id: str,
+        *,
+        workspace_id: str,
+        user_id: str,
+    ) -> bool:
+        result = await self.session.execute(
+            delete(self.model)
+            .where(
+                self.model.id == attachment_id,
+                self.model.workspace_id == workspace_id,
+                self.model.user_id == user_id,
+            )
+            .execution_options(synchronize_session="fetch")
+        )
+        await self.session.commit()
+        for obj in list(self.session.identity_map.values()):
+            if isinstance(obj, self.model) and str(obj.id) == attachment_id:
+                self.session.expunge(obj)
+        return result.rowcount == 1
 
     async def delete_orphans_before(self, cutoff: datetime) -> list[str]:
         orphan_ids_and_paths = await self.session.execute(
