@@ -625,8 +625,9 @@ local or remote target. It does not grant operating-system privileges.
 - **Request approval** asks before each non-read side effect.
 - **Approve for me** allows reads and low-risk actions, and asks for elevated
   risk.
-- **Full access** skips ordinary risk prompts, but catastrophic commands remain
-  blocked, protected-resource writes still ask, and user questions or plan
+- **Full access** auto-approves all non-hard-blocked actions, including
+  protected-resource writes, indirect shell commands, and sandbox opt-out
+  requests. Catastrophic commands remain blocked, and user questions or plan
   approval remain interactive.
 
 Permission changes are live for the next tool authorization, even when a turn is

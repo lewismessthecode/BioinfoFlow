@@ -836,7 +836,7 @@ async def test_metadata_remote_boundary_changes_version_and_next_action_snapshot
 
 
 @pytest.mark.asyncio
-async def test_unbounded_remote_read_file_does_not_auto_run_absolute_path_in_bypass(
+async def test_unbounded_remote_read_file_is_audited_but_allowed_in_bypass(
     db_session,
 ) -> None:
     db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
@@ -888,5 +888,6 @@ async def test_unbounded_remote_read_file_does_not_auto_run_absolute_path_in_byp
         defer_execution=True,
     )
 
-    assert result.status == "waiting_decision"
+    assert result.status == "requested"
+    assert result.permission_decision["decision"] == "allow"
     assert result.permission_decision["requires_explicit_approval"] is True

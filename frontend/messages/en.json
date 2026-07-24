@@ -3093,14 +3093,14 @@
         },
         "bypass": {
           "label": "Full access",
-          "description": "Run non-critical actions automatically while backend safety still blocks critical operations."
+          "description": "Run every non-blocked action automatically without risk approval prompts."
         }
       },
       "boundary": {
         "local": "Local actions keep the sandbox or host boundary currently configured for this session; permission mode does not expand it.",
         "remote": "SSH actions use the remote account and server policy; the working folder is not a sandbox."
       },
-      "safetyFloor": "Critical actions, protected resources, and required user interactions remain blocked or gated in every mode.",
+      "safetyFloor": "Hard-blocked critical actions and required user interactions remain blocked or gated in every mode.",
       "status": {
         "updating": "Updating permission mode...",
         "updated": "Permission mode updated for future operations.",

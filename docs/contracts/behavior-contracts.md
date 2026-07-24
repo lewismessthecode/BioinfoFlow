@@ -141,13 +141,13 @@ The durable execution contract is:
   decision and recovery path
 
 Permission mode is an approval policy, not a capability grant. `bypass` (shown
-as **Full access**) skips ordinary risk approvals only. It does not bypass
-high-confidence critical hard blocks; protected-resource writes, indirect
-commands, and sandbox opt-out can still require explicit approval. Command
-classification is not complete confinement. The enforceable boundary is an
-active local OS sandbox or the SSH account and remote server controls. Explicit
-user/plan interactions and workspace policy remain independent, and a remote
-working root is not confinement.
+as **Full access**) skips every risk approval and auto-approves
+protected-resource writes, indirect commands, and sandbox opt-out requests. It
+does not bypass high-confidence critical hard blocks. Command classification is
+not complete confinement. The enforceable boundary is an active local OS
+sandbox or the SSH account and remote server controls. Explicit user/plan
+interactions and workspace policy remain independent, and a remote working root
+is not confinement.
 
 Authoritative coverage includes `backend/tests/test_agent_core/`,
 `backend/tests/test_api/test_agent_core_api.py`, and the frontend AgentWorkbench,

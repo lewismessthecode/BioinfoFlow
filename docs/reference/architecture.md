@@ -155,16 +155,17 @@ Permission modes control approval behavior:
 
 - `ask_each_action`: ask before every non-read side effect
 - `guarded_auto`: allow reads and low-risk actions, ask for elevated risk
-- `bypass` (shown as **Full access**): allow ordinary non-critical actions
-  without a prompt
+- `bypass` (shown as **Full access**): auto-approve every action that is not
+  hard blocked, without a risk prompt
 
-Automation policy, hard blocks, protected resources, interaction requirements,
-and the execution boundary remain independent. Full access does not grant new OS
-or SSH privileges. High-confidence catastrophic command matches remain hard
-denied, while statically uncertain or indirect forms can require explicit
-approval. This classifier is defense in depth rather than confinement: the true
-boundary is the active local OS sandbox or the remote account and server policy.
-Mandatory user and plan interactions remain independent.
+Automation policy, hard blocks, interaction requirements, and the execution
+boundary remain independent. Full access does not grant new OS or SSH
+privileges. High-confidence catastrophic command matches remain hard denied,
+while protected-resource, statically uncertain, indirect-shell, and sandbox
+opt-out actions are auto-approved and retained in the audit record. This
+classifier is defense in depth rather than confinement: the true boundary is the
+active local OS sandbox or the remote account and server policy. Mandatory user
+and plan interactions remain independent.
 
 `PermissionContextResolver` forces a fresh session read immediately before tool
 exposure and risk evaluation. It resolves a coherent snapshot of policy version,
@@ -209,15 +210,16 @@ target identity, and whether a boundary is actually enforced. Local sandboxed
 commands can rely on the active OS adapter. Unsandboxed local and SSH commands
 cannot: SSH is authorized by the selected remote Unix account and server policy,
 and a remote working root is not confinement. Unknown, outside-root, or
-symlink-sensitive remote paths require approval when safety cannot be proven.
+symlink-sensitive remote paths are elevated for approval outside bypass mode
+when safety cannot be proven.
 Protected command destinations are detected lexically, including common link,
 archive-extraction, and synchronization forms. This analysis does not resolve
 pre-existing filesystem symlinks or inspect archive members, so it is defense in
 depth rather than an OS boundary. Opaque archive extraction, process
 substitution, executable heredocs, compound shell grammar, and wrapper options
-that cannot be parsed confidently require explicit approval even in bypass
-mode. Actual confinement comes from the active local sandbox or the remote Unix
-account and server controls.
+that cannot be parsed confidently are marked as requiring explicit review for
+guarded modes, but Full access auto-approves them. Actual confinement comes from
+the active local sandbox or the remote Unix account and server controls.
 
 ## Remote Connections
 
