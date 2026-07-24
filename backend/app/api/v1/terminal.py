@@ -4,7 +4,14 @@ import asyncio
 import contextlib
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -17,7 +24,6 @@ from app.schemas.terminal import (
     TerminalSessionRead,
 )
 from app.services.remote_connection_service import RemoteConnectionService
-from app.services.remote_connection_service import remote_connection_config_from_model
 from app.services.project_service import ProjectService
 from app.services.terminal_service import (
     TerminalNotInteractiveError,
@@ -59,15 +65,19 @@ async def create_terminal_session(
         remote_root_path = getattr(project, "remote_root_path", None)
         if not remote_connection_id or not remote_root_path:
             raise NotFoundError("Remote project target not found")
-        connection = await RemoteConnectionService(db).get_connection(
+        connection_service = RemoteConnectionService(db)
+        connection = await connection_service.get_connection(
             str(remote_connection_id),
             workspace_id=user.workspace_id,
         )
         if connection is None:
             raise NotFoundError("Remote connection not found")
+        connection_config = await connection_service.resolve_connection_config(
+            connection
+        )
         session = await terminal_manager.create_or_get_remote(
             project_id=str(project.id),
-            connection=remote_connection_config_from_model(connection),
+            connection=connection_config,
             remote_root_path=str(remote_root_path),
             target_label=f"remote · {connection.name}",
         )

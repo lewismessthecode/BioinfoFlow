@@ -6,6 +6,8 @@ import pytest
 from uuid import uuid4
 
 from app.config import settings
+from app.services.remote_connection_service import RemoteConnectionService
+from app.services.remote_execution import RemoteConnectionConfig
 from app.services.terminal_service import terminal_manager
 from tests.support.path_contract import create_project
 from tests.support.auth import TEST_SESSION_COOKIE, create_better_auth_db
@@ -124,6 +126,76 @@ async def test_terminal_session_api_returns_remote_target_without_local_fallback
     assert data["remote_connection_id"] == connection_id
     assert data["cwd"] == "/data/phoenix"
     assert data["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_terminal_session_api_passes_resolved_remote_connection_config(
+    async_client,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: list[dict] = []
+    jump = RemoteConnectionConfig(
+        id="jump-1",
+        name="Bastion",
+        host="bastion.example.org",
+        username="jump-user",
+        password="jump-secret",
+    )
+    resolved = RemoteConnectionConfig(
+        id="resolved-target",
+        name="Resolved cluster",
+        host="cluster.example.org",
+        username="alice",
+        jump_connection=jump,
+    )
+
+    async def fake_resolve_connection_config(self, connection):
+        del self, connection
+        return resolved
+
+    async def fake_remote_factory(**kwargs):
+        captured.append(kwargs)
+        return _BlockingRemoteTerminalTransport()
+
+    monkeypatch.setattr(
+        RemoteConnectionService,
+        "resolve_connection_config",
+        fake_resolve_connection_config,
+    )
+    monkeypatch.setattr(
+        terminal_manager,
+        "_remote_terminal_factory",
+        fake_remote_factory,
+        raising=False,
+    )
+
+    connection_resp = await async_client.post(
+        "/api/v1/connections",
+        json={
+            "name": "Cluster route",
+            "host": "cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "agent",
+        },
+    )
+    connection_id = connection_resp.json()["data"]["id"]
+    project_resp = await async_client.post(
+        "/api/v1/projects",
+        json={
+            "name": "Resolved terminal",
+            "remote_connection_id": connection_id,
+            "remote_root_path": "/data/resolved",
+        },
+    )
+
+    response = await async_client.post(
+        "/api/v1/terminal/sessions",
+        json={"project_id": project_resp.json()["data"]["id"]},
+    )
+
+    assert response.status_code == 201
+    assert captured[0]["connection"] is resolved
 
 
 @pytest.mark.asyncio
