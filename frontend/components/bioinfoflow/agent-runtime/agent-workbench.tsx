@@ -1585,6 +1585,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         contextTitle={null}
         ariaLabel={t("composerPlaceholder")}
         placeholderSuggestions={composerPlaceholders}
+        animatePlaceholder={!hasConversation}
       />
     )
 

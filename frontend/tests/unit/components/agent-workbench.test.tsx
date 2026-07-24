@@ -1750,6 +1750,45 @@ describe("AgentWorkbench", () => {
     expect(screen.getByText("Working on it...")).toBeInTheDocument()
   })
 
+  it("keeps the placeholder static after the first request is submitted", () => {
+    vi.useFakeTimers()
+    const send = vi.fn(() => new Promise(() => {}))
+    configureModelForTest()
+    useAgentRuntimeMock.mockReturnValue({
+      state: {
+        session: null,
+        turns: [],
+        events: [],
+        timeline: [],
+        status: "loading",
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send,
+      interrupt: vi.fn(),
+      decideAction: vi.fn(),
+    })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByLabelText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Plan RNA-seq QC" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    const dockedInput = screen.getByLabelText("Message Bioinfoflow...")
+    fireEvent.blur(dockedInput)
+    expect(dockedInput).toHaveAttribute(
+      "placeholder",
+      "Check a workflow before running it",
+    )
+
+    act(() => vi.advanceTimersByTime(5_000))
+    expect(dockedInput).toHaveAttribute(
+      "placeholder",
+      "Check a workflow before running it",
+    )
+  })
+
   it("sends selected slash skills with the next turn", async () => {
     const send = vi.fn(() => new Promise(() => {}))
     setupRuntime({ send })
