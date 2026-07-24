@@ -5,7 +5,15 @@ import contextlib
 import shlex
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, require_admin
@@ -21,7 +29,6 @@ from app.schemas.remote_connection import (
 from app.services.remote_connection_service import (
     RemoteConnectionService,
     SshRemoteConnectionTester,
-    remote_connection_config_from_model,
 )
 from app.services.remote_execution import SshRemoteExecutor
 from app.utils.responses import error_response, success_response
@@ -197,7 +204,7 @@ async def browse_remote_directory(
     if not connection:
         return _not_found(request)
     result = await executor.run(
-        remote_connection_config_from_model(connection),
+        await service.resolve_connection_config(connection),
         _remote_directory_command(path, limit),
         timeout_seconds=10,
         output_limit=50000,
@@ -205,7 +212,9 @@ async def browse_remote_directory(
     if result.exit_code != 0:
         return error_response(
             code="REMOTE_DIRECTORY_UNAVAILABLE",
-            message=(result.stderr or result.stdout or "Remote directory is unavailable").strip(),
+            message=(
+                result.stderr or result.stdout or "Remote directory is unavailable"
+            ).strip(),
             status_code=400,
             request=request,
         )
@@ -228,7 +237,7 @@ def _remote_directory_command(path: str, limit: int) -> str:
         'if [ ! -d "$dir" ]; then '
         "printf '%s\\n' 'remote path is not a directory' >&2; exit 22; "
         "fi; "
-        "for child in \"$dir\"/* \"$dir\"/.[!.]* \"$dir\"/..?*; do "
+        'for child in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do '
         '[ -e "$child" ] || [ -L "$child" ] || continue; '
         "name=${child##*/}; "
         'if [ "$name" = . ] || [ "$name" = .. ]; then continue; fi; '
@@ -313,6 +322,7 @@ async def exec_connection_socket(
         return
 
     executor = SshRemoteExecutor()
+    connection_config = await service.resolve_connection_config(connection)
 
     try:
         first = await asyncio.wait_for(websocket.receive_json(), timeout=5)
@@ -361,7 +371,7 @@ async def exec_connection_socket(
 
     try:
         async for frame in executor.stream(
-            remote_connection_config_from_model(connection),
+            connection_config,
             command,
             timeout_seconds=timeout_seconds,
             output_limit=_EXEC_WS_MAX_OUTPUT_BYTES,

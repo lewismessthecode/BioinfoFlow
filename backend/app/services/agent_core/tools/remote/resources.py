@@ -26,7 +26,7 @@ from app.services.agent_core.permissions.command_risk import (
 )
 from app.services.agent_core.permissions.risk import RiskAssessment
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
-from app.services.remote_connection_service import remote_connection_config_from_model
+from app.services.remote_connection_service import RemoteConnectionService
 from app.services.remote_execution import (
     RemoteCommandResult,
     RemoteConnectionConfig,
@@ -109,15 +109,15 @@ class DatabaseRemoteConnectionResolver:
         if not allowed_ids:
             return []
 
-        repo = RemoteConnectionRepository(self.db)
+        service = RemoteConnectionService(self.db)
         connections: list[RemoteConnectionConfig] = []
         for connection_id in allowed_ids:
-            connection = await repo.get_for_workspace(
+            connection = await service.get_connection(
                 connection_id,
                 workspace_id=workspace_id,
             )
             if connection is not None:
-                connections.append(remote_connection_config_from_model(connection))
+                connections.append(await service.resolve_connection_config(connection))
         return connections
 
     async def get(
