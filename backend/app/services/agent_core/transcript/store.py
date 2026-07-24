@@ -9,6 +9,11 @@ from app.repositories.agent_core_repo import (
     AgentMessageRepository,
     ensure_clean_owned_publication_session,
 )
+from app.services.agent_temporal_context import (
+    latest_temporal_context,
+    message_metadata_with_temporal_context,
+    render_temporal_context,
+)
 from app.services.agent_core.ownership import TurnOwnershipLostError
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.transcript.messages import parts_to_text, text_part
@@ -320,8 +325,19 @@ class AgentTranscriptStore:
             return None
 
         insert_before = committed[preserve_start].ordering_index
-        summary_text = self._build_summary(summary_candidates)
+        temporal_context = latest_temporal_context(summary_candidates)
+        summary_text = self._build_summary(
+            summary_candidates,
+            temporal_context=temporal_context,
+        )
         superseded_message_ids = [str(message.id) for message in summary_candidates]
+        summary_metadata = message_metadata_with_temporal_context(
+            {
+                "kind": "compaction_summary",
+                "supersedes": superseded_message_ids,
+            },
+            temporal_context,
+        )
         if expected_owner_token is None:
             await self.messages.shift_ordering_indices(
                 session_id,
@@ -332,10 +348,7 @@ class AgentTranscriptStore:
                 turn_id=turn_id,
                 role="assistant",
                 text=summary_text,
-                metadata={
-                    "kind": "compaction_summary",
-                    "supersedes": superseded_message_ids,
-                },
+                metadata=summary_metadata,
                 ordering_index=insert_before,
             )
             await self.messages.mark_superseded(superseded_message_ids)
@@ -349,10 +362,7 @@ class AgentTranscriptStore:
                     "session_id": session_id,
                     "role": "assistant",
                     "content_parts": [text_part(summary_text)],
-                    "message_metadata": {
-                        "kind": "compaction_summary",
-                        "supersedes": superseded_message_ids,
-                    },
+                    "message_metadata": summary_metadata,
                     "status": "committed",
                     "ordering_index": insert_before,
                 },
@@ -366,8 +376,16 @@ class AgentTranscriptStore:
             "transcript_chars": transcript_chars,
         }
 
-    def _build_summary(self, messages: list[Any]) -> str:
-        lines = ["Conversation summary for continuity:"]
+    def _build_summary(
+        self,
+        messages: list[Any],
+        *,
+        temporal_context: dict[str, str] | None = None,
+    ) -> str:
+        lines: list[str] = []
+        if temporal_context is not None:
+            lines.extend([render_temporal_context(temporal_context), ""])
+        lines.append("Conversation summary for continuity:")
         for message in messages:
             text = parts_to_text(message.content_parts or [])
             if message.role == "tool":

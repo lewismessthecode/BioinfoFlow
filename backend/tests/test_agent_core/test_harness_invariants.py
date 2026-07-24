@@ -410,9 +410,16 @@ async def test_turn_writes_canonical_user_and_assistant_messages(db_session):
         ("user", "committed"),
         ("assistant", "committed"),
     ]
-    assert messages[0].content_parts == [
-        {"type": "text", "text": "Remember that we use hg38."}
-    ]
+    assert messages[0].content_parts[-1] == {
+        "type": "text",
+        "text": "Remember that we use hg38.",
+    }
+    assert messages[0].content_parts[0]["text"].startswith(
+        "<environment_context>\n"
+    )
+    assert (messages[0].message_metadata or {})["_temporal_context"] == (
+        turn.model_profile_snapshot["temporal_context"]
+    )
     assert messages[1].content_parts == [
         {"type": "text", "text": "Use hg38 for this project."}
     ]

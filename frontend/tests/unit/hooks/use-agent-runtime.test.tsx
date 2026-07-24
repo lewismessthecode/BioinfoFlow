@@ -348,7 +348,12 @@ describe("useAgentRuntime", () => {
     })
 
     expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
-      expect.objectContaining({ metadata }),
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          ...metadata,
+          client_timezone: expect.any(String),
+        }),
+      }),
     )
   })
 
@@ -388,6 +393,29 @@ describe("useAgentRuntime", () => {
           type: "remote_ssh",
           remote_connection_id: "connection-1",
           connection_id: "connection-1",
+        }),
+      }),
+    )
+  })
+
+  it("sends the browser time zone with every turn", async () => {
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+
+    await act(async () => {
+      await result.current.send("What was published this month?")
+    })
+
+    expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          client_timezone: expect.any(String),
         }),
       }),
     )

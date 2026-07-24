@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,7 @@ from app.services.agent_core.context.instructions import (
     _target_metadata,
 )
 import app.services.agent_core.context as context_module
+import app.services.agent_core.service as service_module
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -234,7 +236,170 @@ async def test_context_assembler_injects_project_instructions_before_environment
     assert "## Environment" in system_content
     assert "## Project instructions" in system_content
     assert "assembler root instruction" in system_content
-    assert messages[-1]["content"] == "Use the repo rules."
+    assert messages[-1]["content"].endswith("\n\nUse the repo rules.")
+
+
+@pytest.mark.asyncio
+async def test_turn_injects_date_context_once_and_keeps_system_prompt_stable(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(
+        service_module,
+        "_utc_now",
+        lambda: datetime(2026, 7, 24, 2, 0, 0, tzinfo=timezone.utc),
+        raising=False,
+    )
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        metadata={
+            "temporal_context": {
+                "current_date": "2026-07-24",
+                "timezone": "Asia/Shanghai",
+            }
+        },
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Find papers published this month.",
+        metadata={"client_timezone": "Asia/Shanghai"},
+    )
+
+    messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=turn,
+    )
+    system_content = messages[0]["content"]
+    first_user_content = messages[-1]["content"]
+
+    assert "current_date" not in system_content
+    assert "Current date and time" not in system_content
+    assert first_user_content == (
+        "<environment_context>\n"
+        "  <current_date>2026-07-24</current_date>\n"
+        "  <timezone>Asia/Shanghai</timezone>\n"
+        "</environment_context>\n\n"
+        "Find papers published this month."
+    )
+    assert turn.model_profile_snapshot["temporal_context"] == {
+        "current_date": "2026-07-24",
+        "timezone": "Asia/Shanghai",
+    }
+
+    monkeypatch.setattr(
+        service_module,
+        "_utc_now",
+        lambda: datetime(2026, 7, 24, 3, 45, 12, tzinfo=timezone.utc),
+        raising=False,
+    )
+    repeated_messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=turn,
+    )
+
+    assert repeated_messages == messages
+
+
+@pytest.mark.asyncio
+async def test_turn_only_updates_temporal_context_when_date_changes(
+    db_session,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    now = datetime(2026, 7, 24, 2, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(service_module, "_utc_now", lambda: now, raising=False)
+    first_turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="First question.",
+        metadata={"client_timezone": "Asia/Shanghai"},
+    )
+    await service.turn_repo.update_all(first_turn, status="completed")
+
+    now = datetime(2026, 7, 24, 15, 0, 0, tzinfo=timezone.utc)
+    second_turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Same-day follow-up.",
+        metadata={"client_timezone": "Asia/Shanghai"},
+    )
+    same_day_messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=second_turn,
+    )
+
+    assert same_day_messages[-1]["content"] == "Same-day follow-up."
+    assert (
+        sum(
+            "<environment_context>" in message.get("content", "")
+            for message in same_day_messages
+        )
+        == 1
+    )
+    await service.turn_repo.update_all(second_turn, status="completed")
+
+    now = datetime(2026, 7, 24, 16, 1, 0, tzinfo=timezone.utc)
+    third_turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Next-day follow-up.",
+        metadata={"client_timezone": "Asia/Shanghai"},
+    )
+    next_day_messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=third_turn,
+    )
+
+    assert next_day_messages[-1]["content"] == (
+        "<environment_context>\n"
+        "  <current_date>2026-07-25</current_date>\n"
+        "  <timezone>Asia/Shanghai</timezone>\n"
+        "</environment_context>\n\n"
+        "Next-day follow-up."
+    )
+    await service.turn_repo.update_all(third_turn, status="completed")
+
+    now = datetime(2026, 7, 25, 1, 0, 0, tzinfo=timezone.utc)
+    fourth_turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="New-time-zone follow-up.",
+        metadata={"client_timezone": "Asia/Tokyo"},
+    )
+    new_time_zone_messages = await AgentContextAssembler(
+        db_session
+    ).provider_messages(
+        agent_session=session,
+        turn=fourth_turn,
+    )
+
+    assert new_time_zone_messages[-1]["content"] == (
+        "<environment_context>\n"
+        "  <current_date>2026-07-25</current_date>\n"
+        "  <timezone>Asia/Tokyo</timezone>\n"
+        "</environment_context>\n\n"
+        "New-time-zone follow-up."
+    )
 
 
 @pytest.mark.asyncio

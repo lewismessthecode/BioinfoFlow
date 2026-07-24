@@ -589,7 +589,17 @@ async def test_normal_turn_runs_through_injected_model_gateway(db_session) -> No
     assert invocation.stream is True
     assert invocation.max_output_tokens == 256
     assert invocation.instructions
-    assert invocation.input_items == (TextPart(text="Summarize this workflow."),)
+    assert invocation.input_items == (
+        TextPart(
+            text=(
+                "<environment_context>\n"
+                f"  <current_date>{turn.model_profile_snapshot['temporal_context']['current_date']}</current_date>\n"
+                "  <timezone>Etc/UTC</timezone>\n"
+                "</environment_context>\n\n"
+                "Summarize this workflow."
+            )
+        ),
+    )
 
     messages = await AgentMessageRepository(db_session).list_for_session(
         str(session.id)

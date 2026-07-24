@@ -46,6 +46,12 @@ from app.services.agent_core.runner import (
 )
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.context import default_system_prompt_snapshot
+from app.services.agent_temporal_context import (
+    latest_temporal_context,
+    message_metadata_with_temporal_context,
+    render_temporal_context,
+    resolve_temporal_context,
+)
 from app.services.agent_core.sandbox import FilesystemPolicy
 from app.services.agent_core.skills import (
     ActiveSkillResolutionError,
@@ -69,6 +75,10 @@ from app.utils.exceptions import (
 
 
 _PROMPT_SNAPSHOT_UNSET = object()
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class AgentCoreService:
@@ -521,6 +531,22 @@ class AgentCoreService:
             input_text=input_text,
             input_parts=input_parts,
         )
+        transcript_messages = await self.transcript.list_messages(str(session.id))
+        previous_temporal_context = latest_temporal_context(transcript_messages)
+        temporal_context = resolve_temporal_context(
+            turn_metadata=turn_metadata,
+            previous_context=previous_temporal_context,
+            session_metadata=getattr(session, "session_metadata", None),
+            now=_utc_now(),
+        )
+        temporal_context_update = (
+            temporal_context if previous_temporal_context != temporal_context else None
+        )
+        if temporal_context_update is not None:
+            transcript_parts.insert(
+                0,
+                text_part(f"{render_temporal_context(temporal_context)}\n"),
+            )
         if not session.title and not await self.turn_repo.list_for_session(
             str(session.id)
         ):
@@ -533,7 +559,10 @@ class AgentCoreService:
             session_updates=session_updates,
             increment_policy_version=increment_policy_version,
             user_parts=transcript_parts,
-            user_metadata={"turn_id": turn_id},
+            user_metadata=message_metadata_with_temporal_context(
+                {"turn_id": turn_id},
+                temporal_context_update,
+            ),
             created_event_type=AgentEventType.TURN_CREATED,
             created_event_payload={"input_text": input_text},
             project_id=str(session.project_id) if session.project_id else None,
@@ -546,6 +575,7 @@ class AgentCoreService:
                 "requested_model_profile_id": model_profile_id,
                 "requested_model_selection": normalized_model_selection,
                 "metadata": turn_metadata,
+                "temporal_context": temporal_context,
             },
             budget_snapshot={"max_iterations": 0, "used_iterations": 0},
             loop_state={"state": "queued"},
