@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
 
 import asyncssh
 import pytest
@@ -10,6 +11,7 @@ from app.services.remote_execution import (
     RemoteConnectionConfig,
     SshRemoteExecutor,
     _TofuHostKeyClient,
+    build_inner_ssh_command,
 )
 from app.utils.exceptions import BadRequestError
 
@@ -312,6 +314,81 @@ async def test_ssh_executor_stream_routes_through_jump_and_preserves_frames():
     ]
     assert client.commands == [
         "ssh -o BatchMode=yes -o ConnectTimeout=5 -- phoenix@10.32.5.1 hostname"
+    ]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf hello world",
+        "printf '%s' \"quoted value\"",
+        "printf safe; touch /tmp/must-not-run-locally",
+        "printf $(touch /tmp/must-not-run-locally)",
+        "printf '$(touch /tmp/must-not-run-locally)'",
+    ],
+)
+def test_inner_ssh_command_round_trips_adversarial_remote_commands(command):
+    connection = RemoteConnectionConfig(
+        id="target-1",
+        name="Dash target",
+        host="-internal.example.org",
+        username="-phoenix",
+        port=2222,
+    )
+
+    inner_command = build_inner_ssh_command(
+        connection,
+        command,
+        connect_timeout_seconds=5,
+    )
+
+    assert shlex.split(inner_command) == [
+        "ssh",
+        "-p",
+        "2222",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=5",
+        "--",
+        "-phoenix@-internal.example.org",
+        command,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ssh_executor_jump_stream_preserves_truncation_frame():
+    client = _FakeAsyncSshClient(_FakeAsyncSshResult(stdout="abcdef"))
+    target = RemoteConnectionConfig(
+        id="target-1",
+        name="Phoenix",
+        host="10.32.5.1",
+        username="phoenix",
+        jump_connection=RemoteConnectionConfig(
+            id="jump-1",
+            name="Bastion",
+            host="bastion.example.org",
+            password="jump-secret",
+        ),
+    )
+    executor = SshRemoteExecutor(
+        async_executor=AsyncSshRemoteExecutor(connect_factory=lambda *_a, **_kw: client)
+    )
+
+    frames = [
+        frame
+        async for frame in executor.stream(
+            target,
+            "hostname",
+            timeout_seconds=5,
+            output_limit=3,
+        )
+    ]
+
+    assert [(frame.type, frame.data) for frame in frames] == [
+        ("stdout", "abc"),
+        ("truncated", "remote output truncated after 3 bytes"),
+        ("exit", None),
     ]
 
 
