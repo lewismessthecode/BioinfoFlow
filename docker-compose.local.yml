@@ -13,6 +13,8 @@ services:
       CORS_ORIGINS: '["http://localhost:${FRONTEND_PORT:-3000}","http://127.0.0.1:${FRONTEND_PORT:-3000}"]'
       TRUSTED_HOSTS: '["localhost","127.0.0.1"]'
       DOCKER_SOCKET: unix:///var/run/docker.sock
+      BIOINFOFLOW_GPU_MODE: ${BIOINFOFLOW_GPU_MODE:-auto}
+      BIOINFOFLOW_GPU_DEVICES: ${BIOINFOFLOW_GPU_DEVICES:-all}
     volumes:
       - type: bind
         source: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/skills

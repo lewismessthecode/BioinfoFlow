@@ -112,7 +112,8 @@ def test_prepare_mounts_deduplicates_targets(tmp_path, monkeypatch):
     assert len(targets) == 1
 
 
-def test_misc_config_adds_nvidia_runtime_env_and_gpu_reservation(tmp_path):
+def test_misc_config_adds_nvidia_runtime_env_and_gpu_reservation(tmp_path, monkeypatch):
+    monkeypatch.setattr(backend_module, "selected_gpu_visible_devices", lambda: "all")
     container = _make_container(tmp_path)
     container.runtime_values = {
         "gpu": True,
@@ -125,11 +126,29 @@ def test_misc_config_adds_nvidia_runtime_env_and_gpu_reservation(tmp_path):
 
     assert container.runtime_values["env"]["EXISTING"] == "1"
     assert container.runtime_values["env"]["NVIDIA_VISIBLE_DEVICES"] == "all"
-    assert container.runtime_values["env"]["NVIDIA_DRIVER_CAPABILITIES"] == "compute,utility"
+    assert (
+        container.runtime_values["env"]["NVIDIA_DRIVER_CAPABILITIES"]
+        == "compute,utility"
+    )
     assert resources is not None
     assert resources["Reservations"]["GenericResources"] == [
         {"DiscreteResourceSpec": {"Kind": "NVIDIA-GPU", "Value": 1}}
     ]
+
+
+def test_misc_config_uses_selected_gpu_uuid_pool(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        backend_module,
+        "selected_gpu_visible_devices",
+        lambda: "GPU-a,GPU-b",
+        raising=False,
+    )
+    container = _make_container(tmp_path)
+    container.runtime_values = {"gpu": True, "env": {}}
+
+    container.misc_config(logging.getLogger(__name__))
+
+    assert container.runtime_values["env"]["NVIDIA_VISIBLE_DEVICES"] == "GPU-a,GPU-b"
 
 
 # ---------------------------------------------------------------------------

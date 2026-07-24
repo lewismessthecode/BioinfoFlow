@@ -91,6 +91,10 @@ class Settings(BaseSettings):
 
     # Docker
     docker_socket: str = "unix:///var/run/docker.sock"
+    bioinfoflow_gpu_mode: str = "auto"
+    bioinfoflow_gpu_devices: str = "all"
+    gpu_probe_timeout_seconds: float = 10.0
+    gpu_inventory_cache_seconds: float = 30.0
 
     # Agent / LLM
     agent_sandbox_enabled: bool = False  # Enable OS-level sandboxing for code execution

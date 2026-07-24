@@ -25,6 +25,16 @@ waits for the UI and API health checks. The `latest/download` URL resolves to a
 tested numeric release and never installs the `main` or `sha-*` development
 images.
 
+On Linux NVIDIA hosts, the installer defaults to automatic GPU discovery. To
+restrict a multi-GPU host to specific UUIDs, pass the policy to the `sh` process:
+
+```bash
+curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | BIOINFOFLOW_GPU_MODE=manual BIOINFOFLOW_GPU_DEVICES=GPU-aaaaaaaa-...,GPU-bbbbbbbb-... sh
+```
+
+As with custom ports, assignments placed before `curl` do not reach the
+installer.
+
 If a default port is occupied, the installer prints the listening process and
 exits without stopping it. Choose two different free ports and retry:
 
@@ -157,6 +167,43 @@ Start the stack:
 ```bash
 docker compose up -d --build
 ```
+
+### NVIDIA GPU discovery
+
+No separate Compose file or GPU-specific image is required. With the default
+settings, Bioinfoflow uses Docker to probe the host automatically while keeping
+the backend container itself free of permanent `gpus: all` access:
+
+```env
+BIOINFOFLOW_GPU_MODE=auto
+BIOINFOFLOW_GPU_DEVICES=all
+```
+
+The Linux host must have a working NVIDIA driver and NVIDIA Container Toolkit.
+Verify those layers independently:
+
+```bash
+nvidia-smi -L
+docker run --rm --gpus all ubuntu:24.04 nvidia-smi -L
+```
+
+For a subset of a multi-GPU host, prefer UUIDs from `nvidia-smi -L`:
+
+```env
+BIOINFOFLOW_GPU_MODE=manual
+BIOINFOFLOW_GPU_DEVICES=GPU-aaaaaaaa-...,GPU-bbbbbbbb-...
+```
+
+After changing the policy:
+
+```bash
+docker compose up -d --build --force-recreate backend
+```
+
+Use `BIOINFOFLOW_GPU_MODE=disabled` to skip probing. Manual selections that do
+not match detected devices expose zero GPU capacity; they never silently fall
+back to every card. Apple Silicon may be shown as local hardware on macOS, but
+it is not advertised as NVIDIA workflow capacity.
 
 Open:
 
