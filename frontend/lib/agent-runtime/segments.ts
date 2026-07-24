@@ -626,8 +626,10 @@ function segmentPriority(kind: AgentRuntimeTranscriptSegment["kind"]) {
       return 2
     case "decision":
       return 3
-    case "turn_error":
+    case "user_steer":
       return 4
+    case "turn_error":
+      return 5
   }
 }
 

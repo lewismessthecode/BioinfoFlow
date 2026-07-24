@@ -148,6 +148,7 @@ type PendingSubmission = {
   optimisticTurn: AgentRuntimeTurn
   sessionId: string
   steerSealed?: boolean
+  optimisticSteerEventId?: string
 }
 
 type WorkflowMentionLoadState = {
@@ -322,8 +323,11 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     >([])
     const [turnPolicy] = useState<AgentTurnPolicy>(readAgentTurnPolicy)
     const [queuedSubmissions, setQueuedSubmissions] = useState<PendingSubmission[]>([])
-    const [pendingInterruptSubmission, setPendingInterruptSubmission] =
-      useState<PendingSubmission | null>(null)
+    const [pendingSteerSubmissions, setPendingSteerSubmissions] = useState<
+      PendingSubmission[]
+    >([])
+    const [pendingSteerInFlight, setPendingSteerInFlight] = useState(false)
+    const pendingSteerGenerationRef = useRef(0)
     const [pendingPermissionMode, setPendingPermissionMode] =
       useState<AgentPermissionMode | null>(null)
     const [decisionFocusAnnouncement, setDecisionFocusAnnouncement] = useState({
@@ -602,8 +606,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const workflowsLoadFailedLabel = t("workflows.loadFailed")
 
     const clearLocalPendingSubmissions = useCallback(() => {
+      pendingSteerGenerationRef.current += 1
       setQueuedSubmissions([])
-      setPendingInterruptSubmission(null)
+      setPendingSteerSubmissions([])
+      setPendingSteerInFlight(false)
       setOptimisticTurns((current) =>
         current.filter((turn) => !isLocalPendingSubmissionTurn(turn)),
       )
@@ -621,6 +627,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         focusInput: () => textareaRef.current?.focus(),
         stop: stopCurrentTurn,
         newConversation: () => {
+          pendingSteerGenerationRef.current += 1
           setActiveSessionId(null)
           setInput("")
           setContextAttachments([])
@@ -633,7 +640,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setOptimisticSteerEvents([])
           setInFlightOptimisticTurnIds([])
           setQueuedSubmissions([])
-          setPendingInterruptSubmission(null)
+          setPendingSteerSubmissions([])
+          setPendingSteerInFlight(false)
           setEnvironmentOpen(false)
           setSidecarOpen(false)
           setActiveSidecarTab("preview")
@@ -724,14 +732,18 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 : submission,
             ),
         )
-        setPendingInterruptSubmission((current) => {
-          if (!current) return current
-          if (current.sessionId === submissionSessionId) return current
-          if (current.sessionId === "pending-session") {
-            return reassignPendingSubmission(current, submissionSessionId)
-          }
-          return null
-        })
+        setPendingSteerSubmissions((current) =>
+          current
+            .filter((submission) =>
+              submission.sessionId === submissionSessionId ||
+              submission.sessionId === "pending-session",
+            )
+            .map((submission) =>
+              submission.sessionId === "pending-session"
+                ? reassignPendingSubmission(submission, submissionSessionId)
+                : submission,
+            ),
+        )
         setOptimisticTurns((current) =>
           current
             .filter((turn) => {
@@ -947,22 +959,20 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             localPendingInterrupt: true,
           })
           setHasSubmittedDraft(true)
-          setOptimisticTurns((current) => [
-            ...current.filter(
-              (turn) => turn.loop_state?.local_pending_interrupt !== true,
-            ),
-            nextOptimisticTurn,
+          setOptimisticTurns((current) => [...current, nextOptimisticTurn])
+          setPendingSteerSubmissions((current) => [
+            ...current,
+            {
+              text: trimmedText,
+              inputParts,
+              inputDisplayParts,
+              activeSkillNames: activeSkillNamesSnapshot,
+              modelSelection,
+              executionScope,
+              optimisticTurn: nextOptimisticTurn,
+              sessionId: submissionSessionId,
+            },
           ])
-          setPendingInterruptSubmission({
-            text: trimmedText,
-            inputParts,
-            inputDisplayParts,
-            activeSkillNames: activeSkillNamesSnapshot,
-            modelSelection,
-            executionScope,
-            optimisticTurn: nextOptimisticTurn,
-            sessionId: submissionSessionId,
-          })
           return
         }
 
@@ -972,16 +982,12 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           inputDisplayParts,
         )
         const optimisticSteerId = `local-steer-${crypto.randomUUID()}`
-        const maxSeq = state.events.reduce(
-          (current, event) => Math.max(current, event.seq),
-          0,
-        )
         const createdAt = new Date().toISOString()
         const optimisticEvent: AgentRuntimeEvent = {
           id: optimisticSteerId,
           session_id: latestActiveBackendTurn!.session_id,
           turn_id: latestActiveBackendTurn!.id,
-          seq: maxSeq + 1,
+          seq: 0,
           type: "turn.steer.received",
           payload: {
             steer_id: optimisticSteerId,
@@ -995,13 +1001,21 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           updated_at: createdAt,
         }
         setHasSubmittedDraft(true)
-        setOptimisticSteerEvents((current) => [...current, optimisticEvent])
+        setOptimisticSteerEvents((current) => {
+          const maxSeq = [...state.events, ...current].reduce(
+            (highest, event) => Math.max(highest, event.seq),
+            0,
+          )
+          return [...current, { ...optimisticEvent, seq: maxSeq + 1 }]
+        })
+        const steerGeneration = pendingSteerGenerationRef.current
         void (async () => {
           const outcome = await steer(trimmedText, {
             inputParts,
             activeSkillNames: activeSkillNamesSnapshot,
             metadata,
           })
+          if (pendingSteerGenerationRef.current !== steerGeneration) return
           if (outcome?.kind === "accepted") {
             setOptimisticSteerEvents((current) =>
               current.filter((event) => event.id !== optimisticSteerId),
@@ -1009,24 +1023,28 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             return
           }
           if (outcome?.kind === "sealed") {
-            setPendingInterruptSubmission({
-              text: trimmedText,
-              inputParts,
-              inputDisplayParts,
-              activeSkillNames: activeSkillNamesSnapshot,
-              modelSelection,
-              executionScope,
-              optimisticTurn: createOptimisticTurn({
+            setPendingSteerSubmissions((current) => [
+              ...current,
+              {
                 text: trimmedText,
                 inputParts,
                 inputDisplayParts,
                 activeSkillNames: activeSkillNamesSnapshot,
+                modelSelection,
+                executionScope,
+                optimisticTurn: createOptimisticTurn({
+                  text: trimmedText,
+                  inputParts,
+                  inputDisplayParts,
+                  activeSkillNames: activeSkillNamesSnapshot,
+                  sessionId: submissionSessionId,
+                  projectId,
+                }),
                 sessionId: submissionSessionId,
-                projectId,
-              }),
-              sessionId: submissionSessionId,
-              steerSealed: true,
-            })
+                steerSealed: true,
+                optimisticSteerEventId: optimisticSteerId,
+              },
+            ])
             return
           }
           setOptimisticSteerEvents((current) =>
@@ -1109,63 +1127,89 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     }, [hasActiveTurn, queuedSubmissions, sendTurn, submissionSessionId])
 
     useEffect(() => {
-      if (!pendingInterruptSubmission) return
-      const next = pendingInterruptSubmission
+      if (!pendingSteerSubmissions.length || pendingSteerInFlight) return
+      const next = pendingSteerSubmissions[0]
       if (next.sessionId !== submissionSessionId) {
         const timer = window.setTimeout(() => {
-          setPendingInterruptSubmission((current) =>
-            current === next ? null : current,
+          setPendingSteerSubmissions((current) =>
+            current[0] === next ? current.slice(1) : current,
           )
           setOptimisticTurns((current) =>
             current.filter((turn) => turn.id !== next.optimisticTurn.id),
           )
+          if (next.optimisticSteerEventId) {
+            setOptimisticSteerEvents((current) =>
+              current.filter((event) => event.id !== next.optimisticSteerEventId),
+            )
+          }
         }, 0)
         return () => window.clearTimeout(timer)
       }
       if (next.steerSealed && hasActiveTurn) return
       if (hasActiveTurn && !latestActiveBackendTurn) return
       const timer = window.setTimeout(() => {
-        setPendingInterruptSubmission((current) => (current === next ? null : current))
-        if (latestActiveBackendTurn) {
-          void (async () => {
-            const outcome = await steer(next.text, {
-              inputParts: next.inputParts,
-              activeSkillNames: next.activeSkillNames,
-              metadata: inputDisplayMetadataFromInputParts(
-                next.inputParts,
-                next.activeSkillNames,
-                next.inputDisplayParts,
-              ),
-            })
-            if (outcome?.kind === "sealed") {
-              setPendingInterruptSubmission({ ...next, steerSealed: true })
+        setPendingSteerInFlight(true)
+        const steerGeneration = pendingSteerGenerationRef.current
+        void (async () => {
+          try {
+            if (latestActiveBackendTurn) {
+              const outcome = await steer(next.text, {
+                inputParts: next.inputParts,
+                activeSkillNames: next.activeSkillNames,
+                metadata: inputDisplayMetadataFromInputParts(
+                  next.inputParts,
+                  next.activeSkillNames,
+                  next.inputDisplayParts,
+                ),
+              })
+              if (pendingSteerGenerationRef.current !== steerGeneration) return
+              if (outcome?.kind === "sealed") {
+                setPendingSteerSubmissions((current) =>
+                  current[0] === next
+                    ? [{ ...next, steerSealed: true }, ...current.slice(1)]
+                    : current,
+                )
+                return
+              }
+              setPendingSteerSubmissions((current) =>
+                current[0] === next ? current.slice(1) : current,
+              )
+              setOptimisticTurns((current) =>
+                current.filter((turn) => turn.id !== next.optimisticTurn.id),
+              )
+              if (!outcome) {
+                setInput((current) => current || next.text)
+              }
               return
             }
-            setOptimisticTurns((current) =>
-              current.filter((turn) => turn.id !== next.optimisticTurn.id),
+            setPendingSteerSubmissions((current) =>
+              current[0] === next ? current.slice(1) : current,
             )
-            if (!outcome) {
-              setInput((current) => current || next.text)
+            if (next.optimisticSteerEventId) {
+              setOptimisticSteerEvents((current) =>
+                current.filter((event) => event.id !== next.optimisticSteerEventId),
+              )
             }
-          })()
-          return
-        }
-        setOptimisticSteerEvents([])
-        sendTurn(
-          next.text,
-          next.inputParts,
-          next.activeSkillNames,
-          next.inputDisplayParts,
-          next.modelSelection,
-          next.executionScope,
-          next.optimisticTurn,
-        )
+            sendTurn(
+              next.text,
+              next.inputParts,
+              next.activeSkillNames,
+              next.inputDisplayParts,
+              next.modelSelection,
+              next.executionScope,
+              next.optimisticTurn,
+            )
+          } finally {
+            setPendingSteerInFlight(false)
+          }
+        })()
       }, 0)
       return () => window.clearTimeout(timer)
     }, [
       hasActiveTurn,
       latestActiveBackendTurn,
-      pendingInterruptSubmission,
+      pendingSteerInFlight,
+      pendingSteerSubmissions,
       sendTurn,
       steer,
       submissionSessionId,

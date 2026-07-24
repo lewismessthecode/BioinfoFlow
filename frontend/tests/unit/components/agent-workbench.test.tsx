@@ -2214,6 +2214,49 @@ describe("AgentWorkbench", () => {
     expect(screen.getByText("Switch to Deaf_20")).toBeInTheDocument()
   })
 
+  it("keeps rapid optimistic steering messages in submission order", async () => {
+    writeAgentTurnPolicy("steer")
+    configureModelForTest()
+    vi.spyOn(crypto, "randomUUID")
+      .mockReturnValueOnce("ffffffff-ffff-4fff-8fff-ffffffffffff")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000000")
+    const steer = vi.fn(() => new Promise(() => {}))
+    useAgentRuntimeMock.mockReturnValue({
+      state: {
+        session: baseSession,
+        turns: [{ ...baseTurn, id: "running-turn", status: "running" }],
+        events: [],
+        timeline: buildAgentRuntimeTimeline(
+          [{ ...baseTurn, id: "running-turn", status: "running" }],
+          [],
+        ),
+        status: "running",
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send: vi.fn(),
+      steer,
+      interrupt: vi.fn(),
+      decideAction: vi.fn(),
+    })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByLabelText("Message Bioinfoflow...")
+    for (const text of ["First guidance", "Second guidance"]) {
+      fireEvent.change(input, { target: { value: text } })
+      fireEvent.keyDown(input, { key: "Enter" })
+    }
+
+    await waitFor(() => expect(steer).toHaveBeenCalledTimes(2))
+    expect(
+      screen.getAllByTestId("agent-user-steer").map((item) => item.textContent),
+    ).toEqual([
+      expect.stringContaining("First guidance"),
+      expect.stringContaining("Second guidance"),
+    ])
+  })
+
   it("waits for an optimistic in-flight turn to become active before steering", async () => {
     writeAgentTurnPolicy("steer")
     configureModelForTest()
@@ -2285,6 +2328,60 @@ describe("AgentWorkbench", () => {
     expect(calls).toEqual(["send:First turn", "steer:Second turn"])
   })
 
+  it("steers multiple drafts in FIFO order after an optimistic turn becomes active", async () => {
+    writeAgentTurnPolicy("steer")
+    configureModelForTest()
+    const send = vi.fn(() => new Promise(() => {}))
+    const steer = vi.fn().mockResolvedValue({
+      kind: "accepted" as const,
+      result: { steer_id: "steer-1", turn_id: "running-turn", delivery: "pending" as const },
+    })
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [] as AgentRuntimeTurn[],
+        events: [] as AgentRuntimeEvent[],
+        timeline: [] as ReturnType<typeof buildAgentRuntimeTimeline>,
+        status: "idle" as "idle" | "loading" | "running" | "error",
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send,
+      steer,
+      interrupt: vi.fn(),
+      decideAction: vi.fn(),
+    }
+    useAgentRuntimeMock.mockReturnValue(runtime)
+    const view = render(<AgentWorkbench />)
+
+    const input = screen.getByLabelText("Message Bioinfoflow...")
+    for (const text of ["First turn", "Second guidance", "Third guidance"]) {
+      fireEvent.change(input, { target: { value: text } })
+      fireEvent.keyDown(input, { key: "Enter" })
+    }
+
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(steer).not.toHaveBeenCalled()
+
+    runtime.state = {
+      ...runtime.state,
+      turns: [{ ...baseTurn, id: "running-turn", status: "running" }],
+      timeline: buildAgentRuntimeTimeline(
+        [{ ...baseTurn, id: "running-turn", status: "running" }],
+        [],
+      ),
+      status: "running",
+    }
+    view.rerender(<AgentWorkbench />)
+
+    await waitFor(() => expect(steer).toHaveBeenCalledTimes(2))
+    expect(steer.mock.calls.map(([text]) => text)).toEqual([
+      "Second guidance",
+      "Third guidance",
+    ])
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
   it("falls back to one new turn after a steer races with turn sealing", async () => {
     writeAgentTurnPolicy("steer")
     configureModelForTest()
@@ -2332,6 +2429,54 @@ describe("AgentWorkbench", () => {
     )
     expect(send).toHaveBeenCalledTimes(1)
     expect(steer).toHaveBeenCalledTimes(1)
+  })
+
+  it("preserves multiple sealed steering drafts as FIFO fallback turns", async () => {
+    writeAgentTurnPolicy("steer")
+    configureModelForTest()
+    const send = vi.fn().mockResolvedValue(undefined)
+    const steer = vi.fn().mockResolvedValue({ kind: "sealed" as const })
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [{ ...baseTurn, id: "running-turn", status: "running" }],
+        events: [] as AgentRuntimeEvent[],
+        timeline: buildAgentRuntimeTimeline(
+          [{ ...baseTurn, id: "running-turn", status: "running" }],
+          [],
+        ),
+        status: "running" as "idle" | "loading" | "running" | "error",
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send,
+      steer,
+      interrupt: vi.fn(),
+      decideAction: vi.fn(),
+    }
+    useAgentRuntimeMock.mockReturnValue(runtime)
+    const view = render(<AgentWorkbench />)
+
+    const input = screen.getByLabelText("Message Bioinfoflow...")
+    for (const text of ["First late note", "Second late note"]) {
+      fireEvent.change(input, { target: { value: text } })
+      fireEvent.keyDown(input, { key: "Enter" })
+    }
+
+    await waitFor(() => expect(steer).toHaveBeenCalledTimes(2))
+    runtime.state = {
+      ...runtime.state,
+      turns: [],
+      timeline: [],
+      status: "idle",
+    }
+    view.rerender(<AgentWorkbench />)
+
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+    expect(send.mock.calls.map(([text]) => text)).toEqual([
+      "First late note",
+      "Second late note",
+    ])
   })
 
   it("restores the draft when steering fails", async () => {
@@ -2578,6 +2723,63 @@ describe("AgentWorkbench", () => {
     expect(interrupt).toHaveBeenCalledTimes(1)
     expect(send).not.toHaveBeenCalled()
     expect(screen.queryByText("Do not auto-send")).not.toBeInTheDocument()
+  })
+
+  it("does not revive steering guidance when a sealed response arrives after stop", async () => {
+    writeAgentTurnPolicy("steer")
+    configureModelForTest()
+    let resolveSteer: ((value: { kind: "sealed" }) => void) | undefined
+    const steer = vi.fn(
+      () =>
+        new Promise<{ kind: "sealed" }>((resolve) => {
+          resolveSteer = resolve
+        }),
+    )
+    const send = vi.fn().mockResolvedValue(undefined)
+    const interrupt = vi.fn().mockResolvedValue(null)
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [{ ...baseTurn, id: "running-turn", status: "running" }],
+        events: [] as AgentRuntimeEvent[],
+        timeline: buildAgentRuntimeTimeline(
+          [{ ...baseTurn, id: "running-turn", status: "running" }],
+          [],
+        ),
+        status: "running" as "idle" | "loading" | "running" | "error",
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send,
+      steer,
+      interrupt,
+      decideAction: vi.fn(),
+    }
+    useAgentRuntimeMock.mockReturnValue(runtime)
+    const workbenchRef = { current: null as React.ElementRef<typeof AgentWorkbench> | null }
+    const view = render(<AgentWorkbench ref={workbenchRef} />)
+
+    const input = screen.getByLabelText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Discard this guidance" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+    await waitFor(() => expect(steer).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      workbenchRef.current?.stop()
+      resolveSteer?.({ kind: "sealed" })
+      await Promise.resolve()
+    })
+    runtime.state = {
+      ...runtime.state,
+      turns: [],
+      timeline: [],
+      status: "idle",
+    }
+    view.rerender(<AgentWorkbench ref={workbenchRef} />)
+
+    await waitFor(() => expect(interrupt).toHaveBeenCalledTimes(1))
+    expect(send).not.toHaveBeenCalled()
+    expect(screen.queryByText("Discard this guidance")).not.toBeInTheDocument()
   })
 
   it("keeps multiple queued drafts in FIFO order", async () => {

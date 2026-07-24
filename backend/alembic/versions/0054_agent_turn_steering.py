@@ -19,16 +19,26 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "agent_turns",
-        sa.Column(
-            "accepts_steer",
-            sa.Boolean(),
-            nullable=False,
-            server_default=sa.true(),
-        ),
-    )
+    inspector = sa.inspect(op.get_bind())
+    if not inspector.has_table("agent_turns"):
+        return
+    columns = {column["name"] for column in inspector.get_columns("agent_turns")}
+    if "accepts_steer" not in columns:
+        op.add_column(
+            "agent_turns",
+            sa.Column(
+                "accepts_steer",
+                sa.Boolean(),
+                nullable=False,
+                server_default=sa.true(),
+            ),
+        )
 
 
 def downgrade() -> None:
-    op.drop_column("agent_turns", "accepts_steer")
+    inspector = sa.inspect(op.get_bind())
+    if not inspector.has_table("agent_turns"):
+        return
+    columns = {column["name"] for column in inspector.get_columns("agent_turns")}
+    if "accepts_steer" in columns:
+        op.drop_column("agent_turns", "accepts_steer")
