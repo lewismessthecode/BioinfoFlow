@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import shlex
 from pathlib import Path
 
 import pytest
 
 from app.services.remote_execution import RemoteConnectionConfig
-from app.services.terminal_service import TerminalSessionManager
+from app.services.terminal_service import (
+    DefaultRemoteTerminalFactory,
+    TerminalSessionManager,
+)
+from app.utils.exceptions import BadRequestError
 
 
 async def _next_message(
@@ -56,6 +61,194 @@ class FakeRemoteTerminalTransport:
 class HangingTerminateRemoteTerminalTransport(FakeRemoteTerminalTransport):
     async def terminate(self) -> None:
         await asyncio.Event().wait()
+
+
+class _FakeAsyncSshProcess:
+    def __init__(self) -> None:
+        self.stdout = asyncio.StreamReader()
+        self.stdin = None
+
+
+class _FakeAsyncSshClient:
+    def __init__(self) -> None:
+        self.created: list[tuple[str, dict]] = []
+
+    async def create_process(self, command: str, **kwargs):
+        self.created.append((command, kwargs))
+        return _FakeAsyncSshProcess()
+
+
+class _FakeAsyncSshClientContext:
+    def __init__(self, client: _FakeAsyncSshClient) -> None:
+        self.client = client
+
+    async def __aenter__(self):
+        return self.client
+
+    async def __aexit__(self, *_args):
+        return None
+
+
+class _FakeAsyncSshExecutor:
+    def __init__(self) -> None:
+        self.client = _FakeAsyncSshClient()
+        self.connections: list[tuple[RemoteConnectionConfig, int]] = []
+
+    def _connect(self, connection: RemoteConnectionConfig, timeout_seconds: int):
+        self.connections.append((connection, timeout_seconds))
+        return _FakeAsyncSshClientContext(self.client)
+
+
+@pytest.mark.asyncio
+async def test_remote_terminal_factory_uses_stored_credential_jump_for_outer_transport():
+    jump = RemoteConnectionConfig(
+        id="jump-1",
+        name="Bastion",
+        host="bastion.example.org",
+        username="jump-user",
+        password="jump-secret",
+    )
+    target = RemoteConnectionConfig(
+        id="target-1",
+        name="Cluster",
+        host="cluster.example.org",
+        username="alice",
+        port=2222,
+        jump_connection=jump,
+    )
+    async_executor = _FakeAsyncSshExecutor()
+    factory = DefaultRemoteTerminalFactory(async_executor=async_executor)
+
+    await factory(
+        connection=target,
+        remote_root_path="/data/project with spaces",
+        cols=120,
+        rows=40,
+        env={},
+    )
+
+    assert async_executor.connections == [(jump, 10)]
+    command, options = async_executor.client.created[0]
+    assert shlex.split(command) == [
+        "ssh",
+        "-p",
+        "2222",
+        "-tt",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        "--",
+        "alice@cluster.example.org",
+        "cd '/data/project with spaces' && exec \"${SHELL:-/bin/sh}\" -i",
+    ]
+    assert options == {
+        "request_pty": True,
+        "term_type": "xterm-256color",
+        "term_size": (120, 40),
+        "encoding": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_remote_terminal_factory_uses_system_ssh_jump_for_outer_transport(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    def fake_spawn_pty_process(**kwargs):
+        captured.update(kwargs)
+        return FakeRemoteTerminalTransport()
+
+    monkeypatch.setattr(
+        "app.services.terminal_service._spawn_pty_process",
+        fake_spawn_pty_process,
+    )
+    jump = RemoteConnectionConfig(
+        id="jump-1",
+        name="Bastion",
+        host="bastion.example.org",
+        username="jump-user",
+        key_path="/keys/bastion_ed25519",
+    )
+    target = RemoteConnectionConfig(
+        id="target-1",
+        name="Cluster",
+        host="cluster.example.org",
+        username="alice",
+        ssh_config_path="/home/jump-user/.ssh/config",
+        jump_connection=jump,
+    )
+    factory = DefaultRemoteTerminalFactory()
+
+    await factory(
+        connection=target,
+        remote_root_path="/data/project",
+        cols=100,
+        rows=30,
+        env={"TERM": "xterm-256color"},
+    )
+
+    argv = captured["command"]
+    assert isinstance(argv, list)
+    assert argv[:-1] == [
+        "ssh",
+        "-i",
+        "/keys/bastion_ed25519",
+        "-tt",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        "--",
+        "jump-user@bastion.example.org",
+    ]
+    assert shlex.split(argv[-1]) == [
+        "ssh",
+        "-F",
+        "/home/jump-user/.ssh/config",
+        "-tt",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        "--",
+        "alice@cluster.example.org",
+        'cd /data/project && exec "${SHELL:-/bin/sh}" -i',
+    ]
+    assert captured["env"] == {"TERM": "xterm-256color"}
+    assert captured["cols"] == 100
+    assert captured["rows"] == 30
+
+
+@pytest.mark.asyncio
+async def test_remote_terminal_factory_rejects_nested_jump_connections():
+    nested_jump = RemoteConnectionConfig(
+        id="nested-jump",
+        name="Nested bastion",
+        host="nested.example.org",
+    )
+    jump = RemoteConnectionConfig(
+        id="jump-1",
+        name="Bastion",
+        host="bastion.example.org",
+        jump_connection=nested_jump,
+    )
+    target = RemoteConnectionConfig(
+        id="target-1",
+        name="Cluster",
+        host="cluster.example.org",
+        jump_connection=jump,
+    )
+
+    with pytest.raises(BadRequestError, match="Nested jump connections"):
+        await DefaultRemoteTerminalFactory()(
+            connection=target,
+            remote_root_path="/data/project",
+            cols=80,
+            rows=24,
+            env={},
+        )
 
 
 @pytest.mark.asyncio
