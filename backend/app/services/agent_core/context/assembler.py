@@ -42,7 +42,10 @@ from app.services.agent_core.transcript import (
     AgentTranscriptStore,
     provider_message_from_parts,
 )
-from app.services.agent_core.transcript.messages import model_input_parts_from_message
+from app.services.agent_core.transcript.messages import (
+    model_input_parts_from_message,
+    model_input_parts_from_message_async,
+)
 from app.services.model_runtime.contracts import InputPart
 
 
@@ -294,10 +297,14 @@ class AgentContextAssembler:
             if message.role not in {"user", "assistant", "tool"}:
                 continue
             input_items.extend(
-                model_input_parts_from_message(
+                await model_input_parts_from_message_async(
                     message.role,
                     message.content_parts or [],
                     getattr(message, "message_metadata", None),
+                    db=self.db,
+                    session_id=str(agent_session.id),
+                    workspace_id=str(agent_session.workspace_id),
+                    user_id=agent_session.user_id,
                 )
             )
         return AgentModelContext(

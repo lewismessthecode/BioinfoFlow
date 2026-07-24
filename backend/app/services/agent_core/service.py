@@ -32,6 +32,7 @@ from app.services.agent_core.execution_target import (
     session_metadata_without_execution_target,
 )
 from app.services.agent_core.ledger import AgentEventLedger
+from app.services.agent_core.input_resolver import AgentInputResolver
 from app.services.agent_core.model_selection import (
     normalize_model_selection,
     session_metadata_with_model_selection,
@@ -527,7 +528,12 @@ class AgentCoreService:
                 turn_metadata,
                 execution_scope,
             )
-        transcript_parts = _transcript_parts_for_turn(
+        transcript_parts = await AgentInputResolver(
+            self.db,
+            legacy_file_resolver=_file_ref_text,
+            legacy_workflow_resolver=_workflow_ref_text,
+        ).resolve(
+            agent_session=session,
             input_text=input_text,
             input_parts=input_parts,
         )

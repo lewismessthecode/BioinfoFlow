@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    model_validator,
+)
 
 
 PermissionMode = Literal["ask_each_action", "guarded_auto", "bypass"]
@@ -201,6 +208,95 @@ class AgentAttachmentRead(BaseModel):
     error_message: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class _AgentInputPartBase(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class AgentTextInputPart(_AgentInputPartBase):
+    type: Literal["text"]
+    text: str
+
+
+class AgentFileRefInputPart(_AgentInputPartBase):
+    type: Literal["file_ref"]
+    attachment_id: UUID | None = None
+    project_id: UUID | None = None
+    path: str | None = None
+    label: str | None = None
+    include_content: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("include_content", "includeContent"),
+    )
+
+    @model_validator(mode="after")
+    def validate_source(self):
+        if self.attachment_id is not None:
+            if self.project_id is not None or self.path is not None:
+                raise ValueError("file_ref must use one source")
+            return self
+        if self.project_id is not None and self.path:
+            return self
+        if self.path and self.project_id is None:
+            return self
+        raise ValueError("file_ref requires attachment_id or project_id and path")
+
+
+class AgentDirectoryRefInputPart(_AgentInputPartBase):
+    type: Literal["directory_ref"]
+    attachment_id: UUID | None = None
+    project_id: UUID | None = None
+    path: str | None = None
+    label: str | None = None
+
+    @model_validator(mode="after")
+    def validate_source(self):
+        if self.attachment_id is not None:
+            if self.project_id is not None or self.path is not None:
+                raise ValueError("directory_ref must use one source")
+            return self
+        if self.project_id is not None and self.path:
+            return self
+        raise ValueError("directory_ref requires attachment_id or project_id and path")
+
+
+class AgentImageRefInputPart(_AgentInputPartBase):
+    type: Literal["image_ref"]
+    attachment_id: UUID
+    detail: Literal["auto", "low", "high", "original"] = "high"
+
+
+class AgentRunRefInputPart(_AgentInputPartBase):
+    type: Literal["run_ref"]
+    run_id: str = Field(min_length=1, max_length=80)
+
+
+class AgentWorkflowRefInputPart(_AgentInputPartBase):
+    type: Literal["workflow_ref"]
+    workflow_id: UUID | None = None
+    project_id: UUID | None = None
+    scope: Literal["project", "global"] | None = None
+
+    @model_validator(mode="after")
+    def validate_reference(self):
+        if not any((self.workflow_id, self.project_id, self.scope)):
+            raise ValueError(
+                "workflow_ref requires workflow_id, project_id, or scope"
+            )
+        return self
+
+
+AgentInputPart = Annotated[
+    AgentTextInputPart
+    | AgentFileRefInputPart
+    | AgentDirectoryRefInputPart
+    | AgentImageRefInputPart
+    | AgentRunRefInputPart
+    | AgentWorkflowRefInputPart,
+    Field(discriminator="type"),
+]
+AGENT_INPUT_PARTS_ADAPTER = TypeAdapter(list[AgentInputPart])
 
 
 class AgentTurnCreate(BaseModel):

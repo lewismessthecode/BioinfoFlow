@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import base64
 from dataclasses import dataclass
 from typing import Any
 
 from app.services.model_runtime.contracts import (
+    ImagePart,
     InputPart,
     ModelTarget,
     ResponsesContinuation,
@@ -12,6 +14,10 @@ from app.services.model_runtime.contracts import (
     ToolCallPart,
     ToolResultPart,
 )
+from app.models.agent_core import AgentAttachmentStatus
+from app.repositories.agent_core_repo import AgentAttachmentRepository
+from app.services.agent_core.attachments import AgentAttachmentService
+from app.utils.exceptions import NotFoundError
 
 
 RESPONSES_CONTINUATION_METADATA_KEY = "_responses_continuation"
@@ -127,6 +133,70 @@ def model_input_parts_from_message(
                 call_id=str((metadata or {}).get("tool_call_id") or ""),
                 output=text,
                 is_error=bool((metadata or {}).get("is_error", False)),
+            )
+        )
+    return tuple(result)
+
+
+async def model_input_parts_from_message_async(
+    role: str,
+    parts: list[dict[str, Any]],
+    metadata: dict[str, Any] | None = None,
+    *,
+    db,
+    session_id: str,
+    workspace_id: str,
+    user_id: str,
+) -> tuple[InputPart, ...]:
+    if role != "user":
+        return model_input_parts_from_message(role, parts, metadata)
+    result: list[InputPart] = []
+    attachments = AgentAttachmentRepository(db)
+    attachment_service = AgentAttachmentService(db)
+    for part in parts:
+        if part.get("type") == "text" and isinstance(part.get("text"), str):
+            if part["text"]:
+                result.append(TextPart(text=part["text"]))
+            continue
+        if part.get("type") != "image_ref":
+            continue
+        attachment_id = part.get("attachment_id")
+        if not isinstance(attachment_id, str):
+            raise NotFoundError("Attachment not found")
+        attachment = await attachments.get_owned(
+            attachment_id,
+            session_id=session_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        stored_metadata = attachment.attachment_metadata if attachment else {}
+        if (
+            attachment is None
+            or attachment.status != AgentAttachmentStatus.READY
+            or attachment.kind != "image"
+            or stored_metadata.get("sha256") != part.get("sha256")
+        ):
+            raise NotFoundError("Attachment not found")
+        model_relpath = stored_metadata.get("model_relpath")
+        model_mime_type = stored_metadata.get("model_mime_type")
+        if not isinstance(model_relpath, str) or not isinstance(
+            model_mime_type, str
+        ):
+            raise NotFoundError("Attachment image metadata is invalid")
+        model_path = attachment_service.validated_root(attachment) / model_relpath
+        if not model_path.is_file() or model_path.is_symlink():
+            raise NotFoundError("Attachment image is not available")
+        detail = part.get("detail")
+        result.append(
+            ImagePart(
+                mime_type=model_mime_type,
+                data=base64.b64encode(model_path.read_bytes()).decode("ascii"),
+                sha256=stored_metadata["sha256"],
+                detail=(
+                    detail
+                    if detail in {"auto", "low", "high", "original"}
+                    else None
+                ),
             )
         )
     return tuple(result)
