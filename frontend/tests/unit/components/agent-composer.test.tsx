@@ -38,6 +38,19 @@ vi.mock("next-intl", () => ({
       "attachMenu.runPreflight": "Run preflight",
       "attachMenu.diagnoseRun": "Diagnose run",
       "attachMenu.comingSoon": "Coming soon",
+      "attachMenu.addFileFolder": "Add file/folder",
+      "attachMenu.addFiles": "Add files",
+      "attachMenu.addFolder": "Add folder",
+      "attachments.label": "Attachments",
+      "attachments.uploading": "Uploading…",
+      "attachments.removing": "Removing…",
+      "attachments.uploadFailed": "Upload failed",
+      "attachments.preview": `Preview ${values?.name ?? ""}`,
+      "attachments.remove": `Remove ${values?.name ?? ""}`,
+      "attachments.retry": `Retry ${values?.name ?? ""}`,
+      "attachments.delete": `Delete ${values?.name ?? ""}`,
+      "attachments.deleteAction": "Delete",
+      "attachments.imagePreview": "Image attachment preview",
       "mode.label": "Agent mode",
       "mode.act": "Act",
       "mode.plan": "Plan",
@@ -1448,5 +1461,111 @@ describe("AgentComposer", () => {
       mode: "manual",
       targetIds: ["connection-sim-224", "connection-test-231"],
     })
+  })
+
+  it("uses one add-file entry with file and folder secondary actions", async () => {
+    const user = userEvent.setup()
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        onAddFiles={vi.fn()}
+        onAddFolder={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Attach or add context" }))
+    expect(screen.getByRole("menuitem", { name: "Add file/folder" })).toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: "Reference a run" })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("menuitem", { name: "Add file/folder" }))
+    expect(screen.getByRole("menuitem", { name: "Add files" })).toBeInTheDocument()
+    expect(screen.getByRole("menuitem", { name: "Add folder" })).toBeInTheDocument()
+  })
+
+  it("uploads pasted images and preserves clipboard text on macOS and Windows", () => {
+    const onChange = vi.fn()
+    const onPasteImages = vi.fn()
+    render(
+      <AgentComposer
+        value="Review: "
+        onChange={onChange}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        onPasteImages={onPasteImages}
+      />,
+    )
+    const image = new File(["png"], "clipboard.png", { type: "image/png" })
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    ;(textarea as HTMLTextAreaElement).setSelectionRange(8, 8)
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        files: [image],
+        getData: (type: string) => (type === "text/plain" ? "check this" : ""),
+      },
+    })
+
+    expect(onPasteImages).toHaveBeenCalledWith([image])
+    expect(onChange).toHaveBeenCalledWith("Review: check this")
+  })
+
+  it("allows ready attachment-only sends but blocks unresolved uploads", () => {
+    const onSubmit = vi.fn()
+    const { rerender } = render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={onSubmit}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        attachments={[
+          {
+            id: "image-1",
+            filename: "clipboard.png",
+            kind: "image",
+            status: "ready",
+            previewUrl: "/preview/image-1",
+          },
+        ]}
+        onRemoveAttachment={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled()
+
+    rerender(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={onSubmit}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        attachments={[
+          {
+            id: "image-1",
+            filename: "clipboard.png",
+            kind: "image",
+            status: "uploading",
+          },
+        ]}
+        onRemoveAttachment={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled()
   })
 })

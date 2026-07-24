@@ -1,18 +1,15 @@
 "use client"
 
-import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react"
+import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type InputHTMLAttributes } from "react"
 import {
   ChevronDown,
-  ClipboardCheck,
   FolderOpen,
-  ListTree,
   Loader2,
   Mic,
   Paperclip,
   Plus,
   Send,
   Square,
-  Stethoscope,
   X,
 } from "@/lib/icons"
 import { useLocale, useTranslations } from "next-intl"
@@ -54,6 +51,11 @@ import { tokenUsageViewFromSummary } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 import { ContextAttachments } from "./context-attachments"
 import {
+  AttachmentStrip,
+  type AgentComposerAttachment,
+} from "./attachment-strip"
+import { AttachmentPreviewDialog } from "./attachment-preview-dialog"
+import {
   ConnectedNodeSelector,
   type ExecutionTargetSelection,
 } from "./connected-node-selector"
@@ -78,6 +80,12 @@ type AgentComposerProps = {
   onSelectModel: (selection: ModelSelection | null) => void
   contextAttachments?: AgentRuntimeFileRefPart[]
   onRemoveContextAttachment?: (path: string) => void
+  attachments?: AgentComposerAttachment[]
+  onAddFiles?: (files: File[]) => void
+  onAddFolder?: (files: File[], relativePaths: string[]) => void
+  onPasteImages?: (files: File[]) => void
+  onRemoveAttachment?: (attachment: AgentComposerAttachment) => void
+  onRetryAttachment?: (attachment: AgentComposerAttachment) => void
   availableSkills?: AgentRuntimeSkill[]
   activeSkillNames?: string[]
   activeComposerTokens?: AgentComposerInlineToken[]
@@ -108,14 +116,6 @@ export type AgentComposerInlineToken =
   | { kind: "skill"; skill: AgentRuntimeSkill }
   | { kind: "workflow"; workflow: AgentRuntimeWorkflowMention }
 
-const attachMenuItems = [
-  { key: "attachFiles", Icon: Paperclip },
-  { key: "browseProjectFiles", Icon: FolderOpen },
-  { key: "referenceRun", Icon: ListTree },
-  { key: "runPreflight", Icon: ClipboardCheck },
-  { key: "diagnoseRun", Icon: Stethoscope },
-] as const
-
 const agentModeOptions: AgentMode[] = ["execution", "plan"]
 
 export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>(
@@ -139,6 +139,12 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       onSelectModel,
       contextAttachments = [],
       onRemoveContextAttachment,
+      attachments = [],
+      onAddFiles,
+      onAddFolder,
+      onPasteImages,
+      onRemoveAttachment,
+      onRetryAttachment,
       availableSkills = [],
       activeSkillNames = [],
       activeComposerTokens,
@@ -167,7 +173,16 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     ref,
   ) {
     const t = useTranslations("agentRuntime")
+    const attachmentPending = attachments.some(
+      (attachment) => attachment.status !== "ready",
+    )
+    const hasReadyAttachment = attachments.some(
+      (attachment) => attachment.status === "ready",
+    )
     const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+    const fileInputRef = useRef<HTMLInputElement | null>(null)
+    const folderInputRef = useRef<HTMLInputElement | null>(null)
+    const previewTriggerRef = useRef<HTMLElement | null>(null)
     const voiceInsertionRef = useRef<{ start: number; end: number } | null>(null)
     const latestValueRef = useRef(value)
     const latestOnChangeRef = useRef(onChange)
@@ -207,7 +222,11 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     })
     const { cancel: cancelVoice, state: voiceState } = voice
     const voiceBusy = voiceState === "recording" || voiceState === "transcribing"
-    const canSubmit = !disabled && !voiceBusy && value.trim().length > 0
+    const canSubmit =
+      !disabled &&
+      !voiceBusy &&
+      !attachmentPending &&
+      (value.trim().length > 0 || hasReadyAttachment)
     useEffect(() => {
       if (voiceState !== "recording") return
       const cancelOnEscape = (event: KeyboardEvent) => {
@@ -219,6 +238,9 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       window.addEventListener("keydown", cancelOnEscape)
       return () => window.removeEventListener("keydown", cancelOnEscape)
     }, [cancelVoice, t, voiceState])
+    const [attachSubmenu, setAttachSubmenu] = useState(false)
+    const [previewAttachment, setPreviewAttachment] =
+      useState<AgentComposerAttachment | null>(null)
     const isCenterPresentation = presentation === "center"
     const animatedPlaceholder = useAnimatedPlaceholder({
       enabled:
@@ -432,6 +454,15 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           attachments={contextAttachments}
           onRemove={onRemoveContextAttachment ?? (() => {})}
         />
+        <AttachmentStrip
+          attachments={attachments}
+          onPreview={(attachment) => {
+            previewTriggerRef.current = document.activeElement as HTMLElement | null
+            setPreviewAttachment(attachment)
+          }}
+          onRemove={onRemoveAttachment ?? (() => {})}
+          onRetry={onRetryAttachment}
+        />
         <div className="relative">
           <div
             className={cn(
@@ -453,6 +484,19 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
               resizeTextarea(event.currentTarget)
               onChange(event.target.value)
               updateCommandMenu(event.currentTarget)
+            }}
+            onPaste={(event) => {
+              const images = Array.from(event.clipboardData.files).filter((file) =>
+                file.type.startsWith("image/"),
+              )
+              if (!images.length) return
+              event.preventDefault()
+              onPasteImages?.(images)
+              const clipboardText = event.clipboardData.getData("text/plain")
+              if (!clipboardText) return
+              const start = event.currentTarget.selectionStart ?? value.length
+              const end = event.currentTarget.selectionEnd ?? start
+              onChange(`${value.slice(0, start)}${clipboardText}${value.slice(end)}`)
             }}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return
@@ -535,7 +579,11 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           ) : null}
         </div>
         <div className="flex min-h-8 flex-wrap items-center gap-1 px-0.5">
-          <DropdownMenu>
+          <DropdownMenu
+            onOpenChange={(open) => {
+              if (!open) setAttachSubmenu(false)
+            }}
+          >
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
@@ -555,18 +603,65 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
               sideOffset={10}
               className={cn("w-52", composerSelectorMenuClassName)}
             >
-              {attachMenuItems.map(({ key, Icon }) => (
+              {!attachSubmenu ? (
                 <DropdownMenuItem
-                  key={key}
                   className="rounded-[7px] px-2 py-1.5 text-xs"
-                  onSelect={() => toast.info(t("attachMenu.comingSoon"))}
+                  onSelect={(event) => {
+                    event.preventDefault()
+                    setAttachSubmenu(true)
+                  }}
                 >
-                  <Icon className="h-3.5 w-3.5" />
-                  <span>{t(`attachMenu.${key}`)}</span>
+                  <Paperclip className="h-3.5 w-3.5" />
+                  <span>{t("attachMenu.addFileFolder")}</span>
                 </DropdownMenuItem>
-              ))}
+              ) : (
+                <>
+                  <DropdownMenuItem
+                    className="rounded-[7px] px-2 py-1.5 text-xs"
+                    onSelect={() => fileInputRef.current?.click()}
+                  >
+                    <Paperclip className="h-3.5 w-3.5" />
+                    <span>{t("attachMenu.addFiles")}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="rounded-[7px] px-2 py-1.5 text-xs"
+                    onSelect={() => folderInputRef.current?.click()}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    <span>{t("attachMenu.addFolder")}</span>
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="sr-only"
+            aria-label={t("attachMenu.addFiles")}
+            onChange={(event) => {
+              const files = Array.from(event.currentTarget.files ?? [])
+              if (files.length) onAddFiles?.(files)
+              event.currentTarget.value = ""
+            }}
+          />
+          <input
+            ref={folderInputRef}
+            type="file"
+            multiple
+            className="sr-only"
+            aria-label={t("attachMenu.addFolder")}
+            {...({ webkitdirectory: "", directory: "" } as InputHTMLAttributes<HTMLInputElement>)}
+            onChange={(event) => {
+              const files = Array.from(event.currentTarget.files ?? [])
+              const relativePaths = files.map(
+                (file) => file.webkitRelativePath || file.name,
+              )
+              if (files.length) onAddFolder?.(files, relativePaths)
+              event.currentTarget.value = ""
+            }}
+          />
 
           <div
             className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5"
@@ -766,6 +861,15 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             </div>
           </div>
         </div>
+        <AttachmentPreviewDialog
+          open={Boolean(previewAttachment)}
+          attachment={previewAttachment}
+          onOpenChange={(open) => {
+            if (!open) setPreviewAttachment(null)
+          }}
+          onDelete={onRemoveAttachment}
+          returnFocusRef={previewTriggerRef}
+        />
       </div>
     )
   },
