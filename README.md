@@ -115,6 +115,28 @@ Provider setup is UI-first. OpenAI, Anthropic, and DeepSeek have a compact
 composer path; Kimi, Kimi China, Gemini, OpenRouter, Ollama, vLLM, and
 other compatible endpoints remain available in **Settings → AI Providers**.
 
+### Optional voice dictation
+
+Voice dictation uses a separate speech-recognition service. Bioinfoflow records
+in the browser, normalizes the audio in the backend, and calls an
+OpenAI-compatible ASR endpoint; it never loads Fun-ASR or Whisper into the main
+backend process.
+
+```text
+Browser → Bioinfoflow backend → separate ASR service → editable composer text
+```
+
+The source Compose stack includes two opt-in sidecars: use Fun-ASR for
+Chinese-first recognition on a Linux NVIDIA GPU, or faster-whisper for a CPU
+host and broader multilingual recognition. You can also configure an external
+cloud endpoint. Start only one local model profile; the default Bioinfoflow
+stack does not download either model.
+
+See [Voice dictation deployment](docs/deployment/voice-dictation.md) for the
+configuration and startup commands. The current one-line localhost installer
+does not bundle the local ASR sidecars; use the source Compose deployment when
+you want the included Fun-ASR or faster-whisper runtime.
+
 ## The Agent works through the platform
 
 The Agent is not a chat box beside a workflow dashboard. It uses the same
@@ -244,6 +266,7 @@ checks with `bun run lint && bun run test`.
 
 - [Documentation home](docs/README.md)
 - [Docker and installer guide](docs/getting-started/docker.md)
+- [Voice dictation deployment](docs/deployment/voice-dictation.md)
 - [Runbook](RUNBOOK.md)
 - [Architecture overview](docs/architecture.md)
 - [Storage and data layout](docs/concepts/storage.md)

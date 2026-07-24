@@ -226,10 +226,10 @@ including during an active turn. With waiting tool approvals, the UI asks
 whether to update future operations only or also approve eligible waiting tools.
 User questions and plan approval are never bulk-approved.
 
-**Full access** skips ordinary Bioinfoflow risk prompts for this selected host.
-It does not grant additional SSH privileges. Catastrophic commands remain
-blocked, and writes to protected credentials, SSH/sudo configuration, shell
-startup files, or permission-policy resources still require explicit approval.
+**Full access** skips all Bioinfoflow risk prompts for this selected host. It
+auto-approves elevated and protected-resource actions while retaining their
+risk audit data. It does not grant additional SSH privileges, and catastrophic
+commands remain hard blocked.
 
 ## Current Limits
 

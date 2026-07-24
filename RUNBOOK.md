@@ -221,6 +221,128 @@ docker compose up -d --build
   `docker compose up -d --build` path asks Docker to launch a short-lived probe
   container, so the backend itself does not need permanent access to every GPU.
 
+### Optional voice dictation
+
+Voice recognition is a separate runtime, not a library loaded by the
+Bioinfoflow backend:
+
+```text
+browser recorder
+    -> Bioinfoflow backend (authentication and one-time WAV normalization)
+    -> ASR service (Fun-ASR, faster-whisper, or explicit cloud API)
+    -> editable composer text
+```
+
+The backend uses one contract for every provider:
+
+- `GET /v1/models` for readiness and model discovery
+- `POST /v1/audio/transcriptions` for transcription
+
+No ASR model is downloaded by a normal `docker compose up`. Choose one of the
+following deployments.
+
+#### Fun-ASR for Chinese on a Linux NVIDIA GPU
+
+Verify Docker GPU access first:
+
+```bash
+nvidia-smi -L
+docker run --rm --gpus all ubuntu:24.04 nvidia-smi -L
+```
+
+Add to `.env`:
+
+```env
+ASR_PROVIDER=funasr
+ASR_BASE_URL=http://asr-funasr:8000
+ASR_MODEL=FunAudioLLM/Fun-ASR-Nano-2512
+ASR_DEVICE=cuda
+ASR_LANGUAGE=zh
+ASR_CONTEXT_TERMS=["Bioinfoflow","Nextflow","MiniWDL","FASTQ"]
+```
+
+Start the selected model and recreate the backend so it receives the ASR
+configuration:
+
+```bash
+docker compose --profile voice-funasr up -d --build asr-funasr backend frontend
+docker compose ps
+docker compose logs -f asr-funasr
+```
+
+#### faster-whisper for CPU or multilingual use
+
+Add to `.env`:
+
+```env
+ASR_PROVIDER=whisper
+ASR_BASE_URL=http://asr-whisper:8000
+ASR_MODEL=large-v3-turbo
+ASR_DEVICE=cpu
+ASR_COMPUTE_TYPE=int8
+ASR_LANGUAGE=zh
+ASR_CONTEXT_TERMS=["Bioinfoflow","Nextflow","MiniWDL","FASTQ"]
+```
+
+Start it with:
+
+```bash
+docker compose --profile voice-whisper up -d --build asr-whisper backend frontend
+docker compose ps
+docker compose logs -f asr-whisper
+```
+
+#### External cloud or self-hosted endpoint
+
+Do not start a local profile. Configure the endpoint directly and recreate the
+backend:
+
+```env
+ASR_PROVIDER=openai
+ASR_BASE_URL=https://api.openai.com
+ASR_MODEL=gpt-4o-mini-transcribe
+ASR_API_KEY=replace-me
+ASR_LANGUAGE=zh
+```
+
+```bash
+docker compose up -d --build --force-recreate backend frontend
+```
+
+Bioinfoflow never automatically falls back from a local model to a cloud
+provider. Only the configured endpoint receives audio.
+
+#### Verify and switch models
+
+The sidecars are private to the Compose network and publish no host port. Check
+their health from the backend container:
+
+```bash
+docker compose exec backend python -c "import urllib.request; print(urllib.request.urlopen('http://asr-funasr:8000/health').read().decode())"
+# or replace asr-funasr with asr-whisper
+```
+
+Then sign in to Bioinfoflow and refresh the Agent page. The microphone is
+enabled only after `/api/v1/speech/status` confirms that the configured model is
+listed by the ASR service.
+
+To switch local models, stop the old profile, change `.env`, then start the new
+profile and recreate the backend:
+
+```bash
+docker compose --profile voice-funasr stop asr-funasr
+docker compose --profile voice-whisper up -d --build asr-whisper backend frontend
+```
+
+Do not run both models unless comparing them deliberately. Model files persist
+under `BIOINFOFLOW_HOME/models/asr`; remove them manually only when you intend to
+reclaim the downloaded model storage.
+
+The release localhost installer currently does not include the Fun-ASR or
+faster-whisper sidecars. Use the source-build Compose stack for the included
+local runtimes. Full details are in
+[Voice Dictation Deployment](docs/deployment/voice-dictation.md).
+
 ### Automatic GPU discovery and multi-GPU selection
 
 On a Linux NVIDIA host, first verify both the host driver and Docker GPU
@@ -503,8 +625,9 @@ local or remote target. It does not grant operating-system privileges.
 - **Request approval** asks before each non-read side effect.
 - **Approve for me** allows reads and low-risk actions, and asks for elevated
   risk.
-- **Full access** skips ordinary risk prompts, but catastrophic commands remain
-  blocked, protected-resource writes still ask, and user questions or plan
+- **Full access** auto-approves all non-hard-blocked actions, including
+  protected-resource writes, indirect shell commands, and sandbox opt-out
+  requests. Catastrophic commands remain blocked, and user questions or plan
   approval remain interactive.
 
 Permission changes are live for the next tool authorization, even when a turn is
@@ -634,6 +757,27 @@ Check:
 - `.env` contains `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1`
 - the backend is actually listening on port `8000`
 - if you changed `NEXT_PUBLIC_*`, you restarted `bun run dev` or rebuilt Docker
+
+### Voice microphone is disabled
+
+Check in order:
+
+- `.env` has a non-empty `ASR_BASE_URL` and `ASR_MODEL`
+- the selected ASR profile is running: `docker compose ps`
+- the backend was recreated after `.env` changed; `docker compose restart`
+  alone does not load new environment values
+- `GET /v1/models` from the ASR service contains the exact configured model ID
+- the browser has microphone permission and supports `MediaRecorder`
+- the page is served from localhost or HTTPS, because browsers normally block
+  microphone capture on insecure remote HTTP origins
+
+Inspect the relevant logs without printing audio or transcript content:
+
+```bash
+docker compose logs --tail=100 backend
+docker compose logs --tail=100 asr-funasr
+# or: docker compose logs --tail=100 asr-whisper
+```
 
 ### Login or callback origin errors
 

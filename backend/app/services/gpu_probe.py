@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import os
+import tarfile
 from dataclasses import dataclass
 
 import docker
@@ -90,14 +92,19 @@ class DockerGpuProbe:
         except DockerException as exc:
             raise GpuDockerUnavailable(_diagnostic(exc)) from exc
         request = docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])
+        inventory_path = "/tmp/bioinfoflow-gpu-inventory.csv"
+        stderr_path = "/tmp/bioinfoflow-gpu-probe.stderr"
+        command = (
+            "nvidia-smi "
+            "--query-gpu=uuid,index,name,memory.total,memory.free,driver_version,compute_cap "
+            "--format=csv,noheader,nounits "
+            f"> {inventory_path} 2> {stderr_path}"
+        )
         try:
             container = self._client.containers.run(
                 image=current.image.id,
-                command=[
-                    "--query-gpu=uuid,index,name,memory.total,memory.free,driver_version,compute_cap",
-                    "--format=csv,noheader,nounits",
-                ],
-                entrypoint=["nvidia-smi"],
+                command=[command],
+                entrypoint=["/bin/sh", "-c"],
                 detach=True,
                 network_disabled=True,
                 device_requests=[request],
@@ -106,6 +113,7 @@ class DockerGpuProbe:
                     "NVIDIA_DRIVER_CAPABILITIES": "compute,utility",
                 },
                 labels={"bioinfoflow.gpu-probe": "true"},
+                log_config=docker.types.LogConfig(type="none"),
             )
         except APIError as exc:
             diagnostic = _diagnostic(exc)
@@ -122,13 +130,9 @@ class DockerGpuProbe:
                 result = container.wait(timeout=self._timeout)
             except ReadTimeout as exc:
                 raise GpuProbeTimeout(_diagnostic(exc)) from exc
-            stdout = container.logs(stdout=True, stderr=False).decode(
-                "utf-8", "replace"
-            )
+            stdout = _read_container_file(container, inventory_path)
             if int(result.get("StatusCode", 1)) != 0:
-                stderr = container.logs(stdout=False, stderr=True).decode(
-                    "utf-8", "replace"
-                )
+                stderr = _read_container_file(container, stderr_path)
                 raise GpuProbeError(
                     " ".join(stderr.split())[:400] or "GPU probe failed"
                 )
@@ -139,3 +143,16 @@ class DockerGpuProbe:
 
 def _diagnostic(error: BaseException) -> str:
     return " ".join(str(error).split())[:400] or error.__class__.__name__
+
+
+def _read_container_file(container, path: str) -> str:
+    chunks, _stat = container.get_archive(path)
+    archive_bytes = b"".join(chunks)
+    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:") as archive:
+        member = archive.next()
+        if member is None:
+            return ""
+        extracted = archive.extractfile(member)
+        if extracted is None:
+            return ""
+        return extracted.read().decode("utf-8", "replace")

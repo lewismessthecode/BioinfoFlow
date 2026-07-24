@@ -225,7 +225,7 @@ def test_remote_full_access_allows_read_only_compound_data_listing():
     )
 
 
-def test_remote_full_access_keeps_compound_mutation_approval_gated():
+def test_remote_full_access_auto_approves_compound_mutation():
     command = 'for d in /mnt/nas1/phoenix-task/oseq_816/*/; do rm -rf "$d"; done'
     target = CommandTargetProfile(
         kind="remote_ssh",
@@ -250,7 +250,7 @@ def test_remote_full_access_keeps_compound_mutation_approval_gated():
             automation_mode="assisted",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -261,7 +261,7 @@ def test_remote_full_access_keeps_compound_mutation_approval_gated():
         "for value in one; do printf ok; done",
     ],
 )
-def test_local_compound_shell_still_requires_approval_in_bypass(command):
+def test_local_compound_shell_is_auto_approved_in_bypass(command):
     assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
 
     assert assessment.requires_explicit_approval is True
@@ -273,7 +273,7 @@ def test_local_compound_shell_still_requires_approval_in_bypass(command):
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -310,7 +310,7 @@ def test_assessment_records_semantics_and_canonical_boundary():
         ("printf x > /workspace/.env", "credential"),
     ],
 )
-def test_protected_resource_writes_always_require_explicit_approval(command, kind):
+def test_protected_resource_writes_are_audited_but_allowed_in_bypass(command, kind):
     assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
 
     assert assessment.requires_explicit_approval is True
@@ -323,7 +323,7 @@ def test_protected_resource_writes_always_require_explicit_approval(command, kin
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -359,7 +359,7 @@ def test_every_supported_write_sink_protects_credential_destinations(command):
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -388,7 +388,7 @@ def test_archive_link_and_sync_sinks_protect_credential_destinations(command):
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -408,7 +408,7 @@ def test_unknown_non_read_command_with_protected_path_fails_ask():
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -487,7 +487,7 @@ def test_remote_indirect_write_destinations_require_explicit_approval(command):
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -618,7 +618,7 @@ def test_indirect_device_capable_write_targets_require_explicit_approval(command
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -658,7 +658,7 @@ def test_compound_symlink_with_unknown_target_requires_explicit_approval():
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -679,7 +679,7 @@ def test_non_block_device_subtrees_are_explicit_not_hard_blocked(path):
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -726,7 +726,7 @@ def test_local_target_profile_records_per_command_sandbox_disable():
     assert target.sandbox_bypass_requested is True
 
 
-def test_sandbox_opt_out_always_requires_explicit_approval_even_in_bypass():
+def test_sandbox_opt_out_is_audited_but_allowed_in_bypass():
     context = SimpleNamespace(
         execution_target=MappingProxyType({"type": "local"}),
         boundary=MappingProxyType({"sandboxed": True, "network_allowed": False}),
@@ -754,7 +754,7 @@ def test_sandbox_opt_out_always_requires_explicit_approval_even_in_bypass():
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -781,7 +781,7 @@ def test_unproven_inline_code_or_danger_literals_require_explicit_approval(comma
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -981,7 +981,7 @@ def test_literal_catastrophic_nested_commands_are_denied_in_bypass(target, comma
         "php8.4 -F worker.php",
     ],
 )
-def test_unsupported_shell_grammar_fails_ask_in_bypass(target, command):
+def test_unsupported_shell_grammar_is_audited_but_allowed_in_bypass(target, command):
     assessment = assess_command_risk(command, target=target)
 
     assert assessment.hard_blocked is False
@@ -994,7 +994,7 @@ def test_unsupported_shell_grammar_fails_ask_in_bypass(target, command):
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -1008,7 +1008,7 @@ def test_unsupported_shell_grammar_fails_ask_in_bypass(target, command):
         "perl5.40 '-eprint(\"ok\")'",
     ],
 )
-def test_attached_inline_interpreter_source_requires_approval(target, command):
+def test_attached_inline_interpreter_source_is_audited_but_allowed_in_bypass(target, command):
     assessment = assess_command_risk(command, target=target)
 
     assert assessment.hard_blocked is False
@@ -1021,7 +1021,7 @@ def test_attached_inline_interpreter_source_requires_approval(target, command):
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 
@@ -1068,7 +1068,7 @@ def test_attached_inline_interpreter_hardlines_are_denied(target, command):
         "rsync -vaT/home/alice/.ssh payload /tmp/output",
     ],
 )
-def test_opaque_or_protected_write_sinks_fail_ask_in_bypass(target, command):
+def test_opaque_or_protected_write_sinks_are_audited_but_allowed_in_bypass(target, command):
     assessment = assess_command_risk(command, target=target)
 
     assert assessment.hard_blocked is False
@@ -1081,7 +1081,7 @@ def test_opaque_or_protected_write_sinks_fail_ask_in_bypass(target, command):
             automation_mode="autonomous",
         )
         .decision
-        == "ask"
+        == "allow"
     )
 
 

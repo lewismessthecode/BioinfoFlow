@@ -35,6 +35,8 @@ def test_bash_assess_risk_escalates_out_of_root_paths():
 
 async def _shell_context(
     db_session,
+    *,
+    permission_mode: str = "guarded_auto",
 ) -> tuple[AgentToolDispatcher, AgentToolContext, Path]:
     workspace_root = Path(settings.bioinfoflow_home)
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
@@ -55,6 +57,7 @@ async def _shell_context(
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
         title="Shell",
+        permission_mode=permission_mode,
     )
     turn = await core.create_turn_record(
         session_id=str(session.id),
@@ -176,8 +179,21 @@ async def test_bash_tool_hard_blocks_catastrophic_command_even_in_bypass(db_sess
 
 
 @pytest.mark.asyncio
-async def test_bash_tool_asks_before_disabling_sandbox_even_in_bypass(db_session):
-    dispatcher, context, workspace_root = await _shell_context(db_session)
+async def test_bash_tool_bypass_auto_approves_sandbox_disable_request(
+    db_session, monkeypatch
+):
+    dispatcher, context, workspace_root = await _shell_context(
+        db_session,
+        permission_mode="bypass",
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.execution.shell.SandboxRunner.build",
+        lambda self, **kwargs: type(
+            "SandboxResult",
+            (),
+            {"argv": ["bash", "-lc", kwargs["command"]]},
+        )(),
+    )
 
     result = await dispatcher.dispatch(
         tool_name="bash",
@@ -191,9 +207,9 @@ async def test_bash_tool_asks_before_disabling_sandbox_even_in_bypass(db_session
         automation_mode="autonomous",
     )
 
-    assert result.status == "waiting_decision"
-    assert result.permission_decision["decision"] == "ask"
-    assert result.result is None
+    assert result.status == "completed"
+    assert result.permission_decision["decision"] == "allow"
+    assert result.result["stdout"].strip() == str(workspace_root)
 
 
 @pytest.mark.asyncio

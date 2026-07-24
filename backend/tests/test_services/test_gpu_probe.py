@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import io
+import tarfile
+
 import pytest
 from requests.exceptions import ReadTimeout
 
@@ -58,10 +61,14 @@ class FakeProbeContainer:
             raise self.wait_error
         return {"StatusCode": self.status_code}
 
-    def logs(self, *, stdout: bool, stderr: bool):
-        if stdout and not stderr:
-            return H20_CSV.encode()
-        return b"probe failed"
+    def get_archive(self, path: str):
+        content = H20_CSV.encode() if path.endswith("inventory.csv") else b"probe failed"
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as archive:
+            info = tarfile.TarInfo(name=path.rsplit("/", 1)[-1])
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+        return [buffer.getvalue()], {"size": len(content)}
 
     def remove(self, *, force: bool):
         self.removed_forcefully = force
@@ -95,7 +102,9 @@ async def test_docker_probe_runs_same_image_and_always_removes_container() -> No
 
     assert devices[0].name == "NVIDIA H20"
     assert client.containers.run_kwargs["image"] == "sha256:backend-image"
-    assert client.containers.run_kwargs["entrypoint"] == ["nvidia-smi"]
+    assert client.containers.run_kwargs["entrypoint"] == ["/bin/sh", "-c"]
+    assert "nvidia-smi" in client.containers.run_kwargs["command"][0]
+    assert client.containers.run_kwargs["log_config"]["Type"] == "none"
     request = client.containers.run_kwargs["device_requests"][0]
     assert request["Count"] == -1
     assert request["Capabilities"] == [["gpu"]]

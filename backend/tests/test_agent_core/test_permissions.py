@@ -34,6 +34,20 @@ def test_advise_only_denies_side_effects() -> None:
     assert decision.decision == "deny"
 
 
+def test_bypass_allows_risk_that_normally_requires_explicit_approval() -> None:
+    decision = PermissionPolicy().decide(
+        risk=RiskAssessment(
+            level="act_high",
+            reasons=["indirect shell execution"],
+            requires_explicit_approval=True,
+        ),
+        permission_mode="bypass",
+        automation_mode="autonomous",
+    )
+
+    assert decision.decision == "allow"
+
+
 def test_critical_actions_are_hard_blocked_even_in_bypass() -> None:
     decision = PermissionPolicy().decide(
         risk=RiskAssessment(level="critical", reasons=["declared"]),
