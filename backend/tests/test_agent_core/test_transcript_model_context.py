@@ -84,7 +84,7 @@ async def test_image_ref_stays_out_of_transcript_base64_and_resolves_for_model(
         turn=turn,
     )
 
-    assert stored[1] == {
+    assert stored[-1] == {
         "type": "image_ref",
         "attachment_id": str(attachment.id),
         "mime_type": "image/png",
@@ -93,7 +93,15 @@ async def test_image_ref_stays_out_of_transcript_base64_and_resolves_for_model(
     }
     assert base64.b64encode(b"png-bytes").decode() not in repr(stored)
     assert context.input_items == (
-        TextPart(text="Inspect this screenshot."),
+        TextPart(
+            text=(
+                "<environment_context>\n"
+                f"  <current_date>{turn.model_profile_snapshot['temporal_context']['current_date']}</current_date>\n"
+                "  <timezone>Etc/UTC</timezone>\n"
+                "</environment_context>\n\n"
+                "Inspect this screenshot."
+            )
+        ),
         ImagePart(
             mime_type="image/png",
             data=base64.b64encode(b"png-bytes").decode(),
