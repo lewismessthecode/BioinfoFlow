@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -196,6 +197,134 @@ async def test_context_compaction_supersedes_older_messages(db_session):
     assert parts_to_text(latest_summary.content_parts).startswith(
         "<environment_context>\n"
     )
+
+
+@pytest.mark.asyncio
+async def test_context_compaction_preserves_active_request_and_todo_state(
+    db_session,
+):
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session)
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    session = await service.session_repo.update_all(
+        session,
+        compression_state={
+            "enabled": True,
+            "threshold_chars": 120,
+            "preserve_recent_messages": 2,
+        },
+    )
+    active_request = (
+        "Implement the approved human WGS germline pipeline now. Preserve the "
+        "full design, create every WDL module, validate the syntax, and do not "
+        "switch back to an unrelated completed run."
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text=active_request,
+    )
+    todos = [
+        {"content": "Create WGS pipeline directory", "status": "completed"},
+        {"content": "Write all WDL task modules", "status": "in_progress"},
+        {"content": "Connect the main workflow", "status": "pending"},
+        {"content": "Write form spec and README", "status": "pending"},
+        {"content": "Validate WDL syntax", "status": "pending"},
+    ]
+    transcript = AgentTranscriptStore(db_session)
+    await transcript.append_parts(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="assistant",
+        parts=[text_part("An unrelated historical run completed. " * 12)],
+    )
+    await transcript.append_parts(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="tool",
+        parts=[
+            text_part(
+                json.dumps(
+                    {
+                        "tool": "todo_write",
+                        "status": "completed",
+                        "result": {"todos": todos},
+                        "error": None,
+                    }
+                )
+            )
+        ],
+        metadata={"tool": "todo_write", "tool_call_id": "todo-1"},
+    )
+    await transcript.append_parts(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="assistant",
+        parts=[text_part("Inspecting WDL examples. " * 12)],
+    )
+    await transcript.append_parts(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="assistant",
+        parts=[text_part("Preparing module files.")],
+    )
+
+    await AgentContextAssembler(db_session).model_context(
+        agent_session=session,
+        turn=turn,
+    )
+
+    stored = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    first_summary = next(
+        message
+        for message in reversed(stored)
+        if message.status == "committed"
+        and (message.message_metadata or {}).get("kind") == "compaction_summary"
+    )
+    first_metadata = first_summary.message_metadata or {}
+    first_text = parts_to_text(first_summary.content_parts)
+
+    assert first_metadata["continuity_state"] == {
+        "active_user_request": active_request,
+        "active_todos": todos,
+    }
+    assert "## Active user request" in first_text
+    assert active_request in first_text
+    assert "## Active task checklist" in first_text
+    assert all(todo["content"] in first_text for todo in todos)
+
+    for index in range(3):
+        await transcript.append_parts(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            role="assistant",
+            parts=[text_part(f"Continuing implementation phase {index}. " * 20)],
+        )
+    await AgentContextAssembler(db_session).model_context(
+        agent_session=session,
+        turn=turn,
+    )
+
+    stored = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    latest_summary = next(
+        message
+        for message in reversed(stored)
+        if message.status == "committed"
+        and (message.message_metadata or {}).get("kind") == "compaction_summary"
+    )
+    latest_metadata = latest_summary.message_metadata or {}
+    latest_text = parts_to_text(latest_summary.content_parts)
+
+    assert latest_metadata["continuity_state"] == first_metadata["continuity_state"]
+    assert active_request in latest_text
+    assert all(todo["content"] in latest_text for todo in todos)
 
 
 @pytest.mark.asyncio
