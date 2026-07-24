@@ -339,6 +339,7 @@ async def upload_attachments(
     session_id: str,
     request: Request,
     kind: str = Form(...),
+    source: str = Form(default="clipboard"),
     files: list[UploadFile] = File(...),
     relative_paths: list[str] | None = Form(default=None),
     user: AuthUser = Depends(get_current_user),
@@ -360,11 +361,13 @@ async def upload_attachments(
     elif kind == "image":
         if len(files) != 1:
             raise BadRequestError("Image upload requires exactly one file")
+        if source not in {"upload", "clipboard"}:
+            raise BadRequestError("Unsupported image source")
         attachments = [
             await service.ingest_image(
                 agent_session=session,
                 file=files[0],
-                source="clipboard",
+                source=source,
             )
         ]
     elif kind == "file":
