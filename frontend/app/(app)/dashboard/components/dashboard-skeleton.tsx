@@ -51,20 +51,22 @@ function RecentRunsTableSkeleton() {
 
 function OperationsOverviewSkeleton() {
   return (
-    <CardRoot variant="workbench" className="grid overflow-hidden xl:grid-cols-[0.8fr_minmax(0,1.35fr)_0.9fr]">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       {Array.from({ length: 3 }).map((_, index) => (
-        <div key={index} className="min-w-0 border-t border-border/70 p-5 first:border-t-0 xl:border-l xl:border-t-0 xl:first:border-l-0">
-          <div className="flex items-center justify-between gap-3">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-5 w-14 rounded-full" />
+        <CardRoot key={index} variant="workbench" className="h-full min-w-0">
+          <div className="p-4">
+            <div className="flex items-center justify-between gap-3">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-5 w-14 rounded-full" />
+            </div>
+            <div className="mt-4 space-y-3">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-4/5" />
+            </div>
           </div>
-          <div className="mt-4 space-y-3">
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-4/5" />
-          </div>
-        </div>
+        </CardRoot>
       ))}
-    </CardRoot>
+    </div>
   )
 }
 

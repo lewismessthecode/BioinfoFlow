@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { CardRoot } from "@/components/bioinfoflow/card";
 import { Gauge, ArrowRight } from "@/lib/icons";
 import type { SchedulerStatus } from "@/lib/types";
 
@@ -13,20 +14,21 @@ export function SchedulerSummary({ schedulerStatus }: SchedulerSummaryProps) {
   const tDashboard = useTranslations("dashboard");
 
   return (
-    <Link
-      href="/scheduler"
-      data-dashboard-section="scheduler"
-      data-testid="dashboard-scheduler-section"
-      className="group block min-w-0 border-t border-border/70 p-5 transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 xl:border-l xl:border-t-0"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-foreground">
-          <Gauge className="size-3.5 text-muted-foreground/80" />
-          <h2 className="text-sm font-medium">{tDashboard("schedulerCard.title")}</h2>
+    <CardRoot variant="workbench" className="h-full min-w-0">
+      <Link
+        href="/scheduler"
+        data-dashboard-section="scheduler"
+        data-testid="dashboard-scheduler-section"
+        className="group block h-full min-w-0 rounded-[inherit] p-4 transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-foreground">
+            <Gauge className="size-3.5 text-muted-foreground/80" />
+            <h2 className="text-sm font-medium">{tDashboard("schedulerCard.title")}</h2>
+          </div>
+          <ArrowRight className="size-3.5 text-muted-foreground transition-colors group-hover:text-foreground" aria-hidden="true" />
         </div>
-        <ArrowRight className="size-3.5 text-muted-foreground transition-colors group-hover:text-foreground" aria-hidden="true" />
-      </div>
-      <div className="mt-4 flex flex-col justify-between gap-4">
+        <div className="mt-4 flex flex-col justify-between gap-4">
           <div>
             <p className="text-xs font-medium text-muted-foreground">
               {tDashboard("schedulerCard.queueDepth")}
@@ -61,7 +63,8 @@ export function SchedulerSummary({ schedulerStatus }: SchedulerSummaryProps) {
               </span>
             </span>
           </div>
-      </div>
-    </Link>
+        </div>
+      </Link>
+    </CardRoot>
   );
 }

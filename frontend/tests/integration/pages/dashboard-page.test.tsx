@@ -242,7 +242,18 @@ describe("DashboardPage", () => {
     expect(screen.getByText("dashboard.schedulerCard.states.dispatched")).toBeInTheDocument()
     expect(screen.getByText("dashboard.schedulerCard.states.completed")).toBeInTheDocument()
     const operations = screen.getByTestId("dashboard-operations-overview")
-    expect(operations).toHaveAttribute("data-layout", "flat-sections")
+    expect(operations).toHaveAttribute("data-layout", "card-grid")
+    expect(operations).toHaveClass(
+      "grid",
+      "grid-cols-1",
+      "gap-4",
+      "md:grid-cols-2",
+      "xl:grid-cols-3"
+    )
+    expect(Array.from(operations.children)).toHaveLength(3)
+    for (const card of Array.from(operations.children)) {
+      expect(card).toHaveAttribute("data-slot", "bioflow-card")
+    }
     expect(operations.querySelectorAll("[data-dashboard-section]")).toHaveLength(3)
   })
 

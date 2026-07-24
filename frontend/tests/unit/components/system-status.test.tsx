@@ -23,6 +23,8 @@ vi.mock("next-intl", () => ({
       "gpu.ready": "Ready for GPU workflows",
       "gpu.policyManual": "Manual · using 1 of 2 GPUs",
       "gpu.selected": "Selected",
+      "gpu.selectedDeviceIds": "Selected device IDs",
+      "gpu.moreDevices": "+7 more",
     }
 
     return copy[key] ?? key
@@ -108,6 +110,32 @@ describe("SystemStatus", () => {
     expect(screen.getByText("Ready for GPU workflows")).toBeInTheDocument()
     expect(screen.getByText("Manual · using 1 of 2 GPUs")).toBeInTheDocument()
     expect(screen.getByText(/GPU-b/)).toBeInTheDocument()
+  })
+
+  it("keeps multi-GPU device identifiers compact", () => {
+    const selectedGpuUuids = Array.from({ length: 8 }, (_, index) => `GPU-device-${index + 1}`)
+    const manyH20Gpus = {
+      ...manualH20Gpu,
+      detected_count: 8,
+      selected_count: 8,
+      selected_gpu_uuids: selectedGpuUuids,
+      gpus: selectedGpuUuids.map((uuid, index) => ({
+        index,
+        uuid,
+        name: "NVIDIA H20",
+        selected: true,
+        memory_total_mb: 97871,
+        memory_free_mb: 95000,
+        gpu_type: "NVIDIA" as const,
+      })),
+    } satisfies GpuInfo
+
+    render(<SystemStatus health={healthyWithNvidiaRuntime} gpuInfo={manyH20Gpus} />)
+
+    expect(screen.getByText("Selected device IDs")).toBeInTheDocument()
+    expect(screen.getByText("GPU-device-1")).toBeInTheDocument()
+    expect(screen.getByText("+7 more")).toBeInTheDocument()
+    expect(screen.queryByText("GPU-device-8")).not.toBeInTheDocument()
   })
 
   it("shows Apple Silicon as local hardware without claiming NVIDIA workflow readiness", () => {

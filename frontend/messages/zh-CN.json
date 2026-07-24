@@ -349,6 +349,8 @@
       "policyAuto": "自动 · 使用 {detected} 张中的 {selected} 张 GPU",
       "policyManual": "手动 · 使用 {detected} 张中的 {selected} 张 GPU",
       "policyDisabled": "GPU 探测已关闭",
+      "selectedDeviceIds": "已选设备 ID",
+      "moreDevices": "另有 {count} 张",
       "stale": "正在显示最近一次成功的 GPU 清单",
       "stateDisabled": "后端环境已关闭自动 GPU 探测。",
       "stateDockerUnavailable": "后端无法访问 Docker。",

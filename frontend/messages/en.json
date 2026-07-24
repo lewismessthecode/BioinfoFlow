@@ -349,6 +349,8 @@
       "policyAuto": "Automatic · using {selected} of {detected} GPUs",
       "policyManual": "Manual · using {selected} of {detected} GPUs",
       "policyDisabled": "GPU discovery disabled",
+      "selectedDeviceIds": "Selected device IDs",
+      "moreDevices": "+{count} more",
       "stale": "Showing the last successful GPU inventory",
       "stateDisabled": "Automatic discovery is disabled in the backend environment.",
       "stateDockerUnavailable": "Docker is unavailable to the backend.",
