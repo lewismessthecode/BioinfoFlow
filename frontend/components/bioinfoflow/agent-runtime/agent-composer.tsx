@@ -97,6 +97,7 @@ type AgentComposerProps = {
   contextTitle?: string | null
   ariaLabel?: string
   placeholderSuggestions?: readonly string[]
+  animatePlaceholder?: boolean
   className?: string
 }
 
@@ -157,6 +158,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       contextTitle,
       ariaLabel,
       placeholderSuggestions = [],
+      animatePlaceholder = true,
       className,
     },
     ref,
@@ -171,7 +173,8 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     const [focused, setFocused] = useState(false)
     const isCenterPresentation = presentation === "center"
     const animatedPlaceholder = useAnimatedPlaceholder({
-      enabled: !disabled && placeholderSuggestions.length > 0,
+      enabled:
+        animatePlaceholder && !disabled && placeholderSuggestions.length > 0,
       focused,
       value,
       strings: placeholderSuggestions,
