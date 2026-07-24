@@ -21,6 +21,7 @@ from app.repositories.agent_core_repo import (
 from app.repositories.agent_user_settings_repo import AgentUserSettingsRepository
 from app.repositories.project_repo import ProjectRepository
 from app.schemas.agent_core import AgentTurnSteerRead
+from app.services.agent_core.attachments import AgentAttachmentService
 from app.services.agent_core.events import AgentEventType, compact_transcript_events
 from app.services.agent_core.execution_target import (
     normalize_execution_scope,
@@ -34,6 +35,7 @@ from app.services.agent_core.execution_target import (
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.input_resolver import AgentInputResolver
 from app.services.agent_core.model_selection import (
+    known_model_supports_vision,
     normalize_model_selection,
     session_metadata_with_model_selection,
 )
@@ -451,6 +453,7 @@ class AgentCoreService:
             user_id=user_id,
         )
         await self.session_repo.update_all(session, status=AgentSessionStatus.DELETED)
+        AgentAttachmentService(self.db).delete_session_files(str(session.id))
 
     async def create_turn_record(
         self,
@@ -528,6 +531,15 @@ class AgentCoreService:
                 turn_metadata,
                 execution_scope,
             )
+        normalized_model_selection = normalize_model_selection(model_selection)
+        if (
+            any(
+                isinstance(part, dict) and part.get("type") == "image_ref"
+                for part in (input_parts or [])
+            )
+            and known_model_supports_vision(normalized_model_selection) is False
+        ):
+            raise BadRequestError("The selected model does not support image input")
         transcript_parts = await AgentInputResolver(
             self.db,
             legacy_file_resolver=_file_ref_text,
@@ -557,7 +569,6 @@ class AgentCoreService:
             str(session.id)
         ):
             session_updates["title"] = _generated_session_title(input_text)
-        normalized_model_selection = normalize_model_selection(model_selection)
         turn_id = str(uuid4())
         turn = await self.turn_repo.create_with_session_claim(
             session_id=str(session.id),

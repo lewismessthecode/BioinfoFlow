@@ -11,7 +11,7 @@ from app.repositories.agent_core_repo import AgentMessageRepository
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.model_runtime.contracts import ImagePart, TextPart
-from app.utils.exceptions import NotFoundError
+from app.utils.exceptions import BadRequestError, NotFoundError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -150,6 +150,29 @@ async def test_stale_attachment_fails_before_turn_is_created(db_session) -> None
                     "attachment_id": "00000000-0000-0000-0000-000000000000",
                 }
             ],
+        )
+
+    assert await service.turn_repo.list_for_session(str(session.id)) == []
+
+
+@pytest.mark.asyncio
+async def test_known_non_vision_model_rejects_image_before_turn_is_created(
+    db_session,
+) -> None:
+    session = await _session(db_session)
+    attachment = await _image_attachment(db_session, session)
+    service = AgentCoreService(db_session)
+
+    with pytest.raises(BadRequestError, match="does not support image input"):
+        await service.create_turn_record(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="Inspect.",
+            input_parts=[
+                {"type": "image_ref", "attachment_id": str(attachment.id)}
+            ],
+            model_selection={"provider": "deepseek", "model": "deepseek-chat"},
         )
 
     assert await service.turn_repo.list_for_session(str(session.id)) == []

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.llm.registry import get_provider_spec
+
 
 def normalize_model_selection(
     selection: dict[str, Any] | None,
@@ -25,6 +27,21 @@ def normalize_model_selection(
     if not provider:
         return None
     return {"provider": provider, "model": model}
+
+
+def known_model_supports_vision(
+    selection: dict[str, Any] | None,
+) -> bool | None:
+    normalized = normalize_model_selection(selection)
+    if not normalized or "provider" not in normalized:
+        return None
+    try:
+        provider = get_provider_spec(normalized["provider"])
+    except ValueError:
+        return None
+    model_id = normalized["model"]
+    model = next((item for item in provider.bundled_models if item.id == model_id), None)
+    return model.supports_vision if model is not None else None
 
 
 def session_model_selection_from_metadata(
