@@ -802,6 +802,65 @@ async def test_agent_session_state_can_limit_large_event_payload(async_client, d
 
 
 @pytest.mark.asyncio
+async def test_agent_session_state_transcript_view_drops_superseded_stream_deltas(
+    async_client,
+    db_session,
+):
+    project_id = await _create_project(async_client)
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"project_id": project_id, "title": "Long transcript"},
+    )
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+    turn = await AgentCoreService(db_session).create_turn_record(
+        session_id=session["id"],
+        workspace_id=session["workspace_id"],
+        user_id=session["user_id"],
+        input_text="Show the full history",
+    )
+    events = [
+        (100, "assistant.text.delta", {"message_id": "message-1", "content": "H"}),
+        (101, "assistant.text.delta", {"message_id": "message-1", "content": "Hi"}),
+        (102, "assistant.text.completed", {"message_id": "message-1", "text": "Hi"}),
+        (103, "assistant.thinking.delta", {"message_id": "message-1", "content": "Check"}),
+        (104, "assistant.thinking.completed", {"message_id": "message-1", "content": "Check"}),
+        (105, "assistant.tool_call.delta", {"call_id": "call-1", "arguments": {"path": "."}}),
+        (106, "assistant.tool_call.completed", {"call_id": "call-1", "arguments": {"path": "."}}),
+        (107, "assistant.text.delta", {"message_id": "message-incomplete", "content": "Keep me"}),
+    ]
+    for seq, event_type, payload in events:
+        db_session.add(
+            AgentEvent(
+                session_id=session["id"],
+                turn_id=str(turn.id),
+                seq=seq,
+                type=event_type,
+                payload=payload,
+                visibility="user",
+                schema_version=1,
+            )
+        )
+    await db_session.commit()
+
+    state = await async_client.get(
+        f"/api/v1/agent/sessions/{session['id']}/state?event_view=transcript"
+    )
+
+    assert state.status_code == 200
+    returned = state.json()["data"]["events"]
+    returned_seqs = [item["seq"] for item in returned]
+    assert 100 not in returned_seqs
+    assert 101 not in returned_seqs
+    assert 103 not in returned_seqs
+    assert 105 not in returned_seqs
+    assert 102 in returned_seqs
+    assert 104 in returned_seqs
+    assert 106 in returned_seqs
+    assert 107 in returned_seqs
+
+
+@pytest.mark.asyncio
 async def test_agent_session_state_includes_cumulative_token_usage_summary(
     async_client,
     db_session,

@@ -130,7 +130,7 @@ describe("useAgentRuntime", () => {
     await waitFor(() => expect(mocks.subscribeAgentRuntimeEvents).toHaveBeenCalledTimes(1))
   })
 
-  it("exposes stream status and refreshes state when the stream is ready", async () => {
+  it("exposes connected stream status without refreshing state on ready", async () => {
     const { result } = renderHook(() =>
       useAgentRuntime(null, {
         activeSessionId: "session-1",
@@ -149,9 +149,7 @@ describe("useAgentRuntime", () => {
     })
 
     expect(result.current.streamStatus).toBe("connected")
-    expect(mocks.getAgentRuntimeState.mock.calls.length).toBeGreaterThan(
-      stateCallsBeforeReady,
-    )
+    expect(mocks.getAgentRuntimeState).toHaveBeenCalledTimes(stateCallsBeforeReady)
   })
 
   it("refreshes state when terminal stream events can carry persisted token usage", async () => {
@@ -188,11 +186,6 @@ describe("useAgentRuntime", () => {
       turns: AgentRuntimeTurn[]
       events: AgentRuntimeEvent[]
     }) => void
-    let resolveReadyRefresh: (payload: {
-      session: AgentRuntimeSession
-      turns: AgentRuntimeTurn[]
-      events: AgentRuntimeEvent[]
-    }) => void
     let resolveTerminalRefresh: (payload: {
       session: AgentRuntimeSession
       turns: AgentRuntimeTurn[]
@@ -202,11 +195,6 @@ describe("useAgentRuntime", () => {
       .mockReturnValueOnce(
         new Promise((resolve) => {
           resolveInitialState = resolve
-        }),
-      )
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          resolveReadyRefresh = resolve
         }),
       )
       .mockReturnValueOnce(
@@ -228,11 +216,6 @@ describe("useAgentRuntime", () => {
     await waitFor(() => expect(mocks.subscribeAgentRuntimeEvents).toHaveBeenCalledTimes(1))
     const subscription = mocks.subscribeAgentRuntimeEvents.mock.calls[0][0]
 
-    await act(async () => {
-      subscription.onReady?.()
-    })
-    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalledTimes(2))
-
     act(() => {
       subscription.onEvent({
         ...event,
@@ -241,7 +224,7 @@ describe("useAgentRuntime", () => {
         type: "turn.completed",
       })
     })
-    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalledTimes(2))
 
     await act(async () => {
       resolveTerminalRefresh({
@@ -263,10 +246,6 @@ describe("useAgentRuntime", () => {
     await waitFor(() =>
       expect(result.current.state.session?.token_usage_summary?.total_tokens).toBe(100),
     )
-
-    await act(async () => {
-      resolveReadyRefresh({ session, turns: [], events: [] })
-    })
 
     expect(result.current.state.session?.token_usage_summary?.total_tokens).toBe(100)
   })
@@ -646,7 +625,7 @@ describe("useAgentRuntime", () => {
     expect(result.current.sessions[0]?.title).toBe("RNA-seq QC Plan")
   })
 
-  it("loads complete session state when restoring a conversation", async () => {
+  it("loads transcript-optimized session state when restoring a conversation", async () => {
     renderHook(() =>
       useAgentRuntime(null, {
         activeSessionId: "session-1",
@@ -655,8 +634,27 @@ describe("useAgentRuntime", () => {
     )
 
     await waitFor(() =>
-      expect(mocks.getAgentRuntimeState).toHaveBeenCalledWith("session-1"),
+      expect(mocks.getAgentRuntimeState).toHaveBeenCalledWith("session-1", {
+        eventView: "transcript",
+      }),
     )
+  })
+
+  it("does not redownload state when the replay stream becomes ready", async () => {
+    renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(mocks.subscribeAgentRuntimeEvents).toHaveBeenCalledOnce())
+    const subscription = mocks.subscribeAgentRuntimeEvents.mock.calls[0][0]
+    const callsBeforeReady = mocks.getAgentRuntimeState.mock.calls.length
+
+    act(() => subscription.onReady?.())
+
+    expect(mocks.getAgentRuntimeState).toHaveBeenCalledTimes(callsBeforeReady)
   })
 
   it("starts the live stream after state load from the latest loaded event", async () => {
@@ -1016,7 +1014,11 @@ describe("useAgentRuntime", () => {
       { initialProps: { activeSessionId: "session-1" } },
     )
 
-    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalledWith("session-1"))
+    await waitFor(() =>
+      expect(mocks.getAgentRuntimeState).toHaveBeenCalledWith("session-1", {
+        eventView: "transcript",
+      }),
+    )
 
     rerender({ activeSessionId: "" })
 

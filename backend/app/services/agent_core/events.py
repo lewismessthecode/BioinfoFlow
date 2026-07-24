@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 
 class AgentEventType:
     TURN_CREATED = "turn.created"
@@ -44,4 +46,54 @@ class AgentEventType:
     MEMORY_REJECTED = "memory.rejected"
 
 
-__all__ = ["AgentEventType"]
+_DELTA_COMPLETION_TYPES = {
+    AgentEventType.ASSISTANT_TEXT_DELTA: AgentEventType.ASSISTANT_TEXT_COMPLETED,
+    AgentEventType.ASSISTANT_THINKING_DELTA: AgentEventType.ASSISTANT_THINKING_COMPLETED,
+    AgentEventType.ASSISTANT_TOOL_CALL_DELTA: AgentEventType.ASSISTANT_TOOL_CALL_COMPLETED,
+}
+
+
+def compact_transcript_events(events: list[Any]) -> list[Any]:
+    """Drop stream deltas superseded by cumulative completion events."""
+    completion_keys = {
+        key
+        for event in events
+        if event.type in _DELTA_COMPLETION_TYPES.values()
+        if (key := _stream_event_key(event)) is not None
+    }
+    return [
+        event
+        for event in events
+        if event.type not in _DELTA_COMPLETION_TYPES
+        or _stream_event_key(event) not in completion_keys
+    ]
+
+
+def _stream_event_key(event: Any) -> tuple[str, str, str] | None:
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    if event.type in {
+        AgentEventType.ASSISTANT_TEXT_DELTA,
+        AgentEventType.ASSISTANT_TEXT_COMPLETED,
+    }:
+        family = "text"
+        identifier = payload.get("message_id")
+    elif event.type in {
+        AgentEventType.ASSISTANT_THINKING_DELTA,
+        AgentEventType.ASSISTANT_THINKING_COMPLETED,
+    }:
+        family = "thinking"
+        identifier = payload.get("message_id")
+    elif event.type in {
+        AgentEventType.ASSISTANT_TOOL_CALL_DELTA,
+        AgentEventType.ASSISTANT_TOOL_CALL_COMPLETED,
+    }:
+        family = "tool_call"
+        identifier = payload.get("call_id")
+    else:
+        return None
+    if not isinstance(identifier, str) or not identifier:
+        return None
+    return str(event.turn_id or ""), family, identifier
+
+
+__all__ = ["AgentEventType", "compact_transcript_events"]
