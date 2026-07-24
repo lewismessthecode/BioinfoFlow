@@ -121,6 +121,24 @@ OpenAI、Anthropic 和 DeepSeek 可以直接从 Agent 输入框连接。Kimi、K
 Gemini、OpenRouter、Ollama、vLLM 以及其他兼容接口，可以在
 **设置 → AI 服务商**中配置。
 
+### 可选：语音输入
+
+语音模型与 Bioinfoflow 主服务分开运行。浏览器负责录音，Bioinfoflow 后端统一转换
+音频格式，再调用一个兼容 OpenAI Audio API 的 ASR 服务；Fun-ASR 或 Whisper 不会
+被加载进 Bioinfoflow 后端进程。
+
+```text
+浏览器 → Bioinfoflow 后端 → 独立 ASR 服务 → 可编辑的输入框文字
+```
+
+源码版 Compose 提供两个按需启动的 sidecar：中文和 Linux NVIDIA GPU 优先选择
+Fun-ASR；普通 CPU 或多语言场景选择 faster-whisper；也可以显式配置外部云端接口。
+只需启动当前使用的一个本地模型，普通的 Bioinfoflow 启动命令不会自动下载模型。
+
+配置和启动命令见[语音输入部署说明](docs/deployment/voice-dictation.md)。目前一行命令
+安装的 localhost 版本尚未打包本地 ASR sidecar；如果要使用内置 Fun-ASR 或
+faster-whisper，请使用源码版 Compose 部署。
+
 ## Agent 不是旁边多出来的聊天框
 
 它和 Bioinfoflow 共用同一套项目、工作流注册信息、文件、运行历史、调度状态、
@@ -240,6 +258,7 @@ bun run dev
 
 - [文档首页](docs/README.md)
 - [Docker 与安装器指南](docs/getting-started/docker.md)
+- [语音输入部署说明](docs/deployment/voice-dictation.md)
 - [运行手册](RUNBOOK.md)
 - [架构说明](docs/architecture.md)
 - [存储与数据布局](docs/concepts/storage.md)
