@@ -51,6 +51,11 @@ vi.mock("next-intl", () => ({
       "attachments.delete": `Delete ${values?.name ?? ""}`,
       "attachments.deleteAction": "Delete",
       "attachments.imagePreview": "Image attachment preview",
+      "contextSearch.menuTitle": "Files, workflows, and runs",
+      "contextSearch.loading": "Searching context…",
+      "contextSearch.empty": "Type to search context",
+      "contextSearch.noMatches": "No matching context",
+      "contextSearch.remove": `Remove ${values?.name ?? ""}`,
       "mode.label": "Agent mode",
       "mode.act": "Act",
       "mode.plan": "Plan",
@@ -1567,5 +1572,72 @@ describe("AgentComposer", () => {
       />,
     )
     expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled()
+  })
+
+  it("searches server context for @ mentions and selects a structured reference", async () => {
+    const onAddContextMention = vi.fn()
+    const onSearchContext = vi.fn().mockResolvedValue({
+      results: [
+        {
+          id: "file:src/main.py",
+          kind: "file",
+          label: "main.py",
+          detail: "src/main.py",
+          input_part: { type: "file_ref", path: "src/main.py" },
+        },
+      ],
+      counts: { file: 1 },
+      next_cursor: null,
+    })
+    render(
+      <AgentComposer
+        value="@mai"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        onSearchContext={onSearchContext}
+        onAddContextMention={onAddContextMention}
+      />,
+    )
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    ;(textarea as HTMLTextAreaElement).setSelectionRange(4, 4)
+    fireEvent.click(textarea)
+
+    expect(await screen.findByRole("option", { name: /main.py/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("option", { name: /main.py/ }))
+    expect(onAddContextMention).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "file:src/main.py" }),
+    )
+  })
+
+  it("treats a malformed context search response as an empty result", async () => {
+    const onSearchContext = vi.fn().mockResolvedValue({ data: [] })
+    render(
+      <AgentComposer
+        value="@missing"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        onSearchContext={onSearchContext}
+        onAddContextMention={vi.fn()}
+      />,
+    )
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    ;(textarea as HTMLTextAreaElement).setSelectionRange(8, 8)
+    fireEvent.click(textarea)
+
+    await waitFor(() => expect(onSearchContext).toHaveBeenCalledTimes(1))
+    expect(await screen.findByTestId("agent-context-menu-empty")).toHaveTextContent(
+      "No matching context",
+    )
+    expect(screen.queryByRole("option")).not.toBeInTheDocument()
   })
 })

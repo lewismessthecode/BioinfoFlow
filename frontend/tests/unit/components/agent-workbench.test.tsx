@@ -116,6 +116,17 @@ vi.mock("next-intl", () => ({
       "attachMenu.runPreflight": "Run preflight",
       "attachMenu.diagnoseRun": "Diagnose run",
       "attachMenu.comingSoon": "Coming soon",
+      "attachMenu.addFileFolder": "Add file/folder",
+      "attachMenu.addFiles": "Add files",
+      "attachMenu.addFolder": "Add folder",
+      "attachments.uploadFailed": "Upload failed",
+      "attachments.removeFailed": "Could not remove attachment",
+      remove: `Remove ${values?.name ?? ""}`,
+      "contextSearch.menuTitle": "Files, workflows, and runs",
+      "contextSearch.loading": "Searching context…",
+      "contextSearch.empty": "Type to search context",
+      "contextSearch.noMatches": "No matching context",
+      "contextSearch.remove": `Remove ${values?.name ?? ""}`,
       "permission.label": "Permission mode",
       "permission.options.ask_each_action.label": "Request approval",
       "permission.options.ask_each_action.description": "Ask before side-effecting actions.",
@@ -237,6 +248,7 @@ vi.mock("next/link", () => ({
 
 vi.mock("@/lib/api", () => ({
   apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+  buildApiUrl: (path: string) => path,
 }))
 
 vi.mock("@/hooks/use-agent-runtime", () => ({
@@ -354,6 +366,7 @@ function setupRuntime({
     reconciliation: null,
     error: null,
   },
+  ensureSession,
 }: {
   session?: AgentRuntimeSession | null
   turns?: AgentRuntimeTurn[]
@@ -374,6 +387,7 @@ function setupRuntime({
     } | null
     error: string | null
   }
+  ensureSession?: ReturnType<typeof vi.fn>
 } = {}) {
   if (send && modelSelection !== null) {
     configureModelForTest(modelSelection ?? undefined)
@@ -388,6 +402,7 @@ function setupRuntime({
       error: null,
     },
     setActiveSessionId: vi.fn(),
+    ensureSession: ensureSession ?? vi.fn().mockResolvedValue(session ?? baseSession),
     send: send ?? vi.fn(),
     steer: vi.fn(),
     interrupt: vi.fn(),
@@ -448,9 +463,24 @@ function demoFirstRunContext() {
 
 function configureModelForTest(
   selectedModel = { provider: "openai", model: "gpt-5" },
+  supportsVision = true,
 ) {
   useLlmSettingsMock.mockReturnValue({
-    models: [],
+    models: [
+      {
+        provider: selectedModel.provider,
+        provider_kind: selectedModel.provider,
+        label: selectedModel.provider,
+        models: [
+          {
+            id: selectedModel.model,
+            name: selectedModel.model,
+            context_window: null,
+            supports_vision: supportsVision,
+          },
+        ],
+      },
+    ],
     selectedModel,
     isLoading: false,
     setSelectedModel: vi.fn(),
@@ -1702,6 +1732,50 @@ describe("AgentWorkbench", () => {
     expect(screen.getAllByText("@rnaseq-quant-mini")).toHaveLength(2)
   })
 
+  it("retries a structured context-only turn", async () => {
+    const send = vi.fn(() => new Promise(() => {}))
+    setupRuntime({
+      send,
+      turns: [{
+        ...baseTurn,
+        id: "turn-file-only",
+        input_text: "",
+        input_parts: [{ type: "file_ref", path: "src/main.py" }],
+        model_profile_snapshot: {
+          metadata: {
+            input_display: {
+              inline_parts: [{
+                type: "context",
+                id: "file:src/main.py",
+                kind: "file",
+                label: "main.py",
+                detail: "src/main.py",
+              }],
+            },
+          },
+        },
+      }],
+    })
+
+    render(<AgentWorkbench projectId="project-1" />)
+    fireEvent.click(screen.getByRole("button", { name: "Retry response" }))
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "",
+        expect.objectContaining({
+          inputParts: [{ type: "file_ref", path: "src/main.py" }],
+          metadata: expect.objectContaining({
+            input_display: expect.objectContaining({
+              inline_parts: [expect.objectContaining({ label: "main.py" })],
+            }),
+          }),
+        }),
+      ),
+    )
+    expect(screen.getAllByText("@main.py")).toHaveLength(2)
+  })
+
   it("keeps an active loading session in the conversation layout", () => {
     setupRuntime({ turns: [], status: "loading" })
 
@@ -1846,19 +1920,26 @@ describe("AgentWorkbench", () => {
           },
         })
       }
-      if (path === "/workflows") {
+      if (path === "/agent/context/search") {
         return Promise.resolve({
-          data: [
-            {
-              id: "workflow-deaf-20",
-              name: "Deaf_20",
-              version: "2.0.9.9",
-              source: "local",
-              engine: "nextflow",
-              description: "Deaf workflow.",
-              updated_at: "2026-07-12T00:00:00Z",
-            },
-          ],
+          data: {
+            results: [{
+              id: "workflow:workflow-deaf-20",
+              kind: "workflow",
+              label: "Deaf_20",
+              detail: "2.0.9.9 · nextflow",
+              input_part: {
+                kind: "workflow_ref",
+                workflow_id: "workflow-deaf-20",
+                project_id: null,
+                scope: "global",
+                display_name: "Deaf_20",
+                display_version: "2.0.9.9",
+              },
+            }],
+            counts: { workflow: 1 },
+            next_cursor: null,
+          },
         })
       }
       if (path === "/connections") return new Promise(() => {})
@@ -1877,7 +1958,7 @@ describe("AgentWorkbench", () => {
 
     const tokenFlow = screen.getByTestId("agent-inline-token-flow")
     const skillToken = within(tokenFlow).getByTestId("agent-inline-skill-token")
-    const workflowToken = within(tokenFlow).getByTestId("agent-inline-workflow-token")
+    const workflowToken = within(tokenFlow).getByRole("group", { name: "@Deaf_20" })
     expect(
       skillToken.compareDocumentPosition(workflowToken) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
@@ -1889,43 +1970,26 @@ describe("AgentWorkbench", () => {
     apiRequestMock.mockImplementation((path: string) => {
       if (path === "/agent/skills") return Promise.resolve({ data: { skills: [] } })
       if (path === "/connections") return new Promise(() => {})
-      if (path === "/projects/project-1/workflows") {
+      if (path === "/agent/context/search") {
         return Promise.resolve({
-          data: [
-            {
-              source: "local",
-              name: "rnaseq-quant-mini",
-              pinned_workflow: {
-                id: "workflow-rna-12",
-                name: "rnaseq-quant-mini",
-                version: "1.2.0",
-                source: "local",
-                engine: "nextflow",
-                description: "RNA-seq quantification.",
-                updated_at: "2026-07-10T00:00:00Z",
+          data: {
+            results: [{
+              id: "workflow:workflow-rna-12",
+              kind: "workflow",
+              label: "rnaseq-quant-mini",
+              detail: "1.2.0 · nextflow",
+              input_part: {
+                kind: "workflow_ref",
+                workflow_id: "workflow-rna-12",
+                project_id: "project-1",
+                scope: "project",
+                display_name: "rnaseq-quant-mini",
+                display_version: "1.2.0",
               },
-              versions: [
-                {
-                  id: "workflow-rna-12",
-                  name: "rnaseq-quant-mini",
-                  version: "1.2.0",
-                  source: "local",
-                  engine: "nextflow",
-                  description: "RNA-seq quantification.",
-                  updated_at: "2026-07-10T00:00:00Z",
-                },
-                {
-                  id: "workflow-rna-11",
-                  name: "rnaseq-quant-mini",
-                  version: "1.1.0",
-                  source: "local",
-                  engine: "nextflow",
-                  description: "Older RNA-seq quantification.",
-                  updated_at: "2026-07-01T00:00:00Z",
-                },
-              ],
-            },
-          ],
+            }],
+            counts: { workflow: 1 },
+            next_cursor: null,
+          },
         })
       }
       return Promise.resolve({ data: [] })
@@ -1972,12 +2036,11 @@ describe("AgentWorkbench", () => {
               ],
               inline_parts: [
                 {
-                  type: "workflow",
-                  workflow_id: "workflow-rna-12",
-                  project_id: "project-1",
-                  scope: "project",
-                  name: "rnaseq-quant-mini",
-                  version: "1.2.0",
+                  type: "context",
+                  id: "workflow:workflow-rna-12",
+                  kind: "workflow",
+                  label: "rnaseq-quant-mini",
+                  detail: "1.2.0 · nextflow",
                 },
                 { type: "text", text: "Draft a run plan" },
               ],
@@ -2036,46 +2099,46 @@ describe("AgentWorkbench", () => {
     expect(bubble).toHaveTextContent("Run @workflow with sample A")
   })
 
-  it("clears stale workflow options while project workflow mentions reload", async () => {
+  it("clears stale context options while a new project search loads", async () => {
     setupRuntime()
-    apiRequestMock.mockImplementation((path: string) => {
+    apiRequestMock.mockImplementation(
+      (path: string, options?: { params?: Record<string, string> }) => {
       if (path === "/agent/skills") return Promise.resolve({ data: { skills: [] } })
       if (path === "/connections") return new Promise(() => {})
-      if (path === "/projects/project-1/workflows") {
+      if (
+        path === "/agent/context/search" &&
+        options?.params?.project_id === "project-1"
+      ) {
         return Promise.resolve({
-          data: [
-            {
-              source: "local",
-              name: "old-project-workflow",
-              pinned_workflow: {
-                id: "workflow-old-10",
-                name: "old-project-workflow",
-                version: "1.0.0",
-                source: "local",
-                engine: "nextflow",
-                description: "Old project workflow.",
-                updated_at: "2026-07-10T00:00:00Z",
+          data: {
+            results: [{
+              id: "workflow:workflow-old-10",
+              kind: "workflow",
+              label: "old-project-workflow",
+              detail: "1.0.0 · nextflow",
+              input_part: {
+                kind: "workflow_ref",
+                workflow_id: "workflow-old-10",
+                project_id: "project-1",
+                scope: "project",
+                display_name: "old-project-workflow",
+                display_version: "1.0.0",
               },
-              versions: [
-                {
-                  id: "workflow-old-10",
-                  name: "old-project-workflow",
-                  version: "1.0.0",
-                  source: "local",
-                  engine: "nextflow",
-                  description: "Old project workflow.",
-                  updated_at: "2026-07-10T00:00:00Z",
-                },
-              ],
-            },
-          ],
+            }],
+            counts: { workflow: 1 },
+            next_cursor: null,
+          },
         })
       }
-      if (path === "/projects/project-2/workflows") {
+      if (
+        path === "/agent/context/search" &&
+        options?.params?.project_id === "project-2"
+      ) {
         return new Promise(() => {})
       }
       return Promise.resolve({ data: [] })
-    })
+      },
+    )
 
     const { rerender } = render(<AgentWorkbench projectId="project-1" />)
     const input = screen.getByLabelText("Message Bioinfoflow...")
@@ -2088,16 +2151,20 @@ describe("AgentWorkbench", () => {
 
     fireEvent.change(input, { target: { value: "" } })
     rerender(<AgentWorkbench projectId="project-2" />)
-    await waitFor(() =>
-      expect(apiRequestMock).toHaveBeenCalledWith("/projects/project-2/workflows"),
-    )
-
     const nextInput = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(nextInput, { target: { value: "@old" } })
 
-    expect(screen.queryByText("@old-project-workflow")).not.toBeInTheDocument()
-    expect(screen.getByTestId("agent-workflow-menu-empty")).toHaveTextContent(
-      "Loading workflows...",
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenCalledWith(
+        "/agent/context/search",
+        expect.objectContaining({
+          params: expect.objectContaining({ project_id: "project-2", q: "old" }),
+        }),
+      ),
+    )
+    expect(screen.queryByText("old-project-workflow")).not.toBeInTheDocument()
+    expect(screen.getByTestId("agent-context-menu-empty")).toHaveTextContent(
+      "Searching context…",
     )
   })
 
@@ -2107,28 +2174,26 @@ describe("AgentWorkbench", () => {
     apiRequestMock.mockImplementation((path: string) => {
       if (path === "/agent/skills") return Promise.resolve({ data: { skills: [] } })
       if (path === "/connections") return new Promise(() => {})
-      if (path === "/workflows") {
+      if (path === "/agent/context/search") {
         return Promise.resolve({
-          data: [
-            {
-              id: "workflow-wgs-20",
-              name: "parabricks-wgs",
-              version: "2.0.0",
-              source: "github",
-              engine: "nextflow",
-              description: "GPU WGS workflow.",
-              updated_at: "2026-07-12T00:00:00Z",
-            },
-            {
-              id: "workflow-wgs-10",
-              name: "parabricks-wgs",
-              version: "1.0.0",
-              source: "github",
-              engine: "nextflow",
-              description: "Previous GPU WGS workflow.",
-              updated_at: "2026-07-01T00:00:00Z",
-            },
-          ],
+          data: {
+            results: [{
+              id: "workflow:workflow-wgs-20",
+              kind: "workflow",
+              label: "parabricks-wgs",
+              detail: "2.0.0 · nextflow",
+              input_part: {
+                kind: "workflow_ref",
+                workflow_id: "workflow-wgs-20",
+                project_id: null,
+                scope: "global",
+                display_name: "parabricks-wgs",
+                display_version: "2.0.0",
+              },
+            }],
+            counts: { workflow: 1 },
+            next_cursor: null,
+          },
         })
       }
       return Promise.resolve({ data: [] })
@@ -2173,12 +2238,11 @@ describe("AgentWorkbench", () => {
               ],
               inline_parts: [
                 {
-                  type: "workflow",
-                  workflow_id: "workflow-wgs-20",
-                  project_id: null,
-                  scope: "global",
-                  name: "parabricks-wgs",
-                  version: "2.0.0",
+                  type: "context",
+                  id: "workflow:workflow-wgs-20",
+                  kind: "workflow",
+                  label: "parabricks-wgs",
+                  detail: "2.0.0 · nextflow",
                 },
                 { type: "text", text: "Explain required inputs" },
               ],
@@ -2187,6 +2251,76 @@ describe("AgentWorkbench", () => {
         }),
       ),
     )
+  })
+
+  it("selects an @file result and sends it as visible structured context", async () => {
+    const send = vi.fn(() => new Promise(() => {}))
+    setupRuntime({ send })
+    apiRequestMock.mockImplementation(
+      (path: string, options?: { params?: Record<string, string> }) => {
+        if (path === "/agent/skills") return Promise.resolve({ data: { skills: [] } })
+        if (path === "/connections") return new Promise(() => {})
+        if (
+          path === "/agent/context/search" &&
+          options?.params?.scope === "file" &&
+          options.params.q === ""
+        ) {
+          return Promise.resolve({
+            data: {
+              results: [{
+                id: "file:src/main.py",
+                kind: "file",
+                label: "main.py",
+                detail: "src/main.py",
+                input_part: { type: "file_ref", path: "src/main.py" },
+              }],
+              counts: { file: 1 },
+              next_cursor: null,
+            },
+          })
+        }
+        return Promise.resolve({ data: [] })
+      },
+    )
+
+    render(<AgentWorkbench projectId="project-1" />)
+
+    const input = screen.getByLabelText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "@file" } })
+    const option = await screen.findByRole("option", { name: /main.py/ })
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "/agent/context/search",
+      expect.objectContaining({
+        params: expect.objectContaining({ q: "", scope: "file" }),
+      }),
+    )
+    fireEvent.click(option)
+
+    expect(input).toHaveValue("")
+    expect(screen.getByRole("group", { name: "@main.py" })).toBeInTheDocument()
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "",
+        expect.objectContaining({
+          inputParts: [{ type: "file_ref", path: "src/main.py" }],
+          metadata: expect.objectContaining({
+            input_display: expect.objectContaining({
+              inline_parts: [{
+                type: "context",
+                id: "file:src/main.py",
+                kind: "file",
+                label: "main.py",
+                detail: "src/main.py",
+              }],
+            }),
+          }),
+        }),
+      ),
+    )
+    expect(within(screen.getByTestId("agent-user-message")).getByText("@main.py"))
+      .toBeInTheDocument()
   })
 
   it("turns @workflow into workflow context for the next turn", async () => {
@@ -2656,7 +2790,7 @@ describe("AgentWorkbench", () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it("treats an optimistic in-flight turn as active before backend state catches up", () => {
+  it("treats an optimistic in-flight turn as active before backend state catches up", async () => {
     writeAgentTurnPolicy("queue")
     const send = vi.fn(() => new Promise(() => {}))
     setupRuntime({ session: baseSession, send })
@@ -2666,6 +2800,7 @@ describe("AgentWorkbench", () => {
     const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "First turn" } })
     fireEvent.keyDown(input, { key: "Enter" })
+    await act(async () => {})
     fireEvent.change(input, { target: { value: "Second turn" } })
     fireEvent.keyDown(input, { key: "Enter" })
 
@@ -3120,7 +3255,7 @@ describe("AgentWorkbench", () => {
     ).toBeInTheDocument()
   })
 
-  it("treats approval and user waits as active turns for queue policy", () => {
+  it("treats approval and user waits as active turns for queue policy", async () => {
     writeAgentTurnPolicy("queue")
     const send = vi.fn().mockResolvedValue(undefined)
     setupRuntime({
@@ -3134,6 +3269,7 @@ describe("AgentWorkbench", () => {
     const input = screen.getByLabelText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "After approval" } })
     fireEvent.keyDown(input, { key: "Enter" })
+    await act(async () => {})
 
     expect(send).not.toHaveBeenCalled()
     expect(screen.getByText("After approval")).toBeInTheDocument()
@@ -3453,7 +3589,7 @@ describe("AgentWorkbench", () => {
     expect(firstSend).not.toHaveBeenCalled()
   })
 
-  it("opens a placeholder attachment menu without sending a message", async () => {
+  it("opens the file and folder attachment selector without sending a message", async () => {
     const send = vi.fn()
     useAgentRuntimeMock.mockReturnValue({
       state: {
@@ -3477,22 +3613,11 @@ describe("AgentWorkbench", () => {
     )
 
     expect(
-      await screen.findByRole("menuitem", { name: "Attach files" }),
+      await screen.findByRole("menuitem", { name: "Add file/folder" }),
     ).toBeInTheDocument()
-    expect(
-      screen.getByRole("menuitem", { name: "Browse project files" }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole("menuitem", { name: "Reference a run" }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole("menuitem", { name: "Run preflight" }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole("menuitem", { name: "Diagnose run" }),
-    ).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("menuitem", { name: "Attach files" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add file/folder" }))
+    expect(screen.getByRole("menuitem", { name: "Add files" })).toBeInTheDocument()
+    expect(screen.getByRole("menuitem", { name: "Add folder" })).toBeInTheDocument()
 
     expect(send).not.toHaveBeenCalled()
   })
@@ -3924,5 +4049,160 @@ describe("AgentWorkbench", () => {
     })
     expect(screen.queryByTestId("agent-todo-dock")).not.toBeInTheDocument()
     expect(screen.queryByText("Working old task")).not.toBeInTheDocument()
+  })
+
+  it("creates a session before uploading a pasted image and sends an image reference", async () => {
+    const send = vi.fn(() => new Promise(() => {}))
+    const ensureSession = vi.fn().mockResolvedValue(baseSession)
+    setupRuntime({ send, ensureSession })
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/agent/sessions/session-1/attachments") {
+        return Promise.resolve({
+          data: [
+            {
+              id: "attachment-image-1",
+              session_id: "session-1",
+              workspace_id: "workspace-1",
+              user_id: "dev",
+              kind: "image",
+              source: "clipboard",
+              filename: "clipboard.png",
+              mime_type: "image/png",
+              size_bytes: 3,
+              status: "ready",
+              created_at: "2026-06-08T00:00:00Z",
+              updated_at: "2026-06-08T00:00:00Z",
+            },
+          ],
+        })
+      }
+      if (path === "/connections") return new Promise(() => {})
+      if (path === "/agent/skills" || path === "/workflows") return new Promise(() => {})
+      return Promise.resolve({ data: [] })
+    })
+
+    render(<AgentWorkbench activeSessionId="" />)
+    const image = new File(["png"], "clipboard.png", { type: "image/png" })
+    await act(async () => {
+      fireEvent.paste(screen.getByRole("textbox", { name: "Message Bioinfoflow..." }), {
+        clipboardData: { files: [image], getData: () => "" },
+      })
+    })
+
+    await waitFor(() => expect(ensureSession).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled(),
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }))
+
+    expect(send).toHaveBeenCalledWith(
+      "",
+      expect.objectContaining({
+        inputParts: [
+          {
+            type: "image_ref",
+            attachment_id: "attachment-image-1",
+            detail: "high",
+          },
+        ],
+      }),
+    )
+  })
+
+  it("does not restore a local attachment removed before its upload completes", async () => {
+    setupRuntime({ session: baseSession })
+    let resolveUpload: ((value: { data: Array<Record<string, unknown>> }) => void) | null = null
+    const upload = new Promise<{ data: Array<Record<string, unknown>> }>((resolve) => {
+      resolveUpload = resolve
+    })
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/agent/sessions/session-1/attachments") return upload
+      if (path === "/agent/attachments/attachment-image-late") {
+        return Promise.resolve({ data: null })
+      }
+      if (path === "/connections") return new Promise(() => {})
+      if (path === "/agent/skills" || path === "/workflows") return new Promise(() => {})
+      return Promise.resolve({ data: [] })
+    })
+
+    render(<AgentWorkbench />)
+    const image = new File(["png"], "late.png", { type: "image/png" })
+    fireEvent.paste(screen.getByRole("textbox", { name: "Message Bioinfoflow..." }), {
+      clipboardData: { files: [image], getData: () => "" },
+    })
+    fireEvent.click(await screen.findByRole("button", { name: "Remove late.png" }))
+
+    await act(async () => {
+      resolveUpload?.({
+        data: [{
+          id: "attachment-image-late",
+          session_id: "session-1",
+          workspace_id: "workspace-1",
+          user_id: "dev",
+          kind: "image",
+          source: "clipboard",
+          filename: "late.png",
+          mime_type: "image/png",
+          size_bytes: 3,
+          status: "ready",
+          created_at: "2026-06-08T00:00:00Z",
+          updated_at: "2026-06-08T00:00:00Z",
+        }],
+      })
+    })
+
+    expect(screen.queryByRole("button", { name: "Remove late.png" }))
+      .not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenCalledWith(
+        "/agent/attachments/attachment-image-late",
+        { method: "DELETE" },
+      ),
+    )
+  })
+
+  it("preserves pasted images and opens model selection for an explicit non-vision model", async () => {
+    const send = vi.fn()
+    setupRuntime({ send, session: baseSession })
+    configureModelForTest({ provider: "text-provider", model: "text-only" }, false)
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/agent/sessions/session-1/attachments") {
+        return Promise.resolve({
+          data: [
+            {
+              id: "attachment-image-1",
+              session_id: "session-1",
+              workspace_id: "workspace-1",
+              user_id: "dev",
+              kind: "image",
+              source: "clipboard",
+              filename: "clipboard.png",
+              mime_type: "image/png",
+              size_bytes: 3,
+              status: "ready",
+              created_at: "2026-06-08T00:00:00Z",
+              updated_at: "2026-06-08T00:00:00Z",
+            },
+          ],
+        })
+      }
+      if (path === "/connections") return new Promise(() => {})
+      if (path === "/agent/skills" || path === "/workflows") return new Promise(() => {})
+      return Promise.resolve({ data: [] })
+    })
+
+    render(<AgentWorkbench activeSessionId="session-1" />)
+    const image = new File(["png"], "clipboard.png", { type: "image/png" })
+    fireEvent.paste(screen.getByRole("textbox", { name: "Message Bioinfoflow..." }), {
+      clipboardData: { files: [image], getData: () => "" },
+    })
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled(),
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }))
+
+    expect(send).not.toHaveBeenCalled()
+    expect(screen.getByRole("dialog", { name: "Connect a model" })).toBeInTheDocument()
+    expect(screen.getByAltText("clipboard.png")).toBeInTheDocument()
   })
 })

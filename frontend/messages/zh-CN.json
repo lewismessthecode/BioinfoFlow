@@ -2879,12 +2879,22 @@
       "uploading": "正在上传…",
       "removing": "正在移除…",
       "uploadFailed": "上传失败",
+      "removeFailed": "无法移除附件",
       "preview": "预览 {name}",
       "remove": "移除 {name}",
       "retry": "重试 {name}",
       "delete": "删除 {name}",
       "deleteAction": "删除",
-      "imagePreview": "图片附件预览"
+      "imagePreview": "图片附件预览",
+      "imageLabel": "图片附件",
+      "previewImage": "预览图片附件"
+    },
+    "contextSearch": {
+      "menuTitle": "文件、工作流和运行",
+      "loading": "正在搜索上下文…",
+      "empty": "输入内容以搜索上下文",
+      "noMatches": "没有匹配的上下文",
+      "remove": "移除 {name}"
     },
     "runtimeLocation": {
       "placeholder": "执行位置",

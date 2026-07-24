@@ -24,6 +24,7 @@ import type {
   AgentRuntimeTurn,
   AgentRuntimeWorkflowRefPart,
 } from "@/lib/agent-runtime"
+import { agentRuntimeAttachmentPreviewUrl } from "@/lib/agent-runtime"
 import {
   dateTimeAttribute,
   formatAbsoluteDateTime,
@@ -38,6 +39,8 @@ import {
 } from "./agent-sources"
 import { InlineApprovalCard } from "./inline-approval-card"
 import type { AgentDecisionHandler, AgentRetryHandler } from "./types"
+import { AttachmentPreviewDialog } from "./attachment-preview-dialog"
+import type { AgentComposerAttachment } from "./attachment-strip"
 
 const BOTTOM_FOLLOW_THRESHOLD = 80
 const TEXT_SWAP_DURATION_MS = 150
@@ -178,9 +181,13 @@ export function AgentTranscript({
 }
 
 function UserMessageBubble({ turn }: { turn: AgentRuntimeTurn }) {
+  const t = useTranslations("agentRuntime.attachments")
   const locale = useLocale()
   const [now] = useState(() => new Date())
+  const [previewAttachment, setPreviewAttachment] =
+    useState<AgentComposerAttachment | null>(null)
   const displayParts = userMessageDisplayPartsForTurn(turn)
+  const imageAttachments = userMessageImageAttachments(turn, t("imageLabel"))
   const timestamp = formatTranscriptMessageDateTime(turn.created_at, locale, now)
   const absoluteTimestamp = formatAbsoluteDateTime(turn.created_at, locale)
   const timestampDateTime = dateTimeAttribute(turn.created_at)
@@ -194,6 +201,26 @@ function UserMessageBubble({ turn }: { turn: AgentRuntimeTurn }) {
         className="max-w-full rounded-lg border border-border/60 bg-muted/35 px-3.5 py-2.5 text-[15px] leading-6 text-foreground shadow-none"
         data-testid="agent-user-message"
       >
+        {imageAttachments.length ? (
+          <div className="mb-2 flex max-w-full gap-2 overflow-x-auto">
+            {imageAttachments.map((attachment) => (
+              <button
+                key={attachment.id}
+                type="button"
+                className="shrink-0 rounded-lg border border-border bg-background/70 p-1 transition-colors hover:bg-background"
+                onClick={() => setPreviewAttachment(attachment)}
+                aria-label={t("previewImage")}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- private authenticated preview URL */}
+                <img
+                  src={attachment.previewUrl || ""}
+                  alt={attachment.filename}
+                  className="h-20 w-24 rounded-md object-cover"
+                />
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
           {displayParts.map((part) =>
             part.type === "text" ? (
@@ -220,8 +247,34 @@ function UserMessageBubble({ turn }: { turn: AgentRuntimeTurn }) {
           {timestamp}
         </time>
       ) : null}
+      <AttachmentPreviewDialog
+        open={Boolean(previewAttachment)}
+        attachment={previewAttachment}
+        onOpenChange={(open) => {
+          if (!open) setPreviewAttachment(null)
+        }}
+        readOnly
+      />
     </div>
   )
+}
+
+function userMessageImageAttachments(
+  turn: AgentRuntimeTurn,
+  filename: string,
+): AgentComposerAttachment[] {
+  return (turn.input_parts ?? []).flatMap((part) => {
+    if (!("type" in part) || part.type !== "image_ref") return []
+    return [
+      {
+        id: part.attachment_id,
+        filename,
+        kind: "image" as const,
+        status: "ready" as const,
+        previewUrl: agentRuntimeAttachmentPreviewUrl(part.attachment_id),
+      },
+    ]
+  })
 }
 
 function UserMessageTokenSpan({ token }: { token: UserMessageToken }) {
@@ -247,7 +300,7 @@ function UserMessageTokenSpan({ token }: { token: UserMessageToken }) {
 type UserMessageToken = {
   type: "token"
   key: string
-  kind: "skill" | "workflow"
+  kind: "skill" | "workflow" | "file" | "directory" | "run"
   label: string
   version?: string | null
   title?: string
@@ -350,6 +403,24 @@ function userMessageInlinePart(item: unknown, index: number): UserMessageDisplay
         key: `inline-skill:${name}:${index}`,
         kind: "skill",
         label: `/${name}`,
+      },
+    ]
+  }
+  if (item.type === "context") {
+    if (
+      typeof item.label !== "string" ||
+      !item.label.trim() ||
+      !["file", "directory", "workflow", "run"].includes(String(item.kind))
+    ) {
+      return []
+    }
+    return [
+      {
+        type: "token",
+        key: `inline-context:${nullableString(item.id) ?? index}:${index}`,
+        kind: item.kind as UserMessageToken["kind"],
+        label: `@${item.label.trim()}`,
+        title: nullableString(item.detail) ?? undefined,
       },
     ]
   }

@@ -2879,12 +2879,22 @@
       "uploading": "Uploading…",
       "removing": "Removing…",
       "uploadFailed": "Upload failed",
+      "removeFailed": "Could not remove attachment",
       "preview": "Preview {name}",
       "remove": "Remove {name}",
       "retry": "Retry {name}",
       "delete": "Delete {name}",
       "deleteAction": "Delete",
-      "imagePreview": "Image attachment preview"
+      "imagePreview": "Image attachment preview",
+      "imageLabel": "Image attachment",
+      "previewImage": "Preview image attachment"
+    },
+    "contextSearch": {
+      "menuTitle": "Files, workflows, and runs",
+      "loading": "Searching context…",
+      "empty": "Type to search context",
+      "noMatches": "No matching context",
+      "remove": "Remove {name}"
     },
     "runtimeLocation": {
       "placeholder": "Execution targets",

@@ -78,6 +78,9 @@ vi.mock("next-intl", () => ({
       "turnStatus.waiting_user": "Waiting for you",
       "turnStatus.waiting_approval": "Needs approval",
       "turnStatus.completed": "Done",
+      previewImage: "Preview image attachment",
+      imagePreview: "Image attachment preview",
+      imageLabel: "Image attachment",
       "turnStatus.failed": "Failed",
       "turnStatus.cancelled": "Cancelled",
       "steer.pending": "Will be considered after the current step",
@@ -1715,5 +1718,26 @@ describe("AgentTranscript", () => {
 
     expect(screen.getByText("Error")).toBeInTheDocument()
     expect(screen.getByText("Search provider unavailable")).toBeInTheDocument()
+  })
+
+  it("keeps sent image attachments available for read-only preview", () => {
+    renderTranscript({
+      turn: {
+        ...baseTurn,
+        input_text: "",
+        input_parts: [
+          {
+            type: "image_ref",
+            attachment_id: "attachment-image-1",
+            detail: "high",
+          },
+        ],
+      },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview image attachment" }))
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+    expect(screen.getAllByAltText("Image attachment").length).toBeGreaterThan(0)
+    expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument()
   })
 })
