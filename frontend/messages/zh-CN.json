@@ -2658,7 +2658,10 @@
     },
     "responseActions": {
       "copy": "复制回复",
-      "retry": "重新生成"
+      "copied": "已复制",
+      "copyFailed": "复制失败",
+      "retry": "重新生成",
+      "retrying": "正在重新生成..."
     },
     "tokenUsage": {
       "label": "Token",

@@ -2658,7 +2658,10 @@
     },
     "responseActions": {
       "copy": "Copy response",
-      "retry": "Retry response"
+      "copied": "Copied",
+      "copyFailed": "Copy failed",
+      "retry": "Retry response",
+      "retrying": "Regenerating..."
     },
     "tokenUsage": {
       "label": "Tokens",
