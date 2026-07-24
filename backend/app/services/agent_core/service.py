@@ -20,6 +20,7 @@ from app.repositories.agent_core_repo import (
 )
 from app.repositories.agent_user_settings_repo import AgentUserSettingsRepository
 from app.repositories.project_repo import ProjectRepository
+from app.schemas.agent_core import AgentTurnSteerRead
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.execution_target import (
     normalize_execution_scope,
@@ -613,6 +614,58 @@ class AgentCoreService:
             user_id=user_id,
         )
         return turn
+
+    async def steer_turn(
+        self,
+        *,
+        turn_id: str,
+        workspace_id: str,
+        user_id: str,
+        input_text: str,
+        input_parts: list[dict] | None = None,
+        active_skill_names: list[str] | None = None,
+        metadata: dict | None = None,
+    ) -> AgentTurnSteerRead:
+        turn = await self.require_turn(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        steer_id = uuid4()
+        normalized_active_skill_names = _validated_active_skill_names(
+            active_skill_names
+        )
+        message_metadata = {
+            **(metadata or {}),
+            "kind": "steer",
+            "steer_id": str(steer_id),
+        }
+        if normalized_active_skill_names:
+            message_metadata["active_skill_names"] = normalized_active_skill_names
+        accepted = await self.turn_repo.accept_steer(
+            turn_id=str(turn.id),
+            steer_id=str(steer_id),
+            content_parts=_transcript_parts_for_turn(
+                input_text=input_text,
+                input_parts=input_parts,
+            ),
+            message_metadata=message_metadata,
+            event_type=AgentEventType.TURN_STEER_RECEIVED,
+            event_payload={
+                "input_text": input_text,
+                "delivery": "pending",
+                "input_display": message_metadata.get("input_display"),
+            },
+        )
+        if accepted is None:
+            raise ConflictError(
+                "This turn no longer accepts guidance; send it as a new turn"
+            )
+        return AgentTurnSteerRead(
+            steer_id=steer_id,
+            turn_id=turn.id,
+            delivery="pending",
+        )
 
     async def cancel_turn(
         self,

@@ -332,6 +332,79 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def accept_steer(
+        self,
+        *,
+        turn_id: str,
+        steer_id: str,
+        content_parts: list[dict],
+        message_metadata: dict,
+        event_type: str,
+        event_payload: dict,
+    ) -> AgentMessage | None:
+        """Persist guidance only while the active turn still accepts it."""
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status.in_(
+                    [
+                        AgentTurnStatus.QUEUED,
+                        AgentTurnStatus.RUNNING,
+                        AgentTurnStatus.WAITING_USER,
+                        AgentTurnStatus.WAITING_APPROVAL,
+                    ]
+                ),
+                self.model.accepts_steer.is_(True),
+            )
+            .values(accepts_steer=True)
+            .returning(self.model.session_id)
+            .execution_options(synchronize_session=False)
+        )
+        session_id = result.scalar_one_or_none()
+        if session_id is None:
+            await self.session.rollback()
+            return None
+
+        event_seq = int(
+            await self.session.scalar(
+                select(func.max(AgentEvent.seq)).where(
+                    AgentEvent.session_id == session_id
+                )
+            )
+            or 0
+        ) + 1
+        message = AgentMessage(
+            session_id=session_id,
+            turn_id=UUID(turn_id),
+            role="user",
+            content_parts=content_parts,
+            message_metadata=message_metadata,
+            status=AgentMessageStatus.DRAFT,
+            ordering_index=0,
+        )
+        self.session.add_all(
+            [
+                message,
+                AgentEvent(
+                    session_id=session_id,
+                    turn_id=UUID(turn_id),
+                    seq=event_seq,
+                    type=event_type,
+                    payload={**event_payload, "steer_id": steer_id},
+                    visibility="user",
+                    schema_version=1,
+                ),
+            ]
+        )
+        try:
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        await self.session.refresh(message)
+        return message
+
     async def list_recoverable(self) -> list[AgentTurn]:
         """List recovery candidates, including actively leased running turns.
 
