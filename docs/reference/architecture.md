@@ -238,6 +238,9 @@ Authentication methods:
 - `ssh_config`: pass the saved alias as the exact SSH target
 - `key_file`: run SSH with a backend-visible key path
 - `agent`: use the backend user's `ssh-agent`
+- `jump`: resolve `jump_connection_id` to one saved direct connection in the
+  same workspace, authenticate to it, and run the target connection as a nested
+  SSH command
 
 Stored password and private-key methods use an in-process SSH transport so users
 do not need backend-visible `~/.ssh/...` paths. Advanced backend SSH methods
@@ -247,6 +250,27 @@ operations, and PTY allocation for remote project terminals. The Connections
 page supports CRUD, testing, and a streamed WebSocket probe. The project
 terminal WebSocket can also bind to a remote project root through the saved
 connection profile.
+
+`RemoteConnectionService.resolve_connection_config()` is the routing boundary
+for jump mode. It resolves `jump_connection_id`, rejects self-references,
+cross-workspace references, and nested jump connections, and attaches the
+direct jump configuration to the target configuration. The execution layer
+then builds the target command as an inner system-SSH invocation:
+
+```text
+Bioinfoflow backend
+  -> authenticate outer SSH session to saved jump connection
+  -> run: ssh -o BatchMode=yes -- user@target '<command>'
+  -> target host
+```
+
+This is session-level chained SSH rather than OpenSSH `ProxyJump`. Bioinfoflow
+supplies credentials only for the outer saved connection. The inner command is
+executed by the jump host's local OpenSSH client and inherits that host's SSH
+config, agent, keys, and known-host policy. Only one direct hop is supported.
+The resolver and nested-command flow are shared by connection tests, streamed
+probes, remote file and directory operations, AgentCore remote tools, and
+remote project terminal PTYs.
 
 AgentCore remote tools only resolve connections explicitly selected in the
 current agent session. `remote.read_file` and `remote.list_dir` are preferred
