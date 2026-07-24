@@ -2864,12 +2864,27 @@
       "focusedComposer": "决定已提交，焦点已返回消息输入框。"
     },
     "attachMenu": {
+      "addFileFolder": "添加文件/文件夹",
+      "addFiles": "添加文件",
+      "addFolder": "添加文件夹",
       "attachFiles": "添加文件",
       "browseProjectFiles": "浏览项目文件",
       "referenceRun": "引用一次运行",
       "runPreflight": "运行预检查",
       "diagnoseRun": "诊断运行",
       "comingSoon": "即将支持"
+    },
+    "attachments": {
+      "label": "附件",
+      "uploading": "正在上传…",
+      "removing": "正在移除…",
+      "uploadFailed": "上传失败",
+      "preview": "预览 {name}",
+      "remove": "移除 {name}",
+      "retry": "重试 {name}",
+      "delete": "删除 {name}",
+      "deleteAction": "删除",
+      "imagePreview": "图片附件预览"
     },
     "runtimeLocation": {
       "placeholder": "执行位置",

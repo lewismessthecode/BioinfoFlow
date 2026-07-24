@@ -2864,12 +2864,27 @@
       "focusedComposer": "Decision submitted. Focus returned to the composer."
     },
     "attachMenu": {
+      "addFileFolder": "Add file/folder",
+      "addFiles": "Add files",
+      "addFolder": "Add folder",
       "attachFiles": "Attach files",
       "browseProjectFiles": "Browse project files",
       "referenceRun": "Reference a run",
       "runPreflight": "Run preflight",
       "diagnoseRun": "Diagnose run",
       "comingSoon": "Coming soon"
+    },
+    "attachments": {
+      "label": "Attachments",
+      "uploading": "Uploading…",
+      "removing": "Removing…",
+      "uploadFailed": "Upload failed",
+      "preview": "Preview {name}",
+      "remove": "Remove {name}",
+      "retry": "Retry {name}",
+      "delete": "Delete {name}",
+      "deleteAction": "Delete",
+      "imagePreview": "Image attachment preview"
     },
     "runtimeLocation": {
       "placeholder": "Execution targets",
