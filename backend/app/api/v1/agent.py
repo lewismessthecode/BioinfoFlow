@@ -8,8 +8,8 @@ from typing import AsyncGenerator, Literal
 from urllib.parse import quote
 
 import aiofiles
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.database as app_database
@@ -22,6 +22,7 @@ from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDenie
 from app.schemas.agent_core import (
     AgentActionDecisionRequest,
     AgentActionRead,
+    AgentAttachmentRead,
     AgentArtifactRead,
     AgentExecutionScope,
     AgentExecutionTarget,
@@ -44,6 +45,7 @@ from app.schemas.agent_core import (
 from app.repositories.agent_user_settings_repo import AgentUserSettingsRepository
 from app.repositories.llm_repo import LlmModelRepository
 from app.services.agent_core import AgentCoreService, AgentMemoryService
+from app.services.agent_core.attachments import AgentAttachmentService
 from app.services.agent_core.execution_target import (
     session_execution_scope_from_metadata,
     session_execution_target_from_metadata,
@@ -94,6 +96,10 @@ def _session_read(session) -> AgentSessionRead:
             ),
         }
     )
+
+
+def _attachment_read(attachment) -> AgentAttachmentRead:
+    return AgentAttachmentRead.model_validate(attachment)
 
 
 @router.get("/settings")
@@ -298,6 +304,84 @@ async def list_sessions(
         request=request,
         pagination=pagination,
     )
+
+
+@router.post("/sessions/{session_id}/attachments")
+async def upload_attachments(
+    session_id: str,
+    request: Request,
+    kind: str = Form(...),
+    files: list[UploadFile] = File(...),
+    relative_paths: list[str] | None = Form(default=None),
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    session = await AgentCoreService(db).require_session(
+        session_id=session_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    service = AgentAttachmentService(db)
+    if kind == "folder":
+        attachment = await service.ingest_folder(
+            agent_session=session,
+            files=files,
+            relative_paths=relative_paths or [],
+        )
+        attachments = [attachment]
+    elif kind == "image":
+        if len(files) != 1:
+            raise BadRequestError("Image upload requires exactly one file")
+        attachments = [
+            await service.ingest_image(
+                agent_session=session,
+                file=files[0],
+                source="clipboard",
+            )
+        ]
+    elif kind == "file":
+        if relative_paths:
+            raise BadRequestError("File uploads do not accept relative paths")
+        attachments = await service.ingest_files(
+            agent_session=session,
+            files=files,
+        )
+    else:
+        raise BadRequestError("Unsupported attachment kind")
+    return success_response(
+        [_dump(_attachment_read(attachment)) for attachment in attachments],
+        request=request,
+        status_code=201,
+    )
+
+
+@router.get("/attachments/{attachment_id}/preview")
+async def preview_attachment(
+    attachment_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    path, media_type = await AgentAttachmentService(db).preview_path(
+        attachment_id=attachment_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    return FileResponse(path, media_type=media_type)
+
+
+@router.delete("/attachments/{attachment_id}")
+async def delete_attachment(
+    attachment_id: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await AgentAttachmentService(db).delete_pending(
+        attachment_id=attachment_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    return success_response({"deleted": True}, request=request)
 
 
 @router.get("/sessions/{session_id}")
