@@ -2664,6 +2664,15 @@
     "attach": "添加附件或上下文",
     "send": "发送消息",
     "stop": "停止回复",
+    "voice": {
+      "start": "开始语音输入",
+      "stop": "停止录音",
+      "recording": "正在听 {time}",
+      "transcribing": "正在转写…",
+      "unavailable": "语音输入暂不可用",
+      "failed": "无法转写这段录音。",
+      "cancelled": "已取消语音录制。"
+    },
     "pendingResponse": "正在处理...",
     "steer": {
       "pending": "将在当前步骤结束后参考",

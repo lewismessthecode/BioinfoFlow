@@ -23,6 +23,7 @@ RUN if [ -n "$APT_MIRROR" ]; then \
       bubblewrap \
       curl \
       default-jre-headless \
+      ffmpeg \
       git \
       procps && \
     rm -rf /var/lib/apt/lists/*

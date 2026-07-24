@@ -1,14 +1,20 @@
 import { readFileSync } from "node:fs"
-import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentComposer } from "@/components/bioinfoflow/agent-runtime/agent-composer"
 import { apiRequest } from "@/lib/api"
+import { getSpeechStatus, transcribeSpeech } from "@/lib/speech"
 
 vi.mock("@/lib/api", () => ({
   apiRequest: vi.fn(),
+}))
+
+vi.mock("@/lib/speech", () => ({
+  getSpeechStatus: vi.fn(),
+  transcribeSpeech: vi.fn(),
 }))
 
 vi.mock("next-intl", () => ({
@@ -19,6 +25,13 @@ vi.mock("next-intl", () => ({
       attach: "Attach or add context",
       send: "Send message",
       stop: "Stop response",
+      "voice.start": "Start voice input",
+      "voice.stop": "Stop recording",
+      "voice.recording": `Listening ${values?.time ?? "0:00"}`,
+      "voice.transcribing": "Transcribing...",
+      "voice.unavailable": "Voice input is unavailable",
+      "voice.failed": "Could not transcribe the recording.",
+      "voice.cancelled": "Voice recording cancelled.",
       "attachMenu.attachFiles": "Attach files",
       "attachMenu.browseProjectFiles": "Browse project files",
       "attachMenu.referenceRun": "Reference a run",
@@ -131,6 +144,8 @@ vi.mock("@/components/bioinfoflow/chat/provider-icons", () => ({
 }))
 
 const apiRequestMock = vi.mocked(apiRequest)
+const speechStatusMock = vi.mocked(getSpeechStatus)
+const transcribeSpeechMock = vi.mocked(transcribeSpeech)
 
 const composerConnections = [
   {
@@ -197,6 +212,160 @@ describe("AgentComposer", () => {
   beforeEach(() => {
     apiRequestMock.mockReset()
     apiRequestMock.mockReturnValue(new Promise(() => {}))
+    speechStatusMock.mockReset()
+    speechStatusMock.mockReturnValue(new Promise(() => {}))
+    transcribeSpeechMock.mockReset()
+  })
+
+  it("records voice, disables send, and inserts editable text without submitting", async () => {
+    const onSubmit = vi.fn()
+    const trackStop = vi.fn()
+    class Recorder {
+      static isTypeSupported() { return true }
+      state = "inactive"
+      mimeType = "audio/webm"
+      ondataavailable: ((event: { data: Blob }) => void) | null = null
+      onstop: (() => void) | null = null
+      start() { this.state = "recording" }
+      stop() {
+        this.state = "inactive"
+        this.ondataavailable?.({ data: new Blob(["voice"], { type: this.mimeType }) })
+        this.onstop?.()
+      }
+    }
+    vi.stubGlobal("MediaRecorder", Recorder)
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue({
+          getTracks: () => [{ stop: trackStop }],
+        }),
+      },
+    })
+    speechStatusMock.mockResolvedValueOnce({
+      configured: true, available: true, provider: "funasr", model: "fun-asr-nano", language: "zh", message: null,
+    })
+    transcribeSpeechMock.mockResolvedValueOnce({ text: "检查 FASTQ", language: "zh" })
+
+    function Harness() {
+      const [value, setValue] = useState("运行 ")
+      return (
+        <AgentComposer
+          value={value}
+          onChange={setValue}
+          onSubmit={onSubmit}
+          onStop={vi.fn()}
+          isRunning={false}
+          models={[]}
+          selectedModel={null}
+          onSelectModel={vi.fn()}
+        />
+      )
+    }
+
+    render(<Harness />)
+    const microphone = await screen.findByRole("button", { name: "Start voice input" })
+    await waitFor(() => expect(microphone).toBeEnabled())
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    textarea.setSelectionRange(3, 3)
+    fireEvent.click(microphone)
+    await screen.findByText("Listening 0:00")
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled()
+    fireEvent.change(textarea, { target: { value: "运行 后续" } })
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop recording" }))
+
+    await waitFor(() => expect(textarea).toHaveValue("运行 检查 FASTQ 后续"))
+    expect(onSubmit).not.toHaveBeenCalled()
+    await waitFor(() => expect(textarea).toHaveFocus())
+    expect(trackStop).toHaveBeenCalled()
+  })
+
+  it("cancels an active recording with Escape without uploading", async () => {
+    class Recorder {
+      static isTypeSupported() { return true }
+      state = "inactive"
+      mimeType = "audio/webm"
+      ondataavailable: ((event: { data: Blob }) => void) | null = null
+      onstop: (() => void) | null = null
+      start() { this.state = "recording" }
+      stop() {
+        this.state = "inactive"
+        this.ondataavailable?.({ data: new Blob(["voice"], { type: this.mimeType }) })
+        this.onstop?.()
+      }
+    }
+    vi.stubGlobal("MediaRecorder", Recorder)
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }) },
+    })
+    speechStatusMock.mockResolvedValueOnce({
+      configured: true, available: true, provider: "funasr", model: "fun-asr-nano", language: "zh", message: null,
+    })
+    render(
+      <AgentComposer
+        value="draft"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+    const microphone = await screen.findByRole("button", { name: "Start voice input" })
+    await waitFor(() => expect(microphone).toBeEnabled())
+    fireEvent.click(microphone)
+    await screen.findByText("Listening 0:00")
+
+    const stopButton = screen.getByRole("button", { name: "Stop recording" })
+    stopButton.focus()
+    fireEvent.keyDown(stopButton, { key: "Escape" })
+
+    await waitFor(() => expect(screen.queryByText("Listening 0:00")).not.toBeInTheDocument())
+    expect(transcribeSpeechMock).not.toHaveBeenCalled()
+  })
+
+  it("inserts Chinese dictation without adding spaces between Han characters", async () => {
+    class Recorder {
+      static isTypeSupported() { return true }
+      state = "inactive"
+      mimeType = "audio/webm"
+      ondataavailable: ((event: { data: Blob }) => void) | null = null
+      onstop: (() => void) | null = null
+      start() { this.state = "recording" }
+      stop() {
+        this.state = "inactive"
+        this.ondataavailable?.({ data: new Blob(["voice"], { type: this.mimeType }) })
+        this.onstop?.()
+      }
+    }
+    vi.stubGlobal("MediaRecorder", Recorder)
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }) },
+    })
+    speechStatusMock.mockResolvedValue({
+      configured: true, available: true, provider: "funasr", model: "fun-asr-nano", language: "zh", message: null,
+    })
+    transcribeSpeechMock.mockResolvedValue({ text: "帮我", language: "zh" })
+
+    function Harness() {
+      const [value, setValue] = useState("请继续")
+      return <AgentComposer value={value} onChange={setValue} onSubmit={vi.fn()} onStop={vi.fn()} isRunning={false} models={[]} selectedModel={null} onSelectModel={vi.fn()} />
+    }
+    render(<Harness />)
+    const microphone = await screen.findByRole("button", { name: "Start voice input" })
+    await waitFor(() => expect(microphone).toBeEnabled())
+    const textarea = screen.getByRole("textbox")
+    textarea.setSelectionRange(1, 1)
+    fireEvent.click(microphone)
+    await screen.findByRole("button", { name: "Stop recording" })
+    fireEvent.click(screen.getByRole("button", { name: "Stop recording" }))
+
+    await waitFor(() => expect(textarea).toHaveValue("请帮我继续"))
   })
 
   afterEach(() => {

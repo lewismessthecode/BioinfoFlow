@@ -137,6 +137,17 @@ class Settings(BaseSettings):
     minimax_api_key: str = ""
     bioinfoflow_credential_key: str = ""
 
+    # OpenAI-compatible speech recognition. Empty base URL keeps voice dictation
+    # disabled; the backend never loads an ASR model itself.
+    asr_provider: str = ""
+    asr_base_url: str = ""
+    asr_api_key: str = ""
+    asr_model: str = ""
+    asr_language: str = "zh"
+    asr_context_terms: list[str] = ["Bioinfoflow", "Nextflow", "MiniWDL", "FASTQ"]
+    asr_max_upload_size_bytes: int = 20 * 1024 * 1024
+    asr_timeout_seconds: float = 90.0
+
     # Extended thinking
     agent_thinking_enabled: bool = True
     agent_thinking_budget: int = 10000
@@ -194,6 +205,11 @@ class Settings(BaseSettings):
     @field_validator("trusted_hosts", mode="before")
     @classmethod
     def parse_trusted_hosts(cls, value: Any) -> list[str]:
+        return cls._parse_str_list(value)
+
+    @field_validator("asr_context_terms", mode="before")
+    @classmethod
+    def parse_asr_context_terms(cls, value: Any) -> list[str]:
         return cls._parse_str_list(value)
 
     @classmethod

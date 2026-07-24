@@ -6,6 +6,8 @@ import {
   ClipboardCheck,
   FolderOpen,
   ListTree,
+  Loader2,
+  Mic,
   Paperclip,
   Plus,
   Send,
@@ -38,6 +40,7 @@ import {
 } from "@/components/ui/popover"
 import type { ModelSelection, ProviderModels } from "@/hooks/use-llm-settings"
 import { useAnimatedPlaceholder } from "@/hooks/use-animated-placeholder"
+import { useVoiceDictation } from "@/hooks/use-voice-dictation"
 import type { AgentPermissionUpdateState } from "@/hooks/use-agent-runtime"
 import type {
   AgentMode,
@@ -164,13 +167,58 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     ref,
   ) {
     const t = useTranslations("agentRuntime")
-    const canSubmit = !disabled && value.trim().length > 0
     const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+    const voiceInsertionRef = useRef<{ start: number; end: number } | null>(null)
+    const latestValueRef = useRef(value)
+    const latestOnChangeRef = useRef(onChange)
+    useEffect(() => {
+      latestValueRef.current = value
+      latestOnChangeRef.current = onChange
+    }, [onChange, value])
     const commandMenuId = useId()
     const [commandMenuOpen, setCommandMenuOpen] = useState(false)
     const [commandToken, setCommandToken] = useState<ComposerCommandToken | null>(null)
     const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0)
     const [focused, setFocused] = useState(false)
+    const insertVoiceTranscript = useCallback(
+      (text: string) => {
+        const selection = voiceInsertionRef.current
+        const latestValue = latestValueRef.current
+        const start = selection?.start ?? latestValue.length
+        const end = selection?.end ?? start
+        const prefix = latestValue.slice(0, start)
+        const suffix = latestValue.slice(end)
+        const needsLeadingSpace = needsVoiceBoundarySpace(prefix.at(-1), text.at(0))
+        const needsTrailingSpace = needsVoiceBoundarySpace(text.at(-1), suffix.at(0))
+        const inserted = `${needsLeadingSpace ? " " : ""}${text}${needsTrailingSpace ? " " : ""}`
+        const nextValue = `${prefix}${inserted}${suffix}`
+        const caret = prefix.length + inserted.length
+        latestOnChangeRef.current(nextValue)
+        window.requestAnimationFrame(() => {
+          textareaRef.current?.focus()
+          textareaRef.current?.setSelectionRange(caret, caret)
+        })
+      },
+      [],
+    )
+    const voice = useVoiceDictation({
+      onTranscript: insertVoiceTranscript,
+      onError: () => toast.error(t("voice.failed")),
+    })
+    const { cancel: cancelVoice, state: voiceState } = voice
+    const voiceBusy = voiceState === "recording" || voiceState === "transcribing"
+    const canSubmit = !disabled && !voiceBusy && value.trim().length > 0
+    useEffect(() => {
+      if (voiceState !== "recording") return
+      const cancelOnEscape = (event: KeyboardEvent) => {
+        if (event.key !== "Escape") return
+        event.preventDefault()
+        cancelVoice()
+        toast.info(t("voice.cancelled"))
+      }
+      window.addEventListener("keydown", cancelOnEscape)
+      return () => window.removeEventListener("keydown", cancelOnEscape)
+    }, [cancelVoice, t, voiceState])
     const isCenterPresentation = presentation === "center"
     const animatedPlaceholder = useAnimatedPlaceholder({
       enabled:
@@ -450,7 +498,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                 onModeChange(mode === "plan" ? "execution" : "plan")
                 return
               }
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (event.key === "Enter" && !event.shiftKey && !voiceBusy) {
                 event.preventDefault()
                 onSubmit()
               }
@@ -628,7 +676,71 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
               summary={tokenUsageSummary}
               compact={compactControls}
             />
-            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
+              {voice.state === "recording" ? (
+                <div
+                  className="hidden items-center gap-1.5 text-[11px] tabular-nums text-destructive/80 sm:flex"
+                  role="status"
+                >
+                  <span>{t("voice.recording", { time: formatVoiceTime(voice.elapsedSeconds) })}</span>
+                  <span className="flex h-3 items-end gap-0.5" aria-hidden="true">
+                    {[0.12, 0.28, 0.44, 0.6, 0.76].map((threshold, index) => (
+                      <span
+                        key={threshold}
+                        className={cn(
+                          "w-0.5 rounded-full bg-destructive/25 transition-[height,background-color] duration-100 motion-reduce:transition-none",
+                          voice.level >= threshold && "bg-destructive/75",
+                        )}
+                        style={{ height: `${4 + index * 1.5}px` }}
+                      />
+                    ))}
+                  </span>
+                </div>
+              ) : voice.state === "transcribing" ? (
+                <span className="hidden items-center gap-1 text-[11px] text-muted-foreground sm:flex" role="status">
+                  <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" />
+                  {t("voice.transcribing")}
+                </span>
+              ) : voice.state === "error" ? (
+                <button
+                  type="button"
+                  className="hidden text-[11px] text-destructive/80 hover:text-destructive sm:inline"
+                  onClick={voice.resetError}
+                >
+                  {t("voice.failed")}
+                </button>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-8 w-8 shrink-0 rounded-[10px] text-foreground/58 hover:bg-muted hover:text-foreground",
+                  voice.state === "recording" && "bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive",
+                )}
+                onClick={() => {
+                  if (voice.state === "recording") {
+                    voice.stop()
+                    return
+                  }
+                  const textarea = textareaRef.current
+                  voiceInsertionRef.current = textarea
+                    ? { start: textarea.selectionStart, end: textarea.selectionEnd }
+                    : { start: value.length, end: value.length }
+                  void voice.start()
+                }}
+                disabled={disabled || !voice.available || voice.state === "transcribing"}
+                aria-label={t(voice.state === "recording" ? "voice.stop" : "voice.start")}
+                title={!voice.available ? t("voice.unavailable") : undefined}
+              >
+                {voice.state === "recording" ? (
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                ) : voice.state === "transcribing" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+                ) : (
+                  <Mic className="h-3.5 w-3.5" />
+                )}
+              </Button>
               {isRunning ? (
                 <Button
                   type="button"
@@ -658,6 +770,23 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     )
   },
 )
+
+function formatVoiceTime(seconds: number) {
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return `${minutes}:${remainder.toString().padStart(2, "0")}`
+}
+
+function needsVoiceBoundarySpace(left?: string, right?: string) {
+  if (!left || !right || /\s/u.test(left) || /\s/u.test(right)) return false
+  const latinOrNumber = /[\p{Script=Latin}\p{N}]/u
+  const wordCharacter = /[\p{L}\p{N}]/u
+  return (
+    wordCharacter.test(left) &&
+    wordCharacter.test(right) &&
+    (latinOrNumber.test(left) || latinOrNumber.test(right))
+  )
+}
 
 type ComposerCommandToken = {
   kind: "skill" | "workflow"
