@@ -142,6 +142,17 @@ function valueAfterFlag(args, flag) {
   return args[index + 1] || "";
 }
 
+export function withLocalDevDefaults(command, args) {
+  if (command !== "dev") return [...args];
+
+  const hasHostname = args.some(
+    (arg) => arg === "--hostname" || arg === "-H" || arg.startsWith("--hostname="),
+  );
+  if (hasHostname) return [...args];
+
+  return [...args, "--hostname", "127.0.0.1"];
+}
+
 function isCliEntrypoint() {
   const thisFile = fileURLToPath(import.meta.url);
   const invoked = process.argv[1] ? path.resolve(process.argv[1]) : "";
@@ -160,6 +171,8 @@ function runCli() {
     console.error("Usage: node scripts/with-root-env.mjs <dev|build|start> [...args]");
     process.exit(1);
   }
+
+  const effectiveArgs = withLocalDevDefaults(command, args);
 
   const useStandaloneServer = command === "start" && fs.existsSync(serverJs);
   if (!useStandaloneServer && !fs.existsSync(nextBin)) {
@@ -181,8 +194,8 @@ function runCli() {
   console.info(formatStartupLog());
 
   const childArgs = useStandaloneServer
-    ? [serverJs, ...args]
-    : [nextBin, command, ...args];
+    ? [serverJs, ...effectiveArgs]
+    : [nextBin, command, ...effectiveArgs];
   const child = spawn(process.execPath, childArgs, {
     cwd: frontendDir,
     env,

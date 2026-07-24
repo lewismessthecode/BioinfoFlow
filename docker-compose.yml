@@ -18,9 +18,12 @@ services:
       args:
         APT_MIRROR: ${APT_MIRROR:-}
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
-    env_file: .env
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    env_file:
+      - path: .env
+        required: false
     environment:
+      AUTH_MODE: ${AUTH_MODE:-dev}
       BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:-${PWD}/data}
       BIOINFOFLOW_HOME_HOST: ${BIOINFOFLOW_HOME:-${PWD}/data}
       DATABASE_URL: sqlite+aiosqlite:///${BIOINFOFLOW_HOME:-${PWD}/data}/state/bioinfoflow.db
@@ -57,13 +60,16 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
-        NEXT_PUBLIC_AUTH_MODE: ${AUTH_MODE:-personal}
+        NEXT_PUBLIC_AUTH_MODE: ${AUTH_MODE:-dev}
         NEXT_PUBLIC_AUTH_LOCAL_ENABLED: ${AUTH_LOCAL_ENABLED:-true}
         NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED: ${AUTH_SELF_SIGNUP_ENABLED:-false}
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
-    env_file: .env
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    env_file:
+      - path: .env
+        required: false
     environment:
+      AUTH_MODE: ${AUTH_MODE:-dev}
       BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:-${PWD}/data}
       BIOINFOFLOW_HOME_HOST: ${BIOINFOFLOW_HOME:-${PWD}/data}
       BETTER_AUTH_DB_PATH: ${BIOINFOFLOW_HOME:-${PWD}/data}/state/auth/better-auth.db

@@ -81,6 +81,7 @@ Expected: all tests pass.
 - Modify: `frontend/lib/auth-config.ts`
 - Modify: `frontend/scripts/with-root-env.mjs`
 - Modify: `frontend/tests/unit/auth-config.test.ts`
+- Modify: `frontend/tests/unit/middleware.test.ts`
 - Modify: `frontend/tests/unit/scripts/with-root-env.test.ts`
 
 - [ ] **Step 1: Write failing frontend default tests**
@@ -113,6 +114,7 @@ Expected: all focused tests pass.
 **Files:**
 - Modify: `docker-compose.yml`
 - Modify: `.env.example`
+- Modify: `frontend/Dockerfile`
 - Create: `backend/tests/test_local_first_run.py`
 
 - [ ] **Step 1: Write failing Compose contract tests**
@@ -122,6 +124,8 @@ Parse `docker-compose.yml` and assert both `env_file` entries use
 `127.0.0.1:`, backend and frontend runtime environments default
 `AUTH_MODE` to dev, and the frontend build arg defaults
 `NEXT_PUBLIC_AUTH_MODE` to dev.
+Also assert that a direct frontend image build defaults its auth build argument
+to dev when no explicit argument is supplied.
 
 - [ ] **Step 2: Run the contract test and verify RED**
 
@@ -155,6 +159,7 @@ Expected: all tests pass.
 - Modify: `README.zh-CN.md`
 - Modify: `RUNBOOK.md`
 - Modify: `backend/README.md`
+- Modify: `docs/getting-started/docker.md`
 
 - [ ] **Step 1: Update local Docker instructions**
 
@@ -208,4 +213,3 @@ finding, and rerun affected verification.
 Use Conventional Commit and PR title `fix: remove local first-run configuration friction`.
 Push `codex/zero-config-first-run` and open a ready-for-review PR describing the
 root cause, security boundary, user impact, and verification evidence.
-

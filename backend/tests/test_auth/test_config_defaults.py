@@ -1,10 +1,17 @@
 from app.config import Settings
 
 
-def test_auth_mode_defaults_to_personal(monkeypatch) -> None:
+def test_auth_mode_defaults_to_dev_for_local_first_run(monkeypatch) -> None:
     monkeypatch.delenv("AUTH_MODE", raising=False)
     monkeypatch.delenv("AUTH_ENABLED", raising=False)
     settings = Settings(_env_file=None)
+
+    assert settings.resolved_auth_mode == "dev"
+    assert settings.auth_enabled_effective is False
+
+
+def test_legacy_auth_enabled_true_maps_to_personal_mode() -> None:
+    settings = Settings(auth_mode="", auth_enabled=True)
 
     assert settings.resolved_auth_mode == "personal"
     assert settings.auth_enabled_effective is True

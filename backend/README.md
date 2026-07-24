@@ -8,13 +8,15 @@ The backend now reads the repo-root `.env` by default. Only create `backend/.env
 if you need backend-only overrides on one machine.
 
 ```bash
-cd ..
-cp .env.example .env
-cd backend
 uv sync
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --reload-dir app --port 8000
 ```
+
+No `.env` file is required for localhost development. The migration command
+creates the default `../data/state/` directory on a fresh checkout, and the
+backend defaults to development auth. Create a repo-root `.env` only for
+explicit overrides or a personal/team deployment.
 
 If startup fails with a schema message or SQLite errors like
 `no such column: projects.is_default`, the local database is behind the code.
@@ -34,9 +36,9 @@ If you access the backend through a non-local hostname or IP, add it to
 
 ## Environment configuration
 
-Default:
+Optional shared override:
 
-- edit the repo-root `.env`
+- copy `../.env.example` to the repo-root `.env` and edit only needed values
 
 Optional backend-only override:
 

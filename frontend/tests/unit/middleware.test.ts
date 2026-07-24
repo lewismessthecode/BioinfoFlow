@@ -83,10 +83,12 @@ describe("middleware", () => {
     })
 
     it("redirects /api/v1 routes without cookie", () => {
+      process.env.AUTH_ENABLED = "true"
       const req = createRequest("/api/v1/projects")
       const res = proxy(req)
       expect(res.status).toBe(307)
       expect(new URL(res.headers.get("location")!).pathname).toBe("/auth")
+      delete process.env.AUTH_ENABLED
     })
   })
 

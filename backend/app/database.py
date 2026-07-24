@@ -7,6 +7,7 @@ from typing import Any
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import CHAR, MetaData, event
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.asyncio import (
@@ -77,6 +78,19 @@ SQLITE_BUSY_TIMEOUT_MS = 30000
 
 def _is_sqlite_url(database_url: str) -> bool:
     return database_url.startswith(("sqlite+aiosqlite://", "sqlite://"))
+
+
+def ensure_sqlite_database_parent(database_url: str) -> None:
+    """Create the parent directory required by a file-backed SQLite URL."""
+    url = make_url(database_url)
+    if url.get_backend_name() != "sqlite":
+        return
+
+    database = url.database
+    if not database or database == ":memory:" or database.startswith("file:"):
+        return
+
+    Path(database).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
 
 
 def create_state_engine(database_url: str, *, debug: bool) -> AsyncEngine:

@@ -8,6 +8,7 @@ import {
   formatStartupLog,
   formatStartupSummary,
   redactSecret,
+  withLocalDevDefaults,
 } from "@/scripts/with-root-env.mjs"
 
 describe("with-root-env startup summary", () => {
@@ -85,5 +86,31 @@ describe("with-root-env startup summary", () => {
 
   it("uses a static startup log line for the CLI log sink", () => {
     expect(formatStartupLog()).toBe("Bioinfoflow frontend starting")
+  })
+
+  it("binds the default development server to loopback", () => {
+    expect(withLocalDevDefaults("dev", [])).toEqual([
+      "--hostname",
+      "127.0.0.1",
+    ])
+  })
+
+  it("preserves an explicitly configured development hostname", () => {
+    expect(withLocalDevDefaults("dev", ["--hostname", "0.0.0.0"])).toEqual([
+      "--hostname",
+      "0.0.0.0",
+    ])
+    expect(withLocalDevDefaults("dev", ["-H", "::1"])).toEqual([
+      "-H",
+      "::1",
+    ])
+  })
+
+  it("does not change production build or start arguments", () => {
+    expect(withLocalDevDefaults("build", [])).toEqual([])
+    expect(withLocalDevDefaults("start", ["--port", "3001"])).toEqual([
+      "--port",
+      "3001",
+    ])
   })
 })

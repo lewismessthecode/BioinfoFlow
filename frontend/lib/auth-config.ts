@@ -60,7 +60,7 @@ function resolveAuthMode(
     return parsedMode
   }
 
-  return parseBoolean(legacyAuthEnabledValue, true) ? "personal" : "dev"
+  return parseBoolean(legacyAuthEnabledValue, false) ? "personal" : "dev"
 }
 
 export function canManageMembers(
