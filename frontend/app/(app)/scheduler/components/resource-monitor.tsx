@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
-import { ChevronsRight } from "@/lib/icons"
+import { Gauge } from "@/lib/icons"
 import {
   CardContent,
   CardHeader,
@@ -113,7 +113,7 @@ export function ResourceMonitor({
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <CardRoot variant="workbench">
           <CardHeader
             title={t("resources")}
@@ -122,9 +122,9 @@ export function ResourceMonitor({
               <button
                 type="button"
                 onClick={() => setDrawerOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3 text-xs font-medium text-foreground transition-[background-color,transform] hover:bg-muted active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <ChevronsRight className="h-3.5 w-3.5" aria-hidden="true" />
+                <Gauge className="h-3.5 w-3.5" aria-hidden="true" />
                 {t("advanced.button")}
                 <kbd className="ml-0.5 rounded border border-border bg-muted px-1.5 py-[1px] font-mono text-[10px] text-muted-foreground">
                   t

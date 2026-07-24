@@ -1833,7 +1833,7 @@
     "subtitle": "集中观察调度队列、资源压力和正在运行的任务。",
     "mode": "模式",
     "configuredMode": "配置模式",
-    "configuredModeLabel": "当前配置：",
+    "configuredModeLabel": "运行模式：",
     "workers": "工作线程",
     "queueDepth": "队列深度",
     "tasks": "任务",
@@ -1846,10 +1846,10 @@
     "memory": "内存",
     "disk": "磁盘",
     "gpu": "GPU",
-    "snapshot": "快照时间",
+    "snapshot": "最近更新",
     "utilization": "使用率",
     "noGpu": "未检测到 GPU",
-    "autoRefresh": "每 30 秒更新",
+    "autoRefresh": "30 秒自动更新",
     "refreshDescription": "页面按定时轮询刷新，不是实时流式更新。",
     "resourceUnavailable": "不可用",
     "resourceSnapshotPending": "等待首个采样结果",
@@ -1863,13 +1863,13 @@
       "failed": "以失败结束、可能需要排查或重试的任务数。"
     },
     "status": {
-      "activeTitle": "持久化调度器已启用",
-      "activeBody": "新的 run 会先写入持久化队列，再由 worker 从队列中认领执行。",
+      "activeTitle": "调度器在线",
+      "activeBody": "新任务进入持久队列后，由下一个可用 worker 自动领取。",
       "fallbackTitle": "虽然配置为 persistent，但当前处于回退模式",
       "fallbackBody": "应用正在无持久化调度实例的情况下提供运行能力，因此队列可见性和恢复能力都会受限。",
-      "persistentBadge": "persistent",
+      "persistentBadge": "持久队列",
       "fallbackBadge": "fallback",
-      "ready": "可分派",
+      "ready": "正常",
       "attention": "需关注"
     },
     "guidance": {
@@ -1894,12 +1894,12 @@
       "loadFailed": "无法加载调度器状态。请检查后端是否正在运行。"
     },
     "pressure": {
-      "label": "容量状态",
-      "healthy": "健康",
+      "label": "可用容量",
+      "healthy": "充足",
       "moderate": "偏紧",
-      "saturated": "饱和",
+      "saturated": "已满载",
       "messages": {
-        "healthy": "当前资源可以继续分派新的 run。",
+        "healthy": "资源充足，可继续分派任务。",
         "moderate": "如果 CPU 或内存继续升高，分派速度可能放缓。",
         "saturated": "建议等资源压力下降后再分派新的 run。"
       },
@@ -1911,8 +1911,8 @@
       }
     },
     "activeRuns": {
-      "title": "活动 run",
-      "count": "{count} 个运行中",
+      "title": "正在运行",
+      "count": "{count} 个活动任务",
       "empty": "当前没有正在执行的 run。",
       "emptyStates": {
         "idle": {
@@ -1928,7 +1928,8 @@
           "body": "重新连接资源流后，才能看到当前正在执行的 run。"
         }
       },
-      "unknownWorkflow": "未知 workflow"
+      "unknownWorkflow": "未知 workflow",
+      "cpuShare": "估算 CPU"
     },
     "charts": {
       "trendsTitle": "资源趋势",
@@ -1938,17 +1939,17 @@
       "gpuFree": "GPU 可用"
     },
     "advanced": {
-      "button": "高级视图",
-      "drawerTitle": "高级视图 · btop 进程面板",
-      "drawerMeta": "实时进程流 · btop",
+      "button": "打开监视器",
+      "drawerTitle": "系统监视器",
+      "drawerMeta": "btop · backend 运行环境",
       "comingSoon": "终端视图即将上线",
       "comingSoonBody": "该面板将在 pty 通道落地后嵌入实时的 btop 视图。在此之前，默认面板已提供压力与按 run 的来源归因。",
       "connecting": "正在连接 btop…",
       "connected": "已连接",
       "disconnected": "连接断开",
       "exited": "btop 已退出",
-      "unavailable": "后端服务没有找到 btop",
-      "unavailableBody": "请设置 BTOP_BIN，或确认启动服务时的 PATH 包含 btop，然后重新打开此面板。",
+      "unavailable": "backend 运行环境缺少 btop",
+      "unavailableBody": "更新 Bioinfoflow 镜像后重试；自定义部署也可以设置 BTOP_BIN。",
       "attemptedPaths": "已检查：{paths}",
       "retry": "重新连接"
     },

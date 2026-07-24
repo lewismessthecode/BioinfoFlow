@@ -3,6 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def _dockerfile() -> str:
+    return (Path(__file__).resolve().parents[1] / "Dockerfile").read_text(
+        encoding="utf-8"
+    )
+
+
 def test_backend_dockerfile_installs_app_before_final_uv_sync():
     """`COPY app app` must precede the final `uv sync` that installs the
     project. The engine spawns miniwdl via `python -m app.engine._miniwdl_entry`,
@@ -10,9 +16,7 @@ def test_backend_dockerfile_installs_app_before_final_uv_sync():
     package — otherwise the subprocess fails before registering our
     container backend and task containers miss the identity mounts.
     """
-    dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text(
-        encoding="utf-8"
-    )
+    dockerfile = _dockerfile()
 
     copy_app_index = dockerfile.index("COPY app app")
     # The deps-only prep layer uses `--no-install-project`; the project
@@ -43,8 +47,22 @@ def test_backend_dockerfile_exports_app_pythonpath_for_workspace_subprocesses():
     Setting PYTHONPATH makes that module import independent of the current
     workspace and the exact project-install mode used by uv.
     """
-    dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text(
-        encoding="utf-8"
-    )
+    dockerfile = _dockerfile()
 
     assert 'PYTHONPATH="/app"' in dockerfile
+
+
+def test_backend_dockerfile_installs_btop_for_scheduler_monitor():
+    """The btop WebSocket spawns inside the backend container.
+
+    Installing btop on the Compose host cannot satisfy that process lookup, so
+    the release image must carry the binary itself.
+    """
+    dockerfile = _dockerfile()
+
+    package_block = dockerfile.split("apt-get install -y --no-install-recommends", 1)[1]
+    package_block = package_block.split("&&", 1)[0]
+    assert "btop" in package_block.split(), (
+        "backend/Dockerfile must install btop because /scheduler/btop/ws "
+        "spawns the monitor inside the backend container"
+    )

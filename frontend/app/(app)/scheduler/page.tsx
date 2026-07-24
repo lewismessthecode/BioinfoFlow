@@ -37,8 +37,14 @@ function formatUtcTimestamp(value: string | null) {
 }
 
 function formatRefreshTimestamp(value: Date | null) {
-  if (!value) return "…"
-  return formatUtcTimestamp(value.toISOString()) ?? "…"
+  if (!value) return { compact: "…", full: "…" }
+  const hours = String(value.getUTCHours()).padStart(2, "0")
+  const minutes = String(value.getUTCMinutes()).padStart(2, "0")
+  const seconds = String(value.getUTCSeconds()).padStart(2, "0")
+  return {
+    compact: `${hours}:${minutes}:${seconds} UTC`,
+    full: formatUtcTimestamp(value.toISOString()) ?? value.toISOString(),
+  }
 }
 
 export default function SchedulerPage() {
@@ -140,10 +146,11 @@ function SchedulerStateStrip({
   lastUpdatedAt: Date | null
 }) {
   const t = useTranslations("scheduler")
+  const snapshot = formatRefreshTimestamp(lastUpdatedAt)
 
   return (
     <CardRoot variant="workbench">
-      <CardContent className="grid gap-4 !p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center">
+      <CardContent className="grid gap-5 !p-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)] lg:items-start">
         <div className="flex items-start gap-3">
           <div
             className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${
@@ -171,19 +178,33 @@ function SchedulerStateStrip({
           </div>
         </div>
 
-        <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4">
-          <StateMetric label={t("queueDepth")} value={status.queue_depth} />
-          <StateMetric label={t("workers")} value={status.workers} />
-          <StateMetric label={t("queued")} value={status.states.queued} />
-          <StateMetric label={t("dispatched")} value={status.states.dispatched} />
-          <StateMetric label={t("completed")} value={status.states.completed} />
-          <StateMetric label={t("failed")} value={status.states.failed} />
-          <StateMetric label={t("mode")} value={status.effective_mode} />
-          <StateMetric
-            label={t("snapshot")}
-            value={formatRefreshTimestamp(lastUpdatedAt)}
-            muted
-          />
+        <div className="min-w-0">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-y border-border/70 py-4 sm:grid-cols-3">
+            <StateMetric label={t("queueDepth")} value={status.queue_depth} />
+            <StateMetric label={t("workers")} value={status.workers} />
+            <StateMetric label={t("queued")} value={status.states.queued} />
+            <StateMetric label={t("dispatched")} value={status.states.dispatched} />
+            <StateMetric label={t("completed")} value={status.states.completed} />
+            <StateMetric label={t("failed")} value={status.states.failed} />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-muted-foreground">
+            <span>
+              {t("configuredModeLabel")} {" "}
+              <span className="font-mono font-medium text-foreground">
+                {status.effective_mode}
+              </span>
+            </span>
+            <span>
+              {t("snapshot")} {" "}
+              <time
+                className="font-mono font-medium text-foreground"
+                dateTime={lastUpdatedAt?.toISOString()}
+                title={snapshot.full}
+              >
+                {snapshot.compact}
+              </time>
+            </span>
+          </div>
         </div>
       </CardContent>
     </CardRoot>
@@ -193,20 +214,14 @@ function SchedulerStateStrip({
 function StateMetric({
   label,
   value,
-  muted,
 }: {
   label: string
   value: string | number
-  muted?: boolean
 }) {
   return (
-    <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+    <div className="min-w-0">
       <p className="truncate text-xs text-muted-foreground">{label}</p>
-      <p
-        className={`mt-1 truncate font-mono text-xs font-medium sm:text-sm ${
-          muted ? "text-muted-foreground" : "text-foreground"
-        }`}
-      >
+      <p className="mt-1 truncate font-mono text-lg font-medium tabular-nums text-foreground">
         {value}
       </p>
     </div>
