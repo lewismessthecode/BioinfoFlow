@@ -48,8 +48,8 @@ or deliberately connected remote resources.
 
 ## Install and run the first analysis
 
-Requirements: macOS or Linux, Docker Engine or Docker Desktop with Compose, and
-an `amd64` or `arm64` machine.
+Requirements: macOS or Linux, Docker Engine or Docker Desktop with Docker
+Compose 2.24 or newer, and an `amd64` or `arm64` machine.
 
 The shortest path for a trusted local machine is the release installer:
 
@@ -80,24 +80,21 @@ or remote deployment:
 ```bash
 git clone https://github.com/lewismessthecode/BioinfoFlow.git
 cd BioinfoFlow
-cp .env.example .env
-
-# Before starting, change the bootstrap owner credentials:
-# AUTH_BOOTSTRAP_OWNER_EMAIL, AUTH_BOOTSTRAP_OWNER_PASSWORD
-${EDITOR:-vi} .env
-
 docker compose up -d --build
 ```
 
-For localhost-only use, `BETTER_AUTH_SECRET` may stay empty; Bioinfoflow
-generates and persists a local secret. Set a stable value, for example from
-`openssl rand -base64 32`, before shared or remote deployment. The source
-Compose stack publishes its frontend and backend ports on host interfaces by
-default, so change the owner credentials before startup and use it only on a
-trusted machine and network.
+No `.env` file is required for this localhost first run. The source Compose
+stack binds both services to `127.0.0.1`, uses development auth, creates its
+SQLite directories automatically, and lets you connect an AI provider from the
+UI. Copy `.env.example` to `.env` only when you want to override a default.
 
-Open <http://localhost:3000>. Source builds use the owner account configured in
-`.env`; the localhost installer opens directly in development auth mode.
+Before shared or remote deployment, configure personal or team auth, owner
+credentials, stable auth and credential secrets, public URLs, CORS origins, and
+trusted hosts, then expose the services through TLS. See the
+[runbook](RUNBOOK.md) for that explicit production boundary.
+
+Open <http://localhost:3000>. Local source builds and the localhost installer
+open directly in development auth mode.
 
 Your first useful run takes three steps:
 
@@ -213,9 +210,9 @@ beyond one local user.
 
 ### Configure the source deployment
 
-The source installation above is also the path for development, authenticated
-personal or team deployments, custom public URLs, and frontend configuration
-changes. For team or remote use, also set a stable
+The source installation above is also the path for development, and it can be
+customized for authenticated personal or team deployments, public URLs, and
+frontend configuration changes. For team or remote use, also set a stable
 `BIOINFOFLOW_CREDENTIAL_KEY`, configure the real browser origin and trusted
 origins, terminate TLS, and review the security guidance before exposing ports.
 AI providers can be configured after sign-in.

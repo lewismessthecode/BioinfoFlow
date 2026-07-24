@@ -6,7 +6,7 @@ deployments.
 ## Localhost Installer
 
 The release installer is the shortest path from an empty machine to the Agent
-workspace. It requires Docker Desktop or Docker Engine with Compose v2 and a
+workspace. It requires Docker Desktop or Docker Engine with Compose 2.24+ and a
 local Unix-socket Docker context.
 
 The latest numeric release publishes `install.sh`, `docker-compose.local.yml`,
@@ -93,19 +93,20 @@ before changing that boundary.
 
 If you only remember one rule, remember this:
 
-> Edit the repo-root `.env`. That is the default config source for Docker and local development.
+> Localhost needs no `.env`; use the repo-root `.env` only for explicit overrides or shared deployment.
 
 ## 1. Environment Variables: One Rule, Not Three
 
 ### Default
 
-Use exactly one file by default:
+The localhost source stack and package development commands have complete local
+defaults. Do not create an environment file for the first run.
+
+When you need customization, use one shared file:
 
 ```bash
 cp .env.example .env
 ```
-
-Then edit `.env`.
 
 ### Optional overrides
 
@@ -131,20 +132,29 @@ The effective order is:
 
 Do not create extra env files unless you have a specific reason.
 
-For almost everyone, this is enough:
+For a localhost source build, this is enough:
 
 ```bash
-cp .env.example .env
+docker compose up -d --build
 ```
 
-For the local source-build Compose stack, leave `BIOINFOFLOW_HOME` unset unless
-you want the data root outside this repo. Then set at least:
+The stack defaults to dev auth, binds frontend and backend ports to
+`127.0.0.1`, stores data under this repo's `data/` directory, and accepts
+provider configuration through the UI.
+
+For a shared or remote source deployment, copy `.env.example` to `.env` and set
+at least:
 
 ```env
+AUTH_MODE=personal
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
-AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
-BETTER_AUTH_URL=http://localhost:3000
+AUTH_BOOTSTRAP_OWNER_PASSWORD=<strong-password>
+BETTER_AUTH_SECRET=<stable-random-secret>
+BIOINFOFLOW_CREDENTIAL_KEY=<stable-hex-key>
+NEXT_PUBLIC_API_BASE_URL=https://bioinfoflow.example/api/v1
+BETTER_AUTH_URL=https://bioinfoflow.example
+CORS_ORIGINS=["https://bioinfoflow.example"]
+TRUSTED_HOSTS=["bioinfoflow.example"]
 ```
 
 After first sign-in, configure the agent under **Settings -> AI Providers**.
@@ -184,14 +194,12 @@ TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER_IP_OR_DOMAIN"]
 
 ### Prerequisites
 
-- Docker Desktop or Docker Engine with Compose
-- At least one AI provider. Hosted providers use an API key; Ollama, vLLM, and OpenAI-compatible services can use an endpoint and model without a key when the service permits it.
+- Docker Desktop or Docker Engine with Docker Compose 2.24+
+- An AI provider is required only for Agent actions and can be connected from the UI after startup.
 
 ### First run
 
 ```bash
-cp .env.example .env
-# edit .env: owner credentials; provider keys can be added in the UI
 docker compose up -d --build
 ```
 
@@ -200,10 +208,8 @@ Open:
 - UI: `http://localhost:3000`
 - API docs: `http://localhost:8000/api/v1/docs`
 
-Sign in with:
-
-- `AUTH_BOOTSTRAP_OWNER_EMAIL`
-- `AUTH_BOOTSTRAP_OWNER_PASSWORD`
+The localhost stack opens directly in dev auth mode. Configure a model from the
+UI when you are ready to use the Agent.
 
 ### Docker notes
 
@@ -395,13 +401,15 @@ Inspect Bioinfoflow's stable GPU state with:
 curl -fsS http://localhost:8000/api/v1/system/gpu | jq '.data | {mode,state,detected_count,selected_count,selected_gpu_uuids,gpus}'
 ```
 
-### Fast localhost run with published images
+### Authenticated run with published images
 
-Use this path when you want to try the latest formal release without building images locally:
+The one-line localhost installer is the zero-configuration published-image
+path. Use this lower-level Compose path when you explicitly want personal auth
+without building images locally:
 
 ```bash
 cp .env.example .env
-# edit .env: owner credentials; provider keys can be added in the UI
+# edit .env: set AUTH_MODE=personal and uncomment strong owner credentials
 cat >> .env <<'EOF'
 IMAGE_REGISTRY=ghcr.io/lewismessthecode
 IMAGE_TAG=latest
@@ -560,10 +568,10 @@ its credentials. **From Tarball** is unchanged and never uses registry settings.
 
 ### Backend
 
-The backend now auto-reads the repo-root `.env`.
+The backend works without `.env` for localhost development and auto-reads the
+repo-root `.env` when it exists.
 
 ```bash
-cp .env.example .env
 cd backend
 uv sync
 uv run alembic upgrade head
@@ -662,17 +670,14 @@ the currently waiting eligible tool actions as part of the same update.
 
 For the smallest working local setup:
 
-1. Copy `.env.example` to `.env`
-2. Set owner credentials and, optionally, one LLM API key
-3. Run backend migrations
-4. Start backend
-5. Start frontend
+1. Run backend migrations
+2. Start backend
+3. Start frontend
+4. Connect a model from the UI when needed
 
 Commands:
 
 ```bash
-cp .env.example .env
-
 cd backend
 uv sync
 uv run alembic upgrade head

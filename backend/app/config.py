@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     # Auth (Better Auth shared DB)
     better_auth_db_path: str = ""
     auth_mode: str = ""
-    auth_enabled: bool = True
+    auth_enabled: bool = False
 
     # Database (SQLite MVP)
     database_url: str = ""
@@ -201,9 +201,11 @@ class Settings(BaseSettings):
         if value is None:
             return ""
         normalized = str(value).strip().lower()
+        if not normalized:
+            return ""
         if normalized in {"personal", "team", "dev"}:
             return normalized
-        return ""
+        raise ValueError("AUTH_MODE must be one of: personal, team, dev")
 
     @field_validator("cors_origins", mode="before")
     @classmethod

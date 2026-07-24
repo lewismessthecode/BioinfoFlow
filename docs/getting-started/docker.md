@@ -5,8 +5,8 @@ when you are developing Bioinfoflow or configuring a shared deployment.
 
 ## Prerequisites
 
-- Docker Engine or Docker Desktop with Compose
-- At least one AI provider: use an API key for a hosted provider, or configure an endpoint and model for Ollama, vLLM, or another OpenAI-compatible service.
+- Docker Engine or Docker Desktop with Docker Compose 2.24 or newer
+- An AI provider is needed only when you use the Agent; connect one from the UI after startup.
 
 ## Localhost Installer
 
@@ -112,23 +112,26 @@ shared or remote access, and review [Security Notes](../security.md).
 From the repo root:
 
 ```bash
-cp .env.example .env
+docker compose up -d --build
 ```
 
-Edit `.env`:
+This localhost path needs no `.env`: both ports bind to `127.0.0.1`, auth uses
+dev mode, storage defaults under `./data`, and provider setup is available in
+the UI. Copy `.env.example` to `.env` only to customize defaults.
+
+For a shared or remote deployment, create `.env` and configure the security
+boundary explicitly:
 
 ```env
-# Optional for local Docker.
-# If unset, Docker Compose uses this repo's ./data directory.
-# BIOINFOFLOW_HOME=/absolute/path/to/bioinfoflow-data
-
+AUTH_MODE=personal
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
-AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
-
-# Optional for localhost Docker. If empty, Bioinfoflow creates a persistent
-# local secret under BIOINFOFLOW_HOME/state/auth on first startup.
-# Set this before running a shared or remote deployment.
-# BETTER_AUTH_SECRET=...
+AUTH_BOOTSTRAP_OWNER_PASSWORD=<strong-password>
+BETTER_AUTH_SECRET=<stable-random-secret>
+BIOINFOFLOW_CREDENTIAL_KEY=<stable-hex-key>
+NEXT_PUBLIC_API_BASE_URL=https://bioinfoflow.example/api/v1
+BETTER_AUTH_URL=https://bioinfoflow.example
+CORS_ORIGINS=["https://bioinfoflow.example"]
+TRUSTED_HOSTS=["bioinfoflow.example"]
 ```
 
 Provider configuration is UI-first. Hosted providers only need an API key.
@@ -254,15 +257,17 @@ Open:
 - UI: `http://localhost:3000`
 - API docs: `http://localhost:8000/api/v1/docs`
 
-Sign in with the owner email and password from `.env`.
+The localhost stack opens without a login screen. Personal and team deployments
+use the owner credentials configured in `.env`.
 
-## Published Images
+## Authenticated Published Images
 
-For localhost, you can skip the local image build and pull the latest images from GHCR:
+The installer above is the zero-configuration localhost image path. Use this
+lower-level stack when you explicitly want personal auth and published images:
 
 ```bash
 cp .env.example .env
-# edit .env: owner credentials; provider keys can be added in the UI
+# edit .env: set AUTH_MODE=personal and uncomment strong owner credentials
 cat >> .env <<'EOF'
 IMAGE_REGISTRY=ghcr.io/lewismessthecode
 IMAGE_TAG=latest
@@ -473,12 +478,19 @@ Local defaults in `.env.example` are already set for:
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 BETTER_AUTH_URL=http://localhost:3000
 CORS_ORIGINS=["http://localhost:3000"]
-AUTH_MODE=personal
+AUTH_MODE=dev
 ```
+
+The source Compose file also binds both published ports to `127.0.0.1`.
 
 For a shared or remote server, set these before building:
 
 ```env
+AUTH_MODE=personal
+AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
+AUTH_BOOTSTRAP_OWNER_PASSWORD=<strong-password>
+BETTER_AUTH_SECRET=<stable-random-secret>
+BIOINFOFLOW_CREDENTIAL_KEY=<stable-hex-key>
 NEXT_PUBLIC_API_BASE_URL=http://YOUR_SERVER:8000/api/v1
 BETTER_AUTH_URL=http://YOUR_SERVER:3000
 CORS_ORIGINS=["http://YOUR_SERVER:3000"]

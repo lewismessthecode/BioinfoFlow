@@ -1,10 +1,19 @@
+import pytest
+
 from app.config import Settings
 
 
-def test_auth_mode_defaults_to_personal(monkeypatch) -> None:
+def test_auth_mode_defaults_to_dev_for_local_first_run(monkeypatch) -> None:
     monkeypatch.delenv("AUTH_MODE", raising=False)
     monkeypatch.delenv("AUTH_ENABLED", raising=False)
     settings = Settings(_env_file=None)
+
+    assert settings.resolved_auth_mode == "dev"
+    assert settings.auth_enabled_effective is False
+
+
+def test_legacy_auth_enabled_true_maps_to_personal_mode() -> None:
+    settings = Settings(auth_mode="", auth_enabled=True)
 
     assert settings.resolved_auth_mode == "personal"
     assert settings.auth_enabled_effective is True
@@ -28,6 +37,11 @@ def test_explicit_auth_mode_wins_over_legacy_auth_enabled() -> None:
 
     assert settings.resolved_auth_mode == "team"
     assert settings.auth_enabled_effective is True
+
+
+def test_invalid_auth_mode_is_rejected() -> None:
+    with pytest.raises(ValueError, match="AUTH_MODE must be one of"):
+        Settings(auth_mode="personl")
 
 
 def test_relative_sqlite_database_url_is_resolved_to_backend_root() -> None:

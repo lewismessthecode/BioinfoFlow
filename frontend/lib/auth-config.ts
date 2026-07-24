@@ -35,7 +35,7 @@ function parseBoolean(value: string | undefined, defaultValue: boolean): boolean
 }
 
 function parseAuthMode(value: string | undefined): AuthMode | null {
-  if (!value) {
+  if (!value || value.trim() === "") {
     return null
   }
 
@@ -48,7 +48,7 @@ function parseAuthMode(value: string | undefined): AuthMode | null {
     return normalized
   }
 
-  return null
+  throw new Error("AUTH_MODE must be one of: personal, team, dev")
 }
 
 function resolveAuthMode(
@@ -60,7 +60,7 @@ function resolveAuthMode(
     return parsedMode
   }
 
-  return parseBoolean(legacyAuthEnabledValue, true) ? "personal" : "dev"
+  return parseBoolean(legacyAuthEnabledValue, false) ? "personal" : "dev"
 }
 
 export function canManageMembers(
