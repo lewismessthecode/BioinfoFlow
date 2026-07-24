@@ -2647,6 +2647,10 @@
     "send": "发送消息",
     "stop": "停止回复",
     "pendingResponse": "正在处理...",
+    "steer": {
+      "pending": "将在当前步骤结束后参考",
+      "cancelled": "回复已停止，未处理此消息"
+    },
     "scrollToBottom": "回到最新内容",
     "recentActivityWindow": "显示最近活动",
     "thinking": "思考过程",

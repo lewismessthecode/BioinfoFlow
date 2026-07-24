@@ -77,6 +77,8 @@ vi.mock("next-intl", () => ({
       "turnStatus.completed": "Done",
       "turnStatus.failed": "Failed",
       "turnStatus.cancelled": "Cancelled",
+      "steer.pending": "Will be considered after the current step",
+      "steer.cancelled": "Not processed because the response stopped",
       scrollToBottom: "Jump to latest",
       "sources.title": "Sources",
       "sources.open": "Open sources",
@@ -209,6 +211,21 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("First finding")).toBeInTheDocument()
     expect(screen.getByText("Second finding")).toBeInTheDocument()
     expect(screen.getByText("nextflow log")).toBeInTheDocument()
+  })
+
+  it("renders steering guidance inside the active turn timeline", () => {
+    renderTranscript({
+      events: [
+        event("steer-received", 2, "turn.steer.received", {
+          steer_id: "steer-1",
+          input_text: "Use the project virtualenv.",
+        }),
+      ],
+    })
+
+    const steer = screen.getByTestId("agent-user-steer")
+    expect(steer).toHaveTextContent("Use the project virtualenv.")
+    expect(steer).toHaveTextContent("Will be considered after the current step")
   })
 
   it("renders selected skill and workflow tokens in the user bubble", () => {

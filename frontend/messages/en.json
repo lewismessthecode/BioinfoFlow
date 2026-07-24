@@ -2647,6 +2647,10 @@
     "send": "Send message",
     "stop": "Stop response",
     "pendingResponse": "Working on it...",
+    "steer": {
+      "pending": "Will be considered after the current step",
+      "cancelled": "Not processed because the response stopped"
+    },
     "scrollToBottom": "Jump to latest",
     "recentActivityWindow": "Showing recent activity",
     "thinking": "Thinking",
