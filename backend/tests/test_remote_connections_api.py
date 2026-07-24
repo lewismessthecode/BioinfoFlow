@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from starlette.websockets import WebSocketDisconnect
 
@@ -617,6 +618,105 @@ async def test_remote_connection_service_resolves_jump_credentials_without_summa
     assert config.summary()["jump_connection_name"] == "Bastion"
     assert "password" not in config.summary()
     assert "jump_connection" not in config.summary()
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_resolver_rejects_persisted_nested_jump(db_session):
+    from app.models.remote_connection import RemoteConnection
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    service = RemoteConnectionService(db_session)
+    outer_jump = await service.create_connection(
+        _connection_payload(name="Outer Bastion", auth_method="agent", key_path=None),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    referenced_jump = await service.create_connection(
+        _connection_payload(
+            name="Referenced Bastion", auth_method="agent", key_path=None
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    target = await service.create_connection(
+        _connection_payload(
+            name="Phoenix",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=str(referenced_jump.id),
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    await db_session.execute(
+        update(RemoteConnection)
+        .where(RemoteConnection.id == referenced_jump.id)
+        .values(
+            auth_method="jump",
+            jump_connection_id=str(outer_jump.id),
+        )
+    )
+    await db_session.commit()
+
+    with pytest.raises(ValidationError, match="Nested jump"):
+        await service.resolve_connection_config(target)
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_resolver_rejects_direct_jump_with_route_residue(
+    db_session,
+):
+    from app.models.remote_connection import RemoteConnection
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    service = RemoteConnectionService(db_session)
+    outer_jump = await service.create_connection(
+        _connection_payload(name="Outer Bastion", auth_method="agent", key_path=None),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    referenced_jump = await service.create_connection(
+        _connection_payload(
+            name="Referenced Bastion", auth_method="agent", key_path=None
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    target = await service.create_connection(
+        _connection_payload(
+            name="Phoenix",
+            auth_method="jump",
+            key_path=None,
+            jump_connection_id=str(referenced_jump.id),
+        ),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    await db_session.execute(
+        update(RemoteConnection)
+        .where(RemoteConnection.id == referenced_jump.id)
+        .values(jump_connection_id=str(outer_jump.id))
+    )
+    await db_session.commit()
+
+    with pytest.raises(ValidationError, match="direct connection"):
+        await service.resolve_connection_config(target)
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_resolver_rejects_persisted_self_jump(db_session):
+    from app.models.remote_connection import RemoteConnection
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    service = RemoteConnectionService(db_session)
+    target = await service.create_connection(
+        _connection_payload(name="Phoenix", auth_method="agent", key_path=None),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    await db_session.execute(
+        update(RemoteConnection)
+        .where(RemoteConnection.id == target.id)
+        .values(auth_method="jump", jump_connection_id=str(target.id))
+    )
+    await db_session.commit()
+    await db_session.refresh(target)
+
+    with pytest.raises(ValidationError, match="itself"):
+        await service.resolve_connection_config(target)
 
 
 @pytest.mark.asyncio

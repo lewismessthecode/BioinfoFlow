@@ -302,6 +302,14 @@ class RemoteConnectionService:
                 raise ValidationError(
                     "Jump connection must exist in the same workspace"
                 )
+            if str(connection.id) == str(jump.id):
+                raise ValidationError(
+                    "A remote connection cannot use itself as a jump host"
+                )
+            if jump.auth_method == RemoteConnectionAuthMethod.JUMP:
+                raise ValidationError("Nested jump connections are not supported")
+            if jump.jump_connection_id is not None:
+                raise ValidationError("Jump host must be a direct connection")
             jump_config = remote_connection_config_from_model(jump)
         return remote_connection_config_from_model(
             connection,
