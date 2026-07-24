@@ -4,11 +4,25 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, case, desc, exists, func, insert, literal, or_, select, update
+from sqlalchemy import (
+    and_,
+    case,
+    delete,
+    desc,
+    exists,
+    func,
+    insert,
+    literal,
+    or_,
+    select,
+    update,
+)
 
 from app.models.agent_core import (
     AgentAction,
     AgentActionStatus,
+    AgentAttachment,
+    AgentAttachmentStatus,
     AgentArtifact,
     AgentEvent,
     AgentMessage,
@@ -45,6 +59,89 @@ def ensure_clean_owned_publication_session(session) -> None:
         raise RuntimeError(
             "Owner-conditioned publication requires a clean database session"
         )
+
+
+class AgentAttachmentRepository(BaseRepository[AgentAttachment]):
+    model = AgentAttachment
+
+    async def get_owned(
+        self,
+        attachment_id: str,
+        *,
+        session_id: str,
+        workspace_id: str,
+        user_id: str,
+    ) -> AgentAttachment | None:
+        return await self.session.scalar(
+            select(self.model).where(
+                self.model.id == attachment_id,
+                self.model.session_id == session_id,
+                self.model.workspace_id == workspace_id,
+                self.model.user_id == user_id,
+            )
+        )
+
+    async def list_for_session(
+        self,
+        *,
+        session_id: str,
+        workspace_id: str,
+        user_id: str,
+    ) -> list[AgentAttachment]:
+        result = await self.session.execute(
+            select(self.model)
+            .where(
+                self.model.session_id == session_id,
+                self.model.workspace_id == workspace_id,
+                self.model.user_id == user_id,
+            )
+            .order_by(self.model.created_at, self.model.id)
+        )
+        return list(result.scalars().all())
+
+    async def mark_pending_delete(
+        self,
+        attachment_id: str,
+        *,
+        session_id: str,
+        workspace_id: str,
+        user_id: str,
+    ) -> AgentAttachment | None:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == attachment_id,
+                self.model.session_id == session_id,
+                self.model.workspace_id == workspace_id,
+                self.model.user_id == user_id,
+            )
+            .values(status=AgentAttachmentStatus.PENDING_DELETE)
+            .returning(self.model)
+            .execution_options(populate_existing=True)
+        )
+        attachment = result.scalar_one_or_none()
+        await self.session.commit()
+        return attachment
+
+    async def delete_orphans_before(self, cutoff: datetime) -> list[str]:
+        orphan_ids_and_paths = await self.session.execute(
+            select(self.model.id, self.model.storage_path).where(
+                self.model.created_at < cutoff,
+                ~exists(
+                    select(AgentTurn.id).where(
+                        AgentTurn.session_id == self.model.session_id
+                    )
+                ),
+            )
+        )
+        rows = list(orphan_ids_and_paths.all())
+        if not rows:
+            return []
+        await self.session.execute(
+            delete(self.model).where(self.model.id.in_([row.id for row in rows]))
+        )
+        await self.session.commit()
+        return [row.storage_path for row in rows]
 
 
 async def _fence_owned_turn(

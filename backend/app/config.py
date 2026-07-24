@@ -121,6 +121,14 @@ class Settings(BaseSettings):
     agent_turn_lease_seconds: int = 300
     agent_compact_threshold: int = 50000  # Auto-compact token threshold
     agent_project_instructions_max_bytes: int = 32768
+    agent_attachment_file_max_bytes: int = 25 * 1024 * 1024
+    agent_attachment_image_max_bytes: int = 20 * 1024 * 1024
+    agent_attachment_folder_max_bytes: int = 100 * 1024 * 1024
+    agent_attachment_folder_max_files: int = 1000
+    agent_attachment_turn_max_images: int = 10
+    agent_attachment_text_max_bytes: int = 64 * 1024
+    agent_attachment_pdf_max_pages: int = 200
+    agent_attachment_orphan_ttl_seconds: int = 24 * 60 * 60
 
     # Provider API keys used by LLM catalog bootstrap.
     # UI-configured providers are stored in the LLM catalog and take precedence.

@@ -1,6 +1,7 @@
 from app.repositories.base import BaseRepository
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
+    AgentAttachmentRepository,
     AgentArtifactRepository,
     AgentEventRepository,
     AgentMemoryRepository,
@@ -27,6 +28,7 @@ __all__ = [
     "AgentTurnRepository",
     "AgentEventRepository",
     "AgentActionRepository",
+    "AgentAttachmentRepository",
     "AgentArtifactRepository",
     "AgentMemoryRepository",
     "LlmProviderRepository",
