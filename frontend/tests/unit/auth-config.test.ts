@@ -50,4 +50,20 @@ describe("auth config", () => {
     expect(config.mode).toBe("team")
     expect(config.authEnabled).toBe(true)
   })
+
+  it("rejects an invalid server auth mode instead of disabling auth", async () => {
+    process.env.AUTH_MODE = "personl"
+
+    await expect(loadConfigModule()).rejects.toThrow(
+      "AUTH_MODE must be one of: personal, team, dev",
+    )
+  })
+
+  it("rejects an invalid public auth mode during module startup", async () => {
+    process.env.NEXT_PUBLIC_AUTH_MODE = "personl"
+
+    await expect(loadConfigModule()).rejects.toThrow(
+      "AUTH_MODE must be one of: personal, team, dev",
+    )
+  })
 })

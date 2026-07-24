@@ -201,9 +201,11 @@ class Settings(BaseSettings):
         if value is None:
             return ""
         normalized = str(value).strip().lower()
+        if not normalized:
+            return ""
         if normalized in {"personal", "team", "dev"}:
             return normalized
-        return ""
+        raise ValueError("AUTH_MODE must be one of: personal, team, dev")
 
     @field_validator("cors_origins", mode="before")
     @classmethod

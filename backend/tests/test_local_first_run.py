@@ -28,9 +28,24 @@ def test_source_compose_defaults_to_loopback_dev_auth() -> None:
 
     assert backend["ports"] == ["127.0.0.1:${BACKEND_PORT:-8000}:8000"]
     assert frontend["ports"] == ["127.0.0.1:${FRONTEND_PORT:-3000}:3000"]
-    assert backend["environment"]["AUTH_MODE"] == "${AUTH_MODE:-dev}"
-    assert frontend["environment"]["AUTH_MODE"] == "${AUTH_MODE:-dev}"
-    assert frontend["build"]["args"]["NEXT_PUBLIC_AUTH_MODE"] == "${AUTH_MODE:-dev}"
+    assert backend["environment"]["AUTH_MODE"] == "${AUTH_MODE:-}"
+    assert backend["environment"]["AUTH_ENABLED"] == "${AUTH_ENABLED:-false}"
+    assert frontend["environment"]["AUTH_MODE"] == "${AUTH_MODE:-}"
+    assert frontend["environment"]["AUTH_ENABLED"] == "${AUTH_ENABLED:-false}"
+    assert frontend["build"]["args"]["NEXT_PUBLIC_AUTH_MODE"] == "${AUTH_MODE:-}"
+    assert (
+        frontend["build"]["args"]["NEXT_PUBLIC_AUTH_ENABLED"]
+        == "${AUTH_ENABLED:-false}"
+    )
+
+
+def test_published_image_compose_fails_closed_to_personal_auth() -> None:
+    compose = yaml.safe_load(
+        (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    )
+
+    assert compose["services"]["backend"]["environment"]["AUTH_MODE"] == "personal"
+    assert compose["services"]["frontend"]["environment"]["AUTH_MODE"] == "personal"
 
 
 def test_env_example_is_optional_local_customization() -> None:

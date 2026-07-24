@@ -55,7 +55,8 @@ Expected: all tests pass.
 
 With `AUTH_MODE` and `AUTH_ENABLED` removed and `_env_file=None`, assert
 `resolved_auth_mode == "dev"` and `auth_enabled_effective is False`. Retain
-tests showing `AUTH_ENABLED=true` maps to personal and explicit modes win.
+tests showing `AUTH_ENABLED=true` maps to personal, explicit modes win, and an
+invalid nonempty mode raises a validation error.
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
@@ -90,6 +91,7 @@ Assert that no auth variables resolve server and client configuration to dev
 mode. Add tests for a small exported argument helper that appends
 `--hostname 127.0.0.1` for `dev` only when neither `--hostname` nor `-H` is
 present, and preserves an explicit hostname.
+Add server and public-config tests proving invalid auth modes abort startup.
 
 - [ ] **Step 2: Run focused Vitest tests and verify RED**
 
@@ -126,6 +128,9 @@ Parse `docker-compose.yml` and assert both `env_file` entries use
 `NEXT_PUBLIC_AUTH_MODE` to dev.
 Also assert that a direct frontend image build defaults its auth build argument
 to dev when no explicit argument is supplied.
+Assert modern and legacy auth variables are propagated without a dev override,
+and `docker-compose.prod.yml` explicitly locks its published services to
+personal auth.
 
 - [ ] **Step 2: Run the contract test and verify RED**
 

@@ -31,6 +31,7 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     env_file: .env
     environment:
+      AUTH_MODE: personal
       BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
       BIOINFOFLOW_HOME_HOST: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
       DATABASE_URL: sqlite+aiosqlite:///${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/bioinfoflow.db
@@ -55,6 +56,7 @@ services:
       - "${FRONTEND_PORT:-3000}:3000"
     env_file: .env
     environment:
+      AUTH_MODE: personal
       BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
       BIOINFOFLOW_HOME_HOST: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
       BETTER_AUTH_DB_PATH: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/auth/better-auth.db

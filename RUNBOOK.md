@@ -6,7 +6,7 @@ deployments.
 ## Localhost Installer
 
 The release installer is the shortest path from an empty machine to the Agent
-workspace. It requires Docker Desktop or Docker Engine with Compose v2 and a
+workspace. It requires Docker Desktop or Docker Engine with Compose 2.24+ and a
 local Unix-socket Docker context.
 
 The latest numeric release publishes `install.sh`, `docker-compose.local.yml`,
@@ -194,8 +194,8 @@ TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER_IP_OR_DOMAIN"]
 
 ### Prerequisites
 
-- Docker Desktop or Docker Engine with Compose
-- At least one AI provider. Hosted providers use an API key; Ollama, vLLM, and OpenAI-compatible services can use an endpoint and model without a key when the service permits it.
+- Docker Desktop or Docker Engine with Docker Compose 2.24+
+- An AI provider is required only for Agent actions and can be connected from the UI after startup.
 
 ### First run
 

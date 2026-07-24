@@ -1,3 +1,5 @@
+import pytest
+
 from app.config import Settings
 
 
@@ -35,6 +37,11 @@ def test_explicit_auth_mode_wins_over_legacy_auth_enabled() -> None:
 
     assert settings.resolved_auth_mode == "team"
     assert settings.auth_enabled_effective is True
+
+
+def test_invalid_auth_mode_is_rejected() -> None:
+    with pytest.raises(ValueError, match="AUTH_MODE must be one of"):
+        Settings(auth_mode="personl")
 
 
 def test_relative_sqlite_database_url_is_resolved_to_backend_root() -> None:

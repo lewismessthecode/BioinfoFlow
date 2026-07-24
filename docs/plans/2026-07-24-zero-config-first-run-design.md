@@ -65,13 +65,16 @@ The regression test runs Alembic against a nonexistent temporary
 
 With no environment file and no legacy auth override, backend settings resolve
 to `AUTH_MODE=dev`. Explicit `AUTH_MODE=personal|team|dev` and legacy
-`AUTH_ENABLED` continue to work. The documented Uvicorn development command
+`AUTH_ENABLED` continue to work. Invalid nonempty auth modes fail validation
+instead of falling through to dev. The documented Uvicorn development command
 uses Uvicorn's loopback default.
 
 ### Frontend local defaults
 
 When neither the modern nor legacy auth variables are present, frontend auth
 configuration resolves to dev mode. Explicit values remain authoritative.
+Invalid nonempty modes abort frontend startup or build instead of disabling
+authentication.
 `bun run dev` injects `--hostname 127.0.0.1` unless the caller explicitly
 provides a hostname, keeping passwordless development loopback-only. A direct
 frontend image build also defaults its baked auth mode to dev; release builds
@@ -87,6 +90,8 @@ The source Compose stack:
 - publishes frontend and backend ports on `127.0.0.1` only;
 - retains explicit substitutions for custom ports, paths, URLs, auth modes,
   provider configuration, and other operator overrides.
+- passes both modern `AUTH_MODE` and legacy `AUTH_ENABLED` through the same
+  backend/frontend resolution logic so upgrades do not silently disable auth.
 
 `.env.example` becomes an optional customization template. Bootstrap owner
 credentials are commented examples used only after switching to personal or
@@ -101,6 +106,11 @@ stable secrets, browser/API URLs, CORS origins, and trusted hosts.
 
 No attempt is made to infer public deployment URLs or manufacture third-party
 provider credentials.
+
+The published-image Compose stack remains an authenticated personal-mode
+surface and explicitly sets personal auth, preventing backend defaults from
+opening its publicly published API. The optional source `.env` mechanism
+requires Docker Compose 2.24 or newer and that minimum is documented.
 
 ## Verification
 
