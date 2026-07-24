@@ -11,7 +11,11 @@ from app.path_layout import skills_root
 from app.repositories.agent_core_repo import AgentMessageRepository
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
-from app.services.agent_core.transcript import AgentTranscriptStore, text_part
+from app.services.agent_core.transcript import (
+    AgentTranscriptStore,
+    parts_to_text,
+    text_part,
+)
 from app.services.model_runtime.contracts import TextPart
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -138,12 +142,60 @@ async def test_context_compaction_supersedes_older_messages(db_session):
         and (message.message_metadata or {}).get("kind") == "compaction_summary"
         for message in stored
     )
+    summary_metadata = summary_message.message_metadata or {}
+    assert summary_metadata["_temporal_context"] == turn.model_profile_snapshot[
+        "temporal_context"
+    ]
+    assert parts_to_text(summary_message.content_parts).startswith(
+        "<environment_context>\n"
+        f"  <current_date>{turn.model_profile_snapshot['temporal_context']['current_date']}</current_date>\n"
+        "  <timezone>Etc/UTC</timezone>\n"
+        "</environment_context>\n\n"
+    )
     assert any(
         message["role"] == "assistant"
         and "Conversation summary for continuity" in message.get("content", "")
         for message in messages
     )
     assert not any(message.get("content") == "old assistant reply one" * 8 for message in messages)
+
+    for cycle in range(3):
+        await transcript.append_parts(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            role="user",
+            parts=[text_part(f"later user message {cycle} " * 20)],
+        )
+        await transcript.append_parts(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            role="assistant",
+            parts=[text_part(f"later assistant message {cycle} " * 20)],
+        )
+        await transcript.append_parts(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            role="user",
+            parts=[text_part(f"recent user message {cycle}")],
+        )
+        await AgentContextAssembler(db_session).provider_messages(
+            agent_session=session,
+            turn=turn,
+        )
+
+    stored = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    latest_summary = next(
+        message
+        for message in reversed(stored)
+        if message.status == "committed"
+        and (message.message_metadata or {}).get("kind") == "compaction_summary"
+    )
+    assert (latest_summary.message_metadata or {})["_temporal_context"] == (
+        turn.model_profile_snapshot["temporal_context"]
+    )
+    assert parts_to_text(latest_summary.content_parts).startswith(
+        "<environment_context>\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -179,7 +231,15 @@ async def test_model_context_preserves_each_assistant_phase_from_canonical_parts
     )
 
     assert context.input_items == (
-        TextPart(text="Continue the investigation."),
+        TextPart(
+            text=(
+                "<environment_context>\n"
+                f"  <current_date>{turn.model_profile_snapshot['temporal_context']['current_date']}</current_date>\n"
+                "  <timezone>Etc/UTC</timezone>\n"
+                "</environment_context>\n\n"
+                "Continue the investigation."
+            )
+        ),
         TextPart(text="Checking inputs.", phase="commentary"),
         TextPart(text="Investigation complete.", phase="final_answer"),
     )

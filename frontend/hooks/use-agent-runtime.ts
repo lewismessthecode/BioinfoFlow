@@ -474,7 +474,7 @@ export function useAgentRuntime(
           modelSelection: options?.modelSelection,
           executionTarget,
           executionScope,
-          metadata: options?.metadata,
+          metadata: metadataWithClientTimeZone(options?.metadata),
         })
         dispatch({ type: "turn.upsert", turn })
         await refreshState(session.id)
@@ -928,6 +928,20 @@ function metadataForExecutionRequest({
   const connectionId =
     remoteConnectionId || remoteConnectionIdFromExecutionTarget(executionTarget)
   return connectionId ? { remote_connection_id: connectionId } : undefined
+}
+
+function metadataWithClientTimeZone(
+  metadata: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | undefined {
+  const next = { ...(metadata ?? {}) }
+  try {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone?.trim()
+    if (timeZone) next.client_timezone = timeZone
+  } catch {
+    // The backend falls back to an explicit UTC date when browser locale data
+    // is unavailable.
+  }
+  return Object.keys(next).length ? next : undefined
 }
 
 function executionTargetForExecutionScope(

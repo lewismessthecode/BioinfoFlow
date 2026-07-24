@@ -360,7 +360,8 @@ async def test_context_replays_committed_transcript_messages(db_session, monkeyp
     )
 
     assert [message["role"] for message in messages] == ["system", "user", "assistant"]
-    assert messages[1]["content"] == "Replay this transcript."
+    assert messages[1]["content"].startswith("<environment_context>\n")
+    assert messages[1]["content"].endswith("\n\nReplay this transcript.")
     assert messages[2]["content"] == "Committed assistant reply."
 
 
