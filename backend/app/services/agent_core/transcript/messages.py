@@ -152,15 +152,24 @@ async def model_input_parts_from_message_async(
     if role != "user":
         return model_input_parts_from_message(role, parts, metadata)
     result: list[InputPart] = []
+    pending_text_parts: list[dict[str, Any]] = []
     attachments = AgentAttachmentRepository(db)
     attachment_service = AgentAttachmentService(db)
+
+    def flush_text() -> None:
+        text = parts_to_text(pending_text_parts)
+        pending_text_parts.clear()
+        if text:
+            result.append(TextPart(text=text))
+
     for part in parts:
         if part.get("type") == "text" and isinstance(part.get("text"), str):
             if part["text"]:
-                result.append(TextPart(text=part["text"]))
+                pending_text_parts.append(part)
             continue
         if part.get("type") != "image_ref":
             continue
+        flush_text()
         attachment_id = part.get("attachment_id")
         if not isinstance(attachment_id, str):
             raise NotFoundError("Attachment not found")
@@ -207,6 +216,7 @@ async def model_input_parts_from_message_async(
                 ),
             )
         )
+    flush_text()
     return tuple(result)
 
 
