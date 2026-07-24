@@ -17,6 +17,9 @@ import type {
   AgentPermissionMode,
   AgentPendingStrategy,
   AgentRuntimeArtifact,
+  AgentRuntimeAttachment,
+  AgentRuntimeContextSearchResponse,
+  AgentRuntimeContextSearchScope,
   AgentRuntimeInputPart,
   AgentRuntimeSession,
   AgentRuntimeSteerOutcome,
@@ -26,6 +29,51 @@ import type {
   AgentRuntimeTurn,
   AgentRuntimeWorkflowMention,
 } from "./types"
+
+export const uploadAgentRuntimeAttachment = async (input: {
+  sessionId: string
+  kind: "file" | "folder" | "image"
+  files: File[]
+  relativePaths?: string[]
+  source?: "upload" | "clipboard"
+}) => {
+  const body = new FormData()
+  body.append("kind", input.kind)
+  body.append("source", input.source ?? "upload")
+  input.files.forEach((file) => body.append("files", file))
+  input.relativePaths?.forEach((path) => body.append("relative_paths", path))
+  const response = await apiRequest<AgentRuntimeAttachment[]>(
+    `/agent/sessions/${input.sessionId}/attachments`,
+    { method: "POST", body },
+  )
+  return response.data
+}
+
+export const deleteAgentRuntimeAttachment = async (attachmentId: string) => {
+  await apiRequest(`/agent/attachments/${attachmentId}`, { method: "DELETE" })
+}
+
+export const agentRuntimeAttachmentPreviewUrl = (attachmentId: string) =>
+  buildApiUrl(`/agent/attachments/${attachmentId}/preview`)
+
+export const searchAgentRuntimeContext = async (input: {
+  query: string
+  scope?: AgentRuntimeContextSearchScope
+  projectId?: string | null
+  sessionId?: string | null
+  cursor?: string | null
+}) => {
+  const params: Record<string, string> = { q: input.query }
+  if (input.scope) params.scope = input.scope
+  if (input.projectId) params.project_id = input.projectId
+  if (input.sessionId) params.session_id = input.sessionId
+  if (input.cursor) params.cursor = input.cursor
+  const response = await apiRequest<AgentRuntimeContextSearchResponse>(
+    "/agent/context/search",
+    { params },
+  )
+  return response.data
+}
 
 type CreateAgentRuntimeSessionInput = {
   projectId?: string | null
@@ -248,18 +296,34 @@ function agentRuntimeInputPartsForRequest(
 ): AgentRuntimeInputPart[] | null | undefined {
   if (!inputParts) return inputParts
   return inputParts.map((part) => {
-    if (!("kind" in part) || part.kind !== "workflow_ref") return part
-    const requestPart: AgentRuntimeInputPart = { kind: "workflow_ref" }
-    if (Object.hasOwn(part, "workflow_id")) {
-      requestPart.workflow_id = part.workflow_id ?? null
+    const discriminator = "type" in part ? part.type : "kind" in part ? part.kind : null
+    if (discriminator === "text") return part
+    if (discriminator === "workflow_ref" && "kind" in part) {
+      const requestPart: AgentRuntimeInputPart = { kind: "workflow_ref" }
+      if (Object.hasOwn(part, "workflow_id")) {
+        requestPart.workflow_id = part.workflow_id ?? null
+      }
+      if (Object.hasOwn(part, "project_id")) {
+        requestPart.project_id = part.project_id ?? null
+      }
+      if (Object.hasOwn(part, "scope")) {
+        requestPart.scope = part.scope
+      }
+      return requestPart
     }
-    if (Object.hasOwn(part, "project_id")) {
-      requestPart.project_id = part.project_id ?? null
+    if (!("type" in part)) return part
+    const requestPart = { type: part.type } as Record<string, unknown>
+    const requestKeys: Record<string, string[]> = {
+      file_ref: ["attachment_id", "project_id", "path", "label", "include_content"],
+      directory_ref: ["attachment_id", "project_id", "path", "label"],
+      image_ref: ["attachment_id", "detail"],
+      run_ref: ["run_id"],
+      workflow_ref: ["workflow_id", "project_id", "scope"],
     }
-    if (Object.hasOwn(part, "scope")) {
-      requestPart.scope = part.scope
+    for (const key of requestKeys[part.type] ?? []) {
+      if (Object.hasOwn(part, key)) requestPart[key] = (part as unknown as Record<string, unknown>)[key]
     }
-    return requestPart
+    return requestPart as AgentRuntimeInputPart
   })
 }
 

@@ -13,6 +13,7 @@ export type ProviderModelInfo = {
   name: string
   model_id?: string
   context_window: number | null
+  supports_vision: boolean
 }
 
 export type ProviderModels = {
@@ -189,6 +190,7 @@ function modelsFromConfiguration(data: LlmConfiguration): ProviderModels[] {
           name: model.display_name,
           context_window: model.context_length ?? null,
           model_id: model.id,
+          supports_vision: model.supports_vision ?? false,
         })),
     }))
     .filter((group) => group.models.length > 0)

@@ -38,12 +38,14 @@ const MOCK_MODELS: ProviderModels[] = [
         name: "Claude Sonnet 4",
         context_window: 200000,
         model_id: "model-sonnet",
+        supports_vision: true,
       },
       {
         id: "claude-haiku-3",
         name: "Claude Haiku 3",
         context_window: 200000,
         model_id: "model-haiku",
+        supports_vision: false,
       },
     ],
   },
@@ -73,6 +75,7 @@ const MOCK_CONFIGURATION = {
       model_id: "claude-sonnet-4-20250514",
       display_name: "Claude Sonnet 4",
       context_length: 200000,
+      supports_vision: true,
     },
     {
       id: "model-haiku",
@@ -80,6 +83,7 @@ const MOCK_CONFIGURATION = {
       model_id: "claude-haiku-3",
       display_name: "Claude Haiku 3",
       context_length: 200000,
+      supports_vision: false,
     },
   ],
   profiles: [],
@@ -148,6 +152,7 @@ describe("useLlmSettings", () => {
         name: "Claude Sonnet 4",
         context_window: 200000,
         model_id: "model-sonnet",
+        supports_vision: true,
         provider: "provider-anthropic",
       },
       {
@@ -155,6 +160,7 @@ describe("useLlmSettings", () => {
         name: "Claude Haiku 3",
         context_window: 200000,
         model_id: "model-haiku",
+        supports_vision: false,
         provider: "provider-anthropic",
       },
     ])

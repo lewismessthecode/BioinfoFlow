@@ -433,7 +433,12 @@ export function useAgentRuntime(
       },
     ) => {
       const text = inputText.trim()
-      if (!text) return null
+      const hasStructuredInput = Boolean(
+        options?.inputParts?.some((part) =>
+          "type" in part ? part.type !== "text" : "kind" in part,
+        ),
+      )
+      if (!text && !hasStructuredInput) return null
       dispatch({ type: "loading" })
       try {
         const remoteConnectionId = Object.hasOwn(options ?? {}, "remoteConnectionId")
@@ -791,6 +796,7 @@ export function useAgentRuntime(
     setActiveSessionId,
     refreshSessions,
     refreshState,
+    ensureSession: ensureSessionWithMetadata,
     send,
     steer,
     interrupt,

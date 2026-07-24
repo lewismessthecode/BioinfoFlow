@@ -301,6 +301,58 @@ describe("useAgentRuntime", () => {
     )
   })
 
+  it("exposes ensureSession for uploads before the first turn", async () => {
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    let created: AgentRuntimeSession | null = null
+    await act(async () => {
+      created = await result.current.ensureSession()
+    })
+
+    expect(created).toEqual(session)
+    expect(mocks.createAgentRuntimeSession).toHaveBeenCalledTimes(1)
+    expect(mocks.createAgentRuntimeTurn).not.toHaveBeenCalled()
+  })
+
+  it("allows attachment-only turns when structured input parts are sendable", async () => {
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await act(async () => {
+      await result.current.send("", {
+        inputParts: [
+          {
+            type: "image_ref",
+            attachment_id: "attachment-1",
+            detail: "high",
+          },
+        ],
+      })
+    })
+
+    expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputText: "",
+        inputParts: [
+          {
+            type: "image_ref",
+            attachment_id: "attachment-1",
+            detail: "high",
+          },
+        ],
+      }),
+    )
+  })
+
   it("passes turn display metadata through when creating a turn", async () => {
     const { result } = renderHook(() =>
       useAgentRuntime(null, {
