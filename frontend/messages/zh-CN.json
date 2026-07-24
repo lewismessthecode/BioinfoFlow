@@ -2305,9 +2305,9 @@
       },
       "customInstructions": {
         "label": "自定义指令",
-        "description": "补充平台规范、环境信息，以及智能助手需要了解的其他上下文。",
-        "newSessionsOnly": "更改仅对新会话生效。已有会话会继续使用创建时的指令。",
-        "placeholder": "填写平台规范、环境信息或其他上下文……",
+        "description": "为新会话补充长期上下文。",
+        "newSessionsOnly": "仅对新会话生效。",
+        "placeholder": "补充上下文……",
         "loading": "正在加载自定义指令...",
         "save": "保存指令",
         "saving": "保存中...",

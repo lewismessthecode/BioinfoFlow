@@ -790,24 +790,27 @@ export default function SettingsPageClient({
                     })}
                   </fieldset>
                 </SettingsRow>
-              </SettingsGroup>
-
-              <SettingsGroup>
-                <AgentCustomInstructions
-                  labels={{
-                    label: t("agent.customInstructions.label"),
-                    description: t("agent.customInstructions.description"),
-                    newSessionsOnly: t("agent.customInstructions.newSessionsOnly"),
-                    placeholder: t("agent.customInstructions.placeholder"),
-                    loading: t("agent.customInstructions.loading"),
-                    save: t("agent.customInstructions.save"),
-                    saving: t("agent.customInstructions.saving"),
-                    clear: t("agent.customInstructions.clear"),
-                    saved: t("agent.customInstructions.saved"),
-                    saveFailed: t("agent.customInstructions.saveFailed"),
-                    loadFailed: t("agent.customInstructions.loadFailed"),
-                  }}
-                />
+                <SettingsRow
+                  title={t("agent.customInstructions.label")}
+                  description={t("agent.customInstructions.description")}
+                  className="lg:items-start"
+                >
+                  <AgentCustomInstructions
+                    labels={{
+                      label: t("agent.customInstructions.label"),
+                      description: t("agent.customInstructions.description"),
+                      newSessionsOnly: t("agent.customInstructions.newSessionsOnly"),
+                      placeholder: t("agent.customInstructions.placeholder"),
+                      loading: t("agent.customInstructions.loading"),
+                      save: t("agent.customInstructions.save"),
+                      saving: t("agent.customInstructions.saving"),
+                      clear: t("agent.customInstructions.clear"),
+                      saved: t("agent.customInstructions.saved"),
+                      saveFailed: t("agent.customInstructions.saveFailed"),
+                      loadFailed: t("agent.customInstructions.loadFailed"),
+                    }}
+                  />
+                </SettingsRow>
               </SettingsGroup>
             </>
           )}
