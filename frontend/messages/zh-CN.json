@@ -344,7 +344,18 @@
     "parabricksCompatible": "兼容 Parabricks",
     "noGpuDetected": "未检测到 GPU",
     "gpu": {
-      "nvidiaRuntimeVisible": "NVIDIA Runtime 可见"
+      "nvidiaRuntimeVisible": "NVIDIA Runtime 可见",
+      "ready": "可用于 GPU 工作流",
+      "policyAuto": "自动 · 使用 {detected} 张中的 {selected} 张 GPU",
+      "policyManual": "手动 · 使用 {detected} 张中的 {selected} 张 GPU",
+      "policyDisabled": "GPU 探测已关闭",
+      "stale": "正在显示最近一次成功的 GPU 清单",
+      "stateDisabled": "后端环境已关闭自动 GPU 探测。",
+      "stateDockerUnavailable": "后端无法访问 Docker。",
+      "stateToolkitUnavailable": "NVIDIA Container Toolkit 不可用或无法分配 GPU。",
+      "stateNoGpus": "Docker 没有报告 NVIDIA GPU。",
+      "statePolicyInvalid": "配置的 GPU 选择与检测到的设备不匹配。",
+      "stateProbeFailed": "GPU 探测失败；请检查后端日志和宿主机驱动。"
     },
     "narrativeEmpty": "还没有运行记录。开始第一次分析前，请先查看下方系统准备状态。",
     "narrativeAllComplete": "已完成全部 {total} 次运行，一切顺利",
@@ -418,7 +429,13 @@
           "detail": {
             "ready": "GPU 可用于加速工作流：{names}",
             "visible": "可使用 {count} 张 GPU：{names}。只有需要加速时才会用到。",
-            "runtimeHidden": "这台主机支持 GPU，但容器还未启用 GPU 访问。需要 GPU 工作流时再打开 GPU compose override。{recommendation}",
+            "disabled": "自动 GPU 探测已关闭。设置 BIOINFOFLOW_GPU_MODE=auto 并重建后端即可启用。",
+            "dockerUnavailable": "后端无法访问 Docker，因此不能检查 GPU 能力。CPU 工作流仍可运行。",
+            "toolkitUnavailable": "Docker 无法分配 NVIDIA GPU。请安装 NVIDIA Container Toolkit，然后重建后端。",
+            "noGpus": "Docker 可用，但没有检测到 NVIDIA GPU。CPU 工作流仍可运行。",
+            "policyInvalid": "配置的 GPU 选择与检测到的设备不匹配。请更新 BIOINFOFLOW_GPU_DEVICES 并重建后端。",
+            "probeFailed": "GPU 探测失败。请检查后端日志和宿主机驱动；CPU 工作流仍可运行。",
+            "runtimeHidden": "这台主机支持 GPU，但容器暂时无法访问。请检查 NVIDIA Container Toolkit 并重建后端。{recommendation}",
             "hostOnly": "这台主机有 NVIDIA 工具，但容器暂时不可见 GPU。CPU 工作流可以先运行。{recommendation}",
             "error": "暂时无法确认 GPU 状态。CPU 工作流可以先运行。详情：{error}",
             "cpuOnly": "未启用 GPU。CPU 工作流可以直接运行。"

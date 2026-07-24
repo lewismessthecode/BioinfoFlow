@@ -49,51 +49,21 @@ function RecentRunsTableSkeleton() {
   )
 }
 
-function SystemStatusSkeleton() {
+function OperationsOverviewSkeleton() {
   return (
-    <CardRoot variant="workbench" className="h-full">
-      <div className="px-4 pb-2 pt-3.5">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-5 w-28" />
-          <Skeleton className="h-6 w-16 rounded-full" />
-        </div>
-      </div>
-      <CardContent className="!pt-0">
-        <div className="grid gap-5 md:grid-cols-2">
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="h-4 w-full" />
-          </div>
-          <div className="space-y-2">
+    <CardRoot variant="workbench" className="grid overflow-hidden xl:grid-cols-[0.8fr_minmax(0,1.35fr)_0.9fr]">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="min-w-0 border-t border-border/70 p-5 first:border-t-0 xl:border-l xl:border-t-0 xl:first:border-l-0">
+          <div className="flex items-center justify-between gap-3">
             <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-5 w-14 rounded-full" />
+          </div>
+          <div className="mt-4 space-y-3">
+            <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-4/5" />
           </div>
         </div>
-      </CardContent>
-    </CardRoot>
-  )
-}
-
-function SchedulerSummarySkeleton() {
-  return (
-    <CardRoot variant="workbench" className="h-full">
-      <div className="px-4 pb-2 pt-3.5">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-5 w-24" />
-          <Skeleton className="h-7 w-7 rounded-md" />
-        </div>
-      </div>
-      <CardContent className="flex flex-col gap-4 !pt-0">
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-24" />
-          <Skeleton className="h-8 w-12" />
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-8 w-full" />
-        </div>
-      </CardContent>
+      ))}
     </CardRoot>
   )
 }
@@ -108,10 +78,7 @@ export function DashboardSkeleton() {
         <StatCardSkeleton />
       </div>
 
-      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,0.75fr)]">
-        <SystemStatusSkeleton />
-        <SchedulerSummarySkeleton />
-      </div>
+      <OperationsOverviewSkeleton />
       <RecentRunsTableSkeleton />
     </div>
   )

@@ -11,6 +11,8 @@ DRY_RUN=0
 NO_OPEN=0
 ACTION=install
 REQUESTED_VERSION=${BIOINFOFLOW_VERSION:-}
+REQUESTED_GPU_MODE=${BIOINFOFLOW_GPU_MODE:-}
+REQUESTED_GPU_DEVICES=${BIOINFOFLOW_GPU_DEVICES:-}
 if [ -n "$REQUESTED_VERSION" ]; then VERSION_EXPLICIT=1; else VERSION_EXPLICIT=0; fi
 
 usage() {
@@ -19,7 +21,9 @@ Usage: install.sh [--dry-run] [--version [TAG]] [--update] [--uninstall] [--purg
 
 Install or repair the localhost Bioinfoflow release. Set BIOINFOFLOW_VERSION or
 pass --version TAG to select a release. --uninstall preserves data; --purge
-removes it explicitly. The installer never requests or stores provider API keys.
+removes it explicitly. GPU discovery is automatic; set BIOINFOFLOW_GPU_MODE=manual
+and BIOINFOFLOW_GPU_DEVICES to a UUID list to restrict a multi-GPU host. The
+installer never requests or stores provider API keys.
 EOF
 }
 
@@ -142,13 +146,21 @@ if [ -f "$ENV_FILE" ]; then
     case "$installed_env_line" in
       FRONTEND_PORT=*) installed_frontend_port=${installed_env_line#FRONTEND_PORT=} ;;
       BACKEND_PORT=*) installed_backend_port=${installed_env_line#BACKEND_PORT=} ;;
+      BIOINFOFLOW_GPU_MODE=*) installed_gpu_mode=${installed_env_line#BIOINFOFLOW_GPU_MODE=} ;;
+      BIOINFOFLOW_GPU_DEVICES=*) installed_gpu_devices=${installed_env_line#BIOINFOFLOW_GPU_DEVICES=} ;;
     esac
   done < "$ENV_FILE"
   [ -n "$REQUESTED_FRONTEND_PORT" ] || REQUESTED_FRONTEND_PORT=$installed_frontend_port
   [ -n "$REQUESTED_BACKEND_PORT" ] || REQUESTED_BACKEND_PORT=$installed_backend_port
+  [ -n "$REQUESTED_GPU_MODE" ] || REQUESTED_GPU_MODE=${installed_gpu_mode:-}
+  [ -n "$REQUESTED_GPU_DEVICES" ] || REQUESTED_GPU_DEVICES=${installed_gpu_devices:-}
 fi
 FRONTEND_PORT=${REQUESTED_FRONTEND_PORT:-3000}
 BACKEND_PORT=${REQUESTED_BACKEND_PORT:-8000}
+GPU_MODE=${REQUESTED_GPU_MODE:-auto}
+GPU_DEVICES=${REQUESTED_GPU_DEVICES:-all}
+case "$GPU_MODE" in auto|manual|disabled) ;; *) die_with_hint "BIOINFOFLOW_GPU_MODE must be auto, manual, or disabled" "Choose a supported GPU mode and retry." ;; esac
+[ "$GPU_MODE" != manual ] || [ -n "$GPU_DEVICES" ] || die_with_hint "BIOINFOFLOW_GPU_DEVICES is required in manual mode" "Set one or more GPU UUIDs from 'nvidia-smi -L' and retry."
 validate_port FRONTEND_PORT "$FRONTEND_PORT"
 validate_port BACKEND_PORT "$BACKEND_PORT"
 [ "$FRONTEND_PORT" != "$BACKEND_PORT" ] || die_with_hint "FRONTEND_PORT and BACKEND_PORT must be different" "Choose two free ports and retry."
@@ -427,6 +439,8 @@ IMAGE_REGISTRY=$IMAGE_REGISTRY
 FRONTEND_PORT=$FRONTEND_PORT
 BACKEND_PORT=$BACKEND_PORT
 DOCKER_SOCKET_PATH=$DOCKER_SOCKET_PATH
+BIOINFOFLOW_GPU_MODE=$GPU_MODE
+BIOINFOFLOW_GPU_DEVICES=$GPU_DEVICES
 BIOINFOFLOW_INSTALL_UID=$(id -u)
 BIOINFOFLOW_INSTALL_GID=$(id -g)
 EOF

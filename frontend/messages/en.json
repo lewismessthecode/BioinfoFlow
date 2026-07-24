@@ -344,7 +344,18 @@
     "parabricksCompatible": "Parabricks Compatible",
     "noGpuDetected": "No GPU detected",
     "gpu": {
-      "nvidiaRuntimeVisible": "NVIDIA runtime visible"
+      "nvidiaRuntimeVisible": "NVIDIA runtime visible",
+      "ready": "Ready for GPU workflows",
+      "policyAuto": "Automatic · using {selected} of {detected} GPUs",
+      "policyManual": "Manual · using {selected} of {detected} GPUs",
+      "policyDisabled": "GPU discovery disabled",
+      "stale": "Showing the last successful GPU inventory",
+      "stateDisabled": "Automatic discovery is disabled in the backend environment.",
+      "stateDockerUnavailable": "Docker is unavailable to the backend.",
+      "stateToolkitUnavailable": "NVIDIA Container Toolkit is unavailable or cannot allocate a GPU.",
+      "stateNoGpus": "Docker did not report any NVIDIA GPUs.",
+      "statePolicyInvalid": "The configured GPU selection does not match detected devices.",
+      "stateProbeFailed": "The GPU probe failed; check backend logs and host driver health."
     },
     "narrativeEmpty": "No runs yet. Review system readiness below before starting the first analysis.",
     "narrativeAllComplete": "All {total} runs completed successfully",
@@ -418,7 +429,13 @@
           "detail": {
             "ready": "GPU is ready for accelerated workflows: {names}",
             "visible": "{count} GPU(s) are available: {names}. They are used only when a workflow needs acceleration.",
-            "runtimeHidden": "This host supports GPU work, but the container does not have GPU access yet. Enable the GPU compose override when a workflow needs it. {recommendation}",
+            "disabled": "Automatic GPU discovery is disabled. Set BIOINFOFLOW_GPU_MODE=auto and recreate the backend to enable it.",
+            "dockerUnavailable": "Docker is unavailable to the backend, so GPU capability cannot be checked. CPU workflows remain available.",
+            "toolkitUnavailable": "Docker cannot allocate an NVIDIA GPU. Install NVIDIA Container Toolkit, then recreate the backend.",
+            "noGpus": "Docker is available, but no NVIDIA GPUs were detected. CPU workflows remain available.",
+            "policyInvalid": "The configured GPU selection does not match the detected devices. Update BIOINFOFLOW_GPU_DEVICES and recreate the backend.",
+            "probeFailed": "The GPU probe failed. Check backend logs and host driver health; CPU workflows remain available.",
+            "runtimeHidden": "This host supports GPU work, but the container cannot access it yet. Check NVIDIA Container Toolkit and recreate the backend. {recommendation}",
             "hostOnly": "NVIDIA tools are available on the host, but the container cannot see GPUs yet. CPU workflows can run now. {recommendation}",
             "error": "GPU status is unavailable for now. CPU workflows can run now. Details: {error}",
             "cpuOnly": "GPU is not enabled. CPU workflows can run now."

@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from app.services.gpu_service import GpuInfo, GpuService
+from app.services.gpu_probe import GpuProbeError, ProbedGpu
 
 
 class FakeProcess:
@@ -17,6 +18,133 @@ class FakeProcess:
 
     async def communicate(self):
         return self._stdout, self._stderr
+
+
+class FakeGpuProbe:
+    def __init__(self, devices: list[ProbedGpu]):
+        self.devices = devices
+        self.inventory_calls = 0
+
+    async def inventory(self) -> list[ProbedGpu]:
+        self.inventory_calls += 1
+        return self.devices
+
+
+class BlockingGpuProbe(FakeGpuProbe):
+    def __init__(self, devices: list[ProbedGpu]):
+        super().__init__(devices)
+        self.release = asyncio.Event()
+
+    async def inventory(self) -> list[ProbedGpu]:
+        self.inventory_calls += 1
+        await self.release.wait()
+        return self.devices
+
+
+class FlakyGpuProbe(FakeGpuProbe):
+    async def inventory(self) -> list[ProbedGpu]:
+        self.inventory_calls += 1
+        if self.inventory_calls > 1:
+            raise GpuProbeError("temporary probe failure")
+        return self.devices
+
+
+@pytest.mark.asyncio
+async def test_get_status_applies_manual_uuid_selection_to_docker_inventory() -> None:
+    probe = FakeGpuProbe(
+        [
+            ProbedGpu("GPU-a", 0, "NVIDIA H20", 97871, 96000, "550.54", "9.0"),
+            ProbedGpu("GPU-b", 1, "NVIDIA H20", 97871, 95000, "550.54", "9.0"),
+        ]
+    )
+    service = GpuService(
+        probe=probe,
+        mode="manual",
+        selectors="GPU-b",
+        cache_seconds=30,
+    )
+
+    status = await service.get_status()
+
+    assert status.state == "ready"
+    assert status.detected_count == 2
+    assert status.selected_count == 1
+    assert status.selected_gpu_uuids == ("GPU-b",)
+    assert [gpu.selected for gpu in status.gpus] == [False, True]
+    assert status.usable_for_gpu_workflows is True
+    assert probe.inventory_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_status_calls_share_one_probe() -> None:
+    probe = BlockingGpuProbe(
+        [ProbedGpu("GPU-a", 0, "NVIDIA H20", 97871, 96000, "550.54", "9.0")]
+    )
+    service = GpuService(probe=probe, mode="auto", selectors="all", cache_seconds=30)
+
+    first_task = asyncio.create_task(service.get_status())
+    second_task = asyncio.create_task(service.get_status())
+    await asyncio.sleep(0)
+    probe.release.set()
+    first, second = await asyncio.gather(first_task, second_task)
+
+    assert first == second
+    assert probe.inventory_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_manual_index_is_exposed_as_uuid_after_inventory_resolution() -> None:
+    probe = FakeGpuProbe(
+        [ProbedGpu("GPU-b", 1, "NVIDIA H20", 97871, 95000, "550.54", "9.0")]
+    )
+    service = GpuService(probe=probe, mode="manual", selectors="1", cache_seconds=30)
+
+    await service.get_status()
+
+    assert service.selected_visible_devices() == "GPU-b"
+
+
+@pytest.mark.asyncio
+async def test_auto_mode_exposes_devices_only_after_successful_docker_inventory() -> (
+    None
+):
+    probe = FakeGpuProbe(
+        [ProbedGpu("GPU-a", 0, "NVIDIA H20", 97871, 96000, "550.54", "9.0")]
+    )
+    service = GpuService(probe=probe, mode="auto", selectors="all", cache_seconds=30)
+
+    assert service.selected_visible_devices() is None
+
+    await service.get_status()
+
+    assert service.selected_visible_devices() == "all"
+
+
+@pytest.mark.asyncio
+async def test_recent_successful_inventory_is_returned_as_stale_on_refresh_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = 0.0
+    monkeypatch.setattr("app.services.gpu_service.time.monotonic", lambda: clock)
+    probe = FlakyGpuProbe(
+        [ProbedGpu("GPU-a", 0, "NVIDIA H20", 97871, 96000, "550.54", "9.0")]
+    )
+    service = GpuService(probe=probe, mode="auto", selectors="all", cache_seconds=10)
+
+    fresh = await service.get_status()
+    clock = 11.0
+    stale = await service.get_status()
+
+    assert fresh.stale is False
+    assert stale.stale is True
+    assert stale.selected_gpu_uuids == ("GPU-a",)
+    assert stale.error == "temporary probe failure"
+
+    clock = 21.0
+    failed = await service.get_status()
+
+    assert failed.state == "probe_failed"
+    assert service.selected_visible_devices() is None
 
 
 @pytest.mark.asyncio

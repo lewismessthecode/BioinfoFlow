@@ -26,6 +26,8 @@ services:
       DATABASE_URL: sqlite+aiosqlite:///${BIOINFOFLOW_HOME:-${PWD}/data}/state/bioinfoflow.db
       BETTER_AUTH_DB_PATH: ${BIOINFOFLOW_HOME:-${PWD}/data}/state/auth/better-auth.db
       DOCKER_SOCKET: unix:///var/run/docker.sock
+      BIOINFOFLOW_GPU_MODE: ${BIOINFOFLOW_GPU_MODE:-auto}
+      BIOINFOFLOW_GPU_DEVICES: ${BIOINFOFLOW_GPU_DEVICES:-all}
     # The agent bash tool can be OS-sandboxed with bubblewrap (AGENT_SANDBOX_ENABLED=true).
     # bwrap inside Docker needs an unprivileged user namespace; if the host
     # restricts that, add `security_opt: ["seccomp:unconfined"]` (and/or

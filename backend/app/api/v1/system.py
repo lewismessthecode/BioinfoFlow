@@ -117,6 +117,15 @@ async def get_gpu_status(request: Request):
         {
             "available": status.available,
             "detected": getattr(status, "detected", status.available),
+            "mode": getattr(status, "mode", "auto"),
+            "state": getattr(status, "state", "ready"),
+            "container_toolkit_available": getattr(
+                status, "container_toolkit_available", status.docker_nvidia_runtime
+            ),
+            "detected_count": getattr(status, "detected_count", len(status.gpus)),
+            "selected_count": getattr(status, "selected_count", len(status.gpus)),
+            "selected_gpu_uuids": list(getattr(status, "selected_gpu_uuids", ())),
+            "stale": getattr(status, "stale", False),
             "nvidia_smi_found": status.nvidia_smi_found,
             "docker_nvidia_runtime": status.docker_nvidia_runtime,
             "runtime_visible_to_backend": getattr(
@@ -131,7 +140,9 @@ async def get_gpu_status(request: Request):
             "gpus": [
                 {
                     "index": gpu.index,
+                    "uuid": getattr(gpu, "uuid", ""),
                     "name": gpu.name,
+                    "selected": getattr(gpu, "selected", True),
                     "memory_total_mb": gpu.memory_total_mb,
                     "memory_free_mb": gpu.memory_free_mb,
                     "driver_version": gpu.driver_version,
@@ -241,6 +252,9 @@ def _gpu_readiness_check(gpu_status) -> dict:
     parabricks_compatible = bool(getattr(gpu_status, "parabricks_compatible", False))
     recommendation = getattr(gpu_status, "recommendation", None)
     error = getattr(gpu_status, "error", None)
+    mode = getattr(gpu_status, "mode", "auto")
+    state = getattr(gpu_status, "state", "ready")
+    selected_gpu_uuids = list(getattr(gpu_status, "selected_gpu_uuids", ()) or ())
     gpus = list(getattr(gpu_status, "gpus", []) or [])
     gpu_names = [
         str(getattr(gpu, "name", "")).strip()
@@ -277,21 +291,22 @@ def _gpu_readiness_check(gpu_status) -> dict:
         severity="optional",
         facts={
             "available": available,
+            "mode": mode,
+            "state": state,
             "detected": detected,
             "host_signal": host_signal,
             "nvidia_smi_found": nvidia_smi_found,
             "docker_nvidia_runtime": docker_nvidia_runtime,
             "runtime_visible_to_backend": runtime_visible_to_backend,
-            "backend_visibility": "visible"
-            if runtime_visible_to_backend
-            else "hidden",
+            "backend_visibility": "visible" if runtime_visible_to_backend else "hidden",
             "usable_for_gpu_workflows": usable_for_gpu_workflows,
-            "workflow_usability": "ready"
-            if usable_for_gpu_workflows
-            else "optional",
+            "workflow_usability": "ready" if usable_for_gpu_workflows else "optional",
             "parabricks_compatible": parabricks_compatible,
             "gpu_count": len(gpus),
             "gpu_names": gpu_names,
+            "detected_count": len(gpus),
+            "selected_count": len(selected_gpu_uuids),
+            "selected_gpu_uuids": selected_gpu_uuids,
             "recommendation": recommendation,
             "error": error,
         },
@@ -388,7 +403,9 @@ async def get_readiness(request: Request, db: AsyncSession = Depends(get_db)):
         for check in checks
     )
     required_checks = [check for check in checks if check["severity"] == "blocking"]
-    required_completed = sum(1 for check in required_checks if check["status"] == "pass")
+    required_completed = sum(
+        1 for check in required_checks if check["status"] == "pass"
+    )
     optional_checks = [check for check in checks if check["severity"] == "optional"]
     return success_response(
         {

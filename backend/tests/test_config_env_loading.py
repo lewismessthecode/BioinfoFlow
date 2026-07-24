@@ -98,3 +98,34 @@ def test_scheduler_worker_heartbeat_grace_seconds_binds_from_env(tmp_path, monke
 
     assert settings.scheduler_worker_heartbeat_grace_seconds == 5
     assert SchedulerConfig.from_settings(settings).worker_heartbeat_grace_seconds == 5
+
+
+def test_gpu_settings_default_to_automatic_discovery(tmp_path, monkeypatch):
+    root_env = tmp_path / "root.env"
+    backend_env = tmp_path / "backend.env"
+    root_env.write_text("BIOINFOFLOW_HOME=/tmp/bioinfoflow\n", encoding="utf-8")
+    backend_env.write_text("", encoding="utf-8")
+    monkeypatch.delenv("BIOINFOFLOW_GPU_MODE", raising=False)
+    monkeypatch.delenv("BIOINFOFLOW_GPU_DEVICES", raising=False)
+
+    configured = Settings(_env_file=(root_env, backend_env))
+
+    assert configured.bioinfoflow_gpu_mode == "auto"
+    assert configured.bioinfoflow_gpu_devices == "all"
+
+
+def test_gpu_settings_bind_manual_uuid_selection(tmp_path, monkeypatch):
+    root_env = tmp_path / "root.env"
+    backend_env = tmp_path / "backend.env"
+    root_env.write_text(
+        "BIOINFOFLOW_HOME=/tmp/bioinfoflow\n"
+        "BIOINFOFLOW_GPU_MODE=manual\n"
+        "BIOINFOFLOW_GPU_DEVICES=GPU-a,GPU-b\n",
+        encoding="utf-8",
+    )
+    backend_env.write_text("", encoding="utf-8")
+
+    configured = Settings(_env_file=(root_env, backend_env))
+
+    assert configured.bioinfoflow_gpu_mode == "manual"
+    assert configured.bioinfoflow_gpu_devices == "GPU-a,GPU-b"

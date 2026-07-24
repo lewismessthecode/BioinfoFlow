@@ -217,41 +217,61 @@ docker compose up -d --build
 - `BIOINFOFLOW_HOME` is identity-mounted into the same absolute path on host and in containers.
 - If you leave `BIOINFOFLOW_HOME` unset, the source-build Compose stack defaults to this repo's `data/` directory; the published-image stack defaults to `/srv/bioinfoflow`.
 - The backend creates the required platform subdirectories on startup.
-- GPU detection is automatic only after the host GPU has been exposed into the backend container. Bioinfoflow will not enable Docker GPU passthrough on its own.
+- GPU discovery defaults to `BIOINFOFLOW_GPU_MODE=auto`. The normal
+  `docker compose up -d --build` path asks Docker to launch a short-lived probe
+  container, so the backend itself does not need permanent access to every GPU.
 
-### Optional GPU enablement
+### Automatic GPU discovery and multi-GPU selection
 
-Keep the base stack CPU-safe by default. On a GPU host, opt in with the compose override:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
-```
-
-For published images:
+On a Linux NVIDIA host, first verify both the host driver and Docker GPU
+capability:
 
 ```bash
-docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml pull
-docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d
+nvidia-smi -L
+docker run --rm --gpus all ubuntu:24.04 nvidia-smi -L
 ```
 
-What this does:
+Then start Bioinfoflow normally:
 
-- requests `gpus: all` for the backend container
-- exposes NVIDIA utility/compute capabilities so readiness checks can see `nvidia-smi`
-- keeps CPU-only hosts working because the override is never loaded unless you ask for it
+```bash
+docker compose up -d --build
+```
 
-What it does not do:
+The default policy detects and permits all GPUs. To permit only selected cards,
+copy their stable UUIDs from `nvidia-smi -L` into `.env`:
 
-- it does not manufacture GPU access if the host lacks the NVIDIA Container Toolkit
-- it does not make GPU a required readiness item
-- it does not change your workflow routing unless the host runtime is genuinely available
+```env
+BIOINFOFLOW_GPU_MODE=manual
+BIOINFOFLOW_GPU_DEVICES=GPU-aaaaaaaa-...,GPU-bbbbbbbb-...
+```
 
-If the server has NVIDIA GPUs but the readiness drawer still says the backend cannot see them, verify:
+Apply a policy change by recreating the backend:
 
-- `nvidia-smi` works on the host
-- Docker has the NVIDIA runtime / toolkit installed
-- you started Compose with `-f docker-compose.gpu.yml`
-- you rebuilt or restarted the backend container after enabling the override
+```bash
+docker compose up -d --build --force-recreate backend
+```
+
+Set `BIOINFOFLOW_GPU_MODE=disabled` to skip probing and expose no GPU workflow
+capacity. Numeric indices are accepted in manual mode, but UUIDs are preferred
+because device ordering can change after a reboot. Invalid manual selections
+fail closed rather than falling back to all GPUs.
+
+`docker-compose.gpu.yml` remains a compatibility/troubleshooting override for
+older deployments; normal installations no longer require it.
+
+If an NVIDIA host is not detected, verify:
+
+- `nvidia-smi -L` works on the host
+- the `docker run --rm --gpus all ...` probe works
+- the backend mounts the local Docker socket
+- `.env` uses `auto`, or a valid manual UUID selection
+- the backend was recreated after changing the policy
+
+Inspect Bioinfoflow's stable GPU state with:
+
+```bash
+curl -fsS http://localhost:8000/api/v1/system/gpu | jq '.data | {mode,state,detected_count,selected_count,selected_gpu_uuids,gpus}'
+```
 
 ### Fast localhost run with published images
 

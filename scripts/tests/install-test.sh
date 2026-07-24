@@ -242,6 +242,12 @@ if [ "$STATUS" -eq 0 ] && assert_contains "$(cat "$HOME_DIR/.bioinfoflow/install
 teardown_case
 
 setup_case
+run_installer BIOINFOFLOW_GPU_MODE=manual BIOINFOFLOW_GPU_DEVICES=GPU-a,GPU-b ARGS=--no-open
+gpu_env=$(cat "$HOME_DIR/.bioinfoflow/install/.env" 2>/dev/null || true)
+if [ "$STATUS" -eq 0 ] && assert_contains "$gpu_env" "BIOINFOFLOW_GPU_MODE=manual" && assert_contains "$gpu_env" "BIOINFOFLOW_GPU_DEVICES=GPU-a,GPU-b"; then pass "persists a manual GPU UUID allowlist"; else fail "persists a manual GPU UUID allowlist (status=$STATUS output=$OUTPUT env=$gpu_env)"; fi
+teardown_case
+
+setup_case
 run_installer FAKE_ARCH=arm64 ARGS=--no-open
 if [ "$STATUS" -eq 0 ] && assert_contains "$(cat "$HOME_DIR/.bioinfoflow/install/.env")" "BIOINFOFLOW_ARCH=arm64"; then pass "maps arm64 to arm64"; else fail "maps arm64 to arm64"; fi
 teardown_case
@@ -316,6 +322,13 @@ run_installer BIOINFOFLOW_VERSION=v1.0.0 FRONTEND_PORT=3100 BACKEND_PORT=8100 AR
 run_installer BIOINFOFLOW_VERSION=v1.1.0 ARGS="--update --no-open"
 updated_env=$(cat "$HOME_DIR/.bioinfoflow/install/.env" 2>/dev/null || true)
 if [ "$STATUS" -eq 0 ] && assert_contains "$updated_env" "FRONTEND_PORT=3100" && assert_contains "$updated_env" "BACKEND_PORT=8100"; then pass "updates preserve installed custom ports by default"; else fail "updates preserve installed custom ports by default (status=$STATUS output=$OUTPUT env=$updated_env)"; fi
+teardown_case
+
+setup_case
+run_installer BIOINFOFLOW_VERSION=v1.0.0 BIOINFOFLOW_GPU_MODE=manual BIOINFOFLOW_GPU_DEVICES=GPU-a ARGS=--no-open
+run_installer BIOINFOFLOW_VERSION=v1.1.0 ARGS="--update --no-open"
+updated_gpu_env=$(cat "$HOME_DIR/.bioinfoflow/install/.env" 2>/dev/null || true)
+if [ "$STATUS" -eq 0 ] && assert_contains "$updated_gpu_env" "BIOINFOFLOW_GPU_MODE=manual" && assert_contains "$updated_gpu_env" "BIOINFOFLOW_GPU_DEVICES=GPU-a"; then pass "updates preserve the installed GPU policy by default"; else fail "updates preserve the installed GPU policy by default (status=$STATUS output=$OUTPUT env=$updated_gpu_env)"; fi
 teardown_case
 
 setup_case
