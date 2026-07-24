@@ -20,6 +20,9 @@ vi.mock("next-intl", () => ({
       parabricksCompatible: "Parabricks Compatible",
       noGpuDetected: "No GPU detected",
       "gpu.nvidiaRuntimeVisible": "NVIDIA runtime visible",
+      "gpu.ready": "Ready for GPU workflows",
+      "gpu.policyManual": "Manual · using 1 of 2 GPUs",
+      "gpu.selected": "Selected",
     }
 
     return copy[key] ?? key
@@ -52,6 +55,42 @@ const runtimeOnlyGpu: GpuInfo = {
   gpus: [],
 }
 
+const manualH20Gpu = {
+  available: true,
+  detected: true,
+  mode: "manual",
+  state: "ready",
+  detected_count: 2,
+  selected_count: 1,
+  selected_gpu_uuids: ["GPU-b"],
+  container_toolkit_available: true,
+  usable_for_gpu_workflows: true,
+  nvidia_smi_found: true,
+  docker_nvidia_runtime: true,
+  parabricks_compatible: true,
+  recommendation: "Manual GPU policy selected 1 of 2 detected GPUs.",
+  error: null,
+  gpus: [
+    { index: 0, uuid: "GPU-a", name: "NVIDIA H20", selected: false, memory_total_mb: 97871, memory_free_mb: 96000, gpu_type: "NVIDIA" },
+    { index: 1, uuid: "GPU-b", name: "NVIDIA H20", selected: true, memory_total_mb: 97871, memory_free_mb: 95000, gpu_type: "NVIDIA" },
+  ],
+} satisfies GpuInfo
+
+const appleSiliconGpu = {
+  available: true,
+  detected: true,
+  mode: "auto",
+  state: "ready",
+  detected_count: 1,
+  selected_count: 0,
+  selected_gpu_uuids: [],
+  usable_for_gpu_workflows: false,
+  parabricks_compatible: false,
+  gpus: [
+    { index: 0, name: "Apple M3 Max", selected: false, memory_total_mb: 49152, memory_free_mb: 0, gpu_type: "Apple Silicon" },
+  ],
+} satisfies GpuInfo
+
 describe("SystemStatus", () => {
   it("does not report no GPU when the NVIDIA runtime is visible", () => {
     render(<SystemStatus health={healthyWithNvidiaRuntime} gpuInfo={runtimeOnlyGpu} />)
@@ -60,5 +99,22 @@ describe("SystemStatus", () => {
     expect(screen.getByText("NVIDIA runtime visible")).toBeInTheDocument()
     expect(screen.queryByText("GPU details unavailable to backend")).not.toBeInTheDocument()
     expect(screen.queryByText(runtimeOnlyGpu.recommendation)).not.toBeInTheDocument()
+  })
+
+  it("shows detected H20 hardware separately from the selected GPU pool", () => {
+    render(<SystemStatus health={healthyWithNvidiaRuntime} gpuInfo={manualH20Gpu} />)
+
+    expect(screen.getByText("2 × NVIDIA H20")).toBeInTheDocument()
+    expect(screen.getByText("Ready for GPU workflows")).toBeInTheDocument()
+    expect(screen.getByText("Manual · using 1 of 2 GPUs")).toBeInTheDocument()
+    expect(screen.getByText(/GPU-b/)).toBeInTheDocument()
+  })
+
+  it("shows Apple Silicon as local hardware without claiming NVIDIA workflow readiness", () => {
+    render(<SystemStatus health={healthyWithNvidiaRuntime} gpuInfo={appleSiliconGpu} />)
+
+    expect(screen.getByText("Apple M3 Max")).toBeInTheDocument()
+    expect(screen.queryByText("Ready for GPU workflows")).not.toBeInTheDocument()
+    expect(screen.queryByText(/Automatic ·/)).not.toBeInTheDocument()
   })
 })

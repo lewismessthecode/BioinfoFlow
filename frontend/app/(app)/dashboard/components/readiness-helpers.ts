@@ -20,7 +20,7 @@ export type ReadinessSummary = ReadinessCounts & {
 };
 
 export type GpuReadinessFacts = {
-  state: "ready" | "visible" | "runtimeHidden" | "hostOnly" | "error" | "cpuOnly";
+  state: "ready" | "visible" | "disabled" | "dockerUnavailable" | "toolkitUnavailable" | "noGpus" | "policyInvalid" | "probeFailed" | "runtimeHidden" | "hostOnly" | "error" | "cpuOnly";
   gpuCount: number;
   names: string;
   recommendation: string;
@@ -100,9 +100,22 @@ export function gpuReadinessFactsFor(check: ReadinessCheck): GpuReadinessFacts {
   const names = readStringList(facts.gpu_names).join(", ");
   const recommendation = readString(facts.recommendation);
   const error = readString(facts.error);
+  const state = readString(facts.state);
+
+  const stableStates: Record<string, GpuReadinessFacts["state"]> = {
+    disabled: "disabled",
+    docker_unavailable: "dockerUnavailable",
+    toolkit_unavailable: "toolkitUnavailable",
+    no_gpus: "noGpus",
+    policy_invalid: "policyInvalid",
+    probe_failed: "probeFailed",
+  };
 
   if (readBoolean(facts.usable_for_gpu_workflows)) {
     return { state: "ready", gpuCount, names, recommendation, error };
+  }
+  if (stableStates[state]) {
+    return { state: stableStates[state], gpuCount, names, recommendation, error };
   }
   if (readBoolean(facts.runtime_visible_to_backend) && gpuCount > 0) {
     return { state: "visible", gpuCount, names, recommendation, error };
