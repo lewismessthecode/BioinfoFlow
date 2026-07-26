@@ -119,6 +119,28 @@ def test_bubblewrap_argv_confines_to_roots_and_disables_network(tmp_path):
     assert (str(write_root), str(write_root)) in bind_pairs
 
 
+def test_bubblewrap_mounts_tmpfs_before_capability_roots_under_tmp(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    argv = BubblewrapAdapter().build_argv(
+        _spec(
+            command="printf ok",
+            cwd=workspace,
+            read_roots=[workspace],
+            write_roots=[workspace],
+        )
+    )
+
+    tmpfs_index = argv.index("--tmpfs")
+    workspace_bind_index = next(
+        index
+        for index, token in enumerate(argv)
+        if token == "--bind" and argv[index + 1] == str(workspace)
+    )
+    assert tmpfs_index < workspace_bind_index
+
+
 def test_filesystem_policy_allows_absolute_path_inside_allowed_root(tmp_path):
     root = tmp_path / "root"
     root.mkdir()

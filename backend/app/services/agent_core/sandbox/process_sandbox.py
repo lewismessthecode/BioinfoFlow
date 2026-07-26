@@ -73,13 +73,15 @@ class BubblewrapAdapter:
         for directory in _LINUX_SYSTEM_RO:
             if Path(directory).exists():
                 argv += ["--ro-bind", directory, directory]
+        # Establish synthetic filesystems before capability binds. Otherwise a
+        # later tmpfs mount would hide any allowed workspace rooted under /tmp.
+        argv += ["--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"]
         for root in _existing(spec.read_roots):
             argv += ["--ro-bind", str(root), str(root)]
         # Write roots are bound after read roots so rw access wins where they
         # overlap a read-only bind.
         for root in _existing(spec.write_roots):
             argv += ["--bind", str(root), str(root)]
-        argv += ["--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"]
         if not spec.allow_network:
             argv += ["--unshare-net"]
         argv += ["--chdir", str(spec.cwd), "--die-with-parent"]
