@@ -4,7 +4,6 @@ import asyncio
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 import json
-import sys
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -228,7 +227,7 @@ async def test_runtime_approval_resume_uses_remaining_turn_budget(
                 name = "bash"
                 arguments = json.dumps(
                     {
-                        "command": f"{sys.executable} -c 'print(\"approved\")'",
+                        "command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" approved'",
                         "cwd": str(settings.deliveries_root),
                     }
                 )
@@ -991,7 +990,7 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
                 name = "bash"
                 arguments = json.dumps(
                     {
-                        "command": f"{sys.executable} -c 'print(\"recover\")'",
+                        "command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" recover'",
                         "cwd": str(settings.deliveries_root),
                     }
                 )

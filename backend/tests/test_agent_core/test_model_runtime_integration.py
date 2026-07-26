@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta, timezone
 import json
-import sys
+import shlex
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -67,6 +67,10 @@ from app.services.agent_core.transcript.messages import (
 )
 from app.services.agent_core.transcript.store import AgentTranscriptStore
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+def _approval_shell(command: str) -> str:
+    return "sh -c " + shlex.quote(f': "$COMMAND"; {command}')
 
 
 class FakeModelGateway:
@@ -1121,7 +1125,7 @@ async def test_approval_resume_survives_controller_restart(
                 name="bash",
                 arguments_delta=json.dumps(
                     {
-                        "command": f"{sys.executable} -c 'print(\"approved\")'",
+                        "command": _approval_shell('printf "%s\\n" approved'),
                         "cwd": str(settings.deliveries_root),
                     }
                 ),
@@ -1383,7 +1387,7 @@ async def test_fallback_approval_resume_uses_exact_resolved_fallback_target(
                 name="bash",
                 arguments_delta=json.dumps(
                     {
-                        "command": f"{sys.executable} -c 'print(\"fallback-approved\")'",
+                        "command": _approval_shell('printf "%s\\n" fallback-approved'),
                         "cwd": str(settings.deliveries_root),
                     }
                 ),
@@ -1584,7 +1588,7 @@ async def test_responses_approval_resume_survives_service_restart(
                 "name": "bash",
                 "arguments": json.dumps(
                     {
-                        "command": f"{sys.executable} -c 'print(\"responses-approved\")'",
+                        "command": _approval_shell('printf "%s\\n" responses-approved'),
                         "cwd": str(settings.deliveries_root),
                     }
                 ),
@@ -1601,7 +1605,7 @@ async def test_responses_approval_resume_survives_service_restart(
                 name="bash",
                 arguments_delta=json.dumps(
                     {
-                        "command": f"{sys.executable} -c 'print(\"responses-approved\")'",
+                        "command": _approval_shell('printf "%s\\n" responses-approved'),
                         "cwd": str(settings.deliveries_root),
                     }
                 ),
@@ -1927,13 +1931,9 @@ async def test_responses_tool_call_batch_waits_for_every_approval_before_resume(
     )
     first_marker = settings.deliveries_root / "first-approved.txt"
     rejected_marker = settings.deliveries_root / "second-rejected.txt"
-    first_command = (
-        f'{sys.executable} -c "from pathlib import Path; '
-        f"Path({str(first_marker)!r}).write_text('ran')\""
-    )
-    rejected_command = (
-        f'{sys.executable} -c "from pathlib import Path; '
-        f"Path({str(rejected_marker)!r}).write_text('ran')\""
+    first_command = _approval_shell(f"printf ran > {shlex.quote(str(first_marker))}")
+    rejected_command = _approval_shell(
+        f"printf ran > {shlex.quote(str(rejected_marker))}"
     )
     gateway = FakeModelGateway(
         (
@@ -2089,11 +2089,8 @@ async def test_stale_resume_job_cannot_claim_after_a_new_approval_batch(
         session=session,
         input_text=input_text,
     )
-    first_marker = tmp_path / "old-approval-batch.txt"
-    first_command = (
-        f'{sys.executable} -c "from pathlib import Path; '
-        f"Path({str(first_marker)!r}).write_text('ran')\""
-    )
+    first_marker = settings.deliveries_root / "old-approval-batch.txt"
+    first_command = _approval_shell(f"printf ran > {shlex.quote(str(first_marker))}")
     gateway = FakeModelGateway(
         (
             ToolCallDelta(
@@ -2335,9 +2332,8 @@ async def test_responses_config_rotation_closes_entire_pending_tool_call_batch(
                     name="bash",
                     arguments_delta=json.dumps(
                         {
-                            "command": (
-                                f'{sys.executable} -c "from pathlib import Path; '
-                                f"Path({str(marker)!r}).write_text('ran')\""
+                            "command": _approval_shell(
+                                f"printf ran > {shlex.quote(str(marker))}"
                             ),
                             "cwd": str(settings.deliveries_root),
                         }
@@ -2447,10 +2443,9 @@ async def test_concurrent_full_runtime_resume_has_one_durable_owner(
         session=session,
         input_text=input_text,
     )
-    marker = tmp_path / "single-resume-owner.txt"
-    command = (
-        f'{sys.executable} -c "import time; from pathlib import Path; '
-        f"time.sleep(0.15); Path({str(marker)!r}).write_text('ran')\""
+    marker = settings.deliveries_root / "single-resume-owner.txt"
+    command = _approval_shell(
+        f"sleep 0.15; printf ran > {shlex.quote(str(marker))}"
     )
     gateway = FakeModelGateway(
         (
@@ -2609,9 +2604,8 @@ async def test_concurrent_config_rotation_cleanup_has_one_durable_owner(
                     name="bash",
                     arguments_delta=json.dumps(
                         {
-                            "command": (
-                                f'{sys.executable} -c "from pathlib import Path; '
-                                f"Path({str(marker)!r}).write_text('ran')\""
+                            "command": _approval_shell(
+                                f"printf ran > {shlex.quote(str(marker))}"
                             ),
                             "cwd": str(settings.deliveries_root),
                         }

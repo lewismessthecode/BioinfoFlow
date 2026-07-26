@@ -909,7 +909,11 @@ async def test_mixed_reads_stop_at_approval_before_model_continues(
         return _response(
             tool_calls=[
                 ("read-1", "projects__list", {}),
-                ("approval", "bash", {"command": "python -c 'print(1)'"}),
+                (
+                    "approval",
+                    "bash",
+                    {"command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" 1'"},
+                ),
                 ("read-2", "projects__list", {}),
             ]
         )
@@ -1237,7 +1241,7 @@ async def test_adjacent_reads_overlap_before_approval_barrier(db_session, monkey
                 (
                     "approval-between",
                     "bash",
-                    {"command": "python -c 'print(1)'"},
+                    {"command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" 1'"},
                 ),
             ]
         )
@@ -1304,7 +1308,9 @@ async def test_approval_barrier_defers_later_safe_calls_until_resume(
                     (
                         "approval-barrier",
                         "bash",
-                        {"command": "python -c 'print(1)'"},
+                        {
+                            "command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" 1'"
+                        },
                     ),
                     ("read-after-approval", "projects__list", {}),
                 ]
