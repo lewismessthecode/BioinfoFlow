@@ -35,7 +35,10 @@ export function buildTurnSegments(
     decisionResolverEvents === events ? sortedEvents : sortEvents(decisionResolverEvents)
   const textBlocks = buildTextBlocks(turn, sortedEvents)
   const thinkingBlocks = buildThinkingBlocks(turn, sortedEvents)
-  const activities = buildAgentRuntimeToolActivities(sortedEvents)
+  const activities = finalizeToolActivities(
+    turn,
+    buildAgentRuntimeToolActivities(sortedEvents),
+  )
   const activitySegments = activities.map((activity, index) =>
     activityGroupSegment(turn.id, activity, index),
   )
@@ -280,6 +283,19 @@ function finalizeTextBlocks(
       return textBlock
     })
     .sort((a, b) => a.seqStart - b.seqStart || a.id.localeCompare(b.id))
+}
+
+function finalizeToolActivities(
+  turn: AgentRuntimeTurn,
+  activities: AgentRuntimeToolActivity[],
+) {
+  if (turn.status !== "failed" && turn.status !== "cancelled") return activities
+  const terminalStatus = turn.status
+  return activities.map((activity) =>
+    ["building", "requested", "waiting", "running"].includes(activity.status)
+      ? { ...activity, status: terminalStatus }
+      : activity,
+  )
 }
 
 function snapshotTextBlock(
