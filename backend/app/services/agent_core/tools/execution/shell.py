@@ -3,16 +3,19 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-from pathlib import Path
 from typing import Any
 
-from app.config import settings
 from app.services.agent_core.permissions.command_risk import (
     CommandRiskAssessment,
     CommandTargetProfile,
     assess_command_risk,
 )
-from app.services.agent_core.sandbox import FilesystemPolicy, SandboxRunner
+from app.services.agent_core.sandbox import (
+    FilesystemPolicy,
+    SandboxRunner,
+    SandboxUnavailableError,
+    local_boundary_from_tool_context,
+)
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.utils.exceptions import PermissionDeniedError
 
@@ -46,7 +49,6 @@ class ExecuteShellTool:
                 "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},
                 "output_limit": {"type": "integer", "minimum": 100, "maximum": 50000},
                 "description": {"type": "string"},
-                "dangerously_disable_sandbox": {"type": "boolean"},
             },
             "required": ["command"],
             "additionalProperties": False,
@@ -81,7 +83,8 @@ class ExecuteShellTool:
         if not isinstance(command, str) or not command.strip():
             return None
         if target is None:
-            roots = tuple(str(root) for root in FilesystemPolicy().allowed_roots)
+            policy = FilesystemPolicy()
+            roots = tuple(str(root) for root in policy.allowed_roots)
             runner = SandboxRunner.from_settings()
             target = CommandTargetProfile(
                 kind="local",
@@ -92,42 +95,40 @@ class ExecuteShellTool:
                 else "none",
                 read_roots=roots,
                 write_roots=roots,
-                working_directory=str(input.get("cwd") or settings.repo_root),
+                working_directory=str(input.get("cwd") or policy.default_root),
                 network_allowed=runner.allow_network,
-                sandbox_bypass_requested=bool(
-                    input.get("dangerously_disable_sandbox", False)
-                ),
+                sandbox_bypass_requested=False,
             )
         return assess_command_risk(command, target=target)
 
     async def run(
         self, input: dict[str, Any], context: AgentToolContext
     ) -> dict[str, Any]:
-        del context
+        boundary = await local_boundary_from_tool_context(context)
         command = input.get("command")
         if not isinstance(command, str) or not command.strip():
             raise PermissionDeniedError("command must be a non-empty string")
-        # Default to the repo root (which the environment prompt advertises as
-        # the working directory) so repo-oriented commands like `git status`
-        # and `rg --files` run against the code tree, not the data home.
-        cwd = FilesystemPolicy().require_allowed_dir(
-            input.get("cwd") or str(settings.repo_root)
+        cwd = boundary.policy.require_allowed_dir(
+            input.get("cwd") or str(boundary.working_directory)
         )
         timeout = int(input.get("timeout_seconds") or 120)
         output_limit = int(input.get("output_limit") or 16000)
 
         # The OS sandbox — not the risk classifier — is the real boundary. When
-        # enabled it confines the process to the repo and data home; reads of
-        # /etc, the wider FS, or the docker socket are blocked at the syscall
-        # layer rather than merely flagged for approval.
-        bioinfoflow_home = Path(settings.bioinfoflow_home).expanduser().resolve()
-        repo_root = Path(settings.repo_root).expanduser().resolve()
-        sandbox = SandboxRunner.from_settings().build(
+        # enabled it confines writes to session capability roots. Bubblewrap also
+        # confines reads to those roots; macOS Seatbelt applies permanent deny
+        # rules for product source, internal state, and the Docker socket.
+        runner = SandboxRunner.from_settings()
+        if not runner.enabled:
+            raise SandboxUnavailableError(
+                "agent bash requires OS sandboxing; AGENT_SANDBOX_ENABLED cannot be false"
+            )
+        sandbox = runner.build(
             command=command,
             cwd=cwd,
-            read_roots=[repo_root, bioinfoflow_home],
-            write_roots=[cwd, bioinfoflow_home],
-            disable_requested=bool(input.get("dangerously_disable_sandbox", False)),
+            read_roots=list(boundary.read_roots),
+            write_roots=list(boundary.write_roots),
+            deny_read_roots=list(boundary.protected_roots),
         )
 
         process = await asyncio.create_subprocess_exec(

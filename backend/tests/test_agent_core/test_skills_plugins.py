@@ -61,7 +61,7 @@ def test_agent_skill_registry_discovers_versioned_manifests(tmp_path: Path):
     assert registry.describe_for_prompt() == "- rna-qc (1.2.0): Summarize RNA-seq QC signals."
 
 
-def test_agent_skill_registry_discovers_repo_and_configured_roots_with_repo_precedence(
+def test_agent_skill_registry_default_roots_ignore_product_repo_skills(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -107,11 +107,11 @@ def test_agent_skill_registry_discovers_repo_and_configured_roots_with_repo_prec
 
     assert [skill.name for skill in registry.list()] == ["configured-only", "shared-qc"]
     shared = registry.get("shared-qc")
-    assert shared.source == "repo"
-    assert shared.root == (repo_root / ".agents" / "skills").resolve()
-    assert shared.path == (repo_root / ".agents" / "skills" / "shared-qc" / "SKILL.md").resolve()
-    assert shared.description == "Repo-local QC guidance."
-    assert shared.body == "# Repo skill\nPrefer the repo body."
+    assert shared.source == "configured"
+    assert shared.root == configured_root.resolve()
+    assert shared.path == (configured_root / "shared-qc" / "SKILL.md").resolve()
+    assert shared.description == "Configured QC guidance."
+    assert shared.body == "# Configured skill\nThis should lose precedence."
     configured = registry.get("configured-only")
     assert configured.source == "configured"
     assert configured.root == configured_root.resolve()
@@ -321,7 +321,7 @@ async def test_skill_and_plugin_tools_use_default_registry_roots(tmp_path: Path,
 
 
 @pytest.mark.asyncio
-async def test_skill_tools_use_repo_scoped_registry_with_debug_payloads(
+async def test_skill_tools_use_configured_registry_with_debug_payloads(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -391,17 +391,17 @@ async def test_skill_tools_use_repo_scoped_registry_with_debug_payloads(
             "name": "shared-qc",
             "title": None,
             "version": "0.1.0",
-            "description": "Repo scoped QC guidance.",
+            "description": "Configured QC guidance.",
             "category": None,
             "tags": [],
-                "source": "repo",
-                "root": str(repo_skills_root.resolve()),
-                "path": str(repo_skills_root / "shared-qc" / "SKILL.md"),
-                "directory": str((repo_skills_root / "shared-qc").resolve()),
+                "source": "configured",
+                "root": str(configured_root.resolve()),
+                "path": str(configured_root / "shared-qc" / "SKILL.md"),
+                "directory": str((configured_root / "shared-qc").resolve()),
         },
     ]
 
     loaded = await LoadSkillTool().run({"name": "shared-qc"}, context)
-    assert loaded["skill"]["source"] == "repo"
-    assert loaded["skill"]["root"] == str(repo_skills_root.resolve())
-    assert loaded["skill"]["body"] == "# Repo\nUse this body."
+    assert loaded["skill"]["source"] == "configured"
+    assert loaded["skill"]["root"] == str(configured_root.resolve())
+    assert loaded["skill"]["body"] == "# Configured\nThis body loses precedence."

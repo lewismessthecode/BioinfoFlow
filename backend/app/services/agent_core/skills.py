@@ -88,7 +88,6 @@ class AgentSkillRegistry:
     @classmethod
     def from_default_roots(cls) -> "AgentSkillRegistry":
         return cls.from_roots(
-            repo_root=settings.repo_root,
             configured_root=settings.skills_root,
         )
 

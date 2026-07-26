@@ -13,7 +13,10 @@ from app.services.agent_core.execution_target import (
     session_execution_scope_from_metadata,
 )
 from app.services.agent_core.permissions.remote_boundary import RemoteBoundaryResolver
-from app.services.agent_core.sandbox import FilesystemPolicy, SandboxRunner
+from app.services.agent_core.sandbox import (
+    LocalFilesystemBoundaryResolver,
+    SandboxRunner,
+)
 from app.utils.exceptions import PermissionDeniedError
 
 
@@ -109,9 +112,11 @@ class PermissionContextResolver:
             )
             boundary = remote_boundary.audit_boundary()
         else:
-            filesystem_policy = FilesystemPolicy()
+            filesystem_boundary = await LocalFilesystemBoundaryResolver(
+                self.repository.session
+            ).resolve(agent_session)
             effective_roots = tuple(
-                str(root)[:1000] for root in filesystem_policy.allowed_roots[:16]
+                str(root)[:1000] for root in filesystem_boundary.read_roots[:16]
             )
             runner = SandboxRunner.from_settings()
             adapter = runner.available_adapter() if runner.enabled else None
@@ -121,7 +126,7 @@ class PermissionContextResolver:
                 "enforcement": "os_sandbox" if sandboxed else "none",
                 "sandboxed": sandboxed,
                 "sandbox_type": adapter.name if adapter is not None else "none",
-                "filesystem_policy": "allowed_roots",
+                "filesystem_policy": "capability_roots",
                 "roots_enforced_by": "os_sandbox" if sandboxed else "application_policy",
                 "network_allowed": runner.allow_network if sandboxed else True,
             }

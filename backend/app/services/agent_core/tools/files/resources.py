@@ -5,8 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.config import settings
-from app.services.agent_core.sandbox import FilesystemPolicy
+from app.services.agent_core.sandbox import (
+    FilesystemPolicy,
+    local_boundary_from_tool_context,
+)
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.utils.exceptions import BadRequestError
 
@@ -42,8 +44,14 @@ class ReadFileTool:
     async def run(
         self, input: dict[str, Any], context: AgentToolContext
     ) -> dict[str, Any]:
-        del context
-        path = _resolve_path(input["path"], must_exist=True, allow_directory=False)
+        boundary = await local_boundary_from_tool_context(context)
+        path = _resolve_path(
+            input["path"],
+            policy=boundary.policy,
+            base=boundary.working_directory,
+            must_exist=True,
+            allow_directory=False,
+        )
         content = path.read_text(encoding="utf-8")
         lines = content.splitlines()
         offset = int(input.get("offset") or 0)
@@ -88,8 +96,10 @@ class WriteFileTool:
     async def run(
         self, input: dict[str, Any], context: AgentToolContext
     ) -> dict[str, Any]:
-        del context
-        path = _resolve_path_for_write(input["path"])
+        boundary = await local_boundary_from_tool_context(context)
+        path = _resolve_path_for_write(
+            input["path"], policy=boundary.policy, base=boundary.working_directory
+        )
         content = input["content"]
         path.write_text(content, encoding="utf-8")
         return {"path": str(path), "bytes_written": len(content.encode("utf-8"))}
@@ -129,8 +139,13 @@ class EditFileTool:
     async def run(
         self, input: dict[str, Any], context: AgentToolContext
     ) -> dict[str, Any]:
-        del context
-        path = _resolve_path(input["path"], must_exist=True, allow_directory=False)
+        boundary = await local_boundary_from_tool_context(context)
+        path = _resolve_path_for_write(
+            input["path"], policy=boundary.policy, base=boundary.working_directory
+        )
+        path = boundary.policy.require_allowed_path(
+            path, must_exist=True, allow_directory=False
+        )
         content = path.read_text(encoding="utf-8")
         old_text = input["old_text"]
         new_text = input["new_text"]
@@ -225,7 +240,7 @@ class ApplyPatchTool:
     async def run(
         self, input: dict[str, Any], context: AgentToolContext
     ) -> dict[str, Any]:
-        del context
+        boundary = await local_boundary_from_tool_context(context)
         operations = input.get("operations")
         if not isinstance(operations, list) or not operations:
             raise BadRequestError("operations must be a non-empty list")
@@ -235,7 +250,11 @@ class ApplyPatchTool:
         for operation in operations:
             if not isinstance(operation, dict):
                 raise BadRequestError("each operation must be an object")
-            prepared_operation = _prepare_patch_operation(operation)
+            prepared_operation = _prepare_patch_operation(
+                operation,
+                policy=boundary.policy,
+                base=boundary.working_directory,
+            )
             path = prepared_operation["path"]
             if path in seen_paths:
                 raise BadRequestError("multiple operations cannot target the same path")
@@ -280,10 +299,15 @@ class ApplyPatchTool:
         return {"operations": summaries}
 
 
-def _prepare_patch_operation(operation: dict[str, Any]) -> dict[str, Any]:
+def _prepare_patch_operation(
+    operation: dict[str, Any],
+    *,
+    policy: FilesystemPolicy,
+    base: Path,
+) -> dict[str, Any]:
     op = operation.get("op")
     if op == "create":
-        path = _resolve_path_for_write(operation.get("path"))
+        path = _resolve_path_for_write(operation.get("path"), policy=policy, base=base)
         if path.exists():
             raise BadRequestError(f"file already exists: {path}")
         content = operation.get("content")
@@ -291,14 +315,16 @@ def _prepare_patch_operation(operation: dict[str, Any]) -> dict[str, Any]:
             raise BadRequestError("create content must be text")
         return {"op": op, "path": path, "content": content}
     if op == "delete":
-        path = _resolve_path(
-            operation.get("path"), must_exist=True, allow_directory=False
+        path = _resolve_path_for_write(operation.get("path"), policy=policy, base=base)
+        path = policy.require_allowed_path(
+            path, must_exist=True, allow_directory=False
         )
         return {"op": op, "path": path}
     if op != "replace":
         raise BadRequestError("operation op must be create, replace, or delete")
 
-    path = _resolve_path(operation.get("path"), must_exist=True, allow_directory=False)
+    path = _resolve_path_for_write(operation.get("path"), policy=policy, base=base)
+    path = policy.require_allowed_path(path, must_exist=True, allow_directory=False)
     content = path.read_text(encoding="utf-8")
     old_text = operation.get("old_text")
     new_text = operation.get("new_text")
@@ -362,22 +388,32 @@ def _restore_patch_targets(
 
 
 def _resolve_path(
-    raw_path: str | None, *, must_exist: bool, allow_directory: bool
+    raw_path: str | None,
+    *,
+    policy: FilesystemPolicy,
+    base: Path,
+    must_exist: bool,
+    allow_directory: bool,
 ) -> Path:
-    candidate = Path(raw_path or settings.repo_root)
+    candidate = Path(raw_path or base)
     if not candidate.is_absolute():
-        candidate = Path(settings.repo_root) / candidate
-    return FilesystemPolicy().require_allowed_path(
+        candidate = base / candidate
+    return policy.require_allowed_path(
         candidate,
         must_exist=must_exist,
         allow_directory=allow_directory,
     )
 
 
-def _resolve_path_for_write(raw_path: str | None) -> Path:
+def _resolve_path_for_write(
+    raw_path: str | None,
+    *,
+    policy: FilesystemPolicy,
+    base: Path,
+) -> Path:
     if not isinstance(raw_path, str) or not raw_path.strip():
         raise BadRequestError("path must be non-empty text")
     candidate = Path(raw_path)
     if not candidate.is_absolute():
-        candidate = Path(settings.repo_root) / candidate
-    return FilesystemPolicy().require_parent_dir(candidate)
+        candidate = base / candidate
+    return policy.require_parent_dir(candidate)

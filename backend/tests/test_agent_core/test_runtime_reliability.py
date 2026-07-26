@@ -229,7 +229,7 @@ async def test_runtime_approval_resume_uses_remaining_turn_budget(
                 arguments = json.dumps(
                     {
                         "command": f"{sys.executable} -c 'print(\"approved\")'",
-                        "cwd": str(settings.bioinfoflow_home),
+                        "cwd": str(settings.deliveries_root),
                     }
                 )
             else:
@@ -992,7 +992,7 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
                 arguments = json.dumps(
                     {
                         "command": f"{sys.executable} -c 'print(\"recover\")'",
-                        "cwd": str(settings.bioinfoflow_home),
+                        "cwd": str(settings.deliveries_root),
                     }
                 )
 

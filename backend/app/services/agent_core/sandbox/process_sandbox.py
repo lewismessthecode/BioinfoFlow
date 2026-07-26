@@ -32,16 +32,6 @@ class SandboxUnavailableError(RuntimeError):
 # Do not bind /etc wholesale: the sandbox boundary should block commands such
 # as `cat /etc/passwd` rather than relying on the permission classifier.
 _LINUX_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/opt")
-_MACOS_READ_ROOTS = (
-    "/usr",
-    "/bin",
-    "/sbin",
-    "/System",
-    "/Library",
-    "/private/var/db",
-    "/dev",
-    "/opt",
-)
 _MACOS_WRITE_ROOTS = ("/dev/null", "/dev/dtracehelper", "/private/tmp", "/private/var/folders")
 
 
@@ -51,6 +41,7 @@ class SandboxSpec:
     cwd: Path
     read_roots: list[Path] = field(default_factory=list)
     write_roots: list[Path] = field(default_factory=list)
+    deny_read_roots: list[Path] = field(default_factory=list)
     allow_network: bool = False
 
 
@@ -109,9 +100,17 @@ class SeatbeltAdapter:
         return ["sandbox-exec", "-p", profile, "bash", "-lc", spec.command]
 
     def _profile(self, spec: SandboxSpec) -> str:
-        read_roots = list(_MACOS_READ_ROOTS) + [str(root) for root in _existing(spec.read_roots)]
         write_roots = list(_MACOS_WRITE_ROOTS) + [str(root) for root in _existing(spec.write_roots)]
-        read_rules = "\n".join(f'    (subpath "{path}")' for path in _dedupe(read_roots))
+        deny_read_rules = "\n".join(
+            f'    (subpath "{path}")' for path in _dedupe(
+                [str(root) for root in spec.deny_read_roots]
+            )
+        )
+        deny_read_section = (
+            ["(deny file-read*", deny_read_rules, ")"]
+            if deny_read_rules
+            else []
+        )
         write_rules = "\n".join(f'    (subpath "{path}")' for path in _dedupe(write_roots))
         network_rule = "(allow network*)" if spec.allow_network else "(deny network*)"
         return "\n".join(
@@ -122,10 +121,11 @@ class SeatbeltAdapter:
                 "(allow process-fork)",
                 "(allow signal)",
                 "(allow sysctl-read)",
-                "(allow file-read-metadata)",
-                "(allow file-read*",
-                read_rules,
-                ")",
+                # Current macOS shells require a wider set of platform reads
+                # than a stable allowlist provides. Keep writes capability-based
+                # and explicitly deny permanent protected resources.
+                "(allow file-read*)",
+                *deny_read_section,
                 "(allow file-write*",
                 write_rules,
                 ")",
@@ -181,6 +181,7 @@ class SandboxRunner:
         cwd: Path,
         read_roots: list[Path],
         write_roots: list[Path],
+        deny_read_roots: list[Path] | None = None,
         disable_requested: bool = False,
     ) -> SandboxResult:
         if not self.enabled:
@@ -205,6 +206,7 @@ class SandboxRunner:
             cwd=cwd,
             read_roots=read_roots,
             write_roots=write_roots,
+            deny_read_roots=list(deny_read_roots or []),
             allow_network=self.allow_network,
         )
         return SandboxResult(adapter.build_argv(spec), adapter.name, True)

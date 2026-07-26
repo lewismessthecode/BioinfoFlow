@@ -51,6 +51,7 @@ class AgentToolContext:
     user_id: str
     session_id: str
     turn_id: str
+    project_id: str | None = None
     permission_context_snapshot: dict[str, Any] | None = None
     ownership_guard: Callable[[], Awaitable[None]] | None = None
     expected_owner_token: str | None = None

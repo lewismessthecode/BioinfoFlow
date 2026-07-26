@@ -92,13 +92,8 @@ class ListPluginsTool:
 
 def _skill_registry() -> AgentSkillRegistry:
     return AgentSkillRegistry.from_roots(
-        repo_root=_repo_root(),
         configured_root=_skills_root(),
     )
-
-
-def _repo_root() -> Path:
-    return Path(settings.repo_root).expanduser().resolve()
 
 
 def _skills_root() -> Path:

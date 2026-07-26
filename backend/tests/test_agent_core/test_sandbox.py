@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from app.config import settings
 from app.services.agent_core.sandbox.process_sandbox import (
     BubblewrapAdapter,
     SandboxRunner,
@@ -161,6 +162,68 @@ def test_filesystem_policy_resolves_relative_paths_from_allowed_root(tmp_path, m
     monkeypatch.chdir(tmp_path)
 
     assert FilesystemPolicy(allowed_roots=[root]).require_allowed_path("sample.txt") == target.resolve()
+
+
+def test_filesystem_policy_distinguishes_read_and_write_roots(tmp_path):
+    read_root = tmp_path / "reference"
+    write_root = tmp_path / "project"
+    read_root.mkdir()
+    write_root.mkdir()
+    reference = read_root / "genome.fa"
+    reference.write_text("ACGT", encoding="utf-8")
+
+    policy = FilesystemPolicy(
+        read_roots=[read_root, write_root],
+        write_roots=[write_root],
+        default_root=write_root,
+    )
+
+    assert policy.require_allowed_path(reference) == reference.resolve()
+    with pytest.raises(PermissionDeniedError, match="not writable"):
+        policy.require_parent_dir(read_root / "new.fa")
+
+
+def test_filesystem_policy_denies_protected_path_before_allowed_root(tmp_path):
+    allowed = tmp_path
+    protected = tmp_path / "product-source"
+    protected.mkdir()
+    source = protected / "main.py"
+    source.write_text("secret implementation", encoding="utf-8")
+
+    policy = FilesystemPolicy(
+        read_roots=[allowed],
+        write_roots=[allowed],
+        protected_roots=[protected],
+        default_root=allowed,
+    )
+
+    with pytest.raises(PermissionDeniedError, match="protected"):
+        policy.require_allowed_path(source)
+
+
+def test_filesystem_policy_denies_docker_socket_even_inside_allowed_root(
+    tmp_path, monkeypatch
+):
+    socket = tmp_path / "docker.sock"
+    socket.touch()
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{socket}")
+    policy = FilesystemPolicy(allowed_roots=[tmp_path])
+
+    with pytest.raises(PermissionDeniedError, match="protected"):
+        policy.require_allowed_path(socket)
+
+
+def test_container_repo_root_slash_does_not_block_declared_external_root(
+    tmp_path, monkeypatch
+):
+    external = tmp_path / "external"
+    external.mkdir()
+    target = external / "result.txt"
+    target.write_text("ok", encoding="utf-8")
+    monkeypatch.setattr(settings, "repo_root", "/")
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(tmp_path / "data"))
+
+    assert FilesystemPolicy(allowed_roots=[external]).require_allowed_path(target) == target
 
 
 def _spec(*, command: str, cwd: Path, read_roots, write_roots):

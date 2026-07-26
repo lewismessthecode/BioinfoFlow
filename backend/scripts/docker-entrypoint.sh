@@ -40,6 +40,9 @@ mkdir -p \
   "${BIOINFOFLOW_HOME}/state/auth" \
   "${BIOINFOFLOW_HOME}/state/workflows" \
   "${BIOINFOFLOW_HOME}/projects" \
+  "${BIOINFOFLOW_HOME}/sources/deliveries" \
+  "${BIOINFOFLOW_HOME}/sources/reference" \
+  "${BIOINFOFLOW_HOME}/sources/database" \
   "${BIOINFOFLOW_HOME}/state/engine/cache/nextflow" \
   "${BIOINFOFLOW_HOME}/state/engine/cache/miniwdl"
 

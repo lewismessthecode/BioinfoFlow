@@ -499,13 +499,12 @@ async def test_agent_skills_api_lists_and_loads_local_manifests(
 
 
 @pytest.mark.asyncio
-async def test_agent_skills_api_prefers_repo_skill_over_configured_duplicate(
+async def test_agent_skills_api_ignores_product_repo_skill_duplicate(
     async_client,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
     repo_root = tmp_path / "repo"
-    repo_skills_root = repo_root / ".agents" / "skills"
     monkeypatch.setattr(settings, "repo_root", str(repo_root))
     _write_skill(
         "shared-qc",
@@ -522,23 +521,24 @@ async def test_agent_skills_api_prefers_repo_skill_over_configured_duplicate(
     listed = await async_client.get("/api/v1/agent/skills")
 
     assert listed.status_code == 200
+    configured_root = settings.skills_root.resolve()
     assert listed.json()["data"]["skills"] == [
         {
             "name": "shared-qc",
             "version": "0.1.0",
-            "description": "Repo duplicate guidance.",
-            "tags": ["repo", "test"],
-            "source": "repo",
-            "root": str(repo_skills_root.resolve()),
-            "path": str(repo_skills_root / "shared-qc" / "SKILL.md"),
+            "description": "Configured duplicate guidance.",
+            "tags": ["agent", "test"],
+            "source": "configured",
+            "root": str(configured_root),
+            "path": str(configured_root / "shared-qc" / "SKILL.md"),
         }
     ]
 
     loaded = await async_client.get("/api/v1/agent/skills/shared-qc")
     assert loaded.status_code == 200
-    assert loaded.json()["data"]["source"] == "repo"
-    assert loaded.json()["data"]["root"] == str(repo_skills_root.resolve())
-    assert loaded.json()["data"]["body"] == "Repo body should be loaded."
+    assert loaded.json()["data"]["source"] == "configured"
+    assert loaded.json()["data"]["root"] == str(configured_root)
+    assert loaded.json()["data"]["body"] == "Configured body should not be loaded."
 
 
 @pytest.mark.asyncio
@@ -577,7 +577,7 @@ async def test_agent_turn_create_accepts_valid_active_skills(async_client):
 
 
 @pytest.mark.asyncio
-async def test_agent_turn_create_accepts_repo_scoped_active_skills(
+async def test_agent_turn_create_rejects_product_repo_scoped_active_skills(
     async_client,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -602,9 +602,7 @@ async def test_agent_turn_create_accepts_repo_scoped_active_skills(
         },
     )
 
-    assert create_turn.status_code == 202
-    turn = create_turn.json()["data"]
-    assert turn["active_skill_names"] == ["repo-run-triage"]
+    assert create_turn.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -2120,19 +2118,17 @@ async def test_agent_fs_tree_defaults_to_project_home(async_client):
 
 @pytest.mark.asyncio
 async def test_agent_fs_file_rejects_sensitive_files(async_client, tmp_path, monkeypatch):
-    repo_root = tmp_path / "repo"
     data_root = tmp_path / "data"
-    repo_root.mkdir()
-    data_root.mkdir()
-    public_file = repo_root / "notes.txt"
+    public_root = data_root / "sources" / "deliveries"
+    public_root.mkdir(parents=True)
+    public_file = public_root / "notes.txt"
     public_file.write_text("safe note", encoding="utf-8")
-    secret_file = repo_root / ".env"
+    secret_file = public_root / ".env"
     secret_file.write_text("OPENAI_API_KEY=secret", encoding="utf-8")
-    nested_secret = data_root / "auth" / "better-auth.db"
-    nested_secret.parent.mkdir()
+    nested_secret = data_root / "state" / "auth" / "better-auth.db"
+    nested_secret.parent.mkdir(parents=True)
     nested_secret.write_text("auth db bytes", encoding="utf-8")
 
-    monkeypatch.setattr(settings, "repo_root", str(repo_root))
     monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
 
     public_resp = await async_client.get(
@@ -2152,24 +2148,22 @@ async def test_agent_fs_file_rejects_sensitive_files(async_client, tmp_path, mon
 
 @pytest.mark.asyncio
 async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_path, monkeypatch):
-    repo_root = tmp_path / "repo"
     data_root = tmp_path / "data"
-    repo_root.mkdir()
-    data_root.mkdir()
-    pdf_file = repo_root / "summary.pdf"
+    public_root = data_root / "sources" / "deliveries"
+    public_root.mkdir(parents=True)
+    pdf_file = public_root / "summary.pdf"
     pdf_file.write_bytes(b"%PDF-1.7\nbinary-\xff\n")
-    xlsm_file = repo_root / "metrics.xlsm"
+    xlsm_file = public_root / "metrics.xlsm"
     xlsm_file.write_bytes(b"PK\x03\x04binary-\xff\n")
-    ods_file = repo_root / "metrics.ods"
+    ods_file = public_root / "metrics.ods"
     ods_file.write_bytes(b"PK\x03\x04binary-\xff\n")
-    png_file = repo_root / "plot.png"
+    png_file = public_root / "plot.png"
     png_file.write_bytes(b"\x89PNG\r\n\x1a\nbinary-\xff\n")
-    svg_file = repo_root / "plot.svg"
+    svg_file = public_root / "plot.svg"
     svg_file.write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8")
-    html_file = repo_root / 'report "qc"; v1.html'
+    html_file = public_root / 'report "qc"; v1.html'
     html_file.write_text("<h1>QC</h1>", encoding="utf-8")
 
-    monkeypatch.setattr(settings, "repo_root", str(repo_root))
     monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
 
     metadata_resp = await async_client.get(

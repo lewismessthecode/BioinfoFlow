@@ -15,8 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import app.database as app_database
 from app.api.deps import get_current_user, get_db
 from app.auth.session import AuthUser
-from app.config import settings
-from app.path_layout import project_home
+from app.path_layout import deliveries_root, project_home
 from app.services.agent_core.sandbox import FilesystemPolicy
 from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.schemas.agent_core import (
@@ -810,8 +809,8 @@ async def get_fs_tree(
 ):
     """List the immediate children of a directory inside the allowed roots.
 
-    Read-only and confined by :class:`FilesystemPolicy` to repo_root /
-    bioinfoflow_home. Lazy (one level): the Files tab requests subdirectories on
+    Read-only and confined by :class:`FilesystemPolicy` to agent data roots.
+    Lazy (one level): the Files tab requests subdirectories on
     expand rather than streaming the whole tree.
     """
     policy = FilesystemPolicy()
@@ -828,7 +827,7 @@ async def get_fs_tree(
             raise BadRequestError("Remote projects use SSH file browsing")
         base = policy.require_allowed_dir(str(project_home(project)))
     else:
-        base = policy.require_allowed_dir(str(settings.repo_root))
+        base = policy.require_allowed_dir(str(deliveries_root()))
     entries = []
     for child in sorted(base.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
         if child.name.startswith(".git") or _is_sensitive_fs_path(child):

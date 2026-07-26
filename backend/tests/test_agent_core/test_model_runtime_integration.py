@@ -1122,7 +1122,7 @@ async def test_approval_resume_survives_controller_restart(
                 arguments_delta=json.dumps(
                     {
                         "command": f"{sys.executable} -c 'print(\"approved\")'",
-                        "cwd": str(settings.bioinfoflow_home),
+                        "cwd": str(settings.deliveries_root),
                     }
                 ),
             ),
@@ -1384,7 +1384,7 @@ async def test_fallback_approval_resume_uses_exact_resolved_fallback_target(
                 arguments_delta=json.dumps(
                     {
                         "command": f"{sys.executable} -c 'print(\"fallback-approved\")'",
-                        "cwd": str(settings.bioinfoflow_home),
+                        "cwd": str(settings.deliveries_root),
                     }
                 ),
             ),
@@ -1585,7 +1585,7 @@ async def test_responses_approval_resume_survives_service_restart(
                 "arguments": json.dumps(
                     {
                         "command": f"{sys.executable} -c 'print(\"responses-approved\")'",
-                        "cwd": str(settings.bioinfoflow_home),
+                        "cwd": str(settings.deliveries_root),
                     }
                 ),
             },
@@ -1602,7 +1602,7 @@ async def test_responses_approval_resume_survives_service_restart(
                 arguments_delta=json.dumps(
                     {
                         "command": f"{sys.executable} -c 'print(\"responses-approved\")'",
-                        "cwd": str(settings.bioinfoflow_home),
+                        "cwd": str(settings.deliveries_root),
                     }
                 ),
             ),
@@ -1917,7 +1917,6 @@ async def _responses_batch_approval_fixture(db_session, *, session, input_text: 
 async def test_responses_tool_call_batch_waits_for_every_approval_before_resume(
     db_session,
     monkeypatch,
-    tmp_path,
 ) -> None:
     input_text = "Run both commands only after deciding each approval."
     session, turn = await _turn(db_session, input_text=input_text)
@@ -1926,8 +1925,8 @@ async def test_responses_tool_call_batch_waits_for_every_approval_before_resume(
         session=session,
         input_text=input_text,
     )
-    first_marker = tmp_path / "first-approved.txt"
-    rejected_marker = tmp_path / "second-rejected.txt"
+    first_marker = settings.deliveries_root / "first-approved.txt"
+    rejected_marker = settings.deliveries_root / "second-rejected.txt"
     first_command = (
         f'{sys.executable} -c "from pathlib import Path; '
         f"Path({str(first_marker)!r}).write_text('ran')\""
@@ -1943,7 +1942,7 @@ async def test_responses_tool_call_batch_waits_for_every_approval_before_resume(
                 call_id="call-responses-batch-first",
                 name="bash",
                 arguments_delta=json.dumps(
-                    {"command": first_command, "cwd": str(settings.bioinfoflow_home)}
+                    {"command": first_command, "cwd": str(settings.deliveries_root)}
                 ),
             ),
             ToolCallDelta(
@@ -1951,7 +1950,7 @@ async def test_responses_tool_call_batch_waits_for_every_approval_before_resume(
                 call_id="call-responses-batch-second",
                 name="bash",
                 arguments_delta=json.dumps(
-                    {"command": rejected_command, "cwd": str(settings.bioinfoflow_home)}
+                    {"command": rejected_command, "cwd": str(settings.deliveries_root)}
                 ),
             ),
             CompletionMetadata(
@@ -2102,7 +2101,7 @@ async def test_stale_resume_job_cannot_claim_after_a_new_approval_batch(
                 call_id="call-old-batch",
                 name="bash",
                 arguments_delta=json.dumps(
-                    {"command": first_command, "cwd": str(settings.bioinfoflow_home)}
+                    {"command": first_command, "cwd": str(settings.deliveries_root)}
                 ),
             ),
             CompletionMetadata(
@@ -2340,7 +2339,7 @@ async def test_responses_config_rotation_closes_entire_pending_tool_call_batch(
                                 f'{sys.executable} -c "from pathlib import Path; '
                                 f"Path({str(marker)!r}).write_text('ran')\""
                             ),
-                            "cwd": str(settings.bioinfoflow_home),
+                            "cwd": str(settings.deliveries_root),
                         }
                     ),
                 )
@@ -2460,7 +2459,7 @@ async def test_concurrent_full_runtime_resume_has_one_durable_owner(
                 call_id="call-single-resume-owner",
                 name="bash",
                 arguments_delta=json.dumps(
-                    {"command": command, "cwd": str(settings.bioinfoflow_home)}
+                    {"command": command, "cwd": str(settings.deliveries_root)}
                 ),
             ),
             CompletionMetadata(
@@ -2614,7 +2613,7 @@ async def test_concurrent_config_rotation_cleanup_has_one_durable_owner(
                                 f'{sys.executable} -c "from pathlib import Path; '
                                 f"Path({str(marker)!r}).write_text('ran')\""
                             ),
-                            "cwd": str(settings.bioinfoflow_home),
+                            "cwd": str(settings.deliveries_root),
                         }
                     ),
                 )
