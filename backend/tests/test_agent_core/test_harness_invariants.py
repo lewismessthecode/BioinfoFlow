@@ -966,7 +966,7 @@ async def test_loop_refreshes_permission_context_before_each_model_iteration(
 
 @pytest.mark.asyncio
 async def test_approval_resume_executes_tool_and_continues_turn(
-    db_session, monkeypatch
+    db_session, monkeypatch, run_shell_without_platform_sandbox
 ):
     monkeypatch.setattr(
         "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None

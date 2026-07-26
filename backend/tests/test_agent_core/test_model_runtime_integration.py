@@ -1114,6 +1114,7 @@ async def test_failed_tool_result_round_trips_with_error_flag(
 async def test_approval_resume_survives_controller_restart(
     db_session,
     monkeypatch,
+    run_shell_without_platform_sandbox,
     decision: str,
 ) -> None:
     session, turn = await _turn(db_session, input_text="Run the approved command.")
@@ -1324,6 +1325,7 @@ async def test_runtime_uses_semantic_fallback_through_same_gateway(db_session) -
 async def test_fallback_approval_resume_uses_exact_resolved_fallback_target(
     db_session,
     monkeypatch,
+    run_shell_without_platform_sandbox,
 ) -> None:
     session, turn = await _turn(
         db_session, input_text="Fallback, then request approval."
@@ -1467,6 +1469,7 @@ async def test_fallback_approval_resume_uses_exact_resolved_fallback_target(
 async def test_responses_approval_resume_survives_service_restart(
     db_session,
     monkeypatch,
+    run_shell_without_platform_sandbox,
     caplog,
     rotation,
     decision,
@@ -1921,6 +1924,7 @@ async def _responses_batch_approval_fixture(db_session, *, session, input_text: 
 async def test_responses_tool_call_batch_waits_for_every_approval_before_resume(
     db_session,
     monkeypatch,
+    run_shell_without_platform_sandbox,
 ) -> None:
     input_text = "Run both commands only after deciding each approval."
     session, turn = await _turn(db_session, input_text=input_text)
@@ -2081,6 +2085,7 @@ async def test_stale_resume_job_cannot_claim_after_a_new_approval_batch(
     db_session,
     monkeypatch,
     tmp_path,
+    run_shell_without_platform_sandbox,
 ) -> None:
     input_text = "Run the first approved command, then request a second approval."
     session, turn = await _turn(db_session, input_text=input_text)
@@ -2434,6 +2439,7 @@ async def test_concurrent_full_runtime_resume_has_one_durable_owner(
     db_session,
     monkeypatch,
     tmp_path,
+    run_shell_without_platform_sandbox,
     recovery_enqueued,
 ) -> None:
     input_text = "Run the approved command exactly once, then continue."

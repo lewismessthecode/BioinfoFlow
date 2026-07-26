@@ -196,7 +196,7 @@ def test_agent_max_iterations_defaults_to_90(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_runtime_approval_resume_uses_remaining_turn_budget(
-    db_session, monkeypatch
+    db_session, monkeypatch, run_shell_without_platform_sandbox
 ):
     model_calls = 0
 
