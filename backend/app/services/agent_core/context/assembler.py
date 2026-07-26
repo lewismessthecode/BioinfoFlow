@@ -6,7 +6,6 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.models.agent_core import AgentActionStatus, AgentMemoryStatus
 from app.path_layout import state_root
 from app.repositories.agent_core_repo import (
@@ -28,7 +27,7 @@ from app.services.agent_core.execution_target import (
     is_remote_ssh_execution_target,
 )
 from app.services.agent_core.plugins import AgentPluginRegistry
-from app.services.agent_core.sandbox import FilesystemPolicy
+from app.services.agent_core.sandbox import LocalFilesystemBoundaryResolver
 from app.services.agent_core.skills import (
     ActiveSkillResolutionError,
     AgentSkillRegistry,
@@ -375,11 +374,14 @@ class AgentContextAssembler:
         remote_target = is_remote_ssh_execution_target(execution_target)
         lines: list[str] = ["## Environment"]
         if not remote_target:
-            lines.append(f"- Working directory: {settings.repo_root}")
-            allowed_roots = ", ".join(
-                str(root) for root in FilesystemPolicy().allowed_roots
+            boundary = await LocalFilesystemBoundaryResolver(self.db).resolve(
+                agent_session
             )
-            lines.append(f"- Allowed filesystem roots: {allowed_roots}")
+            lines.append(f"- Working directory: {boundary.working_directory}")
+            read_roots = ", ".join(str(root) for root in boundary.read_roots)
+            write_roots = ", ".join(str(root) for root in boundary.write_roots)
+            lines.append(f"- Readable filesystem roots: {read_roots}")
+            lines.append(f"- Writable filesystem roots: {write_roots}")
         lines.append(f"- Workspace: {agent_session.workspace_id}")
         if not remote_target:
             lines.append(

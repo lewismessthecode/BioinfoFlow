@@ -7,6 +7,8 @@ import pytest
 
 from app.config import settings
 from app.models.workspace import Workspace
+from app.models.project import Project
+from app.path_layout import project_home
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.context.instructions import (
@@ -45,6 +47,7 @@ async def test_project_instruction_resolver_walks_local_root_to_current_with_pri
     current = repo_root / "pipelines" / "rnaseq"
     current.mkdir(parents=True)
     monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(repo_root))
     (repo_root / "AGENTS.md").write_text("root agents", encoding="utf-8")
     (repo_root / "CLAUDE.md").write_text("root claude hidden", encoding="utf-8")
     (repo_root / "pipelines" / "AGENTS.override.md").write_text(
@@ -65,7 +68,7 @@ async def test_project_instruction_resolver_walks_local_root_to_current_with_pri
         }
     )
 
-    context = await resolver_cls(max_bytes=32768).resolve(session)
+    context = await resolver_cls(max_bytes=32768, local_root=repo_root).resolve(session)
 
     assert context is not None
     assert "## Project instructions" in context
@@ -88,9 +91,10 @@ async def test_project_instruction_context_marks_truncation(tmp_path, monkeypatc
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(repo_root))
     (repo_root / "AGENTS.md").write_text("0123456789abcdef", encoding="utf-8")
 
-    context = await resolver_cls(max_bytes=10).resolve(
+    context = await resolver_cls(max_bytes=10, local_root=repo_root).resolve(
         SimpleNamespace(session_metadata={"execution_target": {"kind": "local"}})
     )
 
@@ -111,9 +115,10 @@ async def test_project_instruction_resolver_skips_local_symlink_escape(
     outside = tmp_path / "outside-instructions.md"
     outside.write_text("outside secret", encoding="utf-8")
     monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(repo_root))
     (repo_root / "AGENTS.md").symlink_to(outside)
 
-    context = await resolver_cls(max_bytes=32768).resolve(
+    context = await resolver_cls(max_bytes=32768, local_root=repo_root).resolve(
         SimpleNamespace(session_metadata={"execution_target": {"kind": "local"}})
     )
 
@@ -129,6 +134,7 @@ async def test_current_local_session_target_overrides_stale_remote_turn_target(
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(repo_root))
     (repo_root / "AGENTS.md").write_text(
         "current local instructions",
         encoding="utf-8",
@@ -154,7 +160,9 @@ async def test_current_local_session_target_overrides_stale_remote_turn_target(
     )
 
     target = _target_metadata(session, turn)
-    context = await resolver_cls(max_bytes=32768).resolve(session, turn=turn)
+    context = await resolver_cls(max_bytes=32768, local_root=repo_root).resolve(
+        session, turn=turn
+    )
 
     assert target["trace_label"] == "retain this non-target field"
     assert target["type"] == "local"
@@ -205,16 +213,33 @@ async def test_context_assembler_injects_project_instructions_before_environment
     monkeypatch,
 ):
     await _workspace(db_session)
-    repo_root = tmp_path / "repo"
+    repo_root = tmp_path / "bioinfoflow-product"
+    data_root = repo_root / "data"
     repo_root.mkdir()
+    data_root.mkdir()
     monkeypatch.setattr(settings, "repo_root", str(repo_root))
-    (repo_root / "AGENTS.md").write_text("assembler root instruction", encoding="utf-8")
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
+    (repo_root / "AGENTS.md").write_text("product source instruction", encoding="utf-8")
+    project = Project(
+        name="Instruction project",
+        user_id="dev",
+        created_by_user_id="dev",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+    project_root = project_home(project)
+    project_root.mkdir(parents=True)
+    (project_root / "AGENTS.md").write_text(
+        "assembler project instruction", encoding="utf-8"
+    )
     service = AgentCoreService(db_session)
     session = await service.create_session(
-        project_id=None,
+        project_id=str(project.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
-        metadata={"execution_target": {"kind": "local", "cwd": str(repo_root)}},
+        metadata={"execution_target": {"kind": "local", "cwd": str(project_root)}},
     )
     turn = await service.create_turn_record(
         session_id=str(session.id),
@@ -235,7 +260,10 @@ async def test_context_assembler_injects_project_instructions_before_environment
     )
     assert "## Environment" in system_content
     assert "## Project instructions" in system_content
-    assert "assembler root instruction" in system_content
+    assert "assembler project instruction" in system_content
+    assert "product source instruction" not in system_content
+    assert f"- Working directory: {project_root}" in system_content
+    assert f"- Working directory: {repo_root}\n" not in system_content
     assert messages[-1]["content"].endswith("\n\nUse the repo rules.")
 
 

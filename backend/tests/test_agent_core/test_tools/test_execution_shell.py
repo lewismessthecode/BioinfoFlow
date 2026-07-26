@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 
 from app.repositories.agent_core_repo import AgentActionRepository
-from app.config import settings
 from app.models.project import Project
 from app.models.workspace import Workspace
+from app.path_layout import project_home
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.tools import (
     AgentToolContext,
@@ -20,6 +20,18 @@ from app.services.agent_core.tools import (
 )
 from app.services.agent_core.tools.execution import ExecuteShellTool
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+@pytest.fixture(autouse=True)
+def _run_shell_without_platform_sandbox_for_tool_tests(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.execution.shell.SandboxRunner.build",
+        lambda self, **kwargs: type(
+            "SandboxResult",
+            (),
+            {"argv": ["bash", "-lc", kwargs["command"]]},
+        )(),
+    )
 
 
 def test_bash_assess_risk_escalates_out_of_root_paths():
@@ -38,7 +50,6 @@ async def _shell_context(
     *,
     permission_mode: str = "guarded_auto",
 ) -> tuple[AgentToolDispatcher, AgentToolContext, Path]:
-    workspace_root = Path(settings.bioinfoflow_home)
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     project = Project(
         name="Shell Project",
@@ -50,6 +61,8 @@ async def _shell_context(
     db_session.add_all([workspace, project])
     await db_session.commit()
     await db_session.refresh(project)
+    workspace_root = project_home(project)
+    workspace_root.mkdir(parents=True, exist_ok=True)
 
     core = AgentCoreService(db_session)
     session = await core.create_session(
@@ -73,6 +86,7 @@ async def _shell_context(
             user_id="dev",
             session_id=str(session.id),
             turn_id=str(turn.id),
+            project_id=str(project.id),
         ),
         workspace_root,
     )
@@ -130,9 +144,9 @@ async def test_bash_tool_auto_runs_safe_command_with_pipe_and_glob(db_session):
 
 
 @pytest.mark.asyncio
-async def test_bash_tool_cancellation_kills_descendant_processes(db_session, tmp_path):
+async def test_bash_tool_cancellation_kills_descendant_processes(db_session):
     _dispatcher, context, workspace_root = await _shell_context(db_session)
-    child_pid_file = tmp_path / "shell-child.pid"
+    child_pid_file = workspace_root / "shell-child.pid"
     command = f"sleep 30 & echo $! > {shlex.quote(str(child_pid_file))}; wait"
     task = asyncio.create_task(
         ExecuteShellTool().run(
@@ -179,22 +193,11 @@ async def test_bash_tool_hard_blocks_catastrophic_command_even_in_bypass(db_sess
 
 
 @pytest.mark.asyncio
-async def test_bash_tool_bypass_auto_approves_sandbox_disable_request(
-    db_session, monkeypatch
-):
+async def test_bash_tool_rejects_sandbox_disable_request(db_session):
     dispatcher, context, workspace_root = await _shell_context(
         db_session,
         permission_mode="bypass",
     )
-    monkeypatch.setattr(
-        "app.services.agent_core.tools.execution.shell.SandboxRunner.build",
-        lambda self, **kwargs: type(
-            "SandboxResult",
-            (),
-            {"argv": ["bash", "-lc", kwargs["command"]]},
-        )(),
-    )
-
     result = await dispatcher.dispatch(
         tool_name="bash",
         input={
@@ -207,14 +210,12 @@ async def test_bash_tool_bypass_auto_approves_sandbox_disable_request(
         automation_mode="autonomous",
     )
 
-    assert result.status == "completed"
-    assert result.permission_decision["decision"] == "allow"
-    assert result.result["stdout"].strip() == str(workspace_root)
+    assert result.status == "failed"
 
 
 @pytest.mark.asyncio
-async def test_bash_tool_defaults_cwd_to_repo_root(db_session):
-    dispatcher, context, _workspace_root = await _shell_context(db_session)
+async def test_bash_tool_defaults_cwd_to_active_project(db_session):
+    dispatcher, context, workspace_root = await _shell_context(db_session)
 
     result = await dispatcher.dispatch(
         tool_name="bash",
@@ -224,7 +225,7 @@ async def test_bash_tool_defaults_cwd_to_repo_root(db_session):
     )
 
     assert result.status == "completed"
-    assert result.result["cwd"] == str(Path(settings.repo_root).expanduser().resolve())
+    assert result.result["cwd"] == str(workspace_root.resolve())
 
 
 @pytest.mark.asyncio

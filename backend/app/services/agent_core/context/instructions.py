@@ -9,7 +9,10 @@ from typing import Any, Protocol, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.path_layout import project_home
+from app.repositories.project_repo import ProjectRepository
 from app.services.agent_core.execution_target import execution_target_from_session
+from app.services.agent_core.sandbox import FilesystemPolicy
 from app.services.agent_core.tools.remote import SessionMetadataRemoteConnectionResolver
 from app.services.remote_execution import RemoteExecutor, SshRemoteExecutor
 
@@ -106,7 +109,10 @@ class ProjectInstructionResolver:
         *,
         max_bytes: int | None = None,
         remote_reader: RemoteProjectInstructionReader | None = None,
+        local_root: Path | None = None,
     ) -> None:
+        self.db = db
+        self.local_root = local_root.expanduser().resolve() if local_root else None
         self.max_bytes = int(max_bytes or settings.agent_project_instructions_max_bytes)
         self.remote_reader = remote_reader or (
             SshProjectInstructionReader(db) if db is not None else None
@@ -129,12 +135,30 @@ class ProjectInstructionResolver:
             )
             if _is_remote_target(target):
                 return await self._resolve_remote(agent_session, target)
-            return self._resolve_local(target)
+            return await self._resolve_local(agent_session, target)
         except Exception as exc:  # noqa: BLE001 - context assembly must not break a turn
             return _unavailable_marker(f"{exc.__class__.__name__}")
 
-    def _resolve_local(self, target: dict[str, Any]) -> str | None:
-        root = Path(settings.repo_root).expanduser().resolve(strict=False)
+    async def _resolve_local(
+        self, agent_session, target: dict[str, Any]
+    ) -> str | None:
+        root = self.local_root
+        if root is None:
+            if self.db is None or not getattr(agent_session, "project_id", None):
+                return None
+            project = await ProjectRepository(self.db).get_fresh(
+                str(agent_session.project_id)
+            )
+            if (
+                project is None
+                or str(project.workspace_id) != str(agent_session.workspace_id)
+                or project.storage_mode == "remote"
+            ):
+                return None
+            root = project_home(project)
+        root = FilesystemPolicy(
+            allowed_roots=[root], default_root=root
+        ).require_allowed_dir(str(root))
         current = _local_current(root, _first_string(target, _CWD_KEYS))
         files: list[ProjectInstructionFile] = []
         used_bytes = 0

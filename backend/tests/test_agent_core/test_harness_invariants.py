@@ -4,7 +4,6 @@ import asyncio
 import importlib
 import importlib.util
 import json
-import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -967,7 +966,7 @@ async def test_loop_refreshes_permission_context_before_each_model_iteration(
 
 @pytest.mark.asyncio
 async def test_approval_resume_executes_tool_and_continues_turn(
-    db_session, monkeypatch
+    db_session, monkeypatch, run_shell_without_platform_sandbox
 ):
     monkeypatch.setattr(
         "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
@@ -984,8 +983,8 @@ async def test_approval_resume_executes_tool_and_continues_turn(
                 name="bash",
                 arguments_delta=json.dumps(
                     {
-                        "command": f"{sys.executable} -c 'print(\"approved-tool\")'",
-                        "cwd": str(settings.bioinfoflow_home),
+                        "command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" approved-tool'",
+                        "cwd": str(settings.deliveries_root),
                     }
                 ),
             ),
@@ -1080,8 +1079,8 @@ async def test_rejected_tool_decision_continues_turn_with_tool_result(
                 name="bash",
                 arguments_delta=json.dumps(
                     {
-                        "command": f"{sys.executable} -c 'print(\"should-not-run\")'",
-                        "cwd": str(settings.bioinfoflow_home),
+                        "command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" should-not-run'",
+                        "cwd": str(settings.deliveries_root),
                     }
                 ),
             ),

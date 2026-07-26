@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from app.config import settings
 from app.models.llm import LlmModel, LlmProvider
 from app.models.workspace import Workspace
 from app.path_layout import skills_root
@@ -496,15 +495,10 @@ async def test_active_skill_body_is_added_to_current_turn_context(db_session):
 
 
 @pytest.mark.asyncio
-async def test_skill_summary_budget_does_not_truncate_active_repo_skill_body(
+async def test_skill_summary_budget_does_not_truncate_active_configured_skill_body(
     db_session,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ):
     await _workspace(db_session)
-    repo_root = tmp_path / "repo"
-    repo_skills_root = repo_root / ".agents" / "skills"
-    monkeypatch.setattr(settings, "repo_root", str(repo_root))
     configured_root = skills_root()
     for index in range(80):
         _write_skill(
@@ -515,9 +509,9 @@ async def test_skill_summary_budget_does_not_truncate_active_repo_skill_body(
         )
     active_body = "ACTIVE-START\n" + ("active-body-line\n" * 700) + "ACTIVE-END"
     _write_skill(
-        repo_skills_root,
-        "active-repo-skill",
-        "Repo-scoped active skill should load in full.",
+        configured_root,
+        "active-configured-skill",
+        "Configured active skill should load in full.",
         active_body,
     )
 
@@ -532,7 +526,7 @@ async def test_skill_summary_budget_does_not_truncate_active_repo_skill_body(
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
         input_text="Use the repo skill.",
-        active_skill_names=["active-repo-skill"],
+        active_skill_names=["active-configured-skill"],
     )
 
     messages = await AgentContextAssembler(db_session).provider_messages(

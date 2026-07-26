@@ -168,9 +168,18 @@ ports directly to untrusted networks.
 
 ## Agent Shell Isolation
 
-The OS-level bash sandbox for AgentCore is disabled by default. When enabled it
-is fail-closed by default, with network access and unsandboxed opt-out disabled.
-Docker deployments may require host user-namespace and bubblewrap support.
+The OS-level bash sandbox for AgentCore is required and fail-closed, with network
+access disabled by default and no per-command unsandboxed opt-out. Docker
+deployments may require host user-namespace and bubblewrap support.
+
+Structured local file tools and all local writes are capability-based. The
+active project is read-write; reference/database roots are read-only; and
+administrators may declare extra read-write roots with
+`AGENT_FILESYSTEM_ROOTS`. Container deployments must mount those paths at the
+same absolute paths. Bubblewrap also limits shell reads to mounted capabilities.
+Native macOS Seatbelt retains host-user reads for runtime compatibility while
+explicitly denying BioinfoFlow product source, internal state databases, and the
+Docker socket. Those protected resources are never approvable.
 
 The sandbox and approval policy are separate controls:
 
@@ -179,10 +188,10 @@ The sandbox and approval policy are separate controls:
 - SSH commands are constrained by the remote Unix account, sudo/ACL policy,
   scheduler policy, and server configuration, not by the local sandbox
 
-"Full access" (`bypass`) skips all risk prompts for the selected target. It
-auto-approves elevated actions, protected-resource writes, indirect command
-forms, and sandbox opt-out requests, while preserving their risk audit data. It
-does not itself disable an active local sandbox or bypass remote account
+"Full access" (`bypass`) skips risk prompts for the selected target. It may
+auto-approve elevated actions and indirect command forms while preserving their
+risk audit data. It cannot disable the local sandbox, authorize protected local
+resources, or bypass remote account
 authority; an opt-out request can only succeed when server configuration allows
 unsandboxed execution.
 High-confidence matches for catastrophic operations, including recognized root

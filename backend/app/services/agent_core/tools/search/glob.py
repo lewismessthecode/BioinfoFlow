@@ -3,8 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.config import settings
-from app.services.agent_core.sandbox import FilesystemPolicy
+from app.services.agent_core.sandbox import local_boundary_from_tool_context
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.utils.exceptions import BadRequestError
 from app.utils.exceptions import PermissionDeniedError
@@ -52,13 +51,15 @@ class GlobTool:
     )
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
-        del context
+        boundary = await local_boundary_from_tool_context(context)
         pattern = input.get("pattern")
         if not isinstance(pattern, str) or not pattern:
             raise BadRequestError("pattern must be a non-empty string")
         _require_relative_glob_pattern(pattern)
-        policy = FilesystemPolicy()
-        base = policy.require_allowed_dir(input.get("path") or str(settings.repo_root))
+        policy = boundary.policy
+        base = policy.require_allowed_dir(
+            input.get("path") or str(boundary.working_directory)
+        )
         max_results = min(int(input.get("max_results") or 200), _MAX_RESULTS_CAP)
 
         paths: list[str] = []

@@ -6,8 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from app.config import settings
-from app.services.agent_core.sandbox import FilesystemPolicy
+from app.services.agent_core.sandbox import FilesystemPolicy, local_boundary_from_tool_context
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.utils.exceptions import BadRequestError
 from app.utils.exceptions import PermissionDeniedError
@@ -59,11 +58,13 @@ class GrepTool:
     )
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
-        del context
+        boundary = await local_boundary_from_tool_context(context)
         pattern = input.get("pattern")
         if not isinstance(pattern, str) or not pattern:
             raise BadRequestError("pattern must be a non-empty string")
-        base = FilesystemPolicy().require_allowed_dir(input.get("path") or str(settings.repo_root))
+        base = boundary.policy.require_allowed_dir(
+            input.get("path") or str(boundary.working_directory)
+        )
         glob = input.get("glob")
         if glob is not None:
             if not isinstance(glob, str) or not glob:
@@ -76,7 +77,14 @@ class GrepTool:
         if shutil.which("rg"):
             matches = await self._ripgrep(pattern, base, glob, case_insensitive, max_results)
         else:
-            matches = self._python_grep(pattern, base, glob, case_insensitive, max_results)
+            matches = self._python_grep(
+                pattern,
+                base,
+                glob,
+                case_insensitive,
+                max_results,
+                policy=boundary.policy,
+            )
         truncated = len(matches) > max_results
         return {
             "matches": matches[:max_results],
@@ -85,7 +93,12 @@ class GrepTool:
         }
 
     async def _ripgrep(
-        self, pattern: str, base: Path, glob: str | None, case_insensitive: bool, max_results: int
+        self,
+        pattern: str,
+        base: Path,
+        glob: str | None,
+        case_insensitive: bool,
+        max_results: int,
     ) -> list[dict[str, Any]]:
         argv = ["rg", "--no-heading", "--line-number", "--color=never", "--max-count", str(max_results)]
         if case_insensitive:
@@ -116,7 +129,14 @@ class GrepTool:
         return matches
 
     def _python_grep(
-        self, pattern: str, base: Path, glob: str | None, case_insensitive: bool, max_results: int
+        self,
+        pattern: str,
+        base: Path,
+        glob: str | None,
+        case_insensitive: bool,
+        max_results: int,
+        *,
+        policy: FilesystemPolicy,
     ) -> list[dict[str, Any]]:
         flags = re.IGNORECASE if case_insensitive else 0
         try:
@@ -125,7 +145,6 @@ class GrepTool:
             raise BadRequestError(f"invalid regex: {exc}") from exc
         matches: list[dict[str, Any]] = []
         scanned = 0
-        policy = FilesystemPolicy()
         for file_path in sorted(base.rglob(glob or "*")):
             if scanned >= _SCAN_FILE_CAP or len(matches) > max_results:
                 break

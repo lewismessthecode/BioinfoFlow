@@ -4,7 +4,6 @@ import asyncio
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 import json
-import sys
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -197,7 +196,7 @@ def test_agent_max_iterations_defaults_to_90(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_runtime_approval_resume_uses_remaining_turn_budget(
-    db_session, monkeypatch
+    db_session, monkeypatch, run_shell_without_platform_sandbox
 ):
     model_calls = 0
 
@@ -228,8 +227,8 @@ async def test_runtime_approval_resume_uses_remaining_turn_budget(
                 name = "bash"
                 arguments = json.dumps(
                     {
-                        "command": f"{sys.executable} -c 'print(\"approved\")'",
-                        "cwd": str(settings.bioinfoflow_home),
+                        "command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" approved'",
+                        "cwd": str(settings.deliveries_root),
                     }
                 )
             else:
@@ -991,8 +990,8 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
                 name = "bash"
                 arguments = json.dumps(
                     {
-                        "command": f"{sys.executable} -c 'print(\"recover\")'",
-                        "cwd": str(settings.bioinfoflow_home),
+                        "command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" recover'",
+                        "cwd": str(settings.deliveries_root),
                     }
                 )
 

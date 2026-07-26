@@ -824,6 +824,7 @@ class AgentLoopController:
             user_id=turn.user_id,
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
+            project_id=str(agent_session.project_id) if agent_session.project_id else None,
             ownership_guard=self._ensure_owned,
             expected_owner_token=self._execution_owner_token,
         )
@@ -1284,6 +1285,7 @@ class AgentLoopController:
             user_id=turn.user_id,
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
+            project_id=str(agent_session.project_id) if agent_session.project_id else None,
             ownership_guard=self._ensure_owned,
             expected_owner_token=self._execution_owner_token,
         )
@@ -1612,6 +1614,7 @@ class AgentLoopController:
                     user_id=turn.user_id,
                     session_id=str(agent_session.id),
                     turn_id=str(turn.id),
+                    project_id=str(agent_session.project_id) if agent_session.project_id else None,
                     ownership_guard=self._ensure_owned,
                     expected_owner_token=self._execution_owner_token,
                 ),

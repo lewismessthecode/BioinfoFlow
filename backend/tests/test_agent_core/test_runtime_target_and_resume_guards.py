@@ -360,7 +360,7 @@ async def test_active_turn_refreshes_target_before_next_tool_and_model_request(
                 tool_name="bash",
                 arguments={
                     "command": f"{sys.executable} -c 'print(\"stale-local\")'",
-                    "cwd": str(settings.bioinfoflow_home),
+                    "cwd": str(settings.deliveries_root),
                 },
             )
         return _completion()
@@ -442,7 +442,7 @@ async def test_resume_completed_action_does_not_skip_current_pending_observation
                 tool_name="bash",
                 arguments={
                     "command": f"{sys.executable} -c 'print(\"pending\")'",
-                    "cwd": str(settings.bioinfoflow_home),
+                    "cwd": str(settings.deliveries_root),
                 },
             )
         return _completion()

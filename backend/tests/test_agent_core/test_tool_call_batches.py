@@ -358,6 +358,7 @@ async def test_tool_batch_parallelizes_only_adjacent_safe_calls(
 async def test_three_approvals_continue_only_after_entire_batch_is_terminal(
     db_session,
     monkeypatch,
+    run_shell_without_platform_sandbox,
 ):
     calls = 0
 
@@ -909,7 +910,11 @@ async def test_mixed_reads_stop_at_approval_before_model_continues(
         return _response(
             tool_calls=[
                 ("read-1", "projects__list", {}),
-                ("approval", "bash", {"command": "python -c 'print(1)'"}),
+                (
+                    "approval",
+                    "bash",
+                    {"command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" 1'"},
+                ),
                 ("read-2", "projects__list", {}),
             ]
         )
@@ -1237,7 +1242,7 @@ async def test_adjacent_reads_overlap_before_approval_barrier(db_session, monkey
                 (
                     "approval-between",
                     "bash",
-                    {"command": "python -c 'print(1)'"},
+                    {"command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" 1'"},
                 ),
             ]
         )
@@ -1275,6 +1280,7 @@ async def test_adjacent_reads_overlap_before_approval_barrier(db_session, monkey
 async def test_approval_barrier_defers_later_safe_calls_until_resume(
     db_session,
     monkeypatch,
+    run_shell_without_platform_sandbox,
 ):
     read_calls = 0
 
@@ -1304,7 +1310,9 @@ async def test_approval_barrier_defers_later_safe_calls_until_resume(
                     (
                         "approval-barrier",
                         "bash",
-                        {"command": "python -c 'print(1)'"},
+                        {
+                            "command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" 1'"
+                        },
                     ),
                     ("read-after-approval", "projects__list", {}),
                 ]
