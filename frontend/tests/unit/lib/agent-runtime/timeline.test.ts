@@ -36,6 +36,43 @@ function event(
 }
 
 describe("active turn steering timeline", () => {
+  it("terminalizes an unfinished tool call when the turn fails", () => {
+    const [entry] = buildAgentRuntimeTimeline(
+      [
+        {
+          ...turn,
+          status: "failed",
+          termination_reason: "model_failed",
+          error_code: "model_request_failed",
+          error_message: "The model provider request timed out.",
+        },
+      ],
+      [
+        event("tool-started", 2, "assistant.tool_call.started", {
+          call_id: "call-1",
+          name: "files__apply_patch",
+          status: "building",
+          index: 0,
+        }),
+        event("turn-failed", 3, "turn.failed", {
+          termination_reason: "model_failed",
+          error_code: "model_request_failed",
+          error_message: "The model provider request timed out.",
+        }),
+      ],
+    )
+
+    expect(entry.activities).toEqual([
+      expect.objectContaining({
+        name: "files__apply_patch",
+        status: "failed",
+      }),
+    ])
+    expect(entry.activityGroups).toEqual([
+      expect.objectContaining({ status: "failed" }),
+    ])
+  })
+
   it("merges received and delivered steer events into one user segment", () => {
     const [entry] = buildAgentRuntimeTimeline(
       [turn],
