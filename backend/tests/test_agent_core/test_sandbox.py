@@ -179,7 +179,7 @@ def test_filesystem_policy_distinguishes_read_and_write_roots(tmp_path):
     )
 
     assert policy.require_allowed_path(reference) == reference.resolve()
-    with pytest.raises(PermissionDeniedError, match="not writable"):
+    with pytest.raises(PermissionDeniedError, match="outside allowed roots"):
         policy.require_parent_dir(read_root / "new.fa")
 
 

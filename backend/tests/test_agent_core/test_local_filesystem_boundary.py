@@ -80,9 +80,9 @@ async def test_local_boundary_never_exposes_product_source_or_internal_state(
         SimpleNamespace(project_id=None, workspace_id=DEFAULT_WORKSPACE_ID)
     )
 
-    with pytest.raises(PermissionDeniedError, match="protected"):
+    with pytest.raises(PermissionDeniedError, match="outside allowed roots"):
         boundary.policy.require_allowed_path(source_file)
-    with pytest.raises(PermissionDeniedError, match="protected"):
+    with pytest.raises(PermissionDeniedError, match="outside allowed roots"):
         boundary.policy.require_allowed_path(state_file)
     assert tmp_path.resolve() not in boundary.read_roots
 

@@ -86,14 +86,6 @@ class FilesystemPolicy:
         roots: list[Path],
     ) -> Path:
         selected = default if path is None or (isinstance(path, str) and not path.strip()) else path
-        raw_selected = _path_text(selected) if selected is not None else ""
-        if os.path.isabs(os.path.normpath(raw_selected)):
-            preflight = Path(os.path.normpath(raw_selected)).expanduser().resolve(strict=False)
-            self._require_not_protected(preflight)
-            if roots is self.write_roots and not any(
-                _is_relative_to(preflight, root) for root in self.write_roots
-            ) and any(_is_relative_to(preflight, root) for root in self.read_roots):
-                raise PermissionDeniedError(f"Path is readable but not writable: {preflight}")
         candidate = self._lexically_allowed_candidate(
             selected,
             roots=roots,
