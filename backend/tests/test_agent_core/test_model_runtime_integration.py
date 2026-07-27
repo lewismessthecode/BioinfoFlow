@@ -612,6 +612,31 @@ async def test_normal_turn_runs_through_injected_model_gateway(db_session) -> No
 
 
 @pytest.mark.asyncio
+async def test_model_invocation_omits_skill_loader_when_registry_is_empty(
+    db_session,
+) -> None:
+    _session, turn = await _turn(db_session)
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="No skills are configured."),
+            CompletionMetadata(response_id="chatcmpl-no-skills", finish_reason="stop"),
+        )
+    )
+
+    result = await AgentLoopController(db_session, model_gateway=gateway).run_turn(
+        turn_id=str(turn.id),
+        target=_target(),
+        capabilities=RuntimeCapabilities(supports_tools=True),
+        strategy=RuntimeStrategy(allow_tools=True),
+    )
+
+    assert result.termination_reason == "assistant_final"
+    assert "skills__load" not in {
+        tool.name for tool in gateway.invocations[0].tools
+    }
+
+
+@pytest.mark.asyncio
 async def test_text_only_turn_continues_after_streamed_steer(db_session) -> None:
     session, turn = await _turn(db_session, input_text="Draft an answer.")
     session_id = str(session.id)

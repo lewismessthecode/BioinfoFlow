@@ -13,6 +13,7 @@ from app.services.agent_core.skills import AgentSkillRegistry
 from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.skills import ListPluginsTool, ListSkillsTool, LoadSkillTool
 from app.services.agent_core.tools.specs import AgentToolContext
+from app.utils.exceptions import NotFoundError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -405,3 +406,59 @@ async def test_skill_tools_use_configured_registry_with_debug_payloads(
     assert loaded["skill"]["source"] == "configured"
     assert loaded["skill"]["root"] == str(configured_root.resolve())
     assert loaded["skill"]["body"] == "# Configured\nThis body loses precedence."
+
+
+@pytest.mark.asyncio
+async def test_load_skill_missing_name_lists_available_skills_sorted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("zeta-qc", "alpha-qc"):
+        _write_skill(
+            tmp_path / "skills",
+            name,
+            f"name: {name}\ndescription: {name} guidance.",
+            f"# {name}",
+        )
+    from app.services.agent_core.tools.skills import resources
+
+    monkeypatch.setattr(resources, "_skills_root", lambda: tmp_path / "skills")
+    context = AgentToolContext(
+        db=None,  # type: ignore[arg-type]
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        session_id="session-1",
+        turn_id="turn-1",
+    )
+
+    with pytest.raises(NotFoundError) as error:
+        await LoadSkillTool().run({"name": "missing-qc"}, context)
+
+    assert error.value.message == (
+        "Agent skill not found: missing-qc. "
+        "Currently available agent skills: alpha-qc, zeta-qc."
+    )
+
+
+@pytest.mark.asyncio
+async def test_load_skill_missing_name_reports_empty_registry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.agent_core.tools.skills import resources
+
+    monkeypatch.setattr(resources, "_skills_root", lambda: tmp_path / "skills")
+    context = AgentToolContext(
+        db=None,  # type: ignore[arg-type]
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        session_id="session-1",
+        turn_id="turn-1",
+    )
+
+    with pytest.raises(NotFoundError) as error:
+        await LoadSkillTool().run({"name": "missing-qc"}, context)
+
+    assert error.value.message == (
+        "Agent skill not found: missing-qc. No agent skills are currently available."
+    )
