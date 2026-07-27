@@ -8,6 +8,17 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Shiki emits both palettes as CSS variables; select the active app theme. */
+.markdown-code-highlight .shiki,
+.markdown-code-highlight .shiki span {
+  color: var(--shiki-light) !important;
+}
+
+.dark .markdown-code-highlight .shiki,
+.dark .markdown-code-highlight .shiki span {
+  color: var(--shiki-dark) !important;
+}
+
 /* Bioinfoflow - Notion-neutral app workspace */
 /* Light Mode - white shell with low-contrast tool chrome */
 :root {

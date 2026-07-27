@@ -175,6 +175,7 @@ describe("MarkdownRenderer link sanitization", () => {
     )
 
     const codeBlock = container.querySelector("[data-testid='markdown-code-block']")
+    expect(codeBlock).toHaveClass("markdown-code-highlight")
     expect(codeBlock?.className).toContain("min-w-0")
     expect(codeBlock?.className).toContain("max-w-full")
     expect(codeBlock?.className).toContain("overflow-hidden")
