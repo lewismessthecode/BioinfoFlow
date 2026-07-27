@@ -33,7 +33,7 @@ from app.services.agent_core.core.runtime_strategy import (
     capabilities_from_model,
     resolve_runtime_strategy,
 )
-from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.events import AgentEventType, safe_agent_error_message
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.model_selection import (
@@ -1073,6 +1073,11 @@ class AgentCoreRuntime:
         error_code: str,
         ownership: TurnOwnership | None = None,
     ):
+        error_message = safe_agent_error_message(
+            error_code,
+            error_message,
+            allow_non_model_detail=True,
+        )
         completed_at = datetime.now(timezone.utc)
         values = {
             "status": AgentTurnStatus.FAILED,

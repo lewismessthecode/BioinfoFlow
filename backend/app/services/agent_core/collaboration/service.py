@@ -36,7 +36,7 @@ from app.services.agent_core.collaboration.contracts import (
     SpawnAgentResult,
 )
 from app.services.agent_core.collaboration.model_preflight import AgentModelPreflight
-from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.events import AgentEventType, safe_agent_error_message
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.ownership import TurnOwnershipLostError
 from app.services.agent_core.runner import enqueue_turn_run
@@ -1283,21 +1283,7 @@ def _external_status(turn) -> str:
 def _safe_agent_error(turn) -> str | None:
     if turn is None or _external_status(turn) != "errored":
         return None
-    error_code = str(turn.error_code or "").strip()
-    raw = str(turn.error_message or "").lower()
-    if error_code == "model_request_failed":
-        if "authentication" in raw or "unauthorized" in raw or "401" in raw:
-            return "Model provider authentication failed."
-        if "rate" in raw or "429" in raw:
-            return "Model provider rate limit was reached."
-        return "The model request failed."
-    stable_messages = {
-        "model_selection_missing": "No usable model is configured for this agent.",
-        "session_not_found": "The agent session could not be loaded.",
-        "execution_claim_lost": "The agent execution lease was replaced.",
-        "iteration_limit": "The agent reached its iteration limit.",
-    }
-    return stable_messages.get(error_code, "Agent failed before completing the task.")
+    return safe_agent_error_message(turn.error_code, turn.error_message)
 
 
 def _persist_safe_terminal_error(turn) -> None:

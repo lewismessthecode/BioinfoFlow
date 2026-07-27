@@ -7,24 +7,27 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from sqlalchemy import select
 
 import app.api.v1.agent as agent_api_module
 from app.api.deps import get_current_user
 from app.auth.session import AuthUser
 from app.config import settings
-from app.models.agent_core import AgentEvent, AgentTurn
+from app.models.agent_core import AgentEvent, AgentTurn, AgentTurnStatus
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.models.project import Project
 from app.models.remote_connection import RemoteConnection
 from app.path_layout import project_home, skills_root
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.actions import AgentActionService
+from app.services.agent_core.collaboration.service import AgentCollaborationService
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.executor import AgentToolExecutor
 from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
 from app.services.model_runtime.gateway import ModelGateway
+from app.services.model_runtime.errors import ModelError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -1028,6 +1031,164 @@ async def test_public_state_and_stream_project_internal_agent_lifecycle_safely(
     assert "event: agent.lifecycle" in stream_lines
     assert not any("sk-secret" in line for line in stream_lines)
     assert not any("authorization" in line for line in stream_lines)
+
+
+@pytest.mark.asyncio
+async def test_child_model_failure_is_sanitized_in_storage_ledger_replay_and_sse(
+    async_client,
+    db_session,
+    monkeypatch,
+    caplog,
+):
+    secret = "sentinel-child-provider-secret"
+    provider = LlmProvider(
+        name="Child failure provider",
+        kind="openai_compatible",
+        wire_protocol="chat_completions",
+        base_url="https://models.example/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    db_session.add(
+        LlmProviderCredential(
+            provider_id=str(provider.id),
+            source="stored",
+            encrypted_secret=encrypt_secret("runtime-key"),
+            masked_hint="ru...ey",
+            updated_by="dev",
+        )
+    )
+    model = LlmModel(
+        provider_id=str(provider.id),
+        model_id="child-failure-model",
+        display_name="Child failure model",
+        supports_tools=True,
+        supports_streaming=True,
+    )
+    db_session.add(model)
+    await db_session.commit()
+    await db_session.refresh(model)
+
+    core = AgentCoreService(db_session)
+    root = await core.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        title="Failure projection root",
+    )
+    parent_turn = AgentTurn(
+        session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Delegate a failing child.",
+        status=AgentTurnStatus.RUNNING,
+        model_profile_snapshot={
+            "resolved_model_id": str(model.id),
+            "resolved_model_selection": {
+                "provider": "openai_compatible",
+                "model": model.model_id,
+            },
+        },
+    )
+    db_session.add(parent_turn)
+    await db_session.flush()
+    root.active_turn_id = str(parent_turn.id)
+    await db_session.commit()
+    root_id = str(root.id)
+    parent_turn_id = str(parent_turn.id)
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    monkeypatch.setattr(settings, "agent_retry_max_attempts", 1)
+
+    spawned = await AgentCollaborationService(db_session).spawn_agent(
+        parent_session_id=root_id,
+        parent_turn_id=parent_turn_id,
+        task_name="failing_child",
+        message="Fail without leaking provider details.",
+        fork_turns="none",
+    )
+
+    class SecretFailingGateway:
+        async def invoke(self, _invocation):
+            if False:
+                yield None
+            raise ModelError(
+                category="authentication",
+                message=f"HTTP 401 bearer {secret}",
+                http_status=401,
+                retryable=False,
+            )
+
+    failed = await AgentCoreRuntime(
+        db_session,
+        model_gateway=SecretFailingGateway(),
+    ).run_turn(spawned.child_turn_id)
+    await db_session.refresh(failed)
+    internal_events = list(
+        (
+            await db_session.execute(
+                select(AgentEvent).where(
+                    AgentEvent.session_id == spawned.child_session_id
+                )
+            )
+        ).scalars()
+    )
+    failed_event = next(event for event in internal_events if event.type == "turn.failed")
+
+    assert failed.error_code == "model_request_failed"
+    assert failed.error_message == "Model provider authentication failed."
+    assert failed_event.payload["error_code"] == "model_request_failed"
+    assert failed_event.payload["error_message"] == (
+        "Model provider authentication failed."
+    )
+    assert secret not in repr([event.payload for event in internal_events])
+    assert secret not in caplog.text
+
+    parent_state = await async_client.get(
+        f"/api/v1/agent/sessions/{root_id}/state?event_view=public"
+    )
+    child_state = await async_client.get(
+        f"/api/v1/agent/sessions/{spawned.child_session_id}/state?event_view=public"
+    )
+    assert parent_state.status_code == 200
+    assert child_state.status_code == 200
+    parent_lifecycle = next(
+        event
+        for event in parent_state.json()["data"]["events"]
+        if event["type"] == "agent.lifecycle"
+        and event["payload"].get("status") == "errored"
+    )
+    child_failure = next(
+        event
+        for event in child_state.json()["data"]["events"]
+        if event["type"] == "turn.lifecycle"
+        and event["payload"].get("status") == "failed"
+    )
+    assert parent_lifecycle["payload"]["error_message"] == (
+        "Model provider authentication failed."
+    )
+    assert child_failure["payload"]["error_message"] == (
+        "Model provider authentication failed."
+    )
+
+    for session_id in (root_id, spawned.child_session_id):
+        stream_lines: list[str] = []
+        async with async_client.stream(
+            "GET",
+            f"/api/v1/agent/sessions/{session_id}/stream"
+            "?after_seq=0&follow=false&event_view=public",
+        ) as stream:
+            assert stream.status_code == 200
+            async for line in stream.aiter_lines():
+                stream_lines.append(line)
+        assert not any(secret in line for line in stream_lines)
+        assert any("Model provider authentication failed." in line for line in stream_lines)
 
 
 @pytest.mark.asyncio

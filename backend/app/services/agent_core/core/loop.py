@@ -43,7 +43,11 @@ from app.services.agent_core.core.runtime_strategy import (
     RuntimeStrategy,
 )
 from app.services.agent_core.core.types import LoopResult
-from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.events import (
+    AgentEventType,
+    safe_agent_error_message,
+    safe_model_error_payload,
+)
 from app.services.agent_core.execution_target import (
     ExecutionTargetChangedError,
     execution_target_from_session,
@@ -367,15 +371,25 @@ class AgentLoopController:
                         await self.tool_batches.fail_continuation(
                             active_continuation_batch_id
                         )
-                model_error = (
+                raw_model_error = (
                     exc.to_public_dict() if isinstance(exc, ModelError) else None
+                )
+                error_message = safe_agent_error_message(
+                    "model_request_failed",
+                    str(exc),
+                    model_error=raw_model_error,
+                )
+                model_error = safe_model_error_payload(
+                    raw_model_error,
+                    error_code="model_request_failed",
+                    error_message=error_message,
                 )
                 return LoopResult(
                     termination_reason="model_failed",
                     final_text=None,
                     iteration_count=budget.used_iterations,
                     error_code="model_request_failed",
-                    error_message=str(exc),
+                    error_message=error_message,
                     token_usage=token_usage,
                     continuation_batch_id=released_batch_id,
                     model_replay_safe=(
@@ -2028,13 +2042,26 @@ class AgentLoopController:
             exc: Exception,
             delay_seconds: float,
         ) -> None:
+            raw_model_error = (
+                exc.to_public_dict() if isinstance(exc, ModelError) else None
+            )
+            error_message = safe_agent_error_message(
+                "model_request_failed",
+                str(exc),
+                model_error=raw_model_error,
+            )
             payload: dict[str, Any] = {
                 "next_attempt": next_attempt,
                 "delay_seconds": delay_seconds,
-                "error": str(exc),
+                "error": error_message,
             }
-            if isinstance(exc, ModelError):
-                payload["model_error"] = exc.to_public_dict()
+            model_error = safe_model_error_payload(
+                raw_model_error,
+                error_code="model_request_failed",
+                error_message=error_message,
+            )
+            if model_error is not None:
+                payload["model_error"] = model_error
             await self.ledger.append(
                 session_id=str(turn.session_id),
                 turn_id=str(turn.id),
@@ -2133,6 +2160,22 @@ class AgentLoopController:
         max_iterations = int(
             persisted_budget.get("max_iterations") or _max_iterations()
         )
+        safe_error_message = result.error_message
+        safe_model_error = result.model_error
+        if status == AgentTurnStatus.FAILED and (
+            result.error_code or result.error_message
+        ):
+            safe_error_message = safe_agent_error_message(
+                result.error_code,
+                result.error_message,
+                model_error=result.model_error,
+                allow_non_model_detail=True,
+            )
+            safe_model_error = safe_model_error_payload(
+                result.model_error,
+                error_code=result.error_code,
+                error_message=safe_error_message,
+            )
         values = dict(
             status=status,
             accepts_steer=status
@@ -2151,7 +2194,7 @@ class AgentLoopController:
             },
             loop_state=loop_state,
             error_code=result.error_code,
-            error_message=result.error_message,
+            error_message=safe_error_message,
             claimed_at=None,
             lease_until=None,
             owner_token=None,
@@ -2189,11 +2232,11 @@ class AgentLoopController:
             payload = {"termination_reason": result.termination_reason}
         elif result.error_code or result.error_message:
             payload = {
-                "error_message": result.error_message,
+                "error_message": safe_error_message,
                 "error_code": result.error_code,
             }
-            if result.model_error is not None:
-                payload["model_error"] = result.model_error
+            if safe_model_error is not None:
+                payload["model_error"] = safe_model_error
         else:
             payload = {"termination_reason": result.termination_reason}
         if event_type is not None:
@@ -2226,10 +2269,10 @@ class AgentLoopController:
             "iteration_count": result.iteration_count,
             "error_code": result.error_code,
         }
-        if result.error_message:
-            log_fields["error_message"] = truncate_log_value(result.error_message)
-        if result.model_error is not None:
-            log_fields["model_error"] = result.model_error
+        if safe_error_message:
+            log_fields["error_message"] = truncate_log_value(safe_error_message)
+        if safe_model_error is not None:
+            log_fields["model_error"] = safe_model_error
         logger.info("agent_core.turn.finished", **log_fields)
         agent_metrics.increment(f"turns.{result.termination_reason}")
         agent_metrics.observe("turns.iterations", float(result.iteration_count))
