@@ -382,6 +382,11 @@ class AgentContextAssembler:
             write_roots = ", ".join(str(root) for root in boundary.write_roots)
             lines.append(f"- Readable filesystem roots: {read_roots}")
             lines.append(f"- Writable filesystem roots: {write_roots}")
+            lines.append(
+                "BioinfoFlow product source is not part of this workspace. Do not "
+                "inspect it or invoke `bif`; use the exposed BioinfoFlow platform "
+                "tools."
+            )
         lines.append(f"- Workspace: {agent_session.workspace_id}")
         if not remote_target:
             lines.append(
