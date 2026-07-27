@@ -8,6 +8,11 @@ from pypinyin import Style, lazy_pinyin
 MAX_PROJECT_DIRECTORY_LENGTH = 100
 
 _NON_DIRECTORY_CHARACTER = re.compile(r"[^a-z0-9]+")
+_WINDOWS_RESERVED_DIRECTORY_NAMES = (
+    {"con", "prn", "aux", "nul"}
+    | {f"com{number}" for number in range(1, 10)}
+    | {f"lpt{number}" for number in range(1, 10)}
+)
 
 
 def normalize_project_directory_name(project_name: str) -> str:
@@ -20,6 +25,8 @@ def normalize_project_directory_name(project_name: str) -> str:
         .decode("ascii")
     )
     directory_name = _NON_DIRECTORY_CHARACTER.sub("-", ascii_value.lower()).strip("-")
+    if directory_name in _WINDOWS_RESERVED_DIRECTORY_NAMES:
+        directory_name = f"project-{directory_name}"
 
     return _truncate_directory_name(directory_name) or "project"
 
