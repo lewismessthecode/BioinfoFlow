@@ -783,28 +783,28 @@ describe("AgentTranscript", () => {
       events: [
         event("event-call-1", 1, "assistant.tool_call.completed", {
           call_id: "call-1",
-          name: "glob",
+          name: "workflows.list",
           status: "completed",
-          arguments: { pattern: "**/*.wdl" },
+          arguments: { search: "rna" },
           index: 0,
         }),
         event("event-call-2", 2, "assistant.tool_call.completed", {
           call_id: "call-2",
-          name: "files__read",
+          name: "workflows.source",
           status: "completed",
-          arguments: { path: "/app/workflow.wdl" },
+          arguments: { workflow_id: "workflow-1" },
           index: 1,
         }),
       ],
     })
 
     expect(screen.getByText("Read 2 sources")).toBeInTheDocument()
-    expect(screen.queryByText("glob")).not.toBeInTheDocument()
+    expect(screen.queryByText("workflows.list")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: /Read 2 sources/ }))
 
-    expect(screen.getByText("glob")).toBeInTheDocument()
-    expect(screen.getByText("files__read")).toBeInTheDocument()
+    expect(screen.getByText("workflows.list")).toBeInTheDocument()
+    expect(screen.getByText("workflows.source")).toBeInTheDocument()
     expect(screen.getAllByTestId("agent-tool-activity-row")).toHaveLength(2)
     expect(screen.queryByText("Arguments")).not.toBeInTheDocument()
 
@@ -815,7 +815,7 @@ describe("AgentTranscript", () => {
 
     expect(detailsButton).toHaveAttribute("aria-expanded", "true")
     expect(screen.getByText("Arguments")).toBeInTheDocument()
-    expect(screen.getAllByText(/workflow\.wdl/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/workflow-1/).length).toBeGreaterThan(0)
   })
 
   it("classifies workflow list and source lookups as reads, not workflow registration", () => {
@@ -866,12 +866,11 @@ describe("AgentTranscript", () => {
           arguments: { project_id: "project-1", workflow_id: "workflow-1" },
           index: 2,
         }),
-        event("event-image-build", 4, "assistant.tool_call.completed", {
-          call_id: "call-image-build",
-          name: "images.build",
-          status: "completed",
-          arguments: { dockerfile: "Dockerfile" },
-          index: 3,
+        event("event-docker-build", 4, "action.completed", {
+          action_id: "action-docker-build",
+          name: "bash",
+          input_preview: "docker build -t demo:latest .",
+          result: { exit_code: 0, stdout: "built" },
         }),
         event("event-mixed-verify", 5, "action.completed", {
           action_id: "action-mixed-verify",
@@ -917,11 +916,11 @@ describe("AgentTranscript", () => {
   it("compacts same-category tool calls inside one contiguous tool burst", () => {
     renderTranscript({
       events: [
-        event("event-glob-1", 1, "assistant.tool_call.completed", {
-          call_id: "call-glob-1",
-          name: "glob",
+        event("event-workflows-list", 1, "assistant.tool_call.completed", {
+          call_id: "call-workflows-list",
+          name: "workflows.list",
           status: "completed",
-          arguments: { pattern: "**/*.wdl" },
+          arguments: { search: "rna" },
           index: 0,
         }),
         event("event-bash-1", 2, "action.completed", {
@@ -943,11 +942,11 @@ describe("AgentTranscript", () => {
           input_preview: "docker run --rm minibwa:1.0 --help",
           result: { exit_code: 0, stdout: "usage" },
         }),
-        event("event-glob-2", 5, "assistant.tool_call.completed", {
-          call_id: "call-glob-2",
-          name: "glob",
+        event("event-workflows-get", 5, "assistant.tool_call.completed", {
+          call_id: "call-workflows-get",
+          name: "workflows.get",
           status: "completed",
-          arguments: { pattern: "**/*.json" },
+          arguments: { workflow_id: "workflow-2" },
           index: 2,
         }),
       ],
@@ -1199,9 +1198,9 @@ describe("AgentTranscript", () => {
         }),
         event("event-completed", 2, "assistant.tool_call.completed", {
           call_id: "call-1",
-          name: "glob",
+          name: "workflows.source",
           status: "completed",
-          arguments: { pattern: "**/*.wdl" },
+          arguments: { workflow_id: "workflow-1" },
           index: 0,
         }),
       ],
@@ -1210,7 +1209,7 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("Verified 1 check")).toBeInTheDocument()
     expect(screen.getByText("bash")).toBeInTheDocument()
     expect(screen.getByText("Read 1 sources")).toBeInTheDocument()
-    expect(screen.queryByText("glob")).not.toBeInTheDocument()
+    expect(screen.queryByText("workflows.source")).not.toBeInTheDocument()
   })
 
   it("keeps activity details collapsed until the user expands them", () => {
@@ -1219,9 +1218,9 @@ describe("AgentTranscript", () => {
         event("event-tool", 1, "assistant.tool_call.completed", {
           message_id: "message-1",
           call_id: "call-1",
-          name: "glob",
+          name: "workflows.source",
           status: "completed",
-          arguments: { pattern: "**/*.wdl" },
+          arguments: { workflow_id: "workflow-1" },
           index: 0,
         }),
       ],
@@ -1233,7 +1232,7 @@ describe("AgentTranscript", () => {
     fireEvent.click(screen.getByRole("button", { name: /Read 1 sources/ }))
 
     expect(screen.getByTestId("agent-tool-activity-row")).toBeInTheDocument()
-    expect(screen.getByText("glob")).toBeInTheDocument()
+    expect(screen.getByText("workflows.source")).toBeInTheDocument()
     expect(screen.queryByText("Arguments")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
@@ -1271,9 +1270,9 @@ describe("AgentTranscript", () => {
         event("event-tool", 2, "assistant.tool_call.completed", {
           message_id: "message-1",
           call_id: "call-1",
-          name: "glob",
+          name: "workflows.source",
           status: "completed",
-          arguments: { pattern: "**/*.wdl" },
+          arguments: { workflow_id: "workflow-1" },
           index: 0,
         }),
         event("event-text-2", 3, "assistant.text.completed", {
@@ -1306,9 +1305,9 @@ describe("AgentTranscript", () => {
         event("event-tool", 2, "assistant.tool_call.completed", {
           message_id: "message-1",
           call_id: "call-1",
-          name: "glob",
+          name: "workflows.source",
           status: "completed",
-          arguments: { pattern: "**/*.wdl" },
+          arguments: { workflow_id: "workflow-1" },
           index: 0,
         }),
         event("event-text-2", 3, "assistant.text.delta", {
@@ -1334,9 +1333,9 @@ describe("AgentTranscript", () => {
         event("event-tool", 2, "assistant.tool_call.completed", {
           message_id: "message-1",
           call_id: "call-1",
-          name: "glob",
+          name: "workflows.source",
           status: "completed",
-          arguments: { pattern: "**/*.wdl" },
+          arguments: { workflow_id: "workflow-1" },
           index: 0,
         }),
       ],
@@ -1381,7 +1380,7 @@ describe("AgentTranscript", () => {
         ...baseTurn,
         status: "failed",
         final_text: null,
-        error_message: "files__read failed",
+        error_message: "workflows.source failed",
       },
       events: [
         event("event-text", 1, "assistant.text.completed", {
@@ -1389,14 +1388,14 @@ describe("AgentTranscript", () => {
           content: "Now let me try another way.",
         }),
         event("event-failed", 2, "turn.failed", {
-          error_message: "files__read failed",
+          error_message: "workflows.source failed",
         }),
       ],
     })
 
     const followUp = screen.getByText("Now let me try another way.")
     expect(followUp.closest(".text-destructive")).toBeNull()
-    expect(screen.getByText("files__read failed")).toBeInTheDocument()
+    expect(screen.getByText("workflows.source failed")).toBeInTheDocument()
   })
 
   it("renders source-backed answers with inline citation previews and a sources drawer", () => {

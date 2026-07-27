@@ -343,7 +343,7 @@ const waitingDecisionEvent: AgentRuntimeEvent = {
   turn_id: "turn-1",
   seq: 1,
   type: "action.waiting_decision",
-  payload: { action_id: "action-1", name: "files__write" },
+  payload: { action_id: "action-1", name: "write" },
   visibility: "user",
   schema_version: 1,
   created_at: "2026-06-09T00:00:00Z",
@@ -1389,7 +1389,7 @@ describe("AgentWorkbench", () => {
           type: "action.completed",
           payload: {
             action_id: "a1",
-            name: "files__write",
+            name: "write",
             result: {
               path: "/workspace/project-1/workflow.nf",
               additions: 12,
