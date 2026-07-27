@@ -162,6 +162,25 @@ def test_unknown_executable_cannot_claim_introspection_semantics():
 @pytest.mark.parametrize(
     "command",
     [
+        "NODE_OPTIONS=--require=/tmp/pwn.js node --version",
+        "env NODE_OPTIONS=--require=/tmp/pwn.js node --version",
+        "PYTHONPATH=/tmp/pwn python3 --version",
+        "env PYTHONPATH=/tmp/pwn python3 --version",
+        "nohup node --version",
+        "exec node --version",
+        "/tmp/node --version",
+    ],
+)
+def test_introspection_proof_rejects_environment_wrappers_and_paths(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.level == "act_high"
+    assert assessment.effects == ["execute"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
         "python3 -c 'print(1)'",
         "python3 script.py",
     ],

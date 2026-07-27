@@ -12,7 +12,7 @@ import re
 import shlex
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from app.services.agent_core.permissions.risk import RiskAssessment, RiskLevel
@@ -127,20 +127,15 @@ def assess_command_risk(
     target: CommandTargetProfile,
     requested_connection_id: str | None = None,
 ) -> CommandRiskAssessment:
-    semantics = _analyze_command_semantics(command)
+    semantics = _analyze_command_semantics(command, target=target)
     level = semantics.level
-    nodes = _parse_command_nodes(_strip_heredoc_bodies(command))
     effects = list(semantics.effects)
-    sink_safety = _analyze_write_sink_safety(nodes)
-    execution_safety = _analyze_indirect_execution_safety(
-        nodes,
-        command=command,
-        target=target,
-    )
-    referenced_paths, path_analysis_confident = _referenced_paths(nodes, target=target)
-    protected_resources = _protected_resources(
-        [*referenced_paths, *sink_safety.protected_paths]
-    )
+    assert semantics.sink_safety is not None
+    assert semantics.execution_safety is not None
+    sink_safety = semantics.sink_safety
+    execution_safety = semantics.execution_safety
+    referenced_paths = list(semantics.referenced_paths)
+    protected_resources = list(semantics.protected_resources)
     reasons = [*semantics.reasons, f"command semantics classified as {level}"]
     hard_blocked = False
 
@@ -154,51 +149,11 @@ def assess_command_risk(
             "requested remote connection does not match the selected execution target"
         )
 
-    unknown_path = any(_path_is_unresolved(path) for path in referenced_paths)
-    outside_paths = [
-        path
-        for path in referenced_paths
-        if not _path_is_unresolved(path)
-        and not _path_within_roots(path, target.read_roots)
-    ]
-    if level in {"read", "act_low"} and (unknown_path or outside_paths):
-        level = "act_high"
-        if unknown_path:
-            reasons.append(
-                "a variable or home-relative path cannot be bounded statically"
-            )
-        if outside_paths:
-            reasons.append("a referenced path is outside the target read roots")
-    if (
-        target.kind == "remote_ssh"
-        and level in {"read", "act_low"}
-        and not path_analysis_confident
-    ):
-        level = "act_high"
-        reasons.append(
-            "remote read option/path semantics cannot be proven safe statically"
-        )
-
     if hard_blocked:
         reasons.append("the command matches a non-bypassable hard safety boundary")
         confidence: RiskConfidence = "high"
-    elif level == "critical":
-        reasons.append("the command requires explicit user approval")
-        confidence = "high"
-    elif target.kind == "remote_ssh":
-        reasons.append(
-            "remote commands are bounded by the remote SSH account and server policy, not the working directory"
-        )
-        confidence = "low" if unknown_path else "medium"
-    elif target.sandbox_strength == "enforced":
-        reasons.append("the local operating-system sandbox enforces the declared roots")
-        confidence = "low" if unknown_path else "high"
     else:
-        reasons.append("the local command has no enforced operating-system sandbox")
-        confidence = "low" if unknown_path else "medium"
-
-    if sink_safety.low_confidence:
-        confidence = "low"
+        confidence = semantics.confidence
 
     protected_write = bool(sink_safety.protected_paths)
     if protected_write:
@@ -432,6 +387,11 @@ class _CommandSemantics:
     confidence: RiskConfidence
     reasons: tuple[str, ...] = ()
     hardline_facts: tuple[str, ...] = ()
+    referenced_paths: tuple[str, ...] = ()
+    path_analysis_confident: bool = True
+    protected_resources: tuple[dict[str, str], ...] = ()
+    sink_safety: _WriteSinkSafety | None = None
+    execution_safety: _IndirectExecutionSafety | None = None
 
 
 def classify_command_level(command: str) -> RiskLevel:
@@ -439,8 +399,89 @@ def classify_command_level(command: str) -> RiskLevel:
     return _analyze_command_semantics(command).level
 
 
-def _analyze_command_semantics(command: str) -> _CommandSemantics:
-    """Derive effects first, then reduce them to one semantic risk floor."""
+def _analyze_command_semantics(
+    command: str,
+    *,
+    target: CommandTargetProfile | None = None,
+) -> _CommandSemantics:
+    """Produce the single semantic input consumed by command assessment."""
+    semantics = _analyze_command_grammar(command)
+    if target is None:
+        return semantics
+
+    nodes = _parse_command_nodes(_strip_heredoc_bodies(command))
+    sink_safety = _analyze_write_sink_safety(nodes)
+    execution_safety = _analyze_indirect_execution_safety(
+        nodes,
+        command=command,
+        target=target,
+    )
+    referenced_paths, path_analysis_confident = _referenced_paths(
+        nodes,
+        target=target,
+    )
+    protected_resources = _protected_resources(
+        [*referenced_paths, *sink_safety.protected_paths]
+    )
+    level = semantics.level
+    reasons = list(semantics.reasons)
+    unknown_path = any(_path_is_unresolved(path) for path in referenced_paths)
+    outside_paths = [
+        path
+        for path in referenced_paths
+        if not _path_is_unresolved(path)
+        and not _path_within_roots(path, target.read_roots)
+    ]
+    if level in {"read", "act_low"} and (unknown_path or outside_paths):
+        level = "act_high"
+        if unknown_path:
+            reasons.append(
+                "a variable or home-relative path cannot be bounded statically"
+            )
+        if outside_paths:
+            reasons.append("a referenced path is outside the target read roots")
+    if (
+        target.kind == "remote_ssh"
+        and level in {"read", "act_low"}
+        and not path_analysis_confident
+    ):
+        level = "act_high"
+        reasons.append(
+            "remote read option/path semantics cannot be proven safe statically"
+        )
+
+    if level == "critical":
+        confidence: RiskConfidence = "high"
+        reasons.append("the command requires explicit user approval")
+    elif target.kind == "remote_ssh":
+        confidence = "low" if unknown_path else "medium"
+        reasons.append(
+            "remote commands are bounded by the remote SSH account and server policy, not the working directory"
+        )
+    elif target.sandbox_strength == "enforced":
+        confidence = "low" if unknown_path else "high"
+        reasons.append("the local operating-system sandbox enforces the declared roots")
+    else:
+        confidence = "low" if unknown_path else "medium"
+        reasons.append("the local command has no enforced operating-system sandbox")
+    if sink_safety.low_confidence:
+        confidence = "low"
+
+    return replace(
+        semantics,
+        level=level,
+        confidence=confidence,
+        reasons=tuple(_dedupe(reasons)),
+        referenced_paths=tuple(referenced_paths),
+        path_analysis_confident=path_analysis_confident,
+        protected_resources=tuple(protected_resources),
+        sink_safety=sink_safety,
+        execution_safety=execution_safety,
+    )
+
+
+def _analyze_command_grammar(command: str) -> _CommandSemantics:
+    """Adapt the established shell grammar into immutable semantics."""
     text = (command or "").strip()
     if not text:
         return _CommandSemantics(
@@ -553,15 +594,15 @@ def _inspect_node(
     *,
     introspection_proven: bool = False,
 ) -> _NodeSemantics:
-    level = _classify_node(node)
-    effects = tuple(_node_effects(node))
-    if introspection_proven and level != "critical":
+    if introspection_proven:
         return _NodeSemantics(
             level="act_low",
             effects=("read",),
             confidence="high",
             reasons=("trusted executable requested static version or help output",),
         )
+    level = _classify_node(node)
+    effects = tuple(_node_effects(node))
     return _NodeSemantics(
         level=level,
         effects=effects,
@@ -584,15 +625,16 @@ def _is_proven_introspection_command(
     raw_tokens = list(nodes[0].tokens)
     if any(token and set(token) <= {"<", ">"} for token in raw_tokens):
         return False
-    unwrapped = _unwrap_command_details(_strip_shell_control_tokens(raw_tokens))
-    if not unwrapped.tokens or unwrapped.elevated or not unwrapped.confident:
+    if not raw_tokens:
         return False
-    executable = _basename(unwrapped.tokens[0])
+    executable = raw_tokens[0]
+    if "/" in executable or _basename(executable) != executable:
+        return False
     family = _interpreter_family(executable)
     if family is None:
         return False
     allowed_flags = _TRUSTED_INTROSPECTION_FLAGS.get(family)
-    args = unwrapped.tokens[1:]
+    args = raw_tokens[1:]
     return bool(allowed_flags and args and all(arg in allowed_flags for arg in args))
 
 
