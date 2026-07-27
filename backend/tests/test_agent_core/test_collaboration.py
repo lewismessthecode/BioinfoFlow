@@ -1968,11 +1968,16 @@ async def _create_child_with_turn(
 @pytest.mark.asyncio
 async def test_send_message_to_idle_child_is_durable_without_starting_turn(
     db_session,
+    monkeypatch,
 ) -> None:
     await _seed_workspace(db_session)
     root, _ = await _create_parent_turn(db_session)
     child, prior_turn = await _create_child_with_turn(
         db_session, root=root, name="reader"
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.notify_collaboration_waiters",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("idle notifier unavailable")),
     )
     result = await AgentCollaborationService(db_session).send_message(
         caller_session_id=str(root.id),
@@ -1995,6 +2000,7 @@ async def test_send_message_to_idle_child_is_durable_without_starting_turn(
         if (message.message_metadata or {}).get("kind") == "inter_agent_message"
     ]
     assert result.delivery == "queued"
+    assert len(mailbox) == 1
     assert [parts_to_text(message.content_parts) for message in mailbox] == [
         "Extra context"
     ]
@@ -2010,6 +2016,7 @@ async def test_send_message_to_idle_child_is_durable_without_starting_turn(
         "task_name": "/root/reader",
         "delivery": "queued",
     }
+    assert len(events) == 1
 
 
 @pytest.mark.asyncio
@@ -2374,6 +2381,7 @@ async def test_followup_rejects_root_and_interrupt_rejects_root_or_self(
 @pytest.mark.asyncio
 async def test_interrupt_uses_terminal_result_as_the_only_lifecycle_authority(
     db_session,
+    monkeypatch,
 ) -> None:
     await _seed_workspace(db_session)
     root, _ = await _create_parent_turn(db_session)
@@ -2383,6 +2391,10 @@ async def test_interrupt_uses_terminal_result_as_the_only_lifecycle_authority(
         name="reader",
         status=AgentTurnStatus.RUNNING,
         slot=1,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.notify_collaboration_waiters",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("interrupt notifier unavailable")),
     )
     service = AgentCollaborationService(db_session)
 
@@ -2402,6 +2414,13 @@ async def test_interrupt_uses_terminal_result_as_the_only_lifecycle_authority(
     assert events[0].payload["child_session_id"] == str(child.id)
     assert events[0].payload["child_turn_id"] == str(child_turn.id)
     assert events[0].payload["status"] == "interrupted"
+    results = [
+        message
+        for message in await service.transcript.list_messages(str(root.id))
+        if (message.message_metadata or {}).get("collaboration_kind")
+        == "agent_result"
+    ]
+    assert len(results) == 1
 
 
 @pytest.mark.asyncio
@@ -2516,6 +2535,41 @@ async def test_terminal_child_publishes_safe_exactly_once_parent_result(
     assert payload["status"] == "errored"
     assert payload["error_message"] == "Model provider authentication failed."
     assert "secret" not in parts_to_text(results[0].content_parts)
+
+
+@pytest.mark.asyncio
+async def test_terminal_publication_notification_failure_keeps_result_once(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.COMPLETED,
+        slot=1,
+    )
+    child_turn.final_text = "README found"
+    await db_session.commit()
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.notify_collaboration_waiters",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("terminal notifier unavailable")),
+    )
+    service = AgentCollaborationService(db_session)
+
+    await service.publish_child_terminal(turn_id=str(child_turn.id))
+    await service.publish_child_terminal(turn_id=str(child_turn.id))
+
+    results = [
+        message
+        for message in await service.transcript.list_messages(str(root.id))
+        if (message.message_metadata or {}).get("collaboration_kind")
+        == "agent_result"
+    ]
+    assert len(results) == 1
+    assert (results[0].message_metadata or {})["agent_result"]["status"] == "completed"
 
 
 @pytest.mark.asyncio
