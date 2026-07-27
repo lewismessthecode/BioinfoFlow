@@ -179,9 +179,10 @@ def test_bubblewrap_is_unavailable_when_binary_is_missing(monkeypatch):
 def test_bubblewrap_availability_requires_successful_user_namespace_probe(
     monkeypatch, returncode, expected
 ):
+    executable = f"/usr/bin/bwrap-exit-{returncode}"
     monkeypatch.setattr(
         "app.services.agent_core.sandbox.process_sandbox.shutil.which",
-        lambda _name: "/usr/bin/bwrap",
+        lambda _name: executable,
     )
     calls = []
 
@@ -197,7 +198,7 @@ def test_bubblewrap_availability_requires_successful_user_namespace_probe(
     assert calls == [
         (
             [
-                "/usr/bin/bwrap",
+                executable,
                 "--unshare-user",
                 "--uid",
                 "0",
@@ -222,7 +223,7 @@ def test_bubblewrap_availability_requires_successful_user_namespace_probe(
 def test_bubblewrap_availability_treats_probe_timeout_as_unavailable(monkeypatch):
     monkeypatch.setattr(
         "app.services.agent_core.sandbox.process_sandbox.shutil.which",
-        lambda _name: "/usr/bin/bwrap",
+        lambda _name: "/usr/bin/bwrap-timeout",
     )
 
     def timed_out(*_args, **_kwargs):
@@ -235,10 +236,10 @@ def test_bubblewrap_availability_treats_probe_timeout_as_unavailable(monkeypatch
     assert BubblewrapAdapter().available() is False
 
 
-def test_bubblewrap_availability_probe_is_cached_per_adapter(monkeypatch):
+def test_bubblewrap_availability_probe_is_cached_across_adapters(monkeypatch):
     monkeypatch.setattr(
         "app.services.agent_core.sandbox.process_sandbox.shutil.which",
-        lambda _name: "/usr/bin/bwrap",
+        lambda _name: "/usr/bin/bwrap-cross-adapter-cache",
     )
     calls = 0
 
@@ -250,11 +251,40 @@ def test_bubblewrap_availability_probe_is_cached_per_adapter(monkeypatch):
     monkeypatch.setattr(
         "app.services.agent_core.sandbox.process_sandbox.subprocess.run", fake_run
     )
-    adapter = BubblewrapAdapter()
-
-    assert adapter.available() is True
-    assert adapter.available() is True
+    assert BubblewrapAdapter().available() is True
+    assert BubblewrapAdapter().available() is True
     assert calls == 1
+
+
+def test_bubblewrap_availability_reprobes_after_cache_ttl(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.shutil.which",
+        lambda _name: "/usr/bin/bwrap-expiring-cache",
+    )
+    now = 100.0
+    returncodes = iter((1, 0))
+    calls = 0
+
+    def clock():
+        return now
+
+    def fake_run(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(returncode=next(returncodes))
+
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.subprocess.run", fake_run
+    )
+
+    assert BubblewrapAdapter(clock=clock).available() is False
+    assert BubblewrapAdapter(clock=clock).available() is False
+    assert calls == 1
+
+    now += 31.0
+
+    assert BubblewrapAdapter(clock=clock).available() is True
+    assert calls == 2
 
 
 def test_bubblewrap_mounts_tmpfs_before_capability_roots_under_tmp(tmp_path):
