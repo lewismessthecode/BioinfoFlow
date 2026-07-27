@@ -330,24 +330,24 @@ async def test_mkdir_race_discards_pending_row_and_uses_next_suffix(
     db_session,
     monkeypatch,
 ) -> None:
-    original_mkdir = Path.mkdir
+    original_mkdir = os.mkdir
     lost_candidate = projects_root() / "ce-shi"
     raced = False
 
     def race_once(
-        self: Path,
+        path,
         mode: int = 0o777,
-        parents: bool = False,
-        exist_ok: bool = False,
+        *,
+        dir_fd: int | None = None,
     ) -> None:
         nonlocal raced
-        if self == lost_candidate and not raced:
+        if path == lost_candidate.name and dir_fd is not None and not raced:
             raced = True
-            original_mkdir(self, mode=mode, parents=parents, exist_ok=exist_ok)
-            raise FileExistsError(self)
-        original_mkdir(self, mode=mode, parents=parents, exist_ok=exist_ok)
+            original_mkdir(path, mode=mode, dir_fd=dir_fd)
+            raise FileExistsError(path)
+        original_mkdir(path, mode=mode, dir_fd=dir_fd)
 
-    monkeypatch.setattr(Path, "mkdir", race_once)
+    monkeypatch.setattr(os, "mkdir", race_once)
     service = ProjectDirectoryService(db_session)
 
     project = await service.commit(await service.add_pending(_project_data()))
@@ -356,6 +356,105 @@ async def test_mkdir_race_discards_pending_row_and_uses_next_suffix(
     assert project.directory_name == "ce-shi-2"
     assert await _directory_names(db_session) == ["ce-shi-2"]
     assert lost_candidate.is_dir()
+
+
+@pytest.mark.asyncio
+async def test_root_open_failure_removes_unopened_reservation(
+    db_session,
+    monkeypatch,
+) -> None:
+    original_open = os.open
+    expected = OSError(errno.EMFILE, "too many open files")
+    candidate = projects_root() / "ce-shi"
+    candidate_parent_fd: int | None = None
+
+    def fail_candidate_open(
+        path,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal candidate_parent_fd
+        if path == candidate.name and dir_fd is not None:
+            candidate_parent_fd = dir_fd
+            raise expected
+        if dir_fd is None:
+            return original_open(path, flags, mode)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", fail_candidate_open)
+    service = ProjectDirectoryService(db_session)
+
+    with pytest.raises(OSError) as caught:
+        await service.add_pending(_project_data())
+
+    assert caught.value is expected
+    assert await _directory_names(db_session) == []
+    assert not candidate.exists()
+    _assert_fd_closed(candidate_parent_fd)
+
+    monkeypatch.setattr(os, "open", original_open)
+    project = await service.commit(await service.add_pending(_project_data()))
+
+    assert project.directory_name == "ce-shi"
+
+
+@pytest.mark.asyncio
+async def test_root_open_failure_does_not_remove_replacement(
+    db_session,
+    monkeypatch,
+) -> None:
+    original_open = os.open
+    expected = OSError(errno.EMFILE, "too many open files")
+    candidate = projects_root() / "ce-shi"
+    replaced = False
+    candidate_parent_fd: int | None = None
+    replacement_fd: int | None = None
+
+    def replace_candidate_before_open_failure(
+        path,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal candidate_parent_fd, replaced, replacement_fd
+        if path == candidate.name and dir_fd is not None and not replaced:
+            replaced = True
+            candidate_parent_fd = dir_fd
+            os.rmdir(candidate.name, dir_fd=dir_fd)
+            os.mkdir(candidate.name, dir_fd=dir_fd)
+            replacement_fd = original_open(
+                candidate.name,
+                os.O_RDONLY | os.O_DIRECTORY,
+                dir_fd=dir_fd,
+            )
+            raise expected
+        if dir_fd is None:
+            return original_open(path, flags, mode)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", replace_candidate_before_open_failure)
+    service = ProjectDirectoryService(db_session)
+
+    with pytest.raises(OSError) as caught:
+        await service.add_pending(_project_data())
+
+    assert caught.value is expected
+    assert replaced is True
+    assert await _directory_names(db_session) == []
+    _assert_fd_closed(candidate_parent_fd)
+    assert replacement_fd is not None
+    try:
+        replacement_stat = os.fstat(replacement_fd)
+        current_stat = candidate.lstat()
+        assert (current_stat.st_dev, current_stat.st_ino) == (
+            replacement_stat.st_dev,
+            replacement_stat.st_ino,
+        )
+    finally:
+        os.close(replacement_fd)
 
 
 @pytest.mark.asyncio

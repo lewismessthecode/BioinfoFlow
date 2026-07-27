@@ -97,29 +97,60 @@ class ProjectDirectoryService:
                     continue
                 raise
 
+            parent_fd: int | None = None
             try:
-                root.mkdir(parents=False, exist_ok=False)
-            except FileExistsError:
-                await self.repo.delete_pending(project)
-                continue
+                try:
+                    parent_fd = os.open(parent, _directory_open_flags())
+                except OSError:
+                    await self.repo.delete_pending(project)
+                    raise
 
-            try:
-                opened_root = _open_owned_root(root)
-            except OSError:
-                await self.repo.delete_pending(project)
-                raise
-            if opened_root is None:
-                await self.repo.delete_pending(project)
-                continue
-            root_fd, parent_fd, root_stat = opened_root
-            reservation = ManagedProjectReservation(
-                project=project,
-                root=root,
-                root_device=root_stat.st_dev,
-                root_inode=root_stat.st_ino,
-                root_fd=root_fd,
-                parent_fd=parent_fd,
-            )
+                try:
+                    os.mkdir(root.name, dir_fd=parent_fd)
+                except FileExistsError:
+                    await self.repo.delete_pending(project)
+                    continue
+                except OSError:
+                    await self.repo.delete_pending(project)
+                    raise
+
+                try:
+                    root_stat = os.stat(
+                        root.name,
+                        dir_fd=parent_fd,
+                        follow_symlinks=False,
+                    )
+                except FileNotFoundError:
+                    await self.repo.delete_pending(project)
+                    continue
+                except OSError:
+                    await self.repo.delete_pending(project)
+                    raise
+                if not stat.S_ISDIR(root_stat.st_mode):
+                    await self.repo.delete_pending(project)
+                    continue
+
+                try:
+                    root_fd = _open_owned_root(parent_fd, root.name, root_stat)
+                except OSError:
+                    await self.repo.delete_pending(project)
+                    _remove_unopened_owned_root(parent_fd, root.name, root_stat)
+                    raise
+                if root_fd is None:
+                    await self.repo.delete_pending(project)
+                    continue
+                reservation = ManagedProjectReservation(
+                    project=project,
+                    root=root,
+                    root_device=root_stat.st_dev,
+                    root_inode=root_stat.st_ino,
+                    root_fd=root_fd,
+                    parent_fd=parent_fd,
+                )
+                parent_fd = None
+            finally:
+                if parent_fd is not None:
+                    os.close(parent_fd)
             try:
                 layout_created = _create_project_layout(reservation)
             except Exception:
@@ -251,47 +282,57 @@ def _path_entry_exists(path: Path) -> bool:
     return True
 
 
-def _open_owned_root(path: Path) -> tuple[int, int, os.stat_result] | None:
+def _open_owned_root(
+    parent_fd: int,
+    name: str,
+    expected_stat: os.stat_result,
+) -> int | None:
     if not _secure_directory_fds_supported():
         raise ValidationError(
             "Secure project directory reservations are not supported on this platform"
         )
 
-    flags = _directory_open_flags()
-    try:
-        parent_fd = os.open(path.parent, flags)
-    except FileNotFoundError:
-        return None
-
-    root_fd: int | None = None
+    root_fd = os.open(name, _directory_open_flags(), dir_fd=parent_fd)
     keep_open = False
     try:
-        try:
-            root_fd = os.open(path.name, flags, dir_fd=parent_fd)
-        except FileNotFoundError:
-            return None
-        except OSError:
-            if not _entry_is_directory(parent_fd, path.name):
-                return None
-            raise
-
         root_stat = os.fstat(root_fd)
         if not stat.S_ISDIR(root_stat.st_mode):
             return None
+        if (
+            root_stat.st_dev != expected_stat.st_dev
+            or root_stat.st_ino != expected_stat.st_ino
+        ):
+            return None
         if not _entry_matches_identity(
             parent_fd,
-            path.name,
-            root_stat.st_dev,
-            root_stat.st_ino,
+            name,
+            expected_stat.st_dev,
+            expected_stat.st_ino,
         ):
             return None
         keep_open = True
-        return root_fd, parent_fd, root_stat
+        return root_fd
     finally:
         if not keep_open:
-            if root_fd is not None:
-                os.close(root_fd)
-            os.close(parent_fd)
+            os.close(root_fd)
+
+
+def _remove_unopened_owned_root(
+    parent_fd: int,
+    name: str,
+    expected_stat: os.stat_result,
+) -> None:
+    if not _entry_matches_identity(
+        parent_fd,
+        name,
+        expected_stat.st_dev,
+        expected_stat.st_ino,
+    ):
+        return
+    try:
+        os.rmdir(name, dir_fd=parent_fd)
+    except OSError:
+        pass
 
 
 def _create_project_layout(reservation: ManagedProjectReservation) -> bool:
