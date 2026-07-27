@@ -371,18 +371,9 @@ class AgentLoopController:
                         await self.tool_batches.fail_continuation(
                             active_continuation_batch_id
                         )
-                raw_model_error = (
+                error_message = str(exc)
+                model_error = (
                     exc.to_public_dict() if isinstance(exc, ModelError) else None
-                )
-                error_message = safe_agent_error_message(
-                    "model_request_failed",
-                    str(exc),
-                    model_error=raw_model_error,
-                )
-                model_error = safe_model_error_payload(
-                    raw_model_error,
-                    error_code="model_request_failed",
-                    error_message=error_message,
                 )
                 return LoopResult(
                     termination_reason="model_failed",
@@ -2045,20 +2036,34 @@ class AgentLoopController:
             raw_model_error = (
                 exc.to_public_dict() if isinstance(exc, ModelError) else None
             )
-            error_message = safe_agent_error_message(
-                "model_request_failed",
-                str(exc),
-                model_error=raw_model_error,
+            error_message = str(exc)
+            category = str((raw_model_error or {}).get("category") or "")
+            sanitize_provider_error = category in {
+                "authentication",
+                "authorization",
+                "rate_limit",
+            } or bool(
+                agent_session.root_session_id is not None
             )
+            if sanitize_provider_error:
+                error_message = safe_agent_error_message(
+                    "model_request_failed",
+                    error_message,
+                    model_error=raw_model_error,
+                )
             payload: dict[str, Any] = {
                 "next_attempt": next_attempt,
                 "delay_seconds": delay_seconds,
                 "error": error_message,
             }
-            model_error = safe_model_error_payload(
-                raw_model_error,
-                error_code="model_request_failed",
-                error_message=error_message,
+            model_error = (
+                safe_model_error_payload(
+                    raw_model_error,
+                    error_code="model_request_failed",
+                    error_message=error_message,
+                )
+                if sanitize_provider_error
+                else raw_model_error
             )
             if model_error is not None:
                 payload["model_error"] = model_error
@@ -2165,12 +2170,27 @@ class AgentLoopController:
         if status == AgentTurnStatus.FAILED and (
             result.error_code or result.error_message
         ):
-            safe_error_message = safe_agent_error_message(
-                result.error_code,
-                result.error_message,
-                model_error=result.model_error,
-                allow_non_model_detail=True,
-            )
+            category = str((result.model_error or {}).get("category") or "")
+            sanitize_provider_error = category in {
+                "authentication",
+                "authorization",
+                "rate_limit",
+            }
+            if result.error_code == "model_request_failed":
+                failed_session = await self.sessions.get(str(turn.session_id))
+                sanitize_provider_error = sanitize_provider_error or bool(
+                    failed_session is not None
+                    and (
+                        failed_session.parent_session_id is not None
+                        or failed_session.root_session_id is not None
+                    )
+                )
+            if sanitize_provider_error:
+                safe_error_message = safe_agent_error_message(
+                    result.error_code,
+                    result.error_message,
+                    model_error=result.model_error,
+                )
             safe_model_error = safe_model_error_payload(
                 result.model_error,
                 error_code=result.error_code,
