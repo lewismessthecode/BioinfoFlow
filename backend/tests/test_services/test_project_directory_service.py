@@ -359,7 +359,7 @@ async def test_mkdir_race_discards_pending_row_and_uses_next_suffix(
 
 
 @pytest.mark.asyncio
-async def test_root_open_failure_removes_unopened_reservation(
+async def test_root_open_failure_preserves_unopened_reservation(
     db_session,
     monkeypatch,
 ) -> None:
@@ -391,13 +391,13 @@ async def test_root_open_failure_removes_unopened_reservation(
 
     assert caught.value is expected
     assert await _directory_names(db_session) == []
-    assert not candidate.exists()
+    assert candidate.is_dir()
     _assert_fd_closed(candidate_parent_fd)
 
     monkeypatch.setattr(os, "open", original_open)
     project = await service.commit(await service.add_pending(_project_data()))
 
-    assert project.directory_name == "ce-shi"
+    assert project.directory_name == "ce-shi-2"
 
 
 @pytest.mark.asyncio
@@ -436,85 +436,6 @@ async def test_root_open_failure_does_not_remove_replacement(
         return original_open(path, flags, mode, dir_fd=dir_fd)
 
     monkeypatch.setattr(os, "open", replace_candidate_before_open_failure)
-    service = ProjectDirectoryService(db_session)
-
-    with pytest.raises(OSError) as caught:
-        await service.add_pending(_project_data())
-
-    assert caught.value is expected
-    assert replaced is True
-    assert await _directory_names(db_session) == []
-    _assert_fd_closed(candidate_parent_fd)
-    assert replacement_fd is not None
-    try:
-        replacement_stat = os.fstat(replacement_fd)
-        current_stat = candidate.lstat()
-        assert (current_stat.st_dev, current_stat.st_ino) == (
-            replacement_stat.st_dev,
-            replacement_stat.st_ino,
-        )
-    finally:
-        os.close(replacement_fd)
-
-
-@pytest.mark.asyncio
-async def test_root_open_failure_does_not_remove_replacement_after_identity_check(
-    db_session,
-    monkeypatch,
-) -> None:
-    import app.services.project_directory_service as directory_service_module
-
-    original_open = os.open
-    original_matches_identity = directory_service_module._entry_matches_identity
-    expected = OSError(errno.EMFILE, "too many open files")
-    candidate = projects_root() / "ce-shi"
-    replaced = False
-    candidate_parent_fd: int | None = None
-    replacement_fd: int | None = None
-
-    def fail_candidate_open(
-        path,
-        flags: int,
-        mode: int = 0o777,
-        *,
-        dir_fd: int | None = None,
-    ) -> int:
-        nonlocal candidate_parent_fd
-        if path == candidate.name and dir_fd is not None:
-            candidate_parent_fd = dir_fd
-            raise expected
-        if dir_fd is None:
-            return original_open(path, flags, mode)
-        return original_open(path, flags, mode, dir_fd=dir_fd)
-
-    def replace_after_identity_check(
-        parent_fd: int,
-        name: str,
-        device: int,
-        inode: int,
-    ) -> bool:
-        nonlocal replaced, replacement_fd
-        matches = original_matches_identity(parent_fd, name, device, inode)
-        if matches and not replaced:
-            replaced = True
-            try:
-                os.rmdir(candidate.name, dir_fd=parent_fd)
-            except FileNotFoundError:
-                pass
-            os.mkdir(candidate.name, dir_fd=parent_fd)
-            replacement_fd = original_open(
-                candidate.name,
-                os.O_RDONLY | os.O_DIRECTORY,
-                dir_fd=parent_fd,
-            )
-        return matches
-
-    monkeypatch.setattr(os, "open", fail_candidate_open)
-    monkeypatch.setattr(
-        directory_service_module,
-        "_entry_matches_identity",
-        replace_after_identity_check,
-    )
     service = ProjectDirectoryService(db_session)
 
     with pytest.raises(OSError) as caught:

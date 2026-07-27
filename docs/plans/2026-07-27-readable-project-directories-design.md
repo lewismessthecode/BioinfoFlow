@@ -159,6 +159,10 @@ new name during an update.
   Exhaustion returns a clear validation error instead of looping indefinitely.
 - Failed database persistence cleans up only a directory positively known to
   have been created by the current request.
+- If the allocator cannot open the new directory and therefore cannot retain a
+  descriptor proving ownership, it leaves the path in place and rolls back the
+  database reservation. Device and inode values alone are insufficient because
+  Linux can immediately reuse an inode after a concurrent replacement.
 
 ## Test Strategy
 
