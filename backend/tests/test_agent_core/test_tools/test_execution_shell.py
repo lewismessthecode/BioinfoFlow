@@ -471,6 +471,15 @@ class _InvalidResultErrorTool:
         (
             {
                 "type": "Invalid",
+                "message": "bad payload",
+                "continuable": True,
+                "payload": ["not", "a", "mapping"],
+            },
+            "payload must be a dictionary",
+        ),
+        (
+            {
+                "type": "Invalid",
                 "message": "bad",
                 "continuable": True,
                 "payload": {"value": object()},
