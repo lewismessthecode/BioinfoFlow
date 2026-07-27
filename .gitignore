@@ -134,6 +134,7 @@ data/
 !/docs/plans/2026-07-13-litellm-model-runtime-design.md
 !/docs/plans/2026-07-13-litellm-model-runtime.md
 !/docs/plans/2026-07-27-readable-project-directories-design.md
+!/docs/plans/2026-07-27-readable-project-directories.md
 docs/course-bioinfoflow-zh.html
 .gstack/
 .zsh_history
