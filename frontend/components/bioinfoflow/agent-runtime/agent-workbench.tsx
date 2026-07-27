@@ -1637,7 +1637,11 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             aria-label={environmentLabel}
             data-agent-workbench-action="environment"
           >
-            <SlidersHorizontal className="h-4 w-4" />
+            {desktopSidecarVisible ? (
+              <PanelRightClose className="h-4 w-4" data-icon="panel-right-close" />
+            ) : (
+              <SlidersHorizontal className="h-4 w-4" data-icon="sliders-horizontal" />
+            )}
           </Button>
           {!desktopSidecarVisible ? (
             <Button
