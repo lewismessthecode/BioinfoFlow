@@ -19,6 +19,7 @@ from app.services.project_directory_service import (
     ProjectDirectoryService,
     is_project_directory_name_conflict,
 )
+from app.services.project_service import ProjectService
 from app.utils.exceptions import ValidationError
 from app.utils.project_directory_names import project_directory_candidate
 
@@ -136,6 +137,39 @@ async def test_skips_legacy_managed_uuid_root_when_disk_entry_is_missing(
     assert project_home(project) != project_home(legacy)
     assert (project_home(project) / "data").is_dir()
     assert (project_home(project) / "runs").is_dir()
+
+
+@pytest.mark.asyncio
+async def test_skips_external_legacy_uuid_that_can_return_to_managed(
+    db_session,
+    tmp_path,
+) -> None:
+    legacy_id = "87654321-4321-6789-a234-678987654321"
+    legacy_data = _project_data(name="Legacy external project")
+    legacy_data.update(
+        storage_mode="external",
+        external_root_path=str(tmp_path / "external-project"),
+    )
+    legacy = await ProjectRepository(db_session).create(
+        **legacy_data,
+        id=legacy_id,
+        directory_name=None,
+    )
+
+    directory_service = ProjectDirectoryService(db_session)
+    project = await directory_service.commit(
+        await directory_service.add_pending(_project_data(name=legacy_id))
+    )
+    updated_legacy = await ProjectService(db_session).update_project(
+        legacy,
+        {"storage_mode": "managed"},
+    )
+
+    assert project.directory_name == f"{legacy_id}-2"
+    assert updated_legacy.directory_name is None
+    assert project_home(updated_legacy).name == legacy_id
+    assert project_home(project).name == f"{legacy_id}-2"
+    assert project_home(updated_legacy) != project_home(project)
 
 
 @pytest.mark.asyncio
