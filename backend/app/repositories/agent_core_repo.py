@@ -435,24 +435,23 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         await self.session.flush()
         return result.rowcount == 1
 
-    async def release_child_slot_for_terminal(
+    async def finalize_child_terminal_state(
         self,
         child_session_id: str,
         terminal_turn_id: str,
     ) -> bool:
-        """Release only if no newer follow-up turn owns the child session."""
+        """Clear stale active/slot state without touching a newer follow-up."""
         result = await self.session.execute(
             update(self.model)
             .where(
                 self.model.id == child_session_id,
                 self.model.root_session_id.is_not(None),
-                self.model.collaboration_slot.is_not(None),
                 or_(
                     self.model.active_turn_id.is_(None),
                     self.model.active_turn_id == terminal_turn_id,
                 ),
             )
-            .values(collaboration_slot=None)
+            .values(active_turn_id=None, collaboration_slot=None)
             .execution_options(synchronize_session=False)
         )
         await self.session.flush()
@@ -736,6 +735,35 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             .order_by(self.model.created_at, self.model.id)
         )
         result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_unpublished_child_terminals(
+        self,
+        *,
+        publication_event_type: str,
+    ) -> list[AgentTurn]:
+        published = exists(
+            select(AgentEvent.id).where(
+                AgentEvent.turn_id == self.model.id,
+                AgentEvent.type == publication_event_type,
+            )
+        )
+        result = await self.session.execute(
+            select(self.model)
+            .join(AgentSession, AgentSession.id == self.model.session_id)
+            .where(
+                AgentSession.root_session_id.is_not(None),
+                self.model.status.in_(
+                    [
+                        AgentTurnStatus.COMPLETED,
+                        AgentTurnStatus.FAILED,
+                        AgentTurnStatus.CANCELLED,
+                    ]
+                ),
+                ~published,
+            )
+            .order_by(self.model.completed_at, self.model.created_at, self.model.id)
+        )
         return list(result.scalars().all())
 
     async def seal_steering_if_idle(

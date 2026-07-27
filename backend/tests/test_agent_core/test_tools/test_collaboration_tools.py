@@ -83,7 +83,8 @@ def test_task4_collaboration_tools_have_precise_model_visible_contracts() -> Non
         "maximum": 60000,
         "default": 30000,
     }
-    assert wait.write_scope == []
+    assert wait.risk_level == "act_low"
+    assert wait.write_scope == ["agent_sessions"]
 
     interrupt = registry.get("interrupt_agent").spec
     assert interrupt.input_schema["required"] == ["target"]

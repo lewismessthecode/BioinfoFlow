@@ -1134,6 +1134,23 @@ class AgentCoreService:
 
     async def recover_orphaned_turns(self) -> dict[str, int]:
         summary = {"enqueued": 0, "failed": 0, "waiting": 0, "skipped": 0}
+        from app.services.agent_core.collaboration.service import (
+            AgentCollaborationService,
+        )
+
+        unpublished_ids = [
+            str(terminal.id)
+            for terminal in await self.turn_repo.list_unpublished_child_terminals(
+                publication_event_type=AgentEventType.AGENT_RESULT_PUBLISHED,
+            )
+        ]
+        for terminal_id in unpublished_ids:
+            await AgentCollaborationService(self.db).publish_child_terminal(
+                turn_id=terminal_id
+            )
+            summary["collaboration_published"] = (
+                summary.get("collaboration_published", 0) + 1
+            )
         for turn in await self.turn_repo.list_recoverable():
             if is_turn_running(str(turn.id)):
                 summary["skipped"] += 1

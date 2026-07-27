@@ -19,6 +19,7 @@ class AgentEventType:
     TURN_RECOVERY_FAILED = "turn.recovery.failed"
     AGENT_MESSAGE_RECEIVED = "agent.message.received"
     AGENT_RESULT_RECEIVED = "agent.result.received"
+    AGENT_RESULT_PUBLISHED = "agent.result.published"
     TRANSCRIPT_TOOL_GROUP_REPAIRED = "transcript.tool_group_repaired"
     MODEL_SELECTED = "model.selected"
     MODEL_RETRYING = "model.retrying"
