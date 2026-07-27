@@ -5,44 +5,33 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.services.agent_core.tools.execution import ExecuteShellTool
-from app.services.agent_core.tools.attachments import (
-    AttachmentReadTool,
-    AttachmentSearchTool,
-)
 from app.services.agent_core.tools.collaboration import COLLABORATION_TOOLS
 from app.services.agent_core.tools.files import (
-    ApplyPatchTool,
     EditFileTool,
-    ReadFileTool,
     WriteFileTool,
 )
 from app.services.agent_core.tools.interaction import AskUserTool, ExitPlanModeTool
 from app.services.agent_core.tools.memory import ListMemoriesTool, ProposeMemoryTool
 from app.services.agent_core.tools.platform import (
     BindProjectWorkflowTool,
-    BuildImageTool,
     CancelRunTool,
     CleanupRunTool,
     CreateProjectTool,
     CreateWorkflowTool,
-    DeleteImageTool,
     DeleteProjectTool,
     DeleteRunTool,
     DeleteWorkflowTool,
-    GetImageTool,
     GetProjectTool,
     GetRunLogsTool,
     GetRunTool,
     GetWorkflowTool,
     InspectRunTool,
     InspectWorkflowTool,
-    ListImagesTool,
     ListProjectWorkflowsTool,
     ListProjectsTool,
     ListRunsTool,
     ListWorkflowsTool,
     PinProjectWorkflowTool,
-    PullImageTool,
     RetryRunTool,
     ResumeRunTool,
     RunAuditTool,
@@ -64,7 +53,6 @@ from app.services.agent_core.tools.remote import (
     RemoteListDirTool,
     RemoteReadFileTool,
 )
-from app.services.agent_core.tools.search import GlobTool, GrepTool
 from app.services.agent_core.tools.skills import (
     ListPluginsTool,
     ListSkillsTool,
@@ -92,15 +80,9 @@ def default_tool_providers() -> tuple[AgentToolProvider, ...]:
     return (
         StaticAgentToolProvider(
             (
-                AttachmentSearchTool(),
-                AttachmentReadTool(),
-                ReadFileTool(),
-                ApplyPatchTool(),
                 WriteFileTool(),
                 EditFileTool(),
                 ExecuteShellTool(),
-                GrepTool(),
-                GlobTool(),
             )
         ),
         StaticAgentToolProvider(
@@ -123,11 +105,6 @@ def default_tool_providers() -> tuple[AgentToolProvider, ...]:
                 WorkflowFormSpecTool(),
                 WorkflowDagTool(),
                 WorkflowSourceTool(),
-                ListImagesTool(),
-                GetImageTool(),
-                PullImageTool(),
-                BuildImageTool(),
-                DeleteImageTool(),
                 ListRunsTool(),
                 InspectRunTool(),
                 GetRunTool(),

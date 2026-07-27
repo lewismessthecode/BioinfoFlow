@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
-
 import pytest
 
-from app.config import settings
-from app.models.image import DockerImage, ImageStatus
 from app.models.project import Project
 from app.models.run import Run, RunStatus
 from app.models.workflow import Workflow, WorkflowEngine, WorkflowSource
@@ -17,7 +12,6 @@ from app.services.agent_core.tools import (
     AgentToolDispatcher,
     build_default_tool_registry,
 )
-from app.services.image_service import ImageService
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -42,14 +36,7 @@ async def _tool_context(
         schema_json={"inputs": []},
         form_spec={"fields": []},
     )
-    image = DockerImage(
-        name="biocontainers/fastqc",
-        tag="latest",
-        full_name="biocontainers/fastqc:latest",
-        registry="quay.io",
-        status=ImageStatus.REMOTE.value,
-    )
-    db_session.add_all([workspace, project, workflow, image])
+    db_session.add_all([workspace, project, workflow])
     await db_session.commit()
     await db_session.refresh(project)
     await db_session.refresh(workflow)
@@ -94,7 +81,6 @@ async def _tool_context(
         {
             "project": project,
             "workflow": workflow,
-            "image": image,
             "run": run,
             "core": core,
         },
@@ -381,130 +367,6 @@ async def test_workflow_source_caps_nested_content(db_session, monkeypatch, tmp_
     assert result.status == "completed"
     assert result.result["data"]["source"]["content"] == "abcde\n[truncated]"
     assert result.result["data"]["source"]["truncated"] is True
-
-
-@pytest.mark.asyncio
-async def test_images_list_tool_reads_catalog_without_forcing_docker_sync(db_session):
-    dispatcher, context, _resources = await _tool_context(db_session)
-
-    result = await dispatcher.dispatch(
-        tool_name="images.list",
-        input={"search": "fastqc", "status": "remote"},
-        context=context,
-    )
-
-    assert result.status == "completed"
-    assert result.result["images"][0]["full_name"] == "biocontainers/fastqc:latest"
-    assert result.result["status"]["docker"] == "not_synced"
-
-
-@pytest.mark.asyncio
-async def test_images_list_tool_serializes_catalog_sync_timestamp(
-    db_session, monkeypatch
-):
-    dispatcher, context, _resources = await _tool_context(db_session)
-    last_synced_at = datetime(2026, 4, 8, 8, 0, tzinfo=timezone.utc)
-    monkeypatch.setattr(ImageService, "_last_sync_at", last_synced_at)
-
-    result = await dispatcher.dispatch(
-        tool_name="images.list",
-        input={"status": "local"},
-        context=context,
-    )
-
-    assert result.status == "completed"
-    assert result.result["status"]["last_synced_at"] == "2026-04-08T08:00:00+00:00"
-
-
-@pytest.mark.asyncio
-async def test_images_list_tool_is_read_only_even_for_local_filter(
-    db_session, monkeypatch
-):
-    dispatcher, context, _resources = await _tool_context(db_session)
-
-    async def fail_sync(self, *, force=False):
-        raise AssertionError("images.list must not sync Docker state")
-
-    monkeypatch.setattr(
-        "app.services.image_service.ImageService._sync_local_images",
-        fail_sync,
-    )
-
-    result = await dispatcher.dispatch(
-        tool_name="images.list",
-        input={"status": "local"},
-        context=context,
-    )
-
-    assert result.status == "completed"
-    assert result.result["status"]["docker"] == "not_synced"
-
-
-@pytest.mark.asyncio
-async def test_images_build_rejects_context_outside_current_project(
-    db_session,
-):
-    dispatcher, context, resources = await _tool_context(db_session)
-    outside_context = Path(settings.bioinfoflow_home) / "outside-build-context"
-    outside_context.mkdir()
-    (outside_context / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
-
-    result = await dispatcher.dispatch(
-        tool_name="images.build",
-        input={
-            "project_id": str(resources["project"].id),
-            "tag": "unsafe-build:latest",
-            "context_path": str(outside_context),
-        },
-        context=context,
-        permission_mode="bypass",
-    )
-
-    assert result.status == "failed"
-    assert result.error["type"] == "PermissionDeniedError"
-    assert "Build context must be inside the project root" in result.error["message"]
-
-
-@pytest.mark.asyncio
-async def test_images_build_rejects_dockerfile_outside_build_context_project(
-    db_session, tmp_path
-):
-    dispatcher, context, resources = await _tool_context(db_session)
-    project_root = settings.projects_root / str(resources["project"].id)
-    build_context = project_root / "build-context"
-    build_context.mkdir(parents=True)
-    outside_dockerfile = tmp_path / "Dockerfile"
-    outside_dockerfile.write_text("FROM scratch\n", encoding="utf-8")
-
-    result = await dispatcher.dispatch(
-        tool_name="images.build",
-        input={
-            "project_id": str(resources["project"].id),
-            "tag": "unsafe-dockerfile:latest",
-            "context_path": str(build_context),
-            "dockerfile": str(outside_dockerfile),
-        },
-        context=context,
-        permission_mode="bypass",
-    )
-
-    assert result.status == "failed"
-    assert result.error["type"] == "PermissionDeniedError"
-    assert "Dockerfile must be inside the project root" in result.error["message"]
-
-
-@pytest.mark.asyncio
-async def test_images_get_tool_returns_platform_image_projection(db_session):
-    dispatcher, context, resources = await _tool_context(db_session)
-
-    result = await dispatcher.dispatch(
-        tool_name="images.get",
-        input={"image_id": str(resources["image"].id)},
-        context=context,
-    )
-
-    assert result.status == "completed"
-    assert result.result["image"]["full_name"] == "biocontainers/fastqc:latest"
 
 
 @pytest.mark.asyncio

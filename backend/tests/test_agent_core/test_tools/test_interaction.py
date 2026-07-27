@@ -17,9 +17,8 @@ from app.services.agent_core.tools import (
 )
 from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.specs import AgentToolSpec
-from app.services.agent_core.tools.files import resources as file_resources
 from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
-from app.utils.exceptions import ConflictError
+from app.utils.exceptions import ConflictError, NotFoundError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -478,17 +477,9 @@ async def test_resume_rejects_requested_action_that_was_not_marked_for_resume(
 
 
 @pytest.mark.asyncio
-async def test_resume_historical_files_write_action_uses_current_write_tool(
-    db_session, tmp_path, monkeypatch
-):
+async def test_resume_historical_files_write_action_fails_as_unknown_tool(db_session):
     _core, dispatcher, context, session_id, turn_id = await _interaction_context(
         db_session
-    )
-    target = tmp_path / "resumed.txt"
-    monkeypatch.setattr(
-        file_resources,
-        "_resolve_path_for_write",
-        lambda _path, **_kwargs: target,
     )
     action = await AgentActionRepository(db_session).create(
         session_id=session_id,
@@ -503,13 +494,11 @@ async def test_resume_historical_files_write_action_uses_current_write_tool(
         requires_resume=True,
     )
 
-    result = await dispatcher.resume_action(
-        action_id=str(action.id),
-        context=context,
-    )
-
-    assert result.status == AgentActionStatus.COMPLETED
-    assert target.read_text(encoding="utf-8") == "historical action"
+    with pytest.raises(NotFoundError, match="Agent tool not found: files.write"):
+        await dispatcher.resume_action(
+            action_id=str(action.id),
+            context=context,
+        )
 
 
 @pytest.mark.asyncio

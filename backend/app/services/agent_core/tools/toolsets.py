@@ -106,8 +106,6 @@ _REMOTE_SSH_TARGET_NEUTRAL_TOOLS = frozenset(
     }
 ) | COLLABORATION_TOOL_NAMES
 _REMOTE_SSH_TARGET_PREFIXES = ("remote.", "skills.", "web.")
-_RETIRED_MODEL_TOOL_NAMES = frozenset({"glob", "grep", "web.fetch"})
-_RETIRED_MODEL_TOOL_PREFIXES = ("attachments.", "files.", "images.")
 _MODEL_HIDDEN_TOOLS = frozenset(
     {
         "memory.list",
@@ -262,7 +260,6 @@ class ToolsetExposure:
             names = {name for name in names if not name.startswith("remote.")}
         elif execution_target is not None and not scope_allows_remote:
             names = {name for name in names if not name.startswith("remote.")}
-        names = {name for name in names if not _is_retired_model_tool(name)}
         return names
 
     def decide(
@@ -372,12 +369,6 @@ def _is_remote_ssh_compatible_tool(spec: AgentToolSpec) -> bool:
     if spec.name in _REMOTE_SSH_TARGET_NEUTRAL_TOOLS:
         return True
     return spec.name.startswith(_REMOTE_SSH_TARGET_PREFIXES)
-
-
-def _is_retired_model_tool(name: str) -> bool:
-    return name in _RETIRED_MODEL_TOOL_NAMES or name.startswith(
-        _RETIRED_MODEL_TOOL_PREFIXES
-    )
 
 
 def provider_tool_specs(specs: Iterable[AgentToolSpec]) -> list[dict]:
