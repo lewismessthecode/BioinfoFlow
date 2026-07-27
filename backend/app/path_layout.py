@@ -49,9 +49,7 @@ def agent_session_attachments_root(session_id: str) -> Path:
 
 
 def agent_attachment_root(session_id: str, attachment_id: str) -> Path:
-    safe_attachment_id = safe_path_name(
-        attachment_id, field_name="agent attachment id"
-    )
+    safe_attachment_id = safe_path_name(attachment_id, field_name="agent attachment id")
     return agent_session_attachments_root(session_id) / safe_attachment_id
 
 
@@ -135,7 +133,11 @@ def project_home(
         return Path(str(override)).expanduser().resolve()
     if storage_mode == "remote":
         raise BadRequestError("Remote projects do not have a local project root")
-    return (projects_root() / str(project.id)).resolve()
+    directory_name = safe_path_name(
+        str(project.directory_name or project.id),
+        field_name="project directory name",
+    )
+    return (projects_root() / directory_name).resolve()
 
 
 def project_data_root(
