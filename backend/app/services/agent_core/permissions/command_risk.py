@@ -3184,6 +3184,12 @@ def _inspect_legacy_behavior(node: _CommandNode) -> _NodeSemantics:
     effects: list[SemanticEffect] = []
     tokens, elevated = _unwrap_command(list(node.tokens))
     if not tokens:
+        if node.tokens and _basename(node.tokens[0]) == "env":
+            return _NodeSemantics(
+                level=level,
+                effects=("read",),
+                reasons=("env without a command inspects the current environment",),
+            )
         return _NodeSemantics(level=level, effects=("unknown",))
     executable = _basename(tokens[0])
     args = tokens[1:]
