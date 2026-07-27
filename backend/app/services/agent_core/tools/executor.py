@@ -713,7 +713,12 @@ class AgentToolExecutor:
         action = await self.action_repo.get(action_id)
         if action is None:
             raise ConflictError("Tool action does not exist")
-        error = {"type": "InteractionExclusive", "message": reason}
+        error = {
+            "type": "InteractionExclusive",
+            "message": reason,
+            "category": "batch_sibling",
+            "continuable": True,
+        }
         cancelled = await self.action_repo.cancel_open(
             action_id,
             error=error,
