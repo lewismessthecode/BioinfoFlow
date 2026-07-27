@@ -322,17 +322,21 @@ def _remove_unopened_owned_root(
     name: str,
     expected_stat: os.stat_result,
 ) -> None:
+    quarantine_name = _move_entry_to_quarantine(parent_fd, name)
+    if quarantine_name is None:
+        return
     if not _entry_matches_identity(
         parent_fd,
-        name,
+        quarantine_name,
         expected_stat.st_dev,
         expected_stat.st_ino,
     ):
+        _restore_quarantined_entry(parent_fd, quarantine_name, name)
         return
     try:
-        os.rmdir(name, dir_fd=parent_fd)
+        os.rmdir(quarantine_name, dir_fd=parent_fd)
     except OSError:
-        pass
+        _restore_quarantined_entry(parent_fd, quarantine_name, name)
 
 
 def _create_project_layout(reservation: ManagedProjectReservation) -> bool:
@@ -415,13 +419,17 @@ def _move_root_to_quarantine(
     reservation: ManagedProjectReservation,
     parent_fd: int,
 ) -> str | None:
+    return _move_entry_to_quarantine(parent_fd, reservation.root.name)
+
+
+def _move_entry_to_quarantine(parent_fd: int, name: str) -> str | None:
     for _ in range(_QUARANTINE_ATTEMPTS):
         quarantine_name = f"{_QUARANTINE_PREFIX}{secrets.token_hex(16)}"
         if _entry_exists_at(parent_fd, quarantine_name):
             continue
         try:
             os.rename(
-                reservation.root.name,
+                name,
                 quarantine_name,
                 src_dir_fd=parent_fd,
                 dst_dir_fd=parent_fd,
