@@ -1370,6 +1370,78 @@ async def test_approval_resume_survives_controller_restart(
 
 
 @pytest.mark.asyncio
+async def test_approved_command_domain_failure_is_returned_to_model(
+    db_session,
+    monkeypatch,
+    run_shell_without_platform_sandbox,
+) -> None:
+    _session, turn = await _turn(
+        db_session, input_text="Run the approved command and diagnose failure."
+    )
+    command = _approval_shell(
+        'printf "%s" command-out; printf "%s" command-err >&2; exit 9'
+    )
+    gateway = FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="call-bash-domain-failure",
+                name="bash",
+                arguments_delta=json.dumps(
+                    {"command": command, "cwd": str(settings.deliveries_root)}
+                ),
+            ),
+            CompletionMetadata(
+                response_id="chatcmpl-domain-failure", finish_reason="tool_calls"
+            ),
+        ),
+        (
+            TextDelta(text="The approved command failed and I diagnosed it."),
+            CompletionMetadata(
+                response_id="chatcmpl-after-domain-failure", finish_reason="stop"
+            ),
+        ),
+    )
+    first_controller = AgentLoopController(db_session, model_gateway=gateway)
+
+    waiting = await first_controller.run_turn(turn_id=str(turn.id), target=_target())
+
+    assert waiting.termination_reason == "waiting_approval"
+    action = (await AgentActionRepository(db_session).list_for_turn(str(turn.id)))[0]
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
+    await AgentCoreService(db_session).decide_action(
+        action_id=str(action.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+
+    result = await AgentLoopController(
+        db_session, model_gateway=gateway
+    ).resume_turn_from_action(action_id=str(action.id), target=_target())
+
+    assert result.termination_reason == "assistant_final"
+    assert result.final_text == "The approved command failed and I diagnosed it."
+    persisted = await AgentActionRepository(db_session).get_fresh(str(action.id))
+    assert persisted is not None
+    assert persisted.status == AgentActionStatus.FAILED
+    assert persisted.result["exit_code"] == 9
+    assert persisted.error["continuable"] is True
+    tool_result = next(
+        item
+        for item in gateway.invocations[1].input_items
+        if isinstance(item, ToolResultPart)
+    )
+    assert tool_result.call_id == "call-bash-domain-failure"
+    assert tool_result.is_error is True
+    assert "command-out" in tool_result.output
+    assert "command-err" in tool_result.output
+    assert '"exit_code":9' in tool_result.output
+
+
+@pytest.mark.asyncio
 async def test_empty_response_retries_once_then_fails(db_session) -> None:
     _session, turn = await _turn(db_session, input_text="Do not answer.")
     empty = (CompletionMetadata(response_id="chatcmpl-empty", finish_reason="stop"),)

@@ -23,6 +23,8 @@ from app.services.agent_core.tools import (
     AgentToolDispatcher,
     build_default_tool_registry,
 )
+from app.services.agent_core.tools.registry import AgentToolRegistry
+from app.services.agent_core.tools.specs import AgentToolSpec
 from app.services.agent_core.tools.execution import ExecuteShellTool
 from app.services.agent_core.tools.execution.shell import (
     _agent_browser_process_context,
@@ -404,6 +406,8 @@ async def test_bash_tool_records_nonzero_exit_as_failed_with_command_result(db_s
     assert result.error == {
         "type": "CommandExitError",
         "message": "Command exited with code 13.",
+        "category": "tool_result",
+        "continuable": True,
     }
 
     action = await AgentActionRepository(db_session).get_fresh(result.action_id)
@@ -427,6 +431,106 @@ async def test_bash_tool_records_nonzero_exit_as_failed_with_command_result(db_s
         "result": expected_result,
         "error": result.error,
     }
+
+
+class _InvalidResultErrorTool:
+    spec = AgentToolSpec(
+        name="bash",
+        description="Return a valid result and an invalid semantic error.",
+        input_schema={"type": "object", "additionalProperties": False},
+        output_schema={
+            "type": "object",
+            "properties": {"ok": {"type": "boolean"}},
+            "required": ["ok"],
+            "additionalProperties": False,
+        },
+        risk_level="read",
+    )
+
+    def __init__(self, hook_result=None, hook_exception: Exception | None = None):
+        self.hook_result = hook_result
+        self.hook_exception = hook_exception
+
+    async def run(self, input, context):
+        del input, context
+        return {"ok": True}
+
+    def result_error(self, result):
+        assert result == {"ok": True}
+        if self.hook_exception is not None:
+            raise self.hook_exception
+        return self.hook_result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("hook_result", "expected_message"),
+    [
+        ({"message": "missing type"}, "non-empty type"),
+        ({"type": "Invalid", "message": ""}, "non-empty message"),
+        (
+            {
+                "type": "Invalid",
+                "message": "bad",
+                "continuable": True,
+                "payload": {"value": object()},
+            },
+            "JSON-serializable",
+        ),
+    ],
+)
+async def test_invalid_tool_result_error_is_normalized_without_leaving_action_running(
+    db_session, hook_result, expected_message
+):
+    _dispatcher, context, _workspace_root = await _shell_context(
+        db_session, permission_mode="bypass"
+    )
+    registry = AgentToolRegistry()
+    registry.register(_InvalidResultErrorTool(hook_result=hook_result))
+
+    result = await AgentToolDispatcher(db_session, registry).dispatch(
+        tool_name="bash",
+        input={},
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert result.status == "failed"
+    assert result.result is None
+    assert result.error["type"] in {"TypeError", "ValueError"}
+    assert expected_message in result.error["message"]
+    action = await AgentActionRepository(db_session).get_fresh(result.action_id)
+    assert action is not None
+    assert action.status == "failed"
+    assert action.error == result.error
+
+
+@pytest.mark.asyncio
+async def test_tool_result_error_exception_is_normalized_without_leaving_action_running(
+    db_session,
+):
+    _dispatcher, context, _workspace_root = await _shell_context(
+        db_session, permission_mode="bypass"
+    )
+    registry = AgentToolRegistry()
+    registry.register(
+        _InvalidResultErrorTool(hook_exception=RuntimeError("hook exploded"))
+    )
+
+    result = await AgentToolDispatcher(db_session, registry).dispatch(
+        tool_name="bash",
+        input={},
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert result.status == "failed"
+    assert result.result is None
+    assert result.error == {"type": "RuntimeError", "message": "hook exploded"}
+    action = await AgentActionRepository(db_session).get_fresh(result.action_id)
+    assert action is not None
+    assert action.status == "failed"
+    assert action.error == result.error
 
 
 @pytest.mark.asyncio

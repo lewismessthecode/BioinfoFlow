@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, NotRequired, Protocol, TypedDict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,6 +71,13 @@ class AgentTool(Protocol):
         """Run the tool through typed platform/domain service boundaries."""
 
 
+class ToolResultError(TypedDict):
+    type: str
+    message: str
+    continuable: bool
+    payload: NotRequired[dict[str, Any]]
+
+
 def tool_result_error(
     tool: AgentTool, result: dict[str, Any]
 ) -> dict[str, Any] | None:
@@ -86,5 +94,32 @@ def tool_result_error(
     if error is None:
         return None
     if not isinstance(error, dict):
-        raise TypeError("tool result_error hook must return a dictionary or None")
-    return error
+        raise TypeError("tool result_error hook must return a mapping or None")
+    error_type = error.get("type")
+    if not isinstance(error_type, str) or not error_type.strip():
+        raise ValueError("tool result_error must include a non-empty type")
+    message = error.get("message")
+    if not isinstance(message, str) or not message.strip():
+        raise ValueError("tool result_error must include a non-empty message")
+    continuable = error.get("continuable")
+    if not isinstance(continuable, bool):
+        raise ValueError("tool result_error must include a boolean continuable flag")
+    unexpected = set(error) - {"type", "message", "continuable", "payload"}
+    if unexpected:
+        raise ValueError(
+            "tool result_error contains unsupported fields: "
+            + ", ".join(sorted(unexpected))
+        )
+    normalized: dict[str, Any] = {
+        "type": error_type.strip(),
+        "message": message.strip(),
+        "category": "tool_result",
+        "continuable": continuable,
+    }
+    if "payload" in error:
+        normalized["payload"] = error["payload"]
+    try:
+        json.dumps(normalized, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise TypeError("tool result_error must be JSON-serializable") from exc
+    return normalized
