@@ -167,7 +167,7 @@ function ThemePreviewCard({
   return (
     <div
       data-testid="appearance-preview-shell"
-      className="relative flex min-h-[420px] flex-col overflow-hidden rounded-xl border"
+      className="relative flex min-h-[236px] flex-col overflow-hidden rounded-xl border"
       style={{
         backgroundColor: tokens.background,
         borderColor: tokens.border,
@@ -221,200 +221,97 @@ function ThemePreviewCard({
         </div>
       </div>
 
-      <div className="relative grid flex-1 gap-3 p-4 md:grid-cols-[104px_minmax(0,1fr)]">
+      <div className="relative grid flex-1 grid-cols-[72px_minmax(0,1fr)] gap-3 p-4">
         <aside
-          className="flex h-full flex-col rounded-xl border px-3 py-4"
+          className="flex h-full flex-col items-center rounded-lg border p-3"
           style={{
             backgroundColor: tokens.sidebar,
             borderColor: tokens["sidebar-border"],
             color: tokens["sidebar-foreground"],
           }}
         >
-          <div className="flex justify-center">
-            <div
-              className="flex h-11 w-11 items-center justify-center rounded-lg"
-              style={{ backgroundColor: tokens["sidebar-accent"] }}
-            >
-              <Logo size={24} />
-            </div>
+          <div
+            className="flex size-9 items-center justify-center rounded-lg"
+            style={{ backgroundColor: tokens["sidebar-accent"] }}
+          >
+            <Logo size={20} />
           </div>
-          <div className="mt-4 space-y-2.5">
+          <div className="mt-4 w-full space-y-2">
             <div
-              className="h-8 rounded-lg"
+              className="h-5 rounded-md"
               style={{ backgroundColor: tokens["sidebar-accent"] }}
             />
             <div
-              className="h-2.5 rounded-full"
+              className="h-2 rounded-full"
               style={{ backgroundColor: tokens["accent-muted"] }}
             />
             <div
-              className="h-2.5 w-4/5 rounded-full"
-              style={{ backgroundColor: tokens["accent-subtle"] }}
-            />
-            <div
-              className="h-2.5 w-3/5 rounded-full"
+              className="h-2 w-4/5 rounded-full"
               style={{ backgroundColor: tokens["accent-subtle"] }}
             />
           </div>
         </aside>
 
-        <div className="flex h-full flex-col gap-3">
+        <div
+          data-testid="appearance-preview-main"
+          className="flex min-w-0 flex-col gap-3 rounded-lg border p-3"
+          style={{
+            borderColor: tokens.border,
+            backgroundColor: tokens.card,
+          }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-1.5">
+              <div
+                className="h-2.5 w-20 rounded-full"
+                style={{ backgroundColor: tokens["accent-muted"] }}
+              />
+              <div
+                className="h-2 w-12 rounded-full"
+                style={{ backgroundColor: tokens["accent-subtle"] }}
+              />
+            </div>
+            <div
+              className="size-7 rounded-lg"
+              style={{ backgroundColor: tokens.primary }}
+            />
+          </div>
+
           <div
-            className="rounded-xl border p-3.5"
+            className="flex flex-1 flex-col justify-center rounded-lg p-3"
             style={{
-              borderColor: tokens.border,
-              backgroundColor: tokens.card,
+              backgroundColor: tokens.accent,
             }}
           >
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span
-                  className="size-2.5 rounded-full"
-                  style={{ backgroundColor: tokens["fg-faint"] }}
-                />
-                <span
-                  className="size-2.5 rounded-full"
-                  style={{ backgroundColor: tokens["fg-faint"] }}
-                />
-                <span
-                  className="size-2.5 rounded-full"
-                  style={{ backgroundColor: tokens["fg-faint"] }}
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span
-                  className="inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-semibold"
-                  style={{
-                    backgroundColor: tokens.primary,
-                    color: tokens["primary-foreground"],
-                  }}
-                >
-                  {presetLabel}
-                </span>
-                <div
-                  className="block h-6 w-12 rounded-full"
-                  style={{ backgroundColor: tokens["surface-subtle"] }}
-                />
-              </div>
-            </div>
-
             <div
-              data-testid="appearance-preview-main"
-              className="mt-4 grid flex-1 grid-cols-[minmax(0,1fr)_148px] gap-3"
-            >
-              <div className="space-y-3">
-                <div
-                  className="min-h-[126px] rounded-lg p-3"
-                  style={{
-                    backgroundColor: tokens.accent,
-                    color: tokens["text-secondary"],
-                  }}
-                >
-                  <div
-                    className="h-2.5 w-24 rounded-full"
-                    style={{ backgroundColor: tokens.primary }}
-                  />
-                  <div
-                    className="mt-3 h-3 rounded-full"
-                    style={{ backgroundColor: tokens["surface-elevated"] }}
-                  />
-                  <div
-                    className="mt-2 h-3 w-4/5 rounded-full"
-                    style={{ backgroundColor: tokens["surface-elevated"] }}
-                  />
-                  <div className="mt-4 flex items-center gap-2">
-                    <span
-                      className="inline-flex h-7 items-center rounded-full px-3"
-                      style={{
-                        backgroundColor: tokens.primary,
-                        color: tokens["primary-foreground"],
-                      }}
-                    >
-                      <span
-                        className="block h-2.5 w-9 rounded-full"
-                        style={{ backgroundColor: tokens["primary-foreground"] }}
-                      />
-                    </span>
-                    <div
-                      className="block h-7 w-16 rounded-full"
-                      style={{ backgroundColor: tokens["surface-elevated"] }}
-                    />
-                  </div>
-                </div>
+              className="h-2.5 w-2/3 rounded-full"
+              style={{ backgroundColor: tokens.primary }}
+            />
+            <div
+              className="mt-2 h-2 w-full rounded-full"
+              style={{ backgroundColor: tokens["surface-elevated"] }}
+            />
+            <div
+              className="mt-2 h-2 w-4/5 rounded-full"
+              style={{ backgroundColor: tokens["surface-elevated"] }}
+            />
+          </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  {Array.from({ length: 2 }).map((_, index) => (
-                    <div
-                      key={`${presetLabel}-${mode}-${index}`}
-                      className="rounded-lg border p-3"
-                      style={{
-                        borderColor: tokens.border,
-                        backgroundColor:
-                          index === 0 ? tokens["surface-subtle"] : tokens["surface-elevated"],
-                      }}
-                    >
-                      <div
-                        className="h-2.5 w-2/3 rounded-full"
-                        style={{ backgroundColor: tokens["accent-muted"] }}
-                      />
-                      <div
-                        className="mt-3 h-8 rounded-lg"
-                        style={{ backgroundColor: tokens["accent-subtle"] }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div
-                className="flex h-full min-h-[239px] flex-col rounded-lg border px-3 py-3 font-mono text-[11px]"
-                style={{
-                  borderColor: tokens.border,
-                  backgroundColor: tokens["terminal-background"],
-                  color: tokens["terminal-foreground"],
-                }}
-              >
-                <div className="mb-3 flex items-center gap-1.5">
-                  <span
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: tokens["announcement-bg"] }}
-                  />
-                  <span
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: tokens.primary }}
-                  />
-                  <span
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: tokens.ring }}
-                  />
-                </div>
-
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-2">
-                    <span style={{ color: tokens.primary }}>$</span>
-                    <span
-                      className="h-2.5 w-16 rounded-full"
-                      style={{ backgroundColor: tokens["terminal-selection"] }}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span style={{ color: tokens.ring }}>{">"}</span>
-                    <span
-                      className="h-2.5 w-24 rounded-full"
-                      style={{ backgroundColor: tokens["accent-muted"] }}
-                    />
-                  </div>
-                  <div
-                    className="h-9 rounded-lg border"
-                    style={{
-                      borderColor: tokens.border,
-                      backgroundColor: tokens["terminal-selection"],
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div
+              className="h-9 rounded-lg border"
+              style={{
+                borderColor: tokens.border,
+                backgroundColor: tokens["surface-subtle"],
+              }}
+            />
+            <div
+              className="h-9 rounded-lg border"
+              style={{
+                borderColor: tokens.border,
+                backgroundColor: tokens["surface-elevated"],
+              }}
+            />
           </div>
         </div>
       </div>
