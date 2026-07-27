@@ -19,7 +19,10 @@ DEFAULT_TOOLSET_POLICY = {"name": "default"}
 # The capable, approval-gated policy new sessions start with. Registration and
 # exposure are deliberately separate: product and compatibility tools remain
 # registered but are disclosed only by capability, target, or explicit allowlist.
-EXECUTION_TOOLSET_POLICY = {"name": "execution"}
+EXECUTION_TOOLSET_POLICY = {
+    "name": "execution",
+    "capabilities": ["bioinfo.read", "bioinfo.manage"],
+}
 # Read-only planning policy: core inspection plus planning helpers. Writes and
 # shell are hidden until exit_plan_mode flips the session to execution.
 PLAN_TOOLSET_POLICY = {"name": "plan"}

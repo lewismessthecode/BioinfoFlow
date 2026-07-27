@@ -21,6 +21,7 @@ from app.services.agent_core.actions import AgentActionService
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.executor import AgentToolExecutor
+from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
 from app.services.model_runtime.gateway import ModelGateway
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -39,6 +40,34 @@ class _FakeBackend:
     ) -> Any:
         assert wire_protocol == "chat_completions"
         return await self.completion(**request)
+
+
+@pytest.mark.asyncio
+async def test_execution_sessions_persist_canonical_toolset_policy(async_client):
+    created_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"mode": "execution"},
+    )
+    assert created_response.status_code == 201
+    created = created_response.json()["data"]
+    assert created["toolset_policy"] == EXECUTION_TOOLSET_POLICY
+
+    plan_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"mode": "plan"},
+    )
+    assert plan_response.status_code == 201
+    plan_session = plan_response.json()["data"]
+    assert plan_session["toolset_policy"] == {"name": "plan"}
+
+    updated_response = await async_client.patch(
+        f"/api/v1/agent/sessions/{plan_session['id']}",
+        json={"mode": "execution"},
+    )
+    assert updated_response.status_code == 200
+    assert updated_response.json()["data"]["toolset_policy"] == (
+        EXECUTION_TOOLSET_POLICY
+    )
 
 
 def _install_fake_completion(monkeypatch, completion) -> None:

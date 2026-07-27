@@ -34,7 +34,10 @@ from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.executor import AgentToolExecutor
-from app.services.agent_core.tools.toolsets import ToolsetExposure
+from app.services.agent_core.tools.toolsets import (
+    EXECUTION_TOOLSET_POLICY,
+    ToolsetExposure,
+)
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ModelEvent,
@@ -146,7 +149,43 @@ async def test_session_can_start_without_project_and_keeps_prompt_snapshot(db_se
     assert session.project_id is None
     assert session.runtime_mode == "api"
     assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v11"
-    assert session.toolset_policy["name"] == "execution"
+    assert session.toolset_policy == EXECUTION_TOOLSET_POLICY
+
+
+@pytest.mark.asyncio
+async def test_session_mode_updates_use_canonical_execution_policy(db_session):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        toolset_policy={"name": "plan"},
+    )
+
+    execution_session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"mode": "execution"},
+    )
+    assert execution_session.toolset_policy == EXECUTION_TOOLSET_POLICY
+
+    plan_session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"mode": "plan"},
+    )
+    assert plan_session.toolset_policy == {"name": "plan"}
+
+    default_session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"mode": "default"},
+    )
+    assert default_session.toolset_policy == {"name": "default"}
 
 
 def test_v11_system_prompt_defines_the_comprehensive_provider_neutral_agent_contract():

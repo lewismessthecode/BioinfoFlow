@@ -63,7 +63,10 @@ from app.services.agent_core.model_selection import (
     session_model_selection_from_metadata,
 )
 from app.services.agent_core.tools import build_default_tool_registry
-from app.services.agent_core.tools.toolsets import ToolsetExposure
+from app.services.agent_core.tools.toolsets import (
+    EXECUTION_TOOLSET_POLICY,
+    ToolsetExposure,
+)
 from app.services.project_service import ProjectService
 from app.utils.responses import success_response
 
@@ -309,7 +312,11 @@ async def create_session(
             else None
         ),
         metadata=payload.metadata,
-        toolset_policy={"name": payload.mode},
+        toolset_policy=(
+            EXECUTION_TOOLSET_POLICY
+            if payload.mode == "execution"
+            else {"name": payload.mode}
+        ),
     )
     return success_response(
         _dump(_session_read(session)),

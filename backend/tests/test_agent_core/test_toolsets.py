@@ -1,5 +1,27 @@
 from app.services.agent_core.tools import build_default_tool_registry
-from app.services.agent_core.tools.toolsets import ToolsetExposure
+from app.services.agent_core.tools.toolsets import (
+    EXECUTION_TOOLSET_POLICY,
+    ToolsetExposure,
+)
+
+
+def test_canonical_execution_policy_exposes_platform_lifecycle_tools() -> None:
+    assert EXECUTION_TOOLSET_POLICY == {
+        "name": "execution",
+        "capabilities": ["bioinfo.read", "bioinfo.manage"],
+    }
+
+    exposed = ToolsetExposure(build_default_tool_registry()).exposed_names(
+        policy=EXECUTION_TOOLSET_POLICY
+    )
+
+    assert {
+        "workflows.create",
+        "projects.workflows.bind",
+        "runs.submit",
+        "runs.inspect",
+        "workflows.inspect",
+    } <= exposed
 
 
 def test_default_and_plan_use_explicit_small_core_surfaces() -> None:
