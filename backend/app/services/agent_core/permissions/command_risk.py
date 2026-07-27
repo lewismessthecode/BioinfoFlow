@@ -28,7 +28,8 @@ SemanticEffect = Literal[
     "network",
     "process_control",
     "privilege",
-    "execute",
+    "code_execution",
+    "unknown",
 ]
 
 
@@ -138,7 +139,7 @@ def assess_command_risk(
 ) -> CommandRiskAssessment:
     semantics = _analyze_command_semantics(command, target=target)
     level = semantics.level
-    effects = list(semantics.effects)
+    effects = _audit_effects(semantics.effects)
     assert semantics.sink_safety is not None
     assert semantics.execution_safety is not None
     sink_safety = semantics.sink_safety
@@ -399,7 +400,7 @@ class _NodeSemantics:
 @dataclass(frozen=True)
 class _CommandSemantics:
     level: RiskLevel
-    effects: tuple[str, ...]
+    effects: tuple[SemanticEffect, ...]
     confidence: RiskConfidence
     reasons: tuple[str, ...] = ()
     referenced_paths: tuple[str, ...] = ()
@@ -407,6 +408,30 @@ class _CommandSemantics:
     protected_resources: tuple[dict[str, str], ...] = ()
     sink_safety: _WriteSinkSafety | None = None
     execution_safety: _IndirectExecutionSafety | None = None
+
+
+def _risk_floor_for_effects(effects: tuple[SemanticEffect, ...]) -> RiskLevel:
+    """Reduce semantic effects to the minimum permissible risk level."""
+    effect_set = set(effects)
+    if effect_set & {"delete", "process_control", "privilege"}:
+        return "destructive"
+    if "network" in effect_set:
+        return "external"
+    if effect_set & {"write", "code_execution", "unknown"}:
+        return "act_high"
+    if "read" in effect_set:
+        return "read"
+    return "act_high"
+
+
+def _audit_effects(effects: tuple[SemanticEffect, ...]) -> list[str]:
+    """Map internal semantics onto the stable public audit vocabulary."""
+    return _dedupe(
+        [
+            "execute" if effect in {"code_execution", "unknown"} else effect
+            for effect in effects
+        ]
+    )
 
 
 def classify_command_level(command: str) -> RiskLevel:
@@ -517,7 +542,7 @@ def _analyze_command_grammar(parsed: _ParsedCommand) -> _CommandSemantics:
     if not text:
         return _CommandSemantics(
             level="act_low",
-            effects=("execute",),
+            effects=("unknown",),
             confidence="low",
             reasons=("empty command has no proven side effect",),
         )
@@ -529,12 +554,24 @@ def _analyze_command_grammar(parsed: _ParsedCommand) -> _CommandSemantics:
             reasons=("fork bomb",),
         )
     substitutions = parsed.substitutions
-    if any(classify_command_level(inner) == "critical" for inner in substitutions):
+    substitution_semantics = [
+        _analyze_command_semantics(inner) for inner in substitutions
+    ]
+    substitution_effects: list[SemanticEffect] = (
+        ["code_execution"] if substitutions else []
+    )
+    substitution_reasons: list[str] = []
+    for nested in substitution_semantics:
+        substitution_effects.extend(nested.effects)
+        substitution_reasons.extend(nested.reasons)
+    if any(nested.level == "critical" for nested in substitution_semantics):
         return _CommandSemantics(
             level="critical",
-            effects=("execute",),
+            effects=tuple(_dedupe(substitution_effects)),
             confidence="high",
-            reasons=("critical dynamic shell source",),
+            reasons=tuple(
+                _dedupe(["critical dynamic shell source", *substitution_reasons])
+            ),
         )
 
     nodes = list(parsed.nodes)
@@ -548,7 +585,7 @@ def _analyze_command_grammar(parsed: _ParsedCommand) -> _CommandSemantics:
     if _dynamic_command_hardline(nodes) or _invoked_function_hardline(nodes):
         return _CommandSemantics(
             level="critical",
-            effects=("execute",),
+            effects=("code_execution",),
             confidence="high",
             reasons=("dynamic hardline command",),
         )
@@ -559,8 +596,11 @@ def _analyze_command_grammar(parsed: _ParsedCommand) -> _CommandSemantics:
         has_dynamic_source=bool(substitutions),
     )
     highest: RiskLevel = "act_high" if substitutions or "<(" in text else "read"
-    effects: list[str] = []
-    reasons: list[str] = []
+    for nested in substitution_semantics:
+        if _RANK[nested.level] > _RANK[highest]:
+            highest = nested.level
+    effects: list[SemanticEffect] = list(substitution_effects)
+    reasons: list[str] = list(substitution_reasons)
     previous: _CommandNode | None = None
     for index, node in enumerate(nodes):
         semantics = _inspect_node(
@@ -572,7 +612,7 @@ def _analyze_command_grammar(parsed: _ParsedCommand) -> _CommandSemantics:
         if semantics.level == "critical":
             return _CommandSemantics(
                 level="critical",
-                effects=tuple(_dedupe(effects)) or ("execute",),
+                effects=tuple(_dedupe(effects)) or ("unknown",),
                 confidence="high",
                 reasons=tuple(_dedupe(reasons)),
             )
@@ -584,7 +624,9 @@ def _analyze_command_grammar(parsed: _ParsedCommand) -> _CommandSemantics:
         ):
             return _CommandSemantics(
                 level="critical",
-                effects=tuple(_dedupe([*effects, "network", "execute"])),
+                effects=tuple(
+                    _dedupe([*effects, "network", "code_execution"])
+                ),
                 confidence="high",
                 reasons=("network source piped to shell",),
             )
@@ -597,16 +639,17 @@ def _analyze_command_grammar(parsed: _ParsedCommand) -> _CommandSemantics:
         ):
             return _CommandSemantics(
                 level="critical",
-                effects=tuple(_dedupe([*effects, "execute"])),
+                effects=tuple(_dedupe([*effects, "code_execution"])),
                 confidence="high",
                 reasons=("critical literal source piped to shell",),
             )
         if _RANK[semantics.level] > _RANK[highest]:
             highest = semantics.level
         previous = node
+    normalized_effects = tuple(_dedupe(effects)) or ("unknown",)
     return _CommandSemantics(
-        level=highest,
-        effects=tuple(_dedupe(effects)) or ("execute",),
+        level=_max_level(_risk_floor_for_effects(normalized_effects), highest),
+        effects=normalized_effects,
         confidence="high" if introspection_proven else "medium",
         reasons=tuple(_dedupe(reasons)),
     )
@@ -3141,17 +3184,22 @@ def _inspect_legacy_behavior(node: _CommandNode) -> _NodeSemantics:
     effects: list[SemanticEffect] = []
     tokens, elevated = _unwrap_command(list(node.tokens))
     if not tokens:
-        return _NodeSemantics(level=level, effects=("execute",))
+        return _NodeSemantics(level=level, effects=("unknown",))
     executable = _basename(tokens[0])
     args = tokens[1:]
     if elevated:
         effects.append("privilege")
+    writes = _node_writes(tokens, executable, args)
+    if writes:
+        effects.append("write")
     if executable in _SHELLS:
+        effects.append("code_execution")
         inner = _shell_command_argument(args)
         if inner is not None:
             effects.extend(_analyze_command_semantics(inner).effects)
             return _node_semantics(level, effects)
     if executable == "eval" and args:
+        effects.append("code_execution")
         effects.extend(_analyze_command_semantics(" ".join(args)).effects)
         return _node_semantics(level, effects)
     if executable == "busybox":
@@ -3164,6 +3212,7 @@ def _inspect_legacy_behavior(node: _CommandNode) -> _NodeSemantics:
     if executable == "xargs":
         nested = _xargs_command(args)
         if nested:
+            effects.append("code_execution")
             effects.extend(
                 _inspect_node(_CommandNode(tokens=tuple(nested))).effects
             )
@@ -3172,6 +3221,7 @@ def _inspect_legacy_behavior(node: _CommandNode) -> _NodeSemantics:
         if "-delete" in args:
             effects.append("delete")
         for nested in _find_nested_commands(args):
+            effects.append("code_execution")
             effects.extend(
                 _inspect_node(_CommandNode(tokens=tuple(nested))).effects
             )
@@ -3191,12 +3241,12 @@ def _inspect_legacy_behavior(node: _CommandNode) -> _NodeSemantics:
         effects.append("process_control")
     elif executable.startswith("mkfs"):
         effects.append("write")
+    elif _interpreter_family(executable) is not None:
+        effects.append("code_execution")
     elif executable in _EXTERNAL_EXECUTABLES or executable in _INSTALL_EXECUTABLES:
         effects.append("network")
         if executable == "rsync":
             effects.append("write")
-    elif _node_writes(tokens, executable, args):
-        effects.append("write")
     elif executable == "git":
         if level == "external":
             effects.append("network")
@@ -3204,8 +3254,8 @@ def _inspect_legacy_behavior(node: _CommandNode) -> _NodeSemantics:
             effects.append("delete")
         elif level == "act_low":
             effects.append("read")
-        else:
-            effects.append("execute")
+        elif not writes:
+            effects.append("unknown")
     elif executable == "docker":
         if level == "external":
             effects.append("network")
@@ -3214,14 +3264,16 @@ def _inspect_legacy_behavior(node: _CommandNode) -> _NodeSemantics:
         elif level == "act_low":
             effects.append("read")
         else:
-            effects.append("execute")
+            effects.append("code_execution")
+    elif writes:
+        pass
     elif (
         executable in _READ_EXECUTABLES
         or _is_read_only_platform_command(executable, args)
     ):
         effects.append("read")
     else:
-        effects.append("execute")
+        effects.append("unknown")
     return _node_semantics(level, effects)
 
 
@@ -3229,7 +3281,7 @@ def _node_semantics(
     level: RiskLevel,
     effects: list[SemanticEffect],
 ) -> _NodeSemantics:
-    normalized = tuple(_dedupe(effects)) or ("execute",)
+    normalized = tuple(_dedupe(effects)) or ("unknown",)
     return _NodeSemantics(
         level=level,
         effects=normalized,
