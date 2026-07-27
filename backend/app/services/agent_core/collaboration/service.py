@@ -149,12 +149,13 @@ class AgentCollaborationService:
             await self.db.flush()
             await self.sessions.reserve_child_slot(child)
 
-            forked_messages, copied_roots = await self._reown_forked_attachments(
+            forked_messages = await self._reown_forked_attachments(
                 forked_messages,
                 child=child,
                 parent_session_id=root_session_id,
                 workspace_id=workspace_id,
                 user_id=user_id,
+                copied_roots=copied_roots,
             )
             for ordering_index, item in enumerate(forked_messages, start=1):
                 await self.transcript.append_parts(
@@ -197,7 +198,7 @@ class AgentCollaborationService:
             await self.db.rollback()
             _remove_copied_roots(copied_roots)
             raise ConflictError("agent_name_reserved") from exc
-        except Exception:
+        except BaseException:
             await self.db.rollback()
             _remove_copied_roots(copied_roots)
             raise
@@ -272,8 +273,8 @@ class AgentCollaborationService:
         parent_session_id: str,
         workspace_id: str,
         user_id: str,
-    ) -> tuple[list[dict], list[Path]]:
-        copied_roots: list[Path] = []
+        copied_roots: list[Path],
+    ) -> list[dict]:
         replacements: dict[str, str] = {}
         result = deepcopy(messages)
         for item in result:
@@ -293,8 +294,8 @@ class AgentCollaborationService:
                         raise BadRequestError("fork_attachment_not_found")
                     clone_id = str(uuid4())
                     clone_root = agent_attachment_root(str(child.id), clone_id)
-                    _clone_attachment_files(source=source, destination=clone_root)
                     copied_roots.append(clone_root)
+                    _clone_attachment_files(source=source, destination=clone_root)
                     await self.attachments.add(
                         id=clone_id,
                         session_id=str(child.id),
@@ -316,7 +317,7 @@ class AgentCollaborationService:
                     replacement = clone_id
                     replacements[source_id] = replacement
                 part["attachment_id"] = replacement
-        return result, copied_roots
+        return result
 
 
 def _parent_model(snapshot: dict) -> tuple[str, str]:
@@ -329,8 +330,13 @@ def _parent_model(snapshot: dict) -> tuple[str, str]:
 
 
 def _parent_reasoning_effort(snapshot: dict) -> str | None:
-    value = snapshot.get("reasoning_effort")
-    return value if value in {"low", "medium", "high"} else None
+    strategy = snapshot.get("resolved_runtime_strategy")
+    value = strategy.get("reasoning_effort") if isinstance(strategy, dict) else None
+    if value in {"low", "medium", "high"}:
+        return value
+    if isinstance(strategy, dict) and strategy.get("allow_thinking") is True:
+        return "medium"
+    return None
 
 
 def _parent_supports_reasoning(snapshot: dict) -> bool | None:
@@ -405,10 +411,19 @@ def _clone_attachment_files(*, source: AgentAttachment, destination: Path) -> No
     source_root = agent_attachment_root(str(source.session_id), str(source.id))
     if not source_root.is_dir():
         raise BadRequestError("fork_attachment_storage_missing")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source_root, destination)
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source_root, destination)
+    except BaseException:
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
 
 
 def _remove_copied_roots(paths: list[Path]) -> None:
     for path in paths:
         shutil.rmtree(path, ignore_errors=True)
+    for parent in {path.parent for path in paths}:
+        try:
+            parent.rmdir()
+        except OSError:
+            pass

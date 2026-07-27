@@ -593,7 +593,7 @@ async def test_normal_turn_runs_through_injected_model_gateway(db_session) -> No
     assert invocation.target == _target()
     assert invocation.stream is True
     assert invocation.max_output_tokens == 256
-    assert invocation.reasoning.effort is None
+    assert invocation.reasoning.effort == "medium"
     assert invocation.instructions
     assert invocation.input_items == (
         TextPart(

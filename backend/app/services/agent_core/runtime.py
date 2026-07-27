@@ -967,7 +967,10 @@ class AgentCoreRuntime:
             snapshot["resolved_profile_id"] = resolved["profile_id"]
         snapshot["resolved_model_source"] = resolved["source"]
         snapshot["resolved_model_capabilities"] = resolved.get("capabilities", {})
-        snapshot["resolved_runtime_strategy"] = resolved.get("runtime_strategy", {})
+        snapshot["resolved_runtime_strategy"] = _resolved_runtime_strategy(
+            resolved,
+            turn=turn,
+        ).as_dict()
         updated_turn, updated = await self.turn_repo.update_owned(
             str(turn.id),
             expected_owner_token=ownership.owner_token,
@@ -1122,13 +1125,21 @@ def _resolved_runtime_strategy(
     if not isinstance(strategy, dict):
         return RuntimeStrategy()
     fallback_model_ids = strategy.get("fallback_model_ids") or []
+    allow_thinking = bool(strategy.get("allow_thinking", True))
+    reasoning_effort = _turn_reasoning_effort(turn)
+    if reasoning_effort is None:
+        persisted_effort = strategy.get("reasoning_effort")
+        if persisted_effort in {"low", "medium", "high"}:
+            reasoning_effort = persisted_effort
+        elif allow_thinking:
+            reasoning_effort = "medium"
     return RuntimeStrategy(
         use_streaming=bool(strategy.get("use_streaming", True)),
-        allow_thinking=bool(strategy.get("allow_thinking", True)),
+        allow_thinking=allow_thinking,
         allow_tools=bool(strategy.get("allow_tools", True)),
         max_tokens=_coerce_optional_int(strategy.get("max_tokens")),
         reasoning_budget=_coerce_optional_int(strategy.get("reasoning_budget")),
-        reasoning_effort=_turn_reasoning_effort(turn),
+        reasoning_effort=reasoning_effort,
         fallback_model_ids=tuple(str(item) for item in fallback_model_ids),
     )
 
