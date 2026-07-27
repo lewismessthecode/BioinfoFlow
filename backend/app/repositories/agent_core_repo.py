@@ -373,6 +373,26 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         )
         return list(result.scalars().all())
 
+    async def list_idle_children_with_draft_messages(self) -> list[AgentSession]:
+        pending_message = exists(
+            select(AgentMessage.id).where(
+                AgentMessage.session_id == self.model.id,
+                AgentMessage.turn_id.is_(None),
+                AgentMessage.status == AgentMessageStatus.DRAFT,
+            )
+        )
+        result = await self.session.execute(
+            select(self.model)
+            .where(
+                self.model.root_session_id.is_not(None),
+                self.model.active_turn_id.is_(None),
+                self.model.collaboration_slot.is_(None),
+                pending_message,
+            )
+            .order_by(self.model.created_at, self.model.id)
+        )
+        return list(result.scalars().all())
+
     async def reserve_child_slot(self, child: AgentSession) -> AgentSession:
         if child not in self.session:
             raise ValueError("Child session must be owned by this repository session")
