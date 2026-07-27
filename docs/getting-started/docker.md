@@ -391,11 +391,15 @@ same registry-selection rules: full image names can be pulled directly,
 automatic/default behavior remains available for unqualified names, and explicit
 `registry_id` use is limited to owners/admins in team mode.
 
-The source `docker-compose.yml` enables `seccomp:unconfined` for the backend so
-Bubblewrap can create its unprivileged user namespace. This grants the namespace
-syscall needed by the Agent bash sandbox without making the container privileged
-or adding `SYS_ADMIN`. Sandbox selection still treats Bubblewrap as unavailable
-unless a bounded runtime probe can create that namespace successfully.
+The bundled Compose files enable `seccomp:unconfined` for the backend so
+Bubblewrap can create its unprivileged user namespace. This setting disables
+Docker's seccomp syscall filter for the whole backend container. It does not make
+the container privileged or add `SYS_ADMIN`, but it is still a meaningful
+security tradeoff. A deployment may replace it with a validated custom seccomp
+profile that permits the required namespace calls. Sandbox selection still
+treats Bubblewrap as unavailable unless a bounded runtime probe can create that
+namespace successfully; probe results are cached briefly and retried after the
+cache expires.
 
 For WDL, static task `docker`/`container` references are captured during workflow
 registration and missing images are prefetched automatically before MiniWDL

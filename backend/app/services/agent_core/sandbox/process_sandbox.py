@@ -18,9 +18,11 @@ from __future__ import annotations
 import platform
 import shutil
 import subprocess
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, ClassVar, Protocol
 
 from app.config import settings
 
@@ -41,7 +43,16 @@ _MACOS_WRITE_ROOTS = (
 )
 _BWRAP_PROTECTED_STAGE_PREFIX = "/.bioinfoflow-protected-read"
 _BWRAP_USER_NAMESPACE_ARGS = ("--unshare-user", "--uid", "0", "--gid", "0")
+_BWRAP_PROBE_ARGS = (
+    *_BWRAP_USER_NAMESPACE_ARGS,
+    "--ro-bind",
+    "/",
+    "/",
+    "--",
+    "/bin/true",
+)
 _BWRAP_PROBE_TIMEOUT_SECONDS = 2.0
+_BWRAP_AVAILABILITY_CACHE_TTL_SECONDS = 30.0
 
 
 @dataclass(frozen=True)
@@ -75,40 +86,49 @@ class BubblewrapAdapter:
     """Linux/container confinement via ``bwrap`` (bubblewrap)."""
 
     name = "bubblewrap"
+    _availability_cache: ClassVar[
+        dict[tuple[str, tuple[str, ...]], tuple[float, bool]]
+    ] = {}
+    _availability_cache_lock: ClassVar[threading.Lock] = threading.Lock()
 
-    def __init__(self) -> None:
-        self._availability: bool | None = None
+    def __init__(self, *, clock: Callable[[], float] | None = None) -> None:
+        self._clock = clock or time.monotonic
+
+    @classmethod
+    def clear_availability_cache(cls) -> None:
+        """Clear the process cache, primarily for deterministic tests."""
+        with cls._availability_cache_lock:
+            cls._availability_cache.clear()
 
     def available(self) -> bool:
-        if self._availability is not None:
-            return self._availability
-
         executable = shutil.which("bwrap")
         if executable is None:
-            self._availability = False
             return False
 
-        try:
-            probe = subprocess.run(
-                [
-                    executable,
-                    *_BWRAP_USER_NAMESPACE_ARGS,
-                    "--ro-bind",
-                    "/",
-                    "/",
-                    "--",
-                    "/bin/true",
-                ],
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=_BWRAP_PROBE_TIMEOUT_SECONDS,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            self._availability = False
-        else:
-            self._availability = probe.returncode == 0
-        return self._availability
+        cache_key = (executable, _BWRAP_PROBE_ARGS)
+        now = self._clock()
+        with self._availability_cache_lock:
+            cached = self._availability_cache.get(cache_key)
+            if (
+                cached is not None
+                and now - cached[0] < _BWRAP_AVAILABILITY_CACHE_TTL_SECONDS
+            ):
+                return cached[1]
+
+            try:
+                probe = subprocess.run(
+                    [executable, *_BWRAP_PROBE_ARGS],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=_BWRAP_PROBE_TIMEOUT_SECONDS,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                available = False
+            else:
+                available = probe.returncode == 0
+            self._availability_cache[cache_key] = (now, available)
+            return available
 
     def build_argv(self, spec: SandboxSpec) -> list[str]:
         argv: list[str] = ["bwrap", *_BWRAP_USER_NAMESPACE_ARGS]

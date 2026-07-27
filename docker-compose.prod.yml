@@ -39,6 +39,12 @@ services:
       DOCKER_SOCKET: unix:///var/run/docker.sock
       BIOINFOFLOW_GPU_MODE: ${BIOINFOFLOW_GPU_MODE:-auto}
       BIOINFOFLOW_GPU_DEVICES: ${BIOINFOFLOW_GPU_DEVICES:-all}
+    # Bubblewrap user namespaces are blocked by Docker's default seccomp policy.
+    # This disables seccomp filtering for the backend container; it does not
+    # make the container privileged or add SYS_ADMIN. Deployments may replace
+    # it with a validated custom seccomp profile that permits the required calls.
+    security_opt:
+      - seccomp:unconfined
     volumes:
       - ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}:${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
       - /var/run/docker.sock:/var/run/docker.sock

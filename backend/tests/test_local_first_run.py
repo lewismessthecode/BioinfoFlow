@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -10,6 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def _source_compose() -> dict:
     return yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+
+
+def _compose(filename: str) -> dict:
+    return yaml.safe_load((ROOT / filename).read_text(encoding="utf-8"))
 
 
 def test_source_compose_uses_optional_env_file() -> None:
@@ -43,12 +48,28 @@ def test_source_compose_defaults_to_loopback_dev_auth() -> None:
     )
 
 
-def test_source_compose_grants_only_required_bubblewrap_namespace_permission() -> None:
-    backend = _source_compose()["services"]["backend"]
+@pytest.mark.parametrize(
+    "filename",
+    ["docker-compose.yml", "docker-compose.local.yml", "docker-compose.prod.yml"],
+)
+def test_compose_backends_disable_seccomp_without_privileged_escalation(
+    filename: str,
+) -> None:
+    backend = _compose(filename)["services"]["backend"]
 
     assert backend["security_opt"] == ["seccomp:unconfined"]
     assert backend.get("privileged", False) is False
     assert "SYS_ADMIN" not in backend.get("cap_add", [])
+
+
+def test_docker_guide_explains_seccomp_tradeoff() -> None:
+    guide = (ROOT / "docs" / "getting-started" / "docker.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_guide = " ".join(guide.split())
+
+    assert "disables Docker's seccomp syscall filter" in normalized_guide
+    assert "validated custom seccomp profile" in normalized_guide
 
 
 def test_published_image_compose_fails_closed_to_personal_auth() -> None:

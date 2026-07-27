@@ -38,10 +38,10 @@ services:
       ASR_MODEL: ${ASR_MODEL:-}
       ASR_LANGUAGE: ${ASR_LANGUAGE:-zh}
       ASR_CONTEXT_TERMS: ${ASR_CONTEXT_TERMS:-["Bioinfoflow","Nextflow","MiniWDL","FASTQ"]}
-    # The agent bash tool requires bubblewrap (AGENT_SANDBOX_ENABLED=true).
-    # Allow its unprivileged user-namespace syscall without granting a
-    # privileged container or SYS_ADMIN. The sandbox fails closed if its
-    # namespace probe cannot create the confinement boundary.
+    # Bubblewrap user namespaces are blocked by Docker's default seccomp policy.
+    # This disables seccomp filtering for the backend container; it does not
+    # make the container privileged or add SYS_ADMIN. Deployments may replace
+    # it with a validated custom seccomp profile that permits the required calls.
     security_opt:
       - seccomp:unconfined
     volumes:
