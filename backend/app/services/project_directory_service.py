@@ -84,7 +84,7 @@ class ProjectDirectoryService:
                 legacy_project_id = None
             if (
                 legacy_project_id is not None
-                and await self.repo.has_legacy_managed_project_id(legacy_project_id)
+                and await self.repo.has_legacy_directory_owner(legacy_project_id)
             ):
                 continue
 

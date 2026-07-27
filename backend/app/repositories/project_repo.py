@@ -26,12 +26,12 @@ class ProjectRepository(BaseRepository[Project]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def has_legacy_managed_project_id(self, project_id: UUID) -> bool:
+    async def has_legacy_directory_owner(self, project_id: UUID) -> bool:
+        """Return whether a legacy project reserves its UUID directory name."""
         stmt = (
             select(self.model.id)
             .where(
                 self.model.id == project_id,
-                self.model.storage_mode == "managed",
                 self.model.directory_name.is_(None),
             )
             .limit(1)
