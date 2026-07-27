@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
@@ -8,8 +9,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.agent_core import AgentSession, AgentSessionStatus
+from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.models.workspace import Workspace
 from app.repositories.agent_core_repo import AgentSessionRepository
+from app.services.agent_core.collaboration.context_fork import (
+    InvalidForkTurnsError,
+    fork_agent_context,
+)
+from app.services.agent_core.collaboration.model_preflight import AgentModelPreflight
+from app.services.llm.credentials import encrypt_secret
+from app.services.llm.probe import LlmProviderProbeResult
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -258,3 +267,338 @@ async def test_staged_child_and_slot_share_the_callers_transaction(db_session) -
     await db_session.rollback()
 
     assert await db_session.get(AgentSession, child_id) is None
+
+
+def _message(
+    role: str,
+    text: str,
+    *,
+    phase: str | None = None,
+    kind: str | None = None,
+    parts: list[dict] | None = None,
+    status: str = "committed",
+    metadata: dict | None = None,
+):
+    metadata = {**(metadata or {}), **({"kind": kind} if kind else {})} or None
+    content_parts = parts or [
+        {
+            "type": "text",
+            "text": text,
+            **({"phase": phase} if phase else {}),
+        }
+    ]
+    return SimpleNamespace(
+        role=role,
+        content_parts=content_parts,
+        message_metadata=metadata,
+        status=status,
+    )
+
+
+def _fork_texts(messages) -> list[str]:
+    return [
+        "\n".join(
+            part["text"]
+            for part in message["content_parts"]
+            if part.get("type") == "text"
+        )
+        for message in messages
+    ]
+
+
+def test_numeric_context_fork_keeps_last_user_turns_and_final_answers() -> None:
+    messages = [
+        _message("system", "system rules"),
+        _message("developer", "developer rules"),
+        _message("user", "user one"),
+        _message("assistant", "assistant one reasoning", phase="commentary"),
+        _message("assistant", "assistant one final", phase="final_answer"),
+        _message(
+            "assistant",
+            "",
+            parts=[
+                {"type": "text", "text": "not a terminal answer"},
+                {
+                    "type": "tool_calls",
+                    "tool_calls": [
+                        {"id": "call-1", "name": "spawn_agent", "arguments": {}}
+                    ],
+                }
+            ],
+        ),
+        _message("tool", "spawn result"),
+        _message("user", "user two"),
+        _message("assistant", "assistant two final", phase="final_answer"),
+        _message("user", "user three"),
+        _message("assistant", "assistant three final", phase="final_answer"),
+        _message("user", "pending draft", status="draft"),
+    ]
+
+    forked = fork_agent_context(messages, fork_turns="2")
+
+    assert _fork_texts(forked) == [
+        "system rules",
+        "developer rules",
+        "user two",
+        "assistant two final",
+        "user three",
+        "assistant three final",
+    ]
+    assert all(message["role"] != "tool" for message in forked)
+
+
+def test_all_context_fork_keeps_accepted_summary_but_filters_runtime_noise() -> None:
+    messages = [
+        _message("developer", "developer rules"),
+        _message(
+            "assistant",
+            "accepted compacted history",
+            kind="compaction_summary",
+        ),
+        _message("user", "current request"),
+        _message("assistant", "progress", phase="commentary"),
+        _message("assistant", "final answer", phase="final_answer"),
+        _message(
+            "assistant",
+            "provider continuation",
+            metadata={"_responses_continuation": {"response_id": "private"}},
+        ),
+        _message("assistant", "mailbox", kind="inter_agent_message"),
+        _message("assistant", "lifecycle", kind="agent_lifecycle"),
+        _message("tool", "tool output"),
+    ]
+
+    forked = fork_agent_context(messages, fork_turns="all")
+
+    assert _fork_texts(forked) == [
+        "developer rules",
+        "accepted compacted history",
+        "current request",
+        "final answer",
+        "provider continuation",
+    ]
+    assert forked[-1]["message_metadata"] is None
+
+
+def test_none_context_fork_returns_no_parent_conversation() -> None:
+    assert fork_agent_context([_message("user", "hello")], fork_turns="none") == []
+
+
+@pytest.mark.parametrize("fork_turns", ["0", "-1", "recent", "", 2])
+def test_invalid_context_fork_values_raise_stable_error(fork_turns) -> None:
+    with pytest.raises(InvalidForkTurnsError) as caught:
+        fork_agent_context([], fork_turns=fork_turns)
+
+    assert caught.value.code == "invalid_fork_turns"
+
+
+async def _create_probe_model(
+    db_session: AsyncSession,
+    *,
+    model_name: str = "cheap-model",
+    enabled: bool = True,
+    supports_tools: bool = True,
+    supports_reasoning: bool = True,
+    test_status: dict | None = None,
+) -> LlmModel:
+    provider = LlmProvider(
+        name=f"Provider for {model_name}",
+        kind="openai_compatible",
+        wire_protocol="chat_completions",
+        base_url="https://probe.example/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=enabled,
+        test_status=test_status,
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    db_session.add(
+        LlmProviderCredential(
+            provider_id=str(provider.id),
+            source="stored",
+            encrypted_secret=encrypt_secret("super-secret-child-key"),
+            masked_hint="su...ey",
+            updated_by="dev",
+        )
+    )
+    model = LlmModel(
+        provider_id=str(provider.id),
+        model_id=model_name,
+        display_name=model_name,
+        supports_tools=supports_tools,
+        supports_streaming=True,
+        supports_reasoning=supports_reasoning,
+    )
+    db_session.add(model)
+    await db_session.commit()
+    await db_session.refresh(model)
+    return model
+
+
+@pytest.mark.asyncio
+async def test_available_requested_model_is_selected_with_fresh_exact_probe(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    model = await _create_probe_model(
+        db_session,
+        test_status={"success": True, "model": "cheap-model"},
+    )
+    calls: list[dict] = []
+
+    async def fake_probe(_self, **kwargs):
+        calls.append(kwargs)
+        return LlmProviderProbeResult(
+            success=True,
+            latency_ms=1,
+            wire_protocol="chat_completions",
+            model_id=kwargs["model_id"],
+        )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        fake_probe,
+    )
+
+    result = await AgentModelPreflight(db_session).resolve(
+        requested_model="cheap-model",
+        parent_model="parent-model",
+        parent_model_id="parent-id",
+        parent_reasoning_effort="high",
+        requested_reasoning_effort="low",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        role="owner",
+    )
+
+    assert result.requested_model == "cheap-model"
+    assert result.effective_model == "cheap-model"
+    assert result.effective_model_id == str(model.id)
+    assert result.reasoning_effort == "low"
+    assert result.fallback is False
+    assert [call["model_id"] for call in calls] == ["cheap-model"]
+
+
+@pytest.mark.asyncio
+async def test_unavailable_requested_model_falls_back_without_leaking_probe_details(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    await _create_probe_model(db_session, model_name="unavailable-model")
+
+    async def fake_probe(_self, **kwargs):
+        return LlmProviderProbeResult(
+            success=False,
+            latency_ms=1,
+            wire_protocol="chat_completions",
+            model_id=kwargs["model_id"],
+            error_code="authentication_error",
+            error_message="bad key super-secret-child-key",
+            http_status=401,
+        )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        fake_probe,
+    )
+
+    result = await AgentModelPreflight(db_session).resolve(
+        requested_model="unavailable-model",
+        parent_model="parent-model",
+        parent_model_id="parent-id",
+        parent_reasoning_effort="high",
+        requested_reasoning_effort="ultra",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        role="owner",
+    )
+
+    assert result.effective_model == "parent-model"
+    assert result.effective_model_id == "parent-id"
+    assert result.reasoning_effort == "high"
+    assert result.fallback is True
+    assert result.fallback_reason == "requested_model_unavailable"
+    assert "secret" not in repr(result).lower()
+
+
+@pytest.mark.asyncio
+async def test_omitted_requested_model_inherits_parent_without_probe(
+    db_session,
+    monkeypatch,
+) -> None:
+    async def forbidden_probe(*args, **kwargs):
+        raise AssertionError("omitted model must not be probed")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        forbidden_probe,
+    )
+
+    result = await AgentModelPreflight(db_session).resolve(
+        requested_model=None,
+        parent_model="parent-model",
+        parent_model_id="parent-id",
+        parent_reasoning_effort="high",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    assert result.requested_model is None
+    assert result.effective_model == "parent-model"
+    assert result.effective_model_id == "parent-id"
+    assert result.reasoning_effort == "high"
+    assert result.fallback is False
+
+
+@pytest.mark.asyncio
+async def test_supported_model_rejects_invalid_or_unsupported_explicit_effort(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    await _create_probe_model(
+        db_session,
+        model_name="plain-model",
+        supports_reasoning=False,
+    )
+
+    async def fake_probe(_self, **kwargs):
+        return LlmProviderProbeResult(
+            success=True,
+            latency_ms=1,
+            wire_protocol="chat_completions",
+            model_id=kwargs["model_id"],
+        )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        fake_probe,
+    )
+
+    with pytest.raises(ValueError, match="invalid_reasoning_effort"):
+        await AgentModelPreflight(db_session).resolve(
+            requested_model="plain-model",
+            parent_model="parent-model",
+            parent_model_id="parent-id",
+            parent_reasoning_effort="high",
+            requested_reasoning_effort="ultra",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            role="owner",
+        )
+
+    with pytest.raises(ValueError, match="unsupported_reasoning_effort"):
+        await AgentModelPreflight(db_session).resolve(
+            requested_model="plain-model",
+            parent_model="parent-model",
+            parent_model_id="parent-id",
+            parent_reasoning_effort="high",
+            requested_reasoning_effort="low",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            role="owner",
+        )
