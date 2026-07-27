@@ -14,6 +14,7 @@ from app.auth.session import AuthUser
 from app.config import settings
 from app.models.agent_core import AgentEvent, AgentTurn
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
+from app.models.project import Project
 from app.models.remote_connection import RemoteConnection
 from app.path_layout import project_home, skills_root
 from app.services.agent_core import AgentCoreService
@@ -2265,9 +2266,11 @@ async def test_agent_fs_tree_and_file_are_confined_to_allowed_roots(async_client
 
 
 @pytest.mark.asyncio
-async def test_agent_fs_tree_defaults_to_project_home(async_client):
+async def test_agent_fs_tree_defaults_to_project_home(async_client, db_session):
     project_id = await _create_project(async_client)
-    project_root = project_home(project_id)
+    project = await db_session.get(Project, project_id)
+    assert project is not None
+    project_root = project_home(project)
     marker = project_root / "project-note.txt"
     marker.write_text("project scoped", encoding="utf-8")
 

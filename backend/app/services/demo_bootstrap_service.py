@@ -25,6 +25,10 @@ from app.repositories.project_workflow_binding_repo import (
 from app.repositories.project_workflow_pin_repo import ProjectWorkflowPinRepository
 from app.repositories.workflow_repo import WorkflowRepository
 from app.services.demo_contract import DEMO_WORKFLOW
+from app.services.project_directory_service import (
+    ManagedProjectReservation,
+    ProjectDirectoryService,
+)
 from app.services.workflow_form_spec import reconcile_workflow_form_spec
 from app.services.workflow_validator import WorkflowValidator
 
@@ -79,6 +83,7 @@ class DemoBootstrapService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.project_repo = ProjectRepository(session)
+        self.project_directory_service = ProjectDirectoryService(session)
         self.workflow_repo = WorkflowRepository(session)
         self.binding_repo = ProjectWorkflowBindingRepository(session)
         self.pin_repo = ProjectWorkflowPinRepository(session)
@@ -109,27 +114,31 @@ class DemoBootstrapService:
         )
         project = await self.project_repo.get(project_id)
         created = False
+        reservation: ManagedProjectReservation | None = None
 
         if project is None:
             if not await self._workspace_is_fresh(workspace_id=workspace_id):
                 return self._not_ready_result()
-            project = await self.project_repo.add(
-                id=project_id,
-                name=DEMO_PROJECT_NAME,
-                description=(
-                    "Managed quickstart assets for the first Agent-guided analysis. "
-                    f"Marker: {DEMO_MARKER}"
-                ),
-                storage_mode="managed",
-                external_root_path=None,
-                remote_connection_id=None,
-                container_registry_id=None,
-                remote_root_path=None,
-                user_id=user_id,
-                created_by_user_id=user_id,
-                workspace_id=workspace_id,
-                is_default=False,
+            reservation = await self.project_directory_service.add_pending(
+                {
+                    "id": project_id,
+                    "name": DEMO_PROJECT_NAME,
+                    "description": (
+                        "Managed quickstart assets for the first Agent-guided analysis. "
+                        f"Marker: {DEMO_MARKER}"
+                    ),
+                    "storage_mode": "managed",
+                    "external_root_path": None,
+                    "remote_connection_id": None,
+                    "container_registry_id": None,
+                    "remote_root_path": None,
+                    "user_id": user_id,
+                    "created_by_user_id": user_id,
+                    "workspace_id": workspace_id,
+                    "is_default": False,
+                }
             )
+            project = reservation.project
             created = True
         else:
             self._validate_managed_project(
@@ -137,14 +146,23 @@ class DemoBootstrapService:
                 workspace_id=workspace_id,
             )
 
-        ensure_project_layout(project)
-        self._repair_project_files(project)
-        workflow = await self._ensure_workflow()
-        await self._ensure_binding_and_pin(
-            project_id=str(project.id),
-            workflow=workflow,
-        )
-        await self.session.commit()
+        try:
+            ensure_project_layout(project)
+            self._repair_project_files(project)
+            workflow = await self._ensure_workflow()
+            await self._ensure_binding_and_pin(
+                project_id=str(project.id),
+                workflow=workflow,
+            )
+            if reservation is None:
+                await self.session.commit()
+            else:
+                project = await self.project_directory_service.commit(reservation)
+        except BaseException:
+            await self.session.rollback()
+            if reservation is not None and reservation.root_fd is not None:
+                await self.project_directory_service.discard(reservation)
+            raise
 
         return {
             "ready": True,
