@@ -638,6 +638,58 @@ async def test_model_invocation_omits_skill_loader_when_registry_is_empty(
 
 
 @pytest.mark.asyncio
+async def test_empty_skill_registry_rejects_stale_skill_load_before_execution(
+    db_session,
+    monkeypatch,
+) -> None:
+    _session, turn = await _turn(db_session)
+    gateway = FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="call-stale-skill",
+                name="skills__load",
+                arguments_delta=json.dumps({"name": "missing-skill"}),
+            ),
+            CompletionMetadata(
+                response_id="chatcmpl-stale-skill",
+                finish_reason="tool_calls",
+            ),
+        ),
+        (
+            TextDelta(text="The stale skill call executed."),
+            CompletionMetadata(
+                response_id="chatcmpl-after-stale-skill",
+                finish_reason="stop",
+            ),
+        ),
+    )
+    controller = AgentLoopController(db_session, model_gateway=gateway)
+    skill_tool = controller.registry.get("skills.load")
+    tool_executed = False
+
+    async def track_skill_execution(input, context):
+        del input, context
+        nonlocal tool_executed
+        tool_executed = True
+        return {"skill": {"name": "missing-skill"}}
+
+    monkeypatch.setattr(skill_tool, "run", track_skill_execution)
+
+    result = await controller.run_turn(
+        turn_id=str(turn.id),
+        target=_target(),
+        capabilities=RuntimeCapabilities(supports_tools=True),
+        strategy=RuntimeStrategy(allow_tools=True),
+    )
+
+    assert result.termination_reason == "tool_failed"
+    assert result.error_code == "tool_not_exposed"
+    assert tool_executed is False
+    assert len(gateway.invocations) == 1
+
+
+@pytest.mark.asyncio
 async def test_model_iteration_reuses_nonempty_skill_registry_for_tools_and_context(
     db_session,
     monkeypatch,

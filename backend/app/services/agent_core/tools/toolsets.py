@@ -253,14 +253,19 @@ class ToolsetExposure:
         execution_target: dict | str | None = None,
         execution_scope: dict | str | None = None,
         model_visible: bool = True,
+        skills_available: bool = True,
     ) -> ToolExposureDecision:
         names = (
-            self.exposed_names(
-                policy=policy,
-                role=role,
-                execution_target=execution_target,
-                execution_scope=execution_scope,
-            )
+            {
+                spec.name
+                for spec in self.exposed_specs(
+                    policy=policy,
+                    role=role,
+                    execution_target=execution_target,
+                    execution_scope=execution_scope,
+                    skills_available=skills_available,
+                )
+            }
             if model_visible
             else self.callable_names(
                 policy=policy,
