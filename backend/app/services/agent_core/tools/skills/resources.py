@@ -8,6 +8,7 @@ from app.path_layout import state_root
 from app.services.agent_core.plugins import AgentPluginRegistry
 from app.services.agent_core.skills import AgentSkillRegistry
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
+from app.utils.exceptions import NotFoundError
 
 
 class ListSkillsTool:
@@ -54,7 +55,17 @@ class LoadSkillTool:
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         del context
         registry = _skill_registry()
-        skill = registry.get(input["name"])
+        name = input["name"]
+        try:
+            skill = registry.get(name)
+        except NotFoundError as error:
+            available_names = [skill.name for skill in registry.list()]
+            availability = (
+                f"Currently available agent skills: {', '.join(available_names)}."
+                if available_names
+                else "No agent skills are currently available."
+            )
+            raise NotFoundError(f"{error.message}. {availability}") from error
         return {"skill": _skill_payload(skill, include_body=True)}
 
 

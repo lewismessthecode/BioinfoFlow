@@ -47,6 +47,27 @@ def test_default_and_plan_use_explicit_small_core_surfaces() -> None:
     }
 
 
+def test_exposed_specs_hide_skill_loader_when_no_skills_are_available() -> None:
+    exposure = ToolsetExposure(build_default_tool_registry())
+
+    specs = exposure.exposed_specs(
+        policy={"name": "default"},
+        skills_available=False,
+    )
+
+    assert "skills.load" not in {spec.name for spec in specs}
+    assert "skills.load" in exposure.exposed_names(policy={"name": "default"})
+
+
+def test_exposed_specs_keep_skill_loader_when_skills_are_available() -> None:
+    specs = ToolsetExposure(build_default_tool_registry()).exposed_specs(
+        policy={"name": "default"},
+        skills_available=True,
+    )
+
+    assert "skills.load" in {spec.name for spec in specs}
+
+
 def test_execution_uses_only_unnamespaced_general_purpose_tools() -> None:
     registry = build_default_tool_registry()
     exposed = ToolsetExposure(registry).exposed_names(policy={"name": "execution"})

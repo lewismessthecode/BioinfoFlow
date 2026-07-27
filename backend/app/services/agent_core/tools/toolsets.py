@@ -145,6 +145,7 @@ class ToolsetExposure:
         role: str = "orchestrator",
         execution_target: dict | str | None = None,
         execution_scope: dict | str | None = None,
+        skills_available: bool = True,
     ) -> list[AgentToolSpec]:
         names = self.exposed_names(
             policy=policy,
@@ -152,6 +153,8 @@ class ToolsetExposure:
             execution_target=execution_target,
             execution_scope=execution_scope,
         )
+        if not skills_available:
+            names.discard("skills.load")
         return [self.registry.get(name).spec for name in sorted(names)]
 
     def exposed_names(

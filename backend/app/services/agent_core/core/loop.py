@@ -58,6 +58,7 @@ from app.services.agent_core.ownership import (
 )
 from app.services.agent_core.observability import truncate_log_value
 from app.services.agent_core.permissions.context import PermissionContextResolver
+from app.services.agent_core.skills import AgentSkillRegistry
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.batches import ToolCallBatchCoordinator
 from app.services.agent_core.tools.executor import (
@@ -279,12 +280,14 @@ class AgentLoopController:
             permission_snapshot = permission_context.snapshot()
             expected_execution_target = permission_snapshot["execution_target"]
             expected_execution_scope = permission_snapshot.get("execution_scope")
+            skills_available = bool(AgentSkillRegistry.from_default_roots().list())
             visible_tools = (
                 self.executor.exposure.exposed_specs(
                     policy=permission_snapshot["toolset_policy"],
                     role=permission_context.role,
                     execution_target=expected_execution_target,
                     execution_scope=expected_execution_scope,
+                    skills_available=skills_available,
                 )
                 if tools_enabled
                 else []
