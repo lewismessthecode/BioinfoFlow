@@ -18,7 +18,7 @@ services:
       args:
         APT_MIRROR: ${APT_MIRROR:-}
     ports:
-      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+      - "${BIOINFOFLOW_BIND_HOST:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
     env_file:
       - path: .env
         required: false
@@ -66,7 +66,7 @@ services:
         NEXT_PUBLIC_AUTH_LOCAL_ENABLED: ${AUTH_LOCAL_ENABLED:-true}
         NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED: ${AUTH_SELF_SIGNUP_ENABLED:-false}
     ports:
-      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+      - "${BIOINFOFLOW_BIND_HOST:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000"
     env_file:
       - path: .env
         required: false
@@ -113,6 +113,12 @@ services:
       ASR_DEVICE: ${ASR_DEVICE:-cpu}
       ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-int8}
       HF_HOME: /models/huggingface
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_ENDPOINT: ${HF_ENDPOINT:-}
+      HF_HUB_DISABLE_XET: ${HF_HUB_DISABLE_XET:-}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
     volumes:
       - ${BIOINFOFLOW_HOME:-${PWD}/data}/models/asr:/models
     healthcheck:

@@ -484,10 +484,14 @@ AUTH_MODE=dev
 ```
 
 The source Compose file also binds both published ports to `127.0.0.1`.
+Set `BIOINFOFLOW_BIND_HOST=0.0.0.0` to publish them on every host interface for
+a trusted LAN deployment. Keep the loopback default when a reverse proxy on the
+same machine is the only intended entry point.
 
 For a shared or remote server, set these before building:
 
 ```env
+BIOINFOFLOW_BIND_HOST=0.0.0.0
 AUTH_MODE=personal
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=<strong-password>
@@ -504,6 +508,10 @@ TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER"]
 ```bash
 docker compose up -d --build
 ```
+
+`BIOINFOFLOW_BIND_HOST` controls only Docker's host-side port publication.
+Public URLs, CORS, trusted hosts, and authentication still need the matching
+remote values shown above.
 
 Terminate TLS at a reverse proxy for any deployment outside a trusted localhost
 environment, use matching `https://` origins, and avoid exposing ports 3000 and
