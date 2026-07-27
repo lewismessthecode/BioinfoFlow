@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, String, Text
+from sqlalchemy import Boolean, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -9,10 +9,16 @@ from app.workspace import DEFAULT_WORKSPACE_ID
 
 class Project(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "projects"
+    __table_args__ = (
+        Index("uq_projects_directory_name", "directory_name", unique=True),
+    )
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    directory_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     description: Mapped[str | None] = mapped_column(Text)
-    storage_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="managed")
+    storage_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="managed"
+    )
     external_root_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     remote_connection_id: Mapped[str | None] = mapped_column(
         ForeignKey("remote_connections.id", ondelete="RESTRICT"),
