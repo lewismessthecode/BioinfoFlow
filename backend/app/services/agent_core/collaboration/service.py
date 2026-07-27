@@ -744,6 +744,7 @@ class AgentCollaborationService:
         if root is None:
             return
         await self.sessions.lock_policy(root_id)
+        _persist_safe_terminal_error(turn)
         messages = await self.transcript.list_messages(root_id)
         if any(
             (message.message_metadata or {}).get("source_turn_id") == turn_id
@@ -1297,6 +1298,15 @@ def _safe_agent_error(turn) -> str | None:
         "iteration_limit": "The agent reached its iteration limit.",
     }
     return stable_messages.get(error_code, "Agent failed before completing the task.")
+
+
+def _persist_safe_terminal_error(turn) -> None:
+    if _external_status(turn) != "errored":
+        return
+    turn.error_code = str(turn.error_code or "").strip() or "agent_execution_failed"
+    turn.error_message = _safe_agent_error(turn) or (
+        "Agent failed before completing the task."
+    )
 
 
 def _canonical_name(session: AgentSession, root_id: str) -> str:

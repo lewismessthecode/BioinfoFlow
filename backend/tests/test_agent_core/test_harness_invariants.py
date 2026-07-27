@@ -724,7 +724,6 @@ def test_normal_execution_exposes_small_capability_surface_but_keeps_compatibili
         "runs.get",
         "workflows.get",
     } <= registry.names()
-    assert {"task", "subagent.analyze"}.isdisjoint(registry.names())
 
 
 def test_default_tool_providers_are_deterministic_and_registry_rejects_duplicates():

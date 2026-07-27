@@ -119,7 +119,6 @@ _MODEL_HIDDEN_TOOLS = frozenset(
         "runs.logs",
         "runs.outputs",
         "skills.list",
-        "subagent.analyze",
         "workflows.dag",
         "workflows.form_spec",
         "workflows.get",

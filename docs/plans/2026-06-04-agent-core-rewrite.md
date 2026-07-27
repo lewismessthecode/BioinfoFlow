@@ -1182,7 +1182,7 @@ Implemented so far:
   - tools registered: `skills.list`, `skills.load`, `plugins.list`
   - tools read from platform default registry roots and do not accept arbitrary model-provided filesystem roots
 - Read-only subagents have a first policy boundary:
-  - `ReadOnlySubagentRunner` accepts only read-only tools
+  - the original synchronous delegated runner accepts only read-only tools
   - write-capable tools are rejected before execution
   - subagent handoff contract states that write operations must return to the main agent action ledger
   - no concurrent write path is introduced
