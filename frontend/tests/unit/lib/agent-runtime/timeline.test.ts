@@ -50,7 +50,7 @@ describe("active turn steering timeline", () => {
       [
         event("tool-started", 2, "assistant.tool_call.started", {
           call_id: "call-1",
-          name: "files__apply_patch",
+          name: "edit",
           status: "building",
           index: 0,
         }),
@@ -64,7 +64,7 @@ describe("active turn steering timeline", () => {
 
     expect(entry.activities).toEqual([
       expect.objectContaining({
-        name: "files__apply_patch",
+        name: "edit",
         status: "failed",
       }),
     ])

@@ -10,8 +10,13 @@ export function classifyActivity(
   const preview = (activity.inputPreview ?? "").toLowerCase()
   const argumentHint = stringifyArguments(activity.arguments).toLowerCase()
   const fallbackText = `${preview} ${argumentHint}`.trim()
+  const commandTool = isCommandTool(name)
 
-  if (activity.sources.length || isSearchTool(name) || isSearchCommand(fallbackText)) {
+  if (
+    activity.sources.length ||
+    isSearchTool(name) ||
+    (commandTool && isSearchCommand(fallbackText))
+  ) {
     return "search"
   }
   if (isRunTool(name)) return "run"
@@ -21,13 +26,15 @@ export function classifyActivity(
   if (isReadTool(name)) return "read"
   if (isWorkspaceTool(name)) return "workspace"
 
-  if (/\b(nextflow|miniwdl)\s+run\b/.test(fallbackText)) return "run"
-  if (/\b(register|validate)\s+workflow\b/.test(fallbackText)) return "register"
-  if (isFileMutationCommand(fallbackText)) return "write"
-  if (isVerificationCommand(fallbackText)) return "verify"
-  if (isReadCommand(fallbackText)) return "read"
-  if (isWorkspaceCommand(fallbackText)) return "workspace"
-  if (isCommandTool(name) || isCommandLike(fallbackText)) return "command"
+  if (commandTool) {
+    if (/\b(nextflow|miniwdl)\s+run\b/.test(fallbackText)) return "run"
+    if (/\b(register|validate)\s+workflow\b/.test(fallbackText)) return "register"
+    if (isFileMutationCommand(fallbackText)) return "write"
+    if (isVerificationCommand(fallbackText)) return "verify"
+    if (isReadCommand(fallbackText)) return "read"
+    if (isWorkspaceCommand(fallbackText)) return "workspace"
+    return "command"
+  }
   return "other"
 }
 
@@ -56,11 +63,7 @@ function isWorkflowMutationTool(name: string) {
 }
 
 function isFileMutationTool(name: string) {
-  const last = terminalName(name)
-  return (
-    name.startsWith("files__") &&
-    ["write", "edit", "patch", "create", "mkdir", "touch", "rm", "delete", "move", "rename"].includes(last)
-  )
+  return name === "write" || name === "edit"
 }
 
 function isReadTool(name: string) {
@@ -70,8 +73,6 @@ function isReadTool(name: string) {
       "audit",
       "dag",
       "form_spec",
-      "glob",
-      "grep",
       "logs",
       "outputs",
       "rg",
@@ -79,13 +80,13 @@ function isReadTool(name: string) {
       "find",
       "ls",
       "cat",
-      "read",
+      "read_file",
+      "list_dir",
       "list",
       "get",
       "source",
       "status",
-    ].includes(last) ||
-    /__(read|list|get|source|grep|glob|search|find)$/.test(name)
+    ].includes(last)
   )
 }
 
@@ -100,8 +101,7 @@ function isWorkspaceTool(name: string) {
 }
 
 function isCommandTool(name: string) {
-  const last = terminalName(name)
-  return ["bash", "shell", "command", "terminal", "build", "inspect", "pull", "run"].includes(last)
+  return name === "bash" || name === "remote__exec"
 }
 
 function isSearchCommand(text: string) {
@@ -122,10 +122,6 @@ function isVerificationCommand(text: string) {
 
 function isWorkspaceCommand(text: string) {
   return /\b(workspace|pwd|tree|init|setup|prepare|cp|clone)\b/.test(text)
-}
-
-function isCommandLike(text: string) {
-  return /\b(docker|bun|npm|pnpm|yarn|uv|python|python3|pip|alembic|git)\b/.test(text)
 }
 
 function stringifyArguments(argumentsValue: Record<string, unknown> | null | undefined) {

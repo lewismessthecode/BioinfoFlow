@@ -17,7 +17,7 @@ from app.services.model_runtime.contracts import ToolDefinition
 # The small read-only fallback policy, used when a caller passes no policy at all.
 DEFAULT_TOOLSET_POLICY = {"name": "default"}
 # The capable, approval-gated policy new sessions start with. Registration and
-# exposure are deliberately separate: product and compatibility tools remain
+# exposure are deliberately separate: product and extension tools remain
 # registered but are disclosed only by capability, target, or explicit allowlist.
 EXECUTION_TOOLSET_POLICY = {
     "name": "execution",

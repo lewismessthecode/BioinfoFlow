@@ -616,7 +616,7 @@ describe("AgentSideDrawer", () => {
             type: "action.completed",
             payload: {
               action_id: "a1",
-              name: "files__write",
+              name: "write",
               result: {
                 path: "/workspace/project-1/workflow.nf",
                 additions: 12,
