@@ -127,9 +127,10 @@ def assess_command_risk(
     target: CommandTargetProfile,
     requested_connection_id: str | None = None,
 ) -> CommandRiskAssessment:
-    level = classify_command_level(command)
+    semantics = _analyze_command_semantics(command)
+    level = semantics.level
     nodes = _parse_command_nodes(_strip_heredoc_bodies(command))
-    effects = _command_effects(nodes)
+    effects = list(semantics.effects)
     sink_safety = _analyze_write_sink_safety(nodes)
     execution_safety = _analyze_indirect_execution_safety(
         nodes,
@@ -140,7 +141,7 @@ def assess_command_risk(
     protected_resources = _protected_resources(
         [*referenced_paths, *sink_safety.protected_paths]
     )
-    reasons = [f"command semantics classified as {level}"]
+    reasons = [*semantics.reasons, f"command semantics classified as {level}"]
     hard_blocked = False
 
     if (
@@ -380,6 +381,13 @@ _INLINE_INTERPRETER_PATTERNS = (
     ("perl", re.compile(r"perl(?:\d+(?:\.\d+)*)?")),
     ("php", re.compile(r"php(?:\d+(?:\.\d+)*)?")),
 )
+_TRUSTED_INTROSPECTION_FLAGS = {
+    "python": frozenset({"--version", "-V", "--help", "-h"}),
+    "node": frozenset({"--version", "-v", "--help", "-h"}),
+    "ruby": frozenset({"--version", "-v", "--help", "-h"}),
+    "perl": frozenset({"--version", "-v", "--help", "-h"}),
+    "php": frozenset({"--version", "-v", "--help", "-h"}),
+}
 _SHUTDOWN_EXECUTABLES = frozenset({"shutdown", "reboot", "halt", "poweroff"})
 _ROOTISH = frozenset({"/", "/*", "~", "$HOME", "${HOME}", ".."})
 
@@ -408,39 +416,113 @@ class _ShortOptionClusterMatch:
     ambiguous: bool = False
 
 
+@dataclass(frozen=True)
+class _NodeSemantics:
+    level: RiskLevel
+    effects: tuple[str, ...]
+    confidence: RiskConfidence
+    reasons: tuple[str, ...] = ()
+    hardline_facts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _CommandSemantics:
+    level: RiskLevel
+    effects: tuple[str, ...]
+    confidence: RiskConfidence
+    reasons: tuple[str, ...] = ()
+    hardline_facts: tuple[str, ...] = ()
+
+
 def classify_command_level(command: str) -> RiskLevel:
     """Return the semantic risk floor for a shell command string."""
+    return _analyze_command_semantics(command).level
+
+
+def _analyze_command_semantics(command: str) -> _CommandSemantics:
+    """Derive effects first, then reduce them to one semantic risk floor."""
     text = (command or "").strip()
     if not text:
-        return "act_low"
+        return _CommandSemantics(
+            level="act_low",
+            effects=("execute",),
+            confidence="low",
+            reasons=("empty command has no proven side effect",),
+        )
     if _looks_like_fork_bomb(text):
-        return "critical"
+        return _CommandSemantics(
+            level="critical",
+            effects=("process_control",),
+            confidence="high",
+            hardline_facts=("fork bomb",),
+        )
     substitutions = [
         *_command_substitutions(text),
         *_process_substitutions(text),
         *_heredoc_bodies(text),
     ]
     if any(classify_command_level(inner) == "critical" for inner in substitutions):
-        return "critical"
+        return _CommandSemantics(
+            level="critical",
+            effects=("execute",),
+            confidence="high",
+            hardline_facts=("critical dynamic shell source",),
+        )
 
     nodes = _parse_command_nodes(_strip_heredoc_bodies(text))
     if _compound_alias_targets_unsafe_device(nodes):
-        return "critical"
+        return _CommandSemantics(
+            level="critical",
+            effects=("write",),
+            confidence="high",
+            hardline_facts=("unsafe device write",),
+        )
     if _dynamic_command_hardline(nodes) or _invoked_function_hardline(nodes):
-        return "critical"
+        return _CommandSemantics(
+            level="critical",
+            effects=("execute",),
+            confidence="high",
+            hardline_facts=("dynamic hardline command",),
+        )
+
+    introspection_proven = _is_proven_introspection_command(
+        text,
+        nodes,
+        has_dynamic_source=bool(substitutions),
+    )
     highest: RiskLevel = "act_high" if substitutions or "<(" in text else "read"
+    effects: list[str] = []
+    reasons: list[str] = []
+    hardline_facts: list[str] = []
     previous: _CommandNode | None = None
-    for node in nodes:
-        level = _classify_node(node)
-        if level == "critical":
-            return "critical"
+    for index, node in enumerate(nodes):
+        semantics = _inspect_node(
+            node,
+            introspection_proven=introspection_proven and index == 0,
+        )
+        effects.extend(semantics.effects)
+        reasons.extend(semantics.reasons)
+        hardline_facts.extend(semantics.hardline_facts)
+        if semantics.level == "critical":
+            return _CommandSemantics(
+                level="critical",
+                effects=tuple(_dedupe(effects)) or ("execute",),
+                confidence="high",
+                reasons=tuple(_dedupe(reasons)),
+                hardline_facts=tuple(_dedupe(hardline_facts)),
+            )
         if (
             previous is not None
             and node.operator_before == "|"
             and _executable(previous.tokens) in {"curl", "wget"}
             and _is_shell_stdin_target(node.tokens)
         ):
-            return "critical"
+            return _CommandSemantics(
+                level="critical",
+                effects=tuple(_dedupe([*effects, "network", "execute"])),
+                confidence="high",
+                hardline_facts=("network source piped to shell",),
+            )
         if (
             previous is not None
             and node.operator_before == "|"
@@ -448,11 +530,92 @@ def classify_command_level(command: str) -> RiskLevel:
             and (source := _literal_shell_source(previous)) is not None
             and classify_command_level(source) == "critical"
         ):
-            return "critical"
-        if _RANK[level] > _RANK[highest]:
-            highest = level
+            return _CommandSemantics(
+                level="critical",
+                effects=tuple(_dedupe([*effects, "execute"])),
+                confidence="high",
+                hardline_facts=("critical literal source piped to shell",),
+            )
+        if _RANK[semantics.level] > _RANK[highest]:
+            highest = semantics.level
         previous = node
-    return highest
+    return _CommandSemantics(
+        level=highest,
+        effects=tuple(_dedupe(effects)) or ("execute",),
+        confidence="high" if introspection_proven else "medium",
+        reasons=tuple(_dedupe(reasons)),
+        hardline_facts=tuple(_dedupe(hardline_facts)),
+    )
+
+
+def _inspect_node(
+    node: _CommandNode,
+    *,
+    introspection_proven: bool = False,
+) -> _NodeSemantics:
+    level = _classify_node(node)
+    effects = tuple(_node_effects(node))
+    if introspection_proven and level != "critical":
+        return _NodeSemantics(
+            level="act_low",
+            effects=("read",),
+            confidence="high",
+            reasons=("trusted executable requested static version or help output",),
+        )
+    return _NodeSemantics(
+        level=level,
+        effects=effects,
+        confidence="high" if level == "critical" else "medium",
+        hardline_facts=("node matched a hardline rule",) if level == "critical" else (),
+    )
+
+
+def _is_proven_introspection_command(
+    text: str,
+    nodes: list[_CommandNode],
+    *,
+    has_dynamic_source: bool,
+) -> bool:
+    """Prove a single trusted executable can only emit version/help metadata."""
+    if has_dynamic_source or len(nodes) != 1 or nodes[0].operator_before is not None:
+        return False
+    if _has_unquoted_shell_control_operator(text):
+        return False
+    raw_tokens = list(nodes[0].tokens)
+    if any(token and set(token) <= {"<", ">"} for token in raw_tokens):
+        return False
+    unwrapped = _unwrap_command_details(_strip_shell_control_tokens(raw_tokens))
+    if not unwrapped.tokens or unwrapped.elevated or not unwrapped.confident:
+        return False
+    executable = _basename(unwrapped.tokens[0])
+    family = _interpreter_family(executable)
+    if family is None:
+        return False
+    allowed_flags = _TRUSTED_INTROSPECTION_FLAGS.get(family)
+    args = unwrapped.tokens[1:]
+    return bool(allowed_flags and args and all(arg in allowed_flags for arg in args))
+
+
+def _has_unquoted_shell_control_operator(text: str) -> bool:
+    quote: str | None = None
+    escaped = False
+    for char in text:
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and quote != "'":
+            escaped = True
+            continue
+        if quote is not None:
+            if char == quote:
+                quote = None
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            continue
+        if char in {";", "\n", "&", "|"}:
+            return True
+    return False
 
 
 def _classify_node(node: _CommandNode) -> RiskLevel:
@@ -2911,41 +3074,38 @@ def _phoenixcli_is_read_only(args: list[str]) -> bool:
     return True
 
 
-def _command_effects(nodes: list[_CommandNode]) -> list[str]:
+def _node_effects(node: _CommandNode) -> list[str]:
     effects: list[str] = []
-    for node in nodes:
-        tokens, elevated = _unwrap_command(list(node.tokens))
-        if not tokens:
-            continue
-        executable = _basename(tokens[0])
-        args = tokens[1:]
-        if elevated:
-            effects.append("privilege")
-        if executable in _SHELLS:
-            inner = _shell_command_argument(args)
-            if inner is not None:
-                effects.extend(
-                    _command_effects(_parse_command_nodes(_strip_heredoc_bodies(inner)))
-                )
-                continue
-        if executable in {"rm", "rmdir", "shred"}:
-            effects.append("delete")
-        elif executable in {"kill", "pkill", "killall", *_SHUTDOWN_EXECUTABLES}:
-            effects.append("process_control")
-        elif executable in _EXTERNAL_EXECUTABLES or executable in _INSTALL_EXECUTABLES:
-            effects.append("network")
-            if executable == "rsync":
-                effects.append("write")
-        elif _node_writes(tokens, executable, args):
+    tokens, elevated = _unwrap_command(list(node.tokens))
+    if not tokens:
+        return ["execute"]
+    executable = _basename(tokens[0])
+    args = tokens[1:]
+    if elevated:
+        effects.append("privilege")
+    if executable in _SHELLS:
+        inner = _shell_command_argument(args)
+        if inner is not None:
+            effects.extend(_analyze_command_semantics(inner).effects)
+            return _dedupe(effects)
+    if executable in {"rm", "rmdir", "shred"}:
+        effects.append("delete")
+    elif executable in {"kill", "pkill", "killall", *_SHUTDOWN_EXECUTABLES}:
+        effects.append("process_control")
+    elif executable in _EXTERNAL_EXECUTABLES or executable in _INSTALL_EXECUTABLES:
+        effects.append("network")
+        if executable == "rsync":
             effects.append("write")
-        elif (
-            executable in _READ_EXECUTABLES
-            or executable in {"git", "docker"}
-            or _is_read_only_platform_command(executable, args)
-        ):
-            effects.append("read")
-        else:
-            effects.append("execute")
+    elif _node_writes(tokens, executable, args):
+        effects.append("write")
+    elif (
+        executable in _READ_EXECUTABLES
+        or executable in {"git", "docker"}
+        or _is_read_only_platform_command(executable, args)
+    ):
+        effects.append("read")
+    else:
+        effects.append("execute")
     return _dedupe(effects) or ["execute"]
 
 
