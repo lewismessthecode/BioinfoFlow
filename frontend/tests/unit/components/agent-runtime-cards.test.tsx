@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { InlineApprovalCard } from "@/components/bioinfoflow/agent-runtime/inline-approval-card"
+import { AgentTree } from "@/components/bioinfoflow/agent-runtime/agent-tree"
 import { PendingDecisionCards } from "@/components/bioinfoflow/agent-runtime/pending-decision-cards"
 import {
   buildPersistedTargetMap,
@@ -32,6 +33,9 @@ vi.mock("next-intl", () => ({
       "decision.failed": `Could not submit decision: ${values?.error ?? ""}`,
       "decision.retry": "Retry decision",
       "approval.remoteTarget": `Remote target: ${values?.target ?? ""}`,
+      "agentTree.modelFallback": `${values?.requested ?? "Requested model"} unavailable; fell back to ${values?.effective ?? "parent model"}`,
+      "agentTree.modelFallbackGeneric": `Fell back to ${values?.effective ?? "parent model"}`,
+      "agentTree.status.errored": "Errored",
     }
     return labels[key] ?? key
   },
@@ -296,6 +300,34 @@ describe("agent decision cards", () => {
 
     expect(buildPersistedTargetMap(events).size).toBe(20)
     expect(typeReads).toBe(events.length)
+  })
+})
+
+describe("AgentTree", () => {
+  it("renders requested model fallback and child errors accessibly", () => {
+    render(
+      <AgentTree
+        agents={[
+          {
+            childSessionId: "child-1",
+            taskPath: "/root/reader",
+            status: "errored",
+            sequence: 7,
+            requestedModel: "cheap-model",
+            effectiveModel: "parent-model",
+            modelFallback: true,
+            fallbackReason: "Requested model is unavailable.",
+            errorMessage: "Model provider authentication failed.",
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText("/root/reader")).toBeInTheDocument()
+    expect(screen.getByText(/fell back/i)).toBeInTheDocument()
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Model provider authentication failed.",
+    )
   })
 })
 

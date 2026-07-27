@@ -32,6 +32,11 @@ describe("normalizePublicAgentEvent", () => {
     ["action.lifecycle", { status: "waiting_decision" }, "action.waiting_decision"],
     ["artifact.created", { artifact_id: "artifact-1" }, "artifact.created"],
     ["memory.lifecycle", { status: "proposed" }, "memory.proposed"],
+    [
+      "agent.lifecycle",
+      { activity: "running", child_session_id: "child-1", status: "running" },
+      "agent.lifecycle",
+    ],
   ])("normalizes %s into the existing reducer event", (type, payload, expected) => {
     expect(normalizePublicAgentEvent(publicEvent(type, payload))?.type).toBe(expected)
   })

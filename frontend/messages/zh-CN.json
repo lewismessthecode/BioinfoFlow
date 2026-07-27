@@ -3060,6 +3060,22 @@
       "sources": "来源",
       "none": "无"
     },
+    "agentTree": {
+      "title": "子智能体",
+      "empty": "暂无子智能体",
+      "status": {
+        "pending_init": "启动中",
+        "running": "运行中",
+        "completed": "已完成",
+        "errored": "出错",
+        "interrupted": "已中断"
+      },
+      "modelFallback": "{requested} 不可用；已回退到 {effective}",
+      "modelFallbackGeneric": "已回退到 {effective}",
+      "noFinalText": "任务已完成，但没有最终摘要。",
+      "unknownError": "子智能体未能完成任务。",
+      "interrupted": "子智能体已被中断。"
+    },
     "progress": {
       "tasks": "任务",
       "empty": "暂无任务。智能助手的任务清单会在执行时显示在这里。"

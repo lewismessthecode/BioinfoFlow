@@ -18,8 +18,13 @@ class AgentEventType:
     TURN_RECOVERY_ENQUEUED = "turn.recovery.enqueued"
     TURN_RECOVERY_FAILED = "turn.recovery.failed"
     AGENT_MESSAGE_RECEIVED = "agent.message.received"
+    AGENT_SPAWNED = "agent.spawned"
+    AGENT_RUNNING = "agent.running"
+    AGENT_MODEL_FALLBACK = "agent.model_fallback"
+    AGENT_FOLLOWUP_RECEIVED = "agent.followup.received"
     AGENT_RESULT_RECEIVED = "agent.result.received"
     AGENT_RESULT_PUBLISHED = "agent.result.published"
+    AGENT_INTERRUPTED = "agent.interrupted"
     TRANSCRIPT_TOOL_GROUP_REPAIRED = "transcript.tool_group_repaired"
     MODEL_SELECTED = "model.selected"
     MODEL_RETRYING = "model.retrying"
@@ -59,6 +64,7 @@ class PublicAgentEventType:
     ACTION_LIFECYCLE = "action.lifecycle"
     ARTIFACT_CREATED = "artifact.created"
     MEMORY_LIFECYCLE = "memory.lifecycle"
+    AGENT_LIFECYCLE = "agent.lifecycle"
 
 
 _PUBLIC_EVENT_PROJECTIONS: dict[str, tuple[str, dict[str, str]]] = {
@@ -208,14 +214,94 @@ _PUBLIC_EVENT_PROJECTIONS: dict[str, tuple[str, dict[str, str]]] = {
         {"status": "rejected"},
     ),
 }
-PUBLIC_DURABLE_EVENT_TYPES = frozenset(_PUBLIC_EVENT_PROJECTIONS)
+
+_COLLABORATION_EVENT_PROJECTIONS: dict[str, tuple[str, dict[str, str]]] = {
+    AgentEventType.AGENT_SPAWNED: (
+        PublicAgentEventType.AGENT_LIFECYCLE,
+        {"activity": "spawn", "status": "pending_init"},
+    ),
+    AgentEventType.AGENT_RUNNING: (
+        PublicAgentEventType.AGENT_LIFECYCLE,
+        {"activity": "running", "status": "running"},
+    ),
+    AgentEventType.AGENT_MODEL_FALLBACK: (
+        PublicAgentEventType.AGENT_LIFECYCLE,
+        {"activity": "model_fallback"},
+    ),
+    AgentEventType.AGENT_MESSAGE_RECEIVED: (
+        PublicAgentEventType.AGENT_LIFECYCLE,
+        {"activity": "message"},
+    ),
+    AgentEventType.AGENT_FOLLOWUP_RECEIVED: (
+        PublicAgentEventType.AGENT_LIFECYCLE,
+        {"activity": "followup"},
+    ),
+    AgentEventType.AGENT_RESULT_RECEIVED: (
+        PublicAgentEventType.AGENT_LIFECYCLE,
+        {"activity": "result"},
+    ),
+    AgentEventType.AGENT_INTERRUPTED: (
+        PublicAgentEventType.AGENT_LIFECYCLE,
+        {"activity": "interrupt", "status": "interrupted"},
+    ),
+}
+
+_SAFE_COLLABORATION_PAYLOAD_FIELDS = frozenset(
+    {
+        "child_session_id",
+        "child_turn_id",
+        "task_name",
+        "status",
+        "requested_model",
+        "effective_model",
+        "model_fallback",
+        "fallback_reason",
+        "delivery",
+        "final_text",
+        "error_code",
+        "error_message",
+        "termination_reason",
+        "token_usage",
+    }
+)
+
+PUBLIC_DURABLE_EVENT_TYPES = frozenset(
+    {**_PUBLIC_EVENT_PROJECTIONS, **_COLLABORATION_EVENT_PROJECTIONS}
+)
 
 
 def project_public_event(event: Mapping[str, Any]) -> dict[str, Any] | None:
     """Project a durable user event onto the stable public transport protocol."""
+    durable_type = str(event.get("type") or "")
+    collaboration_projection = _COLLABORATION_EVENT_PROJECTIONS.get(durable_type)
+    if collaboration_projection is not None:
+        public_type, discriminators = collaboration_projection
+        payload = event.get("payload")
+        source_payload = payload if isinstance(payload, dict) else {}
+        public_payload = {
+            key: source_payload[key]
+            for key in _SAFE_COLLABORATION_PAYLOAD_FIELDS
+            if key in source_payload and source_payload[key] is not None
+        }
+        public_payload.update(discriminators)
+        if (
+            public_payload.get("status") == "errored"
+            and not str(public_payload.get("error_message") or "").strip()
+        ):
+            public_payload["error_message"] = (
+                "Agent failed before completing the task."
+            )
+        return {
+            **event,
+            "type": public_type,
+            "payload": public_payload,
+            "visibility": "user",
+            "schema_version": 1,
+        }
+
     if event.get("visibility") != "user":
         return None
-    projection = _PUBLIC_EVENT_PROJECTIONS.get(str(event.get("type") or ""))
+    projection = _PUBLIC_EVENT_PROJECTIONS.get(durable_type)
     if projection is None:
         return None
     public_type, discriminators = projection

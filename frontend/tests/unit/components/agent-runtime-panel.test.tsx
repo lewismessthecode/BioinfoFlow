@@ -92,6 +92,38 @@ describe("ProgressTab", () => {
 })
 
 describe("AgentEnvironmentCard", () => {
+  it("shows the live child agent tree from lifecycle events", () => {
+    render(
+      <AgentEnvironmentCard
+        projectId="project-1"
+        events={[
+          {
+            id: "agent-event-1",
+            session_id: "root-session",
+            turn_id: "root-turn",
+            seq: 1,
+            type: "agent.lifecycle",
+            payload: {
+              activity: "running",
+              child_session_id: "child-1",
+              task_name: "/root/reader",
+              status: "running",
+              effective_model: "cheap-model",
+            },
+            visibility: "user",
+            schema_version: 1,
+            created_at: "2026-07-27T00:00:00Z",
+            updated_at: "2026-07-27T00:00:00Z",
+          },
+        ]}
+        artifacts={[]}
+      />,
+    )
+
+    expect(screen.getByText("/root/reader")).toBeInTheDocument()
+    expect(screen.getByText("cheap-model")).toBeInTheDocument()
+  })
+
   it("shows the normalized remote execution target without implying every tool is remote", () => {
     const session: AgentRuntimeSession = {
       id: "session-1",

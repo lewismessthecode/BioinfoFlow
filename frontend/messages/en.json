@@ -3060,6 +3060,22 @@
       "sources": "Sources",
       "none": "None"
     },
+    "agentTree": {
+      "title": "Child agents",
+      "empty": "No child agents",
+      "status": {
+        "pending_init": "Starting",
+        "running": "Running",
+        "completed": "Completed",
+        "errored": "Errored",
+        "interrupted": "Interrupted"
+      },
+      "modelFallback": "{requested} unavailable; fell back to {effective}",
+      "modelFallbackGeneric": "Fell back to {effective}",
+      "noFinalText": "Completed without a final summary.",
+      "unknownError": "Agent failed before completing the task.",
+      "interrupted": "Agent was interrupted."
+    },
     "progress": {
       "tasks": "Tasks",
       "empty": "No tasks yet. The agent's checklist will appear here as it works."

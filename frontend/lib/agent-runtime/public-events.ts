@@ -9,6 +9,7 @@ export const PUBLIC_AGENT_EVENT_TYPES = [
   "action.lifecycle",
   "artifact.created",
   "memory.lifecycle",
+  "agent.lifecycle",
 ] as const satisfies readonly AgentPublicEventType[]
 
 const TURN_LIFECYCLE_TYPES: Record<string, string> = {
@@ -99,6 +100,9 @@ export function normalizePublicAgentEvent(
       break
     case "memory.lifecycle":
       normalizedType = MEMORY_LIFECYCLE_TYPES[stringValue(payload.status)]
+      break
+    case "agent.lifecycle":
+      if (stringValue(payload.child_session_id)) normalizedType = "agent.lifecycle"
       break
   }
 

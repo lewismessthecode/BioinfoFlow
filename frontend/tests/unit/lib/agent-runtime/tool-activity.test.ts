@@ -23,6 +23,24 @@ const actionEvent = (
 })
 
 describe("buildAgentRuntimeToolActivities", () => {
+  it("previews structured collaboration tool results", () => {
+    const [activity] = buildAgentRuntimeToolActivities([
+      actionEvent("event-collab", 1, {
+        action_id: "action-collab",
+        name: "spawn_agent",
+        result: {
+          child_session_id: "child-1",
+          task_name: "/root/reader",
+          status: "pending_init",
+          effective_model: "cheap-model",
+        },
+      }),
+    ])
+
+    expect(activity.outputPreview).toContain("/root/reader")
+    expect(activity.outputPreview).toContain("pending_init")
+    expect(activity.outputPreview).toContain("cheap-model")
+  })
   it("uses nested remote action results for command previews after artifacts are filtered", () => {
     const activities = buildAgentRuntimeToolActivities([
       actionEvent("event-exec", 1, {
