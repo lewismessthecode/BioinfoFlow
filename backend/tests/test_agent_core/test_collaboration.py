@@ -359,11 +359,29 @@ def test_all_context_fork_keeps_accepted_summary_but_filters_runtime_noise() -> 
         _message("user", "current request"),
         _message("assistant", "progress", phase="commentary"),
         _message("assistant", "final answer", phase="final_answer"),
-        _message(
-            "assistant",
-            "provider continuation",
-            metadata={"_responses_continuation": {"response_id": "private"}},
-        ),
+        {
+            "role": "assistant",
+            "content_parts": [
+                {
+                    "type": "text",
+                    "text": "provider continuation",
+                    "phase": "final_answer",
+                }
+            ],
+            "message_metadata": {
+                "_responses_continuation": {
+                    "response_id": "private",
+                    "output_items": [
+                        {
+                            "type": "function_call",
+                            "call_id": "private-call",
+                            "name": "read",
+                            "arguments": "{}",
+                        }
+                    ],
+                }
+            },
+        },
         _message("assistant", "mailbox", kind="inter_agent_message"),
         _message("assistant", "lifecycle", kind="agent_lifecycle"),
         _message("tool", "tool output"),

@@ -153,13 +153,26 @@ def _contains_tool_call_structure(value: Any) -> bool:
         item_type = value.get("type")
         if isinstance(item_type, str) and item_type.lower() in _TOOL_CALL_TYPES:
             return True
-        return any(_contains_tool_call_structure(item) for item in value.values())
+        return any(
+            _contains_tool_call_structure(value[field])
+            for field in ("content", "content_parts", "parts", "output")
+            if field in value
+        )
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         return any(_contains_tool_call_structure(item) for item in value)
     class_name = type(value).__name__.lower()
     if class_name in {"functioncallpart", "toolcallpart", "toolusepart"}:
         return True
-    for attribute in ("content", "content_parts", "function_call", "tool_calls"):
+    for attribute in (
+        "content",
+        "content_parts",
+        "parts",
+        "output",
+        "function_call",
+        "tool_call",
+        "tool_calls",
+        "tool_use",
+    ):
         nested = getattr(value, attribute, None)
         if nested is not None and _contains_tool_call_structure(nested):
             return True
