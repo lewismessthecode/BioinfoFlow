@@ -150,6 +150,7 @@ roots. They are not a general workflow dispatch backend.
 Before exposing Bioinfoflow beyond localhost, set values that exactly match the browser and backend origins:
 
 ```env
+BIOINFOFLOW_BIND_HOST=0.0.0.0
 NEXT_PUBLIC_API_BASE_URL=http://YOUR_SERVER:8000/api/v1
 BETTER_AUTH_URL=http://YOUR_SERVER:3000
 CORS_ORIGINS=["http://YOUR_SERVER:3000"]

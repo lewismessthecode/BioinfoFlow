@@ -57,6 +57,25 @@ ASR_DEVICE=cpu
 ASR_COMPUTE_TYPE=int8
 ```
 
+On Apple Silicon, Docker runs faster-whisper inside a Linux ARM64 VM. The
+included image supports ARM64 and CPU `int8`, but it cannot use Metal or the
+Apple Neural Engine. For a 16 GB Mac, use `ASR_MODEL=small` for the first real
+deployment or `ASR_MODEL=tiny` for a smoke test; move to `large-v3-turbo` when
+the extra accuracy is worth the larger download and slower CPU inference.
+
+Optional Hugging Face authentication and network settings are passed through
+when configured in `.env`:
+
+```env
+HF_TOKEN=<optional-read-token>
+# HF_HUB_DISABLE_XET=1
+# HTTPS_PROXY=http://host.docker.internal:7890
+# HTTP_PROXY=http://host.docker.internal:7890
+```
+
+Bioinfoflow does not hard-code a third-party Hugging Face mirror. If a custom
+endpoint is required, set `HF_ENDPOINT` explicitly for your deployment.
+
 ```bash
 docker compose --profile voice-whisper up -d --build asr-whisper backend frontend
 docker compose ps
@@ -123,4 +142,18 @@ Inspect metadata-only application logs and the selected model log:
 docker compose logs --tail=100 backend
 docker compose logs --tail=100 asr-funasr
 # or: docker compose logs --tail=100 asr-whisper
+```
+
+If Fun-ASR repeatedly exits during `uvicorn server:app`, inspect the first
+import exception rather than changing the restart policy. The included image
+installs matching `torch` and `torchaudio` versions required by FunASR. Rebuild
+without reusing an older image, then verify the runtime imports before waiting
+for the model download:
+
+```bash
+docker compose --profile voice-funasr build --no-cache asr-funasr
+docker compose --profile voice-funasr run --rm --no-deps --entrypoint python asr-funasr -c "import torch, torchaudio, funasr; print(torch.__version__)"
+docker compose --profile voice-funasr up -d asr-funasr backend frontend
+docker compose ps
+docker compose logs --tail=100 asr-funasr
 ```

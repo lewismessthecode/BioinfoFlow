@@ -26,8 +26,12 @@ def test_source_compose_defaults_to_loopback_dev_auth() -> None:
     backend = compose["services"]["backend"]
     frontend = compose["services"]["frontend"]
 
-    assert backend["ports"] == ["127.0.0.1:${BACKEND_PORT:-8000}:8000"]
-    assert frontend["ports"] == ["127.0.0.1:${FRONTEND_PORT:-3000}:3000"]
+    assert backend["ports"] == [
+        "${BIOINFOFLOW_BIND_HOST:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
+    ]
+    assert frontend["ports"] == [
+        "${BIOINFOFLOW_BIND_HOST:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000"
+    ]
     assert backend["environment"]["AUTH_MODE"] == "${AUTH_MODE:-}"
     assert backend["environment"]["AUTH_ENABLED"] == "${AUTH_ENABLED:-false}"
     assert frontend["environment"]["AUTH_MODE"] == "${AUTH_MODE:-}"
@@ -55,6 +59,21 @@ def test_env_example_is_optional_local_customization() -> None:
     assert "# AUTH_BOOTSTRAP_OWNER_EMAIL=" in env_example
     assert "# AUTH_BOOTSTRAP_OWNER_PASSWORD=" in env_example
     assert "# ANTHROPIC_API_KEY=" in env_example
+    assert "BIOINFOFLOW_BIND_HOST=127.0.0.1" in env_example
+    assert "# BIOINFOFLOW_BIND_HOST=0.0.0.0" in env_example
+
+
+def test_local_image_compose_uses_the_shared_bind_host_override() -> None:
+    compose = yaml.safe_load(
+        (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
+    )
+
+    assert compose["services"]["backend"]["ports"] == [
+        "${BIOINFOFLOW_BIND_HOST:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
+    ]
+    assert compose["services"]["frontend"]["ports"] == [
+        "${BIOINFOFLOW_BIND_HOST:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000"
+    ]
 
 
 def test_frontend_image_defaults_to_dev_auth_without_build_args() -> None:

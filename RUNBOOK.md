@@ -146,6 +146,7 @@ For a shared or remote source deployment, copy `.env.example` to `.env` and set
 at least:
 
 ```env
+BIOINFOFLOW_BIND_HOST=0.0.0.0
 AUTH_MODE=personal
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=<strong-password>
@@ -289,6 +290,25 @@ ASR_COMPUTE_TYPE=int8
 ASR_LANGUAGE=zh
 ASR_CONTEXT_TERMS=["Bioinfoflow","Nextflow","MiniWDL","FASTQ"]
 ```
+
+Docker Desktop runs this sidecar as a Linux ARM64 CPU container; it does not
+use Metal or the Apple Neural Engine. On a 16 GB Apple Silicon Mac, start with
+`ASR_MODEL=small` for a practical first deployment. `large-v3-turbo` improves
+accuracy but downloads more data and uses more CPU and memory. Use
+`ASR_MODEL=tiny` only for a quick runtime smoke test.
+
+If Hugging Face warns about anonymous rate limits or large-file downloads fail,
+set only the network values your environment needs:
+
+```env
+HF_TOKEN=<optional-read-token>
+# HF_HUB_DISABLE_XET=1
+# HTTPS_PROXY=http://host.docker.internal:7890
+# HTTP_PROXY=http://host.docker.internal:7890
+```
+
+These values are passed only as explicit download configuration to the Whisper
+sidecar; no mirror endpoint is hard-coded by Bioinfoflow.
 
 Start it with:
 
@@ -833,7 +853,20 @@ connection and remote identity in the snapshot match the intended host.
 
 ### Docker deployment works locally but not on a server
 
-Most common cause:
+Check the TCP publication first:
+
+```bash
+docker compose config
+docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+```
+
+For direct access from another LAN machine, `.env` must contain
+`BIOINFOFLOW_BIND_HOST=0.0.0.0`; the frontend port should then appear as
+`0.0.0.0:3000->3000/tcp` (or the configured `FRONTEND_PORT`). A
+`127.0.0.1:3000->3000/tcp` publication is intentionally reachable only from
+the Docker host.
+
+After TCP access works, the most common application-layer cause is:
 
 - frontend was built with the wrong `NEXT_PUBLIC_API_BASE_URL`
 

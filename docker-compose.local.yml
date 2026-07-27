@@ -2,7 +2,7 @@ services:
   backend:
     image: ${IMAGE_REGISTRY:-ghcr.io/lewismessthecode}/bioinfoflow-backend:${BIOINFOFLOW_VERSION:?Set BIOINFOFLOW_VERSION to a release tag}
     ports:
-      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+      - "${BIOINFOFLOW_BIND_HOST:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
     environment:
       AUTH_MODE: dev
       BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}
@@ -42,7 +42,7 @@ services:
   frontend:
     image: ${IMAGE_REGISTRY:-ghcr.io/lewismessthecode}/bioinfoflow-frontend-localhost:${BIOINFOFLOW_VERSION:?Set BIOINFOFLOW_VERSION to a release tag}
     ports:
-      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+      - "${BIOINFOFLOW_BIND_HOST:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000"
     environment:
       AUTH_MODE: dev
       NEXT_PUBLIC_AUTH_MODE: dev

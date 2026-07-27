@@ -31,11 +31,42 @@ def test_backend_receives_only_explicit_asr_configuration():
     assert environment["ASR_API_KEY"] == "${ASR_API_KEY:-}"
 
 
+def test_whisper_sidecar_receives_explicit_huggingface_download_configuration():
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    environment = compose["services"]["asr-whisper"]["environment"]
+
+    assert environment["HF_TOKEN"] == "${HF_TOKEN:-}"
+    assert environment["HF_ENDPOINT"] == "${HF_ENDPOINT:-}"
+    assert environment["HF_HUB_DISABLE_XET"] == "${HF_HUB_DISABLE_XET:-}"
+    assert environment["HTTP_PROXY"] == "${HTTP_PROXY:-}"
+    assert environment["HTTPS_PROXY"] == "${HTTPS_PROXY:-}"
+    assert environment["NO_PROXY"] == "${NO_PROXY:-}"
+
+
 def test_backend_image_contains_the_single_audio_converter():
     dockerfile = (ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
     package_block = dockerfile.split("apt-get install -y --no-install-recommends", 1)[1]
     package_block = package_block.split("&&", 1)[0]
     assert "ffmpeg" in package_block.split()
+
+
+def test_funasr_image_installs_the_default_model_runtime():
+    requirements = (
+        ROOT / "deploy" / "voice" / "funasr" / "requirements.txt"
+    ).read_text(encoding="utf-8")
+
+    assert "funasr==1.3.26" in requirements.splitlines()
+    assert "torch==2.9.0" in requirements.splitlines()
+    assert "torchaudio==2.9.0" in requirements.splitlines()
+    assert "transformers==4.51.3" in requirements.splitlines()
+
+
+def test_whisper_image_uses_the_requests_free_runtime():
+    requirements = (
+        ROOT / "deploy" / "voice" / "whisper" / "requirements.txt"
+    ).read_text(encoding="utf-8")
+
+    assert "faster-whisper==1.2.1" in requirements.splitlines()
 
 
 def test_sidecar_inference_runs_off_the_healthcheck_event_loop():
