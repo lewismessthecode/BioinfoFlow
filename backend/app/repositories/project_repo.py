@@ -10,6 +10,11 @@ from app.schemas.common import Pagination
 class ProjectRepository(BaseRepository[Project]):
     model = Project
 
+    async def delete_pending(self, project: Project) -> None:
+        """Delete and flush a project without committing its transaction."""
+        await self.session.delete(project)
+        await self.session.flush()
+
     async def get_fresh(self, project_id: str) -> Project | None:
         stmt = (
             select(self.model)
@@ -41,7 +46,9 @@ class ProjectRepository(BaseRepository[Project]):
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
-    async def get_by_external_root_path(self, external_root_path: str) -> Project | None:
+    async def get_by_external_root_path(
+        self, external_root_path: str
+    ) -> Project | None:
         """Find a project by its external storage root."""
         stmt = select(self.model).where(
             self.model.external_root_path == external_root_path
