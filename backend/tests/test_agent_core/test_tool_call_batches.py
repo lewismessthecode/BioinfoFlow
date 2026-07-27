@@ -726,6 +726,17 @@ async def test_interaction_call_is_exclusive_and_cancels_batch_siblings(
         AgentActionStatus.CANCELLED,
     ]
     assert all(action.tool_batch_id == actions[1].tool_batch_id for action in actions)
+    expected_sibling_error = {
+        "type": "InteractionExclusive",
+        "message": "A user interaction in this tool-call batch is exclusive.",
+        "category": "batch_sibling",
+        "continuable": True,
+    }
+    assert [actions[index].error for index in (0, 2)] == [
+        expected_sibling_error,
+        expected_sibling_error,
+    ]
+    assert [actions[index].requires_resume for index in (0, 2)] == [False, False]
     await service.decide_action(
         action_id=str(actions[1].id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -738,6 +749,32 @@ async def test_interaction_call_is_exclusive_and_cancels_batch_siblings(
 
     assert completed.status == "completed"
     assert completed.final_text == "interaction complete"
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
+    sibling_messages = [
+        message
+        for message in messages
+        if message.role == "tool"
+        and message.message_metadata["tool_call_id"]
+        in {"read-before", "read-after"}
+    ]
+    assert [
+        message.message_metadata["tool_call_id"] for message in sibling_messages
+    ] == ["read-before", "read-after"]
+    assert all(
+        message.message_metadata["tool_batch_id"] == str(actions[1].tool_batch_id)
+        and message.message_metadata["is_error"] is True
+        for message in sibling_messages
+    )
+    sibling_payloads = [
+        json.loads(message.content_parts[0]["text"]) for message in sibling_messages
+    ]
+    assert all(
+        payload["status"] == AgentActionStatus.CANCELLED
+        and payload["error"] == expected_sibling_error
+        for payload in sibling_payloads
+    )
 
 
 @pytest.mark.asyncio

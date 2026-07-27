@@ -1348,10 +1348,7 @@ class AgentLoopController:
                         iteration_count=persisted_iteration_count,
                         token_usage=persisted_token_usage,
                     )
-                if result.status not in {
-                    AgentActionStatus.COMPLETED,
-                    AgentActionStatus.REJECTED,
-                } and not _is_continuable_tool_failure(result):
+                if not _is_acceptable_resumed_batch_result(result):
                     failed_resume_status = result.status
             if failed_resume_status is not None:
                 await self._append_missing_batch_results(
@@ -2469,6 +2466,25 @@ def _is_continuable_tool_failure(result: ToolExecutionResult) -> bool:
         and result.result is not None
         and isinstance(error, dict)
         and error.get("category") == "tool_result"
+        and error.get("continuable") is True
+    )
+
+
+def _is_acceptable_resumed_batch_result(result: ToolExecutionResult) -> bool:
+    if result.status in {
+        AgentActionStatus.COMPLETED,
+        AgentActionStatus.REJECTED,
+    }:
+        return True
+    if _is_continuable_tool_failure(result):
+        return True
+    error = result.error
+    return (
+        result.status == AgentActionStatus.CANCELLED
+        and result.result is None
+        and isinstance(error, dict)
+        and error.get("type") == "InteractionExclusive"
+        and error.get("category") == "batch_sibling"
         and error.get("continuable") is True
     )
 
