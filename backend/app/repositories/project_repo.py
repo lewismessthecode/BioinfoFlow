@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import desc, or_, select
 
 from app.models.project import Project
@@ -23,6 +25,19 @@ class ProjectRepository(BaseRepository[Project]):
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def has_legacy_managed_project_id(self, project_id: UUID) -> bool:
+        stmt = (
+            select(self.model.id)
+            .where(
+                self.model.id == project_id,
+                self.model.storage_mode == "managed",
+                self.model.directory_name.is_(None),
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     async def get_default_for_workspace(self, workspace_id: str) -> Project | None:
         """Get the workspace default (uncategorized) project."""

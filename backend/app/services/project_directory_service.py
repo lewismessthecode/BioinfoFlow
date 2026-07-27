@@ -8,6 +8,7 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy import text
@@ -76,6 +77,15 @@ class ProjectDirectoryService:
             directory_name = project_directory_candidate(base_name, ordinal)
             root = parent / directory_name
             if _path_entry_exists(root):
+                continue
+            try:
+                legacy_project_id = UUID(directory_name)
+            except ValueError:
+                legacy_project_id = None
+            if (
+                legacy_project_id is not None
+                and await self.repo.has_legacy_managed_project_id(legacy_project_id)
+            ):
                 continue
 
             project_data["directory_name"] = directory_name
