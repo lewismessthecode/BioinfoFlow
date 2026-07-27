@@ -47,6 +47,7 @@ vi.mock("@/lib/appearance/use-appearance", () => ({
 }))
 
 vi.mock("next-intl", () => ({
+  useLocale: () => "en",
   useTranslations: (namespace: string) => (key: string, values?: Record<string, string>) => {
     const copy: Record<string, Record<string, string>> = {
       userMenu: {
@@ -69,6 +70,10 @@ vi.mock("next-intl", () => ({
         celebrationsOff: "Milestone confetti off",
         celebrationsPaused: "Milestone confetti paused by reduced motion",
         celebrationsMenuState: `Quiet celebrations: ${values?.state ?? ""}`,
+        morePreferences: "More preferences",
+      },
+      language: {
+        select: "Select language",
       },
       celebrations: {
         title: "Quiet celebrations",
@@ -105,10 +110,6 @@ vi.mock("@/components/bioinfoflow/connection-status", () => ({
   ConnectionStatus: ({ state }: { state: string }) => <div>{state}</div>,
 }))
 
-vi.mock("@/components/language-switcher", () => ({
-  LanguageSwitcher: () => <div data-testid="language-switcher" />,
-}))
-
 vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -141,6 +142,16 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
     disabled?: boolean
     onClick?: () => void
   }) => <button disabled={disabled} onClick={onClick}>{children}</button>,
+  DropdownMenuRadioGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuRadioItem: ({
+    children,
+    value,
+    onSelect,
+  }: {
+    children: React.ReactNode
+    value: string
+    onSelect?: () => void
+  }) => <button data-value={value} onClick={onSelect}>{children}</button>,
 }))
 
 import { Navbar } from "@/components/bioinfoflow/navbar"
@@ -165,7 +176,17 @@ describe("Navbar", () => {
     reducedMotionState.value = false
   })
 
-  it("toggles the theme from light to dark", async () => {
+  it("consolidates low-frequency controls into one preferences menu", () => {
+    render(<Navbar viewer={AUTH_VIEWER} />)
+
+    expect(screen.getByRole("button", { name: "More preferences" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Toggle theme" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "English" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "简体中文" })).toBeInTheDocument()
+    expect(screen.getByRole("menuitemcheckbox", { name: "Milestone confetti" })).toBeInTheDocument()
+  })
+
+  it("toggles the theme from the preferences menu", async () => {
     const user = userEvent.setup()
     render(<Navbar viewer={AUTH_VIEWER} />)
 
@@ -204,16 +225,17 @@ describe("Navbar", () => {
     expect(screen.queryByRole("button", { name: "Sign Out" })).not.toBeInTheDocument()
   })
 
-  it("toggles celebrations from the top-right control and updates the trigger state", async () => {
+  it("toggles celebrations from the preferences menu", async () => {
     const user = userEvent.setup()
     render(<Navbar viewer={AUTH_VIEWER} />)
-
-    expect(screen.getByRole("button", { name: "Quiet celebrations: Milestone confetti on" })).toBeInTheDocument()
 
     await user.click(screen.getByRole("menuitemcheckbox", { name: "Milestone confetti" }))
 
     expect(setCelebrationsEnabledMock).toHaveBeenCalledWith(false)
-    expect(screen.getByRole("button", { name: "Quiet celebrations: Milestone confetti off" })).toBeInTheDocument()
+    expect(screen.getByRole("menuitemcheckbox", { name: "Milestone confetti" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    )
   })
 
   it("fires preview confetti from the top-right control", async () => {
@@ -231,7 +253,7 @@ describe("Navbar", () => {
     render(<Navbar viewer={AUTH_VIEWER} />)
 
     expect(
-      screen.getByRole("button", { name: "Quiet celebrations: Milestone confetti paused by reduced motion" }),
+      screen.getByRole("button", { name: "More preferences" }),
     ).toBeInTheDocument()
     expect(screen.getByText("Reduced motion is on, so confetti is paused.")).toBeInTheDocument()
 

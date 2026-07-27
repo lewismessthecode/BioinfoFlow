@@ -1021,7 +1021,7 @@ describe("AgentWorkbench", () => {
       within(navbarActions).getByRole("button", { name: "Open environment" }),
     ).toBeInTheDocument()
     expect(
-      within(navbarActions).getByRole("button", { name: "Collapse workspace panel" }),
+      within(navbarActions).getByRole("button", { name: "Close workspace panel" }),
     ).toBeInTheDocument()
   })
 
@@ -1047,7 +1047,7 @@ describe("AgentWorkbench", () => {
     await act(async () => {
       fireEvent.click(
         within(screen.getByTestId("agent-navbar-actions")).getByRole("button", {
-          name: "Collapse workspace panel",
+          name: "Close workspace panel",
         }),
       )
       await Promise.resolve()
@@ -1301,7 +1301,7 @@ describe("AgentWorkbench", () => {
       <>{setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}</>,
     )
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Collapse workspace panel" }))
+      fireEvent.click(screen.getByRole("button", { name: "Close workspace panel" }))
       await Promise.resolve()
     })
 
@@ -1351,7 +1351,7 @@ describe("AgentWorkbench", () => {
       <>{setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}</>,
     )
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Collapse workspace panel" }))
+      fireEvent.click(screen.getByRole("button", { name: "Close workspace panel" }))
       await Promise.resolve()
     })
 
@@ -1464,7 +1464,7 @@ describe("AgentWorkbench", () => {
     navbarRender.rerender(<>{updatedNavbarActions}</>)
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Collapse workspace panel" }))
+      fireEvent.click(screen.getByRole("button", { name: "Close workspace panel" }))
       await Promise.resolve()
     })
 

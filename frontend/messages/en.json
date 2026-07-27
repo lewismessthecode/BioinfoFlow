@@ -1453,7 +1453,8 @@
     "celebrationsOn": "Milestone confetti on",
     "celebrationsOff": "Milestone confetti off",
     "celebrationsPaused": "Milestone confetti paused by reduced motion",
-    "celebrationsMenuState": "Quiet celebrations: {state}"
+    "celebrationsMenuState": "Quiet celebrations: {state}",
+    "morePreferences": "More preferences"
   },
   "landing": {
     "announcement": {
