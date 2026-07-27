@@ -166,11 +166,8 @@ class AgentCoreRuntime:
             expected_owner_token=ownership.owner_token,
         )
         if session.root_session_id is not None:
-            from app.services.agent_core.collaboration.service import (
-                AgentCollaborationService,
-            )
-
-            await AgentCollaborationService(self.db).publish_child_running(
+            await self._publish_child_running_best_effort(
+                session_id=str(turn.session_id),
                 turn_id=turn_id,
                 expected_owner_token=ownership.owner_token,
             )
@@ -323,11 +320,8 @@ class AgentCoreRuntime:
             expected_owner_token=ownership.owner_token,
         )
         if session.root_session_id is not None:
-            from app.services.agent_core.collaboration.service import (
-                AgentCollaborationService,
-            )
-
-            await AgentCollaborationService(self.db).publish_child_running(
+            await self._publish_child_running_best_effort(
+                session_id=str(turn.session_id),
                 turn_id=turn_id,
                 expected_owner_token=ownership.owner_token,
             )
@@ -387,6 +381,53 @@ class AgentCoreRuntime:
         await self._release_active_if_terminal(completed)
         await self._enqueue_persisted_resume_intent(completed)
         return completed
+
+    async def _publish_child_running_best_effort(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        expected_owner_token: str,
+    ) -> None:
+        from app.services.agent_core.collaboration.service import (
+            AgentCollaborationService,
+        )
+
+        error_type: str | None = None
+        try:
+            session_factory = async_sessionmaker(
+                bind=self.db.bind,
+                expire_on_commit=False,
+                class_=AsyncSession,
+            )
+            async with session_factory() as event_session:
+                try:
+                    await AgentCollaborationService(
+                        event_session
+                    ).publish_child_running(
+                        turn_id=turn_id,
+                        expected_owner_token=expected_owner_token,
+                    )
+                except Exception as exc:
+                    error_type = type(exc).__name__
+                    try:
+                        await event_session.rollback()
+                    except Exception:
+                        pass
+        except Exception as exc:
+            if error_type is None:
+                error_type = type(exc).__name__
+        if error_type is not None:
+            try:
+                logger.warning(
+                    "agent_core.child_lifecycle_publish_failed",
+                    event_type=AgentEventType.AGENT_RUNNING,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    error_type=error_type,
+                )
+            except Exception:
+                pass
 
     async def _drain_durable_resume_intents(
         self,

@@ -30,6 +30,7 @@ from app.services.agent_core.collaboration.contracts import AgentModelChoice
 from app.services.agent_core.collaboration.service import AgentCollaborationService
 from app.services.agent_core.collaboration.service import _collaboration_waiter_count
 from app.services.agent_core.context import AgentContextAssembler
+from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.service import AgentCoreService
 from app.services.agent_core.transcript.messages import parts_to_text
 from app.services.llm.credentials import encrypt_secret
@@ -1249,6 +1250,106 @@ async def test_spawn_agent_reports_requested_model_fallback(
 
 
 @pytest.mark.asyncio
+async def test_spawn_lifecycle_event_failure_rolls_back_without_reserving_name(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    root, turn = await _create_parent_turn(db_session)
+    root_id = str(root.id)
+    turn_id = str(turn.id)
+    service = AgentCollaborationService(db_session)
+    original_append = service.ledger.append
+
+    async def fail_event(*args, **kwargs):
+        raise RuntimeError("lifecycle event unavailable")
+
+    monkeypatch.setattr(service.ledger, "append", fail_event)
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+
+    with pytest.raises(RuntimeError, match="lifecycle event unavailable"):
+        await service.spawn_agent(
+            parent_session_id=root_id,
+            parent_turn_id=turn_id,
+            task_name="reader",
+            message="first attempt",
+            fork_turns="none",
+        )
+
+    await db_session.rollback()
+    children = await service.sessions.list_agent_tree(
+        root_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    assert [item.agent_name for item in children if item.agent_name] == []
+
+    monkeypatch.setattr(service.ledger, "append", original_append)
+    result = await service.spawn_agent(
+        parent_session_id=root_id,
+        parent_turn_id=turn_id,
+        task_name="reader",
+        message="retry",
+        fork_turns="none",
+    )
+    children = await service.sessions.list_agent_tree(
+        root_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    assert result.task_name == "/root/reader"
+    assert [item.agent_name for item in children if item.agent_name] == ["reader"]
+
+
+@pytest.mark.asyncio
+async def test_spawn_returns_committed_child_when_notification_fails(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    root, turn = await _create_parent_turn(db_session)
+    root_id = str(root.id)
+    turn_id = str(turn.id)
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.notify_collaboration_waiters",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("notifier unavailable")),
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.logger.warning",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("sentinel-notification-log-secret")
+        ),
+    )
+    service = AgentCollaborationService(db_session)
+
+    result = await service.spawn_agent(
+        parent_session_id=root_id,
+        parent_turn_id=turn_id,
+        task_name="reader",
+        message="work",
+        fork_turns="none",
+    )
+
+    child = await service.sessions.get_fresh(result.child_session_id)
+    assert child is not None and child.agent_name == "reader"
+    with pytest.raises(Exception, match="agent_name_reserved"):
+        await service.spawn_agent(
+            parent_session_id=root_id,
+            parent_turn_id=turn_id,
+            task_name="reader",
+            message="duplicate",
+            fork_turns="none",
+        )
+
+
+@pytest.mark.asyncio
 async def test_running_event_is_owner_fenced_against_terminal_publication(
     db_session,
     db_engine,
@@ -1873,7 +1974,6 @@ async def test_send_message_to_idle_child_is_durable_without_starting_turn(
     child, prior_turn = await _create_child_with_turn(
         db_session, root=root, name="reader"
     )
-
     result = await AgentCollaborationService(db_session).send_message(
         caller_session_id=str(root.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -1951,6 +2051,218 @@ async def test_followup_task_reuses_idle_child_and_acquires_slot(
     assert events[-1].payload["child_session_id"] == str(child.id)
     assert events[-1].payload["child_turn_id"] == str(followup_turn.id)
     assert events[-1].payload["delivery"] == "followup"
+
+
+@pytest.mark.asyncio
+async def test_followup_lifecycle_event_failure_rolls_back_and_retry_is_unique(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    child, prior_turn = await _create_child_with_turn(
+        db_session, root=root, name="reader"
+    )
+    root_id = str(root.id)
+    child_id = str(child.id)
+    prior_turn_id = str(prior_turn.id)
+    service = AgentCollaborationService(db_session)
+    original_append = service.ledger.append
+
+    async def fail_event(*args, **kwargs):
+        raise RuntimeError("followup event unavailable")
+
+    monkeypatch.setattr(service.ledger, "append", fail_event)
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+
+    with pytest.raises(RuntimeError, match="followup event unavailable"):
+        await service.followup_task(
+            caller_session_id=root_id,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            target="/root/reader",
+            message="first followup",
+        )
+
+    await db_session.rollback()
+    turns = await service.turns.list_for_session(child_id)
+    assert [str(item.id) for item in turns] == [prior_turn_id]
+
+    monkeypatch.setattr(service.ledger, "append", original_append)
+    result = await service.followup_task(
+        caller_session_id=root_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="retry followup",
+    )
+    turns = await service.turns.list_for_session(child_id)
+    assert result.turn_id is not None
+    assert [item.input_text for item in turns].count("retry followup") == 1
+
+
+@pytest.mark.asyncio
+async def test_followup_returns_unique_turn_when_notification_fails(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    child, _ = await _create_child_with_turn(db_session, root=root, name="reader")
+    root_id = str(root.id)
+    child_id = str(child.id)
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.notify_collaboration_waiters",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("notifier unavailable")),
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.logger.warning",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("sentinel-notification-log-secret")
+        ),
+    )
+    service = AgentCollaborationService(db_session)
+
+    result = await service.followup_task(
+        caller_session_id=root_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="followup",
+    )
+
+    turns = await service.turns.list_for_session(child_id)
+    assert result.turn_id is not None
+    assert [item.input_text for item in turns].count("followup") == 1
+
+
+@pytest.mark.asyncio
+async def test_active_followup_returns_steer_when_notification_fails(
+    db_session,
+    monkeypatch,
+    caplog,
+) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    child, active_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    root_id = str(root.id)
+    active_turn_id = str(active_turn.id)
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.notify_collaboration_waiters",
+        lambda *_: (_ for _ in ()).throw(
+            RuntimeError("sentinel-steer-notifier-secret")
+        ),
+    )
+    service = AgentCollaborationService(db_session)
+
+    result = await service.followup_task(
+        caller_session_id=root_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="steer despite notifier failure",
+    )
+
+    events = await service.ledger.event_repo.list_for_session(
+        session_id=root_id,
+        event_types={AgentEventType.AGENT_FOLLOWUP_RECEIVED},
+    )
+    assert result.delivery == "steer"
+    assert result.turn_id == active_turn_id
+    assert events[-1].payload["delivery"] == "steer"
+    assert "sentinel-steer-notifier-secret" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_stage", ["factory", "enter", "cleanup"])
+async def test_active_followup_survives_lifecycle_event_session_failure(
+    db_session,
+    monkeypatch,
+    caplog,
+    failure_stage,
+) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    child, active_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    root_id = str(root.id)
+    child_id = str(child.id)
+    active_turn_id = str(active_turn.id)
+
+    class FailingEventSession:
+        async def rollback(self):
+            raise RuntimeError("sentinel-lifecycle-rollback-secret")
+
+    class FailingEventContext:
+        async def __aenter__(self):
+            if failure_stage == "enter":
+                raise RuntimeError("sentinel-lifecycle-enter-secret")
+            return FailingEventSession()
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            if failure_stage == "cleanup":
+                raise RuntimeError("sentinel-lifecycle-exit-secret")
+            return False
+
+    class FailingEventSessionFactory:
+        def __call__(self):
+            return FailingEventContext()
+
+    def event_sessionmaker(*args, **kwargs):
+        if failure_stage == "factory":
+            raise RuntimeError("sentinel-lifecycle-factory-secret")
+        return FailingEventSessionFactory()
+
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.async_sessionmaker",
+        event_sessionmaker,
+    )
+    if failure_stage == "cleanup":
+        async def fail_lifecycle_publication(*args, **kwargs):
+            raise RuntimeError("sentinel-lifecycle-publication-secret")
+
+        monkeypatch.setattr(
+            AgentCollaborationService,
+            "_publish_root_activity",
+            fail_lifecycle_publication,
+        )
+    service = AgentCollaborationService(db_session)
+
+    result = await service.followup_task(
+        caller_session_id=root_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message=f"steer despite {failure_stage} failure",
+    )
+
+    messages = await service.transcript.list_messages(child_id)
+    assert result.delivery == "steer"
+    assert result.turn_id == active_turn_id
+    assert any(
+        item.role == "user"
+        and (item.message_metadata or {}).get("kind") == "steer"
+        for item in messages
+    )
+    assert "sentinel-lifecycle" not in caplog.text
 
 
 @pytest.mark.asyncio
