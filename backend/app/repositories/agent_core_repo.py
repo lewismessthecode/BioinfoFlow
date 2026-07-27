@@ -1553,8 +1553,25 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         )
         for message in pending:
             event_seq += 1
-            message.status = AgentMessageStatus.SUPERSEDED
-            metadata = message.message_metadata or {}
+            metadata = dict(message.message_metadata or {})
+            collaboration_kind = metadata.get("collaboration_kind")
+            requeued = collaboration_kind in {
+                "agent_followup",
+                "inter_agent_message",
+            }
+            if requeued:
+                message.turn_id = None
+                metadata.update(
+                    {
+                        "kind": collaboration_kind,
+                        "delivery": "queued",
+                        "consumed": False,
+                        "requeued_from_turn_id": turn_id,
+                    }
+                )
+                message.message_metadata = metadata
+            else:
+                message.status = AgentMessageStatus.SUPERSEDED
             self.session.add(
                 AgentEvent(
                     session_id=session_id,
@@ -1568,7 +1585,7 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
                             for part in message.content_parts or []
                             if part.get("type") == "text"
                         ),
-                        "delivery": "cancelled",
+                        "delivery": "requeued" if requeued else "cancelled",
                         "reason": reason,
                     },
                     visibility="user",

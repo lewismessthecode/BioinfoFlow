@@ -28,6 +28,7 @@ from app.services.agent_core.collaboration.context_fork import (
 from app.services.agent_core.collaboration.model_preflight import AgentModelPreflight
 from app.services.agent_core.collaboration.contracts import AgentModelChoice
 from app.services.agent_core.collaboration.service import AgentCollaborationService
+from app.services.agent_core.collaboration.service import _collaboration_waiter_count
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.service import AgentCoreService
 from app.services.agent_core.transcript.messages import parts_to_text
@@ -2645,3 +2646,251 @@ async def test_concurrent_startup_recovery_schedules_pending_followup_once(
         assert len(queued) == 1
         assert queued[0].status == AgentMessageStatus.SUPERSEDED
         assert recovered is not None and recovered.collaboration_slot is not None
+
+
+@pytest.mark.asyncio
+async def test_undelivered_followup_steer_requeues_when_target_turn_terminates(
+    db_session, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    child, active = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.cancel_turn_run",
+        lambda *_: False,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    service = AgentCollaborationService(db_session)
+    steered = await service.followup_task(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="Do not lose this followup",
+    )
+    assert steered.delivery == "steer"
+
+    await service.interrupt_agent(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+    )
+
+    turns = await service.turns.list_for_session(str(child.id))
+    followups = [turn for turn in turns if turn.input_text == "Do not lose this followup"]
+    messages = await service.transcript.list_messages(str(child.id))
+    collaboration_messages = [
+        message
+        for message in messages
+        if (message.message_metadata or {}).get("collaboration_kind")
+        == "agent_followup"
+    ]
+    assert active.status == AgentTurnStatus.CANCELLED
+    assert len(followups) == 1
+    assert len(collaboration_messages) == 1
+    assert collaboration_messages[0].status == AgentMessageStatus.SUPERSEDED
+
+
+@pytest.mark.asyncio
+async def test_undelivered_inter_agent_steer_survives_for_next_turn(
+    db_session, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    child, _active = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.cancel_turn_run",
+        lambda *_: False,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    service = AgentCollaborationService(db_session)
+    await service.send_message(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="Persistent context",
+    )
+    await service.interrupt_agent(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+    )
+    followup = await service.followup_task(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="Continue",
+    )
+
+    messages = await service.transcript.list_messages(str(child.id))
+    persistent = [
+        message
+        for message in messages
+        if (message.message_metadata or {}).get("collaboration_kind")
+        == "inter_agent_message"
+    ]
+    assert followup.delivery == "followup"
+    assert len(persistent) == 1
+    assert str(persistent[0].turn_id) == followup.turn_id
+    assert persistent[0].status == AgentMessageStatus.COMMITTED
+
+
+@pytest.mark.asyncio
+async def test_wait_notifier_wakes_multiple_waiters_and_cleans_up(
+    db_session, db_engine
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    child_id = str(child.id)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def wait_once():
+        async with maker() as worker:
+            return await AgentCollaborationService(worker).wait_agent(
+                caller_session_id=child_id,
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                timeout_ms=5_000,
+            )
+
+    first = asyncio.create_task(wait_once())
+    second = asyncio.create_task(wait_once())
+    for _ in range(100):
+        if _collaboration_waiter_count() == 2:
+            break
+        await asyncio.sleep(0)
+    assert _collaboration_waiter_count() == 2
+    async with maker() as sender:
+        await AgentCoreService(sender).steer_turn(
+            turn_id=str(child_turn.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="Wake both",
+        )
+    results = await asyncio.gather(first, second)
+
+    assert [result.updated_agents for result in results] == [
+        ["/root/reader"],
+        ["/root/reader"],
+    ]
+    assert _collaboration_waiter_count() == 0
+
+
+@pytest.mark.asyncio
+async def test_wait_notifier_cancellation_does_not_leak(db_session, db_engine) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def wait_forever():
+        async with maker() as worker:
+            return await AgentCollaborationService(worker).wait_agent(
+                caller_session_id=str(root.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                timeout_ms=5_000,
+            )
+
+    waiter = asyncio.create_task(wait_forever())
+    for _ in range(50):
+        if _collaboration_waiter_count() == 1:
+            break
+        await asyncio.sleep(0.01)
+    assert _collaboration_waiter_count() == 1
+    waiter.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    assert _collaboration_waiter_count() == 0
+
+
+@pytest.mark.asyncio
+async def test_wait_timeout_uses_bounded_durable_checks(
+    db_session, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    service = AgentCollaborationService(db_session)
+    calls = 0
+    original = service.ledger.event_repo.list_for_session
+
+    async def counted(**kwargs):
+        nonlocal calls
+        calls += 1
+        return await original(**kwargs)
+
+    monkeypatch.setattr(service.ledger.event_repo, "list_for_session", counted)
+    result = await service.wait_agent(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        timeout_ms=120,
+    )
+
+    assert result.timed_out is True
+    assert calls <= 2
+
+
+@pytest.mark.asyncio
+async def test_wait_rechecks_durable_state_without_local_notification(
+    db_session, db_engine
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    root_id = str(root.id)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def wait_once():
+        async with maker() as worker:
+            return await AgentCollaborationService(worker).wait_agent(
+                caller_session_id=root_id,
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                timeout_ms=2_000,
+            )
+
+    waiter = asyncio.create_task(wait_once())
+    for _ in range(50):
+        if _collaboration_waiter_count() == 1:
+            break
+        await asyncio.sleep(0.01)
+    async with maker() as external_process:
+        await AgentCollaborationService(external_process).ledger.append(
+            session_id=root_id,
+            turn_id=None,
+            type="agent.message.received",
+            payload={"task_name": "/root/reader", "delivery": "queued"},
+        )
+
+    result = await waiter
+    assert result.timed_out is False
+    assert result.updated_agents == ["/root/reader"]
+    assert _collaboration_waiter_count() == 0

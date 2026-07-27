@@ -725,6 +725,11 @@ class AgentCoreService:
             raise ConflictError(
                 "This turn no longer accepts guidance; send it as a new turn"
             )
+        from app.services.agent_core.collaboration.service import (
+            notify_collaboration_waiters,
+        )
+
+        notify_collaboration_waiters(str(turn.session_id))
         return AgentTurnSteerRead(
             steer_id=steer_id,
             turn_id=turn.id,
@@ -797,14 +802,31 @@ class AgentCoreService:
 
         messages = await self.transcript.list_messages(session_id)
         for message in messages:
-            metadata = message.message_metadata or {}
+            metadata = dict(message.message_metadata or {})
             if (
                 message.status != "draft"
                 or message.role != "user"
                 or metadata.get("kind") != "steer"
             ):
                 continue
-            message.status = "superseded"
+            collaboration_kind = metadata.get("collaboration_kind")
+            requeued = collaboration_kind in {
+                "agent_followup",
+                "inter_agent_message",
+            }
+            if requeued:
+                message.turn_id = None
+                metadata.update(
+                    {
+                        "kind": collaboration_kind,
+                        "delivery": "queued",
+                        "consumed": False,
+                        "requeued_from_turn_id": turn_id,
+                    }
+                )
+                message.message_metadata = metadata
+            else:
+                message.status = "superseded"
             await self.ledger.append(
                 session_id=session_id,
                 turn_id=turn_id,
@@ -812,7 +834,7 @@ class AgentCoreService:
                 payload={
                     "steer_id": metadata.get("steer_id"),
                     "input_text": parts_to_text(message.content_parts),
-                    "delivery": "cancelled",
+                    "delivery": "requeued" if requeued else "cancelled",
                     "reason": termination_reason,
                 },
                 commit=False,
