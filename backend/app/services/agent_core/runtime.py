@@ -85,6 +85,7 @@ class AgentCoreRuntime:
         *,
         model_gateway: ModelGateway | None = None,
     ):
+        self.db = session
         self.turn_repo = AgentTurnRepository(session)
         self.session_repo = AgentSessionRepository(session)
         self.ledger = AgentEventLedger(session)
@@ -164,6 +165,14 @@ class AgentCoreRuntime:
             payload={},
             expected_owner_token=ownership.owner_token,
         )
+        if session.root_session_id is not None:
+            from app.services.agent_core.collaboration.service import (
+                AgentCollaborationService,
+            )
+
+            await AgentCollaborationService(self.db).publish_child_running(
+                turn_id=turn_id
+            )
         logger.info(
             "agent_core.turn.started",
             session_id=str(turn.session_id),
@@ -312,6 +321,14 @@ class AgentCoreRuntime:
             payload={"resume_action_id": action_id},
             expected_owner_token=ownership.owner_token,
         )
+        if session.root_session_id is not None:
+            from app.services.agent_core.collaboration.service import (
+                AgentCollaborationService,
+            )
+
+            await AgentCollaborationService(self.db).publish_child_running(
+                turn_id=turn_id
+            )
         logger.info(
             "agent_core.turn.started",
             session_id=str(turn.session_id),

@@ -966,6 +966,71 @@ async def test_public_event_stream_uses_projected_names_and_hides_non_user_event
 
 
 @pytest.mark.asyncio
+async def test_public_state_and_stream_project_internal_agent_lifecycle_safely(
+    async_client,
+    db_session,
+):
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"title": "Agent lifecycle projection"},
+    )
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+    db_session.add(
+        AgentEvent(
+            session_id=session["id"],
+            turn_id=None,
+            seq=50,
+            type="agent.result.received",
+            payload={
+                "child_session_id": "child-1",
+                "child_turn_id": "child-turn-1",
+                "task_name": "/root/reader",
+                "status": "errored",
+                "effective_model": "parent-model",
+                "error_code": "model_request_failed",
+                "error_message": "Model provider authentication failed.",
+                "credential": "sk-secret",
+                "raw_provider_body": {"authorization": "Bearer secret"},
+            },
+            visibility="internal",
+            schema_version=1,
+        )
+    )
+    await db_session.commit()
+
+    state = await async_client.get(
+        f"/api/v1/agent/sessions/{session['id']}/state?event_view=public"
+    )
+    assert state.status_code == 200
+    lifecycle = next(
+        event
+        for event in state.json()["data"]["events"]
+        if event["type"] == "agent.lifecycle"
+    )
+    assert lifecycle["payload"]["child_session_id"] == "child-1"
+    assert lifecycle["payload"]["error_message"] == (
+        "Model provider authentication failed."
+    )
+    assert "credential" not in lifecycle["payload"]
+    assert "raw_provider_body" not in lifecycle["payload"]
+
+    stream_lines: list[str] = []
+    async with async_client.stream(
+        "GET",
+        f"/api/v1/agent/sessions/{session['id']}/stream"
+        "?after_seq=49&follow=false&event_view=public",
+    ) as stream:
+        assert stream.status_code == 200
+        async for line in stream.aiter_lines():
+            stream_lines.append(line)
+
+    assert "event: agent.lifecycle" in stream_lines
+    assert not any("sk-secret" in line for line in stream_lines)
+    assert not any("authorization" in line for line in stream_lines)
+
+
+@pytest.mark.asyncio
 async def test_agent_session_state_transcript_view_drops_superseded_stream_deltas(
     async_client,
     db_session,

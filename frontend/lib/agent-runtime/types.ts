@@ -280,6 +280,30 @@ export type AgentPublicEventType =
   | "action.lifecycle"
   | "artifact.created"
   | "memory.lifecycle"
+  | "agent.lifecycle"
+
+export type AgentLifecycleStatus =
+  | "pending_init"
+  | "running"
+  | "completed"
+  | "errored"
+  | "interrupted"
+
+export type AgentTreeNode = {
+  childSessionId: string
+  childTurnId?: string | null
+  taskPath: string
+  status: AgentLifecycleStatus
+  sequence: number
+  requestedModel?: string | null
+  effectiveModel?: string | null
+  modelFallback?: boolean
+  fallbackReason?: string | null
+  finalText?: string | null
+  errorCode?: string | null
+  errorMessage?: string | null
+  terminationReason?: string | null
+}
 
 export type AgentRuntimeTextBlockStatus =
   | "streaming"

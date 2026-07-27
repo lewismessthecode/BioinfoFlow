@@ -1,4 +1,5 @@
 export * from "./activity-groups"
+export * from "./agent-tree"
 export * from "./artifacts"
 export * from "./client"
 export * from "./composer-document"

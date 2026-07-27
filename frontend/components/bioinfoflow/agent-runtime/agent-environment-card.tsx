@@ -15,6 +15,7 @@ import { useTranslations } from "next-intl"
 
 import {
   buildAgentRuntimeToolActivities,
+  reduceAgentTree,
   resolveAgentExecutionTarget,
   type AgentRuntimeArtifact,
   type AgentRuntimeEvent,
@@ -23,6 +24,7 @@ import {
 import { cn } from "@/lib/utils"
 import { todosFromArtifact } from "./artifact-viewers"
 import { TodoChecklist } from "./todo-checklist"
+import { AgentTree } from "./agent-tree"
 
 type AgentEnvironmentCardProps = {
   projectId?: string | null
@@ -40,6 +42,7 @@ export function AgentEnvironmentCard({
   const t = useTranslations("agentRuntime")
   const changes = summarizeChanges(events, artifacts)
   const activities = buildAgentRuntimeToolActivities(events)
+  const agents = reduceAgentTree(events)
   const latestTodos = latestTodoArtifact(artifacts)
   const todos = latestTodos ? todosFromArtifact(latestTodos) : []
   const completedTodos = todos.filter((todo) => todo.status === "completed").length
@@ -122,6 +125,15 @@ export function AgentEnvironmentCard({
           value={modelLabel(session) ?? t("environment.none")}
         />
       </div>
+
+      <div className="my-4 border-t border-border/60" />
+
+      <section className="grid gap-2">
+        <div className="text-sm font-semibold text-muted-foreground">
+          {t("agentTree.title")}
+        </div>
+        <AgentTree agents={agents} />
+      </section>
 
       <div className="my-4 border-t border-border/60" />
 

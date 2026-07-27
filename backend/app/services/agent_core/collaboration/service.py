@@ -258,15 +258,38 @@ class AgentCollaborationService:
             _remove_copied_roots(copied_roots)
             raise
 
+        child_id = str(child.id)
+        child_turn_id = str(child_turn.id)
+        task_path = f"/root/{task_name}"
+        lifecycle_payload = {
+            "child_session_id": child_id,
+            "child_turn_id": child_turn_id,
+            "task_name": task_path,
+            "requested_model": choice.requested_model,
+            "effective_model": choice.effective_model,
+            "model_fallback": choice.fallback,
+            "fallback_reason": choice.fallback_reason,
+        }
+        await self._publish_root_activity(
+            root_id=root_session_id,
+            event_type=AgentEventType.AGENT_SPAWNED,
+            payload=lifecycle_payload,
+        )
+        if choice.fallback:
+            await self._publish_root_activity(
+                root_id=root_session_id,
+                event_type=AgentEventType.AGENT_MODEL_FALLBACK,
+                payload=lifecycle_payload,
+            )
         try:
-            enqueue_turn_run(str(child_turn.id), str(child.id))
+            enqueue_turn_run(child_turn_id, child_id)
         except Exception:
             # The committed queued turn is intentionally left for startup recovery.
             pass
         return SpawnAgentResult(
-            child_session_id=str(child.id),
-            child_turn_id=str(child_turn.id),
-            task_name=f"/root/{task_name}",
+            child_session_id=child_id,
+            child_turn_id=child_turn_id,
+            task_name=task_path,
             status="pending_init",
             requested_model=choice.requested_model,
             effective_model=choice.effective_model,
@@ -296,6 +319,9 @@ class AgentCollaborationService:
         )
         target_id = str(target_session.id)
         target_name = _canonical_name(target_session, root_id)
+        activity_session = caller if target_id == root_id else target_session
+        activity_session_id = str(activity_session.id)
+        activity_task_name = _canonical_name(activity_session, root_id)
         active = await self._active_turn(target_session)
         target_turns = await self.turns.list_for_session(target_id)
         current = active or (target_turns[-1] if target_turns else None)
@@ -319,7 +345,8 @@ class AgentCollaborationService:
                     root_id=root_id,
                     event_type=AgentEventType.AGENT_MESSAGE_RECEIVED,
                     payload={
-                        "task_name": target_name,
+                        "child_session_id": activity_session_id,
+                        "task_name": activity_task_name,
                         "delivery": "steer",
                     },
                 )
@@ -349,7 +376,8 @@ class AgentCollaborationService:
             root_id=root_id,
             event_type=AgentEventType.AGENT_MESSAGE_RECEIVED,
             payload={
-                "task_name": target_name,
+                "child_session_id": activity_session_id,
+                "task_name": activity_task_name,
                 "delivery": "queued",
             },
         )
@@ -424,6 +452,16 @@ class AgentCollaborationService:
                     input_text=message,
                     metadata=metadata,
                 )
+                await self._publish_root_activity(
+                    root_id=root_id,
+                    event_type=AgentEventType.AGENT_FOLLOWUP_RECEIVED,
+                    payload={
+                        "child_session_id": child_id,
+                        "child_turn_id": str(active.id),
+                        "task_name": _canonical_name(child, root_id),
+                        "delivery": "steer",
+                    },
+                )
                 return AgentMessageResult(
                     target=_canonical_name(child, root_id),
                     delivery="steer",
@@ -466,6 +504,16 @@ class AgentCollaborationService:
                         input_text=message,
                         metadata=metadata,
                     )
+                    await self._publish_root_activity(
+                        root_id=root_id,
+                        event_type=AgentEventType.AGENT_FOLLOWUP_RECEIVED,
+                        payload={
+                            "child_session_id": child_id,
+                            "child_turn_id": str(active.id),
+                            "task_name": _canonical_name(child, root_id),
+                            "delivery": "steer",
+                        },
+                    )
                     return AgentMessageResult(
                         target=_canonical_name(child, root_id),
                         delivery="steer",
@@ -481,6 +529,16 @@ class AgentCollaborationService:
                 parts=[text_part(message)],
                 metadata={**metadata, "delivery": "queued"},
                 status=AgentMessageStatus.DRAFT,
+            )
+            await self._publish_root_activity(
+                root_id=root_id,
+                event_type=AgentEventType.AGENT_FOLLOWUP_RECEIVED,
+                payload={
+                    "child_session_id": child_id,
+                    "child_turn_id": str(active.id) if active is not None else None,
+                    "task_name": _canonical_name(child, root_id),
+                    "delivery": "queued",
+                },
             )
             return AgentMessageResult(
                 target=_canonical_name(child, root_id),
@@ -515,6 +573,16 @@ class AgentCollaborationService:
                 turn_id=str(active.id),
                 workspace_id=workspace_id,
                 user_id=user_id,
+            )
+            await self._publish_root_activity(
+                root_id=root_id,
+                event_type=AgentEventType.AGENT_INTERRUPTED,
+                payload={
+                    "child_session_id": str(child.id),
+                    "child_turn_id": str(active.id),
+                    "task_name": _canonical_name(child, root_id),
+                    "status": "interrupted",
+                },
             )
         return AgentInterruptResult(
             target=_canonical_name(child, root_id),
@@ -604,6 +672,28 @@ class AgentCollaborationService:
                     raise
                 await asyncio.sleep(0.02 * (attempt + 1))
 
+    async def publish_child_running(self, *, turn_id: str) -> None:
+        turn = await self.turns.get_fresh(turn_id)
+        if turn is None:
+            return
+        child = await self.sessions.get_fresh(str(turn.session_id))
+        if child is None or child.root_session_id is None:
+            return
+        collaboration = (child.session_metadata or {}).get("collaboration") or {}
+        await self._publish_root_activity(
+            root_id=str(child.root_session_id),
+            event_type=AgentEventType.AGENT_RUNNING,
+            payload={
+                "child_session_id": str(child.id),
+                "child_turn_id": str(turn.id),
+                "task_name": _canonical_name(child, str(child.root_session_id)),
+                "requested_model": collaboration.get("requested_model"),
+                "effective_model": collaboration.get("effective_model"),
+                "model_fallback": bool(collaboration.get("model_fallback", False)),
+                "fallback_reason": collaboration.get("fallback_reason"),
+            },
+        )
+
     async def _publish_child_terminal_once(self, *, turn_id: str) -> None:
         turn = await self.turns.get_fresh(turn_id)
         if turn is None or turn.status not in {
@@ -674,6 +764,7 @@ class AgentCollaborationService:
             turn_id=str(active_parent.id) if active_parent is not None else None,
             type=AgentEventType.AGENT_RESULT_RECEIVED,
             payload=payload,
+            visibility="internal",
             commit=False,
         )
         await self.ledger.append(
@@ -864,6 +955,7 @@ class AgentCollaborationService:
             turn_id=None,
             type=event_type,
             payload=payload,
+            visibility="internal",
         )
         notify_collaboration_waiters(root_id)
 
@@ -905,6 +997,16 @@ class AgentCollaborationService:
         target_name = _canonical_name(child, root_id)
         await self.db.commit()
         notify_collaboration_waiters(root_id, child_id)
+        await self._publish_root_activity(
+            root_id=root_id,
+            event_type=AgentEventType.AGENT_FOLLOWUP_RECEIVED,
+            payload={
+                "child_session_id": child_id,
+                "child_turn_id": turn_id,
+                "task_name": target_name,
+                "delivery": "followup",
+            },
+        )
         try:
             enqueue_turn_run(turn_id, child_id)
         except Exception:
@@ -1110,6 +1212,7 @@ def _terminal_payload(child: AgentSession, turn) -> dict:
     effective_model = selection.get("model") or collaboration.get("effective_model")
     return {
         "child_session_id": str(child.id),
+        "child_turn_id": str(turn.id),
         "task_name": _canonical_name(child, str(child.root_session_id)),
         "status": status,
         "final_text": str(turn.final_text or "").strip() or None,

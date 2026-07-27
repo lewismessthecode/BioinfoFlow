@@ -1193,6 +1193,8 @@ async def test_spawn_agent_reports_requested_model_fallback(
 ) -> None:
     await _seed_workspace(db_session)
     root, turn = await _create_parent_turn(db_session)
+    root_id = str(root.id)
+    turn_id = str(turn.id)
 
     async def fallback(**_kwargs):
         return AgentModelChoice(
@@ -1211,8 +1213,8 @@ async def test_spawn_agent_reports_requested_model_fallback(
         lambda *_: None,
     )
     result = await service.spawn_agent(
-        parent_session_id=str(root.id),
-        parent_turn_id=str(turn.id),
+        parent_session_id=root_id,
+        parent_turn_id=turn_id,
         task_name="reader",
         message="work",
         fork_turns="none",
@@ -1223,6 +1225,38 @@ async def test_spawn_agent_reports_requested_model_fallback(
     assert result.effective_model == "parent-model"
     assert result.model_fallback is True
     assert result.fallback_reason == "requested_model_unavailable"
+
+    events_before_start = await service.ledger.event_repo.list_for_session(
+        session_id=root_id,
+        event_types={
+            "agent.spawned",
+            "agent.model_fallback",
+            "agent.running",
+        },
+    )
+    assert [event.type for event in events_before_start] == [
+        "agent.spawned",
+        "agent.model_fallback",
+    ]
+
+    await service.publish_child_running(turn_id=result.child_turn_id)
+    events = await service.ledger.event_repo.list_for_session(
+        session_id=root_id,
+        event_types={
+            "agent.spawned",
+            "agent.model_fallback",
+            "agent.running",
+        },
+    )
+    assert [event.type for event in events] == [
+        "agent.spawned",
+        "agent.model_fallback",
+        "agent.running",
+    ]
+    assert all(event.visibility == "internal" for event in events)
+    assert events[0].payload["child_session_id"] == result.child_session_id
+    assert events[0].payload["task_name"] == "/root/reader"
+    assert events[1].payload["fallback_reason"] == "requested_model_unavailable"
 
 
 @pytest.mark.parametrize(
@@ -1764,6 +1798,17 @@ async def test_send_message_to_idle_child_is_durable_without_starting_turn(
         "Extra context"
     ]
     assert mailbox[0].status == AgentMessageStatus.DRAFT
+    events = await AgentCollaborationService(
+        db_session
+    ).ledger.event_repo.list_for_session(
+        session_id=str(root.id),
+        event_types={"agent.message.received"},
+    )
+    assert events[-1].payload == {
+        "child_session_id": str(child.id),
+        "task_name": "/root/reader",
+        "delivery": "queued",
+    }
 
 
 @pytest.mark.asyncio
@@ -1796,6 +1841,15 @@ async def test_followup_task_reuses_idle_child_and_acquires_slot(
     assert followup_turn.input_text == "Now inspect pyproject.toml"
     assert child.collaboration_slot == 1
     assert enqueued == [(str(followup_turn.id), str(child.id))]
+    events = await AgentCollaborationService(
+        db_session
+    ).ledger.event_repo.list_for_session(
+        session_id=str(root.id),
+        event_types={"agent.followup.received"},
+    )
+    assert events[-1].payload["child_session_id"] == str(child.id)
+    assert events[-1].payload["child_turn_id"] == str(followup_turn.id)
+    assert events[-1].payload["delivery"] == "followup"
 
 
 @pytest.mark.asyncio
@@ -1838,6 +1892,12 @@ async def test_child_can_message_parent_and_follow_up_sibling(
         turn for turn in sibling_turns if str(turn.id) == followed.turn_id
     )
     assert sibling_followup.input_text == "Check the config I found"
+    events = await service.ledger.event_repo.list_for_session(
+        session_id=str(root.id),
+        event_types={"agent.message.received"},
+    )
+    assert events[-1].payload["child_session_id"] == str(sender.id)
+    assert events[-1].payload["task_name"] == "/root/reader"
 
 
 @pytest.mark.asyncio
@@ -1896,6 +1956,40 @@ async def test_followup_rejects_root_and_interrupt_rejects_root_or_self(
             user_id="dev",
             target="/root/reader",
         )
+
+
+@pytest.mark.asyncio
+async def test_interrupt_publishes_safe_root_lifecycle_event(db_session) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    service = AgentCollaborationService(db_session)
+
+    result = await service.interrupt_agent(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+    )
+
+    assert result.status == "running"
+    events = await service.ledger.event_repo.list_for_session(
+        session_id=str(root.id),
+        event_types={"agent.interrupted"},
+    )
+    assert events[-1].payload == {
+        "child_session_id": str(child.id),
+        "child_turn_id": str(child_turn.id),
+        "task_name": "/root/reader",
+        "status": "interrupted",
+    }
+    assert events[-1].visibility == "internal"
 
 
 @pytest.mark.asyncio

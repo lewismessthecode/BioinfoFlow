@@ -634,7 +634,7 @@ async def get_session_state(
         user_id=user.id,
         limit=event_limit,
         transcript_view=event_view in {"transcript", "public"},
-        visibility="user",
+        visibility=None if event_view == "public" else "user",
         event_types=PUBLIC_DURABLE_EVENT_TYPES if event_view == "public" else None,
     )
     token_usage_summary = await _token_usage_summary_for_turns(
@@ -1076,7 +1076,7 @@ async def list_turn_events(
         workspace_id=user.workspace_id,
         user_id=user.id,
         after_seq=after_seq,
-        visibility="user",
+        visibility=None if event_view == "public" else "user",
         event_types=PUBLIC_DURABLE_EVENT_TYPES if event_view == "public" else None,
     )
     return success_response(
@@ -1123,7 +1123,7 @@ async def stream_session_events(
                     workspace_id=user.workspace_id,
                     user_id=user.id,
                     after_seq=cursor,
-                    visibility="user",
+                    visibility=None if event_view == "public" else "user",
                     event_types=(
                         PUBLIC_DURABLE_EVENT_TYPES
                         if event_view == "public"

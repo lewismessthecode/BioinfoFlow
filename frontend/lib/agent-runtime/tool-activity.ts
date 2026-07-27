@@ -223,7 +223,28 @@ function outputPreview(result: Record<string, unknown> | null | undefined) {
   const stdout = stringValue(result.stdout)
   const stderr = stringValue(result.stderr)
   const output = stringValue(result.output)
-  return truncate(stdout || stderr || output || "", 500)
+  const collaboration = collaborationPreview(result)
+  return truncate(stdout || stderr || output || collaboration || "", 500)
+}
+
+function collaborationPreview(result: Record<string, unknown>) {
+  const agents = Array.isArray(result.agents)
+    ? result.agents.filter(recordValue).map(collaborationRecordPreview).filter(Boolean)
+    : []
+  if (agents.length) return agents.join("\n")
+  return collaborationRecordPreview(result)
+}
+
+function collaborationRecordPreview(result: Record<string, unknown>) {
+  const task = stringValue(result.task_name) ?? stringValue(result.target)
+  const status = stringValue(result.status)
+  const model = stringValue(result.effective_model)
+  const error = stringValue(result.error_message)
+  const finalText = stringValue(result.final_text)
+  const fields = [task, status, model, error, finalText].filter(
+    (value): value is string => Boolean(value),
+  )
+  return fields.length ? fields.join(" · ") : null
 }
 
 function normalizeActionDisplayResult(result: Record<string, unknown> | null) {

@@ -171,7 +171,7 @@ def test_projects_user_events_into_eight_public_categories(
     assert {key: projected["payload"][key] for key in discriminators} == discriminators
     assert projected["visibility"] == "user"
     assert projected["schema_version"] == 1
-    assert len(PUBLIC_EVENT_TYPES) == 8
+    assert len(PUBLIC_EVENT_TYPES) == 9
 
 
 @pytest.mark.parametrize(
@@ -189,6 +189,79 @@ def test_does_not_project_internal_protocol_events(durable_type: str) -> None:
 @pytest.mark.parametrize("visibility", ["internal", "audit"])
 def test_does_not_project_non_user_visibility(visibility: str) -> None:
     assert project_public_event(_event(AgentEventType.TURN_STARTED, visibility)) is None
+
+
+@pytest.mark.parametrize(
+    ("durable_type", "activity", "status"),
+    [
+        ("agent.spawned", "spawn", "pending_init"),
+        ("agent.running", "running", "running"),
+        ("agent.model_fallback", "model_fallback", "pending_init"),
+        ("agent.message.received", "message", None),
+        ("agent.followup.received", "followup", None),
+        ("agent.result.received", "result", "errored"),
+        ("agent.interrupted", "interrupt", "interrupted"),
+    ],
+)
+def test_projects_internal_collaboration_events_to_safe_agent_lifecycle(
+    durable_type: str,
+    activity: str,
+    status: str | None,
+) -> None:
+    event = _event(
+        durable_type,
+        "internal",
+        payload={
+            "child_session_id": "child-1",
+            "child_turn_id": "turn-1",
+            "task_name": "/root/reader",
+            "status": status,
+            "requested_model": "cheap-model",
+            "effective_model": "parent-model",
+            "model_fallback": True,
+            "fallback_reason": "Requested model is unavailable.",
+            "delivery": "steer",
+            "final_text": "README found",
+            "error_code": "model_request_failed",
+            "error_message": "Model provider authentication failed.",
+            "termination_reason": "provider_error",
+            "token_usage": {"total_tokens": 42},
+            "credential": "sk-secret",
+            "raw_provider_body": {"authorization": "Bearer secret"},
+        },
+    )
+
+    projected = project_public_event(event)
+
+    assert projected is not None
+    assert projected["type"] == "agent.lifecycle"
+    assert projected["visibility"] == "user"
+    assert projected["payload"]["activity"] == activity
+    assert projected["payload"]["child_session_id"] == "child-1"
+    assert projected["payload"]["error_message"] == (
+        "Model provider authentication failed."
+    )
+    assert "credential" not in projected["payload"]
+    assert "raw_provider_body" not in projected["payload"]
+
+
+def test_agent_error_projection_never_collapses_to_an_empty_explanation() -> None:
+    projected = project_public_event(
+        _event(
+            "agent.result.received",
+            "internal",
+            payload={
+                "child_session_id": "child-1",
+                "task_name": "/root/reader",
+                "status": "errored",
+                "error_code": "model_request_failed",
+                "error_message": "",
+            },
+        )
+    )
+
+    assert projected is not None
+    assert projected["payload"]["error_message"]
 
 
 def _event(
