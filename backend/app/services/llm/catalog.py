@@ -19,6 +19,7 @@ from app.repositories.llm_repo import (
     LlmProviderRepository,
 )
 from app.services.llm.credentials import (
+    CredentialMaterial,
     credential_available,
     credential_configured,
     encrypt_secret,
@@ -70,6 +71,22 @@ class ExactModelProbeResult:
     model_name: str | None = None
     supports_reasoning: bool = False
     unavailable_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class ExactModelProbeSnapshot:
+    requested_model: str
+    model_id: str
+    model_name: str
+    supports_reasoning: bool
+    endpoint_id: str
+    provider_kind: str
+    wire_protocol: str
+    base_url: str | None
+    private_endpoint_authorized: bool
+    resolve_dns: bool
+    credential: CredentialMaterial
+    credential_required: bool
 
 
 class LlmCatalogService:
@@ -648,6 +665,27 @@ class LlmCatalogService:
     ) -> ExactModelProbeResult:
         """Freshly probe one exact caller-visible tool-capable model."""
 
+        prepared = await self.prepare_exact_model_probe(
+            requested_model,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            role=role,
+        )
+        await self.provider_repo.session.rollback()
+        if isinstance(prepared, ExactModelProbeResult):
+            return prepared
+        return await self.execute_exact_model_probe(prepared)
+
+    async def prepare_exact_model_probe(
+        self,
+        requested_model: str,
+        *,
+        workspace_id: str,
+        user_id: str,
+        role: str | None = None,
+    ) -> ExactModelProbeSnapshot | ExactModelProbeResult:
+        """Resolve immutable probe inputs without performing network I/O."""
+
         requested_model = requested_model.strip()
         if not requested_model:
             return _unavailable_model(requested_model, "model_not_found")
@@ -675,11 +713,6 @@ class LlmCatalogService:
                 provider,
                 role=role,
             )
-            network_access = await resolve_provider_network_access(
-                normalize_provider_base_url(provider.kind, provider.base_url),
-                private_endpoint_authorized=server_authorized,
-                resolve_dns=not server_authorized,
-            )
             credential = await self.credential_repo.get_for_provider(str(provider.id))
             if (
                 not server_authorized
@@ -687,16 +720,19 @@ class LlmCatalogService:
                 and credential.source == LlmCredentialSource.ENV
             ):
                 authorize_server_environment_credential(role=role)
-            result = await self.probe.probe(
+            return ExactModelProbeSnapshot(
+                requested_model=requested_model,
+                model_id=str(model.id),
+                model_name=model.model_id,
+                supports_reasoning=bool(model.supports_reasoning),
                 endpoint_id=str(provider.id),
                 provider_kind=provider.kind,
-                model_id=model.model_id,
                 wire_protocol=provider.wire_protocol,
                 base_url=normalize_provider_base_url(
-                    provider.kind,
-                    provider.base_url,
+                    provider.kind, provider.base_url
                 ),
-                network_access=network_access,
+                private_endpoint_authorized=server_authorized,
+                resolve_dns=not server_authorized,
                 credential=resolve_credential_material(credential),
                 credential_required=_provider_requires_credential(provider),
             )
@@ -704,14 +740,41 @@ class LlmCatalogService:
             return _unavailable_model(requested_model, "model_unavailable")
         except Exception:  # noqa: BLE001 - provider/runtime details stay private
             return _unavailable_model(requested_model, "probe_failed")
+
+    async def execute_exact_model_probe(
+        self,
+        snapshot: ExactModelProbeSnapshot,
+    ) -> ExactModelProbeResult:
+        """Perform DNS and provider I/O from an immutable, detached snapshot."""
+
+        try:
+            network_access = await resolve_provider_network_access(
+                snapshot.base_url,
+                private_endpoint_authorized=snapshot.private_endpoint_authorized,
+                resolve_dns=snapshot.resolve_dns,
+            )
+            result = await self.probe.probe(
+                endpoint_id=snapshot.endpoint_id,
+                provider_kind=snapshot.provider_kind,
+                model_id=snapshot.model_name,
+                wire_protocol=snapshot.wire_protocol,
+                base_url=snapshot.base_url,
+                network_access=network_access,
+                credential=snapshot.credential,
+                credential_required=snapshot.credential_required,
+            )
+        except (PermissionDeniedError, ValueError):
+            return _unavailable_model(snapshot.requested_model, "model_unavailable")
+        except Exception:  # noqa: BLE001 - provider/runtime details stay private
+            return _unavailable_model(snapshot.requested_model, "probe_failed")
         if not result.success:
-            return _unavailable_model(requested_model, "probe_failed")
+            return _unavailable_model(snapshot.requested_model, "probe_failed")
         return ExactModelProbeResult(
             available=True,
-            requested_model=requested_model,
-            model_id=str(model.id),
-            model_name=model.model_id,
-            supports_reasoning=bool(model.supports_reasoning),
+            requested_model=snapshot.requested_model,
+            model_id=snapshot.model_id,
+            model_name=snapshot.model_name,
+            supports_reasoning=snapshot.supports_reasoning,
         )
 
     async def visible_model_supports_reasoning(

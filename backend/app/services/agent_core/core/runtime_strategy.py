@@ -25,6 +25,7 @@ class RuntimeStrategy:
     allow_tools: bool = True
     max_tokens: int | None = None
     reasoning_budget: int | None = None
+    reasoning_effort: str | None = None
     fallback_model_ids: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
@@ -34,6 +35,7 @@ class RuntimeStrategy:
             "allow_tools": self.allow_tools,
             "max_tokens": self.max_tokens,
             "reasoning_budget": self.reasoning_budget,
+            "reasoning_effort": self.reasoning_effort,
             "fallback_model_ids": list(self.fallback_model_ids),
         }
 

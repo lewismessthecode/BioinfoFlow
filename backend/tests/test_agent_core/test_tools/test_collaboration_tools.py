@@ -50,3 +50,29 @@ def test_child_toolset_hides_spawn_and_interaction_but_keeps_coordination() -> N
         execution_target={"type": "remote_ssh", "connection_id": "remote-1"},
     )
     assert COLLABORATION_NAMES - {"spawn_agent"} <= remote_names
+
+
+def test_task4_collaboration_tools_have_precise_model_visible_contracts() -> None:
+    registry = build_default_tool_registry()
+
+    send = registry.get("send_message").spec
+    assert send.input_schema["required"] == ["target", "message"]
+    assert send.write_scope == ["agent_messages"]
+
+    followup = registry.get("followup_task").spec
+    assert followup.input_schema["required"] == ["target", "message"]
+    assert followup.write_scope == ["agent_messages", "agent_turns"]
+
+    wait = registry.get("wait_agent").spec
+    assert wait.input_schema["required"] == []
+    assert wait.input_schema["properties"]["timeout_ms"] == {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 60000,
+        "default": 30000,
+    }
+    assert wait.write_scope == []
+
+    interrupt = registry.get("interrupt_agent").spec
+    assert interrupt.input_schema["required"] == ["target"]
+    assert interrupt.write_scope == ["agent_turns"]

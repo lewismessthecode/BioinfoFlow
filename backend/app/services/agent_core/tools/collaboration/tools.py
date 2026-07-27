@@ -77,56 +77,95 @@ class ListAgentsTool:
 
 
 class _Task4CollaborationTool:
-    tool_name = ""
-    description = ""
-    risk_level = "act_low"
-    write_scope = ["agent_messages"]
-
-    def __init_subclass__(cls) -> None:
-        super().__init_subclass__()
-        cls.spec = AgentToolSpec(
-            name=cls.tool_name,
-            description=cls.description,
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "target": {"type": "string"},
-                    "message": {"type": "string"},
-                    "timeout_ms": {"type": "integer", "minimum": 0},
-                },
-                "additionalProperties": False,
-            },
-            output_schema={"type": "object"},
-            risk_level=cls.risk_level,
-            read_scope=["agent_sessions", "agent_turns"],
-            write_scope=cls.write_scope,
-            audit=f"Coordinate agents with {cls.tool_name}.",
-        )
-
     async def run(self, input: dict, context: AgentToolContext) -> dict:
-        raise BadRequestError(f"{self.tool_name}_not_implemented")
+        del input, context
+        raise BadRequestError("collab_manager_unavailable")
 
 
 class SendMessageTool(_Task4CollaborationTool):
-    tool_name = "send_message"
-    description = "Send a durable message to an agent in the same root tree."
+    spec = AgentToolSpec(
+        name="send_message",
+        description="Send a durable message to an agent in the same root tree.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "minLength": 1},
+                "message": {"type": "string", "minLength": 1},
+            },
+            "required": ["target", "message"],
+            "additionalProperties": False,
+        },
+        output_schema={"type": "object"},
+        risk_level="act_low",
+        read_scope=["agent_sessions", "agent_turns"],
+        write_scope=["agent_messages"],
+        audit="Send a durable inter-agent message.",
+    )
 
 
 class FollowupTaskTool(_Task4CollaborationTool):
-    tool_name = "followup_task"
-    description = "Give an existing child agent a follow-up task."
+    spec = AgentToolSpec(
+        name="followup_task",
+        description="Give an existing child agent a follow-up task.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "minLength": 1},
+                "message": {"type": "string", "minLength": 1},
+            },
+            "required": ["target", "message"],
+            "additionalProperties": False,
+        },
+        output_schema={"type": "object"},
+        risk_level="act_low",
+        read_scope=["agent_sessions", "agent_turns"],
+        write_scope=["agent_messages", "agent_turns"],
+        audit="Queue or steer a follow-up child task.",
+    )
 
 
 class WaitAgentTool(_Task4CollaborationTool):
-    tool_name = "wait_agent"
-    description = "Wait for agent mailbox activity, a steer, or a bounded timeout."
-    risk_level = "read"
-    write_scope: list[str] = []
+    spec = AgentToolSpec(
+        name="wait_agent",
+        description="Wait for agent mailbox activity, a steer, or a bounded timeout.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "timeout_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 60000,
+                    "default": 30000,
+                }
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+        output_schema={"type": "object"},
+        risk_level="read",
+        read_scope=["agent_sessions", "agent_turns", "agent_messages"],
+        write_scope=[],
+        audit="Wait for durable agent mailbox activity.",
+        timeout_seconds=65,
+    )
 
 
 class InterruptAgentTool(_Task4CollaborationTool):
-    tool_name = "interrupt_agent"
-    description = "Interrupt an active child turn while keeping the child reusable."
+    spec = AgentToolSpec(
+        name="interrupt_agent",
+        description="Interrupt an active child turn while keeping the child reusable.",
+        input_schema={
+            "type": "object",
+            "properties": {"target": {"type": "string", "minLength": 1}},
+            "required": ["target"],
+            "additionalProperties": False,
+        },
+        output_schema={"type": "object"},
+        risk_level="act_low",
+        read_scope=["agent_sessions", "agent_turns"],
+        write_scope=["agent_turns"],
+        audit="Interrupt an active child turn.",
+    )
 
 
 COLLABORATION_TOOLS = (
