@@ -41,7 +41,7 @@ jobs:
       - name: Maintain release pull request
         id: release
         if: github.event_name != 'workflow_dispatch' || inputs.publish_version == ''
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@v5
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
