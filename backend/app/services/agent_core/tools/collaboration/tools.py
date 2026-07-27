@@ -166,9 +166,9 @@ class WaitAgentTool:
             "additionalProperties": False,
         },
         output_schema={"type": "object"},
-        risk_level="read",
+        risk_level="act_low",
         read_scope=["agent_sessions", "agent_turns", "agent_messages"],
-        write_scope=[],
+        write_scope=["agent_sessions"],
         audit="Wait for durable agent mailbox activity.",
         timeout_seconds=65,
     )

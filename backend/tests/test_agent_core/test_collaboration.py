@@ -28,6 +28,7 @@ from app.services.agent_core.collaboration.context_fork import (
 from app.services.agent_core.collaboration.model_preflight import AgentModelPreflight
 from app.services.agent_core.collaboration.contracts import AgentModelChoice
 from app.services.agent_core.collaboration.service import AgentCollaborationService
+from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.service import AgentCoreService
 from app.services.agent_core.transcript.messages import parts_to_text
 from app.services.llm.credentials import encrypt_secret
@@ -1939,7 +1940,7 @@ async def test_wait_agent_observes_terminal_update_without_returning_content(
 ) -> None:
     await _seed_workspace(db_session)
     root, _ = await _create_parent_turn(db_session)
-    _child, child_turn = await _create_child_with_turn(
+    child, child_turn = await _create_child_with_turn(
         db_session,
         root=root,
         name="reader",
@@ -1969,7 +1970,7 @@ async def test_idle_parent_consumes_terminal_mailbox_once_on_next_turn(
 ) -> None:
     await _seed_workspace(db_session)
     root = await _create_session(db_session)
-    _child, child_turn = await _create_child_with_turn(
+    child, child_turn = await _create_child_with_turn(
         db_session,
         root=root,
         name="reader",
@@ -2006,6 +2007,16 @@ async def test_idle_parent_consumes_terminal_mailbox_once_on_next_turn(
     assert results[0].status == AgentMessageStatus.COMMITTED
     assert results[0].turn_id == parent_turn.id
     assert (results[0].message_metadata or {})["consumed"] is True
+    first_context = await AgentContextAssembler(db_session).model_context(
+        agent_session=root,
+        turn=parent_turn,
+    )
+    second_context = await AgentContextAssembler(db_session).model_context(
+        agent_session=root,
+        turn=parent_turn,
+    )
+    assert repr(first_context.input_items).count("README found") == 1
+    assert repr(second_context.input_items).count("README found") == 1
 
 
 @pytest.mark.asyncio
@@ -2173,3 +2184,334 @@ async def test_active_parent_delivers_terminal_result_exactly_once_at_boundary(
     assert len(results) == 1
     assert results[0].status == AgentMessageStatus.COMMITTED
     assert (results[0].message_metadata or {})["consumed"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "terminal_status",
+    [
+        AgentTurnStatus.COMPLETED,
+        AgentTurnStatus.FAILED,
+        AgentTurnStatus.CANCELLED,
+    ],
+)
+async def test_startup_recovery_publishes_committed_child_terminal_from_new_session(
+    db_session, db_engine, terminal_status
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=terminal_status,
+        slot=1,
+    )
+    child.active_turn_id = str(child_turn.id)
+    if terminal_status == AgentTurnStatus.COMPLETED:
+        child_turn.final_text = "README found"
+    elif terminal_status == AgentTurnStatus.FAILED:
+        child_turn.error_code = "model_request_failed"
+        child_turn.error_message = "Model provider authentication failed."
+    else:
+        child_turn.termination_reason = "interrupted"
+    await db_session.commit()
+    root_id = str(root.id)
+    child_id = str(child.id)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async with maker() as restarted:
+        summary = await AgentCoreService(restarted).recover_orphaned_turns()
+
+    async with maker() as verify:
+        messages = await AgentCollaborationService(verify).transcript.list_messages(
+            root_id
+        )
+        recovered_child = await verify.get(AgentSession, child_id)
+        results = [
+            message
+            for message in messages
+            if (message.message_metadata or {}).get("source_turn_id")
+            == str(child_turn.id)
+        ]
+        assert summary["collaboration_published"] == 1
+        assert len(results) == 1
+        assert recovered_child is not None
+        assert recovered_child.active_turn_id is None
+        assert recovered_child.collaboration_slot is None
+
+
+@pytest.mark.asyncio
+async def test_two_sessions_concurrently_publish_terminal_result_once(
+    db_session, db_engine
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.FAILED,
+        slot=1,
+    )
+    child_turn.error_code = "model_request_failed"
+    child_turn.error_message = "Model provider authentication failed."
+    await db_session.commit()
+    root_id = str(root.id)
+    child_id = str(child.id)
+    turn_id = str(child_turn.id)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def publish() -> None:
+        async with maker() as worker:
+            await AgentCollaborationService(worker).publish_child_terminal(
+                turn_id=turn_id
+            )
+
+    await asyncio.gather(publish(), publish())
+
+    async with maker() as verify:
+        messages = await AgentCollaborationService(verify).transcript.list_messages(
+            root_id
+        )
+        results = [
+            message
+            for message in messages
+            if (message.message_metadata or {}).get("source_turn_id") == turn_id
+        ]
+        root_events = await AgentCollaborationService(
+            verify
+        ).ledger.event_repo.list_for_session(
+            session_id=root_id,
+            event_types={"agent.result.received"},
+        )
+        marker_events = await AgentCollaborationService(
+            verify
+        ).ledger.event_repo.list_for_session(
+            session_id=child_id,
+            event_types={"agent.result.published"},
+        )
+        assert len(results) == 1
+        assert len(root_events) == 1
+        assert len(marker_events) == 1
+
+
+@pytest.mark.asyncio
+async def test_terminal_event_contains_complete_safe_payload(db_session) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.FAILED,
+        slot=1,
+    )
+    child_turn.error_code = "model_request_failed"
+    child_turn.error_message = "HTTP 401 secret-token authentication denied"
+    child_turn.termination_reason = "model_failed"
+    child_turn.token_usage = {"input_tokens": 10, "output_tokens": 2}
+    await db_session.commit()
+
+    service = AgentCollaborationService(db_session)
+    await service.publish_child_terminal(turn_id=str(child_turn.id))
+    events = await service.ledger.event_repo.list_for_session(
+        session_id=str(root.id),
+        event_types={"agent.result.received"},
+    )
+    payload = events[-1].payload
+
+    assert payload["child_session_id"] == str(child.id)
+    assert payload["task_name"] == "/root/reader"
+    assert payload["status"] == "errored"
+    assert payload["error_code"] == "model_request_failed"
+    assert payload["error_message"] == "Model provider authentication failed."
+    assert payload["error_message"]
+    assert payload["termination_reason"] == "model_failed"
+    assert payload["token_usage"] == {"input_tokens": 10, "output_tokens": 2}
+    assert payload["effective_model"] == "parent-model"
+    assert "secret" not in repr(payload)
+
+
+@pytest.mark.asyncio
+async def test_child_wait_observes_direct_child_steer(db_session) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    service = AgentCollaborationService(db_session)
+    await service.core.steer_turn(
+        turn_id=str(child_turn.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Use the exact path",
+    )
+
+    result = await service.wait_agent(
+        caller_session_id=str(child.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        timeout_ms=0,
+    )
+
+    assert result.timed_out is False
+    assert result.updated_agents == ["/root/reader"]
+    assert "Use the exact path" not in repr(result)
+
+
+@pytest.mark.asyncio
+async def test_mailbox_consumption_rolls_back_with_failed_turn_claim_and_retries(
+    db_session, db_engine
+) -> None:
+    await _seed_workspace(db_session)
+    root, active_turn = await _create_parent_turn(db_session)
+    _child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.COMPLETED,
+        slot=1,
+    )
+    child_turn.final_text = "README found"
+    await db_session.commit()
+    root_id = str(root.id)
+    await AgentCollaborationService(db_session).publish_child_terminal(
+        turn_id=str(child_turn.id)
+    )
+
+    with pytest.raises(Exception, match="another turn is active"):
+        await AgentCoreService(db_session).create_turn_record(
+            session_id=root_id,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="Conflicting turn",
+        )
+    active_turn.status = AgentTurnStatus.COMPLETED
+    root.active_turn_id = None
+    await db_session.commit()
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async with maker() as retried:
+        turn = await AgentCoreService(retried).create_turn_record(
+            session_id=root_id,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="Continue",
+        )
+        messages = await AgentCollaborationService(retried).transcript.list_messages(
+            root_id
+        )
+        results = [
+            message
+            for message in messages
+            if (message.message_metadata or {}).get("collaboration_kind")
+            == "agent_result"
+        ]
+        assert len(results) == 1
+        assert results[0].turn_id == turn.id
+        assert results[0].status == AgentMessageStatus.COMMITTED
+
+
+@pytest.mark.asyncio
+async def test_two_idle_followups_race_to_one_active_turn(
+    db_session, db_engine, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    child, _ = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.COMPLETED,
+    )
+    root_id = str(root.id)
+    child_id = str(child.id)
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def follow(message: str):
+        async with maker() as worker:
+            return await AgentCollaborationService(worker).followup_task(
+                caller_session_id=root_id,
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                target="/root/reader",
+                message=message,
+            )
+
+    results = await asyncio.gather(follow("first"), follow("second"))
+
+    async with maker() as verify:
+        turns = await AgentCollaborationService(verify).turns.list_for_session(
+            child_id
+        )
+        active = [
+            turn
+            for turn in turns
+            if turn.status
+            in {
+                AgentTurnStatus.QUEUED,
+                AgentTurnStatus.RUNNING,
+                AgentTurnStatus.WAITING_USER,
+                AgentTurnStatus.WAITING_APPROVAL,
+            }
+        ]
+        assert len(active) == 1
+        assert sorted(result.delivery for result in results) == ["followup", "steer"]
+
+
+@pytest.mark.asyncio
+async def test_old_terminal_recovery_does_not_release_new_followup_slot_new_session(
+    db_session, db_engine, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    child, old_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    old_turn.accepts_steer = False
+    await db_session.commit()
+    root_id = str(root.id)
+    child_id = str(child.id)
+    old_turn_id = str(old_turn.id)
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    service = AgentCollaborationService(db_session)
+    await service.followup_task(
+        caller_session_id=root_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="new work",
+    )
+    old_turn.status = AgentTurnStatus.COMPLETED
+    old_turn.accepts_steer = False
+    await db_session.commit()
+    await service.publish_child_terminal(turn_id=old_turn_id)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async with maker() as restarted:
+        await AgentCollaborationService(restarted).publish_child_terminal(
+            turn_id=old_turn_id
+        )
+
+    async with maker() as verify:
+        recovered = await verify.get(AgentSession, child_id)
+        assert recovered is not None
+        assert recovered.active_turn_id != old_turn_id
+        assert recovered.active_turn_id is not None
+        assert recovered.collaboration_slot is not None

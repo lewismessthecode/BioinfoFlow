@@ -9,7 +9,7 @@ from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -322,6 +322,31 @@ class AgentCollaborationService:
         target: str,
         message: str,
     ) -> AgentMessageResult:
+        for attempt in range(4):
+            try:
+                return await self._followup_task_once(
+                    caller_session_id=caller_session_id,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    target=target,
+                    message=message,
+                )
+            except OperationalError as exc:
+                await self.db.rollback()
+                if "locked" not in str(exc).lower() or attempt == 3:
+                    raise
+                await asyncio.sleep(0.02 * (attempt + 1))
+        raise RuntimeError("unreachable")
+
+    async def _followup_task_once(
+        self,
+        *,
+        caller_session_id: str,
+        workspace_id: str,
+        user_id: str,
+        target: str,
+        message: str,
+    ) -> AgentMessageResult:
         message = str(message or "").strip()
         if not message:
             raise BadRequestError("invalid_agent_message")
@@ -466,6 +491,7 @@ class AgentCollaborationService:
         )
         caller_id = str(caller.id)
         root_id = str(caller.root_session_id or caller.id)
+        caller_name = _canonical_name(caller, root_id)
         deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
         while True:
             await self.db.rollback()
@@ -473,35 +499,61 @@ class AgentCollaborationService:
             if caller is None:
                 raise PermissionDeniedError("agent_caller_scope_mismatch")
             metadata = dict(caller.session_metadata or {})
-            cursor = int(metadata.get("collaboration_wait_cursor") or 0)
-            events = await self.ledger.event_repo.list_for_session(
+            cursors = dict(metadata.get("collaboration_wait_cursors") or {})
+            root_cursor = int(cursors.get("root") or 0)
+            caller_cursor = int(cursors.get("caller") or 0)
+            root_events = await self.ledger.event_repo.list_for_session(
                 session_id=root_id,
-                after_seq=cursor,
+                after_seq=root_cursor,
                 event_types={
                     AgentEventType.AGENT_MESSAGE_RECEIVED,
                     AgentEventType.AGENT_RESULT_RECEIVED,
                     AgentEventType.TURN_STEER_RECEIVED,
                 },
             )
-            if events:
-                metadata["collaboration_wait_cursor"] = max(
-                    event.seq for event in events
+            caller_events = []
+            if caller_id != root_id:
+                caller_events = await self.ledger.event_repo.list_for_session(
+                    session_id=caller_id,
+                    after_seq=caller_cursor,
+                    event_types={AgentEventType.TURN_STEER_RECEIVED},
                 )
+            events = [*root_events, *caller_events]
+            if events:
+                if root_events:
+                    cursors["root"] = max(event.seq for event in root_events)
+                if caller_events:
+                    cursors["caller"] = max(event.seq for event in caller_events)
+                metadata["collaboration_wait_cursors"] = cursors
                 caller.session_metadata = metadata
                 await self.db.commit()
-                names = sorted(
-                    {
-                        str(event.payload.get("task_name"))
-                        for event in events
-                        if event.payload.get("task_name")
-                    }
+                names = {
+                    str(event.payload.get("task_name"))
+                    for event in root_events
+                    if event.payload.get("task_name")
+                }
+                if caller_events:
+                    names.add(caller_name)
+                return AgentWaitResult(
+                    timed_out=False,
+                    updated_agents=sorted(names),
                 )
-                return AgentWaitResult(timed_out=False, updated_agents=names)
             if asyncio.get_running_loop().time() >= deadline:
                 return AgentWaitResult(timed_out=True, updated_agents=[])
             await asyncio.sleep(min(0.05, max(deadline - asyncio.get_running_loop().time(), 0)))
 
     async def publish_child_terminal(self, *, turn_id: str) -> None:
+        for attempt in range(4):
+            try:
+                await self._publish_child_terminal_once(turn_id=turn_id)
+                return
+            except OperationalError as exc:
+                await self.db.rollback()
+                if "locked" not in str(exc).lower() or attempt == 3:
+                    raise
+                await asyncio.sleep(0.02 * (attempt + 1))
+
+    async def _publish_child_terminal_once(self, *, turn_id: str) -> None:
         turn = await self.turns.get_fresh(turn_id)
         if turn is None or turn.status not in {
             AgentTurnStatus.COMPLETED,
@@ -524,9 +576,16 @@ class AgentCollaborationService:
             == "agent_result"
             for message in messages
         ):
-            await self.sessions.release_child_slot_for_terminal(
-                str(child.id), turn_id
-            )
+            await self.sessions.finalize_child_terminal_state(str(child.id), turn_id)
+            if not await self._has_publication_marker(turn_id):
+                await self.ledger.append(
+                    session_id=str(child.id),
+                    turn_id=turn_id,
+                    type=AgentEventType.AGENT_RESULT_PUBLISHED,
+                    payload={"root_session_id": root_id},
+                    visibility="internal",
+                    commit=False,
+                )
             await self.db.commit()
             await self._schedule_pending_followup(child=child, root=root)
             return
@@ -556,20 +615,31 @@ class AgentCollaborationService:
             status=AgentMessageStatus.DRAFT,
             commit=False,
         )
-        await self.sessions.release_child_slot_for_terminal(str(child.id), turn_id)
+        await self.sessions.finalize_child_terminal_state(str(child.id), turn_id)
         await self.ledger.append(
             session_id=root_id,
             turn_id=str(active_parent.id) if active_parent is not None else None,
             type=AgentEventType.AGENT_RESULT_RECEIVED,
-            payload={
-                "task_name": _canonical_name(child, root_id),
-                "status": payload["status"],
-                "error_code": payload["error_code"],
-            },
+            payload=payload,
+            commit=False,
+        )
+        await self.ledger.append(
+            session_id=str(child.id),
+            turn_id=turn_id,
+            type=AgentEventType.AGENT_RESULT_PUBLISHED,
+            payload={"root_session_id": root_id},
+            visibility="internal",
             commit=False,
         )
         await self.db.commit()
         await self._schedule_pending_followup(child=child, root=root)
+
+    async def _has_publication_marker(self, turn_id: str) -> bool:
+        events = await self.ledger.event_repo.list_for_turn(
+            turn_id=turn_id,
+            event_types={AgentEventType.AGENT_RESULT_PUBLISHED},
+        )
+        return bool(events)
 
     async def list_agents(
         self,
@@ -947,11 +1017,22 @@ def _terminal_payload(child: AgentSession, turn) -> dict:
         "status": status,
         "final_text": str(turn.final_text or "").strip() or None,
         "error_code": turn.error_code,
-        "error_message": _safe_agent_error(turn),
+        "error_message": _safe_terminal_message(turn, status=status),
         "termination_reason": turn.termination_reason,
         "token_usage": turn.token_usage,
         "effective_model": effective_model,
     }
+
+
+def _safe_terminal_message(turn, *, status: str) -> str:
+    error = _safe_agent_error(turn)
+    if error:
+        return error
+    if status == "completed":
+        return "Agent completed successfully."
+    if status == "interrupted":
+        return "Agent was interrupted."
+    return "Agent failed before completing the task."
 
 
 def _clone_attachment_files(*, source: AgentAttachment, destination: Path) -> None:
