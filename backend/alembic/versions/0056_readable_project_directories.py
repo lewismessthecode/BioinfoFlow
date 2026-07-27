@@ -18,6 +18,9 @@ depends_on = None
 
 
 def upgrade() -> None:
+    if not sa.inspect(op.get_bind()).has_table("projects"):
+        return
+
     op.add_column(
         "projects",
         sa.Column("directory_name", sa.String(length=120), nullable=True),
@@ -31,5 +34,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if not sa.inspect(op.get_bind()).has_table("projects"):
+        return
+
     op.drop_index("uq_projects_directory_name", table_name="projects")
     op.drop_column("projects", "directory_name")
