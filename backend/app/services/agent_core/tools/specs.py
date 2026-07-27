@@ -68,3 +68,23 @@ class AgentTool(Protocol):
         self, input: dict[str, Any], context: AgentToolContext
     ) -> dict[str, Any]:
         """Run the tool through typed platform/domain service boundaries."""
+
+
+def tool_result_error(
+    tool: AgentTool, result: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Return a tool-defined domain error for an otherwise valid result.
+
+    Most tools communicate failure by raising and therefore need no hook. Tools
+    whose domain protocol carries failure in a structured result can opt in with
+    a synchronous ``result_error(result)`` method.
+    """
+    hook = getattr(tool, "result_error", None)
+    if not callable(hook):
+        return None
+    error = hook(result)
+    if error is None:
+        return None
+    if not isinstance(error, dict):
+        raise TypeError("tool result_error hook must return a dictionary or None")
+    return error

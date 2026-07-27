@@ -42,7 +42,11 @@ from app.services.agent_core.tools.middleware import (
 )
 from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.result_budget import normalize_tool_result
-from app.services.agent_core.tools.specs import AgentTool, AgentToolContext
+from app.services.agent_core.tools.specs import (
+    AgentTool,
+    AgentToolContext,
+    tool_result_error,
+)
 from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.utils.exceptions import BadRequestError, ConflictError, PermissionDeniedError
 
@@ -1051,6 +1055,7 @@ class AgentToolExecutor:
             await execution_context.ensure_turn_ownership()
             validated_result = validate_tool_output(raw_result, tool.spec.output_schema)
             result, summary = normalize_tool_result(validated_result)
+            result_error = tool_result_error(tool, result)
         except TurnOwnershipLostError:
             await self.session.rollback()
             raise
@@ -1137,6 +1142,48 @@ class AgentToolExecutor:
             agent_metrics.increment("tools.failed")
             return ToolExecutionResult(
                 action_id=str(action.id), status=action.status, error=error
+            )
+
+        if result_error is not None:
+            failed = await self.action_repo.transition_running(
+                str(action.id),
+                status=AgentActionStatus.FAILED,
+                result=result,
+                output_summary=summary,
+                error=result_error,
+                completed_at=datetime.now(timezone.utc),
+                expected_turn_owner_token=execution_context.expected_owner_token,
+            )
+            if failed is None:
+                await self.session.rollback()
+                return await self._current_result(action_id, fallback=action)
+            action = failed
+            await self.ledger.append(
+                session_id=str(action.session_id),
+                turn_id=str(action.turn_id),
+                type=AgentEventType.ACTION_FAILED,
+                payload={
+                    "action_id": str(action.id),
+                    "name": action.name,
+                    "tool_call_id": str(action.tool_call_id)
+                    if action.tool_call_id
+                    else None,
+                    "input_preview": action.input_preview,
+                    "result": result,
+                    "error": result_error,
+                },
+                commit=False,
+                expected_owner_token=execution_context.expected_owner_token,
+                owner_fenced=execution_context.expected_owner_token is not None,
+            )
+            await self.session.commit()
+            agent_metrics.increment("tools.failed")
+            return ToolExecutionResult(
+                action_id=str(action.id),
+                status=action.status,
+                result=result,
+                permission_decision=action.permission_decision,
+                error=result_error,
             )
 
         completed = await self.action_repo.transition_running(

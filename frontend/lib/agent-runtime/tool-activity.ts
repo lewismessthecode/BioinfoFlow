@@ -67,16 +67,18 @@ export function buildAgentRuntimeToolActivities(
       const error = recordValue(event.payload.error)
       const sources = sourcesFromActionResult(result, event)
       const resultErrorMessage = resultError(result)
+      const exitCode = numberValue(displayResult?.exit_code)
+      const resultFailed = resultErrorMessage !== null || (exitCode !== null && exitCode !== 0)
       const resultCount = sourceResultCount(result)
       const activity = ensureActivity(activities, key, event, {
         id: key,
         callId: toolCallId,
         actionId,
         name: stringValue(event.payload.name) || stringValue(event.payload.kind) || "action",
-        status: resultErrorMessage ? "failed" : actionStatus(event),
+        status: resultFailed ? "failed" : actionStatus(event),
         inputPreview: stringValue(event.payload.input_preview),
         outputPreview: outputPreview(displayResult),
-        exitCode: numberValue(displayResult?.exit_code),
+        exitCode,
         durationMs: numberValue(event.payload.duration_ms),
         errorMessage:
           errorMessage(error) ?? stringValue(event.payload.error_message) ?? resultErrorMessage,
@@ -90,7 +92,7 @@ export function buildAgentRuntimeToolActivities(
       activity.actionId = actionId
       activity.callId = toolCallId || activity.callId
       activity.name = stringValue(event.payload.name) || activity.name
-      activity.status = resultErrorMessage ? "failed" : actionStatus(event)
+      activity.status = resultFailed ? "failed" : actionStatus(event)
       activity.inputPreview = stringValue(event.payload.input_preview) ?? activity.inputPreview
       activity.outputPreview = outputPreview(displayResult) ?? activity.outputPreview
       activity.exitCode = numberValue(displayResult?.exit_code) ?? activity.exitCode

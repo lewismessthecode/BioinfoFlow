@@ -988,6 +988,32 @@ describe("AgentTranscript", () => {
     ).toBeInTheDocument()
   })
 
+  it("renders historical completed command events with nonzero exits as failed", () => {
+    renderTranscript({
+      events: [
+        event("event-failed-command", 1, "action.completed", {
+          action_id: "action-command-1",
+          name: "bash",
+          input_preview: "run-analysis",
+          result: {
+            exit_code: 9,
+            stdout: "",
+            stderr: "analysis check failed",
+          },
+        }),
+      ],
+    })
+
+    expect(screen.getByText("Ran 1 commands")).toBeInTheDocument()
+    expect(screen.getByText("Failed")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Ran 1 commands/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
+
+    expect(screen.getByText("9")).toBeInTheDocument()
+    expect(screen.getByText("analysis check failed")).toBeInTheDocument()
+  })
+
   it("renders exit_plan_mode plans as inline conversation decisions", () => {
     renderTranscript({
       turn: { ...baseTurn, status: "waiting_approval", final_text: null },
