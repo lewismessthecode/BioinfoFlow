@@ -206,9 +206,7 @@ async def test_get_remote_action_exposes_safe_executor_snapshot(
     assert response.status_code == 200
     action = response.json()["data"]
     assert action["permission_context_snapshot"]["command_risk"]["level"] == "act_low"
-    assert action["permission_context_snapshot"]["command_risk"]["effects"] == [
-        "read"
-    ]
+    assert action["permission_context_snapshot"]["command_risk"]["effects"] == ["read"]
     assert action["permission_context_snapshot"]["remote_identity"]["host"] == (
         "safe-host.internal"
     )
@@ -268,9 +266,9 @@ async def test_get_action_does_not_reveal_cross_scope_existence(
     assert hidden.json()["error"]["code"] == missing.json()["error"]["code"]
     assert hidden.json()["error"]["message"] == missing.json()["error"]["message"]
     assert hidden_resume.status_code == missing_resume.status_code == 404
-    assert hidden_resume.json()["error"]["code"] == missing_resume.json()["error"][
-        "code"
-    ]
+    assert (
+        hidden_resume.json()["error"]["code"] == missing_resume.json()["error"]["code"]
+    )
 
 
 @pytest.mark.asyncio
@@ -316,9 +314,7 @@ async def test_resume_action_rejects_actions_outside_external_resume_boundary(
         tool_call_id="call-auto-allowed",
     )
 
-    response = await async_client.post(
-        f"/api/v1/agent/actions/{action.id}/resume"
-    )
+    response = await async_client.post(f"/api/v1/agent/actions/{action.id}/resume")
 
     assert response.status_code == 409
     assert response.json()["error"]["message"] == message
@@ -522,7 +518,10 @@ async def test_agent_skills_api_lists_and_loads_local_manifests(
 
     loaded = await async_client.get("/api/v1/agent/skills/nextflow-debugging")
     assert loaded.status_code == 200
-    assert loaded.json()["data"]["body"] == "Use logs and audit events before explaining failures."
+    assert (
+        loaded.json()["data"]["body"]
+        == "Use logs and audit events before explaining failures."
+    )
 
     missing = await async_client.get("/api/v1/agent/skills/missing-skill")
     assert missing.status_code == 404
@@ -636,7 +635,9 @@ async def test_agent_turn_create_rejects_product_repo_scoped_active_skills(
 
 
 @pytest.mark.asyncio
-async def test_agent_core_session_turn_event_and_artifact_contract(async_client, monkeypatch):
+async def test_agent_core_session_turn_event_and_artifact_contract(
+    async_client, monkeypatch
+):
     stream_log_records: list[tuple[str, str, dict]] = []
 
     class SpyLogger:
@@ -723,9 +724,7 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
     assert turn["model_profile_snapshot"]["resolved_model_id"] == model["id"]
     assert turn["model_profile_snapshot"]["resolved_model_source"] == "session"
 
-    list_turns = await async_client.get(
-        f"/api/v1/agent/sessions/{session['id']}/turns"
-    )
+    list_turns = await async_client.get(f"/api/v1/agent/sessions/{session['id']}/turns")
     assert list_turns.status_code == 200
     assert [item["id"] for item in list_turns.json()["data"]] == [turn["id"]]
 
@@ -781,7 +780,9 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
 
 
 @pytest.mark.asyncio
-async def test_agent_session_state_can_limit_large_event_payload(async_client, db_session):
+async def test_agent_session_state_can_limit_large_event_payload(
+    async_client, db_session
+):
     project_id = await _create_project(async_client)
     create_session = await async_client.post(
         "/api/v1/agent/sessions",
@@ -883,8 +884,7 @@ async def test_public_event_views_filter_visibility_before_limit_and_project_typ
     await db_session.commit()
 
     state = await async_client.get(
-        f"/api/v1/agent/sessions/{session['id']}/state"
-        "?event_view=public&event_limit=1"
+        f"/api/v1/agent/sessions/{session['id']}/state?event_view=public&event_limit=1"
     )
     assert state.status_code == 200
     assert state.json()["data"]["events"] == [
@@ -987,11 +987,31 @@ async def test_agent_session_state_transcript_view_drops_superseded_stream_delta
         (100, "assistant.text.delta", {"message_id": "message-1", "content": "H"}),
         (101, "assistant.text.delta", {"message_id": "message-1", "content": "Hi"}),
         (102, "assistant.text.completed", {"message_id": "message-1", "text": "Hi"}),
-        (103, "assistant.thinking.delta", {"message_id": "message-1", "content": "Check"}),
-        (104, "assistant.thinking.completed", {"message_id": "message-1", "content": "Check"}),
-        (105, "assistant.tool_call.delta", {"call_id": "call-1", "arguments": {"path": "."}}),
-        (106, "assistant.tool_call.completed", {"call_id": "call-1", "arguments": {"path": "."}}),
-        (107, "assistant.text.delta", {"message_id": "message-incomplete", "content": "Keep me"}),
+        (
+            103,
+            "assistant.thinking.delta",
+            {"message_id": "message-1", "content": "Check"},
+        ),
+        (
+            104,
+            "assistant.thinking.completed",
+            {"message_id": "message-1", "content": "Check"},
+        ),
+        (
+            105,
+            "assistant.tool_call.delta",
+            {"call_id": "call-1", "arguments": {"path": "."}},
+        ),
+        (
+            106,
+            "assistant.tool_call.completed",
+            {"call_id": "call-1", "arguments": {"path": "."}},
+        ),
+        (
+            107,
+            "assistant.text.delta",
+            {"message_id": "message-incomplete", "content": "Keep me"},
+        ),
     ]
     for seq, event_type, payload in events:
         db_session.add(
@@ -1358,9 +1378,10 @@ async def test_agent_core_session_execution_scope_contract(async_client):
         ],
     }
     assert updated_session["execution_target"] == {"type": "local"}
-    assert updated_session["metadata"]["execution_scope"] == updated_session[
-        "execution_scope"
-    ]
+    assert (
+        updated_session["metadata"]["execution_scope"]
+        == updated_session["execution_scope"]
+    )
 
     turn_response = await async_client.post(
         f"/api/v1/agent/sessions/{session['id']}/turns",
@@ -1556,7 +1577,9 @@ async def test_terminal_status_and_event_are_visible_before_steer_cleanup(
         assert turn_response.status_code == 200
         assert turn_response.json()["data"]["status"] == "completed"
 
-        events_response = await async_client.get(f"/api/v1/agent/turns/{turn_id}/events")
+        events_response = await async_client.get(
+            f"/api/v1/agent/turns/{turn_id}/events"
+        )
         assert events_response.status_code == 200
         assert _event_types(events_response.json()["data"])[-1] == "turn.completed"
     finally:
@@ -2274,9 +2297,7 @@ async def test_agent_fs_tree_defaults_to_project_home(async_client, db_session):
     marker = project_root / "project-note.txt"
     marker.write_text("project scoped", encoding="utf-8")
 
-    response = await async_client.get(
-        f"/api/v1/agent/fs/tree?project_id={project_id}"
-    )
+    response = await async_client.get(f"/api/v1/agent/fs/tree?project_id={project_id}")
 
     assert response.status_code == 200
     data = response.json()["data"]
@@ -2285,7 +2306,9 @@ async def test_agent_fs_tree_defaults_to_project_home(async_client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_agent_fs_file_rejects_sensitive_files(async_client, tmp_path, monkeypatch):
+async def test_agent_fs_file_rejects_sensitive_files(
+    async_client, tmp_path, monkeypatch
+):
     data_root = tmp_path / "data"
     public_root = data_root / "sources" / "deliveries"
     public_root.mkdir(parents=True)
@@ -2299,14 +2322,10 @@ async def test_agent_fs_file_rejects_sensitive_files(async_client, tmp_path, mon
 
     monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
 
-    public_resp = await async_client.get(
-        f"/api/v1/agent/fs/file?path={public_file}"
-    )
+    public_resp = await async_client.get(f"/api/v1/agent/fs/file?path={public_file}")
     assert public_resp.status_code == 200
 
-    secret_resp = await async_client.get(
-        f"/api/v1/agent/fs/file?path={secret_file}"
-    )
+    secret_resp = await async_client.get(f"/api/v1/agent/fs/file?path={secret_file}")
     assert secret_resp.status_code == 403
     data_secret_resp = await async_client.get(
         f"/api/v1/agent/fs/file?path={nested_secret}"
@@ -2315,7 +2334,9 @@ async def test_agent_fs_file_rejects_sensitive_files(async_client, tmp_path, mon
 
 
 @pytest.mark.asyncio
-async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_path, monkeypatch):
+async def test_agent_fs_file_supports_binary_preview_download(
+    async_client, tmp_path, monkeypatch
+):
     data_root = tmp_path / "data"
     public_root = data_root / "sources" / "deliveries"
     public_root.mkdir(parents=True)
@@ -2328,7 +2349,9 @@ async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_
     png_file = public_root / "plot.png"
     png_file.write_bytes(b"\x89PNG\r\n\x1a\nbinary-\xff\n")
     svg_file = public_root / "plot.svg"
-    svg_file.write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8")
+    svg_file.write_text(
+        "<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8"
+    )
     html_file = public_root / 'report "qc"; v1.html'
     html_file.write_text("<h1>QC</h1>", encoding="utf-8")
 
@@ -2406,7 +2429,9 @@ async def test_agent_toolsets_report_canonical_execution_and_plan_modes(async_cl
     response = await async_client.get("/api/v1/agent/toolsets")
 
     assert response.status_code == 200
-    toolsets = {item["name"]: item["tools"] for item in response.json()["data"]["toolsets"]}
+    toolsets = {
+        item["name"]: item["tools"] for item in response.json()["data"]["toolsets"]
+    }
     assert {
         "runs.submit",
         "workflows.create",
