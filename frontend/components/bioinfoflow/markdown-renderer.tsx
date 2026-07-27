@@ -95,7 +95,7 @@ function CodeBlock({
 
   return (
     <div
-      className="mb-3 min-w-0 max-w-full overflow-hidden rounded-xl border border-border/60 bg-secondary/60"
+      className="markdown-code-highlight mb-3 min-w-0 max-w-full overflow-hidden rounded-xl border border-border/60 bg-secondary/60"
       data-testid="markdown-code-block"
     >
       <div className="flex items-center justify-between border-b border-border/50 px-3 py-1.5">
