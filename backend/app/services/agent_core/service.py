@@ -75,9 +75,11 @@ from app.utils.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
+from app.utils.logging import get_logger
 
 
 _PROMPT_SNAPSHOT_UNSET = object()
+logger = get_logger(__name__)
 
 
 def _utc_now() -> datetime:
@@ -729,7 +731,18 @@ class AgentCoreService:
             notify_collaboration_waiters,
         )
 
-        notify_collaboration_waiters(str(turn.session_id))
+        try:
+            notify_collaboration_waiters(str(turn.session_id))
+        except Exception as exc:
+            try:
+                logger.warning(
+                    "agent_core.steer.notification_failed",
+                    session_id=str(turn.session_id),
+                    turn_id=str(turn.id),
+                    error_type=type(exc).__name__,
+                )
+            except Exception:
+                pass
         return AgentTurnSteerRead(
             steer_id=steer_id,
             turn_id=turn.id,

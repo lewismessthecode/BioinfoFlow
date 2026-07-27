@@ -75,6 +75,253 @@ async def _seed_catalog_model(
     return model
 
 
+async def _child_session(service: AgentCoreService):
+    root = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    child = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    child.parent_session_id = str(root.id)
+    child.root_session_id = str(root.id)
+    child.agent_name = "reader"
+    await service.db.commit()
+    return child
+
+
+@pytest.mark.asyncio
+async def test_child_running_observability_failure_does_not_abort_fresh_turn(
+    db_session,
+    monkeypatch,
+    caplog,
+) -> None:
+    model_calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal model_calls
+        model_calls += 1
+
+        class FakeMessage:
+            content = "Child completed despite observability failure."
+            tool_calls = None
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        return FakeResponse()
+
+    async def fail_running_publication(*args, **kwargs):
+        raise RuntimeError("sentinel-running-publication-secret")
+
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        fake_completion,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.AgentCollaborationService.publish_child_running",
+        fail_running_publication,
+    )
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="child-observability-model")
+    service = AgentCoreService(db_session)
+    child = await _child_session(service)
+    turn = await service.create_turn_record(
+        session_id=str(child.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Complete this child task.",
+    )
+
+    completed = await service.runtime.run_turn(str(turn.id))
+
+    assert model_calls == 1
+    assert completed.status == AgentTurnStatus.COMPLETED
+    assert completed.final_text == "Child completed despite observability failure."
+    assert completed.owner_token is None
+    assert "sentinel-running-publication-secret" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_child_running_observability_cleanup_failure_does_not_abort_turn(
+    db_session,
+    monkeypatch,
+    caplog,
+) -> None:
+    model_calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal model_calls
+        model_calls += 1
+
+        class FakeMessage:
+            content = "Child completed after event cleanup failed."
+            tool_calls = None
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        return FakeResponse()
+
+    async def fail_running_publication(*args, **kwargs):
+        raise RuntimeError("sentinel-event-publication-secret")
+
+    class FailingEventSession:
+        async def rollback(self):
+            raise RuntimeError("sentinel-event-rollback-secret")
+
+    class FailingEventContext:
+        async def __aenter__(self):
+            return FailingEventSession()
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            raise RuntimeError("sentinel-event-close-secret")
+
+    class FailingEventSessionFactory:
+        def __call__(self):
+            return FailingEventContext()
+
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        fake_completion,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.AgentCollaborationService.publish_child_running",
+        fail_running_publication,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.async_sessionmaker",
+        lambda *args, **kwargs: FailingEventSessionFactory(),
+    )
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="child-cleanup-observability-model")
+    service = AgentCoreService(db_session)
+    child = await _child_session(service)
+    turn = await service.create_turn_record(
+        session_id=str(child.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Complete despite cleanup failures.",
+    )
+
+    completed = await service.runtime.run_turn(str(turn.id))
+
+    assert model_calls == 1
+    assert completed.status == AgentTurnStatus.COMPLETED
+    assert completed.final_text == "Child completed after event cleanup failed."
+    assert completed.owner_token is None
+    assert "sentinel-event-publication-secret" not in caplog.text
+    assert "sentinel-event-rollback-secret" not in caplog.text
+    assert "sentinel-event-close-secret" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_child_running_observability_failure_does_not_abort_resume(
+    db_session,
+    monkeypatch,
+    caplog,
+    run_shell_without_platform_sandbox,
+) -> None:
+    model_calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal model_calls
+        model_calls += 1
+
+        class FakeResponse:
+            usage = None
+
+        class FakeChoice:
+            pass
+
+        class FakeMessage:
+            pass
+
+        message = FakeMessage()
+        if model_calls == 1:
+            class FakeFunction:
+                name = "bash"
+                arguments = json.dumps(
+                        {
+                            "command": "sh -c ': \"$COMMAND\"; printf approved'",
+                            "cwd": str(settings.deliveries_root),
+                        }
+                )
+
+            class FakeToolCall:
+                id = "tool-call-observability"
+                function = FakeFunction()
+
+            message.content = ""
+            message.tool_calls = [FakeToolCall()]
+        else:
+            message.content = "Resumed child completed."
+            message.tool_calls = None
+        choice = FakeChoice()
+        choice.message = message
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    async def fail_running_publication(*args, **kwargs):
+        raise RuntimeError("sentinel-resume-publication-secret")
+
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        fake_completion,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.AgentCollaborationService.publish_child_running",
+        fail_running_publication,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda *_args: None,
+    )
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="child-resume-observability-model")
+    service = AgentCoreService(db_session)
+    child = await _child_session(service)
+    child = await service.session_repo.update_all(
+        child,
+        toolset_policy={"name": "execution"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(child.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Run the approved child action.",
+    )
+    waiting = await service.runtime.run_turn(str(turn.id))
+    action = (await AgentActionRepository(db_session).list_for_turn(str(turn.id)))[0]
+    assert waiting.status == AgentTurnStatus.WAITING_APPROVAL
+    await service.decide_action(
+        action_id=str(action.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+
+    completed = await service.runtime.resume_turn_after_action(str(action.id))
+
+    assert model_calls == 2
+    assert completed.status == AgentTurnStatus.COMPLETED
+    assert completed.final_text == "Resumed child completed."
+    assert completed.owner_token is None
+    assert "sentinel-resume-publication-secret" not in caplog.text
+
+
 def test_agent_max_iterations_prefers_explicit_setting(monkeypatch):
     monkeypatch.setattr(settings, "agent_max_iterations", 120)
 

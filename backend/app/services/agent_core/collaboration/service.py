@@ -10,7 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.models.agent_core import (
@@ -45,10 +45,12 @@ from app.services.agent_core.transcript import AgentTranscriptStore
 from app.services.agent_core.transcript.messages import parts_to_text, text_part
 from app.services.authorization_service import AuthorizationService
 from app.utils.exceptions import BadRequestError, ConflictError, PermissionDeniedError
+from app.utils.logging import get_logger
 
 
 _AGENT_NAME = re.compile(r"^[a-z0-9_]{1,80}$")
 _COLLABORATION_WAITERS: dict[str, set[asyncio.Future[None]]] = {}
+logger = get_logger(__name__)
 
 
 def _collaboration_waiter_count() -> int:
@@ -245,6 +247,29 @@ class AgentCollaborationService:
                 },
                 commit=False,
             )
+            child_id = str(child.id)
+            child_turn_id = str(child_turn.id)
+            task_path = f"/root/{task_name}"
+            lifecycle_payload = {
+                "child_session_id": child_id,
+                "child_turn_id": child_turn_id,
+                "task_name": task_path,
+                "requested_model": choice.requested_model,
+                "effective_model": choice.effective_model,
+                "model_fallback": choice.fallback,
+                "fallback_reason": choice.fallback_reason,
+            }
+            await self._stage_root_activity(
+                root_id=root_session_id,
+                event_type=AgentEventType.AGENT_SPAWNED,
+                payload=lifecycle_payload,
+            )
+            if choice.fallback:
+                await self._stage_root_activity(
+                    root_id=root_session_id,
+                    event_type=AgentEventType.AGENT_MODEL_FALLBACK,
+                    payload=lifecycle_payload,
+                )
             await self.db.commit()
         except AgentCollaborationCapacityError as exc:
             await self.db.rollback()
@@ -259,29 +284,7 @@ class AgentCollaborationService:
             _remove_copied_roots(copied_roots)
             raise
 
-        child_id = str(child.id)
-        child_turn_id = str(child_turn.id)
-        task_path = f"/root/{task_name}"
-        lifecycle_payload = {
-            "child_session_id": child_id,
-            "child_turn_id": child_turn_id,
-            "task_name": task_path,
-            "requested_model": choice.requested_model,
-            "effective_model": choice.effective_model,
-            "model_fallback": choice.fallback,
-            "fallback_reason": choice.fallback_reason,
-        }
-        await self._publish_root_activity(
-            root_id=root_session_id,
-            event_type=AgentEventType.AGENT_SPAWNED,
-            payload=lifecycle_payload,
-        )
-        if choice.fallback:
-            await self._publish_root_activity(
-                root_id=root_session_id,
-                event_type=AgentEventType.AGENT_MODEL_FALLBACK,
-                payload=lifecycle_payload,
-            )
+        self._notify_collaboration_waiters_best_effort(root_session_id, child_id)
         try:
             enqueue_turn_run(child_turn_id, child_id)
         except Exception:
@@ -342,7 +345,7 @@ class AgentCollaborationService:
                     input_text=message,
                     metadata=metadata,
                 )
-                await self._publish_root_activity(
+                await self._publish_root_activity_best_effort(
                     root_id=root_id,
                     event_type=AgentEventType.AGENT_MESSAGE_RECEIVED,
                     payload={
@@ -453,7 +456,7 @@ class AgentCollaborationService:
                     input_text=message,
                     metadata=metadata,
                 )
-                await self._publish_root_activity(
+                await self._publish_root_activity_best_effort(
                     root_id=root_id,
                     event_type=AgentEventType.AGENT_FOLLOWUP_RECEIVED,
                     payload={
@@ -505,7 +508,7 @@ class AgentCollaborationService:
                         input_text=message,
                         metadata=metadata,
                     )
-                    await self._publish_root_activity(
+                    await self._publish_root_activity_best_effort(
                         root_id=root_id,
                         event_type=AgentEventType.AGENT_FOLLOWUP_RECEIVED,
                         payload={
@@ -523,29 +526,37 @@ class AgentCollaborationService:
                     )
                 except ConflictError:
                     await self.db.rollback()
-            await self.transcript.append_parts(
-                session_id=str(child.id),
-                turn_id=None,
-                role="user",
-                parts=[text_part(message)],
-                metadata={**metadata, "delivery": "queued"},
-                status=AgentMessageStatus.DRAFT,
-            )
-            await self._publish_root_activity(
-                root_id=root_id,
-                event_type=AgentEventType.AGENT_FOLLOWUP_RECEIVED,
-                payload={
-                    "child_session_id": child_id,
-                    "child_turn_id": str(active.id) if active is not None else None,
-                    "task_name": _canonical_name(child, root_id),
-                    "delivery": "queued",
-                },
-            )
+            active_turn_id = str(active.id) if active is not None else None
+            try:
+                await self.transcript.append_parts(
+                    session_id=str(child.id),
+                    turn_id=None,
+                    role="user",
+                    parts=[text_part(message)],
+                    metadata={**metadata, "delivery": "queued"},
+                    status=AgentMessageStatus.DRAFT,
+                    commit=False,
+                )
+                await self._stage_root_activity(
+                    root_id=root_id,
+                    event_type=AgentEventType.AGENT_FOLLOWUP_RECEIVED,
+                    payload={
+                        "child_session_id": child_id,
+                        "child_turn_id": active_turn_id,
+                        "task_name": _canonical_name(child, root_id),
+                        "delivery": "queued",
+                    },
+                )
+                await self.db.commit()
+            except BaseException:
+                await self.db.rollback()
+                raise
+            self._notify_collaboration_waiters_best_effort(root_id, child_id)
             return AgentMessageResult(
                 target=_canonical_name(child, root_id),
                 delivery="queued",
                 status=_external_status(active),
-                turn_id=str(active.id) if active is not None else None,
+                turn_id=active_turn_id,
             )
 
     async def interrupt_agent(
@@ -967,6 +978,81 @@ class AgentCollaborationService:
         )
         notify_collaboration_waiters(root_id)
 
+    async def _stage_root_activity(
+        self,
+        *,
+        root_id: str,
+        event_type: str,
+        payload: dict,
+    ) -> None:
+        await self.ledger.append(
+            session_id=root_id,
+            turn_id=None,
+            type=event_type,
+            payload=payload,
+            visibility="internal",
+            commit=False,
+        )
+
+    async def _publish_root_activity_best_effort(
+        self,
+        *,
+        root_id: str,
+        event_type: str,
+        payload: dict,
+    ) -> None:
+        error_type: str | None = None
+        try:
+            session_factory = async_sessionmaker(
+                bind=self.db.bind,
+                expire_on_commit=False,
+                class_=AsyncSession,
+            )
+            async with session_factory() as event_session:
+                try:
+                    await AgentCollaborationService(
+                        event_session
+                    )._publish_root_activity(
+                        root_id=root_id,
+                        event_type=event_type,
+                        payload=payload,
+                    )
+                except Exception as exc:
+                    error_type = type(exc).__name__
+                    try:
+                        await event_session.rollback()
+                    except Exception:
+                        pass
+        except Exception as exc:
+            if error_type is None:
+                error_type = type(exc).__name__
+        if error_type is not None:
+            try:
+                logger.warning(
+                    "agent_core.collaboration.lifecycle_publish_failed",
+                    root_session_id=root_id,
+                    event_type=event_type,
+                    error_type=error_type,
+                )
+            except Exception:
+                pass
+
+    def _notify_collaboration_waiters_best_effort(
+        self,
+        *session_ids: str,
+    ) -> None:
+        try:
+            notify_collaboration_waiters(*session_ids)
+        except Exception as exc:
+            try:
+                logger.warning(
+                    "agent_core.collaboration.notification_failed",
+                    session_ids=session_ids,
+                    error_type=type(exc).__name__,
+                )
+            except Exception:
+                pass
+
     async def _start_followup(
         self,
         *,
@@ -979,42 +1065,45 @@ class AgentCollaborationService:
     ) -> AgentMessageResult:
         try:
             await self.sessions.reserve_child_slot(child)
+            collaboration = (child.session_metadata or {}).get("collaboration") or {}
+            model_id = collaboration.get("effective_model_id")
+            turn = await self.core.create_turn_record(
+                session_id=str(child.id),
+                workspace_id=workspace_id,
+                user_id=user_id,
+                input_text=message,
+                model_selection={"model_id": model_id} if model_id else None,
+                metadata={
+                    "collaboration": {
+                        "root_session_id": root_id,
+                        "parent_session_id": root_id,
+                        "agent_name": child.agent_name,
+                        "followup_from_session_id": str(caller.id),
+                    }
+                },
+                commit=False,
+            )
+            child_id = str(child.id)
+            turn_id = str(turn.id)
+            target_name = _canonical_name(child, root_id)
+            await self._stage_root_activity(
+                root_id=root_id,
+                event_type=AgentEventType.AGENT_FOLLOWUP_RECEIVED,
+                payload={
+                    "child_session_id": child_id,
+                    "child_turn_id": turn_id,
+                    "task_name": target_name,
+                    "delivery": "followup",
+                },
+            )
+            await self.db.commit()
         except AgentCollaborationCapacityError as exc:
             await self.db.rollback()
             raise ConflictError("agent_limit_reached") from exc
-        collaboration = (child.session_metadata or {}).get("collaboration") or {}
-        model_id = collaboration.get("effective_model_id")
-        turn = await self.core.create_turn_record(
-            session_id=str(child.id),
-            workspace_id=workspace_id,
-            user_id=user_id,
-            input_text=message,
-            model_selection={"model_id": model_id} if model_id else None,
-            metadata={
-                "collaboration": {
-                    "root_session_id": root_id,
-                    "parent_session_id": root_id,
-                    "agent_name": child.agent_name,
-                    "followup_from_session_id": str(caller.id),
-                }
-            },
-            commit=False,
-        )
-        child_id = str(child.id)
-        turn_id = str(turn.id)
-        target_name = _canonical_name(child, root_id)
-        await self.db.commit()
-        notify_collaboration_waiters(root_id, child_id)
-        await self._publish_root_activity(
-            root_id=root_id,
-            event_type=AgentEventType.AGENT_FOLLOWUP_RECEIVED,
-            payload={
-                "child_session_id": child_id,
-                "child_turn_id": turn_id,
-                "task_name": target_name,
-                "delivery": "followup",
-            },
-        )
+        except BaseException:
+            await self.db.rollback()
+            raise
+        self._notify_collaboration_waiters_best_effort(root_id, child_id)
         try:
             enqueue_turn_run(turn_id, child_id)
         except Exception:
