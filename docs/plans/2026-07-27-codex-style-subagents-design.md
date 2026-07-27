@@ -5,7 +5,8 @@
 Replace BioinfoFlow's synchronous, read-only `task` and `subagent.analyze`
 implementations with a durable Codex-style agent tree. A root agent can spawn,
 observe, message, reuse, wait for, and interrupt child agents. Child agents run
-the normal Agent Core loop but cannot create or coordinate other agents.
+the normal Agent Core loop and may coordinate inside the same root tree, but
+cannot create more agents.
 
 The design follows two constraints:
 
@@ -47,12 +48,14 @@ The existing Agent Core runtime remains canonical for both root and child
 agents. The only runtime distinction is collaboration capability:
 
 - Root/orchestrator sessions may see the six collaboration tools.
-- Child sessions use the same turn loop and ordinary tool executor but never
-  see collaboration tools.
+- Child sessions use the same turn loop and ordinary tool executor. They can
+  message, follow up, wait for, list, and interrupt agents in the same root
+  tree, but never see `spawn_agent`.
 
 The default tree concurrency budget is eight live slots including the root, so
-one root may have at most seven live children. The limit is configurable and
-enforced transactionally before a child session is created.
+one root may have at most seven live children. Each active child owns a nullable
+integer slot reservation. A unique `(root, slot)` constraint makes acquisition
+atomic on SQLite and PostgreSQL; terminal turns release their slot.
 
 ## Turn Loop
 
@@ -69,9 +72,11 @@ The existing loop continues to own:
 - iteration and token budgets;
 - terminal status and startup recovery.
 
-Child completion produces a durable parent-mailbox notification. The parent
-can continue useful work and later call `wait_agent`; no polling loop is needed
-inside the model.
+Child completion produces a durable parent-mailbox notification. If the parent
+turn is active, the notification uses the existing steering path and enters the
+next model context after the current boundary. If the parent is idle, its next
+turn consumes the notification exactly once. The parent can continue useful
+work and later call `wait_agent`; no polling loop is needed inside the model.
 
 ## Tool Model
 
@@ -79,8 +84,8 @@ inside the model.
 
 Input:
 
-- `task_name`: lowercase letters, digits, and underscores; unique among live
-  siblings.
+- `task_name`: lowercase letters, digits, and underscores; permanently unique
+  among siblings. Reuse an existing child with `followup_task`.
 - `message`: initial child task.
 - `fork_turns`: `"none"`, `"all"`, or a positive integer encoded as a string.
 - optional `model` and `reasoning_effort` overrides.
@@ -150,9 +155,8 @@ If `model` is provided:
 1. Resolve it against the caller-visible active catalog.
 2. Require provider/model enablement and tool support.
 3. Resolve the credential without exposing secret material.
-4. Reuse a fresh successful probe only when its provider, endpoint,
-   credential, and model fingerprint still match.
-5. Otherwise run the existing minimal `LlmProviderProbe` request.
+4. Run the existing minimal `LlmProviderProbe` request against that exact model
+   for every explicit override.
 
 If the requested model is unavailable, spawning continues with the parent
 turn's effective model. The fallback is explicit in the tool result and audit
@@ -170,14 +174,14 @@ The root owns a shallow fork-join tree. Child sessions carry:
 - inherited workspace and execution boundaries;
 - requested/effective model metadata.
 
-Children cannot see any collaboration tools. This is enforced by tool exposure,
-not prompt text.
+Children cannot see `spawn_agent`. They retain the other collaboration tools so
+they can report to the parent and coordinate with siblings in the same root
+tree. This is enforced by tool exposure, not prompt text.
 
 No new orchestration table is introduced. Agent sessions and turns remain the
-source of truth. Repository queries provide live-tree listing, sibling-name
-checks, concurrency counting, and mailbox cursors. A small schema/index change
-is acceptable only where metadata queries cannot enforce these invariants
-reliably across SQLite and PostgreSQL.
+source of truth. Indexed session columns provide root/parent identity,
+permanent sibling names, and atomic child-slot reservations. Repository queries
+provide tree listing, target resolution, and mailbox cursors.
 
 ## Extension Model
 
@@ -189,8 +193,8 @@ mailbox behavior so individual tool handlers remain small.
 The ordinary tool registry and exposure layer stay unchanged except for:
 
 - registering the six collaboration tools;
-- exposing them in root execution sessions;
-- excluding them for child sessions;
+- exposing all six in root execution sessions;
+- exposing the five non-spawn collaboration tools for child sessions;
 - removing `task` and `subagent.analyze` completely.
 
 ## Safety And Observability
@@ -198,7 +202,8 @@ The ordinary tool registry and exposure layer stay unchanged except for:
 - Enforce root ownership on every target lookup.
 - Enforce workspace/user boundaries on every operation.
 - Enforce the eight-slot budget before session creation.
-- Validate canonical task names and reject live sibling collisions.
+- Validate canonical task names and reject all sibling collisions; follow-ups
+  reuse the existing child identity.
 - Child sessions inherit cwd, workspace roots, execution target/scope,
   permission mode, automation mode, and prompt snapshot.
 - Inherited permissions do not bypass approval or destructive-action checks.
@@ -207,7 +212,7 @@ The ordinary tool registry and exposure layer stay unchanged except for:
   failure events.
 - Every terminal notification includes status, final text, error code, safe
   error message, termination reason, token usage, and model.
-- Never return `failed` with an empty explanation when an error is persisted.
+- Never return `errored` with an empty explanation when an error is persisted.
 
 ## API And UI
 
@@ -218,7 +223,7 @@ terminal notifications so users can understand what each child is doing.
 The UI should display, at minimum:
 
 - task name/path;
-- queued/running/completed/failed/interrupted status;
+- pending-init/running/completed/errored/interrupted status;
 - requested/effective model and fallback marker;
 - final summary or error message;
 - tool progress when already available through safe public events.
@@ -241,8 +246,8 @@ Use TDD for each behavior. Required regression coverage includes:
 
 - spawn returns before child completion;
 - total concurrency budget of eight including root;
-- duplicate live sibling task names are rejected;
-- child cannot access collaboration tools;
+- duplicate sibling task names are rejected and existing children are reused by follow-up;
+- child cannot access `spawn_agent` but can use the five communication tools;
 - requested model succeeds after a real/fresh probe;
 - unavailable requested model falls back to the parent model;
 - parent model selection fixes the observed authentication regression;
