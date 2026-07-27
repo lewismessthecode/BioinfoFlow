@@ -38,6 +38,7 @@ from app.services.agent_core.collaboration.contracts import (
 from app.services.agent_core.collaboration.model_preflight import AgentModelPreflight
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
+from app.services.agent_core.ownership import TurnOwnershipLostError
 from app.services.agent_core.runner import enqueue_turn_run
 from app.services.agent_core.service import AgentCoreService
 from app.services.agent_core.transcript import AgentTranscriptStore
@@ -565,6 +566,7 @@ class AgentCollaborationService:
             raise PermissionDeniedError("child_agent_required")
         if str(child.id) == str(caller.id):
             raise PermissionDeniedError("cannot_interrupt_self")
+        target_name = _canonical_name(child, root_id)
         active = await self._active_turn(child)
         turns = await self.turns.list_for_session(str(child.id))
         previous = _external_status(active or (turns[-1] if turns else None))
@@ -574,18 +576,8 @@ class AgentCollaborationService:
                 workspace_id=workspace_id,
                 user_id=user_id,
             )
-            await self._publish_root_activity(
-                root_id=root_id,
-                event_type=AgentEventType.AGENT_INTERRUPTED,
-                payload={
-                    "child_session_id": str(child.id),
-                    "child_turn_id": str(active.id),
-                    "task_name": _canonical_name(child, root_id),
-                    "status": "interrupted",
-                },
-            )
         return AgentInterruptResult(
-            target=_canonical_name(child, root_id),
+            target=target_name,
             status=previous,
         )
 
@@ -672,27 +664,43 @@ class AgentCollaborationService:
                     raise
                 await asyncio.sleep(0.02 * (attempt + 1))
 
-    async def publish_child_running(self, *, turn_id: str) -> None:
+    async def publish_child_running(
+        self,
+        *,
+        turn_id: str,
+        expected_owner_token: str,
+    ) -> bool:
         turn = await self.turns.get_fresh(turn_id)
         if turn is None:
-            return
+            return False
         child = await self.sessions.get_fresh(str(turn.session_id))
         if child is None or child.root_session_id is None:
-            return
+            return False
         collaboration = (child.session_metadata or {}).get("collaboration") or {}
-        await self._publish_root_activity(
-            root_id=str(child.root_session_id),
-            event_type=AgentEventType.AGENT_RUNNING,
-            payload={
-                "child_session_id": str(child.id),
-                "child_turn_id": str(turn.id),
-                "task_name": _canonical_name(child, str(child.root_session_id)),
-                "requested_model": collaboration.get("requested_model"),
-                "effective_model": collaboration.get("effective_model"),
-                "model_fallback": bool(collaboration.get("model_fallback", False)),
-                "fallback_reason": collaboration.get("fallback_reason"),
-            },
-        )
+        root_id = str(child.root_session_id)
+        try:
+            await self.ledger.append(
+                session_id=root_id,
+                turn_id=turn_id,
+                type=AgentEventType.AGENT_RUNNING,
+                payload={
+                    "child_session_id": str(child.id),
+                    "child_turn_id": str(turn.id),
+                    "task_name": _canonical_name(child, root_id),
+                    "requested_model": collaboration.get("requested_model"),
+                    "effective_model": collaboration.get("effective_model"),
+                    "model_fallback": bool(
+                        collaboration.get("model_fallback", False)
+                    ),
+                    "fallback_reason": collaboration.get("fallback_reason"),
+                },
+                visibility="internal",
+                expected_owner_token=expected_owner_token,
+            )
+        except TurnOwnershipLostError:
+            return False
+        notify_collaboration_waiters(root_id)
+        return True
 
     async def _publish_child_terminal_once(self, *, turn_id: str) -> None:
         turn = await self.turns.get_fresh(turn_id)

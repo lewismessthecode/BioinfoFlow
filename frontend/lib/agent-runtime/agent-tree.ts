@@ -22,10 +22,22 @@ export function reduceAgentTree(events: AgentRuntimeEvent[]): AgentTreeNode[] {
     const previous = agents.get(childSessionId)
     if (previous && event.seq <= previous.sequence) continue
 
-    const status = lifecycleStatus(event.payload.status) ?? previous?.status ?? "pending_init"
+    const incomingTurnId = stringValue(event.payload.child_turn_id)
+    const turnChanged = Boolean(
+      previous?.childTurnId &&
+        incomingTurnId &&
+        previous.childTurnId !== incomingTurnId,
+    )
+    const incomingStatus = lifecycleStatus(event.payload.status)
+    const previousStatus = turnChanged ? undefined : previous?.status
+    const status =
+      previousStatus && isTerminal(previousStatus)
+        ? previousStatus
+        : incomingStatus ?? previousStatus ?? "pending_init"
+    const previousTurnFields = turnChanged ? undefined : previous
     agents.set(childSessionId, {
       childSessionId,
-      childTurnId: valueOrPrevious(event.payload.child_turn_id, previous?.childTurnId),
+      childTurnId: incomingTurnId ?? previous?.childTurnId,
       taskPath:
         stringValue(event.payload.task_name) ?? previous?.taskPath ?? `/root/${childSessionId}`,
       status,
@@ -46,22 +58,34 @@ export function reduceAgentTree(events: AgentRuntimeEvent[]): AgentTreeNode[] {
         event.payload.fallback_reason,
         previous?.fallbackReason,
       ),
-      finalText: valueOrPrevious(event.payload.final_text, previous?.finalText),
-      errorCode: valueOrPrevious(event.payload.error_code, previous?.errorCode),
+      finalText: valueOrPrevious(
+        event.payload.final_text,
+        previousTurnFields?.finalText,
+      ),
+      errorCode: valueOrPrevious(
+        event.payload.error_code,
+        previousTurnFields?.errorCode,
+      ),
       errorMessage: valueOrPrevious(
         event.payload.error_message,
-        previous?.errorMessage,
+        previousTurnFields?.errorMessage,
       ),
       terminationReason: valueOrPrevious(
         event.payload.termination_reason,
-        previous?.terminationReason,
+        previousTurnFields?.terminationReason,
       ),
+      tokenUsage:
+        recordValue(event.payload.token_usage) ?? previousTurnFields?.tokenUsage,
     })
   }
 
   return [...agents.values()].sort(
     (a, b) => a.taskPath.localeCompare(b.taskPath) || a.childSessionId.localeCompare(b.childSessionId),
   )
+}
+
+function isTerminal(status: AgentLifecycleStatus) {
+  return status === "completed" || status === "errored" || status === "interrupted"
 }
 
 function lifecycleStatus(value: unknown): AgentLifecycleStatus | null {
@@ -79,4 +103,10 @@ function valueOrPrevious(
 
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
 }

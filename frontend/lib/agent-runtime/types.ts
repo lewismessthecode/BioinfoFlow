@@ -303,6 +303,7 @@ export type AgentTreeNode = {
   errorCode?: string | null
   errorMessage?: string | null
   terminationReason?: string | null
+  tokenUsage?: Record<string, unknown> | null
 }
 
 export type AgentRuntimeTextBlockStatus =

@@ -33,6 +33,55 @@ describe("reduceAgentTree", () => {
 
     expect(tree[0]).toMatchObject({ status: "completed", sequence: 9 })
   })
+
+  it("keeps a terminal status monotonic for later events from the same turn", () => {
+    const tree = reduceAgentTree([
+      lifecycle(8, "child-a", "/root/reader", "completed", {
+        child_turn_id: "turn-1",
+        final_text: "README found",
+      }),
+      lifecycle(9, "child-a", "/root/reader", "running", {
+        child_turn_id: "turn-1",
+      }),
+    ])
+
+    expect(tree[0]).toMatchObject({
+      childTurnId: "turn-1",
+      status: "completed",
+      finalText: "README found",
+      sequence: 9,
+    })
+  })
+
+  it("clears terminal fields when a follow-up starts a new child turn", () => {
+    const tree = reduceAgentTree([
+      lifecycle(4, "child-a", "/root/reader", "errored", {
+        child_turn_id: "turn-1",
+        final_text: "old summary",
+        error_code: "model_request_failed",
+        error_message: "Model provider authentication failed.",
+        termination_reason: "model_failed",
+        token_usage: { total_tokens: 42 },
+      }),
+      lifecycle(5, "child-a", "/root/reader", "", {
+        activity: "followup",
+        child_turn_id: "turn-2",
+      }),
+    ])
+
+    expect(tree[0]).toEqual(
+      expect.objectContaining({
+        childTurnId: "turn-2",
+        status: "pending_init",
+        sequence: 5,
+      }),
+    )
+    expect(tree[0].finalText).toBeUndefined()
+    expect(tree[0].errorCode).toBeUndefined()
+    expect(tree[0].errorMessage).toBeUndefined()
+    expect(tree[0].terminationReason).toBeUndefined()
+    expect(tree[0].tokenUsage).toBeUndefined()
+  })
 })
 
 function lifecycle(
