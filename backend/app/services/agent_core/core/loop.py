@@ -418,6 +418,7 @@ class AgentLoopController:
                         prior_continuation_batch_id=active_continuation_batch_id,
                         expected_execution_target=expected_execution_target,
                         expected_execution_scope=expected_execution_scope,
+                        skills_available=skills_available,
                     )
                     if active_continuation_batch_id is not None:
                         active_continuation_batch_id = None
@@ -818,6 +819,7 @@ class AgentLoopController:
         prior_continuation_batch_id: str | None = None,
         expected_execution_target: dict[str, str] | None = None,
         expected_execution_scope: dict[str, Any] | None = None,
+        skills_available: bool = True,
     ) -> tuple[bool, list[str], str | None]:
         session_id = str(agent_session.id)
         turn_id = str(turn.id)
@@ -900,6 +902,7 @@ class AgentLoopController:
                     role=_tool_role(agent_session),
                     execution_target=execution_target_from_session(agent_session),
                     require_model_exposure=True,
+                    skills_available=skills_available,
                 )
                 prepared.append((tool_call, tool_name, result))
             if not await self.sessions.policy_version_matches(

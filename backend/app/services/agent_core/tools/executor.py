@@ -455,6 +455,7 @@ class AgentToolExecutor:
         role: str = "orchestrator",
         execution_target: dict | str | None = None,
         require_model_exposure: bool = False,
+        skills_available: bool = True,
     ) -> ToolExecutionResult:
         tool = self.registry.get(tool_name)
         permission_context = await PermissionContextResolver(self.session).resolve(
@@ -471,6 +472,7 @@ class AgentToolExecutor:
         execution_scope = permission_snapshot.get("execution_scope")
         if require_model_exposure:
             permission_snapshot["model_exposure_required"] = True
+            permission_snapshot["model_skills_available"] = skills_available
         exposure = self.exposure.decide(
             tool_name=tool_name,
             policy=toolset_policy,
@@ -478,6 +480,7 @@ class AgentToolExecutor:
             execution_target=execution_target,
             execution_scope=execution_scope,
             model_visible=require_model_exposure,
+            skills_available=skills_available,
         )
         if not exposure.allowed:
             raise PermissionDeniedError("; ".join(exposure.reasons))
@@ -829,6 +832,12 @@ class AgentToolExecutor:
             model_visible=bool(
                 (action.permission_context_snapshot or {}).get(
                     "model_exposure_required"
+                )
+            ),
+            skills_available=bool(
+                (action.permission_context_snapshot or {}).get(
+                    "model_skills_available",
+                    True,
                 )
             ),
         )
