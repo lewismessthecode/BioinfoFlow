@@ -280,7 +280,8 @@ class AgentLoopController:
             permission_snapshot = permission_context.snapshot()
             expected_execution_target = permission_snapshot["execution_target"]
             expected_execution_scope = permission_snapshot.get("execution_scope")
-            skills_available = bool(AgentSkillRegistry.from_default_roots().list())
+            skill_registry = AgentSkillRegistry.from_default_roots()
+            skills_available = bool(skill_registry.list())
             visible_tools = (
                 self.executor.exposure.exposed_specs(
                     policy=permission_snapshot["toolset_policy"],
@@ -305,6 +306,7 @@ class AgentLoopController:
                 agent_session=agent_session,
                 turn=turn,
                 exposed_tools=visible_tools,
+                skill_registry=skill_registry,
                 skip_compaction=(
                     continuation_anchor is not None
                     and continuation_anchor.turn_id == str(turn.id)

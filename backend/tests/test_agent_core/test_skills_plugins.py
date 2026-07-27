@@ -436,7 +436,7 @@ async def test_load_skill_missing_name_lists_available_skills_sorted(
 
     assert error.value.message == (
         "Agent skill not found: missing-qc. "
-        "Currently available agent skills: alpha-qc, zeta-qc."
+        "Available agent skills: alpha-qc, zeta-qc."
     )
 
 

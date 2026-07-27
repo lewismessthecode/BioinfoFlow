@@ -277,6 +277,7 @@ class AgentContextAssembler:
         agent_session,
         turn,
         exposed_tools=None,
+        skill_registry: AgentSkillRegistry | None = None,
         skip_compaction: bool = False,
     ) -> AgentModelContext:
         await self._repair_incomplete_tool_groups(
@@ -311,6 +312,7 @@ class AgentContextAssembler:
                 agent_session=agent_session,
                 turn=turn,
                 exposed_tools=exposed_tools,
+                skill_registry=skill_registry,
             ),
             input_items=tuple(input_items),
             compacted=compacted,
@@ -333,7 +335,14 @@ class AgentContextAssembler:
             return True
         return False
 
-    async def _instructions(self, *, agent_session, turn, exposed_tools=None) -> str:
+    async def _instructions(
+        self,
+        *,
+        agent_session,
+        turn,
+        exposed_tools=None,
+        skill_registry: AgentSkillRegistry | None = None,
+    ) -> str:
         del exposed_tools
         execution_target = execution_target_from_session(agent_session)
         system_sections = [resolve_system_prompt_prefix(agent_session.prompt_snapshot)]
@@ -356,7 +365,7 @@ class AgentContextAssembler:
         )
         if memory_context:
             system_sections.append(memory_context)
-        skills_context = self._skills_context(turn)
+        skills_context = self._skills_context(turn, skill_registry=skill_registry)
         if skills_context:
             system_sections.append(skills_context)
         return "\n\n".join(section for section in system_sections if section)
@@ -502,8 +511,17 @@ class AgentContextAssembler:
             return None
         return str(project_id)
 
-    def _skills_context(self, turn) -> str | None:
-        skills = AgentSkillRegistry.from_default_roots()
+    def _skills_context(
+        self,
+        turn,
+        *,
+        skill_registry: AgentSkillRegistry | None = None,
+    ) -> str | None:
+        skills = (
+            skill_registry
+            if skill_registry is not None
+            else AgentSkillRegistry.from_default_roots()
+        )
         plugins = AgentPluginRegistry.from_directory(
             state_root() / "agent_core" / "plugins"
         )
