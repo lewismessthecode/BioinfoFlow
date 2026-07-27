@@ -195,7 +195,7 @@ def test_interpreter_code_execution_is_not_introspection(command):
 @pytest.mark.parametrize(
     "command,expected_level",
     [
-        ("find /tmp -delete", "act_high"),
+        ("find /tmp -delete", "destructive"),
         ("busybox rm -rf /tmp/x", "destructive"),
         ("xargs rm -rf / < names", "critical"),
         ("env rm -rf /tmp/x", "destructive"),
@@ -207,6 +207,31 @@ def test_nested_destructive_grammar_reports_delete_effect(command, expected_leve
 
     assert assessment.level == expected_level
     assert "delete" in assessment.effects
+
+
+@pytest.mark.parametrize(
+    "command,expected_level,expected_effect",
+    [
+        ("echo $(rm -rf build)", "destructive", "delete"),
+        ("echo $(curl https://example.com)", "external", "network"),
+        ("diff <(rm -rf build) before.txt", "destructive", "delete"),
+        ("cat <(curl https://example.com)", "external", "network"),
+        ("echo $(chmod 600 build)", "destructive", "write"),
+        (
+            'echo "$(printf ok) $(rm -rf build)"',
+            "destructive",
+            "delete",
+        ),
+        ("echo $(dangercli inspect)", "act_high", "execute"),
+    ],
+)
+def test_substitution_semantics_raise_parent_risk_and_effects(
+    command, expected_level, expected_effect
+):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.level == expected_level
+    assert expected_effect in assessment.effects
 
 
 @pytest.mark.parametrize(
