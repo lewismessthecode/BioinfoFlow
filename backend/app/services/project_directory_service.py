@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,7 +32,10 @@ _HAS_SECURE_DIRECTORY_FDS = (
     and os.stat in os.supports_dir_fd
     and os.unlink in os.supports_dir_fd
     and os.rmdir in os.supports_dir_fd
+    and os.rename in os.supports_dir_fd
 )
+_QUARANTINE_PREFIX = ".bioinfoflow-project-cleanup-"
+_QUARANTINE_ATTEMPTS = 16
 
 
 @dataclass(slots=True)
@@ -41,6 +45,7 @@ class ManagedProjectReservation:
     root_device: int
     root_inode: int
     root_fd: int | None
+    parent_fd: int | None
 
 
 class ProjectDirectoryService:
@@ -89,13 +94,14 @@ class ProjectDirectoryService:
             if opened_root is None:
                 await self.repo.delete_pending(project)
                 continue
-            root_fd, root_stat = opened_root
+            root_fd, parent_fd, root_stat = opened_root
             reservation = ManagedProjectReservation(
                 project=project,
                 root=root,
                 root_device=root_stat.st_dev,
                 root_inode=root_stat.st_ino,
                 root_fd=root_fd,
+                parent_fd=parent_fd,
             )
             try:
                 layout_created = _create_project_layout(reservation)
@@ -127,7 +133,7 @@ class ProjectDirectoryService:
                 _cleanup_owned_root(reservation)
             raise
 
-        _close_reservation_fd(reservation)
+        _close_reservation_fds(reservation)
         await self.session.refresh(reservation.project)
         return reservation.project
 
@@ -166,34 +172,47 @@ def _path_entry_exists(path: Path) -> bool:
     return True
 
 
-def _open_owned_root(path: Path) -> tuple[int, os.stat_result] | None:
+def _open_owned_root(path: Path) -> tuple[int, int, os.stat_result] | None:
     if not _secure_directory_fds_supported():
         raise ValidationError(
             "Secure project directory reservations are not supported on this platform"
         )
 
-    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    flags = _directory_open_flags()
     try:
-        root_fd = os.open(path, flags)
+        parent_fd = os.open(path.parent, flags)
     except FileNotFoundError:
         return None
-    except OSError:
-        if not _path_is_directory(path):
-            return None
-        raise
 
+    root_fd: int | None = None
     keep_open = False
     try:
+        try:
+            root_fd = os.open(path.name, flags, dir_fd=parent_fd)
+        except FileNotFoundError:
+            return None
+        except OSError:
+            if not _entry_is_directory(parent_fd, path.name):
+                return None
+            raise
+
         root_stat = os.fstat(root_fd)
         if not stat.S_ISDIR(root_stat.st_mode):
             return None
-        if not _path_matches_identity(path, root_stat.st_dev, root_stat.st_ino):
+        if not _entry_matches_identity(
+            parent_fd,
+            path.name,
+            root_stat.st_dev,
+            root_stat.st_ino,
+        ):
             return None
         keep_open = True
-        return root_fd, root_stat
+        return root_fd, parent_fd, root_stat
     finally:
         if not keep_open:
-            os.close(root_fd)
+            if root_fd is not None:
+                os.close(root_fd)
+            os.close(parent_fd)
 
 
 def _create_project_layout(reservation: ManagedProjectReservation) -> bool:
@@ -215,23 +234,102 @@ def _create_project_layout(reservation: ManagedProjectReservation) -> bool:
 
 def _cleanup_owned_root(reservation: ManagedProjectReservation) -> None:
     root_fd = reservation.root_fd
-    if root_fd is None:
+    parent_fd = reservation.parent_fd
+    if root_fd is None or parent_fd is None:
+        _close_reservation_fds(reservation)
         return
     reservation.root_fd = None
-    contents_removed = False
+    reservation.parent_fd = None
     try:
+        quarantine_name = _move_root_to_quarantine(reservation, parent_fd)
+        if quarantine_name is None:
+            return
+        if not _entry_matches_reservation(
+            parent_fd,
+            quarantine_name,
+            reservation,
+        ):
+            _restore_quarantined_entry(
+                parent_fd,
+                quarantine_name,
+                reservation.root.name,
+            )
+            return
         try:
             _remove_directory_contents(root_fd)
-            contents_removed = True
         except OSError:
-            pass
-        if contents_removed and _reservation_path_matches(reservation):
+            _restore_quarantined_entry(
+                parent_fd,
+                quarantine_name,
+                reservation.root.name,
+            )
+            return
+        if not _entry_matches_reservation(
+            parent_fd,
+            quarantine_name,
+            reservation,
+        ):
+            _restore_quarantined_entry(
+                parent_fd,
+                quarantine_name,
+                reservation.root.name,
+            )
+            return
+        try:
+            os.rmdir(quarantine_name, dir_fd=parent_fd)
+        except OSError:
             try:
-                os.rmdir(reservation.root)
+                _restore_quarantined_entry(
+                    parent_fd,
+                    quarantine_name,
+                    reservation.root.name,
+                )
             except OSError:
                 pass
     finally:
         os.close(root_fd)
+        os.close(parent_fd)
+
+
+def _move_root_to_quarantine(
+    reservation: ManagedProjectReservation,
+    parent_fd: int,
+) -> str | None:
+    for _ in range(_QUARANTINE_ATTEMPTS):
+        quarantine_name = f"{_QUARANTINE_PREFIX}{secrets.token_hex(16)}"
+        if _entry_exists_at(parent_fd, quarantine_name):
+            continue
+        try:
+            os.rename(
+                reservation.root.name,
+                quarantine_name,
+                src_dir_fd=parent_fd,
+                dst_dir_fd=parent_fd,
+            )
+        except FileNotFoundError:
+            return None
+        except OSError:
+            return None
+        return quarantine_name
+    return None
+
+
+def _restore_quarantined_entry(
+    parent_fd: int,
+    quarantine_name: str,
+    root_name: str,
+) -> None:
+    if _entry_exists_at(parent_fd, root_name):
+        return
+    try:
+        os.rename(
+            quarantine_name,
+            root_name,
+            src_dir_fd=parent_fd,
+            dst_dir_fd=parent_fd,
+        )
+    except OSError:
+        pass
 
 
 def _remove_directory_contents(directory_fd: int) -> None:
@@ -243,7 +341,7 @@ def _remove_directory_contents(directory_fd: int) -> None:
         if stat.S_ISDIR(entry_stat.st_mode):
             child_fd = os.open(
                 name,
-                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                _directory_open_flags(),
                 dir_fd=directory_fd,
             )
             try:
@@ -267,39 +365,77 @@ def _remove_directory_contents(directory_fd: int) -> None:
             pass
 
 
-def _close_reservation_fd(reservation: ManagedProjectReservation) -> None:
+def _close_reservation_fds(reservation: ManagedProjectReservation) -> None:
     root_fd = reservation.root_fd
-    if root_fd is None:
-        return
+    parent_fd = reservation.parent_fd
     reservation.root_fd = None
-    os.close(root_fd)
+    reservation.parent_fd = None
+    if root_fd is not None:
+        os.close(root_fd)
+    if parent_fd is not None:
+        os.close(parent_fd)
 
 
 def _reservation_path_matches(reservation: ManagedProjectReservation) -> bool:
-    return _path_matches_identity(
-        reservation.root,
+    parent_fd = reservation.parent_fd
+    if parent_fd is None:
+        return False
+    return _entry_matches_identity(
+        parent_fd,
+        reservation.root.name,
         reservation.root_device,
         reservation.root_inode,
     )
 
 
-def _path_matches_identity(path: Path, device: int, inode: int) -> bool:
-    try:
-        path_stat = path.lstat()
-    except OSError:
-        return False
-    return (
-        path_stat.st_dev == device
-        and path_stat.st_ino == inode
-        and stat.S_ISDIR(path_stat.st_mode)
+def _entry_matches_reservation(
+    parent_fd: int,
+    name: str,
+    reservation: ManagedProjectReservation,
+) -> bool:
+    return _entry_matches_identity(
+        parent_fd,
+        name,
+        reservation.root_device,
+        reservation.root_inode,
     )
 
 
-def _path_is_directory(path: Path) -> bool:
+def _entry_matches_identity(
+    parent_fd: int,
+    name: str,
+    device: int,
+    inode: int,
+) -> bool:
     try:
-        return stat.S_ISDIR(path.lstat().st_mode)
+        entry_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
     except OSError:
         return False
+    return (
+        entry_stat.st_dev == device
+        and entry_stat.st_ino == inode
+        and stat.S_ISDIR(entry_stat.st_mode)
+    )
+
+
+def _entry_is_directory(parent_fd: int, name: str) -> bool:
+    try:
+        entry_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except OSError:
+        return False
+    return stat.S_ISDIR(entry_stat.st_mode)
+
+
+def _entry_exists_at(parent_fd: int, name: str) -> bool:
+    try:
+        os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _directory_open_flags() -> int:
+    return os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
 
 def _secure_directory_fds_supported() -> bool:
