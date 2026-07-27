@@ -337,10 +337,28 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
             )
         )
 
-    async def list_agent_tree(self, root_session_id: str) -> list[AgentSession]:
+    async def list_agent_tree(
+        self,
+        root_session_id: str,
+        *,
+        workspace_id: str,
+        user_id: str,
+    ) -> list[AgentSession]:
+        root_owned = await self.session.scalar(
+            select(self.model.id).where(
+                self.model.id == root_session_id,
+                self.model.root_session_id.is_(None),
+                self.model.workspace_id == workspace_id,
+                self.model.user_id == user_id,
+            )
+        )
+        if root_owned is None:
+            return []
         result = await self.session.execute(
             select(self.model)
             .where(
+                self.model.workspace_id == workspace_id,
+                self.model.user_id == user_id,
                 or_(
                     self.model.id == root_session_id,
                     self.model.root_session_id == root_session_id,
@@ -354,9 +372,17 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         )
         return list(result.scalars().all())
 
-    async def reserve_child_slot(self, child_session_id: str) -> int:
+    async def reserve_child_slot(self, child: AgentSession) -> AgentSession:
+        if child not in self.session:
+            raise ValueError("Child session must be owned by this repository session")
         await self.session.flush()
         from app.config import settings
+
+        if child.root_session_id is None:
+            raise ValueError("Child session must belong to an agent tree")
+        if child.collaboration_slot is not None:
+            await self.session.refresh(child, attribute_names=["collaboration_slot"])
+            return child
 
         for slot in range(1, settings.agent_collaboration_max_slots):
             try:
@@ -364,7 +390,7 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
                     result = await self.session.execute(
                         update(self.model)
                         .where(
-                            self.model.id == child_session_id,
+                            self.model.id == child.id,
                             self.model.root_session_id.is_not(None),
                             self.model.collaboration_slot.is_(None),
                         )
@@ -374,24 +400,22 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
                     )
                     reserved = result.scalar_one_or_none()
                 if reserved is not None:
-                    return int(reserved)
+                    await self.session.refresh(
+                        child,
+                        attribute_names=["collaboration_slot"],
+                    )
+                    return child
             except IntegrityError:
                 continue
 
-            existing = await self.session.scalar(
-                select(self.model.collaboration_slot).where(
-                    self.model.id == child_session_id
-                )
+            await self.session.refresh(
+                child,
+                attribute_names=["collaboration_slot"],
             )
-            if existing is not None:
-                return int(existing)
+            if child.collaboration_slot is not None:
+                return child
             break
 
-        child = await self.session.scalar(
-            select(self.model).where(self.model.id == child_session_id)
-        )
-        if child is None or child.root_session_id is None:
-            raise ValueError("Child session must exist and belong to an agent tree")
         raise AgentCollaborationCapacityError(
             "Agent collaboration slot limit reached"
         )

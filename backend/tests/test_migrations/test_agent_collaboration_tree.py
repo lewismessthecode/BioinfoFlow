@@ -23,6 +23,17 @@ def _run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _agent_session_schema(db_path: Path) -> tuple[set[str], set[str]]:
+    with sqlite3.connect(db_path) as connection:
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(agent_sessions)")
+        }
+        indexes = {
+            row[1] for row in connection.execute("PRAGMA index_list(agent_sessions)")
+        }
+    return columns, indexes
+
+
 def test_agent_collaboration_migration_keeps_legacy_sessions_nullable_and_enforces_names(
     tmp_path: Path,
 ) -> None:
@@ -101,3 +112,29 @@ def test_agent_collaboration_migration_keeps_legacy_sessions_nullable_and_enforc
         "ix_agent_sessions_parent_session_id",
         "ix_agent_sessions_spawned_by_turn_id",
     } <= indexes.keys()
+
+    downgraded = _run_alembic(db_path, "downgrade", PREVIOUS_REVISION)
+    assert downgraded.returncode == 0, downgraded.stderr
+    downgraded_columns, downgraded_indexes = _agent_session_schema(db_path)
+    assert expected_columns.isdisjoint(downgraded_columns)
+    assert {
+        "uq_agent_sessions_parent_agent_name",
+        "uq_agent_sessions_root_collaboration_slot",
+        "ix_agent_sessions_root_status",
+        "ix_agent_sessions_root_active_turn",
+        "ix_agent_sessions_parent_session_id",
+        "ix_agent_sessions_spawned_by_turn_id",
+    }.isdisjoint(downgraded_indexes)
+
+    reupgraded = _run_alembic(db_path, "upgrade", "head")
+    assert reupgraded.returncode == 0, reupgraded.stderr
+    reupgraded_columns, reupgraded_indexes = _agent_session_schema(db_path)
+    assert expected_columns <= reupgraded_columns
+    assert {
+        "uq_agent_sessions_parent_agent_name",
+        "uq_agent_sessions_root_collaboration_slot",
+        "ix_agent_sessions_root_status",
+        "ix_agent_sessions_root_active_turn",
+        "ix_agent_sessions_parent_session_id",
+        "ix_agent_sessions_spawned_by_turn_id",
+    } <= reupgraded_indexes
