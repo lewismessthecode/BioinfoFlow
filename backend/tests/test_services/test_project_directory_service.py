@@ -137,6 +137,30 @@ async def test_two_sessions_concurrently_commit_distinct_names(db_engine) -> Non
         assert await _directory_names(session) == ["ce-shi", "ce-shi-2"]
 
 
+@pytest.mark.asyncio
+async def test_sqlite_read_autobegin_does_not_commit_pending_project(
+    db_engine,
+) -> None:
+    session_maker = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async with session_maker() as first, session_maker() as observer:
+        await first.execute(select(Project.id))
+        assert first.in_transaction() is True
+        service = ProjectDirectoryService(first)
+
+        reservation = await service.add_pending(_project_data())
+
+        assert await _directory_names(observer) == []
+        await first.rollback()
+        assert await _directory_names(observer) == []
+        await service.discard(reservation)
+        assert not reservation.root.exists()
+
+
 class _PostgresDiag:
     def __init__(self, constraint_name: str):
         self.constraint_name = constraint_name
@@ -145,6 +169,25 @@ class _PostgresDiag:
 class _PostgresError(Exception):
     def __init__(self, constraint_name: str):
         self.diag = _PostgresDiag(constraint_name)
+
+
+class _AsyncpgStyleError(Exception):
+    def __init__(
+        self,
+        message: str,
+        *,
+        constraint_name: str | None = None,
+        sqlstate: str = "23505",
+    ) -> None:
+        super().__init__(message)
+        self.constraint_name = constraint_name
+        self.sqlstate = sqlstate
+
+
+class _AsyncpgAdapterError(Exception):
+    def __init__(self, cause: Exception):
+        super().__init__("asyncpg adapter error")
+        self.__cause__ = cause
 
 
 @pytest.mark.parametrize(
@@ -162,6 +205,41 @@ def test_recognizes_only_directory_name_unique_conflicts(
     expected: bool,
 ) -> None:
     error = IntegrityError("statement", {}, original)
+
+    assert is_project_directory_name_conflict(error) is expected
+
+
+@pytest.mark.parametrize(
+    ("cause", "expected"),
+    [
+        (
+            _AsyncpgStyleError(
+                "duplicate key",
+                constraint_name="uq_projects_directory_name",
+            ),
+            True,
+        ),
+        (
+            _AsyncpgStyleError(
+                'duplicate key violates unique constraint "uq_projects_directory_name"'
+            ),
+            True,
+        ),
+        (
+            _AsyncpgStyleError(
+                'adapter mentions "uq_projects_directory_name"',
+                constraint_name="uq_projects_name",
+            ),
+            False,
+        ),
+        (_AsyncpgStyleError("duplicate key without named constraint"), False),
+    ],
+)
+def test_recognizes_asyncpg_directory_conflicts_through_adapter_cause(
+    cause: Exception,
+    expected: bool,
+) -> None:
+    error = IntegrityError("statement", {}, _AsyncpgAdapterError(cause))
 
     assert is_project_directory_name_conflict(error) is expected
 
@@ -361,6 +439,22 @@ async def test_discard_does_not_follow_replacement_symlink(
     _assert_fd_closed(parent_fd)
     assert reservation.root.is_symlink()
     assert marker.read_text() == "keep"
+    assert await _directory_names(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_discard_after_rollback_only_cleans_reserved_directory(
+    db_session,
+) -> None:
+    service = ProjectDirectoryService(db_session)
+    reservation = await service.add_pending(_project_data())
+
+    await db_session.rollback()
+    await service.discard(reservation)
+
+    assert reservation.root_fd is None
+    assert reservation.parent_fd is None
+    assert not reservation.root.exists()
     assert await _directory_names(db_session) == []
 
 

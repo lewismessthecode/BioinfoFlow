@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +26,10 @@ from app.utils.project_directory_names import (
 MAX_CANDIDATES = 10_000
 _DIRECTORY_NAME_CONSTRAINT = "uq_projects_directory_name"
 _SQLITE_DIRECTORY_NAME_CONFLICT = "unique constraint failed: projects.directory_name"
+_POSTGRES_UNIQUE_VIOLATION = "23505"
+_DIRECTORY_NAME_IN_MESSAGE = re.compile(
+    rf"(?<![A-Za-z0-9_]){re.escape(_DIRECTORY_NAME_CONSTRAINT)}(?![A-Za-z0-9_])"
+)
 _HAS_SECURE_DIRECTORY_FDS = (
     hasattr(os, "O_DIRECTORY")
     and hasattr(os, "O_NOFOLLOW")
@@ -139,7 +145,12 @@ class ProjectDirectoryService:
 
     async def discard(self, reservation: ManagedProjectReservation) -> None:
         try:
-            await self.repo.delete_pending(reservation.project)
+            project_state = sqlalchemy_inspect(reservation.project)
+            if project_state.persistent:
+                await self.repo.delete_pending(reservation.project)
+            elif project_state.pending:
+                self.session.expunge(reservation.project)
+                await self.session.flush()
         except Exception:
             await self.session.rollback()
             raise
@@ -147,21 +158,67 @@ class ProjectDirectoryService:
             _cleanup_owned_root(reservation)
 
     async def _ensure_outer_transaction(self) -> None:
-        if self.session.in_transaction():
-            return
         bind = self.session.get_bind()
         if bind.dialect.name == "sqlite":
-            await self.session.execute(text("BEGIN"))
+            connection = await self.session.connection()
+            raw_connection = connection.sync_connection.connection
+            driver_connection = getattr(raw_connection, "driver_connection", None)
+            driver_in_transaction = getattr(
+                driver_connection,
+                "in_transaction",
+                None,
+            )
+            if driver_in_transaction is False:
+                await self.session.execute(text("BEGIN IMMEDIATE"))
+            return
+        if self.session.in_transaction():
             return
         await self.session.begin()
 
 
 def is_project_directory_name_conflict(error: IntegrityError) -> bool:
-    original = error.orig
-    diagnostic = getattr(original, "diag", None)
-    if getattr(diagnostic, "constraint_name", None) == _DIRECTORY_NAME_CONSTRAINT:
-        return True
-    return _SQLITE_DIRECTORY_NAME_CONFLICT in str(original).casefold()
+    for original in _exception_chain(error.orig):
+        diagnostic = getattr(original, "diag", None)
+        constraint_name = getattr(
+            diagnostic,
+            "constraint_name",
+            None,
+        ) or getattr(original, "constraint_name", None)
+        if constraint_name is not None:
+            if constraint_name == _DIRECTORY_NAME_CONSTRAINT:
+                return True
+            continue
+        message = str(original)
+        if _SQLITE_DIRECTORY_NAME_CONFLICT in message.casefold():
+            return True
+        sqlstate = getattr(original, "sqlstate", None) or getattr(
+            original,
+            "pgcode",
+            None,
+        )
+        if str(
+            sqlstate or ""
+        ) == _POSTGRES_UNIQUE_VIOLATION and _DIRECTORY_NAME_IN_MESSAGE.search(message):
+            return True
+    return False
+
+
+def _exception_chain(error: BaseException):
+    pending = [error]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        identity = id(current)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        yield current
+        cause = current.__cause__
+        context = current.__context__
+        if context is not None:
+            pending.append(context)
+        if cause is not None:
+            pending.append(cause)
 
 
 def _path_entry_exists(path: Path) -> bool:
