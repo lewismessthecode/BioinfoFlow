@@ -55,9 +55,12 @@ async def test_allocates_readable_suffixes_and_creates_layout(db_session) -> Non
     for _ in range(3):
         reservation = await service.add_pending(_project_data())
         root_fd = reservation.root_fd
+        parent_fd = reservation.parent_fd
         projects.append(await service.commit(reservation))
         assert reservation.root_fd is None
+        assert reservation.parent_fd is None
         _assert_fd_closed(root_fd)
+        _assert_fd_closed(parent_fd)
 
     assert [project.directory_name for project in projects] == [
         "ce-shi",
@@ -313,6 +316,7 @@ async def test_commit_failure_rolls_back_and_removes_owned_root(
     service = ProjectDirectoryService(db_session)
     reservation = await service.add_pending(_project_data())
     root_fd = reservation.root_fd
+    parent_fd = reservation.parent_fd
 
     async def fail_commit() -> None:
         raise RuntimeError("commit failed")
@@ -323,9 +327,15 @@ async def test_commit_failure_rolls_back_and_removes_owned_root(
         await service.commit(reservation)
 
     assert reservation.root_fd is None
+    assert reservation.parent_fd is None
     _assert_fd_closed(root_fd)
+    _assert_fd_closed(parent_fd)
     assert await _directory_names(db_session) == []
     assert not reservation.root.exists()
+    assert not any(
+        path.name.startswith(".bioinfoflow-project-cleanup-")
+        for path in projects_root().iterdir()
+    )
 
 
 @pytest.mark.asyncio
@@ -335,6 +345,7 @@ async def test_discard_does_not_follow_replacement_symlink(
     service = ProjectDirectoryService(db_session)
     reservation = await service.add_pending(_project_data())
     root_fd = reservation.root_fd
+    parent_fd = reservation.parent_fd
     victim = projects_root().parent / "victim"
     victim.mkdir()
     marker = victim / "keep.txt"
@@ -345,7 +356,9 @@ async def test_discard_does_not_follow_replacement_symlink(
     await service.discard(reservation)
 
     assert reservation.root_fd is None
+    assert reservation.parent_fd is None
     _assert_fd_closed(root_fd)
+    _assert_fd_closed(parent_fd)
     assert reservation.root.is_symlink()
     assert marker.read_text() == "keep"
     assert await _directory_names(db_session) == []
@@ -359,31 +372,121 @@ async def test_cleanup_does_not_recurse_into_root_replaced_after_identity_check(
     service = ProjectDirectoryService(db_session)
     reservation = await service.add_pending(_project_data())
     root_fd = reservation.root_fd
+    parent_fd = reservation.parent_fd
     victim = projects_root().parent / "victim"
     victim.mkdir()
     marker = victim / "keep.txt"
     marker.write_text("keep")
     original_lstat = Path.lstat
+    original_rename = os.rename
     replaced = False
 
-    def replace_after_identity_check(self: Path):
+    def replace_root() -> None:
         nonlocal replaced
-        result = original_lstat(self)
-        if self == reservation.root and not replaced:
+        if not replaced:
             replaced = True
-            shutil.rmtree(self)
-            self.symlink_to(victim, target_is_directory=True)
+            shutil.rmtree(reservation.root)
+            reservation.root.symlink_to(victim, target_is_directory=True)
+
+    def replace_after_identity_check(self: Path):
+        result = original_lstat(self)
+        if self == reservation.root:
+            replace_root()
         return result
 
+    def replace_before_quarantine(
+        src,
+        dst,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+    ) -> None:
+        if src == reservation.root.name and src_dir_fd is not None:
+            replace_root()
+        original_rename(
+            src,
+            dst,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+        )
+
     monkeypatch.setattr(Path, "lstat", replace_after_identity_check)
+    monkeypatch.setattr(os, "rename", replace_before_quarantine)
 
     await service.discard(reservation)
 
     assert reservation.root_fd is None
+    assert reservation.parent_fd is None
     _assert_fd_closed(root_fd)
+    _assert_fd_closed(parent_fd)
     assert replaced is True
     assert reservation.root.is_symlink()
     assert marker.read_text() == "keep"
+    assert await _directory_names(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_cleanup_does_not_remove_empty_root_replaced_after_identity_check(
+    db_session,
+    monkeypatch,
+) -> None:
+    service = ProjectDirectoryService(db_session)
+    reservation = await service.add_pending(_project_data())
+    original_lstat = Path.lstat
+    original_rename = os.rename
+    replacement_fd: int | None = None
+
+    def replace_root() -> None:
+        nonlocal replacement_fd
+        if replacement_fd is None:
+            shutil.rmtree(reservation.root)
+            reservation.root.mkdir()
+            replacement_fd = os.open(
+                reservation.root,
+                os.O_RDONLY | os.O_DIRECTORY,
+            )
+
+    def replace_with_empty_directory_after_identity_check(self: Path):
+        result = original_lstat(self)
+        if self == reservation.root:
+            replace_root()
+        return result
+
+    def replace_before_quarantine(
+        src,
+        dst,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+    ) -> None:
+        if src == reservation.root.name and src_dir_fd is not None:
+            replace_root()
+        original_rename(
+            src,
+            dst,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+        )
+
+    monkeypatch.setattr(
+        Path,
+        "lstat",
+        replace_with_empty_directory_after_identity_check,
+    )
+    monkeypatch.setattr(os, "rename", replace_before_quarantine)
+
+    await service.discard(reservation)
+
+    assert replacement_fd is not None
+    try:
+        replacement_stat = os.fstat(replacement_fd)
+        current_stat = original_lstat(reservation.root)
+        assert (current_stat.st_dev, current_stat.st_ino) == (
+            replacement_stat.st_dev,
+            replacement_stat.st_ino,
+        )
+    finally:
+        os.close(replacement_fd)
     assert await _directory_names(db_session) == []
 
 
