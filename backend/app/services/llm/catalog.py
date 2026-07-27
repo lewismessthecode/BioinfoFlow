@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import ipaddress
 from typing import Any
@@ -58,6 +59,16 @@ from app.services.llm.test_status import (
 )
 from app.utils.authorization import ADMIN_ROLES, can_manage_server_integrations
 from app.utils.exceptions import NotFoundError, PermissionDeniedError
+
+
+@dataclass(frozen=True)
+class ExactModelProbeResult:
+    available: bool
+    requested_model: str
+    model_id: str | None = None
+    model_name: str | None = None
+    supports_reasoning: bool = False
+    unavailable_reason: str | None = None
 
 
 class LlmCatalogService:
@@ -624,6 +635,74 @@ class LlmCatalogService:
             return _active_models(await self.model_repo.list_for_provider(provider_id))
         return _active_models(
             await self.model_repo.list_for_providers(sorted(enabled_provider_ids))
+        )
+
+    async def probe_exact_model(
+        self,
+        requested_model: str,
+        *,
+        workspace_id: str,
+        user_id: str,
+        role: str | None = None,
+    ) -> ExactModelProbeResult:
+        """Freshly probe one exact caller-visible tool-capable model."""
+
+        requested_model = requested_model.strip()
+        if not requested_model:
+            return _unavailable_model(requested_model, "model_not_found")
+        providers = await self.provider_repo.list_available(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            enabled_only=True,
+        )
+        candidates = []
+        for provider in providers:
+            for model in _active_models(
+                await self.model_repo.list_for_provider(str(provider.id))
+            ):
+                if requested_model in {str(model.id), model.model_id}:
+                    candidates.append((provider, model))
+        if len(candidates) != 1:
+            return _unavailable_model(requested_model, "model_not_found")
+        provider, model = candidates[0]
+        if not model.supports_tools:
+            return _unavailable_model(requested_model, "tools_not_supported")
+
+        try:
+            validate_provider_transport(provider)
+            network_access = await resolve_provider_network_access(
+                normalize_provider_base_url(provider.kind, provider.base_url),
+                private_endpoint_authorized=can_manage_server_integrations(role),
+                resolve_dns=not can_manage_server_integrations(role),
+            )
+            credential = await self.credential_repo.get_for_provider(str(provider.id))
+            if credential is not None and credential.source == LlmCredentialSource.ENV:
+                authorize_server_environment_credential(role=role)
+            result = await self.probe.probe(
+                endpoint_id=str(provider.id),
+                provider_kind=provider.kind,
+                model_id=model.model_id,
+                wire_protocol=provider.wire_protocol,
+                base_url=normalize_provider_base_url(
+                    provider.kind,
+                    provider.base_url,
+                ),
+                network_access=network_access,
+                credential=resolve_credential_material(credential),
+                credential_required=_provider_requires_credential(provider),
+            )
+        except (PermissionDeniedError, ValueError):
+            return _unavailable_model(requested_model, "model_unavailable")
+        except Exception:  # noqa: BLE001 - provider/runtime details stay private
+            return _unavailable_model(requested_model, "probe_failed")
+        if not result.success:
+            return _unavailable_model(requested_model, "probe_failed")
+        return ExactModelProbeResult(
+            available=True,
+            requested_model=requested_model,
+            model_id=str(model.id),
+            model_name=model.model_id,
+            supports_reasoning=bool(model.supports_reasoning),
         )
 
     async def discover_models(
@@ -1292,6 +1371,17 @@ class LlmCatalogService:
 
 def _strip_none(data: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in data.items() if value is not None}
+
+
+def _unavailable_model(
+    requested_model: str,
+    reason: str,
+) -> ExactModelProbeResult:
+    return ExactModelProbeResult(
+        available=False,
+        requested_model=requested_model,
+        unavailable_reason=reason,
+    )
 
 
 def _provider_requires_credential(provider: LlmProvider) -> bool:

@@ -15,6 +15,7 @@ from app.models.llm import (
     LlmProviderCredential,
 )
 from app.services.llm.credentials import encrypt_secret
+from app.services.llm.catalog import LlmCatalogService
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -625,6 +626,55 @@ async def test_failed_provider_probe_keeps_saved_credential_configured(
         if provider["id"] == provider_id
     )
     assert configured_provider["credential"]["configured"] is True
+
+
+@pytest.mark.asyncio
+async def test_exact_model_probe_converts_unexpected_runtime_failure_to_safe_result(
+    db_session,
+    monkeypatch,
+) -> None:
+    provider = await _create_provider(
+        db_session,
+        name="Child preflight provider",
+        user_id="dev",
+        base_url="https://probe.example/v1",
+    )
+    model = await _create_model(
+        db_session,
+        provider_id=str(provider.id),
+        model_id="child-model",
+        display_name="Child model",
+    )
+    db_session.add(
+        LlmProviderCredential(
+            provider_id=str(provider.id),
+            source="stored",
+            encrypted_secret=encrypt_secret("never-serialize-this-key"),
+            masked_hint="ne...ey",
+            updated_by="dev",
+        )
+    )
+    await db_session.commit()
+
+    async def failing_probe(*args, **kwargs):
+        del args, kwargs
+        raise RuntimeError("provider response contains never-serialize-this-key")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        failing_probe,
+    )
+
+    result = await LlmCatalogService(db_session).probe_exact_model(
+        str(model.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        role="owner",
+    )
+
+    assert result.available is False
+    assert result.unavailable_reason == "probe_failed"
+    assert "never-serialize" not in repr(result)
 
 
 @pytest.mark.asyncio
