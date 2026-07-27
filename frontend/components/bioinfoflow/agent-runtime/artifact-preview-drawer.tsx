@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
-import { AlertCircle, ChevronLeft, ChevronRight, FileBox, RotateCw } from "@/lib/icons"
+import { AlertCircle, ChevronLeft, FileBox, RotateCw } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -9,7 +9,9 @@ import {
   deliverableArtifacts,
   type AgentRuntimeArtifact,
 } from "@/lib/agent-runtime"
-import { ArtifactIcon, ArtifactViewer, artifactTypeLabel } from "./artifact-viewers"
+import { buildArtifactTree } from "./artifact-tree"
+import { ArtifactTreeView } from "./artifact-tree-view"
+import { ArtifactViewer, artifactTypeLabel } from "./artifact-viewers"
 
 export function ArtifactPreviewDrawer({
   artifacts,
@@ -30,6 +32,10 @@ export function ArtifactPreviewDrawer({
   const previewArtifacts = useMemo(
     () => deliverableArtifacts(artifacts),
     [artifacts],
+  )
+  const artifactTree = useMemo(
+    () => buildArtifactTree(previewArtifacts, t("artifacts.title")),
+    [previewArtifacts, t],
   )
   const selected =
     previewArtifacts.find((artifact) => artifact.id === selectedId) ?? null
@@ -123,32 +129,20 @@ export function ArtifactPreviewDrawer({
           className="font-mono text-[11px] tabular-nums text-muted-foreground"
           data-testid="artifact-count"
         >
-          {previewArtifacts.length}
+          {artifactTree.fileCount}
         </span>
       </div>
       <div
-        className="min-h-0 divide-y divide-border/45 overflow-y-auto pr-1"
-        data-testid="artifact-list"
+        className="min-h-0 overflow-y-auto px-1.5 py-2"
+        data-testid="artifact-tree-scroll"
       >
-        {previewArtifacts.map((artifact) => (
-          <button
-            key={artifact.id}
-            type="button"
-            onClick={() => setSelectedId(artifact.id)}
-            className="group flex w-full items-center gap-3 px-2 py-3 text-left transition-[background-color,color,transform] duration-200 hover:bg-muted/35 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/25"
-          >
-            <ArtifactIcon type={artifact.type} />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium text-foreground">
-                {artifact.title}
-              </div>
-              <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                {artifact.summary || artifact.file_path || artifactTypeLabel(t, artifact.type)}
-              </div>
-            </div>
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
-          </button>
-        ))}
+        <ArtifactTreeView
+          tree={artifactTree}
+          selectedArtifactId={selectedId}
+          label={t("artifacts.title")}
+          typeLabel={(type) => artifactTypeLabel(t, type)}
+          onSelectArtifact={setSelectedId}
+        />
       </div>
     </div>
   )
