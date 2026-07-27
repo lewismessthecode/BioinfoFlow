@@ -40,6 +40,25 @@ def test_normalized_base_name_is_limited_to_100_characters() -> None:
 
 
 @pytest.mark.parametrize(
+    "reserved_name",
+    [
+        "CON",
+        "prn",
+        "aux",
+        "nul",
+        *(f"com{number}" for number in range(1, 10)),
+        *(f"lpt{number}" for number in range(1, 10)),
+    ],
+)
+def test_normalize_project_directory_name_avoids_windows_reserved_names(
+    reserved_name: str,
+) -> None:
+    normalized = reserved_name.lower()
+
+    assert normalize_project_directory_name(reserved_name) == f"project-{normalized}"
+
+
+@pytest.mark.parametrize(
     ("ordinal", "suffix_length"),
     [(2, 2), (10000, 6)],
 )
