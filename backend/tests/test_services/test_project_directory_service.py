@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.project import Project
-from app.path_layout import projects_root
+from app.path_layout import project_home, projects_root
 from app.repositories.project_repo import ProjectRepository
 from app.services.project_directory_service import (
     MAX_CANDIDATES,
@@ -113,6 +113,29 @@ async def test_skips_a_database_reservation_when_disk_entry_is_missing(
     project = await service.commit(await service.add_pending(_project_data()))
 
     assert project.directory_name == "ce-shi-2"
+
+
+@pytest.mark.asyncio
+async def test_skips_legacy_managed_uuid_root_when_disk_entry_is_missing(
+    db_session,
+) -> None:
+    legacy_id = "12345678-1234-5678-9234-567812345678"
+    legacy = await ProjectRepository(db_session).create(
+        **_project_data(name="Legacy managed project"),
+        id=legacy_id,
+        directory_name=None,
+    )
+    assert not project_home(legacy).exists()
+
+    service = ProjectDirectoryService(db_session)
+    project = await service.commit(
+        await service.add_pending(_project_data(name=legacy_id))
+    )
+
+    assert project.directory_name == f"{legacy_id}-2"
+    assert project_home(project) != project_home(legacy)
+    assert (project_home(project) / "data").is_dir()
+    assert (project_home(project) / "runs").is_dir()
 
 
 @pytest.mark.asyncio

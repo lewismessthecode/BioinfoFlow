@@ -632,3 +632,51 @@ async def test_first_run_bootstrap_closes_project_reservation_fds(
     assert reservations[0].root_fd is None
     assert reservations[0].parent_fd is None
     assert reservations[0].root.exists() is (not cancelled)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "rollback_error",
+    [RuntimeError("rollback failed"), asyncio.CancelledError()],
+)
+async def test_first_run_bootstrap_cleans_reservation_when_rollback_fails(
+    db_session, monkeypatch, rollback_error
+):
+    reservations = []
+    original_add_pending = ProjectDirectoryService.add_pending
+
+    async def capture_reservation(self, data):
+        reservation = await original_add_pending(self, data)
+        reservations.append(reservation)
+        return reservation
+
+    def fail_project_files(project):
+        del project
+        raise RuntimeError("project files failed")
+
+    async def fail_rollback():
+        raise rollback_error
+
+    monkeypatch.setattr(ProjectDirectoryService, "add_pending", capture_reservation)
+    service = DemoBootstrapService(db_session)
+    monkeypatch.setattr(service, "_repair_project_files", fail_project_files)
+    monkeypatch.setattr(db_session, "rollback", fail_rollback)
+
+    with pytest.raises(type(rollback_error)) as caught:
+        await service.bootstrap(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+
+    if isinstance(rollback_error, RuntimeError):
+        assert str(caught.value) == "rollback failed"
+    contexts = []
+    context = caught.value.__context__
+    while context is not None:
+        contexts.append(context)
+        context = context.__context__
+    assert any(str(error) == "project files failed" for error in contexts)
+    assert len(reservations) == 1
+    assert reservations[0].root_fd is None
+    assert reservations[0].parent_fd is None
+    assert not reservations[0].root.exists()

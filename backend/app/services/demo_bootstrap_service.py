@@ -159,9 +159,11 @@ class DemoBootstrapService:
             else:
                 project = await self.project_directory_service.commit(reservation)
         except BaseException:
-            await self.session.rollback()
-            if reservation is not None and reservation.root_fd is not None:
-                await self.project_directory_service.discard(reservation)
+            try:
+                await self.session.rollback()
+            finally:
+                if reservation is not None and reservation.root_fd is not None:
+                    await self.project_directory_service.discard(reservation)
             raise
 
         return {
