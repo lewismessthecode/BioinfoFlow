@@ -379,6 +379,57 @@ async def test_bash_tool_auto_runs_safe_command_with_pipe_and_glob(db_session):
 
 
 @pytest.mark.asyncio
+async def test_bash_tool_records_nonzero_exit_as_failed_with_command_result(db_session):
+    dispatcher, context, workspace_root = await _shell_context(
+        db_session, permission_mode="bypass"
+    )
+    command = "printf shell-out; printf shell-err >&2; exit 13"
+
+    result = await dispatcher.dispatch(
+        tool_name="bash",
+        input={"command": command, "cwd": str(workspace_root)},
+        context=context,
+        permission_mode="bypass",
+    )
+
+    expected_result = {
+        "exit_code": 13,
+        "stdout": "shell-out",
+        "stderr": "shell-err",
+        "cwd": str(workspace_root.resolve()),
+        "command": command,
+    }
+    assert result.status == "failed"
+    assert result.result == expected_result
+    assert result.error == {
+        "type": "CommandExitError",
+        "message": "Command exited with code 13.",
+    }
+
+    action = await AgentActionRepository(db_session).get_fresh(result.action_id)
+    assert action is not None
+    assert action.status == "failed"
+    assert action.result == expected_result
+    assert action.error == result.error
+
+    events = await AgentCoreService(db_session).list_events_for_turn(
+        turn_id=context.turn_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    assert not any(event.type == "action.completed" for event in events)
+    failed = next(event for event in events if event.type == "action.failed")
+    assert failed.payload == {
+        "action_id": result.action_id,
+        "name": "bash",
+        "tool_call_id": None,
+        "input_preview": command,
+        "result": expected_result,
+        "error": result.error,
+    }
+
+
+@pytest.mark.asyncio
 async def test_bash_tool_cancellation_kills_descendant_processes(db_session):
     _dispatcher, context, workspace_root = await _shell_context(db_session)
     child_pid_file = workspace_root / "shell-child.pid"

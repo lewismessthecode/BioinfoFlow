@@ -90,6 +90,7 @@ describe("buildAgentRuntimeToolActivities", () => {
         actionId: "list-1",
         outputPreview: "permission denied",
         exitCode: 13,
+        status: "failed",
       }),
     ])
   })
@@ -115,6 +116,28 @@ describe("buildAgentRuntimeToolActivities", () => {
         actionId: "local-1",
         outputPreview: "local output",
         exitCode: 0,
+      }),
+    )
+  })
+
+  it("treats a nonzero top-level command exit as failed in historical completed events", () => {
+    const activities = buildAgentRuntimeToolActivities([
+      actionEvent("event-local", 1, {
+        action_id: "local-1",
+        name: "bash",
+        result: {
+          stderr: "command failed",
+          exit_code: 7,
+        },
+      }),
+    ])
+
+    expect(activities[0]).toEqual(
+      expect.objectContaining({
+        actionId: "local-1",
+        outputPreview: "command failed",
+        exitCode: 7,
+        status: "failed",
       }),
     )
   })

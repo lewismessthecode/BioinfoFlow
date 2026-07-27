@@ -120,6 +120,15 @@ class ExecuteShellTool:
             )
         return assess_command_risk(command, target=target)
 
+    def result_error(self, result: dict[str, Any]) -> dict[str, Any] | None:
+        exit_code = result.get("exit_code")
+        if not isinstance(exit_code, int) or exit_code == 0:
+            return None
+        return {
+            "type": "CommandExitError",
+            "message": f"Command exited with code {exit_code}.",
+        }
+
     async def run(
         self, input: dict[str, Any], context: AgentToolContext
     ) -> dict[str, Any]:
