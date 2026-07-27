@@ -117,6 +117,7 @@ class AgentCoreService:
         lineage: dict | None = None,
         toolset_policy: dict | None = None,
         prompt_snapshot: dict | None | object = _PROMPT_SNAPSHOT_UNSET,
+        commit: bool = True,
     ):
         project = None
         if project_id is not None:
@@ -135,7 +136,8 @@ class AgentCoreService:
                 user_settings.custom_instructions if user_settings is not None else None
             ).as_dict()
 
-        return await self.session_repo.create(
+        create = self.session_repo.create if commit else self.session_repo.add
+        return await create(
             project_id=str(project_id) if project_id else None,
             workspace_id=workspace_id,
             user_id=user_id,
@@ -473,6 +475,7 @@ class AgentCoreService:
         execution_target: dict | None = None,
         execution_scope: dict | None = None,
         metadata: dict | None = None,
+        commit: bool = True,
     ):
         session = await self.require_session(
             session_id=session_id,
@@ -600,12 +603,14 @@ class AgentCoreService:
             },
             budget_snapshot={"max_iterations": 0, "used_iterations": 0},
             loop_state={"state": "queued"},
+            commit=commit,
         )
         if turn is None:
             raise ConflictError(
                 "Cannot create a new turn while another turn is active in this session"
             )
-        await self.db.refresh(session)
+        if commit:
+            await self.db.refresh(session)
         return turn
 
     async def create_turn(

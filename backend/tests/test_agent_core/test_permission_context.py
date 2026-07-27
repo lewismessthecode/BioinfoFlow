@@ -88,6 +88,30 @@ def test_permission_audit_models_default_to_initial_policy_version() -> None:
 
 
 @pytest.mark.asyncio
+async def test_subagent_role_profile_resolves_to_subagent_capability_boundary(
+    db_session,
+) -> None:
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+
+    db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
+    await db_session.commit()
+    session = await AgentCoreService(db_session).create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        role_profile="subagent",
+    )
+
+    context = await PermissionContextResolver(db_session).resolve(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    assert context.role == "subagent"
+
+
+@pytest.mark.asyncio
 async def test_permission_context_preserves_capability_bundles_for_runtime_exposure(
     db_session,
 ) -> None:

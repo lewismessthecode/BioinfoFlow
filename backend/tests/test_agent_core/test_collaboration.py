@@ -8,7 +8,15 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.agent_core import AgentMessage, AgentSession, AgentSessionStatus
+from app.models.agent_core import (
+    AgentAttachment,
+    AgentAttachmentStatus,
+    AgentMessage,
+    AgentSession,
+    AgentSessionStatus,
+    AgentTurn,
+    AgentTurnStatus,
+)
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.models.workspace import Workspace
 from app.repositories.agent_core_repo import AgentSessionRepository
@@ -17,6 +25,8 @@ from app.services.agent_core.collaboration.context_fork import (
     fork_agent_context,
 )
 from app.services.agent_core.collaboration.model_preflight import AgentModelPreflight
+from app.services.agent_core.collaboration.contracts import AgentModelChoice
+from app.services.agent_core.collaboration.service import AgentCollaborationService
 from app.services.llm.credentials import encrypt_secret
 from app.services.llm.probe import LlmProviderProbeResult
 from app.config import settings
@@ -49,6 +59,32 @@ async def _create_session(
     await db_session.commit()
     await db_session.refresh(session)
     return session
+
+
+async def _create_parent_turn(db_session: AsyncSession) -> tuple[AgentSession, AgentTurn]:
+    root = await _create_session(db_session)
+    turn = AgentTurn(
+        session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="parent request",
+        status=AgentTurnStatus.RUNNING,
+        model_profile_snapshot={
+            "resolved_model_id": "parent-id",
+            "resolved_model_selection": {
+                "provider": "openai_compatible",
+                "model": "parent-model",
+            },
+            "reasoning_effort": "high",
+        },
+    )
+    db_session.add(turn)
+    await db_session.flush()
+    root.active_turn_id = str(turn.id)
+    await db_session.commit()
+    await db_session.refresh(root)
+    await db_session.refresh(turn)
+    return root, turn
 
 
 @pytest.mark.asyncio
@@ -964,3 +1000,376 @@ async def test_parent_reasoning_override_checks_capability_without_live_probe(
             workspace_id=DEFAULT_WORKSPACE_ID,
             user_id="dev",
         )
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_returns_after_enqueue_without_waiting_for_child(
+    db_session, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root, turn = await _create_parent_turn(db_session)
+    root_id = str(root.id)
+    turn_id = str(turn.id)
+    enqueued: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda turn_id, session_id: enqueued.append((turn_id, session_id)),
+    )
+
+    result = await AgentCollaborationService(db_session).spawn_agent(
+        parent_session_id=root_id,
+        parent_turn_id=turn_id,
+        task_name="reader",
+        message="Inspect README",
+        fork_turns="none",
+    )
+
+    assert result.status == "pending_init"
+    assert result.task_name == "/root/reader"
+    assert result.effective_model == "parent-model"
+    assert enqueued == [(result.child_turn_id, result.child_session_id)]
+    child = await db_session.get(AgentSession, result.child_session_id)
+    child_turn = await db_session.get(AgentTurn, result.child_turn_id)
+    assert child is not None and child.collaboration_slot == 1
+    assert child_turn is not None and child_turn.status == AgentTurnStatus.QUEUED
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_fails_closed_for_child_callers(db_session) -> None:
+    await _seed_workspace(db_session)
+    root, root_turn = await _create_parent_turn(db_session)
+    child = AgentSession(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        parent_session_id=str(root.id),
+        root_session_id=str(root.id),
+        agent_name="reader",
+        collaboration_slot=1,
+    )
+    db_session.add(child)
+    await db_session.flush()
+    child_turn = AgentTurn(
+        session_id=str(child.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="child task",
+        status=AgentTurnStatus.RUNNING,
+        model_profile_snapshot=root_turn.model_profile_snapshot,
+    )
+    db_session.add(child_turn)
+    await db_session.commit()
+
+    with pytest.raises(Exception, match="root_agent_required"):
+        await AgentCollaborationService(db_session).spawn_agent(
+            parent_session_id=str(child.id),
+            parent_turn_id=str(child_turn.id),
+            task_name="nested",
+            message="not allowed",
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("task_name", ["", "Upper", "has-dash", "two words"])
+async def test_spawn_agent_rejects_invalid_task_names(
+    db_session, task_name: str
+) -> None:
+    await _seed_workspace(db_session)
+    root, turn = await _create_parent_turn(db_session)
+
+    with pytest.raises(Exception, match="invalid_agent_name"):
+        await AgentCollaborationService(db_session).spawn_agent(
+            parent_session_id=str(root.id),
+            parent_turn_id=str(turn.id),
+            task_name=task_name,
+            message="work",
+        )
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_rejects_duplicate_and_capacity(db_session, monkeypatch) -> None:
+    await _seed_workspace(db_session)
+    root, turn = await _create_parent_turn(db_session)
+    root_id = str(root.id)
+    turn_id = str(turn.id)
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    service = AgentCollaborationService(db_session)
+    await service.spawn_agent(
+        parent_session_id=root_id,
+        parent_turn_id=turn_id,
+        task_name="reader",
+        message="first",
+        fork_turns="none",
+    )
+    with pytest.raises(Exception, match="agent_name_reserved"):
+        await service.spawn_agent(
+            parent_session_id=root_id,
+            parent_turn_id=turn_id,
+            task_name="reader",
+            message="second",
+            fork_turns="none",
+        )
+
+    for slot in range(2, 8):
+        db_session.add(
+            AgentSession(
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                parent_session_id=root_id,
+                root_session_id=root_id,
+                agent_name=f"worker_{slot}",
+                collaboration_slot=slot,
+            )
+        )
+    await db_session.commit()
+    with pytest.raises(Exception, match="agent_limit_reached"):
+        await service.spawn_agent(
+            parent_session_id=root_id,
+            parent_turn_id=turn_id,
+            task_name="eighth",
+            message="work",
+            fork_turns="none",
+        )
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_reports_requested_model_fallback(
+    db_session, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root, turn = await _create_parent_turn(db_session)
+
+    async def fallback(**_kwargs):
+        return AgentModelChoice(
+            requested_model="cheap-model",
+            effective_model="parent-model",
+            effective_model_id="parent-id",
+            reasoning_effort="high",
+            fallback=True,
+            fallback_reason="requested_model_unavailable",
+        )
+
+    service = AgentCollaborationService(db_session)
+    monkeypatch.setattr(service.model_preflight, "resolve", fallback)
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    result = await service.spawn_agent(
+        parent_session_id=str(root.id),
+        parent_turn_id=str(turn.id),
+        task_name="reader",
+        message="work",
+        fork_turns="none",
+        model="cheap-model",
+    )
+
+    assert result.requested_model == "cheap-model"
+    assert result.effective_model == "parent-model"
+    assert result.model_fallback is True
+    assert result.fallback_reason == "requested_model_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_spawn_enqueue_failure_keeps_recoverable_queued_turn(
+    db_session, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root, turn = await _create_parent_turn(db_session)
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("queue offline")),
+    )
+
+    result = await AgentCollaborationService(db_session).spawn_agent(
+        parent_session_id=str(root.id),
+        parent_turn_id=str(turn.id),
+        task_name="reader",
+        message="work",
+        fork_turns="none",
+    )
+
+    child_turn = await db_session.get(AgentTurn, result.child_turn_id)
+    assert child_turn is not None and child_turn.status == AgentTurnStatus.QUEUED
+    assert result.status == "pending_init"
+
+
+@pytest.mark.asyncio
+async def test_spawn_commit_failure_rolls_back_child_turn_and_slot(
+    db_session, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root, turn = await _create_parent_turn(db_session)
+    root_id = str(root.id)
+    turn_id = str(turn.id)
+    original_commit = db_session.commit
+
+    async def fail_commit():
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(db_session, "commit", fail_commit)
+    with pytest.raises(RuntimeError, match="commit failed"):
+        await AgentCollaborationService(db_session).spawn_agent(
+            parent_session_id=root_id,
+            parent_turn_id=turn_id,
+            task_name="reader",
+            message="work",
+            fork_turns="none",
+        )
+    monkeypatch.setattr(db_session, "commit", original_commit)
+
+    children = list(
+        (
+            await db_session.scalars(
+                select(AgentSession).where(AgentSession.root_session_id == root_id)
+            )
+        ).all()
+    )
+    assert children == []
+
+
+@pytest.mark.asyncio
+async def test_forked_image_reference_is_reowned_by_child(
+    db_session, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root, turn = await _create_parent_turn(db_session)
+    source = AgentAttachment(
+        session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        kind="image",
+        source="clipboard",
+        filename="image.png",
+        storage_path=f"{root.id}/source",
+        mime_type="image/png",
+        size_bytes=3,
+        status=AgentAttachmentStatus.READY,
+        attachment_metadata={"sha256": "a" * 64},
+    )
+    db_session.add(source)
+    await db_session.flush()
+    source_id = str(source.id)
+    root_id = str(root.id)
+    turn_id = str(turn.id)
+    db_session.add(
+        AgentMessage(
+            session_id=str(root.id),
+            turn_id=str(turn.id),
+            role="user",
+            content_parts=[
+                {
+                    "type": "image_ref",
+                    "attachment_id": source_id,
+                    "mime_type": "image/png",
+                }
+            ],
+            status="committed",
+            ordering_index=1,
+        )
+    )
+    await db_session.commit()
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service._clone_attachment_files",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+
+    result = await AgentCollaborationService(db_session).spawn_agent(
+        parent_session_id=root_id,
+        parent_turn_id=turn_id,
+        task_name="vision",
+        message="inspect image",
+        fork_turns="all",
+    )
+    messages = list(
+        (
+            await db_session.scalars(
+                select(AgentMessage)
+                .where(AgentMessage.session_id == result.child_session_id)
+                .order_by(AgentMessage.ordering_index)
+            )
+        ).all()
+    )
+    image_part = messages[0].content_parts[0]
+    assert "source_attachment_id" not in image_part
+    clone = await db_session.get(AgentAttachment, image_part["attachment_id"])
+    assert clone is not None
+    assert str(clone.session_id) == result.child_session_id
+    assert str(clone.id) != source_id
+
+
+@pytest.mark.asyncio
+async def test_list_agents_is_root_scoped_deterministic_and_projects_status(
+    db_session,
+) -> None:
+    await _seed_workspace(db_session)
+    root, _turn = await _create_parent_turn(db_session)
+    completed = AgentSession(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        parent_session_id=str(root.id),
+        root_session_id=str(root.id),
+        agent_name="alpha",
+        session_metadata={"collaboration": {"effective_model": "cheap"}},
+    )
+    running = AgentSession(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        parent_session_id=str(root.id),
+        root_session_id=str(root.id),
+        agent_name="beta",
+        collaboration_slot=1,
+        session_metadata={"collaboration": {"effective_model": "parent-model"}},
+    )
+    db_session.add_all([completed, running])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            AgentTurn(
+                session_id=str(completed.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                input_text="done",
+                status=AgentTurnStatus.COMPLETED,
+                final_text="finished",
+            ),
+            AgentTurn(
+                session_id=str(running.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                input_text="active",
+                status=AgentTurnStatus.RUNNING,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    result = await AgentCollaborationService(db_session).list_agents(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    assert [agent.task_name for agent in result] == [
+        "/root",
+        "/root/alpha",
+        "/root/beta",
+    ]
+    assert result[1].status == "completed"
+    assert result[1].final_text == "finished"
+    assert result[2].status == "running"
+
+    assert (
+        await AgentCollaborationService(db_session).list_agents(
+            caller_session_id=str(root.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="other-user",
+        )
+        == []
+    )
