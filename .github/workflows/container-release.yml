@@ -160,7 +160,7 @@ jobs:
 
       - name: Generate backend image tags
         id: metadata
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ needs.detect.outputs.backend_image }}
           flavor: latest=false
@@ -207,7 +207,7 @@ jobs:
 
       - name: Generate authenticated frontend image tags
         id: frontend-metadata
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ needs.detect.outputs.frontend_image }}
           flavor: latest=false
@@ -221,7 +221,7 @@ jobs:
 
       - name: Generate localhost frontend image tags
         id: localhost-metadata
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ needs.detect.outputs.frontend_localhost_image }}
           flavor: latest=false
