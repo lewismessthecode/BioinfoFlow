@@ -10,13 +10,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.path_layout import ensure_project_layout
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
+from app.services.project_directory_service import ProjectDirectoryService
 from app.utils.exceptions import NotFoundError, ValidationError
 from app.utils.repo_paths import normalize_repo_path
 
 
 class ProjectService:
     def __init__(self, session: AsyncSession):
+        self.session = session
         self.repo = ProjectRepository(session)
+        self.directory_service = ProjectDirectoryService(session)
 
     async def get_or_create_default(
         self, *, workspace_id: str, workspace_slug: str, user_id: str
@@ -27,24 +30,28 @@ class ProjectService:
         existing = await self.repo.get_default_for_workspace(workspace_id)
         if existing:
             return existing
-        project_id = str(uuid4())
-        ensure_project_layout(project_id)
         try:
-            return await self.repo.create(
-                id=project_id,
-                name="Recent",
-                description="Uncategorized analyses",
-                storage_mode="managed",
-                external_root_path=None,
-                user_id=user_id,
-                created_by_user_id=user_id,
-                workspace_id=workspace_id,
-                is_default=True,
+            reservation = await self.directory_service.add_pending(
+                {
+                    "id": str(uuid4()),
+                    "name": "Recent",
+                    "description": "Uncategorized analyses",
+                    "storage_mode": "managed",
+                    "external_root_path": None,
+                    "user_id": user_id,
+                    "created_by_user_id": user_id,
+                    "workspace_id": workspace_id,
+                    "is_default": True,
+                }
             )
+            return await self.directory_service.commit(reservation)
         except IntegrityError:
             # Concurrent create — unique partial index blocked the duplicate.
-            await self.repo.session.rollback()
-            return await self.repo.get_default_for_workspace(workspace_id)
+            await self.session.rollback()
+            existing = await self.repo.get_default_for_workspace(workspace_id)
+            if existing is None:
+                raise
+            return existing
 
     async def list_projects(
         self,
@@ -85,7 +92,9 @@ class ProjectService:
             else:
                 data["storage_mode"] = "managed"
                 data["external_root_path"] = None
-                ensure_project_layout(project_id)
+                data["id"] = project_id
+                reservation = await self.directory_service.add_pending(data)
+                return await self.directory_service.commit(reservation)
         data["id"] = project_id
         return await self.repo.create(**data)
 
@@ -108,7 +117,11 @@ class ProjectService:
             data["external_root_path"] = None
             data["remote_connection_id"] = None
             data["remote_root_path"] = None
-            ensure_project_layout(str(project.id))
+            project.storage_mode = "managed"
+            project.external_root_path = None
+            project.remote_connection_id = None
+            project.remote_root_path = None
+            ensure_project_layout(project)
         data.pop("workspace_id", None)
         return await self.repo.update(project, **data)
 

@@ -19,10 +19,13 @@ from app.models.workflow import Workflow
 from app.models.workspace import Workspace
 from app.path_layout import (
     project_data_root,
+    project_home,
+    projects_root,
     workflow_bundle_home,
     workflow_metadata_path,
 )
 from app.services.demo_bootstrap_service import DemoBootstrapService
+from app.services.project_directory_service import ProjectDirectoryService
 from app.workspace import DEFAULT_WORKSPACE_ID
 from tests.support.path_contract import create_project
 
@@ -97,6 +100,8 @@ async def test_first_run_bootstrap_creates_exact_demo_state(async_client, db_ses
     workflow = await db_session.get(Workflow, data["workflow_id"])
     assert project is not None
     assert project.name == DEMO_PROJECT_NAME
+    assert project.directory_name == "bioinfoflow-demo"
+    assert project_home(project).name == "bioinfoflow-demo"
     assert project.storage_mode == "managed"
     assert project.is_default is False
     assert project.user_id == "dev"
@@ -143,6 +148,9 @@ async def test_first_run_bootstrap_creates_exact_demo_state(async_client, db_ses
 @pytest.mark.asyncio
 async def test_first_run_bootstrap_is_idempotent(async_client, db_session):
     first = await _bootstrap(async_client)
+    project = await db_session.get(Project, first["demo_project_id"])
+    assert project is not None
+    directory_name = project.directory_name
     second = await _bootstrap(async_client)
 
     assert first["created"] is True
@@ -150,6 +158,8 @@ async def test_first_run_bootstrap_is_idempotent(async_client, db_session):
     assert second["ready"] is True
     assert second["demo_project_id"] == first["demo_project_id"]
     assert second["workflow_id"] == first["workflow_id"]
+    await db_session.refresh(project)
+    assert project.directory_name == directory_name == "bioinfoflow-demo"
     assert await db_session.scalar(
         select(func.count()).select_from(Project).where(Project.name == DEMO_PROJECT_NAME)
     ) == 1
@@ -167,6 +177,7 @@ async def test_first_run_bootstrap_repairs_missing_files(async_client, db_sessio
     project = await db_session.get(Project, first["demo_project_id"])
     workflow = await db_session.get(Workflow, first["workflow_id"])
     assert project is not None and workflow is not None
+    directory_name = project.directory_name
     (project_data_root(project) / "sample-a.fastq").unlink()
     (workflow_bundle_home(str(workflow.id)) / "workflow.wdl").unlink()
     workflow_metadata_path(str(workflow.id)).unlink()
@@ -175,6 +186,8 @@ async def test_first_run_bootstrap_repairs_missing_files(async_client, db_sessio
 
     assert repaired["created"] is False
     assert repaired["ready"] is True
+    await db_session.refresh(project)
+    assert project.directory_name == directory_name == "bioinfoflow-demo"
     assert (project_data_root(project) / "sample-a.fastq").read_text() == SAMPLE_A_FASTQ
     assert DEMO_RUNTIME_IMAGE in (
         workflow_bundle_home(str(workflow.id)) / "workflow.wdl"
@@ -311,6 +324,15 @@ async def test_first_run_rejects_preclaimed_canonical_workflow(async_client, db_
     preclaimed_response = await async_client.post("/api/v1/first-run/bootstrap")
     assert preclaimed_response.status_code == 409
     assert preclaimed_response.json()["error"]["code"] == "CONFLICT"
+    demo_project_id = str(
+        uuid5(
+            NAMESPACE_URL,
+            f"bioinfoflow:quickstart-project:{DEFAULT_WORKSPACE_ID}",
+        )
+    )
+    assert await db_session.get(Project, demo_project_id) is None
+    assert not (projects_root() / "bioinfoflow-demo").exists()
+    assert not (projects_root() / demo_project_id).exists()
 
 
 
@@ -471,7 +493,11 @@ async def test_first_run_bootstrap_isolates_workspaces(
     assert other_data["created"] is True
     assert other_data["demo_project_id"] != default_data["demo_project_id"]
     other_project = await db_session.get(Project, other_data["demo_project_id"])
+    default_project = await db_session.get(Project, default_data["demo_project_id"])
     assert other_project is not None
+    assert default_project is not None
+    assert default_project.directory_name == "bioinfoflow-demo"
+    assert other_project.directory_name == "bioinfoflow-demo-2"
     assert other_project.user_id == "user-two"
     assert str(other_project.workspace_id) == workspace_id
     assert other_data["workflow_id"] == default_data["workflow_id"]
@@ -495,3 +521,114 @@ async def test_first_run_bootstrap_does_not_seed_non_fresh_workspace(
     assert await db_session.scalar(
         select(func.count()).select_from(Project).where(Project.name == DEMO_PROJECT_NAME)
     ) == 0
+
+
+@pytest.mark.asyncio
+async def test_first_run_bootstrap_preserves_legacy_demo_uuid_directory(
+    async_client, db_session
+):
+    project_id = str(
+        uuid5(
+            NAMESPACE_URL,
+            f"bioinfoflow:quickstart-project:{DEFAULT_WORKSPACE_ID}",
+        )
+    )
+    legacy = Project(
+        id=project_id,
+        name=DEMO_PROJECT_NAME,
+        description=(
+            "Managed quickstart assets for the first Agent-guided analysis. "
+            "Marker: bioinfoflow.demo.quickstart.v1"
+        ),
+        storage_mode="managed",
+        user_id="dev",
+        created_by_user_id="dev",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        is_default=False,
+    )
+    db_session.add(legacy)
+    await db_session.commit()
+
+    data = await _bootstrap(async_client)
+
+    assert data["created"] is False
+    await db_session.refresh(legacy)
+    assert legacy.directory_name is None
+    assert project_home(legacy).name == project_id
+    assert project_data_root(legacy).is_dir()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_step", ["project_files", "binding"])
+async def test_first_run_bootstrap_failure_rolls_back_reserved_project(
+    db_session, monkeypatch, failure_step
+):
+    service = DemoBootstrapService(db_session)
+
+    if failure_step == "project_files":
+        def fail_project_files(project):
+            del project
+            raise RuntimeError("project files failed")
+
+        monkeypatch.setattr(service, "_repair_project_files", fail_project_files)
+    else:
+        async def fail_binding(*, project_id, workflow):
+            del project_id, workflow
+            raise RuntimeError("binding failed")
+
+        monkeypatch.setattr(service, "_ensure_binding_and_pin", fail_binding)
+
+    with pytest.raises(RuntimeError, match="failed"):
+        await service.bootstrap(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+
+    project_id = str(
+        uuid5(
+            NAMESPACE_URL,
+            f"bioinfoflow:quickstart-project:{DEFAULT_WORKSPACE_ID}",
+        )
+    )
+    assert await db_session.get(Project, project_id) is None
+    assert not (projects_root() / "bioinfoflow-demo").exists()
+    assert not (projects_root() / project_id).exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_first_run_bootstrap_closes_project_reservation_fds(
+    db_session, monkeypatch, cancelled
+):
+    reservations = []
+    original_add_pending = ProjectDirectoryService.add_pending
+
+    async def capture_reservation(self, data):
+        reservation = await original_add_pending(self, data)
+        reservations.append(reservation)
+        return reservation
+
+    monkeypatch.setattr(ProjectDirectoryService, "add_pending", capture_reservation)
+    service = DemoBootstrapService(db_session)
+    if cancelled:
+        async def cancel_commit():
+            raise asyncio.CancelledError
+
+        monkeypatch.setattr(db_session, "commit", cancel_commit)
+
+    if cancelled:
+        with pytest.raises(asyncio.CancelledError):
+            await service.bootstrap(
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+            )
+    else:
+        await service.bootstrap(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+
+    assert len(reservations) == 1
+    assert reservations[0].root_fd is None
+    assert reservations[0].parent_fd is None
+    assert reservations[0].root.exists() is (not cancelled)
