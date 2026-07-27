@@ -66,7 +66,7 @@ class ReadFileTool:
 
 class WriteFileTool:
     spec = AgentToolSpec(
-        name="files.write",
+        name="write",
         description="Write a text file within an allowed workspace path.",
         input_schema={
             "type": "object",
@@ -107,7 +107,7 @@ class WriteFileTool:
 
 class EditFileTool:
     spec = AgentToolSpec(
-        name="files.edit",
+        name="edit",
         description="Replace exact text in a file within an allowed workspace path.",
         input_schema={
             "type": "object",

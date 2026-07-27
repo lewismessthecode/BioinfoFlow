@@ -155,17 +155,16 @@ Permission modes control approval behavior:
 
 - `ask_each_action`: ask before every non-read side effect
 - `guarded_auto`: allow reads and low-risk actions, ask for elevated risk
-- `bypass` (shown as **Full access**): auto-approve every action that is not
-  hard blocked, without a risk prompt
+- `bypass` (shown as **Full access**): auto-approve ordinary, external,
+  elevated, and scoped destructive actions without a risk prompt
 
 Automation policy, hard blocks, interaction requirements, and the execution
 boundary remain independent. Full access does not grant new OS or SSH
-privileges. High-confidence catastrophic command matches remain hard denied,
-while protected-resource, statically uncertain, indirect-shell, and sandbox
-opt-out actions are auto-approved and retained in the audit record. This
-classifier is defense in depth rather than confinement: the true boundary is the
-active local OS sandbox or the remote account and server policy. Mandatory user
-and plan interactions remain independent.
+privileges. High-confidence catastrophic commands still require explicit
+approval, while protected-resource, authorization, and target violations remain
+denied. This classifier is defense in depth rather than confinement: the true
+boundary is the active local OS sandbox or the remote account and server policy.
+Mandatory user and plan interactions remain independent.
 
 `PermissionContextResolver` forces a fresh session read immediately before tool
 exposure and risk evaluation. It resolves a coherent snapshot of policy version,

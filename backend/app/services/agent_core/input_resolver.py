@@ -119,7 +119,9 @@ class AgentInputResolver:
             root = self.attachment_service.validated_root(attachment)
             original = safe_join(
                 root,
-                str((attachment.attachment_metadata or {}).get("preview_relpath") or ""),
+                str(
+                    (attachment.attachment_metadata or {}).get("preview_relpath") or ""
+                ),
                 escape_message="Attachment file escapes its root",
             )
             return [
@@ -129,6 +131,7 @@ class AgentInputResolver:
                         label=part.label or attachment.filename,
                         mime_type=attachment.mime_type,
                         include_content=part.include_content,
+                        read_only_path=original,
                     )
                 )
             ]
@@ -162,13 +165,25 @@ class AgentInputResolver:
             )
             if attachment.kind != "folder":
                 raise BadRequestError("directory_ref requires a folder attachment")
-            manifest = list((attachment.attachment_metadata or {}).get("manifest") or [])
+            manifest = list(
+                (attachment.attachment_metadata or {}).get("manifest") or []
+            )
             reference = {
                 "type": "directory_ref",
                 "attachment_id": str(attachment.id),
                 "label": part.label or attachment.filename,
             }
-            return [reference, text_part(_directory_context(manifest, attachment.filename))]
+            files_root = self.attachment_service.validated_root(attachment) / "files"
+            return [
+                reference,
+                text_part(
+                    _directory_context(
+                        manifest,
+                        attachment.filename,
+                        read_only_path=files_root,
+                    )
+                ),
+            ]
 
         project = await self._require_project(session, str(part.project_id))
         target = _project_target(project, part.path or "", allow_directory=True)
@@ -239,7 +254,11 @@ class AgentInputResolver:
                 await self._require_project(session, str(part.project_id))
             if self.legacy_workflow_resolver is not None:
                 return text_part(self.legacy_workflow_resolver(raw))
-            scope = "All registered workflows" if part.scope == "global" else "Project workflows"
+            scope = (
+                "All registered workflows"
+                if part.scope == "global"
+                else "Project workflows"
+            )
             return text_part(f"Workflow context: {scope}")
 
         workflow = await self.db.get(Workflow, str(part.workflow_id))
@@ -335,13 +354,15 @@ def _file_context_text(
     label: str,
     mime_type: str | None,
     include_content: bool,
+    read_only_path: Path | None = None,
 ) -> str:
     if not path.is_file() or path.is_symlink():
         raise NotFoundError("Referenced file is not available")
+    path_context = _read_only_path_context(read_only_path)
     if not include_content:
-        return f"Attached file reference: {label}\nContent: not included."
+        return f"Attached file reference: {label}{path_context}\nContent: not included."
     if mime_type == "application/pdf" or path.read_bytes()[:5] == b"%PDF-":
-        return f"Attached PDF: {label}\n\n{_pdf_text(path)}"
+        return f"Attached PDF: {label}{path_context}\n\n{_pdf_text(path)}"
     limit = settings.agent_attachment_text_max_bytes
     size = path.stat().st_size
     with path.open("rb") as source:
@@ -352,7 +373,7 @@ def _file_context_text(
     except UnicodeDecodeError as exc:
         raise BadRequestError("Attached file is not valid UTF-8 text") from exc
     suffix = "\n[File truncated]" if truncated else ""
-    return f"Attached file: {label}\n\n{content}{suffix}"
+    return f"Attached file: {label}{path_context}\n\n{content}{suffix}"
 
 
 def _pdf_text(path: Path) -> str:
@@ -381,7 +402,9 @@ def _pdf_text(path: Path) -> str:
     return combined
 
 
-def _project_target(project: Project, relative_path: str, *, allow_directory: bool) -> Path:
+def _project_target(
+    project: Project, relative_path: str, *, allow_directory: bool
+) -> Path:
     if project.storage_mode == "remote":
         raise BadRequestError("Remote project references require remote browsing")
     target = safe_join(
@@ -408,14 +431,29 @@ def _local_directory_manifest(root: Path) -> list[str]:
     return manifest
 
 
-def _directory_context(manifest: list[str], label: str) -> str:
+def _directory_context(
+    manifest: list[str], label: str, *, read_only_path: Path | None = None
+) -> str:
     bounded = manifest[:_DIRECTORY_MANIFEST_LIMIT]
-    lines = [f"Attached directory: {label}", "Bounded manifest:"]
+    lines = [f"Attached directory: {label}"]
+    if read_only_path is not None:
+        lines.extend(_read_only_path_context(read_only_path).strip().splitlines())
+    lines.append("Bounded manifest:")
     lines.extend(f"- {path}" for path in bounded)
     if len(manifest) > len(bounded):
         lines.append(f"- ... {len(manifest) - len(bounded)} more files")
     lines.append(
-        "Use attachments.search and attachments.read for bounded on-demand access; "
-        "do not assume recursive file contents are already in context."
+        "After entering execution mode, use bash for bounded on-demand access "
+        "to the materialized directory; do not assume recursive file contents "
+        "are already in context."
     )
     return "\n".join(lines)
+
+
+def _read_only_path_context(path: Path | None) -> str:
+    if path is None:
+        return ""
+    return (
+        f"\nRead-only local path: {path.resolve()}"
+        "\nThis attachment is not copied to remote hosts."
+    )

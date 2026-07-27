@@ -33,7 +33,7 @@ class PermissionPolicy:
         permission_mode: PermissionMode,
         automation_mode: AutomationMode,
     ) -> PermissionDecision:
-        if risk.level == "critical" or getattr(risk, "hard_blocked", False):
+        if getattr(risk, "hard_blocked", False):
             return PermissionDecision(
                 decision="deny",
                 reasons=[*risk.reasons, "hard-blocked actions cannot be approved"],
@@ -44,6 +44,13 @@ class PermissionPolicy:
             return PermissionDecision(
                 decision="deny",
                 reasons=["advise_only mode blocks side effects"],
+                risk_level=risk.level,
+            )
+
+        if risk.level == "critical":
+            return PermissionDecision(
+                decision="ask",
+                reasons=[*risk.reasons, "critical actions require explicit approval"],
                 risk_level=risk.level,
             )
 

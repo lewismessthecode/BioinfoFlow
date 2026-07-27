@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -99,7 +100,11 @@ class TestDoctorHuman:
                     "status": "skip",
                     "detail": "requires backend",
                 },
-                "nextflow": {"ok": True, "status": "pass", "detail": "/usr/bin/nextflow"},
+                "nextflow": {
+                    "ok": True,
+                    "status": "pass",
+                    "detail": "/usr/bin/nextflow",
+                },
             }
             result = runner.invoke(app, ["doctor"])
         assert result.exit_code == 0
@@ -113,9 +118,7 @@ class TestDoctorHuman:
                 "backend": {"ok": True, "detail": "healthy"},
                 "scheduler": {"ok": True, "detail": "persistent"},
             }
-            result = runner.invoke(
-                app, ["--output", "json", "doctor"]
-            )
+            result = runner.invoke(app, ["--output", "json", "doctor"])
         assert result.exit_code == 0
         parsed = json.loads(result.stdout)
         assert parsed["success"] is True
@@ -130,9 +133,7 @@ class TestRunChecks:
         from app.cli.commands.doctor import _run_checks
 
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[_readiness_resp()]
-        )
+        mock_client.get = AsyncMock(side_effect=[_readiness_resp()])
         mock_client.close = AsyncMock()
 
         from app.cli.context import CliContext
@@ -145,12 +146,102 @@ class TestRunChecks:
             verbose=False,
             console=Console(),
         )
-        with patch("shutil.which", return_value="/usr/bin/nextflow"):
+        completed = subprocess.CompletedProcess(
+            args=["/usr/bin/nextflow", "--version"],
+            returncode=0,
+            stdout="agent-browser 0.33.0\n",
+            stderr="",
+        )
+        with (
+            patch("shutil.which", return_value="/usr/bin/nextflow"),
+            patch("subprocess.run", return_value=completed),
+        ):
             results = await _run_checks(ctx)
         assert results["backend"]["ok"] is True
         assert results["provider_key"]["ok"] is False
-        assert results["provider_key"]["hint"].startswith("Configure a supported AI provider")
+        assert results["provider_key"]["hint"].startswith(
+            "Configure a supported AI provider"
+        )
         assert results["nextflow"]["ok"] is True
+        assert results["agent-browser"]["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_agent_browser_missing_has_install_hint(self) -> None:
+        from app.cli.commands.doctor import _run_checks
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[_readiness_resp()])
+        mock_client.close = AsyncMock()
+
+        from app.cli.context import CliContext
+        from rich.console import Console
+
+        ctx = CliContext(
+            client=mock_client,
+            output_mode="human",
+            project_id=None,
+            verbose=False,
+            console=Console(),
+        )
+
+        def which(binary: str) -> str | None:
+            if binary == "agent-browser":
+                return None
+            return f"/usr/bin/{binary}"
+
+        with patch("shutil.which", side_effect=which):
+            results = await _run_checks(ctx)
+
+        assert results["agent-browser"]["status"] == "fail"
+        assert "0.33.0" in results["agent-browser"]["hint"]
+
+    @pytest.mark.parametrize(
+        ("version_output", "expected_status"),
+        [
+            ("agent-browser 0.33.0\n", "pass"),
+            ("agent-browser 0.27.0\n", "fail"),
+        ],
+    )
+    def test_agent_browser_check_requires_pinned_compatible_version(
+        self, version_output: str, expected_status: str
+    ) -> None:
+        from app.cli.commands.doctor import _add_local_binary_checks
+
+        completed = subprocess.CompletedProcess(
+            args=["/usr/bin/agent-browser", "--version"],
+            returncode=0,
+            stdout=version_output,
+            stderr="",
+        )
+        with (
+            patch("shutil.which", return_value="/usr/bin/agent-browser"),
+            patch("subprocess.run", return_value=completed) as run,
+        ):
+            results: dict = {}
+            _add_local_binary_checks(results)
+
+        assert results["agent-browser"]["status"] == expected_status
+        run.assert_called_once_with(
+            ["/usr/bin/agent-browser", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+
+    def test_agent_browser_check_fails_when_version_probe_errors(self) -> None:
+        from app.cli.commands.doctor import _add_local_binary_checks
+
+        with (
+            patch("shutil.which", return_value="/usr/bin/agent-browser"),
+            patch("subprocess.run", side_effect=OSError("cannot execute")),
+        ):
+            results: dict = {}
+            _add_local_binary_checks(results)
+
+        assert results["agent-browser"]["status"] == "fail"
+        assert "cannot execute" in results["agent-browser"]["detail"]
+        assert "0.33.0" in results["agent-browser"]["hint"]
 
     @pytest.mark.asyncio
     async def test_falls_back_when_readiness_endpoint_is_missing(self) -> None:

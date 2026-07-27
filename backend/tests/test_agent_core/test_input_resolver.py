@@ -145,9 +145,7 @@ async def test_pdf_text_keeps_page_markers(db_session, monkeypatch) -> None:
     parts = await AgentInputResolver(db_session).resolve(
         agent_session=session,
         input_text="Summarize.",
-        input_parts=[
-            {"type": "file_ref", "attachment_id": str(attachment.id)}
-        ],
+        input_parts=[{"type": "file_ref", "attachment_id": str(attachment.id)}],
     )
 
     context = "\n".join(part.get("text", "") for part in parts)
@@ -156,7 +154,9 @@ async def test_pdf_text_keeps_page_markers(db_session, monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_directory_ref_emits_bounded_manifest_and_read_guidance(db_session) -> None:
+async def test_directory_ref_emits_bounded_manifest_and_read_guidance(
+    db_session,
+) -> None:
     session = await _seed_session(db_session)
     manifest = [f"project/file-{index}.txt" for index in range(150)]
     attachment = await _seed_attachment(
@@ -171,20 +171,56 @@ async def test_directory_ref_emits_bounded_manifest_and_read_guidance(db_session
     parts = await AgentInputResolver(db_session).resolve(
         agent_session=session,
         input_text="Inspect.",
-        input_parts=[
-            {"type": "directory_ref", "attachment_id": str(attachment.id)}
-        ],
+        input_parts=[{"type": "directory_ref", "attachment_id": str(attachment.id)}],
     )
 
     reference = next(part for part in parts if part["type"] == "directory_ref")
     context = next(
-        part["text"] for part in parts if "attachments.search" in part.get("text", "")
+        part["text"]
+        for part in parts
+        if "After entering execution mode, use bash" in part.get("text", "")
     )
     assert reference["attachment_id"] == str(attachment.id)
+    attachment_files = (
+        agent_attachment_root(str(session.id), str(attachment.id)) / "files"
+    )
+    assert f"Read-only local path: {attachment_files.resolve()}" in context
     assert "file-0.txt" in context
     assert "file-149.txt" not in context
-    assert "attachments.search" in context
-    assert "attachments.read" in context
+    assert "After entering execution mode, use bash" in context
+    assert "attachments.search" not in context
+    assert "attachments.read" not in context
+
+
+@pytest.mark.asyncio
+async def test_uploaded_file_context_advertises_absolute_read_only_path(
+    db_session,
+) -> None:
+    session = await _seed_session(db_session)
+    attachment = await _seed_attachment(
+        db_session,
+        session,
+        kind="file",
+        mime_type="text/plain",
+        filename="notes.txt",
+        content=b"hello",
+    )
+
+    parts = await AgentInputResolver(db_session).resolve(
+        agent_session=session,
+        input_text="Inspect it.",
+        input_parts=[
+            {
+                "type": "file_ref",
+                "attachment_id": str(attachment.id),
+                "include_content": False,
+            }
+        ],
+    )
+
+    context = "\n".join(part.get("text", "") for part in parts)
+    expected = agent_attachment_root(str(session.id), str(attachment.id)) / "original"
+    assert f"Read-only local path: {expected.resolve()}" in context
 
 
 @pytest.mark.asyncio
@@ -231,7 +267,9 @@ async def test_run_ref_uses_server_trusted_run_snapshot(db_session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_project_file_ref_revalidates_workspace_and_relative_path(db_session) -> None:
+async def test_project_file_ref_revalidates_workspace_and_relative_path(
+    db_session,
+) -> None:
     db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
     project = Project(
         name="Local project",
@@ -258,9 +296,7 @@ async def test_project_file_ref_revalidates_workspace_and_relative_path(db_sessi
             }
         ],
     )
-    assert "trusted project text" in "\n".join(
-        part.get("text", "") for part in parts
-    )
+    assert "trusted project text" in "\n".join(part.get("text", "") for part in parts)
 
     with pytest.raises((BadRequestError, NotFoundError, PermissionError)):
         await resolver.resolve(

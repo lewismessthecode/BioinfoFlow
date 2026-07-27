@@ -321,9 +321,7 @@ async def test_cross_session_cancel_wins_over_running_tool_completion(
 
 
 @pytest.mark.asyncio
-async def test_lease_loss_leaves_running_action_for_recovery(
-    db_session, monkeypatch
-):
+async def test_lease_loss_leaves_running_action_for_recovery(db_session, monkeypatch):
     session, turn = await _seed_session_turn(db_session)
     owner_token = "execution-owner"
     await AgentTurnRepository(db_session).update_all(
@@ -523,7 +521,7 @@ async def test_owner_fenced_action_transition_locks_turn_before_action_update(
         index
         for index, statement in enumerate(statements)
         if statement.startswith("update agent_turns")
-            and "owner_token" in statement
+        and "owner_token" in statement
         and "status" in statement
     )
     action_update_index = next(
@@ -642,8 +640,9 @@ async def test_stale_owner_cannot_fail_or_cancel_open_actions(db_session):
 
 
 @pytest.mark.asyncio
-async def test_requested_action_rechecks_fresh_catastrophic_hard_block(
-    db_session, monkeypatch
+@pytest.mark.parametrize("historical_snapshot", [None, {}, {"command_risk": "bad"}])
+async def test_requested_action_reasks_for_fresh_critical_risk_without_valid_snapshot(
+    db_session, monkeypatch, historical_snapshot
 ):
     session, turn = await _seed_session_turn(db_session)
     action = await AgentActionRepository(db_session).create(
@@ -655,18 +654,25 @@ async def test_requested_action_rechecks_fresh_catastrophic_hard_block(
         normalized_input={"command": "rm -rf /"},
         risk_level="act_high",
         permission_decision={"decision": "approve"},
+        permission_context_snapshot=historical_snapshot,
         status=AgentActionStatus.REQUESTED,
         requires_resume=True,
     )
     side_effects = 0
 
-    async def forbidden_run(self, input, context):
+    async def record_run(self, input, context):
         del self, input, context
         nonlocal side_effects
         side_effects += 1
-        return {}
+        return {
+            "exit_code": 0,
+            "stdout": "approved",
+            "stderr": "",
+            "cwd": "/tmp",
+            "command": "rm -rf /",
+        }
 
-    monkeypatch.setattr(ExecuteShellTool, "run", forbidden_run)
+    monkeypatch.setattr(ExecuteShellTool, "run", record_run)
     result = await AgentToolDispatcher(
         db_session, build_default_tool_registry()
     ).resume_action(
@@ -680,9 +686,9 @@ async def test_requested_action_rechecks_fresh_catastrophic_hard_block(
         ),
     )
 
-    assert result.status == AgentActionStatus.FAILED
-    assert result.error["type"] == "PermissionDeniedError"
-    assert "hard-blocked" in result.error["message"]
+    assert result.status == AgentActionStatus.WAITING_DECISION
+    assert result.permission_decision["decision"] == "ask"
+    assert result.permission_decision["risk_level"] == "critical"
     assert side_effects == 0
 
 

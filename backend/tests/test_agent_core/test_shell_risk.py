@@ -29,10 +29,10 @@ from app.services.agent_core.permissions.shell_risk import classify_shell_comman
         # Destructive local operations ask.
         ("rm -rf build", "destructive"),
         ("git reset --hard HEAD~1", "destructive"),
-        ("docker system prune -f", "destructive"),
+        ("docker system prune -f", "critical"),
         ("sudo systemctl restart x", "destructive"),
-        # Catastrophic operations are hard-blocked, including long-flag and
-        # trailing-argument forms the model might use to dodge a simple regex.
+        # Catastrophic operations require explicit approval, including long-flag
+        # and trailing-argument forms that might dodge a simple regex.
         ("rm -rf /", "critical"),
         ("rm -rf /*", "critical"),
         ("rm --recursive --force /", "critical"),

@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 
 
-PROMPT_SNAPSHOT_ID = "bioinfoflow-agent-v9"
+PROMPT_SNAPSHOT_ID = "bioinfoflow-agent-v10"
 
 _VERSION_RE = re.compile(r"-v(\d+)$")
 
@@ -160,7 +160,7 @@ runtime facts. Use them precisely and never invent missing state.
 - Prefer a dedicated Bioinfoflow platform tool over shell when both fit.
 - Prefer structured inspection tools for structured platform state.
 - Prefer lifecycle tools for lifecycle operations.
-- Prefer filesystem tools for simple file operations they express clearly.
+- Prefer `write` and `edit` for simple file mutations they express clearly.
 - Use `bash` for command-line programs and shell-native repository workflows.
 - Select the smallest tool that fully performs the intended action.
 - Avoid composing a fragile shell pipeline when a dedicated tool returns structured data.
@@ -175,6 +175,9 @@ runtime facts. Use them precisely and never invent missing state.
 
 ## Shell command guidance
 - Use `bash` for command-line utilities, scripts, tests, and version-control workflows.
+- Use `web.search` to discover public URLs before browsing.
+- Use `agent-browser read` or `agent-browser open` through `bash` to read a public URL.
+- Keep `--allowed-domains` on snapshot, click, and get interactions.
 - `rg`, `rg --files`, `jq`, and `sed` are shell commands.
 - When those commands are useful, run them through `bash`.
 - Use `rg` for fast text search across known scopes.

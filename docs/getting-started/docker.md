@@ -385,9 +385,11 @@ shared platform capability. Project-level registry override is reserved in the
 data model for future policy; the current UI exposes a global default and
 per-workflow selection.
 
-AgentCore follows the same rule: `images.pull` can pull full image names
-directly, automatic/default behavior remains available for unqualified names, and
-explicit `registry_id` use is limited to owners/admins in team mode.
+Agent sessions use the Docker CLI through the `bash` tool rather than exposing a
+separate `images.pull` model tool. The product Images API and UI still follow the
+same registry-selection rules: full image names can be pulled directly,
+automatic/default behavior remains available for unqualified names, and explicit
+`registry_id` use is limited to owners/admins in team mode.
 
 For WDL, static task `docker`/`container` references are captured during workflow
 registration and missing images are prefetched automatically before MiniWDL

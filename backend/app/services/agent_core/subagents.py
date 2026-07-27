@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.agent_core_repo import AgentSessionRepository, AgentTurnRepository
 from app.services.agent_core.tools.registry import AgentToolRegistry
-from app.utils.exceptions import PermissionDeniedError
+from app.services.agent_core.tools.toolsets import ToolsetExposure
+from app.utils.exceptions import NotFoundError, PermissionDeniedError
 
 
 class ReadOnlySubagentRunner:
@@ -21,13 +22,28 @@ class ReadOnlySubagentRunner:
         context: dict | None = None,
         allowed_tools: list[str] | None = None,
     ) -> dict:
-        tool_names = allowed_tools or self._default_read_only_tools()
-        for tool_name in tool_names:
-            tool = self.registry.get(tool_name)
+        requested_tool_names = (
+            self._default_read_only_tools() if allowed_tools is None else allowed_tools
+        )
+        for tool_name in requested_tool_names:
+            try:
+                tool = self.registry.get(tool_name)
+            except NotFoundError:
+                continue
             if tool.spec.write_scope or tool.spec.risk_level != "read":
                 raise PermissionDeniedError(
                     f"Read-only subagent cannot use write-capable tool: {tool_name}"
                 )
+        tool_names = (
+            sorted(
+                ToolsetExposure(self.registry).exposed_names(
+                    policy={"name": "default", "allowed_tools": requested_tool_names},
+                    role="worker",
+                )
+            )
+            if requested_tool_names
+            else []
+        )
 
         if self.db is None or not _has_runtime_context(context):
             return {
@@ -112,11 +128,12 @@ class ReadOnlySubagentRunner:
         }
 
     def _default_read_only_tools(self) -> list[str]:
-        return [
-            spec.name
-            for spec in self.registry.list_specs()
-            if not spec.write_scope and spec.risk_level == "read"
-        ]
+        return sorted(
+            ToolsetExposure(self.registry).exposed_names(
+                policy={"name": "default"},
+                role="worker",
+            )
+        )
 
 
 def _has_runtime_context(context: dict | None) -> bool:

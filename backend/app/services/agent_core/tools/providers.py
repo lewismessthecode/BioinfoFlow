@@ -72,7 +72,7 @@ from app.services.agent_core.tools.skills import (
 from app.services.agent_core.tools.specs import AgentTool
 from app.services.agent_core.tools.subagents import SubagentAnalyzeTool, TaskTool
 from app.services.agent_core.tools.tasks import TodoWriteTool
-from app.services.agent_core.tools.web import FetchWebPageTool, SearchWebTool
+from app.services.agent_core.tools.web import SearchWebTool
 
 
 class AgentToolProvider(Protocol):
@@ -153,7 +153,7 @@ def default_tool_providers() -> tuple[AgentToolProvider, ...]:
                 RemoteListDirTool(),
             )
         ),
-        StaticAgentToolProvider((SearchWebTool(), FetchWebPageTool())),
+        StaticAgentToolProvider((SearchWebTool(),)),
         StaticAgentToolProvider(
             (
                 ListMemoriesTool(),

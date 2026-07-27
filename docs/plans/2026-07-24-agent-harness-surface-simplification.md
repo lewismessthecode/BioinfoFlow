@@ -17,6 +17,7 @@
 - Context should disclose capabilities. Remote tools appear for a selected remote target; product mutation tools require an explicit capability or allowlist.
 - Durable events optimize for correctness, recovery, and audit. Public events optimize for a stable frontend contract. They should not be the same type system.
 - Compatibility is preserved at deliberate seams: all tools remain registered, explicit `allowed_tools` remains authoritative, legacy user-visible event views remain available, and the frontend normalizes the new public projection before existing reducers see it.
+- Browser URL handling is best-effort preflight plus runtime domain containment, not a complete SSRF security boundary. The third-party browser CLI does not pin resolved IPs, so trusted public domains remain a usage requirement and DNS rebinding is a documented residual risk.
 
 ## Target surfaces
 
