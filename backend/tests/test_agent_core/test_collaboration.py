@@ -19,6 +19,7 @@ from app.services.agent_core.collaboration.context_fork import (
 from app.services.agent_core.collaboration.model_preflight import AgentModelPreflight
 from app.services.llm.credentials import encrypt_secret
 from app.services.llm.probe import LlmProviderProbeResult
+from app.config import settings
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -380,6 +381,52 @@ def test_all_context_fork_keeps_accepted_summary_but_filters_runtime_noise() -> 
     assert forked[-1]["message_metadata"] is None
 
 
+@pytest.mark.parametrize(
+    "tool_bearing_message",
+    [
+        {
+            "role": "assistant",
+            "content": "text beside a provider tool call",
+            "tool_calls": [{"id": "call-1", "name": "read", "arguments": {}}],
+        },
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "text beside tool use"},
+                {"type": "tool_use", "id": "call-2", "name": "read"},
+            ],
+        },
+        {
+            "role": "assistant",
+            "content_parts": [
+                {"type": "text", "text": "text beside function call"},
+                {"type": "function_call", "name": "read", "arguments": {}},
+            ],
+        },
+        {
+            "role": "assistant",
+            "content_parts": [
+                {"type": "text", "text": "text beside nested tool call"},
+                {"type": "output", "tool_call": {"name": "read"}},
+            ],
+        },
+    ],
+)
+def test_all_context_fork_rejects_tool_bearing_assistant_items_without_metadata(
+    tool_bearing_message,
+) -> None:
+    forked = fork_agent_context(
+        [
+            _message("user", "inspect"),
+            tool_bearing_message,
+            _message("assistant", "terminal answer", phase="final_answer"),
+        ],
+        fork_turns="all",
+    )
+
+    assert _fork_texts(forked) == ["inspect", "terminal answer"]
+
+
 def test_none_context_fork_returns_no_parent_conversation() -> None:
     assert fork_agent_context([_message("user", "hello")], fork_turns="none") == []
 
@@ -400,15 +447,19 @@ async def _create_probe_model(
     supports_tools: bool = True,
     supports_reasoning: bool = True,
     test_status: dict | None = None,
+    scope: str = "user",
+    workspace_id: str | None = DEFAULT_WORKSPACE_ID,
+    user_id: str | None = "dev",
+    credential_source: str = "stored",
 ) -> LlmModel:
     provider = LlmProvider(
         name=f"Provider for {model_name}",
         kind="openai_compatible",
         wire_protocol="chat_completions",
         base_url="https://probe.example/v1",
-        scope="user",
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
+        scope=scope,
+        workspace_id=workspace_id,
+        user_id=user_id,
         enabled=enabled,
         test_status=test_status,
     )
@@ -417,8 +468,13 @@ async def _create_probe_model(
     db_session.add(
         LlmProviderCredential(
             provider_id=str(provider.id),
-            source="stored",
-            encrypted_secret=encrypt_secret("super-secret-child-key"),
+            source=credential_source,
+            env_var_name="CHILD_MODEL_API_KEY"
+            if credential_source == "env"
+            else None,
+            encrypted_secret=encrypt_secret("super-secret-child-key")
+            if credential_source == "stored"
+            else None,
             masked_hint="su...ey",
             updated_by="dev",
         )
@@ -601,4 +657,194 @@ async def test_supported_model_rejects_invalid_or_unsupported_explicit_effort(
             workspace_id=DEFAULT_WORKSPACE_ID,
             user_id="dev",
             role="owner",
+        )
+
+
+@pytest.mark.asyncio
+async def test_exact_model_preflight_fails_closed_for_invisible_or_inactive_models(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    other_workspace_id = "00000000-0000-0000-0000-000000000099"
+    db_session.add(Workspace(id=other_workspace_id, name="Other", slug="other"))
+    await db_session.commit()
+    models = [
+        await _create_probe_model(
+            db_session,
+            model_name="cross-user",
+            user_id="other-user",
+        ),
+        await _create_probe_model(
+            db_session,
+            model_name="cross-workspace",
+            workspace_id=other_workspace_id,
+        ),
+        await _create_probe_model(
+            db_session,
+            model_name="malformed-user-scope",
+            user_id=None,
+        ),
+        await _create_probe_model(
+            db_session,
+            model_name="malformed-workspace-scope",
+            scope="workspace",
+            user_id="dev",
+        ),
+        await _create_probe_model(
+            db_session,
+            model_name="malformed-global-scope",
+            scope="global",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id=None,
+        ),
+        await _create_probe_model(
+            db_session,
+            model_name="disabled-provider",
+            enabled=False,
+        ),
+        await _create_probe_model(
+            db_session,
+            model_name="stale-model",
+        ),
+        await _create_probe_model(
+            db_session,
+            model_name="no-tools",
+            supports_tools=False,
+        ),
+    ]
+    models[6].model_metadata = {"catalog_status": "stale"}
+    await db_session.commit()
+    calls: list[str] = []
+
+    async def forbidden_probe(_self, **kwargs):
+        calls.append(kwargs["model_id"])
+        raise AssertionError("invisible or inactive models must not be probed")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        forbidden_probe,
+    )
+
+    for model in models:
+        result = await AgentModelPreflight(db_session).resolve(
+            requested_model=str(model.id),
+            parent_model="parent-model",
+            parent_model_id="parent-id",
+            parent_reasoning_effort="high",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            role="member",
+        )
+        assert result.fallback is True
+        assert result.fallback_reason == "requested_model_unavailable"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_exact_model_preflight_rejects_unauthorized_environment_credential(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    model = await _create_probe_model(
+        db_session,
+        model_name="owner-only-env-model",
+        scope="workspace",
+        user_id=None,
+        credential_source="env",
+    )
+    monkeypatch.setattr(settings, "auth_mode", "team")
+
+    async def forbidden_probe(*args, **kwargs):
+        raise AssertionError("unauthorized env credentials must not be probed")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        forbidden_probe,
+    )
+
+    result = await AgentModelPreflight(db_session).resolve(
+        requested_model=str(model.id),
+        parent_model="parent-model",
+        parent_model_id="parent-id",
+        parent_reasoning_effort="high",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        role="member",
+    )
+
+    assert result.fallback is True
+    assert result.fallback_reason == "requested_model_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_parent_reasoning_override_checks_capability_without_live_probe(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    plain_parent = await _create_probe_model(
+        db_session,
+        model_name="plain-parent",
+        supports_reasoning=False,
+    )
+    reasoning_parent = await _create_probe_model(
+        db_session,
+        model_name="reasoning-parent",
+        supports_reasoning=True,
+    )
+
+    async def forbidden_probe(*args, **kwargs):
+        raise AssertionError("inherited parent models must not be live-probed")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        forbidden_probe,
+    )
+
+    with pytest.raises(ValueError, match="unsupported_reasoning_effort"):
+        await AgentModelPreflight(db_session).resolve(
+            requested_model=None,
+            parent_model="plain-parent",
+            parent_model_id=str(plain_parent.id),
+            parent_reasoning_effort=None,
+            requested_reasoning_effort="low",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+
+    selected = await AgentModelPreflight(db_session).resolve(
+        requested_model=None,
+        parent_model="reasoning-parent",
+        parent_model_id=str(reasoning_parent.id),
+        parent_reasoning_effort=None,
+        requested_reasoning_effort="low",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    assert selected.reasoning_effort == "low"
+
+    selected_from_snapshot = await AgentModelPreflight(db_session).resolve(
+        requested_model=None,
+        parent_model="snapshot-parent",
+        parent_model_id="not-in-catalog",
+        parent_reasoning_effort=None,
+        requested_reasoning_effort="medium",
+        parent_supports_reasoning=True,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    assert selected_from_snapshot.reasoning_effort == "medium"
+
+    with pytest.raises(ValueError, match="unsupported_reasoning_effort"):
+        await AgentModelPreflight(db_session).resolve(
+            requested_model=None,
+            parent_model="snapshot-parent",
+            parent_model_id="not-in-catalog",
+            parent_reasoning_effort=None,
+            requested_reasoning_effort="medium",
+            parent_supports_reasoning=False,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
         )

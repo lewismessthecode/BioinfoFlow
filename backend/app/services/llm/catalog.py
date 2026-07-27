@@ -705,6 +705,22 @@ class LlmCatalogService:
             supports_reasoning=bool(model.supports_reasoning),
         )
 
+    async def visible_model_supports_reasoning(
+        self,
+        model_id: str,
+        *,
+        workspace_id: str,
+        user_id: str,
+    ) -> bool | None:
+        model = await self.model_repo.get_visible(
+            model_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        if model is None:
+            return None
+        return bool(model.supports_reasoning)
+
     async def discover_models(
         self,
         provider_id: str,
