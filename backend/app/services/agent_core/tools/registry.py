@@ -6,12 +6,6 @@ from app.services.agent_core.tools.specs import AgentTool
 from app.utils.exceptions import BadRequestError, NotFoundError
 
 
-_HISTORICAL_TOOL_ALIASES = {
-    "files.edit": "edit",
-    "files.write": "write",
-}
-
-
 class AgentToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, AgentTool] = {}
@@ -33,7 +27,7 @@ class AgentToolRegistry:
             self._tools[tool.spec.name] = tool
 
     def get(self, name: str) -> AgentTool:
-        tool = self._tools.get(_HISTORICAL_TOOL_ALIASES.get(name, name))
+        tool = self._tools.get(name)
         if tool is None:
             raise NotFoundError(f"Agent tool not found: {name}")
         return tool

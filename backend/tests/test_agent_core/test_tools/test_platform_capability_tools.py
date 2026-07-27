@@ -8,7 +8,7 @@ import pytest
 
 from app.config import settings
 from app.models.project import Project
-from app.models.workspace import Workspace, WorkspaceMembership
+from app.models.workspace import Workspace
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.tools import (
     AgentToolContext,
@@ -58,25 +58,6 @@ async def _context(
             turn_id=str(turn.id),
         ),
     )
-
-
-@pytest.mark.asyncio
-async def test_patch_tool_asks_for_approval_in_default_session(db_session):
-    dispatcher, context = await _context(db_session, permission_mode="guarded_auto")
-
-    result = await dispatcher.dispatch(
-        tool_name="files.apply_patch",
-        input={
-            "operations": [
-                {"op": "create", "path": "agent-scratch.txt", "content": "hello"}
-            ]
-        },
-        context=context,
-        permission_mode="guarded_auto",
-    )
-
-    assert result.status == "waiting_decision"
-    assert result.permission_decision["decision"] == "ask"
 
 
 @pytest.mark.asyncio
@@ -183,7 +164,6 @@ async def test_platform_mutation_tools_wrap_services(db_session, monkeypatch):
     dispatcher, context = await _context(db_session)
     project_id = str(uuid4())
     workflow_id = str(uuid4())
-    image_id = str(uuid4())
 
     async def fake_create_project(self, data, *, user_id):
         return SimpleNamespace(
@@ -239,23 +219,6 @@ async def test_platform_mutation_tools_wrap_services(db_session, monkeypatch):
     async def fake_delete_workflow(self, workflow):
         return None
 
-    async def fake_get_image(self, image_id_arg):
-        return SimpleNamespace(
-            id=image_id_arg,
-            name="fastqc",
-            tag="latest",
-            full_name="fastqc:latest",
-            registry="docker.io",
-            status="local",
-            size_bytes=1,
-            entrypoint=[],
-            env={},
-            labels={},
-        )
-
-    async def fake_delete_image(self, image, *, force=False):
-        return True
-
     async def fake_run_mutation(self, run_id, **kwargs):
         return SimpleNamespace(
             id=uuid4(),
@@ -307,14 +270,6 @@ async def test_platform_mutation_tools_wrap_services(db_session, monkeypatch):
         fake_delete_workflow,
     )
     monkeypatch.setattr(
-        "app.services.agent_core.tools.platform.images.ImageService.get_image",
-        fake_get_image,
-    )
-    monkeypatch.setattr(
-        "app.services.agent_core.tools.platform.images.ImageService.delete_image",
-        fake_delete_image,
-    )
-    monkeypatch.setattr(
         "app.services.agent_core.tools.platform.runs.RunService.resume_run",
         fake_run_mutation,
     )
@@ -357,12 +312,6 @@ async def test_platform_mutation_tools_wrap_services(db_session, monkeypatch):
         context=context,
         permission_mode="bypass",
     )
-    deleted_image = await dispatcher.dispatch(
-        tool_name="images.delete",
-        input={"image_id": image_id},
-        context=context,
-        permission_mode="bypass",
-    )
     resumed = await dispatcher.dispatch(
         tool_name="runs.resume",
         input={"run_id": "run-old"},
@@ -387,97 +336,9 @@ async def test_platform_mutation_tools_wrap_services(db_session, monkeypatch):
     assert deleted_project.result == {"project_id": project_id, "deleted": True}
     assert updated_workflow.result["workflow"]["description"] == "renamed-wf"
     assert deleted_workflow.result == {"workflow_id": workflow_id, "deleted": True}
-    assert deleted_image.result == {"image_id": image_id, "deleted": True}
     assert resumed.result["run"]["run_id"] == "run-old-new"
     assert cleanup.result == {"cleanup": {"run_id": "run-old", "removed": True}}
     assert deleted_run.result == {"run_id": "run-old", "deleted": True}
-
-
-@pytest.mark.asyncio
-async def test_images_pull_tool_accepts_registry_id(db_session, monkeypatch):
-    dispatcher, context = await _context(db_session)
-    captured: dict[str, object] = {}
-
-    async def fake_pull_image(self, **kwargs):
-        captured.update(kwargs)
-        return SimpleNamespace(
-            id=uuid4(),
-            name=kwargs["name"],
-            tag=kwargs["tag"],
-            full_name=f"{kwargs['registry']}/{kwargs['name']}:{kwargs['tag']}",
-            registry=kwargs["registry"],
-            status="pulling",
-            size_bytes=None,
-            entrypoint=[],
-            env={},
-            labels={},
-        )
-
-    monkeypatch.setattr(
-        "app.services.agent_core.tools.platform.images.ImageService.pull_image",
-        fake_pull_image,
-    )
-
-    result = await dispatcher.dispatch(
-        tool_name="images.pull",
-        input={
-            "name": "bioinfoflow/bwa",
-            "tag": "v2.2.1",
-            "registry_id": "registry-1",
-        },
-        context=context,
-        permission_mode="bypass",
-    )
-
-    assert result.status == "completed"
-    assert result.result["image"]["name"] == "bioinfoflow/bwa"
-    assert captured["registry_id"] == "registry-1"
-
-
-@pytest.mark.asyncio
-async def test_images_pull_tool_rejects_registry_id_for_members(
-    db_session,
-    monkeypatch,
-):
-    monkeypatch.setattr(settings, "auth_mode", "team")
-    dispatcher, context = await _context(db_session)
-    db_session.add(
-        WorkspaceMembership(
-            workspace_id=DEFAULT_WORKSPACE_ID,
-            user_id=context.user_id,
-            role="member",
-        )
-    )
-    await db_session.commit()
-    called = False
-
-    async def fake_pull_image(self, **kwargs):
-        nonlocal called
-        called = True
-        return None
-
-    monkeypatch.setattr(
-        "app.services.agent_core.tools.platform.images.ImageService.pull_image",
-        fake_pull_image,
-    )
-
-    result = await dispatcher.dispatch(
-        tool_name="images.pull",
-        input={
-            "name": "bioinfoflow/bwa",
-            "tag": "v2.2.1",
-            "registry_id": "registry-1",
-        },
-        context=context,
-        permission_mode="bypass",
-    )
-
-    assert result.status == "failed"
-    assert result.error == {
-        "type": "PermissionDeniedError",
-        "message": "Only workspace admins can select a configured registry",
-    }
-    assert called is False
 
 
 @pytest.mark.asyncio

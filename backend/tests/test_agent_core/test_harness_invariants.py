@@ -52,6 +52,25 @@ from app.utils.exceptions import BadRequestError, PermissionDeniedError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
+RETIRED_AGENT_TOOL_NAMES = frozenset(
+    {
+        "attachments.read",
+        "attachments.search",
+        "files.apply_patch",
+        "files.edit",
+        "files.read",
+        "files.write",
+        "glob",
+        "grep",
+        "images.build",
+        "images.delete",
+        "images.get",
+        "images.list",
+        "images.pull",
+    }
+)
+
+
 def test_model_gateway_has_no_responses_specific_continuation_assembly() -> None:
     source = (
         Path(__file__).parents[2] / "app/services/model_runtime/gateway.py"
@@ -692,7 +711,7 @@ def test_platform_tool_exposure_keeps_read_tools_available_and_mutations_gated()
     assert mutating_tools <= execution_tools
 
 
-def test_normal_execution_exposes_small_capability_surface_but_keeps_compatibility_registered():
+def test_normal_execution_exposes_small_capability_surface_without_retired_tools():
     registry = build_default_tool_registry()
     exposed = ToolsetExposure(registry).exposed_names(
         policy={"name": "execution"},
@@ -718,12 +737,8 @@ def test_normal_execution_exposes_small_capability_surface_but_keeps_compatibili
         "write",
     }
     assert len(exposed) == 16
-    assert {
-        "files.read",
-        "memory.list",
-        "runs.get",
-        "workflows.get",
-    } <= registry.names()
+    assert RETIRED_AGENT_TOOL_NAMES.isdisjoint(registry.names())
+    assert {"memory.list", "runs.get", "workflows.get"} <= registry.names()
 
 
 def test_default_tool_providers_are_deterministic_and_registry_rejects_duplicates():

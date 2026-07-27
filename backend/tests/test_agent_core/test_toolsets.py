@@ -1,7 +1,29 @@
+import pytest
+
 from app.services.agent_core.tools import build_default_tool_registry
 from app.services.agent_core.tools.toolsets import (
     EXECUTION_TOOLSET_POLICY,
     ToolsetExposure,
+)
+from app.utils.exceptions import NotFoundError
+
+
+RETIRED_AGENT_TOOL_NAMES = frozenset(
+    {
+        "attachments.read",
+        "attachments.search",
+        "files.apply_patch",
+        "files.edit",
+        "files.read",
+        "files.write",
+        "glob",
+        "grep",
+        "images.build",
+        "images.delete",
+        "images.get",
+        "images.list",
+        "images.pull",
+    }
 )
 
 
@@ -94,15 +116,14 @@ def test_execution_uses_only_unnamespaced_general_purpose_tools() -> None:
     assert {"files.write", "files.edit"}.isdisjoint(registry.names())
 
 
-def test_registry_resolves_historical_file_action_names_without_exposing_them() -> None:
+def test_registry_rejects_retired_file_action_aliases() -> None:
     registry = build_default_tool_registry()
 
-    assert registry.get("files.write") is registry.get("write")
-    assert registry.get("files.edit") is registry.get("edit")
-    assert {"files.write", "files.edit"}.isdisjoint(registry.names())
-    assert {"files.write", "files.edit"}.isdisjoint(
-        spec.name for spec in registry.list_specs()
-    )
+    with pytest.raises(NotFoundError, match="Agent tool not found: files.write"):
+        registry.get("files.write")
+    with pytest.raises(NotFoundError, match="Agent tool not found: files.edit"):
+        registry.get("files.edit")
+    assert RETIRED_AGENT_TOOL_NAMES.isdisjoint(registry.names())
 
 
 def test_capability_bundles_progressively_disclose_registered_tools() -> None:
@@ -143,20 +164,7 @@ def test_explicit_allowed_tools_remains_an_authoritative_compatibility_path() ->
 
 def test_retired_model_tools_cannot_be_revived_by_any_exposure_path() -> None:
     exposure = ToolsetExposure(build_default_tool_registry())
-    retired = {
-        "attachments.read",
-        "attachments.search",
-        "files.apply_patch",
-        "files.read",
-        "glob",
-        "grep",
-        "images.build",
-        "images.delete",
-        "images.get",
-        "images.list",
-        "images.pull",
-        "web.fetch",
-    }
+    retired = RETIRED_AGENT_TOOL_NAMES | {"web.fetch"}
     policies = (
         {"name": "default", "allowed_tools": sorted(retired)},
         {"name": "plan", "capabilities": ["bioinfo.read", "bioinfo.manage"]},
@@ -223,17 +231,7 @@ def test_plan_capabilities_never_disclose_mutating_or_remote_execution_tools() -
     }.isdisjoint(exposed)
 
 
-def test_attachment_tools_remain_registered_but_are_never_model_visible() -> None:
+def test_retired_agent_tools_are_not_registered() -> None:
     registry = build_default_tool_registry()
-    search = registry.get("attachments.search").spec
-    read = registry.get("attachments.read").spec
 
-    assert search.risk_level == "read"
-    assert read.risk_level == "read"
-    assert search.parallel_safe is True
-    assert read.parallel_safe is True
-    exposed = ToolsetExposure(registry).exposed_names(
-        policy={"name": "execution"},
-        execution_target={"type": "remote_ssh", "connection_id": "conn-1"},
-    )
-    assert {"attachments.search", "attachments.read"}.isdisjoint(exposed)
+    assert RETIRED_AGENT_TOOL_NAMES.isdisjoint(registry.names())
