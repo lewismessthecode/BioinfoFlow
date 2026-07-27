@@ -61,3 +61,23 @@ class AgentListItem:
     error_message: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+
+
+@dataclass(frozen=True)
+class AgentMessageResult:
+    target: str
+    delivery: Literal["queued", "steer", "followup"]
+    status: AgentExternalStatus
+    turn_id: str | None = None
+
+
+@dataclass(frozen=True)
+class AgentWaitResult:
+    timed_out: bool
+    updated_agents: list[str]
+
+
+@dataclass(frozen=True)
+class AgentInterruptResult:
+    target: str
+    status: AgentExternalStatus

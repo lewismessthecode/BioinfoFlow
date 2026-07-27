@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +10,7 @@ from app.repositories.agent_core_repo import (
     AgentMessageRepository,
     ensure_clean_owned_publication_session,
 )
+from app.models.agent_core import AgentMessageStatus
 from app.services.agent_temporal_context import (
     latest_temporal_context,
     message_metadata_with_temporal_context,
@@ -146,6 +148,47 @@ class AgentTranscriptStore:
 
     async def list_messages(self, session_id: str):
         return await self.messages.list_for_session(session_id)
+
+    async def consume_pending_mailbox(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> list:
+        """Attach unseen durable collaboration messages to the next turn once.
+
+        The caller owns the surrounding turn-creation transaction. A failed
+        active-turn claim therefore restores every message to the unseen state.
+        """
+        messages = await self.messages.list_for_session(session_id)
+        pending = [
+            message
+            for message in messages
+            if message.turn_id is None
+            and message.status == AgentMessageStatus.DRAFT
+            and (message.message_metadata or {}).get("kind")
+            in {"inter_agent_message", "agent_result"}
+        ]
+        if not pending:
+            return []
+        ordering_index = max(
+            (
+                message.ordering_index
+                for message in messages
+                if message.status == AgentMessageStatus.COMMITTED
+            ),
+            default=0,
+        )
+        for message in pending:
+            ordering_index += 1
+            metadata = dict(message.message_metadata or {})
+            metadata["consumed"] = True
+            message.message_metadata = metadata
+            message.turn_id = UUID(turn_id)
+            message.status = AgentMessageStatus.COMMITTED
+            message.ordering_index = ordering_index
+        await self.messages.session.flush()
+        return pending
 
     async def deliver_pending_steers(
         self,

@@ -577,6 +577,10 @@ class AgentCoreService:
         ):
             session_updates["title"] = _generated_session_title(input_text)
         turn_id = str(uuid4())
+        await self.transcript.consume_pending_mailbox(
+            session_id=str(session.id),
+            turn_id=turn_id,
+        )
         turn = await self.turn_repo.create_with_session_claim(
             session_id=str(session.id),
             turn_id=turn_id,
@@ -1509,6 +1513,13 @@ class AgentCoreService:
         }:
             return
         await self.session_repo.release_active_turn(str(turn.session_id), str(turn.id))
+        from app.services.agent_core.collaboration.service import (
+            AgentCollaborationService,
+        )
+
+        await AgentCollaborationService(self.db).publish_child_terminal(
+            turn_id=str(turn.id)
+        )
 
     async def list_artifacts_for_session(
         self,

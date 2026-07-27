@@ -435,6 +435,29 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         await self.session.flush()
         return result.rowcount == 1
 
+    async def release_child_slot_for_terminal(
+        self,
+        child_session_id: str,
+        terminal_turn_id: str,
+    ) -> bool:
+        """Release only if no newer follow-up turn owns the child session."""
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == child_session_id,
+                self.model.root_session_id.is_not(None),
+                self.model.collaboration_slot.is_not(None),
+                or_(
+                    self.model.active_turn_id.is_(None),
+                    self.model.active_turn_id == terminal_turn_id,
+                ),
+            )
+            .values(collaboration_slot=None)
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.flush()
+        return result.rowcount == 1
+
     def _active_nonterminal_turn_exists(self):
         return (
             select(AgentTurn.id)
@@ -1318,13 +1341,21 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
                 select(self.model)
                 .where(
                     self.model.session_id == session_id,
-                    self.model.turn_id == turn_id,
                     self.model.role == "user",
                     self.model.status == AgentMessageStatus.DRAFT,
                 )
                 .order_by(self.model.created_at, self.model.id)
             )
-            pending = list(result.scalars().all())
+            pending = [
+                message
+                for message in result.scalars().all()
+                if str(message.turn_id or "") == turn_id
+                or (
+                    message.turn_id is None
+                    and (message.message_metadata or {}).get("kind")
+                    in {"inter_agent_message", "agent_result"}
+                )
+            ]
             if not pending:
                 await self.session.rollback()
                 return [], True
@@ -1369,8 +1400,15 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
                 ordering_index += 1
                 event_seq += 1
                 message.status = AgentMessageStatus.COMMITTED
+                message.turn_id = UUID(turn_id)
                 message.ordering_index = ordering_index
-                metadata = message.message_metadata or {}
+                metadata = dict(message.message_metadata or {})
+                if metadata.get("kind") in {
+                    "inter_agent_message",
+                    "agent_result",
+                }:
+                    metadata["consumed"] = True
+                    message.message_metadata = metadata
                 self.session.add(
                     AgentEvent(
                         session_id=session_id,

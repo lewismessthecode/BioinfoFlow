@@ -12,6 +12,7 @@ from app.models.agent_core import (
     AgentAttachment,
     AgentAttachmentStatus,
     AgentMessage,
+    AgentMessageStatus,
     AgentSession,
     AgentSessionStatus,
     AgentTurn,
@@ -27,6 +28,8 @@ from app.services.agent_core.collaboration.context_fork import (
 from app.services.agent_core.collaboration.model_preflight import AgentModelPreflight
 from app.services.agent_core.collaboration.contracts import AgentModelChoice
 from app.services.agent_core.collaboration.service import AgentCollaborationService
+from app.services.agent_core.service import AgentCoreService
+from app.services.agent_core.transcript.messages import parts_to_text
 from app.services.llm.credentials import encrypt_secret
 from app.services.llm.catalog import ExactModelProbeResult
 from app.services.llm.probe import LlmProviderProbeResult
@@ -1665,3 +1668,508 @@ async def test_list_agents_uses_generic_nonempty_error_for_unknown_empty_failure
     )
     assert failed.error_code == "provider_internal_opaque"
     assert failed.error_message == "Agent failed before completing the task."
+
+
+async def _create_child_with_turn(
+    db_session: AsyncSession,
+    *,
+    root: AgentSession,
+    name: str,
+    status: str = AgentTurnStatus.COMPLETED,
+    slot: int | None = None,
+) -> tuple[AgentSession, AgentTurn]:
+    child = AgentSession(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        parent_session_id=str(root.id),
+        root_session_id=str(root.id),
+        agent_name=name,
+        collaboration_slot=slot,
+        session_metadata={
+            "collaboration": {
+                "effective_model": "parent-model",
+                "effective_model_id": "parent-id",
+            }
+        },
+    )
+    db_session.add(child)
+    await db_session.flush()
+    turn = AgentTurn(
+        session_id=str(child.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="child task",
+        status=status,
+        accepts_steer=status
+        not in {
+            AgentTurnStatus.COMPLETED,
+            AgentTurnStatus.FAILED,
+            AgentTurnStatus.CANCELLED,
+        },
+        model_profile_snapshot={
+            "resolved_model_id": "parent-id",
+            "resolved_model_selection": {"model": "parent-model"},
+        },
+    )
+    db_session.add(turn)
+    await db_session.flush()
+    child.active_turn_id = (
+        str(turn.id)
+        if status
+        not in {
+            AgentTurnStatus.COMPLETED,
+            AgentTurnStatus.FAILED,
+            AgentTurnStatus.CANCELLED,
+        }
+        else None
+    )
+    await db_session.commit()
+    return child, turn
+
+
+@pytest.mark.asyncio
+async def test_send_message_to_idle_child_is_durable_without_starting_turn(
+    db_session,
+) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    child, prior_turn = await _create_child_with_turn(
+        db_session, root=root, name="reader"
+    )
+
+    result = await AgentCollaborationService(db_session).send_message(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="Extra context",
+    )
+
+    turns = await AgentCollaborationService(db_session).turns.list_for_session(
+        str(child.id)
+    )
+    assert [str(turn.id) for turn in turns] == [str(prior_turn.id)]
+    messages = await AgentCollaborationService(db_session).transcript.list_messages(
+        str(child.id)
+    )
+    mailbox = [
+        message
+        for message in messages
+        if (message.message_metadata or {}).get("kind") == "inter_agent_message"
+    ]
+    assert result.delivery == "queued"
+    assert [parts_to_text(message.content_parts) for message in mailbox] == [
+        "Extra context"
+    ]
+    assert mailbox[0].status == AgentMessageStatus.DRAFT
+
+
+@pytest.mark.asyncio
+async def test_followup_task_reuses_idle_child_and_acquires_slot(
+    db_session, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    child, _ = await _create_child_with_turn(db_session, root=root, name="reader")
+    enqueued: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda turn_id, session_id: enqueued.append((turn_id, session_id)),
+    )
+
+    result = await AgentCollaborationService(db_session).followup_task(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="Now inspect pyproject.toml",
+    )
+
+    await db_session.refresh(child)
+    turns = await AgentCollaborationService(db_session).turns.list_for_session(
+        str(child.id)
+    )
+    followup_turn = next(turn for turn in turns if str(turn.id) == result.turn_id)
+    assert result.delivery == "followup"
+    assert followup_turn.input_text == "Now inspect pyproject.toml"
+    assert child.collaboration_slot == 1
+    assert enqueued == [(str(followup_turn.id), str(child.id))]
+
+
+@pytest.mark.asyncio
+async def test_child_can_message_parent_and_follow_up_sibling(
+    db_session, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    sender, _ = await _create_child_with_turn(
+        db_session, root=root, name="reader"
+    )
+    sibling, _ = await _create_child_with_turn(
+        db_session, root=root, name="reviewer"
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    service = AgentCollaborationService(db_session)
+
+    sent = await service.send_message(
+        caller_session_id=str(sender.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root",
+        message="I found the config",
+    )
+    followed = await service.followup_task(
+        caller_session_id=str(sender.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reviewer",
+        message="Check the config I found",
+    )
+
+    assert sent.delivery == "steer"
+    assert followed.delivery == "followup"
+    sibling_turns = await service.turns.list_for_session(str(sibling.id))
+    sibling_followup = next(
+        turn for turn in sibling_turns if str(turn.id) == followed.turn_id
+    )
+    assert sibling_followup.input_text == "Check the config I found"
+
+
+@pytest.mark.asyncio
+async def test_collaboration_targets_fail_closed_across_roots(db_session) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    other = await _create_session(db_session)
+    outsider, _ = await _create_child_with_turn(
+        db_session, root=other, name="reader"
+    )
+
+    with pytest.raises(Exception, match="agent_target_not_found"):
+        await AgentCollaborationService(db_session).send_message(
+            caller_session_id=str(root.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            target=str(outsider.id),
+            message="leak",
+        )
+
+
+@pytest.mark.asyncio
+async def test_followup_rejects_root_and_interrupt_rejects_root_or_self(
+    db_session,
+) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    child, _ = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    service = AgentCollaborationService(db_session)
+
+    with pytest.raises(Exception, match="child_agent_required"):
+        await service.followup_task(
+            caller_session_id=str(child.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            target="/root",
+            message="not allowed",
+        )
+    with pytest.raises(Exception, match="child_agent_required"):
+        await service.interrupt_agent(
+            caller_session_id=str(root.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            target="/root",
+        )
+    with pytest.raises(Exception, match="cannot_interrupt_self"):
+        await service.interrupt_agent(
+            caller_session_id=str(child.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            target="/root/reader",
+        )
+
+
+@pytest.mark.asyncio
+async def test_terminal_child_publishes_safe_exactly_once_parent_result(
+    db_session,
+) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.FAILED,
+        slot=1,
+    )
+    child_turn.error_code = "model_request_failed"
+    child_turn.error_message = "HTTP 401 raw-secret-token authentication denied"
+    await db_session.commit()
+    service = AgentCollaborationService(db_session)
+
+    await service.publish_child_terminal(turn_id=str(child_turn.id))
+    await service.publish_child_terminal(turn_id=str(child_turn.id))
+
+    await db_session.refresh(child)
+    messages = await service.transcript.list_messages(str(root.id))
+    results = [
+        message
+        for message in messages
+        if (message.message_metadata or {}).get("collaboration_kind")
+        == "agent_result"
+    ]
+    assert child.collaboration_slot is None
+    assert len(results) == 1
+    payload = (results[0].message_metadata or {})["agent_result"]
+    assert payload["status"] == "errored"
+    assert payload["error_message"] == "Model provider authentication failed."
+    assert "secret" not in parts_to_text(results[0].content_parts)
+
+
+@pytest.mark.asyncio
+async def test_wait_agent_observes_terminal_update_without_returning_content(
+    db_session,
+) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    _child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.COMPLETED,
+        slot=1,
+    )
+    child_turn.final_text = "README found"
+    await db_session.commit()
+    service = AgentCollaborationService(db_session)
+    await service.publish_child_terminal(turn_id=str(child_turn.id))
+
+    result = await service.wait_agent(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        timeout_ms=0,
+    )
+
+    assert result.timed_out is False
+    assert result.updated_agents == ["/root/reader"]
+    assert "README found" not in repr(result)
+
+
+@pytest.mark.asyncio
+async def test_idle_parent_consumes_terminal_mailbox_once_on_next_turn(
+    db_session,
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    _child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.COMPLETED,
+        slot=1,
+    )
+    child_turn.final_text = "README found"
+    await db_session.commit()
+    collaboration = AgentCollaborationService(db_session)
+    await collaboration.publish_child_terminal(turn_id=str(child_turn.id))
+
+    queued = [
+        message
+        for message in await collaboration.transcript.list_messages(str(root.id))
+        if (message.message_metadata or {}).get("collaboration_kind")
+        == "agent_result"
+    ]
+    assert len(queued) == 1 and queued[0].status == AgentMessageStatus.DRAFT
+
+    parent_turn = await AgentCoreService(db_session).create_turn_record(
+        session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Continue",
+    )
+    messages = await collaboration.transcript.list_messages(str(root.id))
+    results = [
+        message
+        for message in messages
+        if (message.message_metadata or {}).get("collaboration_kind")
+        == "agent_result"
+    ]
+    assert len(results) == 1
+    assert results[0].status == AgentMessageStatus.COMMITTED
+    assert results[0].turn_id == parent_turn.id
+    assert (results[0].message_metadata or {})["consumed"] is True
+
+
+@pytest.mark.asyncio
+async def test_send_message_to_running_child_uses_durable_steer(db_session) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+
+    result = await AgentCollaborationService(db_session).send_message(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="Use the exact path",
+    )
+
+    messages = await AgentCollaborationService(db_session).transcript.list_messages(
+        str(child.id)
+    )
+    steer = next(
+        message
+        for message in messages
+        if (message.message_metadata or {}).get("collaboration_kind")
+        == "inter_agent_message"
+    )
+    assert result.delivery == "steer"
+    assert steer.turn_id == child_turn.id
+    assert steer.status == AgentMessageStatus.DRAFT
+
+
+@pytest.mark.asyncio
+async def test_terminal_hook_schedules_only_one_queued_followup(
+    db_session, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    child_turn.accepts_steer = False
+    await db_session.commit()
+    enqueued: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda turn_id, session_id: enqueued.append((turn_id, session_id)),
+    )
+    service = AgentCollaborationService(db_session)
+
+    queued = await service.followup_task(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="Retry with a smaller task",
+    )
+    assert queued.delivery == "queued"
+    child_turn.status = AgentTurnStatus.COMPLETED
+    child_turn.accepts_steer = False
+    child_turn.final_text = "first task done"
+    await db_session.commit()
+
+    await service.publish_child_terminal(turn_id=str(child_turn.id))
+    await service.publish_child_terminal(turn_id=str(child_turn.id))
+
+    turns = await service.turns.list_for_session(str(child.id))
+    followups = [turn for turn in turns if turn.input_text == "Retry with a smaller task"]
+    assert len(followups) == 1
+    assert enqueued == [(str(followups[0].id), str(child.id))]
+    await db_session.refresh(child)
+    assert child.collaboration_slot is not None
+
+
+@pytest.mark.asyncio
+async def test_interrupted_child_remains_reusable(db_session, monkeypatch) -> None:
+    await _seed_workspace(db_session)
+    root, _ = await _create_parent_turn(db_session)
+    child, _ = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.cancel_turn_run",
+        lambda *_: False,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    service = AgentCollaborationService(db_session)
+
+    previous = await service.interrupt_agent(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+    )
+    followup = await service.followup_task(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="Try a smaller task",
+    )
+
+    assert previous.status == "running"
+    assert followup.delivery == "followup"
+    await db_session.refresh(child)
+    assert child.collaboration_slot is not None
+
+
+@pytest.mark.asyncio
+async def test_active_parent_delivers_terminal_result_exactly_once_at_boundary(
+    db_session,
+) -> None:
+    await _seed_workspace(db_session)
+    root, parent_turn = await _create_parent_turn(db_session)
+    root_id = str(root.id)
+    parent_turn_id = str(parent_turn.id)
+    parent_turn.owner_token = "owner-token"
+    _child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.COMPLETED,
+        slot=1,
+    )
+    child_turn.final_text = "README found"
+    await db_session.commit()
+    service = AgentCollaborationService(db_session)
+    await service.publish_child_terminal(turn_id=str(child_turn.id))
+
+    first = await service.transcript.deliver_pending_steers(
+        session_id=root_id,
+        turn_id=parent_turn_id,
+        expected_owner_token="owner-token",
+    )
+    second = await service.transcript.deliver_pending_steers(
+        session_id=root_id,
+        turn_id=parent_turn_id,
+        expected_owner_token="owner-token",
+    )
+    messages = await service.transcript.list_messages(root_id)
+    results = [
+        message
+        for message in messages
+        if (message.message_metadata or {}).get("collaboration_kind")
+        == "agent_result"
+    ]
+
+    assert len(first) == 1
+    assert second == []
+    assert len(results) == 1
+    assert results[0].status == AgentMessageStatus.COMMITTED
+    assert (results[0].message_metadata or {})["consumed"] is True
