@@ -86,6 +86,66 @@ def test_permission_audit_models_default_to_initial_policy_version() -> None:
     assert action.permission_context_snapshot is None
 
 
+@pytest.mark.asyncio
+async def test_permission_context_preserves_capability_bundles_for_runtime_exposure(
+    db_session,
+) -> None:
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+    from app.services.agent_core.tools.toolsets import ToolsetExposure
+
+    db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
+    await db_session.commit()
+    session = await AgentCoreService(db_session).create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        toolset_policy={
+            "name": "execution",
+            "capabilities": ["bioinfo.manage"],
+        },
+    )
+
+    context = await PermissionContextResolver(db_session).resolve(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    snapshot = context.snapshot()
+
+    assert snapshot["toolset_policy"] == {
+        "name": "execution",
+        "capabilities": ["bioinfo.manage"],
+    }
+    assert "runs.submit" in ToolsetExposure(
+        build_default_tool_registry()
+    ).exposed_names(policy=snapshot["toolset_policy"])
+
+
+@pytest.mark.asyncio
+async def test_capability_changes_participate_in_toolset_policy_versioning(
+    db_session,
+) -> None:
+    db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
+    await db_session.commit()
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        toolset_policy={
+            "name": "execution",
+            "capabilities": ["bioinfo.manage"],
+        },
+    )
+
+    await service._activate_execution_toolset(str(session.id))
+
+    refreshed = await service.session_repo.get_fresh(str(session.id))
+    assert refreshed is not None
+    assert refreshed.toolset_policy == {"name": "execution"}
+    assert refreshed.permission_policy_version == 2
+
+
 @pytest.mark.parametrize(
     ("schema", "field_name"),
     [

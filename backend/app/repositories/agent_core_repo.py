@@ -1568,12 +1568,18 @@ class AgentEventRepository(BaseRepository[AgentEvent]):
         *,
         turn_id: str,
         after_seq: int = 0,
+        visibility: str | None = None,
+        event_types: frozenset[str] | set[str] | None = None,
     ) -> list[AgentEvent]:
-        stmt = (
-            select(self.model)
-            .where(self.model.turn_id == turn_id, self.model.seq > after_seq)
-            .order_by(self.model.seq)
+        stmt = select(self.model).where(
+            self.model.turn_id == turn_id,
+            self.model.seq > after_seq,
         )
+        if visibility is not None:
+            stmt = stmt.where(self.model.visibility == visibility)
+        if event_types is not None:
+            stmt = stmt.where(self.model.type.in_(event_types))
+        stmt = stmt.order_by(self.model.seq)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -1583,11 +1589,17 @@ class AgentEventRepository(BaseRepository[AgentEvent]):
         session_id: str,
         after_seq: int = 0,
         limit: int | None = None,
+        visibility: str | None = None,
+        event_types: frozenset[str] | set[str] | None = None,
     ) -> list[AgentEvent]:
         stmt = select(self.model).where(
             self.model.session_id == session_id,
             self.model.seq > after_seq,
         )
+        if visibility is not None:
+            stmt = stmt.where(self.model.visibility == visibility)
+        if event_types is not None:
+            stmt = stmt.where(self.model.type.in_(event_types))
         if limit is not None:
             stmt = stmt.order_by(desc(self.model.seq)).limit(limit)
         else:

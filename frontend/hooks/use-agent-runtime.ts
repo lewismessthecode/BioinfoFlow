@@ -260,7 +260,7 @@ export function useAgentRuntime(
     dispatch({ type: "loading" })
     try {
       const payload = await getAgentRuntimeState(sessionId, {
-        eventView: "transcript",
+        eventView: "public",
       })
       if (activeSessionIdRef.current !== sessionId) return
       if (stateRefreshSequenceRef.current !== sequence) return
