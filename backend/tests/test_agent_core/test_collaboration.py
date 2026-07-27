@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.agent_core import AgentSession, AgentSessionStatus
+from app.models.agent_core import AgentMessage, AgentSession, AgentSessionStatus
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.models.workspace import Workspace
 from app.repositories.agent_core_repo import AgentSessionRepository
@@ -445,6 +445,51 @@ def test_all_context_fork_rejects_tool_bearing_assistant_items_without_metadata(
     assert _fork_texts(forked) == ["inspect", "terminal answer"]
 
 
+def test_context_fork_preserves_sanitized_canonical_user_image_reference() -> None:
+    message = AgentMessage(
+        session_id="parent-session",
+        turn_id="parent-turn",
+        role="user",
+        content_parts=[
+            {"type": "text", "text": "Inspect this image."},
+            {
+                "type": "image_ref",
+                "attachment_id": "parent-attachment",
+                "mime_type": "image/png",
+                "sha256": "a" * 64,
+                "detail": "high",
+                "storage_path": "parent/private/path",
+                "session_id": "parent-session",
+            },
+        ],
+        message_metadata={
+            "input_display": "private",
+            "attachment_ids": ["parent-attachment"],
+        },
+        status="committed",
+        ordering_index=1,
+    )
+
+    forked = fork_agent_context([message], fork_turns="all")
+
+    assert forked == [
+        {
+            "role": "user",
+            "content_parts": [
+                {"type": "text", "text": "Inspect this image."},
+                {
+                    "type": "image_ref",
+                    "source_attachment_id": "parent-attachment",
+                    "mime_type": "image/png",
+                    "sha256": "a" * 64,
+                    "detail": "high",
+                },
+            ],
+            "message_metadata": None,
+        }
+    ]
+
+
 def test_none_context_fork_returns_no_parent_conversation() -> None:
     assert fork_agent_context([_message("user", "hello")], fork_turns="none") == []
 
@@ -469,12 +514,13 @@ async def _create_probe_model(
     workspace_id: str | None = DEFAULT_WORKSPACE_ID,
     user_id: str | None = "dev",
     credential_source: str = "stored",
+    base_url: str = "https://probe.example/v1",
 ) -> LlmModel:
     provider = LlmProvider(
         name=f"Provider for {model_name}",
         kind="openai_compatible",
         wire_protocol="chat_completions",
-        base_url="https://probe.example/v1",
+        base_url=base_url,
         scope=scope,
         workspace_id=workspace_id,
         user_id=user_id,
@@ -768,8 +814,6 @@ async def test_exact_model_preflight_rejects_unauthorized_environment_credential
     model = await _create_probe_model(
         db_session,
         model_name="owner-only-env-model",
-        scope="workspace",
-        user_id=None,
         credential_source="env",
     )
     monkeypatch.setattr(settings, "auth_mode", "team")
@@ -794,6 +838,60 @@ async def test_exact_model_preflight_rejects_unauthorized_environment_credential
 
     assert result.fallback is True
     assert result.fallback_reason == "requested_model_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("scope", "provider_workspace_id"),
+    [("workspace", DEFAULT_WORKSPACE_ID), ("global", None)],
+)
+@pytest.mark.asyncio
+async def test_member_can_preflight_admin_managed_shared_env_private_provider(
+    db_session,
+    monkeypatch,
+    scope,
+    provider_workspace_id,
+) -> None:
+    await _seed_workspace(db_session)
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setenv("CHILD_MODEL_API_KEY", "shared-env-secret")
+    model = await _create_probe_model(
+        db_session,
+        model_name=f"{scope}-shared-model",
+        scope=scope,
+        workspace_id=provider_workspace_id,
+        user_id=None,
+        credential_source="env",
+        base_url="http://127.0.0.1:8000/v1",
+    )
+    calls: list[dict] = []
+
+    async def successful_probe(_self, **kwargs):
+        calls.append(kwargs)
+        return LlmProviderProbeResult(
+            success=True,
+            latency_ms=1,
+            wire_protocol="chat_completions",
+            model_id=kwargs["model_id"],
+        )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        successful_probe,
+    )
+
+    result = await AgentModelPreflight(db_session).resolve(
+        requested_model=str(model.id),
+        parent_model="parent-model",
+        parent_model_id="parent-id",
+        parent_reasoning_effort="high",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        role="member",
+    )
+
+    assert result.fallback is False
+    assert calls[0]["network_access"] == "unrestricted"
+    assert calls[0]["credential"].api_key == "shared-env-secret"
 
 
 @pytest.mark.asyncio

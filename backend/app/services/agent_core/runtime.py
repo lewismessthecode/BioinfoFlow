@@ -54,6 +54,7 @@ from app.services.agent_core.transcript.store import AgentTranscriptStore
 from app.services.authorization_service import AuthorizationService
 from app.services.llm.access_policy import (
     authorize_server_environment_credential,
+    provider_has_server_integration_authority,
     resolve_provider_network_access,
 )
 from app.services.llm.provider_templates import (
@@ -71,7 +72,6 @@ from app.services.llm.catalog import (
 from app.services.llm.credentials import credential_available, credential_configured
 from app.services.model_runtime.contracts import ModelTarget
 from app.services.model_runtime.gateway import ModelGateway
-from app.utils.authorization import can_manage_server_integrations
 from app.utils.exceptions import PermissionDeniedError
 from app.utils.logging import get_logger
 
@@ -688,7 +688,7 @@ class AgentCoreRuntime:
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        server_authorized = _provider_has_server_integration_authority(
+        server_authorized = provider_has_server_integration_authority(
             provider,
             role=role,
         )
@@ -1150,13 +1150,6 @@ def _model_target(resolved: dict[str, Any]) -> ModelTarget:
         api_key=request_args.get("api_key"),
         target_revision=resolved.get("target_revision"),
     )
-
-
-def _provider_has_server_integration_authority(provider, *, role: str | None) -> bool:
-    return str(getattr(provider, "scope", "user") or "user") in {
-        "global",
-        "workspace",
-    } or can_manage_server_integrations(role)
 
 
 def _target_identity_matches_snapshot(

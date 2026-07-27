@@ -35,6 +35,17 @@ def authorize_server_environment_credential(*, role: str | None) -> None:
     )
 
 
+def provider_has_server_integration_authority(
+    provider,
+    *,
+    role: str | None,
+) -> bool:
+    """Mirror runtime authority for shared versus user-owned providers."""
+
+    scope = str(getattr(provider, "scope", "user") or "user")
+    return scope in {"global", "workspace"} or can_manage_server_integrations(role)
+
+
 async def authorize_provider_endpoint(
     base_url: str | None,
     *,
