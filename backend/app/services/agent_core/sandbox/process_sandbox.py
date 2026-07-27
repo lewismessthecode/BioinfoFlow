@@ -93,6 +93,9 @@ class BubblewrapAdapter:
                 [
                     executable,
                     *_BWRAP_USER_NAMESPACE_ARGS,
+                    "--ro-bind",
+                    "/",
+                    "/",
                     "--",
                     "/bin/true",
                 ],
