@@ -2399,11 +2399,16 @@ async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_
 
 
 @pytest.mark.asyncio
-async def test_agent_toolsets_include_plan_mode(async_client):
+async def test_agent_toolsets_report_canonical_execution_and_plan_modes(async_client):
     response = await async_client.get("/api/v1/agent/toolsets")
 
     assert response.status_code == 200
     toolsets = {item["name"]: item["tools"] for item in response.json()["data"]["toolsets"]}
+    assert {
+        "runs.submit",
+        "workflows.create",
+        "projects.workflows.bind",
+    } <= set(toolsets["execution"])
     assert "plan" in toolsets
     assert "exit_plan_mode" in toolsets["plan"]
     assert "bash" not in toolsets["plan"]

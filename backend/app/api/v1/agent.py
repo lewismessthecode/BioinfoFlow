@@ -1043,7 +1043,9 @@ async def list_toolsets(request: Request):
                     "name": "execution",
                     "tools": [
                         spec.name
-                        for spec in exposure.exposed_specs(policy={"name": "execution"})
+                        for spec in exposure.exposed_specs(
+                            policy=EXECUTION_TOOLSET_POLICY
+                        )
                     ],
                 },
                 {
