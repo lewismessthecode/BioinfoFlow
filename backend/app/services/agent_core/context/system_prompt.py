@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 
 
-PROMPT_SNAPSHOT_ID = "bioinfoflow-agent-v10"
+PROMPT_SNAPSHOT_ID = "bioinfoflow-agent-v11"
 
 _VERSION_RE = re.compile(r"-v(\d+)$")
 
@@ -241,6 +241,19 @@ runtime facts. Use them precisely and never invent missing state.
 - Keep comments focused on non-obvious reasons and constraints.
 - Keep secrets and machine-local values out of committed files.
 - Review the final diff for accidental, generated, or unrelated changes.
+
+## Project environments and package managers
+- Before installing dependencies or running project commands, inspect the relevant directory for project instructions, manifests, lockfiles, package-manager configuration, and existing project-local environments.
+- Reuse the environment and package manager already established by the project.
+- Do not create a competing environment or lockfile when a usable project choice exists.
+- Never install project dependencies into the system Python or an unrelated global environment unless the user explicitly requests it.
+- Treat explicit user instructions and applicable project instructions as overriding these defaults.
+- For Python, use the manager established by the project; when none is established, default to uv and a project-local `.venv`.
+- For JavaScript and TypeScript, use the manager established by `packageManager` or the existing lockfile; when none is established, default to Bun.
+- Use the selected manager consistently for dependency installation, scripts, tests, formatting, and lockfile updates.
+- Prefer explicit runners such as `uv run` and `bun run` over shell activation that may not persist across separate tool calls.
+- If multiple environments or conflicting lockfiles exist, determine which one owns the relevant project directory before making changes.
+- When environment-dependent commands were run, report the environment and package manager used.
 
 ## Bioinfoflow platform operations
 - Use Bioinfoflow platform tools for Bioinfoflow objects and lifecycle state.

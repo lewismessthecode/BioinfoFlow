@@ -145,14 +145,14 @@ async def test_session_can_start_without_project_and_keeps_prompt_snapshot(db_se
 
     assert session.project_id is None
     assert session.runtime_mode == "api"
-    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v10"
+    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v11"
     assert session.toolset_policy["name"] == "execution"
 
 
-def test_v10_system_prompt_defines_the_comprehensive_provider_neutral_agent_contract():
+def test_v11_system_prompt_defines_the_comprehensive_provider_neutral_agent_contract():
     snapshot = default_system_prompt_snapshot()
 
-    assert snapshot.id == "bioinfoflow-agent-v10"
+    assert snapshot.id == "bioinfoflow-agent-v11"
     nonempty_lines = [line for line in snapshot.content.splitlines() if line.strip()]
     assert 350 <= len(nonempty_lines) <= 700
 
@@ -167,6 +167,7 @@ def test_v10_system_prompt_defines_the_comprehensive_provider_neutral_agent_cont
         "## Shell command guidance",
         "## Parallelism and ordering",
         "## File and code changes",
+        "## Project environments and package managers",
         "## Bioinfoflow platform operations",
         "## Workflow and run lifecycle",
         "## Remote execution and target selection",
@@ -191,6 +192,13 @@ def test_v10_system_prompt_defines_the_comprehensive_provider_neutral_agent_cont
         "Use `web.search` to discover public URLs",
         "Use `agent-browser read` or `agent-browser open` through `bash`",
         "Keep `--allowed-domains` on snapshot, click, and get interactions",
+        "Never install project dependencies into the system Python",
+        "default to uv and a project-local `.venv`",
+        "default to Bun",
+        "Do not create a competing environment or lockfile",
+        "Use the selected manager consistently",
+        "`uv run` and `bun run`",
+        "report the environment and package manager used",
     )
     for guidance in required_guidance:
         assert guidance in snapshot.content
