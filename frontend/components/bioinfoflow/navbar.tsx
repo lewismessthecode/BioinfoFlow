@@ -1,18 +1,21 @@
 "use client"
 
-import { Menu, Moon, PartyPopper, Sun } from "@/lib/icons"
-import { useTranslations } from "next-intl"
+import { useTransition } from "react"
+import { Globe, Menu, Moon, MoreHorizontal, PartyPopper, Sun } from "@/lib/icons"
+import { useLocale, useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { getNextAppearanceMode, useAppearance } from "@/lib/appearance/use-appearance"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LanguageSwitcher } from "@/components/language-switcher"
 import { cn } from "@/lib/utils"
 import {
   celebratePreview,
@@ -24,6 +27,8 @@ import { Breadcrumbs } from "./breadcrumbs"
 import { ConnectionStatus } from "./connection-status"
 import type { ConnectionState } from "@/hooks/use-events"
 import type { ViewerIdentity } from "@/lib/auth-config"
+import { locales, localeNames, type Locale } from "@/i18n/config"
+import { setSecureCookie } from "@/lib/cookies"
 
 interface NavbarProps {
   onSidebarToggle?: () => void
@@ -44,18 +49,20 @@ export function Navbar({
   connectionState,
 }: NavbarProps) {
   const { mode, resolvedMode, setMode } = useAppearance()
+  const locale = useLocale()
+  const [localePending, startLocaleTransition] = useTransition()
   const tAccessibility = useTranslations("accessibility")
   const tCelebrations = useTranslations("celebrations")
+  const tLanguage = useTranslations("language")
   const celebrationsEnabled = useCelebrationsEnabledPreference()
   const reducedMotion = useReducedMotionPreference()
-  const celebrationStateLabel = reducedMotion && celebrationsEnabled
-    ? tAccessibility("celebrationsPaused")
-    : celebrationsEnabled
-      ? tAccessibility("celebrationsOn")
-      : tAccessibility("celebrationsOff")
-  const celebrationMenuLabel = tAccessibility("celebrationsMenuState", {
-    state: celebrationStateLabel,
-  })
+  const handleLocaleChange = (nextLocale: Locale) => {
+    if (nextLocale === locale) return
+    startLocaleTransition(() => {
+      setSecureCookie("NEXT_LOCALE", nextLocale, { maxAge: 31536000 })
+      window.location.reload()
+    })
+  }
 
   const actionButtonClassName =
     "h-8 w-8 rounded-[8px] border border-transparent text-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent"
@@ -86,26 +93,53 @@ export function Navbar({
 
       {/* Right Actions */}
       <div className="flex items-center gap-1.5" data-testid="navbar-action-row">
-        <LanguageSwitcher />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className={cn(
-                actionButtonClassName,
-                celebrationsEnabled
-                  ? "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              title={celebrationMenuLabel}
+              className={actionButtonClassName}
+              disabled={localePending}
+              aria-label={tAccessibility("morePreferences")}
             >
-              <PartyPopper className="h-4 w-4" />
-              <span className="sr-only">{celebrationMenuLabel}</span>
+              <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuLabel>{tCelebrations("title")}</DropdownMenuLabel>
+          <DropdownMenuContent
+            align="end"
+            className="w-56 rounded-lg border-border/70 p-1.5 shadow-none"
+          >
+            <DropdownMenuLabel className="px-2 py-1 text-xs font-medium text-muted-foreground">
+              {tAccessibility("morePreferences")}
+            </DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => setMode(getNextAppearanceMode(mode, resolvedMode))}>
+              <span className="relative h-4 w-4 shrink-0">
+                <Sun className="absolute h-4 w-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
+                <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
+              </span>
+              {tAccessibility("toggleTheme")}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-muted-foreground">
+              <Globe className="h-3.5 w-3.5" />
+              {tLanguage("title")}
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={locale}>
+              {locales.map((nextLocale) => (
+                <DropdownMenuRadioItem
+                  key={nextLocale}
+                  value={nextLocale}
+                  onSelect={() => handleLocaleChange(nextLocale)}
+                >
+                  {localeNames[nextLocale]}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-muted-foreground">
+              <PartyPopper className="h-3.5 w-3.5" />
+              {tCelebrations("title")}
+            </DropdownMenuLabel>
             <DropdownMenuCheckboxItem
               checked={celebrationsEnabled}
               onCheckedChange={(checked) => setCelebrationsEnabled(Boolean(checked))}
@@ -128,16 +162,6 @@ export function Navbar({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(actionButtonClassName, "relative")}
-          onClick={() => setMode(getNextAppearanceMode(mode, resolvedMode))}
-        >
-          <Sun className="h-4 w-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
-          <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
-          <span className="sr-only">{tAccessibility("toggleTheme")}</span>
-        </Button>
         {children}
       </div>
       </div>

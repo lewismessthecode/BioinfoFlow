@@ -213,6 +213,36 @@ describe("ArtifactPreviewDrawer", () => {
     expect(screen.queryByText("artifacts.toolLogs")).not.toBeInTheDocument()
   })
 
+  it("renders a flat artifact list without the rejected breadcrumb bar", () => {
+    render(
+      <ArtifactPreviewDrawer
+        artifacts={[
+          artifact({
+            id: "file-1",
+            type: "file",
+            title: "report.md",
+            file_path: "/workspace/report.md",
+          }),
+          artifact({
+            id: "sheet-1",
+            type: "spreadsheet",
+            title: "summary.xlsx",
+            file_path: "/workspace/summary.xlsx",
+          }),
+        ]}
+      />,
+    )
+
+    expect(screen.getByRole("heading", { name: "artifacts.title" })).toBeInTheDocument()
+    expect(screen.getByTestId("artifact-count")).toHaveTextContent("2")
+    expect(screen.getByTestId("artifact-list")).toHaveClass("divide-y")
+    expect(screen.getByRole("button", { name: /report.md/ }).className).not.toContain(
+      "border",
+    )
+    expect(screen.queryByText(/current session/i)).not.toBeInTheDocument()
+    expect(screen.queryByTestId("artifact-breadcrumb")).not.toBeInTheDocument()
+  })
+
   it("uses a light empty state instead of a dashed drop zone", () => {
     render(<ArtifactPreviewDrawer artifacts={[]} status="ready" hasSession />)
 
