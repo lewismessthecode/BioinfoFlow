@@ -1144,13 +1144,17 @@ class AgentCoreService:
                 publication_event_type=AgentEventType.AGENT_RESULT_PUBLISHED,
             )
         ]
+        collaboration = AgentCollaborationService(self.db)
         for terminal_id in unpublished_ids:
-            await AgentCollaborationService(self.db).publish_child_terminal(
+            await collaboration.publish_child_terminal(
                 turn_id=terminal_id
             )
             summary["collaboration_published"] = (
                 summary.get("collaboration_published", 0) + 1
             )
+        recovered_followups = await collaboration.recover_pending_followups()
+        if recovered_followups:
+            summary["collaboration_followups"] = recovered_followups
         for turn in await self.turn_repo.list_recoverable():
             if is_turn_running(str(turn.id)):
                 summary["skipped"] += 1

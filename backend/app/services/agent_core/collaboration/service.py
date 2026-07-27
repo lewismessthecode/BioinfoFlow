@@ -641,6 +641,37 @@ class AgentCollaborationService:
         )
         return bool(events)
 
+    async def recover_pending_followups(self) -> int:
+        child_ids = [
+            str(child.id)
+            for child in await self.sessions.list_idle_children_with_draft_messages()
+        ]
+        recovered = 0
+        for child_id in child_ids:
+            for attempt in range(4):
+                try:
+                    await self.db.rollback()
+                    child = await self.sessions.get_fresh(child_id)
+                    if (
+                        child is None
+                        or child.root_session_id is None
+                        or child.active_turn_id is not None
+                        or child.collaboration_slot is not None
+                    ):
+                        break
+                    root = await self.sessions.get_fresh(str(child.root_session_id))
+                    if root is None:
+                        break
+                    if await self._schedule_pending_followup(child=child, root=root):
+                        recovered += 1
+                    break
+                except OperationalError as exc:
+                    await self.db.rollback()
+                    if "locked" not in str(exc).lower() or attempt == 3:
+                        raise
+                    await asyncio.sleep(0.02 * (attempt + 1))
+        return recovered
+
     async def list_agents(
         self,
         *,
@@ -831,31 +862,38 @@ class AgentCollaborationService:
         *,
         child: AgentSession,
         root: AgentSession,
-    ) -> None:
+    ) -> bool:
+        child_id = str(child.id)
+        root_id = str(root.id)
         await self.db.rollback()
-        child = await self.sessions.get_fresh(str(child.id)) or child
+        child = await self.sessions.get_fresh(child_id)
+        root = await self.sessions.get_fresh(root_id)
+        if child is None or root is None:
+            return False
         pending = [
             message
-            for message in await self.transcript.list_messages(str(child.id))
+            for message in await self.transcript.list_messages(child_id)
             if message.status == AgentMessageStatus.DRAFT
             and (message.message_metadata or {}).get("kind") == "agent_followup"
             and (message.message_metadata or {}).get("delivery") == "queued"
         ]
         if not pending:
-            return
+            return False
         message = pending[0]
         message.status = AgentMessageStatus.SUPERSEDED
         try:
             await self._start_followup(
                 child=child,
                 caller=root,
-                root_id=str(root.id),
+                root_id=root_id,
                 workspace_id=str(child.workspace_id),
                 user_id=child.user_id,
                 message=parts_to_text(message.content_parts),
             )
+            return True
         except ConflictError:
             await self.db.rollback()
+            return False
 
     async def _reown_forked_attachments(
         self,

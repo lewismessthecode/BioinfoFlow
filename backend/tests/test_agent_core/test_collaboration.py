@@ -2515,3 +2515,133 @@ async def test_old_terminal_recovery_does_not_release_new_followup_slot_new_sess
         assert recovered.active_turn_id != old_turn_id
         assert recovered.active_turn_id is not None
         assert recovered.collaboration_slot is not None
+
+
+@pytest.mark.asyncio
+async def test_startup_recovers_followup_after_post_publication_crash(
+    db_session, db_engine, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    child, terminal = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    terminal.accepts_steer = False
+    await db_session.commit()
+    root_id = str(root.id)
+    child_id = str(child.id)
+    terminal_id = str(terminal.id)
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    service = AgentCollaborationService(db_session)
+    await service.followup_task(
+        caller_session_id=root_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="recover this followup",
+    )
+    terminal.status = AgentTurnStatus.COMPLETED
+    terminal.accepts_steer = False
+    await db_session.commit()
+
+    async def crash_after_publication(**_kwargs):
+        raise RuntimeError("simulated process crash")
+
+    monkeypatch.setattr(service, "_schedule_pending_followup", crash_after_publication)
+    with pytest.raises(RuntimeError, match="simulated process crash"):
+        await service.publish_child_terminal(turn_id=terminal_id)
+
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    async with maker() as restarted:
+        summary = await AgentCoreService(restarted).recover_orphaned_turns()
+
+    async with maker() as verify:
+        collaboration = AgentCollaborationService(verify)
+        turns = await collaboration.turns.list_for_session(child_id)
+        followups = [turn for turn in turns if turn.input_text == "recover this followup"]
+        messages = await collaboration.transcript.list_messages(child_id)
+        queued = [
+            message
+            for message in messages
+            if (message.message_metadata or {}).get("kind") == "agent_followup"
+        ]
+        recovered = await verify.get(AgentSession, child_id)
+        assert summary["collaboration_followups"] == 1
+        assert len(followups) == 1
+        assert len(queued) == 1
+        assert queued[0].status == AgentMessageStatus.SUPERSEDED
+        assert recovered is not None
+        assert recovered.active_turn_id == str(followups[0].id)
+        assert recovered.collaboration_slot is not None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_startup_recovery_schedules_pending_followup_once(
+    db_session, db_engine, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    child, terminal = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    terminal.accepts_steer = False
+    await db_session.commit()
+    root_id = str(root.id)
+    child_id = str(child.id)
+    terminal_id = str(terminal.id)
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    service = AgentCollaborationService(db_session)
+    await service.followup_task(
+        caller_session_id=root_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        target="/root/reader",
+        message="one recovered followup",
+    )
+    terminal.status = AgentTurnStatus.COMPLETED
+    terminal.accepts_steer = False
+    await db_session.commit()
+
+    async def crash_after_publication(**_kwargs):
+        raise RuntimeError("simulated process crash")
+
+    monkeypatch.setattr(service, "_schedule_pending_followup", crash_after_publication)
+    with pytest.raises(RuntimeError):
+        await service.publish_child_terminal(turn_id=terminal_id)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def recover() -> dict[str, int]:
+        async with maker() as worker:
+            return await AgentCoreService(worker).recover_orphaned_turns()
+
+    await asyncio.gather(recover(), recover())
+
+    async with maker() as verify:
+        collaboration = AgentCollaborationService(verify)
+        turns = await collaboration.turns.list_for_session(child_id)
+        followups = [turn for turn in turns if turn.input_text == "one recovered followup"]
+        messages = await collaboration.transcript.list_messages(child_id)
+        queued = [
+            message
+            for message in messages
+            if (message.message_metadata or {}).get("kind") == "agent_followup"
+        ]
+        recovered = await verify.get(AgentSession, child_id)
+        assert len(followups) == 1
+        assert len(queued) == 1
+        assert queued[0].status == AgentMessageStatus.SUPERSEDED
+        assert recovered is not None and recovered.collaboration_slot is not None
