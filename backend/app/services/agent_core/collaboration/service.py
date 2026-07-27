@@ -74,6 +74,20 @@ def notify_collaboration_waiters(*session_ids: str) -> None:
             future.set_result(None)
 
 
+def _notify_collaboration_waiters_best_effort(*session_ids: str) -> None:
+    try:
+        notify_collaboration_waiters(*session_ids)
+    except Exception as exc:
+        try:
+            logger.warning(
+                "agent_core.collaboration.notification_failed",
+                session_ids=session_ids,
+                error_type=type(exc).__name__,
+            )
+        except Exception:
+            pass
+
+
 async def _wait_for_collaboration_notification(
     session_ids: set[str],
     timeout_seconds: float,
@@ -385,7 +399,7 @@ class AgentCollaborationService:
                 "delivery": "queued",
             },
         )
-        notify_collaboration_waiters(root_id, target_id)
+        self._notify_collaboration_waiters_best_effort(target_id)
         return AgentMessageResult(
             target=target_name,
             delivery="queued",
@@ -710,7 +724,7 @@ class AgentCollaborationService:
             )
         except TurnOwnershipLostError:
             return False
-        notify_collaboration_waiters(root_id)
+        self._notify_collaboration_waiters_best_effort(root_id)
         return True
 
     async def _publish_child_terminal_once(self, *, turn_id: str) -> None:
@@ -748,7 +762,7 @@ class AgentCollaborationService:
                     commit=False,
                 )
             await self.db.commit()
-            notify_collaboration_waiters(root_id, child_id)
+            self._notify_collaboration_waiters_best_effort(root_id, child_id)
             await self._schedule_pending_followup(child=child, root=root)
             return
 
@@ -795,7 +809,7 @@ class AgentCollaborationService:
             commit=False,
         )
         await self.db.commit()
-        notify_collaboration_waiters(root_id, child_id)
+        self._notify_collaboration_waiters_best_effort(root_id, child_id)
         await self._schedule_pending_followup(child=child, root=root)
 
     async def _has_publication_marker(self, turn_id: str) -> bool:
@@ -976,7 +990,7 @@ class AgentCollaborationService:
             payload=payload,
             visibility="internal",
         )
-        notify_collaboration_waiters(root_id)
+        self._notify_collaboration_waiters_best_effort(root_id)
 
     async def _stage_root_activity(
         self,
@@ -1041,17 +1055,7 @@ class AgentCollaborationService:
         self,
         *session_ids: str,
     ) -> None:
-        try:
-            notify_collaboration_waiters(*session_ids)
-        except Exception as exc:
-            try:
-                logger.warning(
-                    "agent_core.collaboration.notification_failed",
-                    session_ids=session_ids,
-                    error_type=type(exc).__name__,
-                )
-            except Exception:
-                pass
+        _notify_collaboration_waiters_best_effort(*session_ids)
 
     async def _start_followup(
         self,
