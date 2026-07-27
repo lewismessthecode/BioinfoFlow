@@ -102,7 +102,7 @@ def test_formal_release_workflow_publishes_numeric_aliases() -> None:
     installer_workflow = read_repo_file(".github/workflows/release.yml")
     container_workflow = read_repo_file(".github/workflows/container-release.yml")
 
-    assert "googleapis/release-please-action@v4" in workflow
+    assert "googleapis/release-please-action@v5" in workflow
     assert "actions: write" in workflow
     assert "secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN" in workflow
     assert 'gh workflow run ci.yml --ref "$head_branch"' in workflow
