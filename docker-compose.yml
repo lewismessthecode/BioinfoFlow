@@ -39,10 +39,11 @@ services:
       ASR_LANGUAGE: ${ASR_LANGUAGE:-zh}
       ASR_CONTEXT_TERMS: ${ASR_CONTEXT_TERMS:-["Bioinfoflow","Nextflow","MiniWDL","FASTQ"]}
     # The agent bash tool requires bubblewrap (AGENT_SANDBOX_ENABLED=true).
-    # bwrap inside Docker needs an unprivileged user namespace; if the host
-    # restricts that, add `security_opt: ["seccomp:unconfined"]` (and/or
-    # `apparmor:unconfined`) to this service. If bubblewrap is unavailable the
-    # bash tool fails closed; structured platform and file tools remain usable.
+    # Allow its unprivileged user-namespace syscall without granting a
+    # privileged container or SYS_ADMIN. The sandbox fails closed if its
+    # namespace probe cannot create the confinement boundary.
+    security_opt:
+      - seccomp:unconfined
     volumes:
       - ${BIOINFOFLOW_HOME:-${PWD}/data}:${BIOINFOFLOW_HOME:-${PWD}/data}
       - /var/run/docker.sock:/var/run/docker.sock

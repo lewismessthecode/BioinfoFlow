@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -117,7 +119,15 @@ def test_bubblewrap_argv_confines_to_roots_and_disables_network(tmp_path):
             write_roots=[write_root],
         )
     )
-    assert spec_argv[0] == "bwrap"
+    assert spec_argv[:6] == [
+        "bwrap",
+        "--unshare-user",
+        "--uid",
+        "0",
+        "--gid",
+        "0",
+    ]
+    assert spec_argv.index("--ro-bind") >= 6
     assert "--unshare-net" in spec_argv
     assert "--die-with-parent" in spec_argv
     # read root bound read-only, write root bound read-write
@@ -139,6 +149,109 @@ def test_bubblewrap_argv_confines_to_roots_and_disables_network(tmp_path):
         if token == "--bind"
     ]
     assert (str(write_root), str(write_root)) in bind_pairs
+
+
+def test_bubblewrap_is_unavailable_when_binary_is_missing(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.shutil.which",
+        lambda _name: None,
+    )
+    run_calls = 0
+
+    def unexpected_run(*_args, **_kwargs):
+        nonlocal run_calls
+        run_calls += 1
+        raise AssertionError("probe must not run without the binary")
+
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.subprocess.run",
+        unexpected_run,
+    )
+
+    assert BubblewrapAdapter().available() is False
+    assert run_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("returncode", "expected"),
+    [(0, True), (1, False)],
+)
+def test_bubblewrap_availability_requires_successful_user_namespace_probe(
+    monkeypatch, returncode, expected
+):
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.shutil.which",
+        lambda _name: "/usr/bin/bwrap",
+    )
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(returncode=returncode)
+
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.subprocess.run", fake_run
+    )
+
+    assert BubblewrapAdapter().available() is expected
+    assert calls == [
+        (
+            [
+                "/usr/bin/bwrap",
+                "--unshare-user",
+                "--uid",
+                "0",
+                "--gid",
+                "0",
+                "--",
+                "/bin/true",
+            ],
+            {
+                "check": False,
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+                "timeout": 2.0,
+            },
+        )
+    ]
+
+
+def test_bubblewrap_availability_treats_probe_timeout_as_unavailable(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.shutil.which",
+        lambda _name: "/usr/bin/bwrap",
+    )
+
+    def timed_out(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd="bwrap", timeout=2.0)
+
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.subprocess.run", timed_out
+    )
+
+    assert BubblewrapAdapter().available() is False
+
+
+def test_bubblewrap_availability_probe_is_cached_per_adapter(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.shutil.which",
+        lambda _name: "/usr/bin/bwrap",
+    )
+    calls = 0
+
+    def fake_run(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.subprocess.run", fake_run
+    )
+    adapter = BubblewrapAdapter()
+
+    assert adapter.available() is True
+    assert adapter.available() is True
+    assert calls == 1
 
 
 def test_bubblewrap_mounts_tmpfs_before_capability_roots_under_tmp(tmp_path):
