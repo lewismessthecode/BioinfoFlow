@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
 import pytest
@@ -18,7 +19,12 @@ from app.models.agent_core import (
     AgentTurn,
     AgentTurnStatus,
 )
-from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
+from app.models.llm import (
+    LlmModel,
+    LlmModelProfile,
+    LlmProvider,
+    LlmProviderCredential,
+)
 from app.models.workspace import Workspace, WorkspaceMembership
 from app.repositories.agent_core_repo import AgentSessionRepository, AgentTurnRepository
 from app.services.agent_core.collaboration.context_fork import (
@@ -31,11 +37,18 @@ from app.services.agent_core.collaboration.service import AgentCollaborationServ
 from app.services.agent_core.collaboration.service import _collaboration_waiter_count
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.service import AgentCoreService
 from app.services.agent_core.transcript.messages import parts_to_text
 from app.services.llm.credentials import encrypt_secret
 from app.services.llm.catalog import ExactModelProbeResult
 from app.services.llm.probe import LlmProviderProbeResult
+from app.services.model_runtime.contracts import (
+    CompletionMetadata,
+    ModelEvent,
+    ModelInvocation,
+    TextDelta,
+)
 from app.config import settings
 from app.path_layout import agent_attachment_root, agent_attachments_root
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -605,6 +618,66 @@ async def _create_probe_model(
     return model
 
 
+class _RecordingFinalGateway:
+    def __init__(self, final_text: str) -> None:
+        self.final_text = final_text
+        self.invocations: list[ModelInvocation] = []
+
+    async def invoke(self, invocation: ModelInvocation) -> AsyncIterator[ModelEvent]:
+        self.invocations.append(invocation)
+        yield TextDelta(text=self.final_text)
+        yield CompletionMetadata(response_id="child-runtime", finish_reason="stop")
+
+
+async def _parent_with_working_model_and_auth_failing_default(
+    db_session: AsyncSession,
+) -> tuple[AgentSession, AgentTurn, LlmModel, LlmModel]:
+    failing_model = await _create_probe_model(
+        db_session,
+        model_name="catalog-default-auth-failing",
+        test_status={
+            "success": False,
+            "error_code": "authentication_error",
+            "http_status": 401,
+        },
+    )
+    working_model = await _create_probe_model(
+        db_session,
+        model_name="parent-explicit-working",
+    )
+    default_profile = LlmModelProfile(
+        name="Authentication-failing catalog default",
+        task_type="agent",
+        primary_model_id=str(failing_model.id),
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+    )
+    db_session.add(default_profile)
+    await db_session.commit()
+    await db_session.refresh(default_profile)
+
+    root, parent_turn = await _create_parent_turn(db_session)
+    root.default_model_profile_id = str(default_profile.id)
+    parent_turn.model_profile_snapshot = {
+        "resolved_model_id": str(working_model.id),
+        "resolved_model_selection": {
+            "provider": "openai_compatible",
+            "model": working_model.model_id,
+        },
+        "resolved_model_capabilities": {"supports_reasoning": True},
+        "resolved_runtime_strategy": {
+            "allow_thinking": True,
+            "reasoning_effort": "high",
+        },
+    }
+    await db_session.commit()
+    await db_session.refresh(root)
+    await db_session.refresh(parent_turn)
+    return root, parent_turn, working_model, failing_model
+
+
 @pytest.mark.asyncio
 async def test_available_requested_model_is_selected_with_fresh_exact_probe(
     db_session,
@@ -1093,16 +1166,12 @@ async def test_spawn_without_override_ignores_authentication_failing_catalog_def
     db_session, monkeypatch
 ) -> None:
     await _seed_workspace(db_session)
-    await _create_probe_model(
-        db_session,
-        model_name="catalog-default-auth-failing",
-        test_status={
-            "success": False,
-            "error_code": "authentication_error",
-            "http_status": 401,
-        },
+    root, parent_turn, working_model, failing_model = (
+        await _parent_with_working_model_and_auth_failing_default(db_session)
     )
-    root, parent_turn = await _create_parent_turn(db_session)
+    working_model_name = working_model.model_id
+    working_provider_id = str(working_model.provider_id)
+    failing_model_name = failing_model.model_id
     probe_calls: list[dict] = []
 
     async def forbidden_probe(_self, **kwargs):
@@ -1126,12 +1195,11 @@ async def test_spawn_without_override_ignores_authentication_failing_catalog_def
         message="Use the explicitly working parent model.",
         fork_turns="none",
     )
-    child_turn = await service.turns.get_fresh(spawned.child_turn_id)
-    assert child_turn is not None
-    child_turn.status = AgentTurnStatus.COMPLETED
-    child_turn.final_text = "completed with parent model"
-    await db_session.commit()
-    await service.publish_child_terminal(turn_id=spawned.child_turn_id)
+    gateway = _RecordingFinalGateway("completed with parent model")
+    completed = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(spawned.child_turn_id)
 
     agents = await service.list_agents(
         caller_session_id=str(root.id),
@@ -1141,7 +1209,13 @@ async def test_spawn_without_override_ignores_authentication_failing_catalog_def
     child = next(agent for agent in agents if agent.task_name == "/root/inherits_parent")
     assert probe_calls == []
     assert spawned.requested_model is None
-    assert spawned.effective_model == "parent-model"
+    assert spawned.effective_model == working_model_name
+    assert completed is not None and completed.status == AgentTurnStatus.COMPLETED
+    assert completed.final_text == "completed with parent model"
+    assert len(gateway.invocations) == 1
+    assert gateway.invocations[0].target.endpoint_id == working_provider_id
+    assert gateway.invocations[0].target.model_name == working_model_name
+    assert gateway.invocations[0].target.model_name != failing_model_name
     assert child.status == "completed"
     assert child.final_text == "completed with parent model"
 
@@ -1151,12 +1225,13 @@ async def test_spawn_authentication_failing_model_is_fresh_probed_then_falls_bac
     db_session, monkeypatch
 ) -> None:
     await _seed_workspace(db_session)
-    failing_model = await _create_probe_model(
-        db_session,
-        model_name="catalog-default-auth-failing",
+    root, parent_turn, working_model, failing_model = (
+        await _parent_with_working_model_and_auth_failing_default(db_session)
     )
     failing_model_id = str(failing_model.id)
-    root, parent_turn = await _create_parent_turn(db_session)
+    failing_model_name = failing_model.model_id
+    working_model_name = working_model.model_id
+    working_provider_id = str(working_model.provider_id)
     probe_calls: list[dict] = []
 
     async def authentication_failure(_self, **kwargs):
@@ -1190,14 +1265,25 @@ async def test_spawn_authentication_failing_model_is_fresh_probed_then_falls_bac
     )
     child = await db_session.get(AgentSession, spawned.child_session_id)
     child_turn = await db_session.get(AgentTurn, spawned.child_turn_id)
+    gateway = _RecordingFinalGateway("completed after requested model fallback")
+    completed = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(spawned.child_turn_id)
 
     assert [call["model_id"] for call in probe_calls] == [
         "catalog-default-auth-failing"
     ]
     assert spawned.requested_model == failing_model_id
-    assert spawned.effective_model == "parent-model"
+    assert spawned.effective_model == working_model_name
     assert spawned.model_fallback is True
     assert spawned.fallback_reason == "requested_model_unavailable"
+    assert completed is not None and completed.status == AgentTurnStatus.COMPLETED
+    assert completed.final_text == "completed after requested model fallback"
+    assert len(gateway.invocations) == 1
+    assert gateway.invocations[0].target.endpoint_id == working_provider_id
+    assert gateway.invocations[0].target.model_name == working_model_name
+    assert gateway.invocations[0].target.model_name != failing_model_name
     assert child is not None
     assert child.session_metadata["collaboration"]["model_fallback"] is True
     assert child.session_metadata["collaboration"]["fallback_reason"] == (
@@ -1207,7 +1293,7 @@ async def test_spawn_authentication_failing_model_is_fresh_probed_then_falls_bac
     turn_collaboration = child_turn.model_profile_snapshot["metadata"][
         "collaboration"
     ]
-    assert turn_collaboration["effective_model"] == "parent-model"
+    assert turn_collaboration["effective_model"] == working_model_name
     assert turn_collaboration["model_fallback"] is True
     assert "secret" not in repr(child.session_metadata).lower()
 
