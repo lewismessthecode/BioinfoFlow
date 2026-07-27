@@ -417,7 +417,11 @@ describe("ArtifactViewer", () => {
     )
 
     expect(screen.getByTestId("artifact-file-viewer")).toBeInTheDocument()
-    expect(screen.getByText("/workspace/result.custom")).toBeInTheDocument()
+    expect(screen.getByText("result.custom")).toHaveAttribute(
+      "title",
+      "/workspace/result.custom",
+    )
+    expect(screen.queryByText("/workspace/result.custom")).not.toBeInTheDocument()
     expect(screen.getByText("renderer.textLoading")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "artifacts.open" })).toHaveAttribute(
       "href",
