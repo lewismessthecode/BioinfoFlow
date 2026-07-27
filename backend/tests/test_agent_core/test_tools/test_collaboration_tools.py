@@ -55,13 +55,25 @@ def test_child_toolset_hides_spawn_and_interaction_but_keeps_coordination() -> N
 def test_task4_collaboration_tools_have_precise_model_visible_contracts() -> None:
     registry = build_default_tool_registry()
 
+    spawn = registry.get("spawn_agent").spec
+    assert spawn.write_scope == [
+        "agent_sessions",
+        "agent_turns",
+        "agent_messages",
+        "agent_attachments",
+    ]
+
     send = registry.get("send_message").spec
     assert send.input_schema["required"] == ["target", "message"]
     assert send.write_scope == ["agent_messages"]
 
     followup = registry.get("followup_task").spec
     assert followup.input_schema["required"] == ["target", "message"]
-    assert followup.write_scope == ["agent_messages", "agent_turns"]
+    assert followup.write_scope == [
+        "agent_messages",
+        "agent_turns",
+        "agent_sessions",
+    ]
 
     wait = registry.get("wait_agent").spec
     assert wait.input_schema["required"] == []
@@ -75,4 +87,4 @@ def test_task4_collaboration_tools_have_precise_model_visible_contracts() -> Non
 
     interrupt = registry.get("interrupt_agent").spec
     assert interrupt.input_schema["required"] == ["target"]
-    assert interrupt.write_scope == ["agent_turns"]
+    assert interrupt.write_scope == ["agent_turns", "agent_sessions"]

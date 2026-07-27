@@ -31,7 +31,12 @@ class SpawnAgentTool:
         output_schema={"type": "object"},
         risk_level="act_low",
         read_scope=["agent_transcript", "model_catalog"],
-        write_scope=["agent_sessions", "agent_turns", "agent_messages"],
+        write_scope=[
+            "agent_sessions",
+            "agent_turns",
+            "agent_messages",
+            "agent_attachments",
+        ],
         audit="Start a durable child agent in the current root tree.",
     )
 
@@ -119,7 +124,7 @@ class FollowupTaskTool(_Task4CollaborationTool):
         output_schema={"type": "object"},
         risk_level="act_low",
         read_scope=["agent_sessions", "agent_turns"],
-        write_scope=["agent_messages", "agent_turns"],
+        write_scope=["agent_messages", "agent_turns", "agent_sessions"],
         audit="Queue or steer a follow-up child task.",
     )
 
@@ -163,7 +168,7 @@ class InterruptAgentTool(_Task4CollaborationTool):
         output_schema={"type": "object"},
         risk_level="act_low",
         read_scope=["agent_sessions", "agent_turns"],
-        write_scope=["agent_turns"],
+        write_scope=["agent_turns", "agent_sessions"],
         audit="Interrupt an active child turn.",
     )
 
