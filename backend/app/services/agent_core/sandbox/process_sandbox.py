@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import platform
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -39,6 +40,8 @@ _MACOS_WRITE_ROOTS = (
     "/private/var/folders",
 )
 _BWRAP_PROTECTED_STAGE_PREFIX = "/.bioinfoflow-protected-read"
+_BWRAP_USER_NAMESPACE_ARGS = ("--unshare-user", "--uid", "0", "--gid", "0")
+_BWRAP_PROBE_TIMEOUT_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -73,11 +76,39 @@ class BubblewrapAdapter:
 
     name = "bubblewrap"
 
+    def __init__(self) -> None:
+        self._availability: bool | None = None
+
     def available(self) -> bool:
-        return shutil.which("bwrap") is not None
+        if self._availability is not None:
+            return self._availability
+
+        executable = shutil.which("bwrap")
+        if executable is None:
+            self._availability = False
+            return False
+
+        try:
+            probe = subprocess.run(
+                [
+                    executable,
+                    *_BWRAP_USER_NAMESPACE_ARGS,
+                    "--",
+                    "/bin/true",
+                ],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=_BWRAP_PROBE_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            self._availability = False
+        else:
+            self._availability = probe.returncode == 0
+        return self._availability
 
     def build_argv(self, spec: SandboxSpec) -> list[str]:
-        argv: list[str] = ["bwrap"]
+        argv: list[str] = ["bwrap", *_BWRAP_USER_NAMESPACE_ARGS]
         for directory in _LINUX_SYSTEM_RO:
             if Path(directory).exists():
                 argv += ["--ro-bind", directory, directory]

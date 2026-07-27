@@ -43,6 +43,14 @@ def test_source_compose_defaults_to_loopback_dev_auth() -> None:
     )
 
 
+def test_source_compose_grants_only_required_bubblewrap_namespace_permission() -> None:
+    backend = _source_compose()["services"]["backend"]
+
+    assert backend["security_opt"] == ["seccomp:unconfined"]
+    assert backend.get("privileged", False) is False
+    assert "SYS_ADMIN" not in backend.get("cap_add", [])
+
+
 def test_published_image_compose_fails_closed_to_personal_auth() -> None:
     compose = yaml.safe_load(
         (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
