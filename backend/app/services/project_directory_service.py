@@ -134,7 +134,10 @@ class ProjectDirectoryService:
                     root_fd = _open_owned_root(parent_fd, root.name, root_stat)
                 except OSError:
                     await self.repo.delete_pending(project)
-                    _remove_unopened_owned_root(parent_fd, root.name, root_stat)
+                    # Without an open descriptor, path identity cannot be proven:
+                    # Linux may immediately reuse an inode after a replacement.
+                    # Leave the entry in place and fail closed instead of risking
+                    # deletion of a directory created by another actor.
                     raise
                 if root_fd is None:
                     await self.repo.delete_pending(project)
@@ -315,28 +318,6 @@ def _open_owned_root(
     finally:
         if not keep_open:
             os.close(root_fd)
-
-
-def _remove_unopened_owned_root(
-    parent_fd: int,
-    name: str,
-    expected_stat: os.stat_result,
-) -> None:
-    quarantine_name = _move_entry_to_quarantine(parent_fd, name)
-    if quarantine_name is None:
-        return
-    if not _entry_matches_identity(
-        parent_fd,
-        quarantine_name,
-        expected_stat.st_dev,
-        expected_stat.st_ino,
-    ):
-        _restore_quarantined_entry(parent_fd, quarantine_name, name)
-        return
-    try:
-        os.rmdir(quarantine_name, dir_fd=parent_fd)
-    except OSError:
-        _restore_quarantined_entry(parent_fd, quarantine_name, name)
 
 
 def _create_project_layout(reservation: ManagedProjectReservation) -> bool:
