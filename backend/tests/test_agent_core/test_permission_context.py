@@ -19,6 +19,7 @@ from app.services.agent_core.tools.executor import AgentToolExecutor
 from app.services.agent_core.tools import build_default_tool_registry
 from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
+from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -142,7 +143,7 @@ async def test_capability_changes_participate_in_toolset_policy_versioning(
 
     refreshed = await service.session_repo.get_fresh(str(session.id))
     assert refreshed is not None
-    assert refreshed.toolset_policy == {"name": "execution"}
+    assert refreshed.toolset_policy == EXECUTION_TOOLSET_POLICY
     assert refreshed.permission_policy_version == 2
 
 
