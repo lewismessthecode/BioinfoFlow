@@ -137,6 +137,72 @@ def test_unknown_or_ambiguous_cli_commands_are_not_auto_run(command):
 @pytest.mark.parametrize(
     "command",
     [
+        "python3 --version",
+        "python -V",
+        "node --version",
+        "ruby --help",
+    ],
+)
+def test_trusted_interpreter_introspection_is_read_only(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.level == "act_low"
+    assert assessment.effects == ["read"]
+
+
+def test_unknown_executable_cannot_claim_introspection_semantics():
+    assessment = assess_command_risk(
+        "dangercli --version", target=LOCAL_UNSANDBOXED
+    )
+
+    assert assessment.level == "act_high"
+    assert assessment.effects == ["execute"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python3 -c 'print(1)'",
+        "python3 script.py",
+    ],
+)
+def test_interpreter_code_execution_is_not_introspection(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.level == "act_high"
+    assert assessment.effects == ["execute"]
+
+
+@pytest.mark.parametrize(
+    "command,expected_effect",
+    [
+        ("python3 --version > version.txt", "write"),
+        ("python3 --version | tee version.txt", "write"),
+        ("python3 --version $(printf ok)", "execute"),
+        ("python3 --version && printf ok", "execute"),
+        ("python3 --version &", "execute"),
+    ],
+)
+def test_introspection_proof_rejects_dynamic_or_compound_shell(command, expected_effect):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.level == "act_high"
+    assert expected_effect in assessment.effects
+
+
+def test_introspection_proof_never_lowers_inline_hardline():
+    assessment = assess_command_risk(
+        "python3 -c 'import os; os.system(\"reboot\")' --version",
+        target=LOCAL_UNSANDBOXED,
+    )
+
+    assert assessment.level == "critical"
+    assert assessment.requires_explicit_approval is True
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
         "phoenixcli pipeline list",
         "phoenixcli --no-interactive --profile sz01 pipeline list --output json",
         "squeue -u alice",
