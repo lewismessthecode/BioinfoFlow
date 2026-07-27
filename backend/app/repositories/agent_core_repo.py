@@ -17,6 +17,7 @@ from sqlalchemy import (
     select,
     update,
 )
+from sqlalchemy.exc import IntegrityError
 
 from app.models.agent_core import (
     AgentAction,
@@ -37,6 +38,10 @@ from app.models.agent_core import (
 )
 from app.repositories.base import BaseRepository
 from app.schemas.common import Pagination
+
+
+class AgentCollaborationCapacityError(RuntimeError):
+    """Raised when every live child slot for an agent tree is reserved."""
 
 
 def _owned_running_turn(turn_id, owner_token: str):
@@ -290,6 +295,121 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_agent_target(
+        self,
+        root_session_id: str,
+        target: str,
+        *,
+        workspace_id: str,
+        user_id: str,
+    ) -> AgentSession | None:
+        normalized = target.strip()
+        if normalized == "/root":
+            target_filter = self.model.id == root_session_id
+        else:
+            if normalized.startswith("/root/"):
+                normalized = normalized.removeprefix("/root/")
+            try:
+                target_id = str(UUID(normalized))
+            except ValueError:
+                target_id = None
+            name_filter = and_(
+                self.model.root_session_id == root_session_id,
+                self.model.agent_name == normalized,
+            )
+            target_filter = (
+                or_(self.model.id == target_id, name_filter)
+                if target_id is not None
+                else name_filter
+            )
+        return await self.session.scalar(
+            select(self.model).where(
+                self.model.workspace_id == workspace_id,
+                self.model.user_id == user_id,
+                or_(
+                    and_(
+                        self.model.id == root_session_id,
+                        self.model.root_session_id.is_(None),
+                    ),
+                    self.model.root_session_id == root_session_id,
+                ),
+                target_filter,
+            )
+        )
+
+    async def list_agent_tree(self, root_session_id: str) -> list[AgentSession]:
+        result = await self.session.execute(
+            select(self.model)
+            .where(
+                or_(
+                    self.model.id == root_session_id,
+                    self.model.root_session_id == root_session_id,
+                )
+            )
+            .order_by(
+                case((self.model.id == root_session_id, 0), else_=1),
+                self.model.created_at,
+                self.model.id,
+            )
+        )
+        return list(result.scalars().all())
+
+    async def reserve_child_slot(self, child_session_id: str) -> int:
+        await self.session.flush()
+        from app.config import settings
+
+        for slot in range(1, settings.agent_collaboration_max_slots):
+            try:
+                async with self.session.begin_nested():
+                    result = await self.session.execute(
+                        update(self.model)
+                        .where(
+                            self.model.id == child_session_id,
+                            self.model.root_session_id.is_not(None),
+                            self.model.collaboration_slot.is_(None),
+                        )
+                        .values(collaboration_slot=slot)
+                        .returning(self.model.collaboration_slot)
+                        .execution_options(synchronize_session=False)
+                    )
+                    reserved = result.scalar_one_or_none()
+                if reserved is not None:
+                    return int(reserved)
+            except IntegrityError:
+                continue
+
+            existing = await self.session.scalar(
+                select(self.model.collaboration_slot).where(
+                    self.model.id == child_session_id
+                )
+            )
+            if existing is not None:
+                return int(existing)
+            break
+
+        child = await self.session.scalar(
+            select(self.model).where(self.model.id == child_session_id)
+        )
+        if child is None or child.root_session_id is None:
+            raise ValueError("Child session must exist and belong to an agent tree")
+        raise AgentCollaborationCapacityError(
+            "Agent collaboration slot limit reached"
+        )
+
+    async def release_child_slot(self, child_session_id: str) -> bool:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == child_session_id,
+                self.model.root_session_id.is_not(None),
+                self.model.collaboration_slot.is_not(None),
+            )
+            .values(collaboration_slot=None)
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.flush()
+        return result.rowcount == 1
+
     def _active_nonterminal_turn_exists(self):
         return (
             select(AgentTurn.id)
@@ -422,14 +542,22 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
             stmt = stmt.where(self.model.status == AgentSessionStatus.ACTIVE)
         if parent_session_id is not None:
             stmt = stmt.where(
-                self.model.lineage["parent_session_id"].as_string() == parent_session_id
+                or_(
+                    self.model.parent_session_id == parent_session_id,
+                    and_(
+                        self.model.parent_session_id.is_(None),
+                        self.model.lineage["parent_session_id"].as_string()
+                        == parent_session_id,
+                    ),
+                )
             )
         elif not include_children:
             stmt = stmt.where(
+                self.model.parent_session_id.is_(None),
                 or_(
                     self.model.lineage.is_(None),
                     self.model.lineage["parent_session_id"].as_string().is_(None),
-                )
+                ),
             )
         stmt = stmt.order_by(desc(self.model.updated_at), desc(self.model.id))
         result = await self.session.execute(stmt.limit(limit))

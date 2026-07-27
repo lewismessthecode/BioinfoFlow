@@ -67,3 +67,9 @@ def test_legacy_hermes_agent_settings_are_ignored() -> None:
     assert not hasattr(settings, "agent_hermes_state_db")
     assert not hasattr(settings, "agent_engine")
     assert not hasattr(settings, "agent_hermes_max_concurrency")
+
+
+def test_agent_collaboration_slots_default_to_eight() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.agent_collaboration_max_slots == 8

@@ -2,7 +2,18 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -72,6 +83,38 @@ class AgentAttachmentStatus:
 
 class AgentSession(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "agent_sessions"
+    __table_args__ = (
+        Index(
+            "uq_agent_sessions_parent_agent_name",
+            "parent_session_id",
+            "agent_name",
+            unique=True,
+            sqlite_where=text(
+                "parent_session_id IS NOT NULL AND agent_name IS NOT NULL"
+            ),
+            postgresql_where=text(
+                "parent_session_id IS NOT NULL AND agent_name IS NOT NULL"
+            ),
+        ),
+        Index(
+            "uq_agent_sessions_root_collaboration_slot",
+            "root_session_id",
+            "collaboration_slot",
+            unique=True,
+            sqlite_where=text(
+                "root_session_id IS NOT NULL AND collaboration_slot IS NOT NULL"
+            ),
+            postgresql_where=text(
+                "root_session_id IS NOT NULL AND collaboration_slot IS NOT NULL"
+            ),
+        ),
+        Index("ix_agent_sessions_root_status", "root_session_id", "status"),
+        Index(
+            "ix_agent_sessions_root_active_turn",
+            "root_session_id",
+            "active_turn_id",
+        ),
+    )
 
     project_id: Mapped[str | None] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"),
@@ -99,6 +142,22 @@ class AgentSession(Base, UUIDMixin, TimestampMixin):
         String(36),
         nullable=True,
     )
+    parent_session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_sessions.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    root_session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_sessions.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    agent_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    collaboration_slot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    spawned_by_turn_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_turns.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     prompt_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     toolset_policy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     context_policy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -119,6 +178,7 @@ class AgentSession(Base, UUIDMixin, TimestampMixin):
         "AgentTurn",
         back_populates="session",
         cascade="all, delete-orphan",
+        foreign_keys="AgentTurn.session_id",
     )
     messages = relationship(
         "AgentMessage",
@@ -244,7 +304,11 @@ class AgentTurn(Base, UUIDMixin, TimestampMixin):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    session = relationship("AgentSession", back_populates="turns")
+    session = relationship(
+        "AgentSession",
+        back_populates="turns",
+        foreign_keys=[session_id],
+    )
     project = relationship("Project")
     workspace = relationship("Workspace")
     events = relationship(
