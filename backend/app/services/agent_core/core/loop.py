@@ -1350,7 +1350,7 @@ class AgentLoopController:
                 if result.status not in {
                     AgentActionStatus.COMPLETED,
                     AgentActionStatus.REJECTED,
-                }:
+                } and not _is_continuable_tool_failure(result):
                     failed_resume_status = result.status
             if failed_resume_status is not None:
                 await self._append_missing_batch_results(
@@ -1429,7 +1429,10 @@ class AgentLoopController:
                     batch_id=None,
                     result=result,
                 )
-            if result.status not in {"completed", AgentActionStatus.REJECTED}:
+            if result.status not in {
+                AgentActionStatus.COMPLETED,
+                AgentActionStatus.REJECTED,
+            } and not _is_continuable_tool_failure(result):
                 return LoopResult(
                     termination_reason="model_failed",
                     final_text=None,
@@ -2470,6 +2473,17 @@ def _tool_result_for_terminal_action(action) -> ToolExecutionResult:
         result=action.result,
         permission_decision=action.permission_decision,
         error=error,
+    )
+
+
+def _is_continuable_tool_failure(result: ToolExecutionResult) -> bool:
+    error = result.error
+    return (
+        result.status == AgentActionStatus.FAILED
+        and result.result is not None
+        and isinstance(error, dict)
+        and error.get("category") == "tool_result"
+        and error.get("continuable") is True
     )
 
 

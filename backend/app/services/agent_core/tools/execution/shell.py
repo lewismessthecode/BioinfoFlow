@@ -29,7 +29,11 @@ from app.services.agent_core.sandbox import (
     SandboxUnavailableError,
     local_boundary_from_tool_context,
 )
-from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
+from app.services.agent_core.tools.specs import (
+    AgentToolContext,
+    AgentToolSpec,
+    ToolResultError,
+)
 from app.services.agent_core.tools.web.public_url_policy import (
     PublicUrl,
     validate_public_url,
@@ -120,13 +124,14 @@ class ExecuteShellTool:
             )
         return assess_command_risk(command, target=target)
 
-    def result_error(self, result: dict[str, Any]) -> dict[str, Any] | None:
+    def result_error(self, result: dict[str, Any]) -> ToolResultError | None:
         exit_code = result.get("exit_code")
         if not isinstance(exit_code, int) or exit_code == 0:
             return None
         return {
             "type": "CommandExitError",
             "message": f"Command exited with code {exit_code}.",
+            "continuable": True,
         }
 
     async def run(
