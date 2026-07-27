@@ -18,6 +18,7 @@ from app.services.agent_core.tools import (
 from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.specs import AgentToolSpec
 from app.services.agent_core.tools.files import resources as file_resources
+from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
 from app.utils.exceptions import ConflictError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -224,7 +225,7 @@ async def test_exit_plan_mode_flips_session_to_execution_on_approve(
 
     # Toolset must flip to execution BEFORE resume so the resume worker sees it.
     session = await core.session_repo.get(session_id)
-    assert session.toolset_policy == {"name": "execution"}
+    assert session.toolset_policy == EXECUTION_TOOLSET_POLICY
 
     resumed = await dispatcher.resume_action(
         action_id=pending.action_id, context=context
