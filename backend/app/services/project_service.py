@@ -88,7 +88,9 @@ class ProjectService:
                 normalized_override = normalize_repo_path(str(override_path))
                 data["storage_mode"] = "external"
                 data["external_root_path"] = normalized_override
-                ensure_project_layout(project_id, external_root_path=normalized_override)
+                ensure_project_layout(
+                    project_id, external_root_path=normalized_override
+                )
             else:
                 data["storage_mode"] = "managed"
                 data["external_root_path"] = None
@@ -100,19 +102,23 @@ class ProjectService:
 
     async def update_project(self, project, data: dict):
         if "remote_connection_id" in data or "remote_root_path" in data:
-            data.setdefault("remote_connection_id", getattr(project, "remote_connection_id", None))
-            data.setdefault("remote_root_path", getattr(project, "remote_root_path", None))
+            data.setdefault(
+                "remote_connection_id", getattr(project, "remote_connection_id", None)
+            )
+            data.setdefault(
+                "remote_root_path", getattr(project, "remote_root_path", None)
+            )
             data.setdefault("workspace_id", str(project.workspace_id))
             await self._configure_remote_project(data)
         elif data.get("external_root_path"):
-            normalized_override = normalize_repo_path(
-                str(data["external_root_path"])
-            )
+            normalized_override = normalize_repo_path(str(data["external_root_path"]))
             data["storage_mode"] = "external"
             data["external_root_path"] = normalized_override
             data["remote_connection_id"] = None
             data["remote_root_path"] = None
-            ensure_project_layout(str(project.id), external_root_path=normalized_override)
+            ensure_project_layout(
+                str(project.id), external_root_path=normalized_override
+            )
         elif data.get("storage_mode") == "managed":
             data["external_root_path"] = None
             data["remote_connection_id"] = None
@@ -140,7 +146,9 @@ class ProjectService:
         workspace_id = str(data.get("workspace_id") or "")
         if not workspace_id:
             raise ValidationError("workspace_id is required for remote projects")
-        connection = await RemoteConnectionRepository(self.repo.session).get_for_workspace(
+        connection = await RemoteConnectionRepository(
+            self.repo.session
+        ).get_for_workspace(
             str(connection_id),
             workspace_id=workspace_id,
         )

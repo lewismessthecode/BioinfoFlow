@@ -42,6 +42,7 @@ DEMO_ENTRYPOINT = DEMO_WORKFLOW.entrypoint_relpath
 DEMO_ASSET_ROOT = Path(__file__).resolve().parents[1] / "demo_assets" / "quickstart"
 DEMO_PROJECT_FILES = ("samples.tsv", "sample-a.fastq", "sample-b.fastq")
 
+
 @dataclass(slots=True)
 class _LockEntry:
     lock: asyncio.Lock
@@ -227,8 +228,7 @@ class DemoBootstrapService:
             id=workflow_id,
             name=DEMO_WORKFLOW_NAME,
             description=(
-                "Tiny deterministic biological read summary. "
-                f"Marker: {DEMO_MARKER}"
+                f"Tiny deterministic biological read summary. Marker: {DEMO_MARKER}"
             ),
             source=DEMO_WORKFLOW.source,
             engine=DEMO_WORKFLOW.engine,

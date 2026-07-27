@@ -33,15 +33,11 @@ from tests.support.path_contract import create_project
 DEMO_PROJECT_NAME = "Bioinfoflow Demo"
 DEMO_WORKFLOW_NAME = "bioinfoflow-quickstart"
 DEMO_WORKFLOW_VERSION = "1.0.0"
-DEMO_RUNTIME_IMAGE = (
-    "ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90"
+DEMO_RUNTIME_IMAGE = "ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90"
+SAMPLES_TSV = "sample\tfastq\nsample-a\tsample-a.fastq\nsample-b\tsample-b.fastq\n"
+SAMPLE_A_FASTQ = (
+    "@sample-a-1\nACGTACGT\n+\nFFFFFFFF\n@sample-a-2\nTGCATGCA\n+\nFFFFFFFF\n"
 )
-SAMPLES_TSV = (
-    "sample\tfastq\n"
-    "sample-a\tsample-a.fastq\n"
-    "sample-b\tsample-b.fastq\n"
-)
-SAMPLE_A_FASTQ = "@sample-a-1\nACGTACGT\n+\nFFFFFFFF\n@sample-a-2\nTGCATGCA\n+\nFFFFFFFF\n"
 SAMPLE_B_FASTQ = "@sample-b-1\nAACCGG\n+\nFFFFFF\n@sample-b-2\nTTGGCC\n+\nFFFFFF\n"
 
 
@@ -139,7 +135,9 @@ async def test_first_run_bootstrap_creates_exact_demo_state(async_client, db_ses
     assert (data_root / "samples.tsv").read_text() == SAMPLES_TSV
     assert (data_root / "sample-a.fastq").read_text() == SAMPLE_A_FASTQ
     assert (data_root / "sample-b.fastq").read_text() == SAMPLE_B_FASTQ
-    workflow_text = (workflow_bundle_home(str(workflow.id)) / "workflow.wdl").read_text()
+    workflow_text = (
+        workflow_bundle_home(str(workflow.id)) / "workflow.wdl"
+    ).read_text()
     assert DEMO_RUNTIME_IMAGE in workflow_text
     assert "summary.tsv" in workflow_text
     assert "report.md" in workflow_text
@@ -160,15 +158,25 @@ async def test_first_run_bootstrap_is_idempotent(async_client, db_session):
     assert second["workflow_id"] == first["workflow_id"]
     await db_session.refresh(project)
     assert project.directory_name == directory_name == "bioinfoflow-demo"
-    assert await db_session.scalar(
-        select(func.count()).select_from(Project).where(Project.name == DEMO_PROJECT_NAME)
-    ) == 1
-    assert await db_session.scalar(
-        select(func.count()).select_from(Workflow).where(
-            Workflow.name == DEMO_WORKFLOW_NAME,
-            Workflow.version == DEMO_WORKFLOW_VERSION,
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(Project)
+            .where(Project.name == DEMO_PROJECT_NAME)
         )
-    ) == 1
+        == 1
+    )
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(Workflow)
+            .where(
+                Workflow.name == DEMO_WORKFLOW_NAME,
+                Workflow.version == DEMO_WORKFLOW_VERSION,
+            )
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -189,12 +197,14 @@ async def test_first_run_bootstrap_repairs_missing_files(async_client, db_sessio
     await db_session.refresh(project)
     assert project.directory_name == directory_name == "bioinfoflow-demo"
     assert (project_data_root(project) / "sample-a.fastq").read_text() == SAMPLE_A_FASTQ
-    assert DEMO_RUNTIME_IMAGE in (
-        workflow_bundle_home(str(workflow.id)) / "workflow.wdl"
-    ).read_text()
-    assert "bioinfoflow.demo.quickstart.v1" in workflow_metadata_path(
-        str(workflow.id)
-    ).read_text()
+    assert (
+        DEMO_RUNTIME_IMAGE
+        in (workflow_bundle_home(str(workflow.id)) / "workflow.wdl").read_text()
+    )
+    assert (
+        "bioinfoflow.demo.quickstart.v1"
+        in workflow_metadata_path(str(workflow.id)).read_text()
+    )
 
 
 @pytest.mark.asyncio
@@ -220,18 +230,28 @@ async def test_first_run_bootstrap_repairs_missing_binding_and_pin(
     repaired = await _bootstrap(async_client)
 
     assert repaired["created"] is False
-    assert await db_session.scalar(
-        select(func.count()).select_from(ProjectWorkflowBinding).where(
-            ProjectWorkflowBinding.project_id == first["demo_project_id"],
-            ProjectWorkflowBinding.workflow_id == first["workflow_id"],
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(ProjectWorkflowBinding)
+            .where(
+                ProjectWorkflowBinding.project_id == first["demo_project_id"],
+                ProjectWorkflowBinding.workflow_id == first["workflow_id"],
+            )
         )
-    ) == 1
-    assert await db_session.scalar(
-        select(func.count()).select_from(ProjectWorkflowPin).where(
-            ProjectWorkflowPin.project_id == first["demo_project_id"],
-            ProjectWorkflowPin.pinned_workflow_id == first["workflow_id"],
+        == 1
+    )
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(ProjectWorkflowPin)
+            .where(
+                ProjectWorkflowPin.project_id == first["demo_project_id"],
+                ProjectWorkflowPin.pinned_workflow_id == first["workflow_id"],
+            )
         )
-    ) == 1
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -246,9 +266,14 @@ async def test_first_run_bootstrap_serializes_concurrent_calls(db_engine, db_ses
     assert all(item["ready"] is True for item in results)
     assert sum(item["created"] is True for item in results) == 1
     assert results[0]["demo_project_id"] == results[1]["demo_project_id"]
-    assert await db_session.scalar(
-        select(func.count()).select_from(Project).where(Project.name == DEMO_PROJECT_NAME)
-    ) == 1
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(Project)
+            .where(Project.name == DEMO_PROJECT_NAME)
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -292,19 +317,26 @@ async def test_first_run_bootstrap_converges_different_users_in_one_workspace(
     assert first_data["ready"] is True
     assert second_data["ready"] is True
     assert first_data["demo_project_id"] == second_data["demo_project_id"]
-    assert await db_session.scalar(
-        select(func.count()).select_from(Project).where(
-            Project.workspace_id == DEFAULT_WORKSPACE_ID,
-            Project.name == DEMO_PROJECT_NAME,
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(Project)
+            .where(
+                Project.workspace_id == DEFAULT_WORKSPACE_ID,
+                Project.name == DEMO_PROJECT_NAME,
+            )
         )
-    ) == 1
+        == 1
+    )
     project = await db_session.get(Project, first_data["demo_project_id"])
     assert project is not None
     assert project.user_id in users
 
 
 @pytest.mark.asyncio
-async def test_first_run_rejects_preclaimed_canonical_workflow(async_client, db_session):
+async def test_first_run_rejects_preclaimed_canonical_workflow(
+    async_client, db_session
+):
     preclaimed = Workflow(
         id=str(uuid4()),
         name=DEMO_WORKFLOW_NAME,
@@ -335,15 +367,12 @@ async def test_first_run_rejects_preclaimed_canonical_workflow(async_client, db_
     assert not (projects_root() / demo_project_id).exists()
 
 
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("corruption", ["source_ref", "runtime_schema"])
 async def test_first_run_rejects_corrupted_canonical_workflow(
     async_client, db_session, corruption
 ):
-    canonical_id = str(
-        uuid5(NAMESPACE_URL, "bioinfoflow:quickstart-workflow:1.0.0")
-    )
+    canonical_id = str(uuid5(NAMESPACE_URL, "bioinfoflow:quickstart-workflow:1.0.0"))
     source_ref = "local" if corruption != "source_ref" else "replaced.wdl"
     runtime_image = DEMO_RUNTIME_IMAGE if corruption != "runtime_schema" else "latest"
     corrupted = Workflow(
@@ -458,9 +487,7 @@ async def test_bootstrap_lock_registry_releases_many_non_fresh_workspace_keys(
 
 
 @pytest.mark.asyncio
-async def test_first_run_bootstrap_isolates_workspaces(
-    async_client, db_session, app
-):
+async def test_first_run_bootstrap_isolates_workspaces(async_client, db_session, app):
     default_data = await _bootstrap(async_client)
     workspace_id = str(uuid4())
     db_session.add(
@@ -518,9 +545,14 @@ async def test_first_run_bootstrap_does_not_seed_non_fresh_workspace(
         "workflow_id": None,
         "starter_context": None,
     }
-    assert await db_session.scalar(
-        select(func.count()).select_from(Project).where(Project.name == DEMO_PROJECT_NAME)
-    ) == 0
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(Project)
+            .where(Project.name == DEMO_PROJECT_NAME)
+        )
+        == 0
+    )
 
 
 @pytest.mark.asyncio
@@ -566,12 +598,14 @@ async def test_first_run_bootstrap_failure_rolls_back_reserved_project(
     service = DemoBootstrapService(db_session)
 
     if failure_step == "project_files":
+
         def fail_project_files(project):
             del project
             raise RuntimeError("project files failed")
 
         monkeypatch.setattr(service, "_repair_project_files", fail_project_files)
     else:
+
         async def fail_binding(*, project_id, workflow):
             del project_id, workflow
             raise RuntimeError("binding failed")
@@ -611,6 +645,7 @@ async def test_first_run_bootstrap_closes_project_reservation_fds(
     monkeypatch.setattr(ProjectDirectoryService, "add_pending", capture_reservation)
     service = DemoBootstrapService(db_session)
     if cancelled:
+
         async def cancel_commit():
             raise asyncio.CancelledError
 
