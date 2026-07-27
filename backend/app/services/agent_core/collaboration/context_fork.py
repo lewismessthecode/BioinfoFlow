@@ -28,7 +28,13 @@ def fork_agent_context(
     *,
     fork_turns: str,
 ) -> list[dict[str, Any]]:
-    """Return a provider-neutral, model-visible snapshot of parent history."""
+    """Return a provider-neutral, model-visible snapshot of parent history.
+
+    Forked image references use ``source_attachment_id`` deliberately. Task 3's
+    spawn transaction must clone/re-own the attachment for the child session
+    and replace it with a child ``attachment_id``; persisting the parent ID
+    directly would violate the attachment ownership boundary.
+    """
 
     turn_limit = _parse_fork_turns(fork_turns)
     if turn_limit == 0:
@@ -96,7 +102,14 @@ def _semantic_message(item: Any) -> dict[str, Any] | None:
 
     parts: list[dict[str, Any]] = []
     for raw_part in raw_parts:
-        if not isinstance(raw_part, Mapping) or raw_part.get("type") != "text":
+        if not isinstance(raw_part, Mapping):
+            continue
+        if role == "user" and raw_part.get("type") == "image_ref":
+            image_ref = _forked_image_reference(raw_part)
+            if image_ref is not None:
+                parts.append(image_ref)
+            continue
+        if raw_part.get("type") != "text":
             continue
         text = raw_part.get("text")
         if not isinstance(text, str) or not text:
@@ -133,6 +146,26 @@ def _semantic_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
         for key in ("kind", "_temporal_context", "continuity_state")
         if key in metadata
     }
+
+
+def _forked_image_reference(part: Mapping[str, Any]) -> dict[str, str] | None:
+    attachment_id = part.get("attachment_id")
+    if not isinstance(attachment_id, str) or not attachment_id:
+        return None
+    result = {
+        "type": "image_ref",
+        "source_attachment_id": attachment_id,
+    }
+    mime_type = part.get("mime_type")
+    if isinstance(mime_type, str) and mime_type:
+        result["mime_type"] = mime_type
+    sha256 = part.get("sha256")
+    if isinstance(sha256, str) and len(sha256) == 64:
+        result["sha256"] = sha256
+    detail = part.get("detail")
+    if isinstance(detail, str) and detail in {"auto", "low", "high", "original"}:
+        result["detail"] = detail
+    return result
 
 
 _TOOL_CALL_TYPES = frozenset(

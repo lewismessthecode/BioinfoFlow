@@ -30,6 +30,7 @@ from app.services.llm.credentials import (
 from app.services.llm.access_policy import (
     authorize_provider_endpoint,
     authorize_server_environment_credential,
+    provider_has_server_integration_authority,
     resolve_provider_network_access,
 )
 from app.services.llm.provider_templates import (
@@ -670,13 +671,21 @@ class LlmCatalogService:
 
         try:
             validate_provider_transport(provider)
+            server_authorized = provider_has_server_integration_authority(
+                provider,
+                role=role,
+            )
             network_access = await resolve_provider_network_access(
                 normalize_provider_base_url(provider.kind, provider.base_url),
-                private_endpoint_authorized=can_manage_server_integrations(role),
-                resolve_dns=not can_manage_server_integrations(role),
+                private_endpoint_authorized=server_authorized,
+                resolve_dns=not server_authorized,
             )
             credential = await self.credential_repo.get_for_provider(str(provider.id))
-            if credential is not None and credential.source == LlmCredentialSource.ENV:
+            if (
+                not server_authorized
+                and credential is not None
+                and credential.source == LlmCredentialSource.ENV
+            ):
                 authorize_server_environment_credential(role=role)
             result = await self.probe.probe(
                 endpoint_id=str(provider.id),
