@@ -547,11 +547,16 @@ In team mode, ordinary members cannot manage registries or explicitly select a
 registry ID. They can still register workflows; automatic prefetch may use the
 admin-configured global default as a shared platform capability.
 
-AgentCore image pulls use the same platform policy. The `images.pull` tool can
-pull a full image name directly, and automatic/default registry behavior remains
-available for unqualified names. Passing an explicit `registry_id` is treated
-like choosing a configured registry in the UI and is limited to owners/admins in
-team mode.
+AgentCore does not expose `images.*` tools. When an agent needs to inspect,
+pull, build, or remove a container image, it uses the `bash` tool and Docker CLI
+commands such as `docker image ls` or `docker pull <full-image-name>`. Direct
+Docker CLI commands use the image names and credentials available to the Docker
+runtime; they do not accept Bioinfoflow `registry_id` values.
+
+This does not remove the product Images API or Images UI. Those interfaces
+remain the supported path for Bioinfoflow-managed image operations, including
+configured-registry selection, `registry_id`, and the owner/admin policy in team
+mode.
 
 The data model includes a project-level registry override for future policy, but
 the current UI exposes a global default plus per-workflow selection.
