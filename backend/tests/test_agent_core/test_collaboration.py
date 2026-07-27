@@ -31,6 +31,7 @@ from app.services.llm.credentials import encrypt_secret
 from app.services.llm.catalog import ExactModelProbeResult
 from app.services.llm.probe import LlmProviderProbeResult
 from app.config import settings
+from app.path_layout import agent_attachment_root, agent_attachments_root
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -76,7 +77,11 @@ async def _create_parent_turn(db_session: AsyncSession) -> tuple[AgentSession, A
                 "provider": "openai_compatible",
                 "model": "parent-model",
             },
-            "reasoning_effort": "high",
+            "resolved_model_capabilities": {"supports_reasoning": True},
+            "resolved_runtime_strategy": {
+                "allow_thinking": True,
+                "reasoning_effort": "high",
+            },
         },
     )
     db_session.add(turn)
@@ -712,6 +717,7 @@ async def test_unavailable_requested_model_falls_back_without_leaking_probe_deta
     )
 
     assert result.effective_model == "parent-model"
+    assert result.reasoning_effort == "high"
     assert result.effective_model_id == "parent-id"
     assert result.reasoning_effort == "high"
     assert result.fallback is True
@@ -1071,6 +1077,9 @@ async def test_spawn_agent_returns_after_enqueue_without_waiting_for_child(
     child_turn = await db_session.get(AgentTurn, result.child_turn_id)
     assert child is not None and child.collaboration_slot == 1
     assert child_turn is not None and child_turn.status == AgentTurnStatus.QUEUED
+    assert child_turn.model_profile_snapshot["metadata"]["collaboration"][
+        "reasoning_effort"
+    ] == "high"
 
 
 @pytest.mark.asyncio
@@ -1410,6 +1419,99 @@ async def test_forked_image_reference_is_reowned_by_child(
     assert clone is not None
     assert str(clone.session_id) == result.child_session_id
     assert str(clone.id) != source_id
+
+
+@pytest.mark.parametrize("failure_type", [RuntimeError, asyncio.CancelledError])
+@pytest.mark.asyncio
+async def test_attachment_clone_partial_failure_removes_files_and_rolls_back_db(
+    db_session,
+    monkeypatch,
+    tmp_path,
+    failure_type,
+) -> None:
+    await _seed_workspace(db_session)
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(tmp_path))
+    root, turn = await _create_parent_turn(db_session)
+    root_id = str(root.id)
+    turn_id = str(turn.id)
+    sources: list[AgentAttachment] = []
+    for index in range(2):
+        source = AgentAttachment(
+            session_id=root_id,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            kind="image",
+            source="clipboard",
+            filename=f"image-{index}.png",
+            storage_path="pending",
+            mime_type="image/png",
+            size_bytes=3,
+            status=AgentAttachmentStatus.READY,
+            attachment_metadata={"sha256": str(index) * 64},
+        )
+        db_session.add(source)
+        await db_session.flush()
+        source.storage_path = f"{root_id}/{source.id}"
+        source_root = agent_attachment_root(root_id, str(source.id))
+        source_root.mkdir(parents=True)
+        (source_root / "original").write_bytes(b"png")
+        sources.append(source)
+    db_session.add(
+        AgentMessage(
+            session_id=root_id,
+            turn_id=turn_id,
+            role="user",
+            content_parts=[
+                {"type": "image_ref", "attachment_id": str(source.id)}
+                for source in sources
+            ],
+            status="committed",
+            ordering_index=1,
+        )
+    )
+    await db_session.commit()
+    original_clone = __import__(
+        "app.services.agent_core.collaboration.service",
+        fromlist=["_clone_attachment_files"],
+    )._clone_attachment_files
+    calls = 0
+
+    def fail_second_clone(*, source, destination):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return original_clone(source=source, destination=destination)
+        destination.mkdir(parents=True)
+        (destination / "partial").write_bytes(b"orphan")
+        raise failure_type("clone interrupted")
+
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service._clone_attachment_files",
+        fail_second_clone,
+    )
+
+    with pytest.raises(failure_type, match="clone interrupted"):
+        await AgentCollaborationService(db_session).spawn_agent(
+            parent_session_id=root_id,
+            parent_turn_id=turn_id,
+            task_name="vision_failure",
+            message="inspect images",
+            fork_turns="all",
+        )
+
+    assert db_session.in_transaction() is False
+    children = list(
+        (
+            await db_session.scalars(
+                select(AgentSession).where(AgentSession.root_session_id == root_id)
+            )
+        ).all()
+    )
+    assert children == []
+    attachment_sessions = {
+        path.name for path in agent_attachments_root().iterdir() if path.is_dir()
+    }
+    assert attachment_sessions == {root_id}
 
 
 @pytest.mark.asyncio

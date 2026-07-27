@@ -328,7 +328,7 @@ class AgentLoopController:
                 reasoning=ReasoningRequest(
                     enabled=strategy.allow_thinking,
                     effort=(
-                        strategy.reasoning_effort
+                        strategy.reasoning_effort or "medium"
                         if strategy.allow_thinking
                         else None
                     ),

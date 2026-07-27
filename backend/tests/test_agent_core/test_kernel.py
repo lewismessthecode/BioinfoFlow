@@ -37,7 +37,12 @@ def _install_fake_completion(monkeypatch, completion) -> None:
     )
 
 
-async def _seed_catalog_model(db_session, *, model_id: str = "kernel-model") -> LlmModel:
+async def _seed_catalog_model(
+    db_session,
+    *,
+    model_id: str = "kernel-model",
+    supports_reasoning: bool = False,
+) -> LlmModel:
     provider = LlmProvider(
         name=f"{model_id} provider",
         kind="openai_compatible",
@@ -57,6 +62,7 @@ async def _seed_catalog_model(db_session, *, model_id: str = "kernel-model") -> 
         display_name=model_id,
         supports_tools=True,
         supports_streaming=True,
+        supports_reasoning=supports_reasoning,
     )
     db_session.add(model)
     await db_session.commit()
@@ -85,7 +91,7 @@ async def test_agent_core_no_tool_runtime_writes_ordered_events(db_session, monk
 
     _install_fake_completion(monkeypatch, fake_completion)
 
-    model = await _seed_catalog_model(db_session)
+    model = await _seed_catalog_model(db_session, supports_reasoning=True)
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     project = Project(
         name="Kernel Project",
@@ -126,6 +132,9 @@ async def test_agent_core_no_tool_runtime_writes_ordered_events(db_session, monk
         "model": model.model_id,
     }
     assert turn.model_profile_snapshot["resolved_model_source"] == "catalog_default"
+    assert turn.model_profile_snapshot["resolved_runtime_strategy"][
+        "reasoning_effort"
+    ] == "medium"
     assert [event.seq for event in events] == [1, 2, 3, 4, 5]
     assert [event.type for event in events] == [
         "turn.created",
