@@ -1074,6 +1074,13 @@ class AgentCoreRuntime:
         }:
             return
         await self.session_repo.release_active_turn(str(turn.session_id), str(turn.id))
+        from app.services.agent_core.collaboration.service import (
+            AgentCollaborationService,
+        )
+
+        await AgentCollaborationService(
+            self.turn_repo.session
+        ).publish_child_terminal(turn_id=str(turn.id))
 
     def _ownership(self, turn_id: str, owner_token: str) -> TurnOwnership:
         bind = self.turn_repo.session.bind

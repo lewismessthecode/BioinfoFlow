@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import re
 import shutil
 
@@ -26,14 +28,20 @@ from app.repositories.agent_core_repo import (
 )
 from app.services.agent_core.collaboration.context_fork import fork_agent_context
 from app.services.agent_core.collaboration.contracts import (
+    AgentInterruptResult,
     AgentListItem,
+    AgentMessageResult,
     AgentModelChoice,
+    AgentWaitResult,
     SpawnAgentResult,
 )
 from app.services.agent_core.collaboration.model_preflight import AgentModelPreflight
+from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.runner import enqueue_turn_run
 from app.services.agent_core.service import AgentCoreService
 from app.services.agent_core.transcript import AgentTranscriptStore
+from app.services.agent_core.transcript.messages import parts_to_text, text_part
 from app.services.authorization_service import AuthorizationService
 from app.utils.exceptions import BadRequestError, ConflictError, PermissionDeniedError
 
@@ -48,6 +56,7 @@ class AgentCollaborationService:
         self.turns = AgentTurnRepository(session)
         self.attachments = AgentAttachmentRepository(session)
         self.transcript = AgentTranscriptStore(session)
+        self.ledger = AgentEventLedger(session)
         self.core = AgentCoreService(session)
         self.model_preflight = AgentModelPreflight(session)
 
@@ -221,6 +230,347 @@ class AgentCollaborationService:
             fallback_reason=choice.fallback_reason,
         )
 
+    async def send_message(
+        self,
+        *,
+        caller_session_id: str,
+        workspace_id: str,
+        user_id: str,
+        target: str,
+        message: str,
+    ) -> AgentMessageResult:
+        message = str(message or "").strip()
+        if not message:
+            raise BadRequestError("invalid_agent_message")
+        caller, root_id, target_session = await self._resolve_target(
+            caller_session_id=caller_session_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            target=target,
+        )
+        target_id = str(target_session.id)
+        target_name = _canonical_name(target_session, root_id)
+        active = await self._active_turn(target_session)
+        target_turns = await self.turns.list_for_session(target_id)
+        current = active or (target_turns[-1] if target_turns else None)
+        active_status = _external_status(current)
+        metadata = self._message_metadata(
+            kind="inter_agent_message",
+            root_id=root_id,
+            caller=caller,
+            delivery="steer" if active is not None else "queued",
+        )
+        if active is not None:
+            try:
+                await self.core.steer_turn(
+                    turn_id=str(active.id),
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    input_text=message,
+                    metadata=metadata,
+                )
+                await self._publish_root_activity(
+                    root_id=root_id,
+                    event_type=AgentEventType.AGENT_MESSAGE_RECEIVED,
+                    payload={
+                        "task_name": target_name,
+                        "delivery": "steer",
+                    },
+                )
+                return AgentMessageResult(
+                    target=target_name,
+                    delivery="steer",
+                    status=_external_status(active),
+                    turn_id=str(active.id),
+                )
+            except ConflictError:
+                await self.db.rollback()
+                target_session = await self.sessions.get_fresh(target_id)
+                if target_session is None:
+                    raise BadRequestError("agent_target_not_found")
+
+        metadata["delivery"] = "queued"
+        await self.transcript.append_parts(
+            session_id=str(target_session.id),
+            turn_id=None,
+            role="user",
+            parts=[text_part(message)],
+            metadata=metadata,
+            status=AgentMessageStatus.DRAFT,
+            commit=False,
+        )
+        await self._publish_root_activity(
+            root_id=root_id,
+            event_type=AgentEventType.AGENT_MESSAGE_RECEIVED,
+            payload={
+                "task_name": target_name,
+                "delivery": "queued",
+            },
+        )
+        return AgentMessageResult(
+            target=target_name,
+            delivery="queued",
+            status=active_status,
+        )
+
+    async def followup_task(
+        self,
+        *,
+        caller_session_id: str,
+        workspace_id: str,
+        user_id: str,
+        target: str,
+        message: str,
+    ) -> AgentMessageResult:
+        message = str(message or "").strip()
+        if not message:
+            raise BadRequestError("invalid_agent_message")
+        caller, root_id, child = await self._resolve_target(
+            caller_session_id=caller_session_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            target=target,
+        )
+        child_id = str(child.id)
+        caller_id = str(caller.id)
+        if str(child.id) == root_id:
+            raise PermissionDeniedError("child_agent_required")
+
+        active = await self._active_turn(child)
+        metadata = self._message_metadata(
+            kind="agent_followup",
+            root_id=root_id,
+            caller=caller,
+            delivery="steer" if active is not None else "followup",
+        )
+        if active is not None:
+            try:
+                await self.core.steer_turn(
+                    turn_id=str(active.id),
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    input_text=message,
+                    metadata=metadata,
+                )
+                return AgentMessageResult(
+                    target=_canonical_name(child, root_id),
+                    delivery="steer",
+                    status=_external_status(active),
+                    turn_id=str(active.id),
+                )
+            except ConflictError:
+                await self.db.rollback()
+                child = await self.sessions.get_fresh(child_id)
+                if child is None:
+                    raise BadRequestError("agent_target_not_found")
+                caller = await self.sessions.get_fresh(caller_id)
+                if caller is None:
+                    raise PermissionDeniedError("agent_caller_scope_mismatch")
+
+        try:
+            return await self._start_followup(
+                child=child,
+                caller=caller,
+                root_id=root_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                message=message,
+            )
+        except ConflictError:
+            await self.db.rollback()
+            child = await self.sessions.get_fresh(child_id)
+            if child is None:
+                raise BadRequestError("agent_target_not_found")
+            caller = await self.sessions.get_fresh(caller_id)
+            if caller is None:
+                raise PermissionDeniedError("agent_caller_scope_mismatch")
+            active = await self._active_turn(child)
+            if active is not None and active.accepts_steer:
+                try:
+                    await self.core.steer_turn(
+                        turn_id=str(active.id),
+                        workspace_id=workspace_id,
+                        user_id=user_id,
+                        input_text=message,
+                        metadata=metadata,
+                    )
+                    return AgentMessageResult(
+                        target=_canonical_name(child, root_id),
+                        delivery="steer",
+                        status=_external_status(active),
+                        turn_id=str(active.id),
+                    )
+                except ConflictError:
+                    await self.db.rollback()
+            await self.transcript.append_parts(
+                session_id=str(child.id),
+                turn_id=None,
+                role="user",
+                parts=[text_part(message)],
+                metadata={**metadata, "delivery": "queued"},
+                status=AgentMessageStatus.DRAFT,
+            )
+            return AgentMessageResult(
+                target=_canonical_name(child, root_id),
+                delivery="queued",
+                status=_external_status(active),
+                turn_id=str(active.id) if active is not None else None,
+            )
+
+    async def interrupt_agent(
+        self,
+        *,
+        caller_session_id: str,
+        workspace_id: str,
+        user_id: str,
+        target: str,
+    ) -> AgentInterruptResult:
+        caller, root_id, child = await self._resolve_target(
+            caller_session_id=caller_session_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            target=target,
+        )
+        if str(child.id) == root_id:
+            raise PermissionDeniedError("child_agent_required")
+        if str(child.id) == str(caller.id):
+            raise PermissionDeniedError("cannot_interrupt_self")
+        active = await self._active_turn(child)
+        turns = await self.turns.list_for_session(str(child.id))
+        previous = _external_status(active or (turns[-1] if turns else None))
+        if active is not None:
+            await self.core.interrupt_turn(
+                turn_id=str(active.id),
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
+        return AgentInterruptResult(
+            target=_canonical_name(child, root_id),
+            status=previous,
+        )
+
+    async def wait_agent(
+        self,
+        *,
+        caller_session_id: str,
+        workspace_id: str,
+        user_id: str,
+        timeout_ms: int = 30_000,
+    ) -> AgentWaitResult:
+        if timeout_ms < 0 or timeout_ms > 60_000:
+            raise BadRequestError("invalid_wait_timeout")
+        caller = await self._require_caller(
+            caller_session_id=caller_session_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        caller_id = str(caller.id)
+        root_id = str(caller.root_session_id or caller.id)
+        deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
+        while True:
+            await self.db.rollback()
+            caller = await self.sessions.get_fresh(caller_id)
+            if caller is None:
+                raise PermissionDeniedError("agent_caller_scope_mismatch")
+            metadata = dict(caller.session_metadata or {})
+            cursor = int(metadata.get("collaboration_wait_cursor") or 0)
+            events = await self.ledger.event_repo.list_for_session(
+                session_id=root_id,
+                after_seq=cursor,
+                event_types={
+                    AgentEventType.AGENT_MESSAGE_RECEIVED,
+                    AgentEventType.AGENT_RESULT_RECEIVED,
+                    AgentEventType.TURN_STEER_RECEIVED,
+                },
+            )
+            if events:
+                metadata["collaboration_wait_cursor"] = max(
+                    event.seq for event in events
+                )
+                caller.session_metadata = metadata
+                await self.db.commit()
+                names = sorted(
+                    {
+                        str(event.payload.get("task_name"))
+                        for event in events
+                        if event.payload.get("task_name")
+                    }
+                )
+                return AgentWaitResult(timed_out=False, updated_agents=names)
+            if asyncio.get_running_loop().time() >= deadline:
+                return AgentWaitResult(timed_out=True, updated_agents=[])
+            await asyncio.sleep(min(0.05, max(deadline - asyncio.get_running_loop().time(), 0)))
+
+    async def publish_child_terminal(self, *, turn_id: str) -> None:
+        turn = await self.turns.get_fresh(turn_id)
+        if turn is None or turn.status not in {
+            AgentTurnStatus.COMPLETED,
+            AgentTurnStatus.FAILED,
+            AgentTurnStatus.CANCELLED,
+        }:
+            return
+        child = await self.sessions.get_fresh(str(turn.session_id))
+        if child is None or child.root_session_id is None:
+            return
+        root_id = str(child.root_session_id)
+        root = await self.sessions.get_fresh(root_id)
+        if root is None:
+            return
+        await self.sessions.lock_policy(root_id)
+        messages = await self.transcript.list_messages(root_id)
+        if any(
+            (message.message_metadata or {}).get("source_turn_id") == turn_id
+            and (message.message_metadata or {}).get("collaboration_kind")
+            == "agent_result"
+            for message in messages
+        ):
+            await self.sessions.release_child_slot_for_terminal(
+                str(child.id), turn_id
+            )
+            await self.db.commit()
+            await self._schedule_pending_followup(child=child, root=root)
+            return
+
+        payload = _terminal_payload(child, turn)
+        text = json.dumps(
+            {"agent_result": payload},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        active_parent = await self._active_turn(root)
+        metadata = {
+            "kind": "agent_result",
+            "collaboration_kind": "agent_result",
+            "source_turn_id": turn_id,
+            "agent_result": payload,
+            "root_session_id": root_id,
+            "delivery": "steer" if active_parent is not None else "queued",
+            "consumed": False,
+        }
+        await self.transcript.append_parts(
+            session_id=root_id,
+            turn_id=None,
+            role="user",
+            parts=[text_part(text)],
+            metadata=metadata,
+            status=AgentMessageStatus.DRAFT,
+            commit=False,
+        )
+        await self.sessions.release_child_slot_for_terminal(str(child.id), turn_id)
+        await self.ledger.append(
+            session_id=root_id,
+            turn_id=str(active_parent.id) if active_parent is not None else None,
+            type=AgentEventType.AGENT_RESULT_RECEIVED,
+            payload={
+                "task_name": _canonical_name(child, root_id),
+                "status": payload["status"],
+                "error_code": payload["error_code"],
+            },
+            commit=False,
+        )
+        await self.db.commit()
+        await self._schedule_pending_followup(child=child, root=root)
+
     async def list_agents(
         self,
         *,
@@ -240,7 +590,11 @@ class AgentCollaborationService:
         result: list[AgentListItem] = []
         for session in tree:
             turns = await self.turns.list_for_session(str(session.id))
-            latest = turns[-1] if turns else None
+            latest = None
+            if session.active_turn_id:
+                latest = await self.turns.get_fresh(str(session.active_turn_id))
+            if latest is None:
+                latest = turns[-1] if turns else None
             collaboration = (session.session_metadata or {}).get("collaboration") or {}
             result.append(
                 AgentListItem(
@@ -264,6 +618,174 @@ class AgentCollaborationService:
                 )
             )
         return result
+
+    async def _require_caller(
+        self,
+        *,
+        caller_session_id: str,
+        workspace_id: str,
+        user_id: str,
+    ) -> AgentSession:
+        caller = await self.sessions.get_fresh(caller_session_id)
+        if (
+            caller is None
+            or str(caller.workspace_id) != str(workspace_id)
+            or caller.user_id != user_id
+        ):
+            raise PermissionDeniedError("agent_caller_scope_mismatch")
+        root_id = str(caller.root_session_id or caller.id)
+        tree = await self.sessions.list_agent_tree(
+            root_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        if not any(str(item.id) == str(caller.id) for item in tree):
+            raise PermissionDeniedError("agent_caller_scope_mismatch")
+        return caller
+
+    async def _resolve_target(
+        self,
+        *,
+        caller_session_id: str,
+        workspace_id: str,
+        user_id: str,
+        target: str,
+    ) -> tuple[AgentSession, str, AgentSession]:
+        caller = await self._require_caller(
+            caller_session_id=caller_session_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        root_id = str(caller.root_session_id or caller.id)
+        resolved = await self.sessions.get_agent_target(
+            root_id,
+            str(target or ""),
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        if resolved is None:
+            raise BadRequestError("agent_target_not_found")
+        return caller, root_id, resolved
+
+    async def _active_turn(self, session: AgentSession):
+        if session.active_turn_id:
+            turn = await self.turns.get_fresh(str(session.active_turn_id))
+            if turn is not None and _external_status(turn) in {
+                "pending_init",
+                "running",
+            }:
+                return turn
+        turns = await self.turns.list_for_session(str(session.id))
+        if turns and _external_status(turns[-1]) in {"pending_init", "running"}:
+            return turns[-1]
+        return None
+
+    def _message_metadata(
+        self,
+        *,
+        kind: str,
+        root_id: str,
+        caller: AgentSession,
+        delivery: str,
+    ) -> dict:
+        return {
+            "kind": kind,
+            "collaboration_kind": kind,
+            "root_session_id": root_id,
+            "sender_session_id": str(caller.id),
+            "delivery": delivery,
+            "consumed": False,
+        }
+
+    async def _publish_root_activity(
+        self,
+        *,
+        root_id: str,
+        event_type: str,
+        payload: dict,
+    ) -> None:
+        await self.ledger.append(
+            session_id=root_id,
+            turn_id=None,
+            type=event_type,
+            payload=payload,
+        )
+
+    async def _start_followup(
+        self,
+        *,
+        child: AgentSession,
+        caller: AgentSession,
+        root_id: str,
+        workspace_id: str,
+        user_id: str,
+        message: str,
+    ) -> AgentMessageResult:
+        try:
+            await self.sessions.reserve_child_slot(child)
+        except AgentCollaborationCapacityError as exc:
+            await self.db.rollback()
+            raise ConflictError("agent_limit_reached") from exc
+        collaboration = (child.session_metadata or {}).get("collaboration") or {}
+        model_id = collaboration.get("effective_model_id")
+        turn = await self.core.create_turn_record(
+            session_id=str(child.id),
+            workspace_id=workspace_id,
+            user_id=user_id,
+            input_text=message,
+            model_selection={"model_id": model_id} if model_id else None,
+            metadata={
+                "collaboration": {
+                    "root_session_id": root_id,
+                    "parent_session_id": root_id,
+                    "agent_name": child.agent_name,
+                    "followup_from_session_id": str(caller.id),
+                }
+            },
+            commit=False,
+        )
+        await self.db.commit()
+        try:
+            enqueue_turn_run(str(turn.id), str(child.id))
+        except Exception:
+            pass
+        return AgentMessageResult(
+            target=_canonical_name(child, root_id),
+            delivery="followup",
+            status="pending_init",
+            turn_id=str(turn.id),
+        )
+
+    async def _schedule_pending_followup(
+        self,
+        *,
+        child: AgentSession,
+        root: AgentSession,
+    ) -> None:
+        await self.db.rollback()
+        child = await self.sessions.get_fresh(str(child.id)) or child
+        pending = [
+            message
+            for message in await self.transcript.list_messages(str(child.id))
+            if message.status == AgentMessageStatus.DRAFT
+            and (message.message_metadata or {}).get("kind") == "agent_followup"
+            and (message.message_metadata or {}).get("delivery") == "queued"
+        ]
+        if not pending:
+            return
+        message = pending[0]
+        message.status = AgentMessageStatus.SUPERSEDED
+        try:
+            await self._start_followup(
+                child=child,
+                caller=root,
+                root_id=str(root.id),
+                workspace_id=str(child.workspace_id),
+                user_id=child.user_id,
+                message=parts_to_text(message.content_parts),
+            )
+        except ConflictError:
+            await self.db.rollback()
 
     async def _reown_forked_attachments(
         self,
@@ -405,6 +927,31 @@ def _safe_agent_error(turn) -> str | None:
         "iteration_limit": "The agent reached its iteration limit.",
     }
     return stable_messages.get(error_code, "Agent failed before completing the task.")
+
+
+def _canonical_name(session: AgentSession, root_id: str) -> str:
+    if str(session.id) == root_id:
+        return "/root"
+    return f"/root/{session.agent_name}"
+
+
+def _terminal_payload(child: AgentSession, turn) -> dict:
+    status = _external_status(turn)
+    snapshot = turn.model_profile_snapshot or {}
+    selection = snapshot.get("resolved_model_selection") or {}
+    collaboration = (child.session_metadata or {}).get("collaboration") or {}
+    effective_model = selection.get("model") or collaboration.get("effective_model")
+    return {
+        "child_session_id": str(child.id),
+        "task_name": _canonical_name(child, str(child.root_session_id)),
+        "status": status,
+        "final_text": str(turn.final_text or "").strip() or None,
+        "error_code": turn.error_code,
+        "error_message": _safe_agent_error(turn),
+        "termination_reason": turn.termination_reason,
+        "token_usage": turn.token_usage,
+        "effective_model": effective_model,
+    }
 
 
 def _clone_attachment_files(*, source: AgentAttachment, destination: Path) -> None:

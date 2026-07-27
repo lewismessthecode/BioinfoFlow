@@ -3,9 +3,6 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
-from app.utils.exceptions import BadRequestError
-
-
 class SpawnAgentTool:
     spec = AgentToolSpec(
         name="spawn_agent",
@@ -81,13 +78,7 @@ class ListAgentsTool:
         return {"agents": [asdict(agent) for agent in agents]}
 
 
-class _Task4CollaborationTool:
-    async def run(self, input: dict, context: AgentToolContext) -> dict:
-        del input, context
-        raise BadRequestError("collab_manager_unavailable")
-
-
-class SendMessageTool(_Task4CollaborationTool):
+class SendMessageTool:
     spec = AgentToolSpec(
         name="send_message",
         description="Send a durable message to an agent in the same root tree.",
@@ -107,8 +98,22 @@ class SendMessageTool(_Task4CollaborationTool):
         audit="Send a durable inter-agent message.",
     )
 
+    async def run(self, input: dict, context: AgentToolContext) -> dict:
+        from app.services.agent_core.collaboration.service import (
+            AgentCollaborationService,
+        )
 
-class FollowupTaskTool(_Task4CollaborationTool):
+        result = await AgentCollaborationService(context.db).send_message(
+            caller_session_id=context.session_id,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+            target=input.get("target"),
+            message=input.get("message"),
+        )
+        return asdict(result)
+
+
+class FollowupTaskTool:
     spec = AgentToolSpec(
         name="followup_task",
         description="Give an existing child agent a follow-up task.",
@@ -128,8 +133,22 @@ class FollowupTaskTool(_Task4CollaborationTool):
         audit="Queue or steer a follow-up child task.",
     )
 
+    async def run(self, input: dict, context: AgentToolContext) -> dict:
+        from app.services.agent_core.collaboration.service import (
+            AgentCollaborationService,
+        )
 
-class WaitAgentTool(_Task4CollaborationTool):
+        result = await AgentCollaborationService(context.db).followup_task(
+            caller_session_id=context.session_id,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+            target=input.get("target"),
+            message=input.get("message"),
+        )
+        return asdict(result)
+
+
+class WaitAgentTool:
     spec = AgentToolSpec(
         name="wait_agent",
         description="Wait for agent mailbox activity, a steer, or a bounded timeout.",
@@ -154,8 +173,21 @@ class WaitAgentTool(_Task4CollaborationTool):
         timeout_seconds=65,
     )
 
+    async def run(self, input: dict, context: AgentToolContext) -> dict:
+        from app.services.agent_core.collaboration.service import (
+            AgentCollaborationService,
+        )
 
-class InterruptAgentTool(_Task4CollaborationTool):
+        result = await AgentCollaborationService(context.db).wait_agent(
+            caller_session_id=context.session_id,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+            timeout_ms=input.get("timeout_ms", 30000),
+        )
+        return asdict(result)
+
+
+class InterruptAgentTool:
     spec = AgentToolSpec(
         name="interrupt_agent",
         description="Interrupt an active child turn while keeping the child reusable.",
@@ -171,6 +203,19 @@ class InterruptAgentTool(_Task4CollaborationTool):
         write_scope=["agent_turns", "agent_sessions"],
         audit="Interrupt an active child turn.",
     )
+
+    async def run(self, input: dict, context: AgentToolContext) -> dict:
+        from app.services.agent_core.collaboration.service import (
+            AgentCollaborationService,
+        )
+
+        result = await AgentCollaborationService(context.db).interrupt_agent(
+            caller_session_id=context.session_id,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+            target=input.get("target"),
+        )
+        return asdict(result)
 
 
 COLLABORATION_TOOLS = (
