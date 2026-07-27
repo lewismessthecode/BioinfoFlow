@@ -58,7 +58,7 @@ async def test_root_tree_queries_and_target_resolution_are_root_scoped(db_sessio
         root_session_id=str(other_root.id),
         agent_name="reader",
     )
-    wrong_user = await _create_session(
+    await _create_session(
         db_session,
         user_id="other-user",
         parent_session_id=str(root.id),
@@ -68,9 +68,21 @@ async def test_root_tree_queries_and_target_resolution_are_root_scoped(db_sessio
 
     repo = AgentSessionRepository(db_session)
 
-    tree = await repo.list_agent_tree(str(root.id))
+    tree = await repo.list_agent_tree(
+        str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
     assert tree[0].id == root.id
-    assert {session.id for session in tree[1:]} == {child.id, wrong_user.id}
+    assert [session.id for session in tree[1:]] == [child.id]
+    assert (
+        await repo.list_agent_tree(
+            str(root.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="other-user",
+        )
+        == []
+    )
     assert await repo.get_agent_target(
         str(root.id),
         "reader",
@@ -154,7 +166,10 @@ async def test_release_child_slot_keeps_name_reserved(db_session) -> None:
     )
     repo = AgentSessionRepository(db_session)
 
-    assert await repo.reserve_child_slot(str(child.id)) == 1
+    reserved = await repo.reserve_child_slot(child)
+
+    assert reserved is child
+    assert reserved.collaboration_slot == 1
     assert await repo.release_child_slot(str(child.id)) is True
 
     await db_session.refresh(child)
@@ -192,9 +207,12 @@ async def test_last_child_slot_is_acquired_atomically(db_session) -> None:
 
     async def reserve(child_id: str) -> int:
         async with maker() as worker:
-            slot = await AgentSessionRepository(worker).reserve_child_slot(child_id)
+            child = await worker.get(AgentSession, child_id)
+            assert child is not None
+            reserved = await AgentSessionRepository(worker).reserve_child_slot(child)
             await worker.commit()
-            return slot
+            assert reserved.collaboration_slot is not None
+            return reserved.collaboration_slot
 
     results = await asyncio.gather(
         *(reserve(str(child.id)) for child in candidates),
@@ -215,3 +233,28 @@ async def test_last_child_slot_is_acquired_atomically(db_session) -> None:
         )
     )
     assert len(reserved.all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_staged_child_and_slot_share_the_callers_transaction(db_session) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    child = AgentSession(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        parent_session_id=str(root.id),
+        root_session_id=str(root.id),
+        agent_name="staged_worker",
+    )
+    db_session.add(child)
+
+    reserved = await AgentSessionRepository(db_session).reserve_child_slot(child)
+    child_id = str(child.id)
+
+    assert reserved is child
+    assert child.collaboration_slot == 1
+    assert await db_session.get(AgentSession, child_id) is child
+
+    await db_session.rollback()
+
+    assert await db_session.get(AgentSession, child_id) is None
