@@ -1186,7 +1186,6 @@ async def test_spawn_without_override_ignores_authentication_failing_catalog_def
         "app.services.agent_core.collaboration.service.enqueue_turn_run",
         lambda *_: None,
     )
-
     service = AgentCollaborationService(db_session)
     spawned = await service.spawn_agent(
         parent_session_id=str(root.id),
@@ -3414,6 +3413,18 @@ async def test_startup_recovers_followup_after_post_publication_crash(
         "app.services.agent_core.collaboration.service.enqueue_turn_run",
         lambda *_: None,
     )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda *_: None,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.runner.enqueue_turn_resume",
+        lambda *_: None,
+    )
     service = AgentCollaborationService(db_session)
     await service.followup_task(
         caller_session_id=root_id,
@@ -3477,6 +3488,18 @@ async def test_concurrent_startup_recovery_schedules_pending_followup_once(
     terminal_id = str(terminal.id)
     monkeypatch.setattr(
         "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda *_: None,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.runner.enqueue_turn_resume",
         lambda *_: None,
     )
     service = AgentCollaborationService(db_session)

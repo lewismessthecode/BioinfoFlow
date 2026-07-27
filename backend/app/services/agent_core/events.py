@@ -4,6 +4,96 @@ from collections.abc import Mapping
 from typing import Any
 
 
+_MODEL_ERROR_CATEGORIES = frozenset(
+    {
+        "authentication",
+        "authorization",
+        "rate_limit",
+        "timeout",
+        "connection",
+        "service_unavailable",
+        "invalid_request",
+        "not_found",
+        "conflict",
+        "unsupported",
+        "provider",
+        "unknown",
+    }
+)
+
+
+def safe_agent_error_message(
+    error_code: object,
+    error_message: object,
+    *,
+    model_error: Mapping[str, Any] | None = None,
+    allow_non_model_detail: bool = False,
+) -> str:
+    code = str(error_code or "").strip()
+    original = str(error_message or "").strip()
+    raw = original.lower()
+    category = str((model_error or {}).get("category") or "").strip()
+    if code == "model_request_failed":
+        if category in {"authentication", "authorization"} or any(
+            marker in raw for marker in ("authentication", "unauthorized", "401")
+        ):
+            return "Model provider authentication failed."
+        if category == "rate_limit" or "429" in raw or "rate limit" in raw:
+            return "Model provider rate limit was reached."
+        if category == "timeout":
+            if original in {
+                "The provider timed out.",
+                "The model provider request timed out.",
+            }:
+                return original
+            return "The model provider request timed out."
+        if category in {"connection", "service_unavailable"}:
+            return "The model provider is temporarily unavailable."
+        if category in {"invalid_request", "not_found", "conflict", "unsupported"}:
+            return "The model request was rejected."
+        return "The model request failed."
+    stable_messages = {
+        "model_selection_missing": "No usable model is configured for this agent.",
+        "session_not_found": "The agent session could not be loaded.",
+        "execution_claim_lost": "The agent execution lease was replaced.",
+        "iteration_limit": "The agent reached its iteration limit.",
+    }
+    if allow_non_model_detail and original:
+        return original
+    return stable_messages.get(code, "Agent failed before completing the task.")
+
+
+def safe_model_error_payload(
+    model_error: Mapping[str, Any] | None,
+    *,
+    error_code: object,
+    error_message: object,
+) -> dict[str, Any] | None:
+    if not isinstance(model_error, Mapping):
+        return None
+    category = str(model_error.get("category") or "unknown")
+    if category not in _MODEL_ERROR_CATEGORIES:
+        category = "unknown"
+    return {
+        "category": category,
+        "message": safe_agent_error_message(
+            error_code,
+            error_message,
+            model_error=model_error,
+        ),
+        "http_status": model_error.get("http_status")
+        if isinstance(model_error.get("http_status"), int)
+        else None,
+        "provider_code": model_error.get("provider_code"),
+        "retryable": bool(model_error.get("retryable", False)),
+        "replay_safe": bool(model_error.get("replay_safe", False)),
+        "retry_after_seconds": model_error.get("retry_after_seconds")
+        if isinstance(model_error.get("retry_after_seconds"), (int, float))
+        else None,
+        "request_id": model_error.get("request_id"),
+    }
+
+
 class AgentEventType:
     TURN_CREATED = "turn.created"
     TURN_STARTED = "turn.started"
