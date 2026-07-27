@@ -1017,8 +1017,12 @@ describe("AgentWorkbench", () => {
     expect(within(navbarActions).getByRole("tab", { name: "Artifacts" })).toBeInTheDocument()
     expect(within(navbarActions).getByRole("tab", { name: "Files" })).toBeInTheDocument()
     expect(within(navbarActions).getByRole("tab", { name: "Browser" })).toBeInTheDocument()
+    const environmentButton = within(navbarActions).getByRole("button", {
+      name: "Open environment",
+    })
+    expect(environmentButton).toBeInTheDocument()
     expect(
-      within(navbarActions).getByRole("button", { name: "Open environment" }),
+      environmentButton.querySelector('[data-icon="panel-right-close"]'),
     ).toBeInTheDocument()
     expect(
       within(navbarActions).getByRole("button", { name: "Close workspace panel" }),
