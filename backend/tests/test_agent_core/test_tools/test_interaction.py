@@ -17,6 +17,7 @@ from app.services.agent_core.tools import (
 )
 from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.specs import AgentToolSpec
+from app.services.agent_core.tools.files import resources as file_resources
 from app.utils.exceptions import ConflictError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -25,7 +26,11 @@ class _CountingApprovalTool:
     spec = AgentToolSpec(
         name="count_approved_execution",
         description="Count executions of an approved side effect.",
-        input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+        input_schema={
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
         output_schema={
             "type": "object",
             "properties": {"execution": {"type": "integer"}},
@@ -78,9 +83,15 @@ async def _interaction_context(db_session, *, mode: str = "execution"):
 
 
 @pytest.mark.asyncio
-async def test_ask_user_pauses_even_under_bypass_then_resumes_with_answer(db_session, monkeypatch):
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
-    core, dispatcher, context, _session_id, turn_id = await _interaction_context(db_session)
+async def test_ask_user_pauses_even_under_bypass_then_resumes_with_answer(
+    db_session, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
+    core, dispatcher, context, _session_id, turn_id = await _interaction_context(
+        db_session
+    )
 
     pending = await dispatcher.dispatch(
         tool_name="ask_user",
@@ -90,7 +101,11 @@ async def test_ask_user_pauses_even_under_bypass_then_resumes_with_answer(db_ses
                     "question": "Which database?",
                     "header": "DB",
                     "options": [
-                        {"label": "Postgres", "description": "Relational", "recommended": True},
+                        {
+                            "label": "Postgres",
+                            "description": "Relational",
+                            "recommended": True,
+                        },
                         {"label": "SQLite", "description": "Embedded"},
                     ],
                 }
@@ -112,7 +127,10 @@ async def test_ask_user_pauses_even_under_bypass_then_resumes_with_answer(db_ses
     assert waiting and waiting[-1].payload["name"] == "ask_user"
     assert waiting[-1].payload["interaction"]["kind"] == "user_input"
     assert waiting[-1].payload["interaction"]["questions"][0]["header"] == "DB"
-    assert waiting[-1].payload["interaction"]["questions"][0]["options"][0]["recommended"] is True
+    assert (
+        waiting[-1].payload["interaction"]["questions"][0]["options"][0]["recommended"]
+        is True
+    )
 
     decided = await core.decide_action(
         action_id=pending.action_id,
@@ -128,15 +146,21 @@ async def test_ask_user_pauses_even_under_bypass_then_resumes_with_answer(db_ses
     decisions = [e for e in events if e.type == "action.decision_recorded"]
     assert decisions and decisions[-1].payload["answer"] == {"DB": "SQLite"}
 
-    resumed = await dispatcher.resume_action(action_id=pending.action_id, context=context)
+    resumed = await dispatcher.resume_action(
+        action_id=pending.action_id, context=context
+    )
     assert resumed.status == "completed"
     assert resumed.result == {"answers": {"DB": "SQLite"}}
 
 
 @pytest.mark.asyncio
 async def test_ask_user_truncates_overlong_question_header(db_session, monkeypatch):
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
-    core, dispatcher, context, _session_id, turn_id = await _interaction_context(db_session)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
+    core, dispatcher, context, _session_id, turn_id = await _interaction_context(
+        db_session
+    )
 
     pending = await dispatcher.dispatch(
         tool_name="ask_user",
@@ -162,12 +186,19 @@ async def test_ask_user_truncates_overlong_question_header(db_session, monkeypat
         turn_id=turn_id, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
     )
     waiting = [e for e in events if e.type == "action.waiting_decision"]
-    assert waiting[-1].payload["interaction"]["questions"][0]["header"] == "需要确认的问题和下一步操"
+    assert (
+        waiting[-1].payload["interaction"]["questions"][0]["header"]
+        == "需要确认的问题和下一步操"
+    )
 
 
 @pytest.mark.asyncio
-async def test_exit_plan_mode_flips_session_to_execution_on_approve(db_session, monkeypatch):
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+async def test_exit_plan_mode_flips_session_to_execution_on_approve(
+    db_session, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
     core, dispatcher, context, session_id, _turn_id = await _interaction_context(
         db_session, mode="plan"
     )
@@ -195,7 +226,9 @@ async def test_exit_plan_mode_flips_session_to_execution_on_approve(db_session, 
     session = await core.session_repo.get(session_id)
     assert session.toolset_policy == {"name": "execution"}
 
-    resumed = await dispatcher.resume_action(action_id=pending.action_id, context=context)
+    resumed = await dispatcher.resume_action(
+        action_id=pending.action_id, context=context
+    )
     assert resumed.status == "completed"
     assert resumed.result == {"approved": True}
 
@@ -206,7 +239,9 @@ async def test_concurrent_restart_workers_execute_approved_action_once(
     db_session,
     monkeypatch,
 ):
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     db_session.add(workspace)
     await db_session.commit()
@@ -293,7 +328,10 @@ async def test_concurrent_restart_workers_execute_approved_action_once(
     )
 
     assert tool.execution_count == 1
-    assert sum(result.status == AgentActionStatus.COMPLETED for result in worker_results) == 1
+    assert (
+        sum(result.status == AgentActionStatus.COMPLETED for result in worker_results)
+        == 1
+    )
     loser = next(
         result
         for result in worker_results
@@ -302,7 +340,9 @@ async def test_concurrent_restart_workers_execute_approved_action_once(
     assert loser.status == AgentActionStatus.FAILED
     assert loser.error["type"] == "ActionAlreadyClaimed"
     async with session_factory() as verification_session:
-        action = await AgentActionRepository(verification_session).get(pending.action_id)
+        action = await AgentActionRepository(verification_session).get(
+            pending.action_id
+        )
         assert action is not None
         assert action.status == AgentActionStatus.COMPLETED
         events = await AgentEventRepository(verification_session).list_for_turn(
@@ -327,7 +367,9 @@ async def test_late_restart_worker_observes_existing_resume_without_execution(
     existing_status,
     existing_result,
 ):
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     db_session.add(workspace)
     await db_session.commit()
@@ -409,8 +451,12 @@ async def test_resume_rejects_requested_action_that_was_not_marked_for_resume(
     db_session,
     monkeypatch,
 ):
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
-    core, dispatcher, context, _session_id, _turn_id = await _interaction_context(db_session)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
+    core, dispatcher, context, _session_id, _turn_id = await _interaction_context(
+        db_session
+    )
     pending = await dispatcher.dispatch(
         tool_name="ask_user",
         input={"questions": []},
@@ -431,12 +477,49 @@ async def test_resume_rejects_requested_action_that_was_not_marked_for_resume(
 
 
 @pytest.mark.asyncio
+async def test_resume_historical_files_write_action_uses_current_write_tool(
+    db_session, tmp_path, monkeypatch
+):
+    _core, dispatcher, context, session_id, turn_id = await _interaction_context(
+        db_session
+    )
+    target = tmp_path / "resumed.txt"
+    monkeypatch.setattr(
+        file_resources,
+        "_resolve_path_for_write",
+        lambda _path, **_kwargs: target,
+    )
+    action = await AgentActionRepository(db_session).create(
+        session_id=session_id,
+        turn_id=turn_id,
+        kind="tool",
+        name="files.write",
+        input={"path": "resumed.txt", "content": "historical action"},
+        normalized_input={"path": "resumed.txt", "content": "historical action"},
+        risk_level="act_high",
+        permission_decision={"decision": "approve"},
+        status=AgentActionStatus.REQUESTED,
+        requires_resume=True,
+    )
+
+    result = await dispatcher.resume_action(
+        action_id=str(action.id),
+        context=context,
+    )
+
+    assert result.status == AgentActionStatus.COMPLETED
+    assert target.read_text(encoding="utf-8") == "historical action"
+
+
+@pytest.mark.asyncio
 async def test_action_claim_refuses_to_commit_unrelated_pending_writes(
     db_engine,
     db_session,
     monkeypatch,
 ):
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     db_session.add(workspace)
     await db_session.commit()

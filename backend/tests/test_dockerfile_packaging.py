@@ -66,3 +66,18 @@ def test_backend_dockerfile_installs_btop_for_scheduler_monitor():
         "backend/Dockerfile must install btop because /scheduler/btop/ws "
         "spawns the monitor inside the backend container"
     )
+
+
+def test_backend_dockerfile_installs_pinned_agent_browser_and_chromium():
+    dockerfile = _dockerfile()
+
+    assert "ARG AGENT_BROWSER_VERSION=0.33.0" in dockerfile
+    assert "agent-browser-linux-${AGENT_BROWSER_ARCH}" in dockerfile
+    assert "TARGETARCH" in dockerfile
+    assert (
+        "chromium"
+        in dockerfile.split("apt-get install -y --no-install-recommends", 1)[1]
+        .split("&&", 1)[0]
+        .split()
+    )
+    assert 'AGENT_BROWSER_EXECUTABLE_PATH="/usr/bin/chromium"' in dockerfile

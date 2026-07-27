@@ -10,9 +10,9 @@ class TaskTool:
 
     Generalizes ``subagent.analyze``: instead of a fixed analysis contract it
     takes a free-form ``objective`` and returns the child agent's final text.
-    The child runs with ``role_profile="worker"`` so it only sees concurrency-
-    safe read tools (files.read, grep, glob, platform reads, …); any writes are
-    handed back to the parent agent for approval.
+    The child runs with ``role_profile="worker"`` and a host-selected,
+    non-interactive tool surface; any writes are handed back to the parent
+    agent for approval.
     """
 
     spec = AgentToolSpec(
@@ -117,9 +117,8 @@ def _build_task_prompt(*, objective: str, description: str) -> str:
     if description:
         sections.append(f"Details:\n{description}")
     sections.append(
-        "You are a read-only worker subagent. Use only the exposed read tools "
-        "(file reads, grep, glob, platform reads). Do not attempt to write files "
-        "or run side effects. Return a concise, self-contained answer for the "
-        "parent agent."
+        "You are a read-only worker subagent. Use only the tools exposed by the "
+        "host. Do not attempt to write files or run side effects. Return a "
+        "concise, self-contained answer for the parent agent."
     )
     return "\n\n".join(sections)

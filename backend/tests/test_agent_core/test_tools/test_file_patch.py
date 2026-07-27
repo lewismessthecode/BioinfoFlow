@@ -5,7 +5,8 @@ import pytest
 
 from app.config import settings
 from app.services.agent_core.tools import files as file_tools
-from app.utils.exceptions import BadRequestError
+from app.path_layout import agent_attachments_root
+from app.utils.exceptions import BadRequestError, PermissionDeniedError
 
 
 def _tool():
@@ -141,6 +142,37 @@ async def test_apply_patch_rejects_create_over_existing_file(
         )
 
     assert target.read_text(encoding="utf-8") == "keep\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("op", ["create", "replace", "delete"])
+async def test_apply_patch_rejects_attachment_store_mutations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    op: str,
+):
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(tmp_path))
+    monkeypatch.setattr(settings, "repo_root", str(tmp_path))
+    protected = agent_attachments_root()
+    protected.mkdir(parents=True)
+    target = protected / "session" / "attachment" / "original"
+    target.parent.mkdir(parents=True)
+    target.write_text("before", encoding="utf-8")
+    operation = {
+        "create": {"op": "create", "path": str(target.parent / "new"), "content": "x"},
+        "replace": {
+            "op": "replace",
+            "path": str(target),
+            "old_text": "before",
+            "new_text": "after",
+        },
+        "delete": {"op": "delete", "path": str(target)},
+    }[op]
+
+    with pytest.raises(PermissionDeniedError, match="protected"):
+        await _tool().run({"operations": [operation]}, _context())
+
+    assert target.read_text(encoding="utf-8") == "before"
 
 
 @pytest.mark.asyncio

@@ -66,8 +66,9 @@ user input
 ```
 
 Tools implement the `AgentTool` protocol and describe themselves with
-`AgentToolSpec`. The default registry exposes file, shell, search, memory,
-skills, platform, web, subagent, and SSH remote tools. Toolsets include
+`AgentToolSpec`. Model-visible toolsets expose `write`, `edit`, `bash`, approved
+platform/coordination tools, `web.search`, and SSH remote tools where the target
+requires them. Toolsets include
 `default`, `plan`, the read-only `bio` policy, and `execution`; higher-risk
 actions can pause for approval before they run.
 
@@ -79,13 +80,14 @@ used for their decision. A model response containing several tool calls is
 stored as one durable batch: every call must have a terminal result before one
 database-claimed continuation may invoke the model again.
 
-"Full access" is the UI name for bypassing risk approvals on the selected
-target. It auto-approves elevated actions, protected-resource writes, indirect
-command forms, and sandbox opt-out requests. High-confidence catastrophic
-matches remain hard denied. The classifier is not a complete shell security
-boundary: actual confinement comes from an enabled local OS sandbox or, for SSH,
-the remote account and server controls. Explicit user/plan interactions and
-workspace or administrator policy remain independent.
+"Full access" is the UI name for bypassing risk approvals on ordinary,
+external, elevated, and scoped destructive actions for the selected target.
+High-confidence catastrophic actions still require explicit approval;
+protected-resource, authorization, and target violations remain denied. The
+classifier is not a complete shell security boundary: actual confinement comes
+from an enabled local OS sandbox or, for SSH, the remote account and server
+controls. Explicit user/plan interactions and workspace or administrator policy
+remain independent.
 
 ## Remote Connections
 

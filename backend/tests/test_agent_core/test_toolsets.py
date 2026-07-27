@@ -7,34 +7,54 @@ def test_default_and_plan_use_explicit_small_core_surfaces() -> None:
 
     assert exposure.exposed_names(policy={"name": "default"}) == {
         "ask_user",
-        "attachments.read",
-        "attachments.search",
-        "files.read",
-        "glob",
-        "grep",
         "projects.list",
         "runs.inspect",
         "skills.load",
-        "web.fetch",
         "web.search",
         "workflows.inspect",
     }
     assert exposure.exposed_names(policy={"name": "plan"}) == {
         "ask_user",
-        "attachments.read",
-        "attachments.search",
         "exit_plan_mode",
-        "files.read",
-        "glob",
-        "grep",
         "projects.list",
         "runs.inspect",
         "skills.load",
         "todo_write",
-        "web.fetch",
         "web.search",
         "workflows.inspect",
     }
+
+
+def test_execution_uses_only_unnamespaced_general_purpose_tools() -> None:
+    registry = build_default_tool_registry()
+    exposed = ToolsetExposure(registry).exposed_names(policy={"name": "execution"})
+
+    assert exposed == {
+        "ask_user",
+        "bash",
+        "edit",
+        "projects.list",
+        "runs.inspect",
+        "skills.load",
+        "task",
+        "todo_write",
+        "web.search",
+        "workflows.inspect",
+        "write",
+    }
+    assert {"write", "edit"} <= registry.names()
+    assert {"files.write", "files.edit"}.isdisjoint(registry.names())
+
+
+def test_registry_resolves_historical_file_action_names_without_exposing_them() -> None:
+    registry = build_default_tool_registry()
+
+    assert registry.get("files.write") is registry.get("write")
+    assert registry.get("files.edit") is registry.get("edit")
+    assert {"files.write", "files.edit"}.isdisjoint(registry.names())
+    assert {"files.write", "files.edit"}.isdisjoint(
+        spec.name for spec in registry.list_specs()
+    )
 
 
 def test_capability_bundles_progressively_disclose_registered_tools() -> None:
@@ -73,6 +93,48 @@ def test_explicit_allowed_tools_remains_an_authoritative_compatibility_path() ->
     assert exposed == {"projects.create", "runs.submit"}
 
 
+def test_retired_model_tools_cannot_be_revived_by_any_exposure_path() -> None:
+    exposure = ToolsetExposure(build_default_tool_registry())
+    retired = {
+        "attachments.read",
+        "attachments.search",
+        "files.apply_patch",
+        "files.read",
+        "glob",
+        "grep",
+        "images.build",
+        "images.delete",
+        "images.get",
+        "images.list",
+        "images.pull",
+        "web.fetch",
+    }
+    policies = (
+        {"name": "default", "allowed_tools": sorted(retired)},
+        {"name": "plan", "capabilities": ["bioinfo.read", "bioinfo.manage"]},
+        {
+            "name": "execution",
+            "capabilities": ["bioinfo.read", "bioinfo.manage", "remote"],
+        },
+    )
+
+    for policy in policies:
+        assert retired.isdisjoint(exposure.exposed_names(policy=policy))
+
+    assert retired.isdisjoint(
+        exposure.exposed_names(
+            policy={"name": "execution", "allowed_tools": sorted(retired)},
+            role="worker",
+        )
+    )
+    assert retired.isdisjoint(
+        exposure.exposed_names(
+            policy={"name": "execution"},
+            execution_target={"type": "remote_ssh", "connection_id": "conn-1"},
+        )
+    )
+
+
 def test_remote_target_never_widens_explicit_allowed_tools() -> None:
     exposure = ToolsetExposure(build_default_tool_registry())
     target = {"type": "remote_ssh", "connection_id": "conn-1"}
@@ -86,11 +148,14 @@ def test_remote_target_never_widens_explicit_allowed_tools() -> None:
         role="worker",
         execution_target=target,
     ) == {"remote.read_file"}
-    assert exposure.exposed_names(
-        policy={"name": "default", "allowed_tools": ["projects.list"]},
-        role="worker",
-        execution_target=target,
-    ) == set()
+    assert (
+        exposure.exposed_names(
+            policy={"name": "default", "allowed_tools": ["projects.list"]},
+            role="worker",
+            execution_target=target,
+        )
+        == set()
+    )
 
 
 def test_plan_capabilities_never_disclose_mutating_or_remote_execution_tools() -> None:
@@ -110,7 +175,7 @@ def test_plan_capabilities_never_disclose_mutating_or_remote_execution_tools() -
     }.isdisjoint(exposed)
 
 
-def test_attachment_tools_are_read_only_parallel_safe_and_remote_compatible() -> None:
+def test_attachment_tools_remain_registered_but_are_never_model_visible() -> None:
     registry = build_default_tool_registry()
     search = registry.get("attachments.search").spec
     read = registry.get("attachments.read").spec
@@ -123,4 +188,4 @@ def test_attachment_tools_are_read_only_parallel_safe_and_remote_compatible() ->
         policy={"name": "execution"},
         execution_target={"type": "remote_ssh", "connection_id": "conn-1"},
     )
-    assert {"attachments.search", "attachments.read"} <= exposed
+    assert {"attachments.search", "attachments.read"}.isdisjoint(exposed)

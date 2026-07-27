@@ -188,15 +188,15 @@ The sandbox and approval policy are separate controls:
 - SSH commands are constrained by the remote Unix account, sudo/ACL policy,
   scheduler policy, and server configuration, not by the local sandbox
 
-"Full access" (`bypass`) skips risk prompts for the selected target. It may
-auto-approve elevated actions and indirect command forms while preserving their
+"Full access" (`bypass`) skips risk prompts for ordinary, external, elevated,
+and scoped destructive actions on the selected target while preserving their
 risk audit data. It cannot disable the local sandbox, authorize protected local
-resources, or bypass remote account
-authority; an opt-out request can only succeed when server configuration allows
-unsandboxed execution.
-High-confidence matches for catastrophic operations, including recognized root
-filesystem destruction, unsafe block-device writes or formats, direct host
-shutdown/reboot, and fork-bomb forms, are hard denied even in Full access.
+resources, or bypass remote account authority. High-confidence catastrophic
+operations, including recognized root filesystem destruction, unsafe
+block-device writes or formats, direct host shutdown/reboot, and fork-bomb
+forms, still require explicit approval in an interactive session. Independent
+authorization, target, and protected-resource violations remain denied in every
+permission mode.
 
 Command classification is a policy and review aid, not complete shell
 confinement: obfuscated programs and runtime-generated arguments cannot all be
@@ -204,6 +204,31 @@ understood statically. The enforceable boundary is an active local OS sandbox;
 for SSH execution it is the remote Unix account plus sudo, ACL, scheduler, and
 server policy. Keep those controls enabled even when approval prompts are
 relaxed.
+
+### Agent browser network boundary
+
+Agent browser navigation uses a best-effort public DNS preflight before a URL is
+opened, then requires `agent-browser --allowed-domains` for runtime domain
+containment. These controls reject known local, private, link-local, metadata,
+and otherwise non-public destinations and prevent navigation to unrelated host
+names.
+
+The third-party `agent-browser` CLI does not provide IP pinning between the DNS
+preflight and its later browser connection. An attacker-controlled hostname can
+therefore retain residual DNS-rebinding risk, especially in Full access where
+ordinary network actions do not prompt. Treat this browser capability as
+suitable only for trusted public domains. For strictly untrusted URLs, disable
+Bash network access and agent-browser instead of relying on the preflight as a
+complete SSRF boundary.
+
+BioinfoFlow applies URL, action, configuration, and environment hardening to
+recognized direct `agent-browser` commands. Because `bash` is intentionally a
+general-purpose shell, a user-approved script, renamed executable, interpreter,
+or other indirect execution path cannot be proven to be the same program by
+static command parsing. Those paths remain governed by the Bash permission mode
+and operating-system sandbox, not by the direct-command allowlist. In Full
+access, neither the allowlist nor the DNS preflight should be treated as an
+authorization boundary.
 
 ## Agent Permission And Approval Integrity
 

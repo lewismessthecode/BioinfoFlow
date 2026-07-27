@@ -251,10 +251,9 @@ async def _snapshot_with_scope_remote_boundary(
     agent_session = await AgentSessionRepository(session).get_fresh(session_id)
     if agent_session is None:
         raise PermissionDeniedError("Agent session is not accessible")
-    if (
-        str(agent_session.workspace_id) != str(workspace_id)
-        or str(agent_session.user_id) != str(user_id)
-    ):
+    if str(agent_session.workspace_id) != str(workspace_id) or str(
+        agent_session.user_id
+    ) != str(user_id):
         raise PermissionDeniedError("Agent session is not accessible")
 
     connection_id = _action_connection_id(action_input)
@@ -392,6 +391,31 @@ def _has_explicit_user_approval(permission_decision: dict[str, Any]) -> bool:
         "user",
         "user_pending_strategy",
     }
+
+
+_RISK_RANK = {
+    "read": 0,
+    "act_low": 1,
+    "external": 2,
+    "act_high": 2,
+    "destructive": 3,
+    "critical": 4,
+}
+
+
+def _approved_risk_covers_current(
+    permission_context_snapshot: dict[str, Any] | None,
+    current_risk: RiskAssessment,
+) -> bool:
+    if not isinstance(current_risk, CommandRiskAssessment):
+        return True
+    previous = (permission_context_snapshot or {}).get("command_risk")
+    if not isinstance(previous, dict):
+        return False
+    previous_level = previous.get("level")
+    if previous_level not in _RISK_RANK:
+        return False
+    return _RISK_RANK[current_risk.level] <= _RISK_RANK[previous_level]
 
 
 @dataclass(frozen=True)
@@ -844,11 +868,13 @@ class AgentToolExecutor:
             permission_mode=permission_context.permission_mode,
             automation_mode=permission_context.automation_mode,
         )
+        approval_covers_current = _approved_risk_covers_current(
+            action.permission_context_snapshot,
+            current_risk,
+        )
         hard_denied = (
             fresh_decision.decision == "deny"
-            or current_risk.level == "critical"
             or getattr(current_risk, "hard_blocked", False)
-            or previous_decision.get("hard_blocked") is True
             or previous_decision.get("protected_resource_recheck") == "deny"
         )
         if hard_denied:
@@ -870,7 +896,9 @@ class AgentToolExecutor:
             )
 
         requires_approval = fresh_decision.decision == "ask"
-        if requires_approval and not explicitly_approved:
+        if requires_approval and (
+            not explicitly_approved or not approval_covers_current
+        ):
             permission_decision = {
                 **fresh_decision.as_dict(),
                 "source": "policy_recheck",

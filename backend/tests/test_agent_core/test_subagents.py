@@ -19,6 +19,18 @@ from app.utils.exceptions import PermissionDeniedError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
+_RETIRED_WORKER_TOOLS = {
+    "attachments.read",
+    "attachments.search",
+    "files.read",
+    "glob",
+    "grep",
+    "images.get",
+    "images.list",
+    "web.fetch",
+}
+
+
 class _FakeBackend:
     def __init__(self, completion: Callable[..., Awaitable[Any]]) -> None:
         self.completion = completion
@@ -94,6 +106,29 @@ async def test_read_only_subagent_accepts_read_only_tools():
 
 
 @pytest.mark.asyncio
+async def test_read_only_subagent_default_tools_match_worker_model_surface():
+    registry = build_default_tool_registry()
+    result = await ReadOnlySubagentRunner(registry).analyze(task="Inspect safely.")
+
+    expected = ToolsetExposure(registry).exposed_names(
+        policy={"name": "default"},
+        role="worker",
+    )
+    assert set(result["allowed_tools"]) == expected
+    assert _RETIRED_WORKER_TOOLS.isdisjoint(result["allowed_tools"])
+
+
+@pytest.mark.asyncio
+async def test_read_only_subagent_preserves_explicit_empty_tool_list():
+    result = await ReadOnlySubagentRunner(build_default_tool_registry()).analyze(
+        task="Reason without tools.",
+        allowed_tools=[],
+    )
+
+    assert result["allowed_tools"] == []
+
+
+@pytest.mark.asyncio
 async def test_read_only_subagent_rejects_write_capable_tools():
     with pytest.raises(PermissionDeniedError, match="write-capable"):
         await ReadOnlySubagentRunner(build_default_tool_registry()).analyze(
@@ -152,7 +187,16 @@ async def test_read_only_subagent_can_run_delegated_child_turn(db_session, monke
             "turn_id": str(parent_turn.id),
             "project_id": None,
         },
-        allowed_tools=["projects.list", "skills.load"],
+        allowed_tools=[
+            "attachments.read",
+            "files.read",
+            "glob",
+            "grep",
+            "images.list",
+            "projects.list",
+            "skills.load",
+            "web.fetch",
+        ],
     )
 
     assert result["mode"] == "delegated_read_only"
@@ -171,6 +215,11 @@ async def test_read_only_subagent_can_run_delegated_child_turn(db_session, monke
         "name": "default",
         "allowed_tools": ["projects.list", "skills.load"],
     }
+    child_turn = await service.turn_repo.get(result["child_turn_id"])
+    assert child_turn is not None
+    assert _RETIRED_WORKER_TOOLS.isdisjoint(child_turn.input_text.split())
+    for retired in _RETIRED_WORKER_TOOLS:
+        assert retired not in child_turn.input_text
     assert child_session.prompt_snapshot == parent_session.prompt_snapshot
     assert ToolsetExposure(build_default_tool_registry()).exposed_names(
         policy=child_session.toolset_policy,

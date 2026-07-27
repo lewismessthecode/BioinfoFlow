@@ -2268,7 +2268,9 @@ def test_remote_project_paths_cannot_escape_working_directory():
     "path",
     ["/etc/passwd", "~/.ssh/config", "$HOME/.ssh/config", "../outside.txt"],
 )
-def test_unbounded_structured_remote_paths_are_audited_but_allowed_in_bypass(tool, path):
+def test_unbounded_structured_remote_paths_are_audited_but_allowed_in_bypass(
+    tool, path
+):
     target = CommandTargetProfile(
         kind="remote_ssh",
         trust_domain="cluster.example.org",
@@ -2447,12 +2449,8 @@ def test_default_registry_registers_remote_tools_with_expected_exposure():
     assert "remote.connections.list" not in exposure.exposed_names(
         policy={"name": "default"}
     )
-    assert "remote.read_file" not in exposure.exposed_names(
-        policy={"name": "default"}
-    )
-    assert "remote.list_dir" not in exposure.exposed_names(
-        policy={"name": "default"}
-    )
+    assert "remote.read_file" not in exposure.exposed_names(policy={"name": "default"})
+    assert "remote.list_dir" not in exposure.exposed_names(policy={"name": "default"})
     assert registry.get("remote.exec").spec.risk_level == "act_high"
     assert registry.get("remote.read_file").spec.risk_level == "read"
     assert registry.get("remote.read_file").spec.write_scope == []
@@ -2497,7 +2495,8 @@ def test_remote_ssh_toolset_exposure_hides_local_and_platform_tools():
         "remote.read_file",
         "remote.list_dir",
     } <= execution_tools
-    assert {"skills.load", "web.search", "web.fetch"} <= execution_tools
+    assert {"skills.load", "web.search"} <= execution_tools
+    assert "web.fetch" not in execution_tools
     assert {"skills.list", "plugins.list"}.isdisjoint(execution_tools)
     assert {"todo_write", "ask_user"} <= execution_tools
 

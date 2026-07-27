@@ -167,7 +167,7 @@ def test_numeric_output_redirect_target_is_still_a_file_sink():
 def test_remote_full_access_allows_literal_inline_filter_pipeline():
     command = (
         "phoenixcli --no-interactive task list --output json --page-size 100 "
-        "2>&1 | python3 -c \"import sys,json; "
+        '2>&1 | python3 -c "import sys,json; '
         "data=json.load(sys.stdin); print(len(data.get('data', [])))\""
     )
 
@@ -189,7 +189,7 @@ def test_remote_full_access_allows_literal_inline_filter_pipeline():
 
 def test_remote_full_access_allows_read_only_compound_data_listing():
     command = (
-        'for d in /mnt/nas1/phoenix-task/oseq_816/*/; do '
+        "for d in /mnt/nas1/phoenix-task/oseq_816/*/; do "
         'if [ -d "$d/input" ]; then '
         'echo "=== $d ==="; ls "$d/input/" 2>&1; '
         "fi; done"
@@ -521,13 +521,15 @@ def test_connection_mismatch_is_hard_blocked_in_every_mode():
         )
 
 
-def test_nested_destructive_sink_is_denied_even_in_bypass():
+def test_nested_destructive_sink_requires_approval_even_in_bypass():
     assessment = assess_command_risk(
         "find / -exec rm -rf {} +",
         target=LOCAL_UNSANDBOXED,
     )
 
-    assert assessment.hard_blocked is True
+    assert assessment.level == "critical"
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
     assert assessment.confidence == "high"
     assert (
         PermissionPolicy()
@@ -537,7 +539,137 @@ def test_nested_destructive_sink_is_denied_even_in_bypass():
             automation_mode="autonomous",
         )
         .decision
-        == "deny"
+        == "ask"
+    )
+
+
+@pytest.mark.parametrize(
+    "command,expected",
+    [
+        ("docker version", "act_low"),
+        ("docker info", "act_low"),
+        ("docker ps", "act_low"),
+        ("docker images", "act_low"),
+        ("docker inspect api", "act_low"),
+        ("docker volume ls", "act_low"),
+        ("docker system df", "act_low"),
+        ("docker context ls", "act_low"),
+        ("docker context inspect prod", "act_low"),
+        ("docker --context prod ps", "act_low"),
+        ("docker -cprod ps", "act_low"),
+        ("docker -Htcp://docker.example:2375 ps", "act_low"),
+        ("docker --tlscacert ca.pem ps", "act_low"),
+        ("docker --tlscert cert.pem ps", "act_low"),
+        ("docker --tlskey key.pem ps", "act_low"),
+        ("docker --tlscacert=ca.pem --tlscert=cert.pem --tlskey=key.pem ps", "act_low"),
+        ("docker build .", "act_high"),
+        ("docker run alpine true", "act_high"),
+        ("docker run -v cache:/data alpine true", "act_high"),
+        ("docker run --volume ./data:/data alpine true", "act_high"),
+        ("docker create alpine", "act_high"),
+        ("docker create --volume data:/data alpine", "act_high"),
+        ("docker compose up -d", "act_high"),
+        ("docker exec api true", "act_high"),
+        ("docker start api", "act_high"),
+        ("docker restart api", "act_high"),
+        ("docker volume create cache", "act_high"),
+        ("docker context use prod", "act_high"),
+        ("docker pull alpine", "external"),
+        ("docker push registry.example/app", "external"),
+        ("docker login registry.example", "external"),
+        ("docker compose pull", "external"),
+        ("docker compose push", "external"),
+        ("docker rm api", "destructive"),
+        ("docker rmi app:old", "destructive"),
+        ("docker volume rm cache", "destructive"),
+        ("docker container rm api", "destructive"),
+        ("docker image rm app:old", "destructive"),
+    ],
+)
+def test_docker_commands_are_classified_by_concrete_effect(command, expected):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.level == expected
+    assert assessment.hard_blocked is False
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "docker system prune -f",
+        "docker -cprod system prune -f",
+        "docker -Htcp://docker.example:2375 system prune -f",
+        "docker image prune -f",
+        "docker container prune -f",
+        "docker network prune -f",
+        "docker volume prune -f",
+        "docker system prune --volumes -f",
+        "docker compose down --volumes",
+        "docker compose down --volumes=true",
+        "docker compose --project-directory /tmp/project down --volumes",
+        "docker compose -f compose.yml down --volumes",
+        "docker compose --file=compose.yml down --volumes",
+        "docker compose -p demo down --volumes",
+        "docker compose --project-name=demo down --volumes",
+        "docker compose --profile dev down --volumes",
+        "docker compose --env-file .env down --volumes",
+        "docker compose --parallel 4 down --volumes",
+        "docker compose --ansi never down --volumes",
+        "docker compose --progress plain down --volumes",
+        "docker run -v /:/host alpine true",
+        "docker run -v /./:/host alpine true",
+        "docker run -v /tmp/../:/host alpine true",
+        "docker create --mount type=bind,source=/,target=/host alpine",
+        "docker create --mount type=bind,source=/tmp/../,target=/host alpine",
+        "docker run --privileged alpine true",
+        "docker exec --privileged api true",
+        "docker run -v /var/run/docker.sock:/var/run/docker.sock alpine true",
+    ],
+)
+def test_docker_host_escalation_and_broad_cleanup_require_approval(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.level == "critical"
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "docker rm api",
+        "docker rmi app:old",
+        "docker volume rm cache",
+        "ssh host.example true",
+        "curl https://example.org",
+        "uv pip install httpx",
+    ],
+)
+def test_full_access_allows_scoped_docker_removal_and_ordinary_external_actions(
+    command,
+):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.level in {"destructive", "external"}
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "allow"
     )
 
 
@@ -553,10 +685,11 @@ def test_nested_destructive_sink_is_denied_even_in_bypass():
         "mv disk.img /dev/root --suffix .bak",
     ],
 )
-def test_extended_block_device_sinks_are_denied_in_bypass(command):
+def test_extended_block_device_sinks_require_approval_in_bypass(command):
     assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
 
-    assert assessment.hard_blocked is True
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
     assert (
         PermissionPolicy()
         .decide(
@@ -565,17 +698,18 @@ def test_extended_block_device_sinks_are_denied_in_bypass(command):
             automation_mode="autonomous",
         )
         .decision
-        == "deny"
+        == "ask"
     )
 
 
-def test_unknown_device_alias_write_is_denied_in_bypass():
+def test_unknown_device_alias_write_requires_approval_in_bypass():
     assessment = assess_command_risk(
         "dd if=disk.img of=/dev/disk/by-uuid/volume-alias",
         target=LOCAL_UNSANDBOXED,
     )
 
-    assert assessment.hard_blocked is True
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
     assert (
         PermissionPolicy()
         .decide(
@@ -584,7 +718,7 @@ def test_unknown_device_alias_write_is_denied_in_bypass():
             automation_mode="autonomous",
         )
         .decision
-        == "deny"
+        == "ask"
     )
 
 
@@ -622,13 +756,14 @@ def test_indirect_device_capable_write_targets_require_explicit_approval(command
     )
 
 
-def test_compound_symlink_to_unsafe_device_is_hard_blocked():
+def test_compound_symlink_to_unsafe_device_requires_approval():
     assessment = assess_command_risk(
         "ln -s /dev/root /tmp/device-alias && dd if=disk.img of=/tmp/device-alias",
         target=LOCAL_UNSANDBOXED,
     )
 
-    assert assessment.hard_blocked is True
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
     assert assessment.level == "critical"
 
 
@@ -638,7 +773,9 @@ def test_compound_relative_symlink_alias_is_normalized_before_sink_check():
         target=LOCAL_UNSANDBOXED,
     )
 
-    assert assessment.hard_blocked is True
+    assert assessment.hard_blocked is False
+    assert assessment.level == "critical"
+    assert assessment.requires_explicit_approval is True
 
 
 def test_compound_symlink_with_unknown_target_requires_explicit_approval():
@@ -812,11 +949,12 @@ def test_versioned_and_alternate_inline_interpreters_require_approval(command):
         "php8.4 -r 'system(\"reboot\");'",
     ],
 )
-def test_versioned_interpreter_literal_hardlines_are_denied(command):
+def test_versioned_interpreter_literal_hardlines_require_approval(command):
     assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
 
     assert assessment.level == "critical"
-    assert assessment.hard_blocked is True
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
     assert (
         PermissionPolicy()
         .decide(
@@ -825,7 +963,7 @@ def test_versioned_interpreter_literal_hardlines_are_denied(command):
             automation_mode="autonomous",
         )
         .decision
-        == "deny"
+        == "ask"
     )
 
 
@@ -906,10 +1044,14 @@ def test_versioned_interpreter_literal_hardlines_are_denied(command):
         "php8.4 '-Esystem(\"reboot\");'",
     ],
 )
-def test_literal_catastrophic_nested_commands_are_denied_in_bypass(target, command):
+def test_literal_catastrophic_nested_commands_require_approval_in_bypass(
+    target, command
+):
     assessment = assess_command_risk(command, target=target)
 
-    assert assessment.hard_blocked is True
+    assert assessment.level == "critical"
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
     assert (
         PermissionPolicy()
         .decide(
@@ -918,7 +1060,7 @@ def test_literal_catastrophic_nested_commands_are_denied_in_bypass(target, comma
             automation_mode="autonomous",
         )
         .decision
-        == "deny"
+        == "ask"
     )
 
 
@@ -1008,7 +1150,9 @@ def test_unsupported_shell_grammar_is_audited_but_allowed_in_bypass(target, comm
         "perl5.40 '-eprint(\"ok\")'",
     ],
 )
-def test_attached_inline_interpreter_source_is_audited_but_allowed_in_bypass(target, command):
+def test_attached_inline_interpreter_source_is_audited_but_allowed_in_bypass(
+    target, command
+):
     assessment = assess_command_risk(command, target=target)
 
     assert assessment.hard_blocked is False
@@ -1035,10 +1179,12 @@ def test_attached_inline_interpreter_source_is_audited_but_allowed_in_bypass(tar
         "perl5.40 '-esystem(\"reboot\")'",
     ],
 )
-def test_attached_inline_interpreter_hardlines_are_denied(target, command):
+def test_attached_inline_interpreter_hardlines_require_approval(target, command):
     assessment = assess_command_risk(command, target=target)
 
-    assert assessment.hard_blocked is True
+    assert assessment.level == "critical"
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
     assert (
         PermissionPolicy()
         .decide(
@@ -1047,7 +1193,7 @@ def test_attached_inline_interpreter_hardlines_are_denied(target, command):
             automation_mode="autonomous",
         )
         .decision
-        == "deny"
+        == "ask"
     )
 
 
@@ -1068,7 +1214,9 @@ def test_attached_inline_interpreter_hardlines_are_denied(target, command):
         "rsync -vaT/home/alice/.ssh payload /tmp/output",
     ],
 )
-def test_opaque_or_protected_write_sinks_are_audited_but_allowed_in_bypass(target, command):
+def test_opaque_or_protected_write_sinks_are_audited_but_allowed_in_bypass(
+    target, command
+):
     assessment = assess_command_risk(command, target=target)
 
     assert assessment.hard_blocked is False

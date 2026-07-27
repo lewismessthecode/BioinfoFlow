@@ -26,15 +26,9 @@ PLAN_TOOLSET_POLICY = {"name": "plan"}
 
 _CORE_READ_TOOLS = frozenset(
     {
-        "attachments.read",
-        "attachments.search",
-        "files.read",
-        "glob",
-        "grep",
         "projects.list",
         "runs.inspect",
         "skills.load",
-        "web.fetch",
         "web.search",
         "workflows.inspect",
     }
@@ -44,15 +38,14 @@ _PLAN_TOOLS = _DEFAULT_TOOLS | {"exit_plan_mode", "todo_write"}
 _EXECUTION_TOOLS = _CORE_READ_TOOLS | {
     "ask_user",
     "bash",
-    "files.apply_patch",
+    "edit",
     "task",
     "todo_write",
+    "write",
 }
 
 _BIOINFO_READ_TOOLS = frozenset(
     {
-        "images.get",
-        "images.list",
         "projects.get",
         "projects.list",
         "projects.workflows.list",
@@ -64,9 +57,6 @@ _BIOINFO_READ_TOOLS = frozenset(
 )
 _BIOINFO_MANAGE_TOOLS = frozenset(
     {
-        "images.build",
-        "images.delete",
-        "images.pull",
         "projects.create",
         "projects.delete",
         "projects.update",
@@ -102,11 +92,11 @@ _REMOTE_SSH_TARGET_NEUTRAL_TOOLS = frozenset(
         "todo_write",
     }
 )
-_REMOTE_SSH_TARGET_PREFIXES = ("attachments.", "remote.", "skills.", "web.")
+_REMOTE_SSH_TARGET_PREFIXES = ("remote.", "skills.", "web.")
+_RETIRED_MODEL_TOOL_NAMES = frozenset({"glob", "grep", "web.fetch"})
+_RETIRED_MODEL_TOOL_PREFIXES = ("attachments.", "files.", "images.")
 _MODEL_HIDDEN_TOOLS = frozenset(
     {
-        "files.edit",
-        "files.write",
         "memory.list",
         "memory.propose",
         "plugins.list",
@@ -191,7 +181,9 @@ class ToolsetExposure:
             # excluded — they could only deadlock the child run.
             names = set(explicit_allowed or (_CORE_READ_TOOLS | extension_tools))
             names &= {
-                spec.name for spec in specs if spec.name in read_only and not spec.interaction
+                spec.name
+                for spec in specs
+                if spec.name in read_only and not spec.interaction
             }
         elif policy_name == "execution":
             names = set(_EXECUTION_TOOLS | extension_tools)
@@ -206,9 +198,7 @@ class ToolsetExposure:
             capabilities = policy.get("capabilities")
             if isinstance(capabilities, list):
                 for capability in capabilities:
-                    capability_tools = TOOL_CAPABILITY_BUNDLES.get(
-                        str(capability), ()
-                    )
+                    capability_tools = TOOL_CAPABILITY_BUNDLES.get(str(capability), ())
                     names.update(
                         capability_tools
                         if policy_name == "execution"
@@ -245,6 +235,7 @@ class ToolsetExposure:
             names = {name for name in names if not name.startswith("remote.")}
         elif execution_target is not None and not scope_allows_remote:
             names = {name for name in names if not name.startswith("remote.")}
+        names = {name for name in names if not _is_retired_model_tool(name)}
         return names
 
     def decide(
@@ -345,6 +336,12 @@ def _is_remote_ssh_compatible_tool(spec: AgentToolSpec) -> bool:
     if spec.name in _REMOTE_SSH_TARGET_NEUTRAL_TOOLS:
         return True
     return spec.name.startswith(_REMOTE_SSH_TARGET_PREFIXES)
+
+
+def _is_retired_model_tool(name: str) -> bool:
+    return name in _RETIRED_MODEL_TOOL_NAMES or name.startswith(
+        _RETIRED_MODEL_TOOL_PREFIXES
+    )
 
 
 def provider_tool_specs(specs: Iterable[AgentToolSpec]) -> list[dict]:

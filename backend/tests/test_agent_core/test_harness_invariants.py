@@ -145,14 +145,14 @@ async def test_session_can_start_without_project_and_keeps_prompt_snapshot(db_se
 
     assert session.project_id is None
     assert session.runtime_mode == "api"
-    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v9"
+    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v10"
     assert session.toolset_policy["name"] == "execution"
 
 
-def test_v9_system_prompt_defines_the_comprehensive_provider_neutral_agent_contract():
+def test_v10_system_prompt_defines_the_comprehensive_provider_neutral_agent_contract():
     snapshot = default_system_prompt_snapshot()
 
-    assert snapshot.id == "bioinfoflow-agent-v9"
+    assert snapshot.id == "bioinfoflow-agent-v10"
     nonempty_lines = [line for line in snapshot.content.splitlines() if line.strip()]
     assert 350 <= len(nonempty_lines) <= 700
 
@@ -188,6 +188,9 @@ def test_v9_system_prompt_defines_the_comprehensive_provider_neutral_agent_contr
         "Submitting a run is not completion",
         "Approval is not proof of success",
         "Preserve existing user changes",
+        "Use `web.search` to discover public URLs",
+        "Use `agent-browser read` or `agent-browser open` through `bash`",
+        "Keep `--allowed-domains` on snapshot, click, and get interactions",
     )
     for guidance in required_guidance:
         assert guidance in snapshot.content
@@ -413,9 +416,7 @@ async def test_turn_writes_canonical_user_and_assistant_messages(db_session):
         "type": "text",
         "text": "Remember that we use hg38.",
     }
-    assert messages[0].content_parts[0]["text"].startswith(
-        "<environment_context>\n"
-    )
+    assert messages[0].content_parts[0]["text"].startswith("<environment_context>\n")
     assert (messages[0].message_metadata or {})["_temporal_context"] == (
         turn.model_profile_snapshot["temporal_context"]
     )
@@ -613,8 +614,6 @@ def test_platform_tool_exposure_keeps_read_tools_available_and_mutations_gated()
         "projects.workflows.list",
         "workflows.list",
         "workflows.inspect",
-        "images.list",
-        "images.get",
         "runs.list",
         "runs.inspect",
         "scheduler.status",
@@ -630,9 +629,6 @@ def test_platform_tool_exposure_keeps_read_tools_available_and_mutations_gated()
         "workflows.create",
         "workflows.update",
         "workflows.delete",
-        "images.pull",
-        "images.build",
-        "images.delete",
         "runs.submit",
         "runs.cancel",
         "runs.retry",
@@ -658,25 +654,20 @@ def test_normal_execution_exposes_small_capability_surface_but_keeps_compatibili
 
     assert exposed == {
         "ask_user",
-        "attachments.read",
-        "attachments.search",
         "bash",
-        "files.apply_patch",
-        "files.read",
-        "glob",
-        "grep",
+        "edit",
         "projects.list",
         "runs.inspect",
         "skills.load",
         "task",
         "todo_write",
-        "web.fetch",
         "web.search",
         "workflows.inspect",
+        "write",
     }
-    assert len(exposed) == 16
+    assert len(exposed) == 11
     assert {
-        "files.write",
+        "files.read",
         "subagent.analyze",
         "memory.list",
         "runs.get",
@@ -986,7 +977,7 @@ async def test_approval_resume_executes_tool_and_continues_turn(
                 name="bash",
                 arguments_delta=json.dumps(
                     {
-                        "command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" approved-tool'",
+                        "command": 'sh -c \': "$COMMAND"; printf "%s\\n" approved-tool\'',
                         "cwd": str(settings.deliveries_root),
                     }
                 ),
@@ -1082,7 +1073,7 @@ async def test_rejected_tool_decision_continues_turn_with_tool_result(
                 name="bash",
                 arguments_delta=json.dumps(
                     {
-                        "command": "sh -c ': \"$COMMAND\"; printf \"%s\\n\" should-not-run'",
+                        "command": 'sh -c \': "$COMMAND"; printf "%s\\n" should-not-run\'',
                         "cwd": str(settings.deliveries_root),
                     }
                 ),

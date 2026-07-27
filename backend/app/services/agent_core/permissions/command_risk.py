@@ -141,7 +141,7 @@ def assess_command_risk(
         [*referenced_paths, *sink_safety.protected_paths]
     )
     reasons = [f"command semantics classified as {level}"]
-    hard_blocked = level == "critical"
+    hard_blocked = False
 
     if (
         target.kind == "remote_ssh"
@@ -181,6 +181,9 @@ def assess_command_risk(
     if hard_blocked:
         reasons.append("the command matches a non-bypassable hard safety boundary")
         confidence: RiskConfidence = "high"
+    elif level == "critical":
+        reasons.append("the command requires explicit user approval")
+        confidence = "high"
     elif target.kind == "remote_ssh":
         reasons.append(
             "remote commands are bounded by the remote SSH account and server policy, not the working directory"
@@ -216,7 +219,8 @@ def assess_command_risk(
             {"type": "path", "id": path} for path in referenced_paths[:32]
         ],
         requires_explicit_approval=(
-            protected_write
+            level == "critical"
+            or protected_write
             or sink_safety.requires_explicit_approval
             or execution_safety.requires_explicit_approval
             or target.sandbox_bypass_requested
@@ -1569,9 +1573,9 @@ def _remote_read_only_control_node_allowed(
         return False
     if _node_writes(stripped, executable, args):
         return False
-    return _RANK[_classify_node(_CommandNode(tokens=tuple(stripped)))] <= _RANK[
-        "act_low"
-    ]
+    return (
+        _RANK[_classify_node(_CommandNode(tokens=tuple(stripped)))] <= _RANK["act_low"]
+    )
 
 
 def _is_unresolved_inline_code(code: str) -> bool:
@@ -2233,6 +2237,7 @@ def _classify_git(args: list[str]) -> RiskLevel:
 
 
 def _classify_docker(args: list[str]) -> RiskLevel:
+    args = _docker_command_args(args)
     if not args:
         return "act_low"
     if args in [["--version"], ["version"]]:
@@ -2241,10 +2246,14 @@ def _classify_docker(args: list[str]) -> RiskLevel:
         return "act_high"
     subcommand = args[0]
     subargs = args[1:]
+    if _docker_requires_critical_approval(subcommand, subargs):
+        return "critical"
     if subcommand == "system":
-        if subargs[:1] == ["prune"]:
-            return "destructive"
+        if subargs[:1] == ["df"]:
+            return "act_low" if _docker_read_form("info", subargs[1:]) else "act_high"
         return "act_high"
+    if subcommand == "compose":
+        return _classify_docker_compose(subargs)
     if subcommand in {"image", "container", "volume", "network", "context"}:
         return _classify_docker_group(subcommand, subargs)
     if subcommand in _DOCKER_DESTRUCTIVE:
@@ -2253,6 +2262,156 @@ def _classify_docker(args: list[str]) -> RiskLevel:
         return "external"
     if _docker_read_form(subcommand, subargs):
         return "act_low"
+    return "act_high"
+
+
+def _docker_command_args(args: list[str]) -> list[str]:
+    """Strip Docker CLI global options before classifying the subcommand."""
+    index = 0
+    value_options = {
+        "--config",
+        "--context",
+        "--host",
+        "--log-level",
+        "--tlscacert",
+        "--tlscert",
+        "--tlskey",
+        "-c",
+        "-H",
+    }
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            return args[index + 1 :]
+        if arg in value_options:
+            index += 2
+            continue
+        if (arg.startswith("-c") or arg.startswith("-H")) and len(arg) > 2:
+            index += 1
+            continue
+        if any(
+            arg.startswith(f"{option}=")
+            for option in value_options
+            if option.startswith("--")
+        ):
+            index += 1
+            continue
+        if (
+            arg in {"--debug", "-D", "--tls", "--tlsverify"}
+            or arg.startswith("--tlscacert=")
+            or arg.startswith("--tlscert=")
+            or arg.startswith("--tlskey=")
+        ):
+            index += 1
+            continue
+        break
+    return args[index:]
+
+
+def _docker_requires_critical_approval(subcommand: str, args: list[str]) -> bool:
+    if subcommand in {"system", "image", "container", "network", "volume"}:
+        if args[:1] == ["prune"]:
+            return True
+    if subcommand == "compose":
+        compose_command, compose_args = _docker_compose_command(args)
+        if compose_command == "down" and _docker_volumes_requested(compose_args):
+            return True
+        return False
+    if subcommand not in {"run", "create", "exec"}:
+        return False
+    if any(arg == "--privileged" or arg.startswith("--privileged=") for arg in args):
+        return True
+    if subcommand == "exec":
+        return False
+    return _docker_has_host_escalating_mount(args)
+
+
+def _docker_has_host_escalating_mount(args: list[str]) -> bool:
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        value: str | None = None
+        if arg in {"-v", "--volume", "--mount"}:
+            if index + 1 < len(args):
+                value = args[index + 1]
+                index += 1
+        elif arg.startswith("--volume=") or arg.startswith("--mount="):
+            value = arg.split("=", 1)[1]
+        elif arg.startswith("-v") and len(arg) > 2:
+            value = arg[2:]
+        if value is not None:
+            source = posixpath.normpath(_docker_mount_source(value))
+            if source == "/" or _docker_socket_path(source):
+                return True
+        index += 1
+    return False
+
+
+def _docker_mount_source(value: str) -> str:
+    if "," in value and any(
+        part in {"type=bind", "type=volume"} for part in value.split(",")
+    ):
+        fields = dict(part.split("=", 1) for part in value.split(",") if "=" in part)
+        return fields.get("source") or fields.get("src") or ""
+    return value.split(":", 1)[0]
+
+
+def _docker_socket_path(path: str) -> bool:
+    normalized = posixpath.normpath(path)
+    return normalized.endswith("/docker.sock") or normalized == "docker.sock"
+
+
+def _docker_volumes_requested(args: list[str]) -> bool:
+    return any(
+        arg in {"-v", "--volumes"} or arg.startswith("--volumes=") for arg in args
+    )
+
+
+def _docker_compose_command(args: list[str]) -> tuple[str | None, list[str]]:
+    index = 0
+    value_options = {
+        "--ansi",
+        "--env-file",
+        "--file",
+        "--parallel",
+        "--profile",
+        "--progress",
+        "--project-directory",
+        "--project-name",
+        "-f",
+        "-p",
+    }
+    while index < len(args):
+        arg = args[index]
+        if arg in value_options:
+            index += 2
+            continue
+        if any(
+            arg.startswith(f"{option}=")
+            for option in value_options
+            if option.startswith("--")
+        ):
+            index += 1
+            continue
+        if arg.startswith("-"):
+            index += 1
+            continue
+        return arg, args[index + 1 :]
+    return None, []
+
+
+def _classify_docker_compose(args: list[str]) -> RiskLevel:
+    subcommand, subargs = _docker_compose_command(args)
+    if subcommand is None:
+        return "act_high"
+    if subcommand in {"pull", "push"}:
+        return "external"
+    if subcommand in {"rm"}:
+        return "destructive"
+    if subcommand in {"ps", "ls", "logs", "top", "images", "config"}:
+        return "act_low"
+    if subcommand == "down" and _docker_volumes_requested(subargs):
+        return "critical"
     return "act_high"
 
 
@@ -2433,7 +2592,9 @@ def _classify_docker_group(group: str, args: list[str]) -> RiskLevel:
         return "act_high"
     subcommand = args[0]
     subargs = args[1:]
-    if subcommand in {"rm", "prune"}:
+    if subcommand == "prune":
+        return "critical"
+    if subcommand == "rm":
         return "destructive"
     if subcommand in {"pull", "push"}:
         return "external"

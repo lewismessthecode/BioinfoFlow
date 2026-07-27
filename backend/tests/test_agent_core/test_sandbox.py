@@ -9,6 +9,7 @@ from app.services.agent_core.sandbox.process_sandbox import (
     BubblewrapAdapter,
     SandboxRunner,
     SandboxUnavailableError,
+    SeatbeltAdapter,
 )
 from app.services.agent_core.sandbox import FilesystemPolicy
 from app.utils.exceptions import PermissionDeniedError
@@ -27,7 +28,9 @@ class _FakeAdapter:
 
 
 def test_disabled_runner_runs_plain_bash(tmp_path):
-    runner = SandboxRunner(enabled=False, adapters=[_FakeAdapter(name="fake", available=True)])
+    runner = SandboxRunner(
+        enabled=False, adapters=[_FakeAdapter(name="fake", available=True)]
+    )
     result = runner.build(
         command="echo hi", cwd=tmp_path, read_roots=[tmp_path], write_roots=[tmp_path]
     )
@@ -36,7 +39,9 @@ def test_disabled_runner_runs_plain_bash(tmp_path):
 
 
 def test_enabled_runner_uses_available_adapter(tmp_path):
-    runner = SandboxRunner(enabled=True, adapters=[_FakeAdapter(name="fake", available=True)])
+    runner = SandboxRunner(
+        enabled=True, adapters=[_FakeAdapter(name="fake", available=True)]
+    )
     result = runner.build(
         command="echo hi", cwd=tmp_path, read_roots=[tmp_path], write_roots=[tmp_path]
     )
@@ -47,7 +52,9 @@ def test_enabled_runner_uses_available_adapter(tmp_path):
 
 def test_fail_closed_raises_when_no_adapter_available(tmp_path):
     runner = SandboxRunner(
-        enabled=True, fail_closed=True, adapters=[_FakeAdapter(name="fake", available=False)]
+        enabled=True,
+        fail_closed=True,
+        adapters=[_FakeAdapter(name="fake", available=False)],
     )
     with pytest.raises(SandboxUnavailableError):
         runner.build(command="echo hi", cwd=tmp_path, read_roots=[], write_roots=[])
@@ -55,15 +62,23 @@ def test_fail_closed_raises_when_no_adapter_available(tmp_path):
 
 def test_fail_open_falls_back_to_bash_when_no_adapter(tmp_path):
     runner = SandboxRunner(
-        enabled=True, fail_closed=False, adapters=[_FakeAdapter(name="fake", available=False)]
+        enabled=True,
+        fail_closed=False,
+        adapters=[_FakeAdapter(name="fake", available=False)],
     )
-    result = runner.build(command="echo hi", cwd=tmp_path, read_roots=[], write_roots=[])
+    result = runner.build(
+        command="echo hi", cwd=tmp_path, read_roots=[], write_roots=[]
+    )
     assert result.sandboxed is False
     assert result.argv == ["bash", "-lc", "echo hi"]
 
 
 def test_disable_requested_requires_allow_unsandboxed(tmp_path):
-    runner = SandboxRunner(enabled=True, allow_unsandboxed=False, adapters=[_FakeAdapter(name="fake", available=True)])
+    runner = SandboxRunner(
+        enabled=True,
+        allow_unsandboxed=False,
+        adapters=[_FakeAdapter(name="fake", available=True)],
+    )
     with pytest.raises(SandboxUnavailableError):
         runner.build(
             command="echo hi",
@@ -74,7 +89,9 @@ def test_disable_requested_requires_allow_unsandboxed(tmp_path):
         )
 
     permissive = SandboxRunner(
-        enabled=True, allow_unsandboxed=True, adapters=[_FakeAdapter(name="fake", available=True)]
+        enabled=True,
+        allow_unsandboxed=True,
+        adapters=[_FakeAdapter(name="fake", available=True)],
     )
     result = permissive.build(
         command="echo hi",
@@ -93,7 +110,12 @@ def test_bubblewrap_argv_confines_to_roots_and_disables_network(tmp_path):
     read_root.mkdir()
     write_root.mkdir()
     spec_argv = BubblewrapAdapter().build_argv(
-        _spec(command="cat /etc/passwd", cwd=write_root, read_roots=[read_root], write_roots=[write_root])
+        _spec(
+            command="cat /etc/passwd",
+            cwd=write_root,
+            read_roots=[read_root],
+            write_roots=[write_root],
+        )
     )
     assert spec_argv[0] == "bwrap"
     assert "--unshare-net" in spec_argv
@@ -141,13 +163,120 @@ def test_bubblewrap_mounts_tmpfs_before_capability_roots_under_tmp(tmp_path):
     assert tmpfs_index < workspace_bind_index
 
 
+def test_bubblewrap_masks_attachment_store_then_exposes_only_session_read_only(
+    tmp_path,
+):
+    data_root = tmp_path / "data"
+    attachment_store = data_root / "state" / "agent_core" / "attachments"
+    session_root = attachment_store / "session-current"
+    other_root = attachment_store / "session-other"
+    session_root.mkdir(parents=True)
+    other_root.mkdir()
+
+    argv = BubblewrapAdapter().build_argv(
+        _spec(
+            command="cat input.txt",
+            cwd=data_root,
+            read_roots=[data_root, session_root],
+            write_roots=[data_root],
+            protected_roots=[attachment_store],
+            protected_read_roots=[session_root],
+        )
+    )
+
+    data_bind = argv.index("--bind", argv.index(str(data_root)) - 1)
+    mask = argv.index("--tmpfs", data_bind + 1)
+    stage_bind = next(
+        index
+        for index, token in enumerate(argv)
+        if token == "--ro-bind"
+        and argv[index + 1] == str(session_root)
+        and argv[index + 2] != str(session_root)
+    )
+    stage_alias = argv[stage_bind + 2]
+    session_ro_bind = next(
+        index
+        for index, token in enumerate(argv)
+        if token == "--ro-bind"
+        and argv[index + 1 : index + 3] == [stage_alias, str(session_root)]
+    )
+    hide_stage = next(
+        index
+        for index, token in enumerate(argv)
+        if token == "--tmpfs" and argv[index + 1] == stage_alias
+    )
+    assert argv[mask + 1] == str(attachment_store)
+    assert data_bind < stage_bind < mask < session_ro_bind < hide_stage
+    assert str(other_root) not in argv
+    assert (str(session_root), str(session_root)) not in [
+        (argv[index + 1], argv[index + 2])
+        for index, token in enumerate(argv)
+        if token == "--ro-bind"
+    ]
+    assert (str(session_root), str(session_root)) not in [
+        (argv[index + 1], argv[index + 2])
+        for index, token in enumerate(argv)
+        if token == "--bind"
+    ]
+
+
+def test_bubblewrap_masks_protected_files_with_dev_null(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    protected_file = workspace / "secret.db"
+    protected_file.write_text("secret", encoding="utf-8")
+
+    argv = BubblewrapAdapter().build_argv(
+        _spec(
+            command="true",
+            cwd=workspace,
+            read_roots=[workspace],
+            write_roots=[workspace],
+            protected_roots=[protected_file],
+        )
+    )
+
+    assert ["--ro-bind", "/dev/null", str(protected_file)] == argv[
+        argv.index(str(protected_file)) - 2 : argv.index(str(protected_file)) + 1
+    ]
+    assert not any(
+        token == "--tmpfs" and argv[index + 1] == str(protected_file)
+        for index, token in enumerate(argv[:-1])
+    )
+
+
+def test_seatbelt_denies_attachment_writes_and_other_session_reads(tmp_path):
+    data_root = tmp_path / "data"
+    attachment_store = data_root / "state" / "agent_core" / "attachments"
+    session_root = attachment_store / "session-current"
+    session_root.mkdir(parents=True)
+
+    profile = SeatbeltAdapter()._profile(
+        _spec(
+            command="cat input.txt",
+            cwd=data_root,
+            read_roots=[data_root, session_root],
+            write_roots=[data_root],
+            protected_roots=[attachment_store],
+            protected_read_roots=[session_root],
+        )
+    )
+
+    assert f'(deny file-write* (subpath "{attachment_store}"))' in profile
+    assert str(session_root) in profile
+    assert "require-not" in profile
+
+
 def test_filesystem_policy_allows_absolute_path_inside_allowed_root(tmp_path):
     root = tmp_path / "root"
     root.mkdir()
     target = root / "sample.txt"
     target.write_text("ok", encoding="utf-8")
 
-    assert FilesystemPolicy(allowed_roots=[root]).require_allowed_path(target) == target.resolve()
+    assert (
+        FilesystemPolicy(allowed_roots=[root]).require_allowed_path(target)
+        == target.resolve()
+    )
 
 
 def test_filesystem_policy_rejects_absolute_path_outside_allowed_root(tmp_path):
@@ -176,14 +305,19 @@ def test_filesystem_policy_rejects_symlink_escape(tmp_path):
         FilesystemPolicy(allowed_roots=[root]).require_allowed_path(link)
 
 
-def test_filesystem_policy_resolves_relative_paths_from_allowed_root(tmp_path, monkeypatch):
+def test_filesystem_policy_resolves_relative_paths_from_allowed_root(
+    tmp_path, monkeypatch
+):
     root = tmp_path / "root"
     root.mkdir()
     target = root / "sample.txt"
     target.write_text("ok", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    assert FilesystemPolicy(allowed_roots=[root]).require_allowed_path("sample.txt") == target.resolve()
+    assert (
+        FilesystemPolicy(allowed_roots=[root]).require_allowed_path("sample.txt")
+        == target.resolve()
+    )
 
 
 def test_filesystem_policy_distinguishes_read_and_write_roots(tmp_path):
@@ -245,10 +379,36 @@ def test_container_repo_root_slash_does_not_block_declared_external_root(
     monkeypatch.setattr(settings, "repo_root", "/")
     monkeypatch.setattr(settings, "bioinfoflow_home", str(tmp_path / "data"))
 
-    assert FilesystemPolicy(allowed_roots=[external]).require_allowed_path(target) == target
+    assert (
+        FilesystemPolicy(allowed_roots=[external]).require_allowed_path(target)
+        == target
+    )
 
 
-def _spec(*, command: str, cwd: Path, read_roots, write_roots):
+def test_filesystem_policy_rejects_writes_inside_protected_root(tmp_path):
+    root = tmp_path / "root"
+    protected = root / "attachments"
+    protected.mkdir(parents=True)
+    target = protected / "input.txt"
+    target.write_text("keep", encoding="utf-8")
+    policy = FilesystemPolicy(allowed_roots=[root], protected_roots=[protected])
+
+    with pytest.raises(PermissionDeniedError, match="protected"):
+        policy.require_allowed_path(target)
+    with pytest.raises(PermissionDeniedError, match="protected"):
+        policy.require_parent_dir(protected / "new.txt")
+
+
+def _spec(
+    *,
+    command: str,
+    cwd: Path,
+    read_roots,
+    write_roots,
+    deny_read_roots=None,
+    protected_roots=None,
+    protected_read_roots=None,
+):
     from app.services.agent_core.sandbox.process_sandbox import SandboxSpec
 
     return SandboxSpec(
@@ -256,5 +416,8 @@ def _spec(*, command: str, cwd: Path, read_roots, write_roots):
         cwd=cwd,
         read_roots=read_roots,
         write_roots=write_roots,
+        deny_read_roots=deny_read_roots or [],
+        protected_roots=protected_roots or [],
+        protected_read_roots=protected_read_roots or [],
         allow_network=False,
     )
