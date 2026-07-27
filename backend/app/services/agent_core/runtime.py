@@ -171,7 +171,8 @@ class AgentCoreRuntime:
             )
 
             await AgentCollaborationService(self.db).publish_child_running(
-                turn_id=turn_id
+                turn_id=turn_id,
+                expected_owner_token=ownership.owner_token,
             )
         logger.info(
             "agent_core.turn.started",
@@ -327,7 +328,8 @@ class AgentCoreRuntime:
             )
 
             await AgentCollaborationService(self.db).publish_child_running(
-                turn_id=turn_id
+                turn_id=turn_id,
+                expected_owner_token=ownership.owner_token,
             )
         logger.info(
             "agent_core.turn.started",

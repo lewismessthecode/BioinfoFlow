@@ -200,7 +200,6 @@ def test_does_not_project_non_user_visibility(visibility: str) -> None:
         ("agent.message.received", "message", None),
         ("agent.followup.received", "followup", None),
         ("agent.result.received", "result", "errored"),
-        ("agent.interrupted", "interrupt", "interrupted"),
     ],
 )
 def test_projects_internal_collaboration_events_to_safe_agent_lifecycle(

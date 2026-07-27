@@ -20,7 +20,7 @@ from app.models.agent_core import (
 )
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.models.workspace import Workspace, WorkspaceMembership
-from app.repositories.agent_core_repo import AgentSessionRepository
+from app.repositories.agent_core_repo import AgentSessionRepository, AgentTurnRepository
 from app.services.agent_core.collaboration.context_fork import (
     InvalidForkTurnsError,
     fork_agent_context,
@@ -1239,24 +1239,125 @@ async def test_spawn_agent_reports_requested_model_fallback(
         "agent.model_fallback",
     ]
 
-    await service.publish_child_running(turn_id=result.child_turn_id)
-    events = await service.ledger.event_repo.list_for_session(
-        session_id=root_id,
-        event_types={
-            "agent.spawned",
-            "agent.model_fallback",
-            "agent.running",
-        },
+    assert all(event.visibility == "internal" for event in events_before_start)
+    assert events_before_start[0].payload["child_session_id"] == result.child_session_id
+    assert events_before_start[0].payload["task_name"] == "/root/reader"
+    assert (
+        events_before_start[1].payload["fallback_reason"]
+        == "requested_model_unavailable"
     )
-    assert [event.type for event in events] == [
-        "agent.spawned",
-        "agent.model_fallback",
-        "agent.running",
+
+
+@pytest.mark.asyncio
+async def test_running_event_is_owner_fenced_against_terminal_publication(
+    db_session,
+    db_engine,
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    terminal_first, terminal_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="terminal_first",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    running_first, running_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="running_first",
+        status=AgentTurnStatus.RUNNING,
+        slot=2,
+    )
+    terminal_turn.owner_token = "terminal-owner"
+    running_turn.owner_token = "running-owner"
+    await db_session.commit()
+    root_id = str(root.id)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    terminal_committed = asyncio.Event()
+
+    async def complete_before_running() -> None:
+        async with maker() as worker:
+            repo = AgentTurnRepository(worker)
+            completed = await repo.update_claimed_execution(
+                str(terminal_turn.id),
+                owner_token="terminal-owner",
+                status=AgentTurnStatus.COMPLETED,
+                final_text="terminal won",
+            )
+            assert completed is not None
+            await AgentCollaborationService(worker).publish_child_terminal(
+                turn_id=str(terminal_turn.id)
+            )
+        terminal_committed.set()
+
+    async def publish_after_terminal() -> bool:
+        await terminal_committed.wait()
+        async with maker() as worker:
+            return await AgentCollaborationService(worker).publish_child_running(
+                turn_id=str(terminal_turn.id),
+                expected_owner_token="terminal-owner",
+            )
+
+    _, published_after_terminal = await asyncio.gather(
+        complete_before_running(), publish_after_terminal()
+    )
+
+    running_committed = asyncio.Event()
+
+    async def publish_before_terminal() -> bool:
+        async with maker() as worker:
+            published = await AgentCollaborationService(worker).publish_child_running(
+                turn_id=str(running_turn.id),
+                expected_owner_token="running-owner",
+            )
+        running_committed.set()
+        return published
+
+    async def complete_after_running() -> None:
+        await running_committed.wait()
+        async with maker() as worker:
+            repo = AgentTurnRepository(worker)
+            completed = await repo.update_claimed_execution(
+                str(running_turn.id),
+                owner_token="running-owner",
+                status=AgentTurnStatus.COMPLETED,
+                final_text="running published first",
+            )
+            assert completed is not None
+            await AgentCollaborationService(worker).publish_child_terminal(
+                turn_id=str(running_turn.id)
+            )
+
+    published_before_terminal, _ = await asyncio.gather(
+        publish_before_terminal(), complete_after_running()
+    )
+    assert published_after_terminal is False
+    assert published_before_terminal is True
+
+    async with maker() as verify:
+        events = await AgentCollaborationService(
+            verify
+        ).ledger.event_repo.list_for_session(
+            session_id=root_id,
+            event_types={"agent.running", "agent.result.received"},
+        )
+    terminal_first_events = [
+        event
+        for event in events
+        if event.payload.get("child_session_id") == str(terminal_first.id)
     ]
-    assert all(event.visibility == "internal" for event in events)
-    assert events[0].payload["child_session_id"] == result.child_session_id
-    assert events[0].payload["task_name"] == "/root/reader"
-    assert events[1].payload["fallback_reason"] == "requested_model_unavailable"
+    running_first_events = [
+        event
+        for event in events
+        if event.payload.get("child_session_id") == str(running_first.id)
+    ]
+    assert [event.type for event in terminal_first_events] == ["agent.result.received"]
+    assert [event.type for event in running_first_events] == [
+        "agent.running",
+        "agent.result.received",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -1959,7 +2060,9 @@ async def test_followup_rejects_root_and_interrupt_rejects_root_or_self(
 
 
 @pytest.mark.asyncio
-async def test_interrupt_publishes_safe_root_lifecycle_event(db_session) -> None:
+async def test_interrupt_uses_terminal_result_as_the_only_lifecycle_authority(
+    db_session,
+) -> None:
     await _seed_workspace(db_session)
     root, _ = await _create_parent_turn(db_session)
     child, child_turn = await _create_child_with_turn(
@@ -1981,15 +2084,89 @@ async def test_interrupt_publishes_safe_root_lifecycle_event(db_session) -> None
     assert result.status == "running"
     events = await service.ledger.event_repo.list_for_session(
         session_id=str(root.id),
-        event_types={"agent.interrupted"},
+        event_types={"agent.interrupted", "agent.result.received"},
     )
-    assert events[-1].payload == {
-        "child_session_id": str(child.id),
-        "child_turn_id": str(child_turn.id),
-        "task_name": "/root/reader",
-        "status": "interrupted",
-    }
-    assert events[-1].visibility == "internal"
+    assert [event.type for event in events] == ["agent.result.received"]
+    assert events[0].payload["child_session_id"] == str(child.id)
+    assert events[0].payload["child_turn_id"] == str(child_turn.id)
+    assert events[0].payload["status"] == "interrupted"
+
+
+@pytest.mark.asyncio
+async def test_interrupt_loses_cleanly_when_completion_cas_wins(
+    db_session,
+    db_engine,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    root = await _create_session(db_session)
+    child, child_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="reader",
+        status=AgentTurnStatus.RUNNING,
+        slot=1,
+    )
+    child_turn.owner_token = "completion-owner"
+    await db_session.commit()
+    root_id = str(root.id)
+    child_id = str(child.id)
+    turn_id = str(child_turn.id)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    service = AgentCollaborationService(db_session)
+    completion_committed = asyncio.Event()
+    interrupt_reached_cas = asyncio.Event()
+    original_interrupt = service.core.interrupt_turn
+
+    async def delayed_interrupt(**kwargs):
+        interrupt_reached_cas.set()
+        await completion_committed.wait()
+        return await original_interrupt(**kwargs)
+
+    monkeypatch.setattr(service.core, "interrupt_turn", delayed_interrupt)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.cancel_turn_run",
+        lambda *_: False,
+    )
+
+    interrupt_task = asyncio.create_task(
+        service.interrupt_agent(
+            caller_session_id=root_id,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            target="/root/reader",
+        )
+    )
+    await interrupt_reached_cas.wait()
+    async with maker() as completer:
+        completed = await AgentTurnRepository(completer).update_claimed_execution(
+            turn_id,
+            owner_token="completion-owner",
+            status=AgentTurnStatus.COMPLETED,
+            final_text="completion won",
+        )
+        assert completed is not None
+        await AgentCollaborationService(completer).publish_child_terminal(
+            turn_id=turn_id
+        )
+    completion_committed.set()
+    previous = await interrupt_task
+
+    assert previous.status == "running"
+    async with maker() as verify:
+        persisted = await AgentTurnRepository(verify).get_fresh(turn_id)
+        events = await AgentCollaborationService(
+            verify
+        ).ledger.event_repo.list_for_session(
+            session_id=root_id,
+            event_types={"agent.interrupted", "agent.result.received"},
+        )
+    assert persisted is not None and persisted.status == AgentTurnStatus.COMPLETED
+    child_events = [
+        event for event in events if event.payload.get("child_session_id") == child_id
+    ]
+    assert [event.type for event in child_events] == ["agent.result.received"]
+    assert child_events[0].payload["status"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -2878,10 +3055,10 @@ async def test_wait_notifier_wakes_multiple_waiters_and_cleans_up(
 
     first = asyncio.create_task(wait_once())
     second = asyncio.create_task(wait_once())
-    for _ in range(100):
-        if _collaboration_waiter_count() == 2:
-            break
-        await asyncio.sleep(0)
+    loop = asyncio.get_running_loop()
+    waiter_deadline = loop.time() + 1.0
+    while _collaboration_waiter_count() != 2 and loop.time() < waiter_deadline:
+        await asyncio.sleep(0.01)
     assert _collaboration_waiter_count() == 2
     async with maker() as sender:
         await AgentCoreService(sender).steer_turn(

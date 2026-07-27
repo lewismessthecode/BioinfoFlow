@@ -24,7 +24,6 @@ class AgentEventType:
     AGENT_FOLLOWUP_RECEIVED = "agent.followup.received"
     AGENT_RESULT_RECEIVED = "agent.result.received"
     AGENT_RESULT_PUBLISHED = "agent.result.published"
-    AGENT_INTERRUPTED = "agent.interrupted"
     TRANSCRIPT_TOOL_GROUP_REPAIRED = "transcript.tool_group_repaired"
     MODEL_SELECTED = "model.selected"
     MODEL_RETRYING = "model.retrying"
@@ -239,10 +238,6 @@ _COLLABORATION_EVENT_PROJECTIONS: dict[str, tuple[str, dict[str, str]]] = {
     AgentEventType.AGENT_RESULT_RECEIVED: (
         PublicAgentEventType.AGENT_LIFECYCLE,
         {"activity": "result"},
-    ),
-    AgentEventType.AGENT_INTERRUPTED: (
-        PublicAgentEventType.AGENT_LIFECYCLE,
-        {"activity": "interrupt", "status": "interrupted"},
     ),
 }
 
