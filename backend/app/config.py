@@ -123,6 +123,7 @@ class Settings(BaseSettings):
     agent_retry_max_delay_seconds: float = 2.0
     agent_model_attempt_timeout_seconds: float = 120.0
     agent_turn_lease_seconds: int = 300
+    agent_collaboration_max_slots: int = 8
     agent_compact_threshold: int = 50000  # Auto-compact token threshold
     agent_project_instructions_max_bytes: int = 32768
     agent_attachment_file_max_bytes: int = 25 * 1024 * 1024
