@@ -233,7 +233,11 @@ class AgentCoreService:
             if key in updates:
                 update_data[key] = updates[key]
         if "mode" in updates and updates["mode"]:
-            update_data["toolset_policy"] = {"name": updates["mode"]}
+            update_data["toolset_policy"] = (
+                EXECUTION_TOOLSET_POLICY
+                if updates["mode"] == "execution"
+                else {"name": updates["mode"]}
+            )
         if (
             "metadata" in updates
             or "model_selection" in updates
