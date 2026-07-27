@@ -206,28 +206,31 @@ describe("ArtifactPreviewDrawer", () => {
     )
 
     const drawer = screen.getByTestId("artifact-preview-drawer")
-    expect(within(drawer).getByRole("button", { name: /report.md/ })).toBeInTheDocument()
-    expect(screen.getByText("/workspace/report.md")).toBeInTheDocument()
+    expect(within(drawer).getByRole("button", { name: /report.md/ })).toHaveAttribute(
+      "title",
+      "/workspace/report.md",
+    )
+    expect(screen.queryByText("/workspace/report.md")).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /ls output/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /Run record/ })).not.toBeInTheDocument()
     expect(screen.queryByText("artifacts.toolLogs")).not.toBeInTheDocument()
   })
 
-  it("renders a flat artifact list without the rejected breadcrumb bar", () => {
+  it("renders session artifacts as a relative collapsible file tree", () => {
     render(
       <ArtifactPreviewDrawer
         artifacts={[
           artifact({
-            id: "file-1",
+            id: "workflow",
             type: "file",
-            title: "report.md",
-            file_path: "/workspace/report.md",
+            title: "/Users/lewisliu/project/fasta-analysis/workflow.json",
+            file_path: "/Users/lewisliu/project/fasta-analysis/workflow.json",
           }),
           artifact({
-            id: "sheet-1",
-            type: "spreadsheet",
-            title: "summary.xlsx",
-            file_path: "/workspace/summary.xlsx",
+            id: "report",
+            type: "file",
+            title: "/Users/lewisliu/project/fasta-analysis/results/report.md",
+            file_path: "/Users/lewisliu/project/fasta-analysis/results/report.md",
           }),
         ]}
       />,
@@ -235,12 +238,53 @@ describe("ArtifactPreviewDrawer", () => {
 
     expect(screen.getByRole("heading", { name: "artifacts.title" })).toBeInTheDocument()
     expect(screen.getByTestId("artifact-count")).toHaveTextContent("2")
-    expect(screen.getByTestId("artifact-list")).toHaveClass("divide-y")
-    expect(screen.getByRole("button", { name: /report.md/ }).className).not.toContain(
-      "border",
+    expect(screen.getByRole("tree", { name: "artifacts.title" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "fasta-analysis" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
     )
-    expect(screen.queryByText(/current session/i)).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "results" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    )
+    expect(screen.getByRole("button", { name: /workflow.json/ })).toBeInTheDocument()
+    expect(screen.queryByText(/Users\/lewisliu/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "results" }))
+    expect(screen.queryByRole("button", { name: /report.md/ })).not.toBeInTheDocument()
     expect(screen.queryByTestId("artifact-breadcrumb")).not.toBeInTheDocument()
+  })
+
+  it("counts unique files and previews the newest artifact record", async () => {
+    render(
+      <ArtifactPreviewDrawer
+        artifacts={[
+          artifact({
+            id: "old-report",
+            type: "file",
+            title: "/workspace/results/report.md",
+            file_path: "/workspace/results/report.md",
+            payload: { content: "# Old report" },
+            updated_at: "2026-07-27T01:00:00Z",
+          }),
+          artifact({
+            id: "new-report",
+            type: "file",
+            title: "/workspace/results/report.md",
+            file_path: "/workspace/results/report.md",
+            payload: { content: "# New report" },
+            updated_at: "2026-07-27T02:00:00Z",
+          }),
+        ]}
+      />,
+    )
+
+    expect(screen.getByTestId("artifact-count")).toHaveTextContent("1")
+    fireEvent.click(screen.getByRole("button", { name: /report.md/ }))
+    expect(screen.getByRole("heading", { name: "New report" })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "artifacts.back" })).toHaveFocus()
+    })
   })
 
   it("uses a light empty state instead of a dashed drop zone", () => {
@@ -373,7 +417,11 @@ describe("ArtifactViewer", () => {
     )
 
     expect(screen.getByTestId("artifact-file-viewer")).toBeInTheDocument()
-    expect(screen.getByText("/workspace/result.custom")).toBeInTheDocument()
+    expect(screen.getByText("result.custom")).toHaveAttribute(
+      "title",
+      "/workspace/result.custom",
+    )
+    expect(screen.queryByText("/workspace/result.custom")).not.toBeInTheDocument()
     expect(screen.getByText("renderer.textLoading")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "artifacts.open" })).toHaveAttribute(
       "href",

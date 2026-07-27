@@ -76,7 +76,7 @@ function FileArtifact({ artifact }: { artifact: AgentRuntimeArtifact }) {
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3" data-testid="artifact-file-viewer">
-      <ArtifactHeader title={path} />
+      <ArtifactHeader title={filename} sourceTitle={path} />
       {canCopyOrDownload || openUrl ? (
         <div className="flex flex-wrap items-center gap-2">
           {canCopyOrDownload ? (
@@ -188,9 +188,20 @@ function JsonArtifact({ value }: { value: unknown }) {
   )
 }
 
-function ArtifactHeader({ title }: { title: string }) {
+function ArtifactHeader({
+  title,
+  sourceTitle,
+}: {
+  title: string
+  sourceTitle?: string
+}) {
   return (
-    <div className="break-words font-mono text-xs text-muted-foreground">{title}</div>
+    <div
+      className="truncate font-mono text-xs text-muted-foreground"
+      title={sourceTitle && sourceTitle !== title ? sourceTitle : undefined}
+    >
+      {title}
+    </div>
   )
 }
 
