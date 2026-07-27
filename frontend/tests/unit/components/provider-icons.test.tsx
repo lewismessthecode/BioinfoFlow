@@ -1,14 +1,90 @@
-import { describe, expect, it } from "vitest"
+import { render, screen } from "@testing-library/react"
+import { describe, expect, it, vi } from "vitest"
+
+vi.mock("@lobehub/icons", () => {
+  const icon = (title: string) => {
+    const Mono = ({ size, className }: { size?: number; className?: string }) => (
+      <svg className={className} fill="currentColor" height={size} width={size}>
+        <title>{title}</title>
+      </svg>
+    )
+    const Color = ({ size, className }: { size?: number; className?: string }) => (
+      <svg className={className} data-variant="color" height={size} width={size}>
+        <title>{title}</title>
+      </svg>
+    )
+    Mono.Color = Color
+    return Mono
+  }
+
+  return {
+    Anthropic: icon("Anthropic"),
+    Azure: icon("Azure"),
+    Cohere: icon("Cohere"),
+    DeepSeek: icon("DeepSeek"),
+    Fireworks: icon("Fireworks"),
+    Gemini: icon("Gemini"),
+    Grok: icon("Grok"),
+    Groq: icon("Groq"),
+    HuggingFace: icon("HuggingFace"),
+    Kimi: icon("Kimi"),
+    Minimax: icon("Minimax"),
+    Mistral: icon("Mistral"),
+    Ollama: icon("Ollama"),
+    OpenAI: icon("OpenAI"),
+    OpenRouter: icon("OpenRouter"),
+    Perplexity: icon("Perplexity"),
+    Qwen: icon("Qwen"),
+    Together: icon("Together"),
+    XAI: icon("XAI"),
+    ZAI: icon("ZAI"),
+  }
+})
 
 import { resolveProviderIconKey } from "@/components/bioinfoflow/chat/provider-icon-resolver"
+import { ProviderIcon } from "@/components/bioinfoflow/chat/provider-icons"
 
 describe("resolveProviderIconKey", () => {
   it("uses direct provider brand aliases", () => {
-    expect(resolveProviderIconKey({ provider: "openai" })).toBe("openai")
-    expect(resolveProviderIconKey({ provider: "anthropic" })).toBe("anthropic")
-    expect(resolveProviderIconKey({ provider: "claude" })).toBe("anthropic")
-    expect(resolveProviderIconKey({ provider: "google" })).toBe("gemini")
-    expect(resolveProviderIconKey({ provider: "grok" })).toBe("xai")
+    const aliases = [
+      ["openai", "openai"],
+      ["anthropic", "anthropic"],
+      ["claude", "anthropic"],
+      ["azure", "azure"],
+      ["openrouter", "openrouter"],
+      ["fireworks", "fireworks"],
+      ["qwen", "qwen"],
+      ["deepseek", "deepseek"],
+      ["xai", "xai"],
+      ["grok", "xai"],
+      ["zai", "zai"],
+      ["kimi", "kimi"],
+      ["kimi_cn", "kimi"],
+      ["kimi_code", "kimi"],
+      ["minimax", "minimax"],
+      ["huggingface", "huggingface"],
+      ["gemini", "gemini"],
+      ["google", "gemini"],
+      ["groq", "groq"],
+      ["mistral", "mistral"],
+      ["cohere", "cohere"],
+      ["together", "together"],
+      ["perplexity", "perplexity"],
+      ["ollama", "ollama"],
+    ] as const
+
+    for (const [provider, expected] of aliases) {
+      expect(resolveProviderIconKey({ provider })).toBe(expected)
+    }
+  })
+
+  it("uses theme-aware monochrome artwork for provider logos", () => {
+    render(<ProviderIcon provider="kimi" />)
+
+    expect(screen.getByTitle("Kimi").closest("svg")).toHaveAttribute(
+      "fill",
+      "currentColor",
+    )
   })
 
   it("infers compatible endpoint branding from provider labels and model names", () => {
