@@ -21,6 +21,12 @@ import app.services.agent_core.service as service_module
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
+PRODUCT_SOURCE_BOUNDARY_GUIDANCE = (
+    "BioinfoFlow product source is not part of this workspace. Do not inspect it or "
+    "invoke `bif`; use the exposed BioinfoFlow platform tools."
+)
+
+
 async def _workspace(db_session) -> Workspace:
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     db_session.add(workspace)
@@ -264,7 +270,44 @@ async def test_context_assembler_injects_project_instructions_before_environment
     assert "product source instruction" not in system_content
     assert f"- Working directory: {project_root}" in system_content
     assert f"- Working directory: {repo_root}\n" not in system_content
+    environment_context = system_content[system_content.index("## Environment") :]
+    assert environment_context.count(PRODUCT_SOURCE_BOUNDARY_GUIDANCE) == 1
+    assert str(repo_root) not in PRODUCT_SOURCE_BOUNDARY_GUIDANCE
     assert messages[-1]["content"].endswith("\n\nUse the repo rules.")
+
+
+@pytest.mark.asyncio
+async def test_context_assembler_omits_product_source_boundary_for_remote_target(
+    db_session,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "remote-connection",
+            }
+        },
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Inspect the remote project.",
+    )
+
+    messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=turn,
+    )
+
+    assert "## Environment" in messages[0]["content"]
+    assert "- Execution target: remote_ssh" in messages[0]["content"]
+    assert PRODUCT_SOURCE_BOUNDARY_GUIDANCE not in messages[0]["content"]
 
 
 @pytest.mark.asyncio
