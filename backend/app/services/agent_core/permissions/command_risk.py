@@ -21,6 +21,15 @@ from app.services.agent_core.permissions.risk import RiskAssessment, RiskLevel
 TargetKind = Literal["local", "remote_ssh", "container"]
 SandboxStrength = Literal["enforced", "declared", "none"]
 RiskConfidence = Literal["high", "medium", "low"]
+SemanticEffect = Literal[
+    "read",
+    "write",
+    "delete",
+    "network",
+    "process_control",
+    "privilege",
+    "execute",
+]
 
 
 @dataclass(frozen=True)
@@ -358,6 +367,15 @@ class _CommandNode:
 
 
 @dataclass(frozen=True)
+class _ParsedCommand:
+    text: str
+    substitutions: tuple[str, ...]
+    process_substitutions: tuple[str, ...]
+    heredoc_bodies: tuple[str, ...]
+    nodes: tuple[_CommandNode, ...]
+
+
+@dataclass(frozen=True)
 class _UnwrappedCommand:
     tokens: tuple[str, ...]
     elevated: bool = False
@@ -374,10 +392,8 @@ class _ShortOptionClusterMatch:
 @dataclass(frozen=True)
 class _NodeSemantics:
     level: RiskLevel
-    effects: tuple[str, ...]
-    confidence: RiskConfidence
+    effects: tuple[SemanticEffect, ...]
     reasons: tuple[str, ...] = ()
-    hardline_facts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -386,7 +402,6 @@ class _CommandSemantics:
     effects: tuple[str, ...]
     confidence: RiskConfidence
     reasons: tuple[str, ...] = ()
-    hardline_facts: tuple[str, ...] = ()
     referenced_paths: tuple[str, ...] = ()
     path_analysis_confident: bool = True
     protected_resources: tuple[dict[str, str], ...] = ()
@@ -405,17 +420,14 @@ def _analyze_command_semantics(
     target: CommandTargetProfile | None = None,
 ) -> _CommandSemantics:
     """Produce the single semantic input consumed by command assessment."""
-    semantics = _analyze_command_grammar(command)
+    parsed = _parse_command(command)
+    semantics = _analyze_command_grammar(parsed)
     if target is None:
         return semantics
 
-    nodes = _parse_command_nodes(_strip_heredoc_bodies(command))
+    nodes = list(parsed.nodes)
     sink_safety = _analyze_write_sink_safety(nodes)
-    execution_safety = _analyze_indirect_execution_safety(
-        nodes,
-        command=command,
-        target=target,
-    )
+    execution_safety = _analyze_indirect_execution_safety(parsed, target=target)
     referenced_paths, path_analysis_confident = _referenced_paths(
         nodes,
         target=target,
@@ -480,9 +492,28 @@ def _analyze_command_semantics(
     )
 
 
-def _analyze_command_grammar(command: str) -> _CommandSemantics:
-    """Adapt the established shell grammar into immutable semantics."""
+def _parse_command(command: str) -> _ParsedCommand:
     text = (command or "").strip()
+    command_substitutions = tuple(_command_substitutions(text))
+    process_substitutions = tuple(_process_substitutions(text))
+    heredoc_bodies = tuple(_heredoc_bodies(text))
+    substitutions = (
+        *command_substitutions,
+        *process_substitutions,
+        *heredoc_bodies,
+    )
+    return _ParsedCommand(
+        text=text,
+        substitutions=tuple(substitutions),
+        process_substitutions=process_substitutions,
+        heredoc_bodies=heredoc_bodies,
+        nodes=tuple(_parse_command_nodes(_strip_heredoc_bodies(text))),
+    )
+
+
+def _analyze_command_grammar(parsed: _ParsedCommand) -> _CommandSemantics:
+    """Adapt the established shell grammar into immutable semantics."""
+    text = parsed.text
     if not text:
         return _CommandSemantics(
             level="act_low",
@@ -495,35 +526,31 @@ def _analyze_command_grammar(command: str) -> _CommandSemantics:
             level="critical",
             effects=("process_control",),
             confidence="high",
-            hardline_facts=("fork bomb",),
+            reasons=("fork bomb",),
         )
-    substitutions = [
-        *_command_substitutions(text),
-        *_process_substitutions(text),
-        *_heredoc_bodies(text),
-    ]
+    substitutions = parsed.substitutions
     if any(classify_command_level(inner) == "critical" for inner in substitutions):
         return _CommandSemantics(
             level="critical",
             effects=("execute",),
             confidence="high",
-            hardline_facts=("critical dynamic shell source",),
+            reasons=("critical dynamic shell source",),
         )
 
-    nodes = _parse_command_nodes(_strip_heredoc_bodies(text))
+    nodes = list(parsed.nodes)
     if _compound_alias_targets_unsafe_device(nodes):
         return _CommandSemantics(
             level="critical",
             effects=("write",),
             confidence="high",
-            hardline_facts=("unsafe device write",),
+            reasons=("unsafe device write",),
         )
     if _dynamic_command_hardline(nodes) or _invoked_function_hardline(nodes):
         return _CommandSemantics(
             level="critical",
             effects=("execute",),
             confidence="high",
-            hardline_facts=("dynamic hardline command",),
+            reasons=("dynamic hardline command",),
         )
 
     introspection_proven = _is_proven_introspection_command(
@@ -534,7 +561,6 @@ def _analyze_command_grammar(command: str) -> _CommandSemantics:
     highest: RiskLevel = "act_high" if substitutions or "<(" in text else "read"
     effects: list[str] = []
     reasons: list[str] = []
-    hardline_facts: list[str] = []
     previous: _CommandNode | None = None
     for index, node in enumerate(nodes):
         semantics = _inspect_node(
@@ -543,14 +569,12 @@ def _analyze_command_grammar(command: str) -> _CommandSemantics:
         )
         effects.extend(semantics.effects)
         reasons.extend(semantics.reasons)
-        hardline_facts.extend(semantics.hardline_facts)
         if semantics.level == "critical":
             return _CommandSemantics(
                 level="critical",
                 effects=tuple(_dedupe(effects)) or ("execute",),
                 confidence="high",
                 reasons=tuple(_dedupe(reasons)),
-                hardline_facts=tuple(_dedupe(hardline_facts)),
             )
         if (
             previous is not None
@@ -562,7 +586,7 @@ def _analyze_command_grammar(command: str) -> _CommandSemantics:
                 level="critical",
                 effects=tuple(_dedupe([*effects, "network", "execute"])),
                 confidence="high",
-                hardline_facts=("network source piped to shell",),
+                reasons=("network source piped to shell",),
             )
         if (
             previous is not None
@@ -575,7 +599,7 @@ def _analyze_command_grammar(command: str) -> _CommandSemantics:
                 level="critical",
                 effects=tuple(_dedupe([*effects, "execute"])),
                 confidence="high",
-                hardline_facts=("critical literal source piped to shell",),
+                reasons=("critical literal source piped to shell",),
             )
         if _RANK[semantics.level] > _RANK[highest]:
             highest = semantics.level
@@ -585,7 +609,6 @@ def _analyze_command_grammar(command: str) -> _CommandSemantics:
         effects=tuple(_dedupe(effects)) or ("execute",),
         confidence="high" if introspection_proven else "medium",
         reasons=tuple(_dedupe(reasons)),
-        hardline_facts=tuple(_dedupe(hardline_facts)),
     )
 
 
@@ -598,17 +621,9 @@ def _inspect_node(
         return _NodeSemantics(
             level="act_low",
             effects=("read",),
-            confidence="high",
             reasons=("trusted executable requested static version or help output",),
         )
-    level = _classify_node(node)
-    effects = tuple(_node_effects(node))
-    return _NodeSemantics(
-        level=level,
-        effects=effects,
-        confidence="high" if level == "critical" else "medium",
-        hardline_facts=("node matched a hardline rule",) if level == "critical" else (),
-    )
+    return _inspect_legacy_behavior(node)
 
 
 def _is_proven_introspection_command(
@@ -1634,17 +1649,17 @@ class _IndirectExecutionSafety:
 
 
 def _analyze_indirect_execution_safety(
-    nodes: list[_CommandNode],
+    parsed: _ParsedCommand,
     *,
-    command: str,
     target: CommandTargetProfile,
 ) -> _IndirectExecutionSafety:
+    nodes = list(parsed.nodes)
     reasons: list[str] = []
-    if _process_substitutions(command):
+    if parsed.process_substitutions:
         reasons.append(
             "process substitution is indirect shell execution and requires explicit approval"
         )
-    if _heredoc_bodies(command):
+    if parsed.heredoc_bodies:
         reasons.append(
             "heredoc input can supply executable shell source and requires explicit approval"
         )
@@ -3116,11 +3131,17 @@ def _phoenixcli_is_read_only(args: list[str]) -> bool:
     return True
 
 
-def _node_effects(node: _CommandNode) -> list[str]:
-    effects: list[str] = []
+def _inspect_legacy_behavior(node: _CommandNode) -> _NodeSemantics:
+    """Adapt one legacy grammar decision into a complete semantic fact set."""
+    level = _classify_node(node)
+    env_split = _env_split_command(list(node.tokens))
+    if env_split:
+        return _inspect_node(_CommandNode(tokens=tuple(env_split)))
+
+    effects: list[SemanticEffect] = []
     tokens, elevated = _unwrap_command(list(node.tokens))
     if not tokens:
-        return ["execute"]
+        return _NodeSemantics(level=level, effects=("execute",))
     executable = _basename(tokens[0])
     args = tokens[1:]
     if elevated:
@@ -3129,26 +3150,91 @@ def _node_effects(node: _CommandNode) -> list[str]:
         inner = _shell_command_argument(args)
         if inner is not None:
             effects.extend(_analyze_command_semantics(inner).effects)
-            return _dedupe(effects)
+            return _node_semantics(level, effects)
+    if executable == "eval" and args:
+        effects.extend(_analyze_command_semantics(" ".join(args)).effects)
+        return _node_semantics(level, effects)
+    if executable == "busybox":
+        nested = _busybox_command(args)
+        if nested:
+            effects.extend(
+                _inspect_node(_CommandNode(tokens=tuple(nested))).effects
+            )
+            return _node_semantics(level, effects)
+    if executable == "xargs":
+        nested = _xargs_command(args)
+        if nested:
+            effects.extend(
+                _inspect_node(_CommandNode(tokens=tuple(nested))).effects
+            )
+            return _node_semantics(level, effects)
+    if executable == "find":
+        if "-delete" in args:
+            effects.append("delete")
+        for nested in _find_nested_commands(args):
+            effects.extend(
+                _inspect_node(_CommandNode(tokens=tuple(nested))).effects
+            )
+        if effects:
+            return _node_semantics(level, effects)
     if executable in {"rm", "rmdir", "shred"}:
         effects.append("delete")
     elif executable in {"kill", "pkill", "killall", *_SHUTDOWN_EXECUTABLES}:
         effects.append("process_control")
+    elif executable == "systemctl" and _systemctl_verb(args)[0] in {
+        *_SHUTDOWN_EXECUTABLES
+    }:
+        effects.append("process_control")
+    elif executable == "init" and next(
+        (arg for arg in args if not arg.startswith("-")), None
+    ) in {"0", "6"}:
+        effects.append("process_control")
+    elif executable.startswith("mkfs"):
+        effects.append("write")
     elif executable in _EXTERNAL_EXECUTABLES or executable in _INSTALL_EXECUTABLES:
         effects.append("network")
         if executable == "rsync":
             effects.append("write")
     elif _node_writes(tokens, executable, args):
         effects.append("write")
+    elif executable == "git":
+        if level == "external":
+            effects.append("network")
+        elif level == "destructive":
+            effects.append("delete")
+        elif level == "act_low":
+            effects.append("read")
+        else:
+            effects.append("execute")
+    elif executable == "docker":
+        if level == "external":
+            effects.append("network")
+        elif level == "destructive":
+            effects.append("delete")
+        elif level == "act_low":
+            effects.append("read")
+        else:
+            effects.append("execute")
     elif (
         executable in _READ_EXECUTABLES
-        or executable in {"git", "docker"}
         or _is_read_only_platform_command(executable, args)
     ):
         effects.append("read")
     else:
         effects.append("execute")
-    return _dedupe(effects) or ["execute"]
+    return _node_semantics(level, effects)
+
+
+def _node_semantics(
+    level: RiskLevel,
+    effects: list[SemanticEffect],
+) -> _NodeSemantics:
+    normalized = tuple(_dedupe(effects)) or ("execute",)
+    return _NodeSemantics(
+        level=level,
+        effects=normalized,
+        reasons=("node matched a hardline rule",) if level == "critical" else (),
+    )
 
 
 def _node_writes(tokens: list[str], executable: str, args: list[str]) -> bool:

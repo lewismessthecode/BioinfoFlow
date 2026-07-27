@@ -193,6 +193,23 @@ def test_interpreter_code_execution_is_not_introspection(command):
 
 
 @pytest.mark.parametrize(
+    "command,expected_level",
+    [
+        ("find /tmp -delete", "act_high"),
+        ("busybox rm -rf /tmp/x", "destructive"),
+        ("xargs rm -rf / < names", "critical"),
+        ("env rm -rf /tmp/x", "destructive"),
+        ("eval 'rm -rf /tmp/x'", "destructive"),
+    ],
+)
+def test_nested_destructive_grammar_reports_delete_effect(command, expected_level):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.level == expected_level
+    assert "delete" in assessment.effects
+
+
+@pytest.mark.parametrize(
     "command,expected_effect",
     [
         ("python3 --version > version.txt", "write"),
