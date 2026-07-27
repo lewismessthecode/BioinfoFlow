@@ -13,13 +13,15 @@ describe("settings appearance preview styling", () => {
     expect(source).toContain("data-testid=\"appearance-preview-main\"")
   })
 
-  it("uses block-level preview skeleton pills instead of empty inline spans", () => {
+  it("uses a compact preview skeleton without terminal decoration", () => {
     const source = readFileSync(
       resolve(process.cwd(), "components/bioinfoflow/settings/settings-page-client.tsx"),
       "utf8"
     )
 
-    expect(source).toContain("className=\"block h-6 w-12 rounded-full\"")
-    expect(source).toContain("className=\"block h-7 w-16 rounded-full\"")
+    expect(source).toContain('className="relative flex min-h-[236px] flex-col')
+    expect(source).toContain('data-testid="appearance-preview-main"')
+    expect(source).not.toContain("min-h-[420px]")
+    expect(source).not.toContain('tokens["terminal-background"]')
   })
 })
