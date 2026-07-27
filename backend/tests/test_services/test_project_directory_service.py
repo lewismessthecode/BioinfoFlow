@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import errno
+import os
 import shutil
 from pathlib import Path
 
@@ -38,6 +40,13 @@ async def _directory_names(session: AsyncSession) -> list[str]:
     return [name for name in result.scalars() if name is not None]
 
 
+def _assert_fd_closed(file_descriptor: int | None) -> None:
+    assert file_descriptor is not None
+    with pytest.raises(OSError) as caught:
+        os.fstat(file_descriptor)
+    assert caught.value.errno == errno.EBADF
+
+
 @pytest.mark.asyncio
 async def test_allocates_readable_suffixes_and_creates_layout(db_session) -> None:
     service = ProjectDirectoryService(db_session)
@@ -45,7 +54,10 @@ async def test_allocates_readable_suffixes_and_creates_layout(db_session) -> Non
     projects = []
     for _ in range(3):
         reservation = await service.add_pending(_project_data())
+        root_fd = reservation.root_fd
         projects.append(await service.commit(reservation))
+        assert reservation.root_fd is None
+        _assert_fd_closed(root_fd)
 
     assert [project.directory_name for project in projects] == [
         "ce-shi",
@@ -209,33 +221,56 @@ async def test_mkdir_race_discards_pending_row_and_uses_next_suffix(
 
 
 @pytest.mark.asyncio
-async def test_replaced_root_is_not_followed_when_creating_layout(
+@pytest.mark.parametrize("replacement_kind", ["symlink", "directory"])
+async def test_root_replaced_after_identity_check_is_not_used_for_layout(
     db_session,
     monkeypatch,
+    replacement_kind: str,
 ) -> None:
-    original_lstat = Path.lstat
+    original_mkdir = os.mkdir
     candidate = projects_root() / "ce-shi"
     victim = projects_root().parent / "victim"
     victim.mkdir()
-    candidate_checks = 0
+    marker = victim / "keep.txt"
+    marker.write_text("keep")
+    replaced = False
 
-    def replace_before_identity_check(self: Path):
-        nonlocal candidate_checks
-        if self == candidate:
-            candidate_checks += 1
-            if candidate_checks == 2:
-                shutil.rmtree(self)
-                self.symlink_to(victim, target_is_directory=True)
-        return original_lstat(self)
+    def replace_before_layout(
+        path,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> None:
+        nonlocal replaced
+        is_layout_mkdir = (dir_fd is not None and path == "data") or (
+            dir_fd is None and Path(path) == candidate / "data"
+        )
+        if is_layout_mkdir and not replaced:
+            replaced = True
+            shutil.rmtree(candidate)
+            if replacement_kind == "symlink":
+                candidate.symlink_to(victim, target_is_directory=True)
+            else:
+                original_mkdir(candidate)
+                (candidate / "replacement.txt").write_text("keep")
+        original_mkdir(path, mode, dir_fd=dir_fd)
 
-    monkeypatch.setattr(Path, "lstat", replace_before_identity_check)
+    monkeypatch.setattr(os, "mkdir", replace_before_layout)
     service = ProjectDirectoryService(db_session)
 
     project = await service.commit(await service.add_pending(_project_data()))
 
     assert project.directory_name == "ce-shi-2"
-    assert candidate.is_symlink()
-    assert list(victim.iterdir()) == []
+    assert replaced is True
+    assert marker.read_text() == "keep"
+    assert not (victim / "data").exists()
+    assert not (victim / "runs").exists()
+    if replacement_kind == "directory":
+        assert (candidate / "replacement.txt").read_text() == "keep"
+        assert not (candidate / "data").exists()
+        assert not (candidate / "runs").exists()
+    else:
+        assert candidate.is_symlink()
     assert await _directory_names(db_session) == ["ce-shi-2"]
 
 
@@ -244,18 +279,28 @@ async def test_layout_failure_rolls_back_and_removes_only_owned_root(
     db_session,
     monkeypatch,
 ) -> None:
-    import app.services.project_directory_service as directory_service_module
+    original_mkdir = os.mkdir
 
-    def fail_layout(project: Project) -> None:
-        assert project.directory_name == "ce-shi"
-        raise RuntimeError("layout failed")
+    def fail_layout(
+        path,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> None:
+        is_data_directory = (dir_fd is not None and path == "data") or (
+            dir_fd is None and Path(path) == projects_root() / "ce-shi" / "data"
+        )
+        if is_data_directory:
+            raise RuntimeError("layout failed")
+        original_mkdir(path, mode, dir_fd=dir_fd)
 
-    monkeypatch.setattr(directory_service_module, "ensure_project_layout", fail_layout)
+    monkeypatch.setattr(os, "mkdir", fail_layout)
     service = ProjectDirectoryService(db_session)
 
     with pytest.raises(RuntimeError, match="layout failed"):
         await service.add_pending(_project_data())
 
+    assert db_session.in_transaction() is False
     assert await _directory_names(db_session) == []
     assert not (projects_root() / "ce-shi").exists()
 
@@ -267,6 +312,7 @@ async def test_commit_failure_rolls_back_and_removes_owned_root(
 ) -> None:
     service = ProjectDirectoryService(db_session)
     reservation = await service.add_pending(_project_data())
+    root_fd = reservation.root_fd
 
     async def fail_commit() -> None:
         raise RuntimeError("commit failed")
@@ -276,6 +322,8 @@ async def test_commit_failure_rolls_back_and_removes_owned_root(
     with pytest.raises(RuntimeError, match="commit failed"):
         await service.commit(reservation)
 
+    assert reservation.root_fd is None
+    _assert_fd_closed(root_fd)
     assert await _directory_names(db_session) == []
     assert not reservation.root.exists()
 
@@ -286,6 +334,7 @@ async def test_discard_does_not_follow_replacement_symlink(
 ) -> None:
     service = ProjectDirectoryService(db_session)
     reservation = await service.add_pending(_project_data())
+    root_fd = reservation.root_fd
     victim = projects_root().parent / "victim"
     victim.mkdir()
     marker = victim / "keep.txt"
@@ -295,9 +344,65 @@ async def test_discard_does_not_follow_replacement_symlink(
 
     await service.discard(reservation)
 
+    assert reservation.root_fd is None
+    _assert_fd_closed(root_fd)
     assert reservation.root.is_symlink()
     assert marker.read_text() == "keep"
     assert await _directory_names(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_cleanup_does_not_recurse_into_root_replaced_after_identity_check(
+    db_session,
+    monkeypatch,
+) -> None:
+    service = ProjectDirectoryService(db_session)
+    reservation = await service.add_pending(_project_data())
+    root_fd = reservation.root_fd
+    victim = projects_root().parent / "victim"
+    victim.mkdir()
+    marker = victim / "keep.txt"
+    marker.write_text("keep")
+    original_lstat = Path.lstat
+    replaced = False
+
+    def replace_after_identity_check(self: Path):
+        nonlocal replaced
+        result = original_lstat(self)
+        if self == reservation.root and not replaced:
+            replaced = True
+            shutil.rmtree(self)
+            self.symlink_to(victim, target_is_directory=True)
+        return result
+
+    monkeypatch.setattr(Path, "lstat", replace_after_identity_check)
+
+    await service.discard(reservation)
+
+    assert reservation.root_fd is None
+    _assert_fd_closed(root_fd)
+    assert replaced is True
+    assert reservation.root.is_symlink()
+    assert marker.read_text() == "keep"
+    assert await _directory_names(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_platform_without_secure_directory_fds_fails_closed(
+    db_session,
+    monkeypatch,
+) -> None:
+    import app.services.project_directory_service as directory_service_module
+
+    monkeypatch.setattr(directory_service_module, "_HAS_SECURE_DIRECTORY_FDS", False)
+    service = ProjectDirectoryService(db_session)
+
+    with pytest.raises(ValidationError, match="not supported"):
+        await service.add_pending(_project_data())
+
+    assert db_session.in_transaction() is False
+    assert await _directory_names(db_session) == []
+    assert not (projects_root() / "ce-shi").exists()
 
 
 @pytest.mark.asyncio
