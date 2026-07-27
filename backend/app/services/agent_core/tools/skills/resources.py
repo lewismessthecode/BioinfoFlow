@@ -61,7 +61,7 @@ class LoadSkillTool:
         except NotFoundError as error:
             available_names = [skill.name for skill in registry.list()]
             availability = (
-                f"Currently available agent skills: {', '.join(available_names)}."
+                f"Available agent skills: {', '.join(available_names)}."
                 if available_names
                 else "No agent skills are currently available."
             )

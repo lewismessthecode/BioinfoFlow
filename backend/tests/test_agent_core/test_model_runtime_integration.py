@@ -35,6 +35,7 @@ from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.ownership import TurnOwnership
 from app.services.agent_core.runtime import AgentCoreRuntime
+from app.services.agent_core.skills import AgentSkillRegistry
 from app.services.agent_core.tools.executor import ToolExecutionResult
 from app.services.llm.credentials import (
     derive_model_target_revision,
@@ -634,6 +635,56 @@ async def test_model_invocation_omits_skill_loader_when_registry_is_empty(
     assert "skills__load" not in {
         tool.name for tool in gateway.invocations[0].tools
     }
+
+
+@pytest.mark.asyncio
+async def test_model_iteration_reuses_nonempty_skill_registry_for_tools_and_context(
+    db_session,
+    monkeypatch,
+) -> None:
+    skill_dir = settings.skills_root / "multiqc"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: multiqc\n"
+        "description: Interpret MultiQC reports.\n"
+        "---\n"
+        "Summarize report findings.\n",
+        encoding="utf-8",
+    )
+    registry_loads = 0
+    original_from_default_roots = AgentSkillRegistry.from_default_roots
+
+    def tracking_from_default_roots(cls) -> AgentSkillRegistry:
+        nonlocal registry_loads
+        registry_loads += 1
+        return original_from_default_roots()
+
+    monkeypatch.setattr(
+        AgentSkillRegistry,
+        "from_default_roots",
+        classmethod(tracking_from_default_roots),
+    )
+    _session, turn = await _turn(db_session)
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="A skill is configured."),
+            CompletionMetadata(response_id="chatcmpl-with-skills", finish_reason="stop"),
+        )
+    )
+
+    result = await AgentLoopController(db_session, model_gateway=gateway).run_turn(
+        turn_id=str(turn.id),
+        target=_target(),
+        capabilities=RuntimeCapabilities(supports_tools=True),
+        strategy=RuntimeStrategy(allow_tools=True),
+    )
+
+    assert result.termination_reason == "assistant_final"
+    invocation = gateway.invocations[0]
+    assert "skills__load" in {tool.name for tool in invocation.tools}
+    assert "- multiqc (0.1.0): Interpret MultiQC reports." in invocation.instructions
+    assert registry_loads == 1
 
 
 @pytest.mark.asyncio
