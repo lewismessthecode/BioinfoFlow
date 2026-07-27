@@ -2330,6 +2330,141 @@ async def test_responses_tool_call_batch_waits_for_every_approval_before_resume(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("continuable", [False, True], ids=["infrastructure", "domain"])
+async def test_batch_resume_classifies_preterminal_failed_actions(
+    db_session,
+    monkeypatch,
+    run_shell_without_platform_sandbox,
+    continuable: bool,
+) -> None:
+    input_text = "Run both approved commands and report their results."
+    session, turn = await _turn(db_session, input_text=input_text)
+    _provider, continuation = await _responses_batch_approval_fixture(
+        db_session,
+        session=session,
+        input_text=input_text,
+    )
+    first_command = _approval_shell('printf "%s" first')
+    second_command = _approval_shell('printf "%s" second')
+    gateway = FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="call-preterminal-first",
+                name="bash",
+                arguments_delta=json.dumps(
+                    {"command": first_command, "cwd": str(settings.deliveries_root)}
+                ),
+            ),
+            ToolCallDelta(
+                index=1,
+                call_id="call-preterminal-second",
+                name="bash",
+                arguments_delta=json.dumps(
+                    {"command": second_command, "cwd": str(settings.deliveries_root)}
+                ),
+            ),
+            CompletionMetadata(
+                response_id="resp-preterminal-batch",
+                finish_reason="tool_calls",
+                continuation=continuation,
+            ),
+        ),
+        (
+            TextDelta(text="The recovered batch was reported.", phase="final_answer"),
+            CompletionMetadata(
+                response_id="resp-preterminal-final", finish_reason="stop"
+            ),
+        ),
+    )
+    waiting = await AgentCoreRuntime(db_session, model_gateway=gateway).run_turn(
+        str(turn.id)
+    )
+    assert waiting.status == AgentTurnStatus.WAITING_APPROVAL
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions_by_call_id = {action.tool_call_id: action for action in actions}
+    first_action = actions_by_call_id["call-preterminal-first"]
+    second_action = actions_by_call_id["call-preterminal-second"]
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_: None
+    )
+    service = AgentCoreService(db_session)
+    for batch_action in (first_action, second_action):
+        await service.decide_action(
+            action_id=str(batch_action.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            decision="approve",
+        )
+
+    if continuable:
+        persisted_result = {
+            "exit_code": 9,
+            "stdout": "first-out",
+            "stderr": "first-err",
+            "cwd": str(settings.deliveries_root),
+            "command": first_command,
+        }
+        persisted_error = {
+            "type": "CommandExitError",
+            "message": "Command exited with code 9.",
+            "category": "tool_result",
+            "continuable": True,
+        }
+    else:
+        persisted_result = None
+        persisted_error = {
+            "type": "SandboxUnavailableError",
+            "message": "sandbox unavailable",
+        }
+    await AgentActionRepository(db_session).update_all(
+        first_action,
+        status=AgentActionStatus.FAILED,
+        result=persisted_result,
+        error=persisted_error,
+        requires_resume=True,
+        completed_at=datetime.now(timezone.utc),
+    )
+
+    resumed = await AgentCoreRuntime(
+        db_session, model_gateway=gateway
+    ).resume_turn_after_action(str(second_action.id))
+
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
+    first_tool_message = next(
+        message
+        for message in messages
+        if message.role == "tool"
+        and message.message_metadata["tool_call_id"] == "call-preterminal-first"
+    )
+    first_payload = json.loads(first_tool_message.content_parts[0]["text"])
+    assert first_payload["status"] == AgentActionStatus.FAILED
+    assert first_payload["error"] == persisted_error
+
+    if continuable:
+        assert resumed.status == AgentTurnStatus.COMPLETED
+        assert resumed.final_text == "The recovered batch was reported."
+        assert len(gateway.invocations) == 2
+        tool_results = [
+            item
+            for item in gateway.invocations[1].input_items
+            if isinstance(item, ToolResultPart)
+        ]
+        assert [item.call_id for item in tool_results] == [
+            "call-preterminal-first",
+            "call-preterminal-second",
+        ]
+        assert [item.is_error for item in tool_results] == [True, False]
+        assert "first-err" in tool_results[0].output
+    else:
+        assert resumed.status == AgentTurnStatus.FAILED
+        assert resumed.error_code == "tool_resume_failed"
+        assert len(gateway.invocations) == 1
+
+
+@pytest.mark.asyncio
 async def test_stale_resume_job_cannot_claim_after_a_new_approval_batch(
     db_session,
     monkeypatch,

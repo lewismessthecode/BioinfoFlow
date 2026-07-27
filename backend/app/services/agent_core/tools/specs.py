@@ -117,7 +117,10 @@ def tool_result_error(
         "continuable": continuable,
     }
     if "payload" in error:
-        normalized["payload"] = error["payload"]
+        payload = error["payload"]
+        if not isinstance(payload, dict):
+            raise TypeError("tool result_error payload must be a dictionary")
+        normalized["payload"] = payload
     try:
         json.dumps(normalized, allow_nan=False)
     except (TypeError, ValueError) as exc:

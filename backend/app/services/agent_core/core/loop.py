@@ -1314,14 +1314,15 @@ class AgentLoopController:
             ):
                 if batch_action.status in TERMINAL_ACTION_STATUSES:
                     await self._clear_terminal_action_resume_state(batch_action)
+                    result = _tool_result_for_terminal_action(batch_action)
+                elif batch_action.status == AgentActionStatus.REQUESTED:
+                    result = await self.executor.resume_action(
+                        action_id=str(batch_action.id),
+                        context=context,
+                        require_resume_marker=False,
+                    )
+                else:
                     continue
-                if batch_action.status != AgentActionStatus.REQUESTED:
-                    continue
-                result = await self.executor.resume_action(
-                    action_id=str(batch_action.id),
-                    context=context,
-                    require_resume_marker=False,
-                )
                 if (
                     result.status in TERMINAL_ACTION_STATUSES
                     and not await self._has_tool_result(
@@ -1683,22 +1684,7 @@ class AgentLoopController:
                 batch_id=batch_id,
             ):
                 continue
-            if batch_action.status == AgentActionStatus.REJECTED:
-                result = ToolExecutionResult(
-                    action_id=str(batch_action.id),
-                    status=batch_action.status,
-                    error={
-                        "type": "UserRejected",
-                        "message": "The user rejected this tool call.",
-                    },
-                )
-            else:
-                result = ToolExecutionResult(
-                    action_id=str(batch_action.id),
-                    status=batch_action.status,
-                    result=batch_action.result,
-                    error=batch_action.error,
-                )
+            result = _tool_result_for_terminal_action(batch_action)
             await self._append_tool_result(
                 agent_session=agent_session,
                 turn=turn,
