@@ -10,6 +10,7 @@ from uuid import uuid4
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.agent_core import (
     AgentAttachment,
     AgentMessageStatus,
@@ -33,6 +34,7 @@ from app.services.agent_core.collaboration.model_preflight import AgentModelPref
 from app.services.agent_core.runner import enqueue_turn_run
 from app.services.agent_core.service import AgentCoreService
 from app.services.agent_core.transcript import AgentTranscriptStore
+from app.services.authorization_service import AuthorizationService
 from app.utils.exceptions import BadRequestError, ConflictError, PermissionDeniedError
 
 
@@ -86,6 +88,15 @@ class AgentCollaborationService:
         parent_snapshot = dict(parent_turn.model_profile_snapshot or {})
         parent_model_id, parent_model_name = _parent_model(parent_snapshot)
         parent_effort = _parent_reasoning_effort(parent_snapshot)
+        parent_data = _parent_session_data(parent)
+        workspace_id = str(parent.workspace_id)
+        user_id = parent.user_id
+        root_session_id = str(parent.id)
+        role = await AuthorizationService(self.db).resolve_workspace_role(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            fallback_role="owner" if settings.auth_is_personal else None,
+        )
         choice = await self.model_preflight.resolve(
             requested_model=model,
             parent_model=parent_model_name,
@@ -93,14 +104,10 @@ class AgentCollaborationService:
             parent_reasoning_effort=parent_effort,
             requested_reasoning_effort=reasoning_effort,
             parent_supports_reasoning=_parent_supports_reasoning(parent_snapshot),
-            workspace_id=str(parent.workspace_id),
-            user_id=parent.user_id,
+            role=role,
+            workspace_id=workspace_id,
+            user_id=user_id,
         )
-
-        parent_data = _parent_session_data(parent)
-        workspace_id = str(parent.workspace_id)
-        user_id = parent.user_id
-        root_session_id = str(parent.id)
         await self.db.rollback()
 
         copied_roots: list[Path] = []
@@ -250,7 +257,7 @@ class AgentCollaborationService:
                     fallback_reason=collaboration.get("fallback_reason"),
                     final_text=latest.final_text if latest is not None else None,
                     error_code=latest.error_code if latest is not None else None,
-                    error_message=latest.error_message if latest is not None else None,
+                    error_message=_safe_agent_error(latest),
                     created_at=session.created_at.isoformat(),
                     updated_at=session.updated_at.isoformat(),
                 )
@@ -372,6 +379,26 @@ def _external_status(turn) -> str:
     if turn.status == AgentTurnStatus.CANCELLED:
         return "interrupted"
     return "errored"
+
+
+def _safe_agent_error(turn) -> str | None:
+    if turn is None or _external_status(turn) != "errored":
+        return None
+    error_code = str(turn.error_code or "").strip()
+    raw = str(turn.error_message or "").lower()
+    if error_code == "model_request_failed":
+        if "authentication" in raw or "unauthorized" in raw or "401" in raw:
+            return "Model provider authentication failed."
+        if "rate" in raw or "429" in raw:
+            return "Model provider rate limit was reached."
+        return "The model request failed."
+    stable_messages = {
+        "model_selection_missing": "No usable model is configured for this agent.",
+        "session_not_found": "The agent session could not be loaded.",
+        "execution_claim_lost": "The agent execution lease was replaced.",
+        "iteration_limit": "The agent reached its iteration limit.",
+    }
+    return stable_messages.get(error_code, "Agent failed before completing the task.")
 
 
 def _clone_attachment_files(*, source: AgentAttachment, destination: Path) -> None:

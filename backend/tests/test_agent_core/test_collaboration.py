@@ -18,7 +18,7 @@ from app.models.agent_core import (
     AgentTurnStatus,
 )
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
-from app.models.workspace import Workspace
+from app.models.workspace import Workspace, WorkspaceMembership
 from app.repositories.agent_core_repo import AgentSessionRepository
 from app.services.agent_core.collaboration.context_fork import (
     InvalidForkTurnsError,
@@ -28,6 +28,7 @@ from app.services.agent_core.collaboration.model_preflight import AgentModelPref
 from app.services.agent_core.collaboration.contracts import AgentModelChoice
 from app.services.agent_core.collaboration.service import AgentCollaborationService
 from app.services.llm.credentials import encrypt_secret
+from app.services.llm.catalog import ExactModelProbeResult
 from app.services.llm.probe import LlmProviderProbeResult
 from app.config import settings
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -603,6 +604,7 @@ async def test_available_requested_model_is_selected_with_fresh_exact_probe(
         db_session,
         test_status={"success": True, "model": "cheap-model"},
     )
+    model_id = str(model.id)
     calls: list[dict] = []
 
     async def fake_probe(_self, **kwargs):
@@ -632,10 +634,46 @@ async def test_available_requested_model_is_selected_with_fresh_exact_probe(
 
     assert result.requested_model == "cheap-model"
     assert result.effective_model == "cheap-model"
-    assert result.effective_model_id == str(model.id)
+    assert result.effective_model_id == model_id
     assert result.reasoning_effort == "low"
     assert result.fallback is False
     assert [call["model_id"] for call in calls] == ["cheap-model"]
+
+
+@pytest.mark.asyncio
+async def test_exact_model_network_probe_runs_after_read_transaction_is_closed(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    model = await _create_probe_model(db_session, model_name="cheap-model")
+    observed_transaction_state: list[bool] = []
+
+    async def execute(snapshot):
+        observed_transaction_state.append(db_session.in_transaction())
+        return ExactModelProbeResult(
+            available=True,
+            requested_model=snapshot.requested_model,
+            model_id=snapshot.model_id,
+            model_name=snapshot.model_name,
+            supports_reasoning=snapshot.supports_reasoning,
+        )
+
+    preflight = AgentModelPreflight(db_session)
+    monkeypatch.setattr(preflight.catalog, "execute_exact_model_probe", execute)
+
+    result = await preflight.resolve(
+        requested_model=str(model.id),
+        parent_model="parent-model",
+        parent_model_id="parent-id",
+        parent_reasoning_effort="high",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        role="owner",
+    )
+
+    assert result.fallback is False
+    assert observed_transaction_state == [False]
 
 
 @pytest.mark.asyncio
@@ -814,6 +852,7 @@ async def test_exact_model_preflight_fails_closed_for_invisible_or_inactive_mode
         ),
     ]
     models[6].model_metadata = {"catalog_status": "stale"}
+    model_ids = [str(model.id) for model in models]
     await db_session.commit()
     calls: list[str] = []
 
@@ -826,9 +865,9 @@ async def test_exact_model_preflight_fails_closed_for_invisible_or_inactive_mode
         forbidden_probe,
     )
 
-    for model in models:
+    for model_id in model_ids:
         result = await AgentModelPreflight(db_session).resolve(
-            requested_model=str(model.id),
+            requested_model=model_id,
             parent_model="parent-model",
             parent_model_id="parent-id",
             parent_reasoning_effort="high",
@@ -1172,6 +1211,75 @@ async def test_spawn_agent_reports_requested_model_fallback(
     assert result.fallback_reason == "requested_model_unavailable"
 
 
+@pytest.mark.parametrize(
+    ("role", "expects_fallback", "expected_probe_calls"),
+    [("owner", False, 1), ("member", True, 0)],
+)
+@pytest.mark.asyncio
+async def test_spawn_resolves_workspace_role_for_user_env_private_model(
+    db_session,
+    monkeypatch,
+    role,
+    expects_fallback,
+    expected_probe_calls,
+) -> None:
+    await _seed_workspace(db_session)
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setenv("CHILD_MODEL_API_KEY", "owner-env-secret")
+    db_session.add(
+        WorkspaceMembership(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            role=role,
+        )
+    )
+    await db_session.commit()
+    model = await _create_probe_model(
+        db_session,
+        model_name="private-child",
+        credential_source="env",
+        base_url="http://127.0.0.1:8000/v1",
+    )
+    model_id = str(model.id)
+    root, turn = await _create_parent_turn(db_session)
+    root_id = str(root.id)
+    turn_id = str(turn.id)
+    calls: list[dict] = []
+
+    async def successful_probe(_self, **kwargs):
+        calls.append(kwargs)
+        return LlmProviderProbeResult(
+            success=True,
+            latency_ms=1,
+            wire_protocol="chat_completions",
+            model_id=kwargs["model_id"],
+        )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        successful_probe,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+
+    result = await AgentCollaborationService(db_session).spawn_agent(
+        parent_session_id=root_id,
+        parent_turn_id=turn_id,
+        task_name=f"child_{role}",
+        message="work",
+        fork_turns="none",
+        model=model_id,
+    )
+
+    assert result.model_fallback is expects_fallback
+    assert len(calls) == expected_probe_calls
+    if role == "owner":
+        assert calls[0]["network_access"] == "unrestricted"
+        assert calls[0]["credential"].api_key == "owner-env-secret"
+
+
 @pytest.mark.asyncio
 async def test_spawn_enqueue_failure_keeps_recoverable_queued_turn(
     db_session, monkeypatch
@@ -1373,3 +1481,85 @@ async def test_list_agents_is_root_scoped_deterministic_and_projects_status(
         )
         == []
     )
+
+
+@pytest.mark.asyncio
+async def test_list_agents_projects_safe_nonempty_errors_without_provider_details(
+    db_session,
+) -> None:
+    await _seed_workspace(db_session)
+    root, _turn = await _create_parent_turn(db_session)
+    child = AgentSession(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        parent_session_id=str(root.id),
+        root_session_id=str(root.id),
+        agent_name="broken",
+    )
+    db_session.add(child)
+    await db_session.flush()
+    db_session.add(
+        AgentTurn(
+            session_id=str(child.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="fail",
+            status=AgentTurnStatus.FAILED,
+            error_code="model_request_failed",
+            error_message="HTTP 401 raw-secret-token authentication denied",
+        )
+    )
+    await db_session.commit()
+
+    result = await AgentCollaborationService(db_session).list_agents(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    broken = next(agent for agent in result if agent.task_name == "/root/broken")
+    assert broken.status == "errored"
+    assert broken.error_code == "model_request_failed"
+    assert broken.error_message == "Model provider authentication failed."
+    assert "secret" not in broken.error_message
+
+
+@pytest.mark.asyncio
+async def test_list_agents_uses_generic_nonempty_error_for_unknown_empty_failure(
+    db_session,
+) -> None:
+    await _seed_workspace(db_session)
+    root, _turn = await _create_parent_turn(db_session)
+    child = AgentSession(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        parent_session_id=str(root.id),
+        root_session_id=str(root.id),
+        agent_name="unknown_failure",
+    )
+    db_session.add(child)
+    await db_session.flush()
+    db_session.add(
+        AgentTurn(
+            session_id=str(child.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="fail",
+            status=AgentTurnStatus.FAILED,
+            error_code="provider_internal_opaque",
+            error_message="",
+        )
+    )
+    await db_session.commit()
+
+    result = await AgentCollaborationService(db_session).list_agents(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    failed = next(
+        agent for agent in result if agent.task_name == "/root/unknown_failure"
+    )
+    assert failed.error_code == "provider_internal_opaque"
+    assert failed.error_message == "Agent failed before completing the task."

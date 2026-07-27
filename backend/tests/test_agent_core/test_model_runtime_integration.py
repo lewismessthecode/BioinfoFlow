@@ -34,7 +34,7 @@ from app.services.agent_core.core.runtime_strategy import (
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.ownership import TurnOwnership
-from app.services.agent_core.runtime import AgentCoreRuntime
+from app.services.agent_core.runtime import AgentCoreRuntime, _resolved_runtime_strategy
 from app.services.agent_core.skills import AgentSkillRegistry
 from app.services.agent_core.tools.executor import ToolExecutionResult
 from app.services.llm.credentials import (
@@ -593,6 +593,7 @@ async def test_normal_turn_runs_through_injected_model_gateway(db_session) -> No
     assert invocation.target == _target()
     assert invocation.stream is True
     assert invocation.max_output_tokens == 256
+    assert invocation.reasoning.effort is None
     assert invocation.instructions
     assert invocation.input_items == (
         TextPart(
@@ -610,6 +611,54 @@ async def test_normal_turn_runs_through_injected_model_gateway(db_session) -> No
         str(session.id)
     )
     assert [message.role for message in messages] == ["user", "assistant"]
+
+
+@pytest.mark.parametrize(
+    ("selection_path", "effort"),
+    [("inherited", "high"), ("explicit", "low"), ("fallback", "medium")],
+)
+@pytest.mark.asyncio
+async def test_selected_reasoning_effort_reaches_gateway_invocation(
+    db_session, selection_path, effort
+) -> None:
+    _session, turn = await _turn(db_session)
+    snapshot = dict(turn.model_profile_snapshot or {})
+    snapshot["metadata"] = {
+        "collaboration": {
+            "model_selection_path": selection_path,
+            "reasoning_effort": effort,
+        }
+    }
+    turn = await AgentTurnRepository(db_session).update_all(
+        turn,
+        model_profile_snapshot=snapshot,
+    )
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="done"),
+            CompletionMetadata(response_id="reasoning-effort", finish_reason="stop"),
+        )
+    )
+
+    await AgentLoopController(db_session, model_gateway=gateway).run_turn(
+        turn_id=str(turn.id),
+        target=_target(),
+        capabilities=RuntimeCapabilities(
+            supports_tools=False,
+            supports_reasoning=True,
+        ),
+        strategy=_resolved_runtime_strategy(
+            {
+                "runtime_strategy": {
+                    "allow_tools": False,
+                    "allow_thinking": True,
+                }
+            },
+            turn=turn,
+        ),
+    )
+
+    assert gateway.invocations[0].reasoning.effort == effort
 
 
 @pytest.mark.asyncio

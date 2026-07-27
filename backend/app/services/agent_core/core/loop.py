@@ -327,7 +327,11 @@ class AgentLoopController:
                 max_output_tokens=max_tokens or settings.agent_max_tokens,
                 reasoning=ReasoningRequest(
                     enabled=strategy.allow_thinking,
-                    effort="medium" if strategy.allow_thinking else None,
+                    effort=(
+                        strategy.reasoning_effort
+                        if strategy.allow_thinking
+                        else None
+                    ),
                 ),
                 continuation=continuation,
             )

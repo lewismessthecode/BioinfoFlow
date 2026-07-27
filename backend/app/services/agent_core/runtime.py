@@ -868,7 +868,7 @@ class AgentCoreRuntime:
                     error_code="execution_claim_lost",
                     error_message="Agent turn execution lease ownership was lost.",
                 )
-            runtime_strategy = _resolved_runtime_strategy(candidate)
+            runtime_strategy = _resolved_runtime_strategy(candidate, turn=turn)
             if attempt_index == 0:
                 await self.ledger.append(
                     session_id=str(turn.session_id),
@@ -1113,7 +1113,11 @@ def _resolved_capabilities(resolved: dict[str, Any]) -> RuntimeCapabilities:
     )
 
 
-def _resolved_runtime_strategy(resolved: dict[str, Any]) -> RuntimeStrategy:
+def _resolved_runtime_strategy(
+    resolved: dict[str, Any],
+    *,
+    turn=None,
+) -> RuntimeStrategy:
     strategy = resolved.get("runtime_strategy")
     if not isinstance(strategy, dict):
         return RuntimeStrategy()
@@ -1124,8 +1128,19 @@ def _resolved_runtime_strategy(resolved: dict[str, Any]) -> RuntimeStrategy:
         allow_tools=bool(strategy.get("allow_tools", True)),
         max_tokens=_coerce_optional_int(strategy.get("max_tokens")),
         reasoning_budget=_coerce_optional_int(strategy.get("reasoning_budget")),
+        reasoning_effort=_turn_reasoning_effort(turn),
         fallback_model_ids=tuple(str(item) for item in fallback_model_ids),
     )
+
+
+def _turn_reasoning_effort(turn) -> str | None:
+    if turn is None:
+        return None
+    snapshot = getattr(turn, "model_profile_snapshot", None)
+    metadata = snapshot.get("metadata") if isinstance(snapshot, dict) else None
+    collaboration = metadata.get("collaboration") if isinstance(metadata, dict) else None
+    effort = collaboration.get("reasoning_effort") if isinstance(collaboration, dict) else None
+    return effort if effort in {"low", "medium", "high"} else None
 
 
 def _coerce_optional_int(value: Any) -> int | None:
