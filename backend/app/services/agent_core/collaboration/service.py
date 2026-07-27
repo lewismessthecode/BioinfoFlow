@@ -47,6 +47,52 @@ from app.utils.exceptions import BadRequestError, ConflictError, PermissionDenie
 
 
 _AGENT_NAME = re.compile(r"^[a-z0-9_]{1,80}$")
+_COLLABORATION_WAITERS: dict[str, set[asyncio.Future[None]]] = {}
+
+
+def _collaboration_waiter_count() -> int:
+    return len(
+        {
+            future
+            for waiters in _COLLABORATION_WAITERS.values()
+            for future in waiters
+        }
+    )
+
+
+def notify_collaboration_waiters(*session_ids: str) -> None:
+    futures = {
+        future
+        for session_id in session_ids
+        for future in _COLLABORATION_WAITERS.get(session_id, set())
+    }
+    for future in futures:
+        if not future.done():
+            future.set_result(None)
+
+
+async def _wait_for_collaboration_notification(
+    session_ids: set[str],
+    timeout_seconds: float,
+) -> None:
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[None] = loop.create_future()
+    for session_id in session_ids:
+        _COLLABORATION_WAITERS.setdefault(session_id, set()).add(future)
+    try:
+        await asyncio.wait_for(asyncio.shield(future), timeout=timeout_seconds)
+    except TimeoutError:
+        pass
+    finally:
+        for session_id in session_ids:
+            waiters = _COLLABORATION_WAITERS.get(session_id)
+            if waiters is None:
+                continue
+            waiters.discard(future)
+            if not waiters:
+                _COLLABORATION_WAITERS.pop(session_id, None)
+        if not future.done():
+            future.cancel()
 
 
 class AgentCollaborationService:
@@ -307,6 +353,7 @@ class AgentCollaborationService:
                 "delivery": "queued",
             },
         )
+        notify_collaboration_waiters(root_id, target_id)
         return AgentMessageResult(
             target=target_name,
             delivery="queued",
@@ -540,7 +587,11 @@ class AgentCollaborationService:
                 )
             if asyncio.get_running_loop().time() >= deadline:
                 return AgentWaitResult(timed_out=True, updated_agents=[])
-            await asyncio.sleep(min(0.05, max(deadline - asyncio.get_running_loop().time(), 0)))
+            remaining = max(deadline - asyncio.get_running_loop().time(), 0)
+            await _wait_for_collaboration_notification(
+                {root_id, caller_id},
+                min(remaining, 1.0),
+            )
 
     async def publish_child_terminal(self, *, turn_id: str) -> None:
         for attempt in range(4):
@@ -564,6 +615,7 @@ class AgentCollaborationService:
         child = await self.sessions.get_fresh(str(turn.session_id))
         if child is None or child.root_session_id is None:
             return
+        child_id = str(child.id)
         root_id = str(child.root_session_id)
         root = await self.sessions.get_fresh(root_id)
         if root is None:
@@ -576,10 +628,10 @@ class AgentCollaborationService:
             == "agent_result"
             for message in messages
         ):
-            await self.sessions.finalize_child_terminal_state(str(child.id), turn_id)
+            await self.sessions.finalize_child_terminal_state(child_id, turn_id)
             if not await self._has_publication_marker(turn_id):
                 await self.ledger.append(
-                    session_id=str(child.id),
+                    session_id=child_id,
                     turn_id=turn_id,
                     type=AgentEventType.AGENT_RESULT_PUBLISHED,
                     payload={"root_session_id": root_id},
@@ -587,6 +639,7 @@ class AgentCollaborationService:
                     commit=False,
                 )
             await self.db.commit()
+            notify_collaboration_waiters(root_id, child_id)
             await self._schedule_pending_followup(child=child, root=root)
             return
 
@@ -615,7 +668,7 @@ class AgentCollaborationService:
             status=AgentMessageStatus.DRAFT,
             commit=False,
         )
-        await self.sessions.finalize_child_terminal_state(str(child.id), turn_id)
+        await self.sessions.finalize_child_terminal_state(child_id, turn_id)
         await self.ledger.append(
             session_id=root_id,
             turn_id=str(active_parent.id) if active_parent is not None else None,
@@ -624,7 +677,7 @@ class AgentCollaborationService:
             commit=False,
         )
         await self.ledger.append(
-            session_id=str(child.id),
+            session_id=child_id,
             turn_id=turn_id,
             type=AgentEventType.AGENT_RESULT_PUBLISHED,
             payload={"root_session_id": root_id},
@@ -632,6 +685,7 @@ class AgentCollaborationService:
             commit=False,
         )
         await self.db.commit()
+        notify_collaboration_waiters(root_id, child_id)
         await self._schedule_pending_followup(child=child, root=root)
 
     async def _has_publication_marker(self, turn_id: str) -> bool:
@@ -811,6 +865,7 @@ class AgentCollaborationService:
             type=event_type,
             payload=payload,
         )
+        notify_collaboration_waiters(root_id)
 
     async def _start_followup(
         self,
@@ -845,16 +900,20 @@ class AgentCollaborationService:
             },
             commit=False,
         )
+        child_id = str(child.id)
+        turn_id = str(turn.id)
+        target_name = _canonical_name(child, root_id)
         await self.db.commit()
+        notify_collaboration_waiters(root_id, child_id)
         try:
-            enqueue_turn_run(str(turn.id), str(child.id))
+            enqueue_turn_run(turn_id, child_id)
         except Exception:
             pass
         return AgentMessageResult(
-            target=_canonical_name(child, root_id),
+            target=target_name,
             delivery="followup",
             status="pending_init",
-            turn_id=str(turn.id),
+            turn_id=turn_id,
         )
 
     async def _schedule_pending_followup(
