@@ -417,6 +417,63 @@ async def test_commit_failure_rolls_back_and_removes_owned_root(
 
 
 @pytest.mark.asyncio
+async def test_commit_cancellation_rolls_back_and_closes_reservation_fds(
+    db_session,
+    monkeypatch,
+) -> None:
+    service = ProjectDirectoryService(db_session)
+    reservation = await service.add_pending(_project_data())
+    root_fd = reservation.root_fd
+    parent_fd = reservation.parent_fd
+
+    async def cancel_commit() -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(db_session, "commit", cancel_commit)
+
+    with pytest.raises(asyncio.CancelledError):
+        await service.commit(reservation)
+
+    assert db_session.in_transaction() is False
+    assert reservation.root_fd is None
+    assert reservation.parent_fd is None
+    _assert_fd_closed(root_fd)
+    _assert_fd_closed(parent_fd)
+    assert not reservation.root.exists()
+    assert await _directory_names(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_cancellation_after_database_commit_only_closes_reservation_fds(
+    db_session,
+    monkeypatch,
+) -> None:
+    service = ProjectDirectoryService(db_session)
+    reservation = await service.add_pending(_project_data())
+    root_fd = reservation.root_fd
+    parent_fd = reservation.parent_fd
+    real_commit = db_session.commit
+
+    async def commit_then_cancel() -> None:
+        await real_commit()
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(db_session, "commit", commit_then_cancel)
+
+    with pytest.raises(asyncio.CancelledError):
+        await service.commit(reservation)
+
+    assert db_session.in_transaction() is False
+    assert reservation.root_fd is None
+    assert reservation.parent_fd is None
+    _assert_fd_closed(root_fd)
+    _assert_fd_closed(parent_fd)
+    assert (reservation.root / "data").is_dir()
+    assert (reservation.root / "runs").is_dir()
+    assert await _directory_names(db_session) == ["ce-shi"]
+
+
+@pytest.mark.asyncio
 async def test_discard_does_not_follow_replacement_symlink(
     db_session,
 ) -> None:

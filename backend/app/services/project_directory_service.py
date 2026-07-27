@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import secrets
@@ -132,11 +133,22 @@ class ProjectDirectoryService:
     async def commit(self, reservation: ManagedProjectReservation) -> Project:
         try:
             await self.session.commit()
-        except Exception:
-            try:
-                await self.session.rollback()
-            finally:
-                _cleanup_owned_root(reservation)
+        except BaseException:
+            transaction_is_active = self.session.in_transaction()
+            if transaction_is_active:
+                try:
+                    await asyncio.shield(self.session.rollback())
+                except BaseException:
+                    pass
+                try:
+                    _cleanup_owned_root(reservation)
+                except BaseException:
+                    pass
+            else:
+                try:
+                    _close_reservation_fds(reservation)
+                except BaseException:
+                    pass
             raise
 
         _close_reservation_fds(reservation)
