@@ -24,12 +24,20 @@ class LlmProviderRepository(BaseRepository[LlmProvider]):
         stmt = select(self.model)
         if enabled_only:
             stmt = stmt.where(self.model.enabled.is_(True))
-        if workspace_id:
+        if workspace_id and user_id:
+            stmt = stmt.where(
+                _visible_provider_clause(
+                    self.model,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                )
+            )
+        elif workspace_id:
             stmt = stmt.where(
                 (self.model.workspace_id == workspace_id)
                 | (self.model.workspace_id.is_(None))
             )
-        if user_id:
+        elif user_id:
             stmt = stmt.where(
                 (self.model.user_id == user_id) | (self.model.user_id.is_(None))
             )

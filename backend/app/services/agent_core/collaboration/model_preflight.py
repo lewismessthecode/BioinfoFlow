@@ -23,12 +23,25 @@ class AgentModelPreflight:
         user_id: str,
         parent_model: str | None = None,
         requested_reasoning_effort: str | None = None,
+        parent_supports_reasoning: bool | None = None,
         role: str | None = None,
     ) -> AgentModelChoice:
         parent_name = parent_model or parent_model_id
         if requested_model is None:
+            _validate_reasoning_value(requested_reasoning_effort)
+            if requested_reasoning_effort is not None:
+                supports_reasoning = parent_supports_reasoning
+                if supports_reasoning is None:
+                    supports_reasoning = (
+                        await self.catalog.visible_model_supports_reasoning(
+                            parent_model_id,
+                            workspace_id=workspace_id,
+                            user_id=user_id,
+                        )
+                    )
+                if supports_reasoning is not True:
+                    raise ValueError("unsupported_reasoning_effort")
             effort = requested_reasoning_effort or parent_reasoning_effort
-            _validate_reasoning_value(effort)
             return AgentModelChoice(
                 requested_model=None,
                 effective_model=parent_name,

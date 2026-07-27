@@ -78,6 +78,8 @@ def _semantic_message(item: Any) -> dict[str, Any] | None:
     role = _field(item, "role")
     if role not in {"system", "developer", "user", "assistant"}:
         return None
+    if role == "assistant" and _contains_tool_call_structure(item):
+        return None
     metadata = _field(item, "message_metadata") or _field(item, "metadata") or {}
     if not isinstance(metadata, Mapping):
         metadata = {}
@@ -131,3 +133,34 @@ def _semantic_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
         for key in ("kind", "_temporal_context", "continuity_state")
         if key in metadata
     }
+
+
+_TOOL_CALL_TYPES = frozenset(
+    {
+        "function_call",
+        "function_calls",
+        "tool_call",
+        "tool_calls",
+        "tool_use",
+    }
+)
+
+
+def _contains_tool_call_structure(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        if any(key in value for key in _TOOL_CALL_TYPES):
+            return True
+        item_type = value.get("type")
+        if isinstance(item_type, str) and item_type.lower() in _TOOL_CALL_TYPES:
+            return True
+        return any(_contains_tool_call_structure(item) for item in value.values())
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return any(_contains_tool_call_structure(item) for item in value)
+    class_name = type(value).__name__.lower()
+    if class_name in {"functioncallpart", "toolcallpart", "toolusepart"}:
+        return True
+    for attribute in ("content", "content_parts", "function_call", "tool_calls"):
+        nested = getattr(value, attribute, None)
+        if nested is not None and _contains_tool_call_structure(nested):
+            return True
+    return False
