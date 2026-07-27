@@ -14,15 +14,11 @@ import {
 } from "react"
 import {
   CircleCheck,
-  FileBox,
-  FolderTree,
-  Globe,
   MessageCircle,
   PanelRightClose,
   PanelRightOpen,
   RotateCcw,
   SlidersHorizontal,
-  type AppIcon,
 } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
@@ -31,6 +27,7 @@ import type { AgentComposerAttachment } from "./attachment-strip"
 import { ConnectModelDialog } from "./connect-model-dialog"
 import { AgentEnvironmentCard } from "./agent-environment-card"
 import { AgentTabbedPanel, type AgentTabbedPanelTab } from "./agent-tabbed-panel"
+import { AgentWorkspaceTabs } from "./agent-workspace-tabs"
 import { AgentTodoDock } from "./agent-todo-dock"
 import { AgentTranscript } from "./agent-transcript"
 import { ComposerApprovalPopover } from "./composer-approval-popover"
@@ -52,7 +49,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { ResizeHandle } from "@/components/ui/resize-handle"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
 import { useFirstRunContext } from "@/hooks/use-first-run"
@@ -134,17 +130,6 @@ const COMMAND_DISCOVERY_HINTS = [
 ] as const
 
 const WORKFLOW_MENTION_PATTERN = /(^|\s)@workflow(?=\s|$|[,.!?;:])/gi
-
-const SIDECAR_TABS: Array<{
-  key: AgentTabbedPanelTab
-  labelKey: string
-  iconName: string
-  Icon: AppIcon
-}> = [
-  { key: "preview", labelKey: "tabs.artifacts", iconName: "file-box", Icon: FileBox },
-  { key: "files", labelKey: "tabs.files", iconName: "folder-tree", Icon: FolderTree },
-  { key: "browser", labelKey: "tabs.browser", iconName: "globe", Icon: Globe },
-]
 
 type PendingSubmission = {
   text: string
@@ -1630,81 +1615,15 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       })
     }, [sidecarMaxWidth])
 
-    const onSidecarTabKeyDown = useCallback(
-      (event: KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
-        const lastIndex = SIDECAR_TABS.length - 1
-        let nextIndex: number | null = null
-        switch (event.key) {
-          case "ArrowRight":
-          case "ArrowDown":
-            nextIndex = currentIndex === lastIndex ? 0 : currentIndex + 1
-            break
-          case "ArrowLeft":
-          case "ArrowUp":
-            nextIndex = currentIndex === 0 ? lastIndex : currentIndex - 1
-            break
-          case "Home":
-            nextIndex = 0
-            break
-          case "End":
-            nextIndex = lastIndex
-            break
-          default:
-            break
-        }
-        if (nextIndex === null) return
-        event.preventDefault()
-        const nextTab = SIDECAR_TABS[nextIndex]?.key
-        if (!nextTab) return
-        setActiveSidecarTab(nextTab)
-        window.requestAnimationFrame(() => {
-          document.getElementById(`agent-sidecar-tab-${nextTab}`)?.focus()
-        })
-      },
-      [],
-    )
-
     const agentActionButtons = useMemo(
       () => (
         <>
           {desktopSidecarVisible ? (
-            <div
-              className="mr-1 flex min-w-0 items-center gap-1 border-r border-border/55 pr-1.5"
-              role="tablist"
-              aria-label={t("sidecar.title")}
-              data-testid="agent-sidecar-tab-strip"
-            >
-              {SIDECAR_TABS.map(({ key, labelKey, iconName, Icon }, index) => (
-                <Tooltip key={key}>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      role="tab"
-                      id={`agent-sidecar-tab-${key}`}
-                      aria-controls={`agent-sidecar-panel-${key}`}
-                      aria-selected={activeSidecarTab === key}
-                      tabIndex={activeSidecarTab === key ? 0 : -1}
-                      onClick={() => setActiveSidecarTab(key)}
-                      onKeyDown={(event) => onSidecarTabKeyDown(event, index)}
-                      aria-label={t(labelKey)}
-                      className={cn(
-                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-                        activeSidecarTab === key && "bg-muted/60 text-foreground",
-                      )}
-                      data-active={activeSidecarTab === key}
-                    >
-                      <Icon
-                        className="h-4 w-4 shrink-0"
-                        data-icon={iconName}
-                        data-testid={`agent-sidecar-tab-icon-${key}`}
-                        aria-hidden="true"
-                      />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">{t(labelKey)}</TooltipContent>
-                </Tooltip>
-              ))}
-            </div>
+            <AgentWorkspaceTabs
+              activeTab={activeSidecarTab}
+              onActiveTabChange={setActiveSidecarTab}
+              onClose={() => closeSidecar("navbar")}
+            />
           ) : null}
           <Button
             type="button"
@@ -1720,32 +1639,33 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           >
             <SlidersHorizontal className="h-4 w-4" />
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-[8px] border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
-            onClick={toggleSidecar}
-            aria-label={sidecarLabel}
-            data-agent-workbench-action="sidecar-toggle"
-          >
-            {desktopSidecarVisible || mobileSidecarVisible ? (
-              <PanelRightClose className="h-4 w-4" />
-            ) : (
-              <PanelRightOpen className="h-4 w-4" />
-            )}
-          </Button>
+          {!desktopSidecarVisible ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-[8px] border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
+              onClick={toggleSidecar}
+              aria-label={sidecarLabel}
+              data-agent-workbench-action="sidecar-toggle"
+            >
+              {mobileSidecarVisible ? (
+                <PanelRightClose className="h-4 w-4" />
+              ) : (
+                <PanelRightOpen className="h-4 w-4" />
+              )}
+            </Button>
+          ) : null}
         </>
       ),
       [
         activeSidecarTab,
+        closeSidecar,
         desktopSidecarVisible,
         environmentLabel,
         environmentOpen,
         mobileSidecarVisible,
-        onSidecarTabKeyDown,
         sidecarLabel,
-        t,
         toggleEnvironment,
         toggleSidecar,
       ],

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
-import { AlertCircle, ChevronLeft, FileBox, RotateCw } from "@/lib/icons"
+import { AlertCircle, ChevronLeft, ChevronRight, FileBox, RotateCw } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -112,27 +112,44 @@ export function ArtifactPreviewDrawer({
 
   return (
     <div
-      className="grid h-full min-h-0 gap-2 overflow-y-auto pr-1"
+      className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]"
       data-testid="artifact-preview-drawer"
     >
-      {previewArtifacts.map((artifact) => (
-        <button
-          key={artifact.id}
-          type="button"
-          onClick={() => setSelectedId(artifact.id)}
-          className="flex w-full items-start gap-3 rounded-lg border border-border/70 bg-card px-3 py-2.5 text-left transition-[background-color,border-color,transform] hover:border-border hover:bg-muted/40 active:scale-[0.99]"
+      <div className="flex min-h-10 items-center gap-2 border-b border-border/55 px-2 pb-2">
+        <h2 className="text-sm font-semibold tracking-[-0.01em] text-foreground">
+          {t("artifacts.title")}
+        </h2>
+        <span
+          className="font-mono text-[11px] tabular-nums text-muted-foreground"
+          data-testid="artifact-count"
         >
-          <ArtifactIcon type={artifact.type} />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-foreground">
-              {artifact.title}
+          {previewArtifacts.length}
+        </span>
+      </div>
+      <div
+        className="min-h-0 divide-y divide-border/45 overflow-y-auto pr-1"
+        data-testid="artifact-list"
+      >
+        {previewArtifacts.map((artifact) => (
+          <button
+            key={artifact.id}
+            type="button"
+            onClick={() => setSelectedId(artifact.id)}
+            className="group flex w-full items-center gap-3 px-2 py-3 text-left transition-[background-color,color,transform] duration-200 hover:bg-muted/35 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/25"
+          >
+            <ArtifactIcon type={artifact.type} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium text-foreground">
+                {artifact.title}
+              </div>
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                {artifact.summary || artifact.file_path || artifactTypeLabel(t, artifact.type)}
+              </div>
             </div>
-            <div className="truncate text-xs text-muted-foreground">
-              {artifact.summary || artifact.file_path || artifactTypeLabel(t, artifact.type)}
-            </div>
-          </div>
-        </button>
-      ))}
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
