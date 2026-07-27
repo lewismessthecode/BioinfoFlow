@@ -366,6 +366,7 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
             )
             .order_by(
                 case((self.model.id == root_session_id, 0), else_=1),
+                self.model.agent_name,
                 self.model.created_at,
                 self.model.id,
             )
@@ -754,6 +755,7 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         user_metadata: dict,
         created_event_type: str,
         created_event_payload: dict,
+        commit: bool = True,
         **data,
     ) -> AgentTurn | None:
         values = {"active_turn_id": turn_id, **(session_updates or {})}
@@ -833,11 +835,15 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             ]
         )
         try:
-            await self.session.commit()
+            if commit:
+                await self.session.commit()
+            else:
+                await self.session.flush()
         except Exception:
             await self.session.rollback()
             raise
-        await self.session.refresh(turn)
+        if commit:
+            await self.session.refresh(turn)
         return turn
 
     async def claim_action_resume(

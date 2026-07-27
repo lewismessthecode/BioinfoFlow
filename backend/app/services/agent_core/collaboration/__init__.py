@@ -1,6 +1,8 @@
 from app.services.agent_core.collaboration.contracts import (
+    AgentListItem,
     AgentModelChoice,
     AgentStatusView,
+    SpawnAgentResult,
 )
 from app.services.agent_core.collaboration.context_fork import (
     InvalidForkTurnsError,
@@ -12,6 +14,8 @@ __all__ = [
     "AgentModelChoice",
     "AgentModelPreflight",
     "AgentStatusView",
+    "AgentListItem",
+    "SpawnAgentResult",
     "InvalidForkTurnsError",
     "fork_agent_context",
 ]

@@ -42,10 +42,20 @@ _EXECUTION_TOOLS = _CORE_READ_TOOLS | {
     "ask_user",
     "bash",
     "edit",
-    "task",
     "todo_write",
     "write",
 }
+COLLABORATION_TOOL_NAMES = frozenset(
+    {
+        "spawn_agent",
+        "send_message",
+        "followup_task",
+        "wait_agent",
+        "list_agents",
+        "interrupt_agent",
+    }
+)
+_EXECUTION_TOOLS = _EXECUTION_TOOLS | COLLABORATION_TOOL_NAMES
 
 _BIOINFO_READ_TOOLS = frozenset(
     {
@@ -94,7 +104,7 @@ _REMOTE_SSH_TARGET_NEUTRAL_TOOLS = frozenset(
         "plugins.list",
         "todo_write",
     }
-)
+) | COLLABORATION_TOOL_NAMES
 _REMOTE_SSH_TARGET_PREFIXES = ("remote.", "skills.", "web.")
 _RETIRED_MODEL_TOOL_NAMES = frozenset({"glob", "grep", "web.fetch"})
 _RETIRED_MODEL_TOOL_PREFIXES = ("attachments.", "files.", "images.")
@@ -181,16 +191,28 @@ class ToolsetExposure:
             if isinstance(allowed_tools, list) and allowed_tools
             else None
         )
-        if role == "worker":
+        if role in {"worker", "subagent"}:
             # A worker subagent runs without a user watching, so interaction
             # tools (ask_user / exit_plan_mode) that would pause for input are
             # excluded — they could only deadlock the child run.
-            names = set(explicit_allowed or (_CORE_READ_TOOLS | extension_tools))
-            names &= {
-                spec.name
-                for spec in specs
-                if spec.name in read_only and not spec.interaction
-            }
+            if role == "subagent":
+                if policy_name == "execution":
+                    names = set(_EXECUTION_TOOLS | extension_tools)
+                elif policy_name == "plan":
+                    names = set(_PLAN_TOOLS)
+                else:
+                    names = set(_DEFAULT_TOOLS)
+                if explicit_allowed is not None:
+                    names = set(explicit_allowed)
+                names.update(COLLABORATION_TOOL_NAMES - {"spawn_agent"})
+                names -= {"spawn_agent", "ask_user", "exit_plan_mode"}
+            else:
+                names = set(explicit_allowed or (_CORE_READ_TOOLS | extension_tools))
+                names &= {
+                    spec.name
+                    for spec in specs
+                    if spec.name in read_only and not spec.interaction
+                }
         elif policy_name == "execution":
             names = set(_EXECUTION_TOOLS | extension_tools)
         elif policy_name == "plan":
@@ -200,7 +222,7 @@ class ToolsetExposure:
         else:
             names = set(_DEFAULT_TOOLS)
 
-        if role != "worker":
+        if role not in {"worker", "subagent"}:
             capabilities = policy.get("capabilities")
             if isinstance(capabilities, list):
                 for capability in capabilities:
@@ -221,7 +243,7 @@ class ToolsetExposure:
         if remote_selected and explicit_allowed is None:
             names.update(
                 _REMOTE_READ_TOOLS
-                if role == "worker" or policy_name != "execution"
+                if role in {"worker", "subagent"} or policy_name != "execution"
                 else _REMOTE_EXECUTION_TOOLS
             )
 
@@ -307,12 +329,16 @@ class ToolsetExposure:
             for spec in specs
             if spec.risk_level == "read" and not spec.write_scope
         }
-        if role == "worker":
-            names = {
-                spec.name
-                for spec in specs
-                if spec.name in read_only and not spec.interaction
-            }
+        if role in {"worker", "subagent"}:
+            if role == "subagent":
+                names = {spec.name for spec in specs if not spec.interaction}
+                names.discard("spawn_agent")
+            else:
+                names = {
+                    spec.name
+                    for spec in specs
+                    if spec.name in read_only and not spec.interaction
+                }
         elif policy_name == "execution":
             names = {spec.name for spec in specs}
         elif policy_name == "plan":

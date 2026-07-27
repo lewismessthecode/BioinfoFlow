@@ -9,6 +9,7 @@ from app.services.agent_core.tools.attachments import (
     AttachmentReadTool,
     AttachmentSearchTool,
 )
+from app.services.agent_core.tools.collaboration import COLLABORATION_TOOLS
 from app.services.agent_core.tools.files import (
     ApplyPatchTool,
     EditFileTool,
@@ -70,7 +71,6 @@ from app.services.agent_core.tools.skills import (
     LoadSkillTool,
 )
 from app.services.agent_core.tools.specs import AgentTool
-from app.services.agent_core.tools.subagents import SubagentAnalyzeTool, TaskTool
 from app.services.agent_core.tools.tasks import TodoWriteTool
 from app.services.agent_core.tools.web import SearchWebTool
 
@@ -164,8 +164,7 @@ def default_tool_providers() -> tuple[AgentToolProvider, ...]:
                 TodoWriteTool(),
                 AskUserTool(),
                 ExitPlanModeTool(),
-                SubagentAnalyzeTool(),
-                TaskTool(),
+                *COLLABORATION_TOOLS,
             )
         ),
     )

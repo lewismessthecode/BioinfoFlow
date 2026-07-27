@@ -703,23 +703,28 @@ def test_normal_execution_exposes_small_capability_surface_but_keeps_compatibili
         "ask_user",
         "bash",
         "edit",
+        "followup_task",
+        "interrupt_agent",
+        "list_agents",
         "projects.list",
         "runs.inspect",
+        "send_message",
         "skills.load",
-        "task",
+        "spawn_agent",
         "todo_write",
+        "wait_agent",
         "web.search",
         "workflows.inspect",
         "write",
     }
-    assert len(exposed) == 11
+    assert len(exposed) == 16
     assert {
         "files.read",
-        "subagent.analyze",
         "memory.list",
         "runs.get",
         "workflows.get",
     } <= registry.names()
+    assert {"task", "subagent.analyze"}.isdisjoint(registry.names())
 
 
 def test_default_tool_providers_are_deterministic_and_registry_rejects_duplicates():

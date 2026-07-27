@@ -137,7 +137,11 @@ class PermissionContextResolver:
             permission_mode=str(agent_session.permission_mode),
             automation_mode=str(agent_session.automation_mode),
             toolset_policy=_freeze(_bounded_toolset(agent_session.toolset_policy)),
-            role="worker" if role_profile == "worker" else "orchestrator",
+            role=(
+                role_profile
+                if role_profile in {"worker", "subagent"}
+                else "orchestrator"
+            ),
             role_profile=role_profile,
             execution_target=_freeze(execution_target),
             execution_scope=_freeze(execution_scope) if execution_scope else None,
