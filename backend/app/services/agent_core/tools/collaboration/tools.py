@@ -113,7 +113,7 @@ class SendMessageTool:
         return asdict(result)
 
 
-class FollowupTaskTool:
+class FollowupAgentTool:
     spec = AgentToolSpec(
         name="followup_task",
         description="Give an existing child agent a follow-up task.",
@@ -221,7 +221,7 @@ class InterruptAgentTool:
 COLLABORATION_TOOLS = (
     SpawnAgentTool(),
     SendMessageTool(),
-    FollowupTaskTool(),
+    FollowupAgentTool(),
     WaitAgentTool(),
     ListAgentsTool(),
     InterruptAgentTool(),

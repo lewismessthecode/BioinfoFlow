@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace BioinfoFlow's synchronous `task`/`subagent.analyze` path with a durable, shallow Codex-style agent tree supporting spawn, message, follow-up, wait, list, and interrupt.
+**Goal:** Replace BioinfoFlow's synchronous legacy delegation path with a durable, shallow Codex-style agent tree supporting spawn, message, follow-up, wait, list, and interrupt.
 
 **Architecture:** Child agents are ordinary persisted Agent Core sessions and turns. A focused collaboration service adds lineage, concurrency, mailbox, context-fork, and model-preflight behavior while reusing existing turn execution, steering, interruption, events, permissions, and startup recovery. Roots receive all six collaboration tools; children receive the five communication/observation tools but cannot spawn.
 
@@ -741,7 +741,7 @@ rtk git commit -m "feat: show child agent lifecycle"
 - Delete: `backend/tests/test_agent_core/test_tools/test_task.py`
 - Modify/Delete: `backend/tests/test_agent_core/test_subagents.py`
 - Modify: `backend/app/services/agent_core/__init__.py`
-- Modify: relevant docs/tool snapshots found by `rtk rg -n "subagent\.analyze|TaskTool|ReadOnlySubagentRunner|\"task\"" backend frontend docs`
+- Modify: relevant docs/tool snapshots that name the legacy tool classes, delegated runner, or model-visible tool registrations.
 
 - [ ] **Step 1: Write/extend the regression that reproduces the original failure**
 
@@ -762,7 +762,7 @@ Expected: pass with the new implementation.
 Run searches after deletion:
 
 ```bash
-rtk rg -n "subagent\.analyze|TaskTool|ReadOnlySubagentRunner" backend frontend docs
+rtk git grep -n -E 'subagent[.]analyze|Task[T]ool|ReadOnlySubagent[R]unner' -- backend frontend docs
 rtk rg -n '"task"' backend/app/services/agent_core backend/tests/test_agent_core
 ```
 

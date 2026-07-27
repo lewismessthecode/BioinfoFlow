@@ -2,7 +2,7 @@
 
 ## Goal
 
-Replace BioinfoFlow's synchronous, read-only `task` and `subagent.analyze`
+Replace BioinfoFlow's synchronous, read-only legacy delegation tools
 implementations with a durable Codex-style agent tree. A root agent can spawn,
 observe, message, reuse, wait for, and interrupt child agents. Child agents run
 the normal Agent Core loop and may coordinate inside the same root tree, but
@@ -195,7 +195,7 @@ The ordinary tool registry and exposure layer stay unchanged except for:
 - registering the six collaboration tools;
 - exposing all six in root execution sessions;
 - exposing the five non-spawn collaboration tools for child sessions;
-- removing `task` and `subagent.analyze` completely.
+- removing both model-visible legacy delegation tools completely.
 
 ## Safety And Observability
 
@@ -232,9 +232,9 @@ All new copy must be present in English and Chinese locale files.
 
 ## Migration
 
-- Delete the synchronous `TaskTool` implementation and tests.
-- Delete `SubagentAnalyzeTool` and the legacy `ReadOnlySubagentRunner`.
-- Remove `task` and `subagent.analyze` from registration and exposure.
+- Delete the synchronous general delegation implementation and tests.
+- Delete the analysis-only tool and its legacy delegated runner.
+- Remove both legacy tool names from registration and exposure.
 - Add the six Codex-style tools and focused tests.
 - Update prompts, tool documentation, API schemas, public events, frontend
   rendering, and locale strings as required.

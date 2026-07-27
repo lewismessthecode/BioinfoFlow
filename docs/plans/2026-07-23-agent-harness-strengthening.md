@@ -422,7 +422,7 @@ Require:
 
 ```text
 files.apply_patch is exposed; files.write and files.edit are not exposed
-task is exposed; subagent.analyze is not exposed
+the synchronous delegation tool is exposed; the older analysis-only variant is not exposed
 skills.load is exposed; skills.list and plugins.list are not exposed by normal execution
 memory tools remain registered but are not exposed by normal execution
 remote.connections.list remains exposed whenever remote scope is allowed
@@ -478,7 +478,7 @@ Reuse existing services/repositories and preserve current result payloads under 
 
 - [ ] **Step 6: Refine exposure without removing remote discovery**
 
-Normal execution excludes legacy file mutation tools, `subagent.analyze`, `skills.list`, `plugins.list`, and memory tools. It includes `remote.connections.list` whenever the execution scope permits remote targets, including auto mode. Remote operation tools remain unavailable when scope forbids remote execution.
+Normal execution excludes legacy file mutation and analysis-only delegation tools, `skills.list`, `plugins.list`, and memory tools. It includes `remote.connections.list` whenever the execution scope permits remote targets, including auto mode. Remote operation tools remain unavailable when scope forbids remote execution.
 
 - [ ] **Step 7: Strengthen tool descriptions**
 

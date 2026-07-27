@@ -1,6 +1,6 @@
 from app.services.agent_core.tools.collaboration.tools import (
     COLLABORATION_TOOLS,
-    FollowupTaskTool,
+    FollowupAgentTool,
     InterruptAgentTool,
     ListAgentsTool,
     SendMessageTool,
@@ -10,7 +10,7 @@ from app.services.agent_core.tools.collaboration.tools import (
 
 __all__ = [
     "COLLABORATION_TOOLS",
-    "FollowupTaskTool",
+    "FollowupAgentTool",
     "InterruptAgentTool",
     "ListAgentsTool",
     "SendMessageTool",

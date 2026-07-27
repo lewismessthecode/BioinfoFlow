@@ -1089,6 +1089,130 @@ async def test_spawn_agent_returns_after_enqueue_without_waiting_for_child(
 
 
 @pytest.mark.asyncio
+async def test_spawn_without_override_ignores_authentication_failing_catalog_default_and_completes(
+    db_session, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    await _create_probe_model(
+        db_session,
+        model_name="catalog-default-auth-failing",
+        test_status={
+            "success": False,
+            "error_code": "authentication_error",
+            "http_status": 401,
+        },
+    )
+    root, parent_turn = await _create_parent_turn(db_session)
+    probe_calls: list[dict] = []
+
+    async def forbidden_probe(_self, **kwargs):
+        probe_calls.append(kwargs)
+        raise AssertionError("an omitted override must inherit the parent turn model")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        forbidden_probe,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+
+    service = AgentCollaborationService(db_session)
+    spawned = await service.spawn_agent(
+        parent_session_id=str(root.id),
+        parent_turn_id=str(parent_turn.id),
+        task_name="inherits_parent",
+        message="Use the explicitly working parent model.",
+        fork_turns="none",
+    )
+    child_turn = await service.turns.get_fresh(spawned.child_turn_id)
+    assert child_turn is not None
+    child_turn.status = AgentTurnStatus.COMPLETED
+    child_turn.final_text = "completed with parent model"
+    await db_session.commit()
+    await service.publish_child_terminal(turn_id=spawned.child_turn_id)
+
+    agents = await service.list_agents(
+        caller_session_id=str(root.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    child = next(agent for agent in agents if agent.task_name == "/root/inherits_parent")
+    assert probe_calls == []
+    assert spawned.requested_model is None
+    assert spawned.effective_model == "parent-model"
+    assert child.status == "completed"
+    assert child.final_text == "completed with parent model"
+
+
+@pytest.mark.asyncio
+async def test_spawn_authentication_failing_model_is_fresh_probed_then_falls_back_to_parent(
+    db_session, monkeypatch
+) -> None:
+    await _seed_workspace(db_session)
+    failing_model = await _create_probe_model(
+        db_session,
+        model_name="catalog-default-auth-failing",
+    )
+    failing_model_id = str(failing_model.id)
+    root, parent_turn = await _create_parent_turn(db_session)
+    probe_calls: list[dict] = []
+
+    async def authentication_failure(_self, **kwargs):
+        probe_calls.append(kwargs)
+        return LlmProviderProbeResult(
+            success=False,
+            latency_ms=1,
+            wire_protocol="chat_completions",
+            model_id=kwargs["model_id"],
+            error_code="authentication_error",
+            error_message="HTTP 401 secret provider payload",
+            http_status=401,
+        )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        authentication_failure,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda *_: None,
+    )
+
+    spawned = await AgentCollaborationService(db_session).spawn_agent(
+        parent_session_id=str(root.id),
+        parent_turn_id=str(parent_turn.id),
+        task_name="fallback_parent",
+        message="Probe the requested model first.",
+        fork_turns="none",
+        model=failing_model_id,
+    )
+    child = await db_session.get(AgentSession, spawned.child_session_id)
+    child_turn = await db_session.get(AgentTurn, spawned.child_turn_id)
+
+    assert [call["model_id"] for call in probe_calls] == [
+        "catalog-default-auth-failing"
+    ]
+    assert spawned.requested_model == failing_model_id
+    assert spawned.effective_model == "parent-model"
+    assert spawned.model_fallback is True
+    assert spawned.fallback_reason == "requested_model_unavailable"
+    assert child is not None
+    assert child.session_metadata["collaboration"]["model_fallback"] is True
+    assert child.session_metadata["collaboration"]["fallback_reason"] == (
+        "requested_model_unavailable"
+    )
+    assert child_turn is not None
+    turn_collaboration = child_turn.model_profile_snapshot["metadata"][
+        "collaboration"
+    ]
+    assert turn_collaboration["effective_model"] == "parent-model"
+    assert turn_collaboration["model_fallback"] is True
+    assert "secret" not in repr(child.session_metadata).lower()
+
+
+@pytest.mark.asyncio
 async def test_spawn_agent_fails_closed_for_child_callers(db_session) -> None:
     await _seed_workspace(db_session)
     root, root_turn = await _create_parent_turn(db_session)
@@ -1906,6 +2030,33 @@ async def test_list_agents_uses_generic_nonempty_error_for_unknown_empty_failure
     )
     assert failed.error_code == "provider_internal_opaque"
     assert failed.error_message == "Agent failed before completing the task."
+
+
+@pytest.mark.asyncio
+async def test_authentication_failure_persists_safe_nonempty_child_error(
+    db_session,
+) -> None:
+    await _seed_workspace(db_session)
+    root, _turn = await _create_parent_turn(db_session)
+    child, failed_turn = await _create_child_with_turn(
+        db_session,
+        root=root,
+        name="auth_failure",
+        status=AgentTurnStatus.FAILED,
+    )
+    failed_turn.error_code = "model_request_failed"
+    failed_turn.error_message = "HTTP 401 raw-secret-token authentication denied"
+    await db_session.commit()
+
+    await AgentCollaborationService(db_session).publish_child_terminal(
+        turn_id=str(failed_turn.id)
+    )
+
+    await db_session.refresh(failed_turn)
+    assert failed_turn.final_text in {None, ""}
+    assert failed_turn.error_code == "model_request_failed"
+    assert failed_turn.error_message == "Model provider authentication failed."
+    assert "secret" not in failed_turn.error_message.lower()
 
 
 async def _create_child_with_turn(

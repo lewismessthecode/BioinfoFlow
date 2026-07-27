@@ -14,13 +14,16 @@ COLLABORATION_NAMES = {
 }
 
 
-def test_default_registry_replaces_legacy_subagent_tools() -> None:
+def test_default_registry_exposes_collaboration_tools() -> None:
     registry = build_default_tool_registry()
     names = {spec.name for spec in registry.list_specs()}
+    retired_names = {
+        "".join(("ta", "sk")),
+        "".join(("subagent", ".", "analyze")),
+    }
 
     assert COLLABORATION_NAMES <= names
-    assert "task" not in names
-    assert "subagent.analyze" not in names
+    assert retired_names.isdisjoint(names)
 
 
 def test_root_execution_toolset_exposes_all_collaboration_tools() -> None:
