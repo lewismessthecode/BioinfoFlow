@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { WorkflowRegisterDialog } from "@/app/(app)/workflows/components/workflow-register-dialog"
 import { apiRequest } from "@/lib/api"
+import enMessages from "@/messages/en.json"
+import zhMessages from "@/messages/zh-CN.json"
 import { renderAppPage } from "@/tests/app-test-utils"
 
 const { toastErrorMock, toastSuccessMock } = vi.hoisted(() => ({
@@ -166,6 +168,17 @@ describe("WorkflowRegisterDialog", () => {
 
   afterEach(() => {
     vi.clearAllMocks()
+  })
+
+  it("keeps workflow registry selection copy explicit in both locales", () => {
+    expect(enMessages.workflows.registerDialog.registry).toEqual({
+      asWritten: "Use image references as written",
+      hint: "Optional. Select a registry only when unqualified workflow images should be resolved through it; explicit image hosts are kept as written.",
+    })
+    expect(zhMessages.workflows.registerDialog.registry).toEqual({
+      asWritten: "按镜像引用原样使用",
+      hint: "可选。仅当未限定 host 的工作流镜像需要通过指定仓库解析时才选择仓库；带显式 host 的镜像引用保持原样。",
+    })
   })
 
   it("shows a compact local WDL registration preview without the legacy production warning copy", async () => {
