@@ -623,10 +623,23 @@ def _mode_context(agent_session) -> str:
         (getattr(agent_session, "toolset_policy", None) or {}).get("name") or "default"
     )
     if policy_name == "plan":
-        guidance = (
-            "Use the available tools for read-only investigation, then call "
-            "`exit_plan_mode` with a concrete plan to request approval to act."
+        lineage = getattr(agent_session, "lineage", None) or {}
+        child_agent = (
+            str(getattr(agent_session, "role_profile", ""))
+            in {"worker", "subagent"}
+            or getattr(agent_session, "parent_session_id", None) is not None
+            or bool(lineage.get("parent_session_id"))
         )
+        if child_agent:
+            guidance = (
+                "Use the available tools for read-only investigation, then return "
+                "a concrete plan to the parent/orchestrator."
+            )
+        else:
+            guidance = (
+                "Use the available tools for read-only investigation, then call "
+                "`exit_plan_mode` with a concrete plan to request approval to act."
+            )
     else:
         guidance = (
             "Use the available tools and permission mode to carry out the user's "

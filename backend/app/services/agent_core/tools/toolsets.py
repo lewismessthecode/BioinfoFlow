@@ -162,13 +162,18 @@ class ToolsetExposure:
         )
         if not skills_available:
             names.discard("skills.load")
-        specs = self.registry.list_specs()
-        plan_names = _plan_tool_names(
-            specs,
+        plan_policy = dict(PLAN_TOOLSET_POLICY)
+        allowed_tools = (policy or {}).get("allowed_tools")
+        if isinstance(allowed_tools, list) and allowed_tools:
+            plan_policy["allowed_tools"] = allowed_tools
+        plan_names = self.exposed_names(
+            policy=plan_policy,
             role=role,
             execution_target=execution_target,
             execution_scope=execution_scope,
         )
+        if not skills_available:
+            plan_names.discard("skills.load")
         exposed = [self.registry.get(name).spec for name in names]
         return sorted(exposed, key=lambda spec: _tool_spec_order_key(spec, plan_names))
 
