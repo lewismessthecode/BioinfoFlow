@@ -11,6 +11,7 @@ from app.models.workspace import Workspace
 from app.path_layout import deliveries_root, project_home
 from app.services.agent_core.sandbox.local_boundary import (
     LocalFilesystemBoundaryResolver,
+    local_boundary_from_tool_context,
 )
 from app.utils.exceptions import PermissionDeniedError
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -152,6 +153,70 @@ async def test_local_boundary_exposes_existing_unix_docker_socket_only_to_sandbo
     assert socket_root.resolve() not in boundary.read_roots
     with pytest.raises(PermissionDeniedError, match="outside allowed roots"):
         boundary.policy.require_allowed_path(resolved_socket)
+
+
+@pytest.mark.asyncio
+async def test_local_boundary_keeps_docker_socket_inside_ordinary_root_bash_only(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "bioinfoflow-product"
+    data_root = repo_root / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
+    monkeypatch.setattr(settings, "agent_filesystem_roots", "", raising=False)
+    deliveries_root().mkdir(parents=True)
+    docker_socket = deliveries_root() / "docker.sock"
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+    monkeypatch.chdir(deliveries_root())
+
+    unix_socket = socket.socket(socket.AF_UNIX)
+    unix_socket.bind(docker_socket.name)
+    try:
+        boundary = await LocalFilesystemBoundaryResolver(db_session).resolve(
+            SimpleNamespace(project_id=None, workspace_id=DEFAULT_WORKSPACE_ID)
+        )
+    finally:
+        unix_socket.close()
+
+    resolved_socket = docker_socket.resolve()
+    with pytest.raises(PermissionDeniedError, match="protected"):
+        boundary.policy.require_allowed_path(resolved_socket)
+    with pytest.raises(PermissionDeniedError, match="protected"):
+        boundary.policy.require_parent_dir(resolved_socket)
+    assert resolved_socket in boundary.sandbox_read_roots
+    assert resolved_socket in boundary.sandbox_write_roots
+    assert resolved_socket not in boundary.protected_roots
+
+
+@pytest.mark.asyncio
+async def test_fallback_boundary_keeps_docker_socket_inside_ordinary_root_bash_only(
+    tmp_path,
+    monkeypatch,
+):
+    docker_socket = tmp_path / "docker.sock"
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(tmp_path))
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+    monkeypatch.chdir(tmp_path)
+
+    unix_socket = socket.socket(socket.AF_UNIX)
+    unix_socket.bind(docker_socket.name)
+    try:
+        boundary = await local_boundary_from_tool_context(SimpleNamespace())
+    finally:
+        unix_socket.close()
+
+    resolved_socket = docker_socket.resolve()
+    with pytest.raises(PermissionDeniedError, match="protected"):
+        boundary.policy.require_allowed_path(resolved_socket)
+    with pytest.raises(PermissionDeniedError, match="protected"):
+        boundary.policy.require_parent_dir(resolved_socket)
+    assert resolved_socket in boundary.sandbox_read_roots
+    assert resolved_socket in boundary.sandbox_write_roots
+    assert resolved_socket not in boundary.protected_roots
 
 
 @pytest.mark.asyncio

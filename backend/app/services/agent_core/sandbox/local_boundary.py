@@ -44,13 +44,15 @@ class LocalFilesystemBoundaryResolver:
         write_roots = _dedupe([working_directory, *_configured_roots()])
         read_roots = _dedupe([*write_roots, reference_root(), database_root()])
         protected_roots = _protected_roots()
+        docker_socket = _existing_unix_docker_socket()
         policy = FilesystemPolicy(
             read_roots=read_roots,
             write_roots=write_roots,
-            protected_roots=protected_roots,
+            protected_roots=_dedupe(
+                [*protected_roots, *([docker_socket] if docker_socket else [])]
+            ),
             default_root=working_directory,
         )
-        docker_socket = _existing_unix_docker_socket()
         sandbox_read_roots = _dedupe(
             [*policy.read_roots, *([docker_socket] if docker_socket else [])]
         )
@@ -63,7 +65,7 @@ class LocalFilesystemBoundaryResolver:
             write_roots=tuple(policy.write_roots),
             sandbox_read_roots=tuple(sandbox_read_roots),
             sandbox_write_roots=tuple(sandbox_write_roots),
-            protected_roots=tuple(policy.protected_roots),
+            protected_roots=tuple(protected_roots),
             policy=policy,
         )
 
@@ -71,8 +73,13 @@ class LocalFilesystemBoundaryResolver:
 async def local_boundary_from_tool_context(context) -> LocalFilesystemBoundary:
     if getattr(context, "db", None) is not None and hasattr(context, "workspace_id"):
         return await LocalFilesystemBoundaryResolver(context.db).resolve(context)
-    policy = FilesystemPolicy()
+    protected_roots = _protected_roots()
     docker_socket = _existing_unix_docker_socket()
+    policy = FilesystemPolicy(
+        protected_roots=_dedupe(
+            [*protected_roots, *([docker_socket] if docker_socket else [])]
+        )
+    )
     sandbox_read_roots = _dedupe(
         [*policy.read_roots, *([docker_socket] if docker_socket else [])]
     )
@@ -85,7 +92,7 @@ async def local_boundary_from_tool_context(context) -> LocalFilesystemBoundary:
         write_roots=tuple(policy.write_roots),
         sandbox_read_roots=tuple(sandbox_read_roots),
         sandbox_write_roots=tuple(sandbox_write_roots),
-        protected_roots=tuple(policy.protected_roots),
+        protected_roots=tuple(protected_roots),
         policy=policy,
     )
 
