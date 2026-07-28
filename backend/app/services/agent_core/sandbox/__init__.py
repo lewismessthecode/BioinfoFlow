@@ -5,6 +5,7 @@ from app.services.agent_core.sandbox.local_boundary import (
     local_boundary_from_tool_context,
 )
 from app.services.agent_core.sandbox.process_sandbox import (
+    SandboxAvailability,
     SandboxResult,
     SandboxRunner,
     SandboxUnavailableError,
@@ -16,6 +17,7 @@ __all__ = [
     "LocalFilesystemBoundary",
     "LocalFilesystemBoundaryResolver",
     "local_boundary_from_tool_context",
+    "SandboxAvailability",
     "SandboxResult",
     "SandboxRunner",
     "SandboxUnavailableError",

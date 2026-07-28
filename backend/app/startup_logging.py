@@ -5,6 +5,7 @@ from os import cpu_count
 from pathlib import Path
 from typing import Any
 
+from app.services.agent_core.sandbox import SandboxRunner
 from app.utils.logging import get_logger
 
 _PROVIDER_KEY_FIELDS = (
@@ -45,6 +46,7 @@ def build_startup_summary(settings: Any) -> dict[str, Any]:
     This deliberately logs configuration shape and path choices, not secrets.
     It is meant to be visible in local terminals and `docker compose logs`.
     """
+    sandbox_summary = _sandbox_summary(settings)
     return {
         "app": {
             "name": settings.app_name,
@@ -98,6 +100,7 @@ def build_startup_summary(settings: Any) -> dict[str, Any]:
             "max_iterations": int(settings.agent_max_iterations),
             "compact_threshold": int(settings.agent_compact_threshold),
             "sandbox_enabled": bool(settings.agent_sandbox_enabled),
+            "sandbox": sandbox_summary,
             "observability": bool(settings.agent_observability),
             "langsmith_tracing": bool(
                 settings.langsmith_tracing or settings.langsmith_tracing_v2
@@ -126,6 +129,48 @@ def log_startup_summary(settings: Any, *, logger: Any | None = None) -> None:
 
 def _presence(value: str | None) -> str:
     return "set" if value else "unset"
+
+
+def _sandbox_summary(settings: Any) -> dict[str, Any]:
+    enabled = bool(settings.agent_sandbox_enabled)
+    fail_closed = bool(getattr(settings, "agent_sandbox_fail_closed", True))
+    summary = {
+        "enabled": enabled,
+        "fail_closed": fail_closed,
+        "adapter": None,
+        "executable": None,
+        "available": None,
+        "category": None,
+        "message": None,
+    }
+    if not enabled:
+        return summary
+
+    try:
+        availability = SandboxRunner.from_settings(settings).availability()
+    except Exception as exc:
+        summary.update(
+            available=False,
+            category="probe_os_error",
+            message=_bounded_message(str(exc)),
+        )
+        return summary
+
+    summary.update(
+        adapter=availability.adapter,
+        executable=availability.executable,
+        available=availability.available,
+        category=availability.failure_category,
+        message=availability.failure_message,
+    )
+    return summary
+
+
+def _bounded_message(message: str) -> str:
+    printable = "".join(
+        character if character.isprintable() else " " for character in message
+    )
+    return " ".join(printable.split())[:400]
 
 
 def _bytes_to_mb(value: int) -> int:

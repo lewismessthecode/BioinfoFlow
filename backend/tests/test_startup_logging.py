@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from app.startup_logging import build_startup_summary, log_startup_summary
+from app.services.agent_core.sandbox import SandboxAvailability
 
 
 def _settings(tmp_path: Path):
@@ -35,6 +36,9 @@ def _settings(tmp_path: Path):
         agent_max_iterations=90,
         agent_compact_threshold=50000,
         agent_sandbox_enabled=False,
+        agent_sandbox_fail_closed=True,
+        agent_sandbox_allow_network=False,
+        agent_sandbox_allow_unsandboxed=False,
         agent_observability=True,
         langsmith_tracing=True,
         cors_origins=["http://localhost:5173"],
@@ -83,6 +87,15 @@ def test_build_startup_summary_surfaces_operational_config_without_secrets(tmp_p
     assert summary["agent_core"]["runtime"] == "agent_core"
     assert summary["agent_core"]["model_source"] == "llm_catalog"
     assert summary["agent_core"]["max_iterations"] == 90
+    assert summary["agent_core"]["sandbox"] == {
+        "enabled": False,
+        "fail_closed": True,
+        "adapter": None,
+        "executable": None,
+        "available": None,
+        "category": None,
+        "message": None,
+    }
     assert "max_rounds" not in summary["agent_core"]
     assert "agent" not in summary
     assert "hermes" not in repr(summary).lower()
@@ -94,6 +107,56 @@ def test_build_startup_summary_surfaces_operational_config_without_secrets(tmp_p
     assert summary["providers"]["gemini_api_key"] == "unset"
     assert "sk-ant-secret" not in repr(summary)
     assert "sk-openai-secret" not in repr(summary)
+
+
+def test_build_startup_summary_reports_sandbox_probe_diagnostic(tmp_path, monkeypatch):
+    source = _settings(tmp_path)
+    source.agent_sandbox_enabled = True
+    diagnostic = SandboxAvailability(
+        adapter="bubblewrap",
+        executable="/usr/bin/bwrap",
+        available=False,
+        failure_category="probe_exit",
+        failure_message="bwrap: No permissions to create new namespace",
+    )
+    monkeypatch.setattr(
+        "app.startup_logging.SandboxRunner.available_adapter",
+        lambda _runner: None,
+    )
+    monkeypatch.setattr(
+        "app.startup_logging.SandboxRunner.availability",
+        lambda _runner: diagnostic,
+    )
+
+    summary = build_startup_summary(source)
+
+    assert summary["agent_core"]["sandbox"] == {
+        "enabled": True,
+        "fail_closed": True,
+        "adapter": "bubblewrap",
+        "executable": "/usr/bin/bwrap",
+        "available": False,
+        "category": "probe_exit",
+        "message": "bwrap: No permissions to create new namespace",
+    }
+
+
+def test_build_startup_summary_does_not_raise_when_sandbox_probe_crashes(
+    tmp_path, monkeypatch
+):
+    source = _settings(tmp_path)
+    source.agent_sandbox_enabled = True
+    monkeypatch.setattr(
+        "app.startup_logging.SandboxRunner.availability",
+        lambda _runner: (_ for _ in ()).throw(RuntimeError("unexpected probe error")),
+    )
+
+    summary = build_startup_summary(source)
+
+    assert summary["agent_core"]["sandbox"]["enabled"] is True
+    assert summary["agent_core"]["sandbox"]["available"] is False
+    assert summary["agent_core"]["sandbox"]["category"] == "probe_os_error"
+    assert summary["agent_core"]["sandbox"]["message"] == "unexpected probe error"
 
 
 def test_log_startup_summary_emits_named_structured_event(tmp_path):
