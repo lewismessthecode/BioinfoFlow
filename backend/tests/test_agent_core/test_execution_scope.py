@@ -183,3 +183,45 @@ def test_manual_local_only_scope_hides_all_remote_tools():
     )
 
     assert not {name for name in names if name.startswith("remote.")}
+
+
+def test_plan_exposes_bash_only_for_local_scope():
+    exposure = ToolsetExposure(build_default_tool_registry())
+
+    local_names = exposure.exposed_names(
+        policy={"name": "plan"},
+        execution_scope={
+            "mode": "manual",
+            "selected_targets": [{"type": "local"}],
+        },
+    )
+    remote_names = exposure.exposed_names(
+        policy={"name": "plan"},
+        execution_target={"type": "remote_ssh", "connection_id": "conn-1"},
+    )
+
+    assert "bash" in local_names
+    assert "remote.exec" not in local_names
+    assert "bash" not in remote_names
+
+
+def test_plan_exposes_remote_exec_only_for_selected_remote_scope():
+    exposure = ToolsetExposure(build_default_tool_registry())
+
+    auto_names = exposure.exposed_names(
+        policy={"name": "plan"},
+        execution_scope={"mode": "auto"},
+    )
+    remote_names = exposure.exposed_names(
+        policy={"name": "plan"},
+        execution_scope={
+            "mode": "manual",
+            "selected_targets": [
+                {"type": "remote_ssh", "connection_id": "conn-selected"}
+            ],
+        },
+    )
+
+    assert "remote.exec" not in auto_names
+    assert "remote.exec" in remote_names
+    assert "bash" not in remote_names

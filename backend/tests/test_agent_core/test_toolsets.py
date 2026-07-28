@@ -46,7 +46,7 @@ def test_canonical_execution_policy_exposes_platform_lifecycle_tools() -> None:
     } <= exposed
 
 
-def test_default_and_plan_use_explicit_small_core_surfaces() -> None:
+def test_default_uses_explicit_small_core_surface() -> None:
     exposure = ToolsetExposure(build_default_tool_registry())
 
     assert exposure.exposed_names(policy={"name": "default"}) == {
@@ -57,16 +57,84 @@ def test_default_and_plan_use_explicit_small_core_surfaces() -> None:
         "web.search",
         "workflows.inspect",
     }
-    assert exposure.exposed_names(policy={"name": "plan"}) == {
+
+
+def test_plan_derives_registered_read_platform_surface() -> None:
+    exposure = ToolsetExposure(build_default_tool_registry())
+
+    exposed = exposure.exposed_names(
+        policy={"name": "plan"},
+        execution_scope={
+            "mode": "manual",
+            "selected_targets": [{"type": "local"}],
+        },
+    )
+
+    assert {
         "ask_user",
+        "bash",
         "exit_plan_mode",
+        "projects.get",
         "projects.list",
+        "projects.workflows.list",
         "runs.inspect",
+        "runs.list",
+        "scheduler.resources",
+        "scheduler.status",
         "skills.load",
-        "todo_write",
         "web.search",
         "workflows.inspect",
+        "workflows.list",
+    } <= exposed
+    assert {
+        "edit",
+        "followup_task",
+        "interrupt_agent",
+        "memory.propose",
+        "runs.submit",
+        "send_message",
+        "spawn_agent",
+        "todo_write",
+        "write",
+    }.isdisjoint(exposed)
+
+
+def test_plan_model_visible_and_host_callable_static_surfaces_match() -> None:
+    exposure = ToolsetExposure(build_default_tool_registry())
+    kwargs = {
+        "policy": {"name": "plan"},
+        "execution_scope": {
+            "mode": "manual",
+            "selected_targets": [{"type": "local"}],
+        },
     }
+
+    assert exposure.exposed_names(**kwargs) == exposure.callable_names(**kwargs)
+
+
+@pytest.mark.parametrize("role", ["worker", "subagent"])
+def test_plan_keeps_worker_surfaces_narrow_and_static(role: str) -> None:
+    exposure = ToolsetExposure(build_default_tool_registry())
+    kwargs = {
+        "policy": {"name": "plan"},
+        "role": role,
+        "execution_scope": {
+            "mode": "manual",
+            "selected_targets": [{"type": "local"}],
+        },
+    }
+
+    exposed = exposure.exposed_names(**kwargs)
+
+    assert exposed == exposure.callable_names(**kwargs)
+    assert "scheduler.status" not in exposed
+    assert "bash" not in exposed
+    assert {
+        "followup_task",
+        "interrupt_agent",
+        "send_message",
+        "todo_write",
+    }.isdisjoint(exposed)
 
 
 def test_exposed_specs_hide_skill_loader_when_no_skills_are_available() -> None:
@@ -214,7 +282,7 @@ def test_remote_target_never_widens_explicit_allowed_tools() -> None:
     )
 
 
-def test_plan_capabilities_never_disclose_mutating_or_remote_execution_tools() -> None:
+def test_plan_capabilities_never_disclose_mutating_tools() -> None:
     exposed = ToolsetExposure(build_default_tool_registry()).exposed_names(
         policy={
             "name": "plan",
@@ -227,7 +295,6 @@ def test_plan_capabilities_never_disclose_mutating_or_remote_execution_tools() -
         "projects.delete",
         "runs.submit",
         "workflows.update",
-        "remote.exec",
     }.isdisjoint(exposed)
 
 

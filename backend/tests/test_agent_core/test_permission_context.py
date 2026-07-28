@@ -1198,3 +1198,72 @@ async def test_unbounded_remote_read_file_is_audited_but_allowed_in_bypass(
     assert result.status == "requested"
     assert result.permission_decision["decision"] == "allow"
     assert result.permission_decision["requires_explicit_approval"] is True
+
+
+@pytest.mark.asyncio
+async def test_plan_remote_exec_allows_reads_and_denies_writes_without_approval(
+    db_session,
+) -> None:
+    db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
+    connection = RemoteConnection(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        name="Plan host",
+        host="plan.internal",
+        port=22,
+        username="analyst",
+        auth_method="agent",
+    )
+    db_session.add(connection)
+    await db_session.commit()
+    await db_session.refresh(connection)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="bypass",
+        execution_target={
+            "type": "remote_ssh",
+            "connection_id": str(connection.id),
+        },
+    )
+    session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"mode": "plan"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Inspect the selected host without changing it.",
+    )
+    executor = AgentToolExecutor(db_session, build_default_tool_registry())
+    context = AgentToolContext(
+        db=db_session,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+    )
+
+    read_result = await executor.execute(
+        tool_name="remote.exec",
+        input={"command": "pwd"},
+        context=context,
+        toolset_policy={"name": "plan"},
+        defer_execution=True,
+    )
+    write_result = await executor.execute(
+        tool_name="remote.exec",
+        input={"command": "touch output.txt"},
+        context=context,
+        toolset_policy={"name": "plan"},
+    )
+
+    assert read_result.status == "requested"
+    assert write_result.status == "failed"
+    assert write_result.error["type"] == "PermissionDeniedError"
+    assert write_result.permission_decision["decision"] == "deny"
+    assert not write_result.requires_resume

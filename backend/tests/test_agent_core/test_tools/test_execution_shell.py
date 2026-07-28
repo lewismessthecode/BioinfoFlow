@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from app.config import settings
-from app.repositories.agent_core_repo import AgentActionRepository
+from app.repositories.agent_core_repo import AgentActionRepository, AgentSessionRepository
 from app.models.project import Project
 from app.models.workspace import Workspace
 from app.path_layout import (
@@ -288,6 +288,7 @@ async def _shell_context(
     db_session,
     *,
     permission_mode: str = "guarded_auto",
+    mode: str = "act",
 ) -> tuple[AgentToolDispatcher, AgentToolContext, Path]:
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     project = Project(
@@ -311,6 +312,13 @@ async def _shell_context(
         title="Shell",
         permission_mode=permission_mode,
     )
+    if mode != "act":
+        session = await core.update_session(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            updates={"mode": mode},
+        )
     turn = await core.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -329,6 +337,133 @@ async def _shell_context(
         ),
         workspace_root,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("command", "expected_stdout"),
+    [
+        ("pwd", None),
+        ("git status --short", None),
+        ("cat plan-input.txt", "plan-safe"),
+    ],
+)
+async def test_plan_bash_runs_only_read_commands(
+    db_session, command: str, expected_stdout: str | None
+):
+    dispatcher, context, workspace_root = await _shell_context(
+        db_session,
+        mode="plan",
+    )
+    (workspace_root / "plan-input.txt").write_text("plan-safe")
+
+    result = await dispatcher.dispatch(
+        tool_name="bash",
+        input={"command": command, "cwd": str(workspace_root)},
+        context=context,
+    )
+
+    assert result.status in {"completed", "failed"}
+    assert result.status != "waiting_decision"
+    if expected_stdout is not None:
+        assert result.status == "completed"
+        assert result.result["stdout"] == expected_stdout
+    if result.error is not None:
+        assert result.error["type"] != "PermissionDeniedError"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf changed > plan-output.txt",
+        "touch plan-output.txt",
+        "unknown-command plan-output.txt",
+    ],
+)
+async def test_plan_bash_rejects_non_read_commands_without_approval(
+    db_session, command: str
+):
+    dispatcher, context, workspace_root = await _shell_context(
+        db_session,
+        permission_mode="bypass",
+        mode="plan",
+    )
+
+    result = await dispatcher.dispatch(
+        tool_name="bash",
+        input={"command": command, "cwd": str(workspace_root)},
+        context=context,
+    )
+
+    assert result.status == "failed"
+    assert result.error["type"] == "PermissionDeniedError"
+    assert result.permission_decision["decision"] == "deny"
+    assert not (workspace_root / "plan-output.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_plan_bash_resume_rejects_previously_approved_write(
+    db_session, monkeypatch
+):
+    dispatcher, context, workspace_root = await _shell_context(db_session)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
+    output = workspace_root / "approved-before-plan.txt"
+    pending = await dispatcher.dispatch(
+        tool_name="bash",
+        input={"command": f"touch {output}", "cwd": str(workspace_root)},
+        context=context,
+    )
+    assert pending.status == "waiting_decision"
+    await AgentCoreService(db_session).decide_action(
+        action_id=pending.action_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+        note="approved before entering Plan mode",
+    )
+    agent_session = await AgentSessionRepository(db_session).get(context.session_id)
+    await AgentSessionRepository(db_session).update_all(
+        agent_session,
+        toolset_policy={"name": "plan"},
+        permission_policy_version=agent_session.permission_policy_version + 1,
+    )
+
+    resumed = await dispatcher.resume_action(
+        action_id=pending.action_id,
+        context=context,
+    )
+
+    assert resumed.status == "failed"
+    assert resumed.error["type"] == "PermissionDeniedError"
+    assert resumed.permission_decision["decision"] == "deny"
+    assert not output.exists()
+
+
+@pytest.mark.asyncio
+async def test_plan_bash_critical_command_never_enters_approval(db_session):
+    dispatcher, context, workspace_root = await _shell_context(
+        db_session,
+        permission_mode="bypass",
+        mode="plan",
+    )
+
+    result = await dispatcher.dispatch(
+        tool_name="bash",
+        input={"command": "sudo rm -rf -- /./", "cwd": str(workspace_root)},
+        context=context,
+    )
+    events = await AgentCoreService(db_session).list_events_for_turn(
+        turn_id=context.turn_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    assert result.status == "failed"
+    assert result.error["type"] == "PermissionDeniedError"
+    assert "action.waiting_decision" not in {event.type for event in events}
 
 
 @pytest.mark.asyncio
