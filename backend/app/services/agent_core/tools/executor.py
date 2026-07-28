@@ -956,11 +956,7 @@ class AgentToolExecutor:
             role=permission_context.role,
             execution_target=snapshot["execution_target"],
             execution_scope=snapshot.get("execution_scope"),
-            model_visible=bool(
-                (action.permission_context_snapshot or {}).get(
-                    "model_exposure_required"
-                )
-            ),
+            model_visible=False,
             skills_available=bool(
                 (action.permission_context_snapshot or {}).get(
                     "model_skills_available",

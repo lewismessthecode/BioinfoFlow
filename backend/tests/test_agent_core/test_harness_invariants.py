@@ -1024,6 +1024,99 @@ async def test_loop_refreshes_permission_context_before_each_model_iteration(
 
 
 @pytest.mark.asyncio
+async def test_plan_approval_switches_to_execution_and_continues_same_turn(
+    db_session, monkeypatch
+):
+    enqueued_actions: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda action_id, turn_id, session_id: enqueued_actions.append(
+            (action_id, turn_id, session_id)
+        ),
+    )
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session)
+
+    calls = 0
+
+    class PlanApprovalGateway:
+        async def invoke(
+            self,
+            invocation: ModelInvocation,
+        ) -> AsyncIterator[ModelEvent]:
+            nonlocal calls
+            calls += 1
+            tool_names = {tool.name for tool in invocation.tools}
+            if calls == 1:
+                assert "exit_plan_mode" in tool_names
+                assert {"edit", "write"}.isdisjoint(tool_names)
+                yield ToolCallDelta(
+                    index=0,
+                    call_id="tool-call-exit-plan",
+                    name="exit_plan_mode",
+                    arguments_delta=json.dumps(
+                        {"plan": "1. Inspect code\n2. Apply fix\n3. Run tests"}
+                    ),
+                )
+                yield CompletionMetadata(
+                    response_id="chatcmpl-plan-approval",
+                    finish_reason="tool_calls",
+                )
+            else:
+                assert {"bash", "edit", "write"} <= tool_names
+                assert "exit_plan_mode" not in tool_names
+                yield TextDelta(text="Implementation complete.")
+                yield CompletionMetadata(
+                    response_id="chatcmpl-execution-final",
+                    finish_reason="stop",
+                )
+
+    service = AgentCoreService(db_session)
+    service.runtime.model_gateway = PlanApprovalGateway()
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        toolset_policy={"name": "plan"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Plan the fix, then implement it after approval.",
+    )
+
+    waiting_turn = await service.runtime.run_turn(str(turn.id))
+    assert waiting_turn.status == "waiting_approval"
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    assert len(actions) == 1
+    assert actions[0].name == "exit_plan_mode"
+    assert actions[0].status == AgentActionStatus.WAITING_DECISION
+
+    decided = await service.decide_action(
+        action_id=str(actions[0].id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+    assert decided.status == AgentActionStatus.REQUESTED
+    execution_session = await service.session_repo.get(str(session.id))
+    assert execution_session.toolset_policy == EXECUTION_TOOLSET_POLICY
+    assert enqueued_actions == [
+        (str(actions[0].id), str(turn.id), str(session.id))
+    ]
+
+    resumed_turn = await service.runtime.resume_turn_after_action(str(actions[0].id))
+    assert str(resumed_turn.id) == str(turn.id)
+    assert resumed_turn.status == "completed"
+    assert resumed_turn.final_text == "Implementation complete."
+    resumed_action = await AgentActionRepository(db_session).get(str(actions[0].id))
+    assert resumed_action.status == AgentActionStatus.COMPLETED
+    assert resumed_action.result == {"approved": True}
+    assert calls == 2
+
+
+@pytest.mark.asyncio
 async def test_approval_resume_executes_tool_and_continues_turn(
     db_session, monkeypatch, run_shell_without_platform_sandbox
 ):
