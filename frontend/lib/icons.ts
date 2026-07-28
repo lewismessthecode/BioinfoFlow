@@ -138,7 +138,7 @@ export {
   Sparkles,
   Square,
   SquarePen,
-  Star,
+  Stethoscope,
   Sun,
   Terminal,
   TerminalSquare,
