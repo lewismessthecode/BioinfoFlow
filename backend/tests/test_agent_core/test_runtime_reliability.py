@@ -1317,6 +1317,81 @@ async def test_runtime_recovers_when_previously_offered_tool_becomes_unexposed(
 
 
 @pytest.mark.asyncio
+async def test_runtime_fails_closed_for_stale_and_never_offered_mixed_batch(
+    db_session, db_engine, monkeypatch
+):
+    model_calls = 0
+    session_id: str | None = None
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def fake_invoke(_gateway, invocation: ModelInvocation):
+        nonlocal model_calls
+        model_calls += 1
+        yield ResponseStarted(streaming=False)
+        offered = {tool.name for tool in invocation.tools}
+        assert "write" in offered
+        assert "memory__list" not in offered
+        assert session_id is not None
+        async with session_factory() as authorization_session:
+            repo = AgentSessionRepository(authorization_session)
+            authorized_session = await repo.get_fresh(session_id)
+            assert authorized_session is not None
+            await repo.update_all(
+                authorized_session,
+                toolset_policy={"name": "plan"},
+                permission_policy_version=(
+                    authorized_session.permission_policy_version + 1
+                ),
+            )
+        yield ToolCallDelta(
+            index=0,
+            call_id="stale-offered-write",
+            name="write",
+            arguments_delta=json.dumps(
+                {"path": "/tmp/stale-mixed.txt", "content": "not written"}
+            ),
+        )
+        yield ToolCallDelta(
+            index=1,
+            call_id="never-offered-memory",
+            name="memory__list",
+            arguments_delta="{}",
+        )
+        yield CompletionMetadata(response_id=None, finish_reason="tool_calls")
+
+    monkeypatch.setattr(ModelGateway, "invoke", fake_invoke)
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="mixed-unexposed-model")
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    session = await service.session_repo.update_all(
+        session, toolset_policy={"name": "execution"}
+    )
+    session_id = str(session.id)
+    turn = await service.create_turn_record(
+        session_id=session_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Call a stale and a never-offered tool.",
+    )
+
+    failed_turn = await service.runtime.run_turn(str(turn.id))
+
+    assert model_calls == 1
+    assert failed_turn.status == "failed"
+    assert failed_turn.termination_reason == "tool_failed"
+    assert failed_turn.error_code == "tool_not_exposed"
+
+
+@pytest.mark.asyncio
 async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatch):
     calls = 0
     resumed: list[tuple[str, str]] = []

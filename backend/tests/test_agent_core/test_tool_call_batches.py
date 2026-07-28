@@ -1815,7 +1815,7 @@ async def test_stale_exposure_repairs_matching_tool_results_atomically(
         yield ResponseStarted(streaming=False)
         if model_calls == 1:
             offered = {tool.name for tool in invocation.tools}
-            assert "write" in offered
+            assert {"projects__list", "write"} <= offered
             assert session_id is not None
             async with session_factory() as authorization_session:
                 repo = AgentSessionRepository(authorization_session)
@@ -1830,18 +1830,16 @@ async def test_stale_exposure_repairs_matching_tool_results_atomically(
                 )
             yield ToolCallDelta(
                 index=0,
-                call_id="stale-write-1",
-                name="write",
-                arguments_delta=json.dumps(
-                    {"path": "/tmp/stale-1.txt", "content": "one"}
-                ),
+                call_id="fresh-projects-list",
+                name="projects__list",
+                arguments_delta="{}",
             )
             yield ToolCallDelta(
                 index=1,
-                call_id="stale-write-2",
+                call_id="stale-write",
                 name="write",
                 arguments_delta=json.dumps(
-                    {"path": "/tmp/stale-2.txt", "content": "two"}
+                    {"path": "/tmp/stale.txt", "content": "not written"}
                 ),
             )
             yield CompletionMetadata(response_id=None, finish_reason="tool_calls")
@@ -1850,16 +1848,16 @@ async def test_stale_exposure_repairs_matching_tool_results_atomically(
             item for item in invocation.input_items if isinstance(item, ToolResultPart)
         ]
         assert [item.call_id for item in tool_results] == [
-            "stale-write-1",
-            "stale-write-2",
+            "fresh-projects-list",
+            "stale-write",
         ]
         payloads = [json.loads(item.output) for item in tool_results]
         assert all(payload["status"] == "failed" for payload in payloads)
-        assert all(
-            payload["error"]["category"] == "tool_result"
-            and payload["error"]["continuable"] is True
-            for payload in payloads
-        )
+        assert [payload["result"]["reason"] for payload in payloads] == [
+            "batch_preparation_aborted",
+            "stale_tool_exposure",
+        ]
+        assert all(payload["error"]["continuable"] is True for payload in payloads)
         yield TextDelta(text="stale batch repaired")
         yield CompletionMetadata(response_id=None, finish_reason="stop")
 
@@ -1877,7 +1875,7 @@ async def test_stale_exposure_repairs_matching_tool_results_atomically(
         session_id=session_id,
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
-        input_text="Repair both stale calls.",
+        input_text="Repair a mixed stale batch.",
     )
 
     completed = await service.runtime.run_turn(str(turn.id))
@@ -1886,22 +1884,76 @@ async def test_stale_exposure_repairs_matching_tool_results_atomically(
     actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
     actions.sort(key=lambda action: action.tool_call_ordinal)
     assert [action.tool_call_id for action in actions] == [
-        "stale-write-1",
-        "stale-write-2",
+        "fresh-projects-list",
+        "stale-write",
     ]
+    assert [action.name for action in actions] == ["projects.list", "write"]
     assert all(action.status == AgentActionStatus.FAILED for action in actions)
     assert all(action.result is not None for action in actions)
-    assert all(
-        action.error["category"] == "tool_result"
-        and action.error["continuable"] is True
-        for action in actions
-    )
+    assert [action.result["reason"] for action in actions] == [
+        "batch_preparation_aborted",
+        "stale_tool_exposure",
+    ]
+    assert all(action.error["continuable"] is True for action in actions)
     assert len({action.tool_batch_id for action in actions}) == 1
     batch = await AgentToolCallBatchRepository(db_session).get(
         str(actions[0].tool_batch_id)
     )
     assert batch is not None
     assert batch.status == AgentToolCallBatchStatus.FAILED
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+    lifecycle = {
+        action.tool_call_id: [
+            event.type
+            for event in events
+            if event.payload.get("action_id") == str(action.id)
+            and event.type in {"action.requested", "action.failed"}
+        ]
+        for action in actions
+    }
+    assert lifecycle == {
+        "fresh-projects-list": ["action.requested", "action.failed"],
+        "stale-write": ["action.requested", "action.failed"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_preparation_repair_decodes_provider_tool_name(db_session):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Repair a dotted tool name.",
+    )
+    coordinator = ToolCallBatchCoordinator(db_session)
+    batch = await coordinator.create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        tool_call_count=1,
+    )
+
+    await coordinator.repair_preparation_failure(
+        batch_id=str(batch.id),
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        tool_calls=[
+            {
+                "id": "remote-dotted",
+                "name": "remote__exec",
+                "arguments": {"command": "true"},
+            }
+        ],
+        error_message="synthetic repair",
+    )
+
+    actions = await AgentActionRepository(db_session).list_for_batch(str(batch.id))
+    assert len(actions) == 1
+    assert actions[0].name == "remote.exec"
 
 
 @pytest.mark.asyncio
