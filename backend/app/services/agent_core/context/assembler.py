@@ -624,16 +624,20 @@ def _mode_context(agent_session) -> str:
     )
     if policy_name == "plan":
         lineage = getattr(agent_session, "lineage", None) or {}
-        child_agent = (
-            str(getattr(agent_session, "role_profile", ""))
-            in {"worker", "subagent"}
-            or getattr(agent_session, "parent_session_id", None) is not None
+        has_parent = (
+            getattr(agent_session, "parent_session_id", None) is not None
             or bool(lineage.get("parent_session_id"))
         )
-        if child_agent:
+        role_profile = str(getattr(agent_session, "role_profile", ""))
+        if has_parent:
             guidance = (
                 "Use the available tools for read-only investigation, then return "
                 "a concrete plan to the parent/orchestrator."
+            )
+        elif role_profile in {"worker", "subagent"}:
+            guidance = (
+                "Use the available tools for read-only investigation, then present "
+                "a concrete plan directly to the user/caller."
             )
         else:
             guidance = (
