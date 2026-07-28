@@ -132,8 +132,8 @@
           "confidence": {
             "anyOf": [
               {
-                "maximum": 100.0,
-                "minimum": 0.0,
+                "maximum": 100,
+                "minimum": 0,
                 "type": "integer"
               },
               {
@@ -2587,8 +2587,8 @@
           },
           "port": {
             "default": 22,
-            "maximum": 65535.0,
-            "minimum": 1.0,
+            "maximum": 65535,
+            "minimum": 1,
             "title": "Port",
             "type": "integer"
           },
@@ -2741,8 +2741,8 @@
           "port": {
             "anyOf": [
               {
-                "maximum": 65535.0,
-                "minimum": 1.0,
+                "maximum": 65535,
+                "minimum": 1,
                 "type": "integer"
               },
               {
@@ -2846,8 +2846,8 @@
           "max_retries": {
             "anyOf": [
               {
-                "maximum": 10.0,
-                "minimum": 0.0,
+                "maximum": 10,
+                "minimum": 0,
                 "type": "integer"
               },
               {
@@ -2881,7 +2881,7 @@
           "timeout_seconds": {
             "anyOf": [
               {
-                "minimum": 1.0,
+                "minimum": 1,
                 "type": "integer"
               },
               {
@@ -3222,7 +3222,7 @@
   },
   "info": {
     "title": "Bioinfoflow API",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "openapi": "3.1.0",
   "paths": {

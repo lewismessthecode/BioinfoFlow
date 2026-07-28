@@ -41,9 +41,10 @@ def test_release_please_uses_numeric_pre_major_versions() -> None:
     config = json.loads(read_repo_file("release-please-config.json"))
     manifest = json.loads(read_repo_file(".release-please-manifest.json"))
     package = config["packages"]["."]
+    version = read_repo_file("version.txt").strip()
 
     assert config["bootstrap-sha"] == "ffae4af3c28a5285220cac59db389ca84cac307c"
-    assert manifest["."] == "0.1.0"
+    assert manifest["."] == version
     assert package["release-type"] == "simple"
     assert package["package-name"] == "bioinfoflow"
     assert package["include-v-in-tag"] is False
@@ -63,7 +64,7 @@ def test_release_please_uses_numeric_pre_major_versions() -> None:
         None,
     ) in extra_files
     assert (
-        'version = "0.1.0"  # x-release-please-version'
+        f'version = "{version}"  # x-release-please-version'
         in read_repo_file("backend/uv.lock")
     )
     assert ("json", "frontend/package.json", "$.version") in extra_files
@@ -77,12 +78,12 @@ def test_release_please_uses_numeric_pre_major_versions() -> None:
 
 def test_changelog_starts_with_curated_initial_release() -> None:
     changelog = read_repo_file("CHANGELOG.md")
+    initial_release = changelog.split("## [0.1.0] - 2026-07-21", maxsplit=1)[1]
 
     assert "## [0.1.0] - 2026-07-21" in changelog
-    assert "first formally tracked release" in changelog
-    assert "### Highlights" in changelog
-    assert "#1" not in changelog
-    assert "#146" not in changelog
+    assert "first formally tracked release" in initial_release
+    assert "### Highlights" in initial_release
+    assert re.search(r"\[#\d+\]", initial_release) is None
 
 
 def test_main_container_workflow_only_publishes_development_tags() -> None:
