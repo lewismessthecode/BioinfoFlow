@@ -980,6 +980,7 @@ class AgentLoopController:
                 and all(name in offered_tool_names for name in canonical_tool_names)
             )
             recoverable_stale_exposure = False
+            fresh_exposed_tool_names: set[str] = set()
             if stale_exposure_candidate:
                 fresh_permission_context, _ = await PermissionContextResolver(
                     self.db
@@ -989,17 +990,21 @@ class AgentLoopController:
                     user_id=turn.user_id,
                 )
                 fresh_snapshot = fresh_permission_context.snapshot()
-                recoverable_stale_exposure = not self.executor.exposure.decide(
-                    tool_name=preparing_tool_name,
-                    policy=fresh_snapshot["toolset_policy"],
-                    role=fresh_permission_context.role,
-                    execution_target=fresh_snapshot["execution_target"],
-                    execution_scope=fresh_snapshot.get("execution_scope"),
-                    model_visible=True,
-                    skills_available=skills_available,
-                ).allowed
-            repair_error = None
-            repair_result = None
+                fresh_exposed_tool_names = {
+                    spec.name
+                    for spec in self.executor.exposure.exposed_specs(
+                        policy=fresh_snapshot["toolset_policy"],
+                        role=fresh_permission_context.role,
+                        execution_target=fresh_snapshot["execution_target"],
+                        execution_scope=fresh_snapshot.get("execution_scope"),
+                        skills_available=skills_available,
+                    )
+                }
+                recoverable_stale_exposure = (
+                    preparing_tool_name not in fresh_exposed_tool_names
+                )
+            repair_errors = None
+            repair_results = None
             error_type = "BatchPreparationError"
             error_message = str(exc)
             if recoverable_stale_exposure:
@@ -1008,16 +1013,35 @@ class AgentLoopController:
                     "The tool was offered to the model for this invocation but is "
                     "no longer exposed under the current authorization."
                 )
-                repair_error = {
-                    "type": error_type,
-                    "message": error_message,
-                    "category": "tool_result",
-                    "continuable": True,
-                }
-                repair_result = {
-                    "ok": False,
-                    "reason": "stale_tool_exposure",
-                }
+                repair_errors = []
+                repair_results = []
+                for tool_name in canonical_tool_names:
+                    stale = tool_name not in fresh_exposed_tool_names
+                    reason = (
+                        "stale_tool_exposure"
+                        if stale
+                        else "batch_preparation_aborted"
+                    )
+                    repair_errors.append(
+                        {
+                            "type": (
+                                "StaleToolExposure"
+                                if stale
+                                else "BatchPreparationAborted"
+                            ),
+                            "message": (
+                                error_message
+                                if stale
+                                else (
+                                    "The tool call was not executed because another "
+                                    "call in the atomic batch became unexposed."
+                                )
+                            ),
+                            "category": "tool_result",
+                            "continuable": True,
+                        }
+                    )
+                    repair_results.append({"ok": False, "reason": reason})
             await self._persist_failed_preparation_batch(
                 batch_id=batch_id,
                 session_id=session_id,
@@ -1033,8 +1057,8 @@ class AgentLoopController:
                 batch_status=AgentToolCallBatchStatus.FAILED,
                 error_type=error_type,
                 error_message=error_message,
-                action_error=repair_error,
-                action_result=repair_result,
+                action_errors=repair_errors,
+                action_results=repair_results,
                 prior_continuation_batch_id=prior_continuation_batch_id,
             )
             if (
@@ -1199,8 +1223,8 @@ class AgentLoopController:
         batch_status: str,
         error_type: str,
         error_message: str,
-        action_error: dict[str, Any] | None = None,
-        action_result: dict[str, Any] | None = None,
+        action_errors: list[dict[str, Any]] | None = None,
+        action_results: list[dict[str, Any]] | None = None,
         prior_continuation_batch_id: str | None = None,
     ) -> None:
         await self.db.rollback()
@@ -1245,8 +1269,8 @@ class AgentLoopController:
             error_message=error_message,
             action_status=action_status,
             error_type=error_type,
-            error=action_error,
-            result=action_result,
+            errors=action_errors,
+            results=action_results,
             commit=False,
         )
         await self.tool_batches.batches.update_all_pending(

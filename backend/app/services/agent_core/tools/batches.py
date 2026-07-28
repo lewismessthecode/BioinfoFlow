@@ -10,6 +10,9 @@ from app.repositories.agent_core_repo import (
     AgentActionRepository,
     AgentToolCallBatchRepository,
 )
+from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.ledger import AgentEventLedger
+from app.services.agent_core.tools.toolsets import decode_provider_tool_name
 
 
 class ToolCallBatchCoordinator:
@@ -18,6 +21,7 @@ class ToolCallBatchCoordinator:
     def __init__(self, session: AsyncSession):
         self.actions = AgentActionRepository(session)
         self.batches = AgentToolCallBatchRepository(session)
+        self.ledger = AgentEventLedger(session)
 
     async def create(
         self,
@@ -87,44 +91,83 @@ class ToolCallBatchCoordinator:
         error_message: str,
         action_status: str = "failed",
         error_type: str = "BatchPreparationError",
-        error: dict[str, Any] | None = None,
-        result: dict[str, Any] | None = None,
+        errors: list[dict[str, Any]] | None = None,
+        results: list[dict[str, Any]] | None = None,
         commit: bool = True,
     ) -> None:
-        action_error = error or {"type": error_type, "message": error_message}
+        if errors is not None and len(errors) != len(tool_calls):
+            raise ValueError("Preparation repair errors must match tool call count")
+        if results is not None and len(results) != len(tool_calls):
+            raise ValueError("Preparation repair results must match tool call count")
         existing = {
             action.tool_call_ordinal: action
             for action in await self.actions.list_for_batch(batch_id)
         }
         for ordinal, tool_call in enumerate(tool_calls):
+            action_error = (
+                errors[ordinal]
+                if errors is not None
+                else {"type": error_type, "message": error_message}
+            )
+            action_result = results[ordinal] if results is not None else None
+            canonical_name = decode_provider_tool_name(
+                str(tool_call.get("name") or "unknown")
+            )
             action = existing.get(ordinal)
+            created = action is None
             if action is None:
-                create = self.actions.create if commit else self.actions.add
-                action = await create(
+                action = await self.actions.add(
                     session_id=session_id,
                     turn_id=turn_id,
                     tool_batch_id=batch_id,
                     tool_call_ordinal=ordinal,
                     tool_call_id=tool_call.get("id"),
                     kind="tool",
-                    name=str(tool_call.get("name") or "unknown"),
+                    name=canonical_name,
                     input=tool_call.get("arguments") or {},
                     normalized_input=tool_call.get("arguments") or {},
                     risk_level="act_high",
                     status=action_status,
-                    result=result,
+                    result=action_result,
                     error=action_error,
                     completed_at=datetime.now(timezone.utc),
                 )
             elif action.status not in {"completed", "failed", "cancelled", "rejected"}:
-                update = self.actions.update_all if commit else self.actions.update_all_pending
-                await update(
+                await self.actions.update_all_pending(
                     action,
                     status=action_status,
                     requires_resume=False,
-                    result=result,
+                    result=action_result,
                     error=action_error,
                     completed_at=datetime.now(timezone.utc),
                 )
+            else:
+                continue
+            if created:
+                await self.ledger.append(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    type=AgentEventType.ACTION_REQUESTED,
+                    payload={
+                        "action_id": str(action.id),
+                        "kind": "tool",
+                        "name": canonical_name,
+                        "evaluated_policy_version": getattr(
+                            action, "evaluated_policy_version", None
+                        ),
+                    },
+                    commit=False,
+                )
+            await self.ledger.append(
+                session_id=session_id,
+                turn_id=turn_id,
+                type=(
+                    AgentEventType.ACTION_CANCELLED
+                    if action_status == "cancelled"
+                    else AgentEventType.ACTION_FAILED
+                ),
+                payload={"action_id": str(action.id), "error": action_error},
+                commit=False,
+            )
         if commit:
             await self.batches.session.commit()
