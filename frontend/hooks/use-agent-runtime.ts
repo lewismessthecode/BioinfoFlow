@@ -553,9 +553,6 @@ export function useAgentRuntime(
           metadata: metadataWithClientTimeZone(options?.metadata),
         })
         dispatch({ type: "turn.upsert", turn })
-        if (pendingModeSnapshot?.mode === modeSnapshot) {
-          clearPendingMode(pendingModeSnapshot)
-        }
         await refreshState(session.id)
         return turn
       } catch (error) {
@@ -569,7 +566,6 @@ export function useAgentRuntime(
     [
       activeSession,
       capturePendingModeIntent,
-      clearPendingMode,
       ensureSessionExecutionMetadata,
       ensureSessionWithMetadata,
       refreshState,
