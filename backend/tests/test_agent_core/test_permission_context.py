@@ -575,6 +575,38 @@ async def test_local_permission_snapshot_reports_unavailable_docker_socket(
 
 
 @pytest.mark.asyncio
+async def test_local_permission_snapshot_rejects_socket_under_protected_ancestor(
+    db_session,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    docker_socket = state_root / "docker.sock"
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(tmp_path))
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+    monkeypatch.chdir(state_root)
+    unix_socket = socket.socket(socket.AF_UNIX)
+    unix_socket.bind(docker_socket.name)
+    try:
+        session, _turn = await _create_session_and_turn(db_session)
+        snapshot = (
+            await PermissionContextResolver(db_session).resolve(
+                session_id=str(session.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+            )
+        ).snapshot()
+    finally:
+        unix_socket.close()
+
+    assert snapshot["boundary"]["docker_socket_access"] == "unavailable"
+    assert str(docker_socket.resolve()) not in snapshot["effective_roots"]
+
+
+@pytest.mark.asyncio
 async def test_remote_permission_snapshot_contains_safe_identity_without_credentials(
     db_session,
 ) -> None:

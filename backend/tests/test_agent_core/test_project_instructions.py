@@ -328,6 +328,49 @@ async def test_context_assembler_omits_product_source_boundary_for_remote_target
 
 
 @pytest.mark.asyncio
+async def test_context_assembler_omits_docker_guidance_for_protected_socket(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    repo_root = tmp_path / "bioinfoflow-product"
+    data_root = repo_root / "data"
+    state_root = data_root / "state"
+    docker_socket = state_root / "docker.sock"
+    repo_root.mkdir()
+    state_root.mkdir(parents=True)
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+    monkeypatch.chdir(state_root)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Use Docker if available.",
+    )
+
+    unix_socket = socket.socket(socket.AF_UNIX)
+    unix_socket.bind(docker_socket.name)
+    try:
+        messages = await AgentContextAssembler(db_session).provider_messages(
+            agent_session=session,
+            turn=turn,
+        )
+    finally:
+        unix_socket.close()
+
+    assert DOCKER_SOCKET_AUTHORITY_GUIDANCE not in messages[0]["content"]
+
+
+@pytest.mark.asyncio
 async def test_turn_injects_date_context_once_and_keeps_system_prompt_stable(
     db_session,
     tmp_path,

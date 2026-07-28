@@ -45,6 +45,10 @@ class LocalFilesystemBoundaryResolver:
         read_roots = _dedupe([*write_roots, reference_root(), database_root()])
         protected_roots = _protected_roots()
         docker_socket = _existing_unix_docker_socket()
+        sandbox_docker_socket = _sandbox_capable_docker_socket(
+            docker_socket,
+            protected_roots=protected_roots,
+        )
         policy = FilesystemPolicy(
             read_roots=read_roots,
             write_roots=write_roots,
@@ -54,10 +58,16 @@ class LocalFilesystemBoundaryResolver:
             default_root=working_directory,
         )
         sandbox_read_roots = _dedupe(
-            [*policy.read_roots, *([docker_socket] if docker_socket else [])]
+            [
+                *policy.read_roots,
+                *([sandbox_docker_socket] if sandbox_docker_socket else []),
+            ]
         )
         sandbox_write_roots = _dedupe(
-            [*policy.write_roots, *([docker_socket] if docker_socket else [])]
+            [
+                *policy.write_roots,
+                *([sandbox_docker_socket] if sandbox_docker_socket else []),
+            ]
         )
         return LocalFilesystemBoundary(
             working_directory=working_directory.resolve(),
@@ -75,16 +85,26 @@ async def local_boundary_from_tool_context(context) -> LocalFilesystemBoundary:
         return await LocalFilesystemBoundaryResolver(context.db).resolve(context)
     protected_roots = _protected_roots()
     docker_socket = _existing_unix_docker_socket()
+    sandbox_docker_socket = _sandbox_capable_docker_socket(
+        docker_socket,
+        protected_roots=protected_roots,
+    )
     policy = FilesystemPolicy(
         protected_roots=_dedupe(
             [*protected_roots, *([docker_socket] if docker_socket else [])]
         )
     )
     sandbox_read_roots = _dedupe(
-        [*policy.read_roots, *([docker_socket] if docker_socket else [])]
+        [
+            *policy.read_roots,
+            *([sandbox_docker_socket] if sandbox_docker_socket else []),
+        ]
     )
     sandbox_write_roots = _dedupe(
-        [*policy.write_roots, *([docker_socket] if docker_socket else [])]
+        [
+            *policy.write_roots,
+            *([sandbox_docker_socket] if sandbox_docker_socket else []),
+        ]
     )
     return LocalFilesystemBoundary(
         working_directory=policy.default_root,
@@ -180,3 +200,15 @@ def _existing_unix_docker_socket() -> Path | None:
     except OSError:
         return None
     return docker_socket if stat.S_ISSOCK(mode) else None
+
+
+def _sandbox_capable_docker_socket(
+    docker_socket: Path | None,
+    *,
+    protected_roots: list[Path],
+) -> Path | None:
+    if docker_socket is None:
+        return None
+    if any(_is_relative_to(docker_socket, root) for root in protected_roots):
+        return None
+    return docker_socket
