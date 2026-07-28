@@ -29,7 +29,9 @@ services:
     image: ${IMAGE_REGISTRY:+${IMAGE_REGISTRY}/}bioinfoflow-backend:${IMAGE_TAG:-latest}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     environment:
       AUTH_MODE: personal
       BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
@@ -47,7 +49,10 @@ services:
       - seccomp:unconfined
     volumes:
       - ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}:${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
-      - /var/run/docker.sock:/var/run/docker.sock
+      - type: bind
+        source: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+        read_only: false
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/system/ping')"]
       interval: 30s
@@ -60,7 +65,9 @@ services:
     image: ${IMAGE_REGISTRY:+${IMAGE_REGISTRY}/}bioinfoflow-frontend:${IMAGE_TAG:-latest}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     environment:
       AUTH_MODE: personal
       BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}

@@ -344,7 +344,6 @@ add Harbor like this:
 | Endpoint | `http://10.227.4.56:80` |
 | Namespace | `pipeline-dev` |
 | HTTP | On, because this example endpoint is plain HTTP |
-| Default | On, if this should be the global workflow-image default |
 | Credentials | Stored credentials, environment variables, or none |
 
 Stored credentials are encrypted and redacted after saving. Use the actual
@@ -375,21 +374,19 @@ available to the backend container, such as `BIO_REGISTRY_USER` and
 already authenticated or the registry is public. Use **Test** after saving to
 confirm the backend can read the credentials.
 
-During workflow registration, **Image Registry -> Automatic** uses the configured
-default for unqualified static workflow images when one exists. Explicit image
-hosts, such as `quay.io/...` or `10.227.4.56:80/...`, are kept as written. You can
-also choose a configured registry to persist that choice for the workflow.
-In team mode, ordinary members cannot manage registries or explicitly select a
-registry ID, but automatic prefetch can use the admin-configured default as a
-shared platform capability. Project-level registry override is reserved in the
-data model for future policy; the current UI exposes a global default and
-per-workflow selection.
+There is no global default workflow registry. During workflow registration,
+**Image Registry -> Automatic** stores no workflow binding. Only an explicit
+workflow or project registry binding rewrites unqualified static workflow
+images, with the workflow binding taking precedence. Without either binding,
+`ubuntu:22.04` remains `ubuntu:22.04`. Explicit image hosts, such as
+`quay.io/...` or `10.227.4.56:80/...`, are always kept as written. In team mode,
+ordinary members cannot manage registries or explicitly select a registry ID.
 
 Agent sessions use the Docker CLI through the `bash` tool rather than exposing a
 separate `images.pull` model tool. The product Images API and UI still follow the
-same registry-selection rules: full image names can be pulled directly,
-automatic/default behavior remains available for unqualified names, and explicit
-`registry_id` use is limited to owners/admins in team mode.
+same explicit-selection rules: full image names can be pulled directly,
+Automatic keeps an unqualified name unchanged, and explicit `registry_id` use is
+limited to owners/admins in team mode.
 
 The bundled Compose files enable `seccomp:unconfined` for the backend so
 Bubblewrap can create its unprivileged user namespace. This setting disables
@@ -399,17 +396,32 @@ security tradeoff. A deployment may replace it with a validated custom seccomp
 profile that permits the required namespace calls. Sandbox selection still
 treats Bubblewrap as unavailable unless a bounded runtime probe can create that
 namespace successfully; probe results are cached briefly and retried after the
-cache expires.
+cache expires. The diagnostic category is one of `binary_missing`, `probe_exit`,
+`probe_timeout`, or `probe_os_error`. On Linux, Docker's default seccomp profile
+can surface `No permissions to create new namespace`; inspect the rendered
+Compose configuration and recreate the backend rather than adding `privileged`
+or `SYS_ADMIN`:
+
+```bash
+docker compose config | sed -n '/backend:/,/frontend:/p'
+docker compose up -d --build --force-recreate backend
+```
+
+The backend socket gives Agent Bash complete Docker daemon authority.
+Bubblewrap and macOS Seatbelt filesystem/network restrictions apply to the
+local CLI process, but do not constrain mounts, networking, or other actions
+that the Docker daemon performs on that process's behalf.
 
 For WDL, static task `docker`/`container` references are captured during workflow
 registration and missing images are prefetched automatically before MiniWDL
-starts. When a configured registry applies, run compilation uses a run-local WDL
-copy with those static container literals rewritten to the same resolved image
-names. Dynamic container expressions are skipped and resolved at runtime. For
-Nextflow, Docker pull is enabled when Docker is available, and Bioinfoflow
-injects the configured registry prefix as `docker.registry` for unqualified
-process images. You can also use full Harbor image names in the workflow or
-pipeline config:
+starts. When an explicit workflow or project registry binding applies, run
+compilation uses a run-local WDL copy with only unqualified static container
+literals rewritten to the same resolved image names; the registered workflow
+source is not modified. Dynamic container expressions and qualified image hosts
+are preserved. For Nextflow, Docker pull is enabled when Docker is available,
+and Bioinfoflow injects an explicitly bound registry prefix as `docker.registry`
+for unqualified process images. You can also use full Harbor image names in the
+workflow or pipeline config:
 
 ```text
 10.227.4.56:80/pipeline-dev/bwa:0.7.17
