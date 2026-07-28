@@ -107,9 +107,11 @@ class CreateWorkflowTool:
     spec = AgentToolSpec(
         name="workflows.create",
         description=(
-            "Register a workflow with the platform. Provide inline content for a "
-            "local WDL/Nextflow file, a github source_ref, or an nf-core name. This "
-            "is how you add a workflow you authored to the workflows module."
+            "Register a WDL or Nextflow workflow with the platform. For a local "
+            "workflow directory, provide bundle_path and entrypoint_relpath; for a "
+            "single local WDL/Nextflow file, provide inline content and file_name. "
+            "Do not label shell or Python scripts as WDL or Nextflow entrypoints. "
+            "For remote workflows, provide a github source_ref or an nf-core name."
         ),
         input_schema={
             "type": "object",
@@ -121,6 +123,10 @@ class CreateWorkflowTool:
                 "engine": {"type": "string", "enum": ["nextflow", "wdl"]},
                 "content": {"type": "string"},
                 "file_name": {"type": "string"},
+                "bundle_path": {
+                    "type": "string",
+                    "description": "Absolute path to a local WDL/Nextflow workflow directory.",
+                },
                 "entrypoint_relpath": {"type": "string"},
                 "source_ref": {"type": "string"},
                 "estimated_time": {"type": "string"},

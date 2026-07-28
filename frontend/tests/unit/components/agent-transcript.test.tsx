@@ -808,7 +808,7 @@ describe("AgentTranscript", () => {
     expect(screen.getAllByTestId("agent-tool-activity-row")).toHaveLength(2)
     expect(screen.queryByText("Arguments")).not.toBeInTheDocument()
 
-    const detailsButton = screen.getAllByRole("button", { name: /Show details/ })[1]
+    const detailsButton = screen.getByRole("button", { name: "workflows.source" })
     expect(detailsButton).toHaveAttribute("aria-expanded", "false")
 
     fireEvent.click(detailsButton)
@@ -980,7 +980,7 @@ describe("AgentTranscript", () => {
       screen.queryByText("Image quay.io/example/missing:tag was not found"),
     ).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
+    fireEvent.click(screen.getByRole("button", { name: /runs__submit.*Failed/ }))
 
     expect(
       screen.getByText("Image quay.io/example/missing:tag was not found"),
@@ -1007,7 +1007,7 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("Failed")).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: /Ran 1 commands/ }))
-    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
+    fireEvent.click(screen.getByRole("button", { name: /bash.*Failed/ }))
 
     expect(screen.getByText("9")).toBeInTheDocument()
     expect(screen.getByText("analysis check failed")).toBeInTheDocument()
@@ -1235,7 +1235,7 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("workflows.source")).toBeInTheDocument()
     expect(screen.queryByText("Arguments")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
+    fireEvent.click(screen.getByRole("button", { name: "workflows.source" }))
 
     expect(screen.getByText("Arguments")).toBeInTheDocument()
   })
@@ -1634,7 +1634,7 @@ describe("AgentTranscript", () => {
     })
 
     fireEvent.click(screen.getByRole("button", { name: /Found 1 sources/ }))
-    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
+    fireEvent.click(screen.getByRole("button", { name: /web\.search.*unsafe echoed source/ }))
 
     expect(screen.getByText("Unsafe search result")).toBeInTheDocument()
     expect(screen.queryByRole("link", { name: /Unsafe search result/ })).not.toBeInTheDocument()
@@ -1739,7 +1739,7 @@ describe("AgentTranscript", () => {
     expect(screen.getAllByText("Failed").length).toBeGreaterThan(0)
 
     fireEvent.click(screen.getByRole("button", { name: /Found 0 sources/ }))
-    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
+    fireEvent.click(screen.getByRole("button", { name: /web\.search.*Failed/ }))
 
     expect(screen.getByText("Error")).toBeInTheDocument()
     expect(screen.getByText("Search provider unavailable")).toBeInTheDocument()
