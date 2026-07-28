@@ -73,6 +73,34 @@ describe("active turn steering timeline", () => {
     ])
   })
 
+  it("terminalizes stale activity when the turn completed without overwriting explicit failures", () => {
+    const [entry] = buildAgentRuntimeTimeline(
+      [{ ...turn, status: "completed" }],
+      [
+        event("action-started", 2, "action.started", {
+          action_id: "action-running",
+          name: "read_file",
+        }),
+        event("action-failed", 3, "action.failed", {
+          action_id: "action-failed",
+          name: "shell_command",
+          error_message: "Command failed.",
+        }),
+        event("action-cancelled", 4, "action.cancelled", {
+          action_id: "action-cancelled",
+          name: "write_file",
+        }),
+      ],
+    )
+
+    expect(entry.activities).toEqual([
+      expect.objectContaining({ actionId: "action-running", status: "completed" }),
+      expect.objectContaining({ actionId: "action-failed", status: "failed" }),
+      expect.objectContaining({ actionId: "action-cancelled", status: "cancelled" }),
+    ])
+    expect(entry.activityGroups.every((group) => group.status !== "running")).toBe(true)
+  })
+
   it("merges received and delivered steer events into one user segment", () => {
     const [entry] = buildAgentRuntimeTimeline(
       [turn],

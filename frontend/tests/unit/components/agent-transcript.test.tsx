@@ -161,21 +161,29 @@ function renderTranscript({
   events = [],
   onDecision,
   onRetryTurn,
+  retryingTurnId = null,
+  responseActionsDisabled = false,
   eventWindowLimited = false,
 }: {
   turn?: AgentRuntimeTurn
   events?: AgentRuntimeEvent[]
   onDecision?: Parameters<typeof AgentTranscript>[0]["onDecision"]
   onRetryTurn?: (turn: AgentRuntimeTurn) => void
+  retryingTurnId?: string | null
+  responseActionsDisabled?: boolean
   eventWindowLimited?: boolean
 } = {}) {
   const props = {
     timeline: buildAgentRuntimeTimeline([turn], events),
     onDecision,
     onRetryTurn,
+    retryingTurnId,
+    responseActionsDisabled,
     eventWindowLimited,
   } as Parameters<typeof AgentTranscript>[0] & {
     onRetryTurn?: (turn: AgentRuntimeTurn) => void
+    retryingTurnId?: string | null
+    responseActionsDisabled?: boolean
   }
   return render(
     <AgentTranscript {...props} />,
@@ -708,6 +716,42 @@ describe("AgentTranscript", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retry response" }))
     expect(onRetryTurn).toHaveBeenCalledWith(baseTurn)
+  })
+
+  it("shows retry progress only on the response being regenerated", () => {
+    const priorTurn = {
+      ...baseTurn,
+      id: "turn-prior",
+      input_text: "Inspect the workflow.",
+      final_text: "The workflow is valid.",
+    }
+    const retryTurn = {
+      ...baseTurn,
+      id: "turn-retry",
+      input_text: "Summarize the run.",
+      final_text: "The run completed.",
+    }
+    const onRetryTurn = vi.fn()
+
+    render(
+      <AgentTranscript
+        timeline={buildAgentRuntimeTimeline([priorTurn, retryTurn], [])}
+        onRetryTurn={onRetryTurn}
+        retryingTurnId="turn-retry"
+        responseActionsDisabled
+      />,
+    )
+
+    const retryingButton = screen.getByRole("button", { name: "Regenerating..." })
+    const idleButton = screen.getByRole("button", { name: "Retry response" })
+    expect(retryingButton).toBeDisabled()
+    expect(retryingButton).toHaveAttribute("aria-busy", "true")
+    expect(idleButton).toBeDisabled()
+    expect(idleButton).toHaveAttribute("aria-busy", "false")
+
+    fireEvent.click(retryingButton)
+    fireEvent.click(idleButton)
+    expect(onRetryTurn).not.toHaveBeenCalled()
   })
 
   it("falls back to DOM copy and confirms success when Clipboard API is unavailable", async () => {
@@ -1706,6 +1750,11 @@ describe("AgentTranscript", () => {
 
   it("keeps running searches in a searching state before results arrive", () => {
     renderTranscript({
+      turn: {
+        ...baseTurn,
+        status: "running",
+        completed_at: null,
+      },
       events: [
         event("event-search", 1, "action.started", {
           action_id: "action-search",
