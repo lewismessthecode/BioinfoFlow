@@ -32,10 +32,13 @@ from app.services.run_compiler import (
     LaunchSpec,
     RunCompiler,
     ValidatedRun,
+    _merge_config_patch,
+    _remove_config_override,
     _render_csv,
 )
 from sqlalchemy import select
 from app.services.workflow_image_service import WorkflowImageRegistry
+from app.services.workflow_image_service import resolve_workflow_image_requirements
 
 
 @pytest.mark.unit
@@ -761,6 +764,22 @@ async def test_compile_wdl_launch_snapshot_does_not_pull_required_images(
         "_build_engine_inputs",
         lambda **kwargs: ({}, {}, 0),
     )
+    monkeypatch.setattr(
+        run_compiler_module,
+        "resolve_workflow_image_requirements_with_credentials",
+        AsyncMock(
+            return_value=resolve_workflow_image_requirements(
+                {
+                    "tasks": [
+                        {
+                            "container": "nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1"
+                        }
+                    ]
+                },
+                selected_registry=None,
+            )
+        ),
+    )
 
     payload = RunCreate(project_id=project_id, workflow_id=workflow_id)
     validated = ValidatedRun(
@@ -795,7 +814,12 @@ async def test_compile_wdl_launch_snapshot_does_not_pull_required_images(
     assert isinstance(compiled, CompiledRun)
     assert adapter.pre_submit_config is not None
     assert adapter.pre_submit_config["runtime"]["required_images"] == [
-        "nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1"
+        {
+            "full_name": "nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1",
+            "name": "nvidia/clara/clara-parabricks",
+            "tag": "4.7.0-1",
+            "registry": "nvcr.io",
+        }
     ]
     assert adapter.pre_submit_config["runtime"]["pull_required_images"] is False
     assert "pull_required_images" not in compiled.run.config["runtime"]
@@ -835,6 +859,7 @@ async def test_compile_wdl_uses_resolved_registry_images_in_runtime_and_source(
         'workflow wf { call align }\n',
         encoding="utf-8",
     )
+    original_workflow_bytes = workflow_path.read_bytes()
 
     compiler = _make_compiler(storage=SimpleNamespace(resolve_asset=AsyncMock()))
     monkeypatch.setattr(run_compiler_module, "get_adapter", lambda engine: adapter)
@@ -924,6 +949,7 @@ async def test_compile_wdl_uses_resolved_registry_images_in_runtime_and_source(
     assert f'docker: "{expected_image}"' in resolved_workflow_path.read_text(
         encoding="utf-8"
     )
+    assert workflow_path.read_bytes() == original_workflow_bytes
     assert compiled.launch.argv == ("miniwdl", "run", str(resolved_workflow_path))
 
 
@@ -1017,6 +1043,106 @@ async def test_compile_nextflow_sets_registry_override_for_unqualified_images(
     assert compiled.run.config["request"]["config_overrides"]["docker.registry"] == (
         "harbor.example.test/bio"
     )
+
+
+@pytest.mark.asyncio
+async def test_resolve_workflow_image_registry_prefers_workflow_then_project(
+    monkeypatch,
+):
+    workflow_material = SimpleNamespace(
+        endpoint="https://workflow.example.test",
+        namespace="workflow",
+        registry_id="workflow-registry",
+        username="workflow-user",
+        password="workflow-secret",
+    )
+    project_registry = SimpleNamespace(id="project-registry")
+    project_material = SimpleNamespace(
+        endpoint="https://project.example.test",
+        namespace="project",
+        registry_id="project-registry",
+        username="project-user",
+        password="project-secret",
+    )
+    service = SimpleNamespace(
+        resolve_auth_material=AsyncMock(
+            side_effect=lambda registry_id: (
+                workflow_material
+                if registry_id == "workflow-registry"
+                else project_material
+            )
+        ),
+        get_project_registry=AsyncMock(return_value=project_registry),
+    )
+    monkeypatch.setattr(
+        run_compiler_module,
+        "ContainerRegistryService",
+        lambda session: service,
+    )
+    compiler = _make_compiler(storage=SimpleNamespace())
+    del compiler._resolve_workflow_image_registry
+
+    workflow_result = await compiler._resolve_workflow_image_registry(
+        SimpleNamespace(container_registry_id="workflow-registry"),
+        project_id="project-1",
+    )
+    project_result = await compiler._resolve_workflow_image_registry(
+        SimpleNamespace(container_registry_id=None),
+        project_id="project-1",
+    )
+
+    assert workflow_result.registry_id == "workflow-registry"
+    assert project_result.registry_id == "project-registry"
+    service.get_project_registry.assert_awaited_once_with(project_id="project-1")
+
+
+@pytest.mark.asyncio
+async def test_resolve_workflow_image_registry_returns_none_without_project_binding(
+    monkeypatch,
+):
+    service = SimpleNamespace(
+        resolve_auth_material=AsyncMock(),
+        get_project_registry=AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        run_compiler_module,
+        "ContainerRegistryService",
+        lambda session: service,
+    )
+    compiler = _make_compiler(storage=SimpleNamespace())
+    del compiler._resolve_workflow_image_registry
+
+    result = await compiler._resolve_workflow_image_registry(
+        SimpleNamespace(container_registry_id=None),
+        project_id="project-1",
+    )
+
+    assert result is None
+    service.get_project_registry.assert_awaited_once_with(project_id="project-1")
+    service.resolve_auth_material.assert_not_awaited()
+
+
+def test_unbound_registry_cleanup_removes_stale_nextflow_overrides_after_merge():
+    config = {
+        "config_overrides": {"docker.registry": "registry.invalid/old"},
+        "request": {
+            "config_overrides": {"docker.registry": "registry.invalid/request"}
+        },
+    }
+
+    config = _merge_config_patch(
+        config,
+        {
+            "config_overrides": {"docker.registry": "registry.invalid/extra"},
+            "request": {
+                "config_overrides": {"docker.registry": "registry.invalid/extra-request"}
+            },
+        },
+    )
+    _remove_config_override(config, "docker.registry")
+
+    assert "docker.registry" not in config["config_overrides"]
+    assert "docker.registry" not in config["request"]["config_overrides"]
 
 
 def _make_compiler(*, storage, project_repo=None) -> RunCompiler:

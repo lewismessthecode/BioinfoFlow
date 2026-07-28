@@ -8,6 +8,8 @@ from app.services import workflow_image_service as workflow_image_module
 from app.services.workflow_image_service import (
     WorkflowImagePrefetchService,
     WorkflowImageRegistry,
+    resolve_container_image_reference,
+    resolve_workflow_image_requirements_with_credentials,
     resolve_workflow_image_requirements,
     workflow_container_images,
 )
@@ -38,33 +40,44 @@ def test_workflow_container_images_skips_dynamic_and_deduplicates_static_images(
     ) == ["ubuntu:22.04", "biocontainers/fastqc:0.12.1"]
 
 
-def test_resolver_rewrites_unqualified_images_with_default_registry_namespace():
+def test_resolver_preserves_unqualified_image_without_selected_registry():
+    requirement = resolve_container_image_reference(
+        "ubuntu:22.04",
+        selected_registry=None,
+    )
+
+    assert requirement.full_name == "ubuntu:22.04"
+    assert requirement.registry == "docker.io"
+    assert requirement.rewrite_applied is False
+
+
+def test_resolver_rewrites_unqualified_images_with_selected_registry_namespace():
     registry = WorkflowImageRegistry(
-        endpoint="registry.example.com:5000/",
-        namespace="/bioinfoflow/",
+        endpoint="http://10.227.4.56:80",
+        namespace="pipeline-dev",
         registry_id="registry-1",
         auth_config={"username": "bioinfoflow", "password": "secret"},
     )
 
     requirements = resolve_workflow_image_requirements(
-        _schema("bwa:0.7.17"),
-        default_registry=registry,
+        _schema("ubuntu:22.04"),
+        selected_registry=registry,
     )
 
     assert len(requirements) == 1
     requirement = requirements[0]
-    assert requirement.source_reference == "bwa:0.7.17"
-    assert requirement.name == "bioinfoflow/bwa"
-    assert requirement.tag == "0.7.17"
-    assert requirement.registry == "registry.example.com:5000"
-    assert requirement.full_name == "registry.example.com:5000/bioinfoflow/bwa:0.7.17"
+    assert requirement.source_reference == "ubuntu:22.04"
+    assert requirement.name == "pipeline-dev/ubuntu"
+    assert requirement.tag == "22.04"
+    assert requirement.registry == "10.227.4.56:80"
+    assert requirement.full_name == "10.227.4.56:80/pipeline-dev/ubuntu:22.04"
     assert requirement.explicit_registry is False
     assert requirement.rewrite_applied is True
     assert requirement.registry_id == "registry-1"
     assert requirement.auth_config == {"username": "bioinfoflow", "password": "secret"}
 
 
-def test_resolver_respects_explicit_registries_when_default_registry_is_configured():
+def test_resolver_never_rewrites_explicit_registry_when_selected_registry_is_configured():
     registry = WorkflowImageRegistry(
         endpoint="registry.example.com",
         namespace="bioinfoflow",
@@ -75,12 +88,12 @@ def test_resolver_respects_explicit_registries_when_default_registry_is_configur
             "quay.io/biocontainers/fastqc:0.12.1",
             "localhost:5000/demo/tool",
         ),
-        default_registry=registry,
+        selected_registry=registry,
     )
 
     assert [item.full_name for item in requirements] == [
         "quay.io/biocontainers/fastqc:0.12.1",
-        "localhost:5000/demo/tool:latest",
+        "localhost:5000/demo/tool",
     ]
     assert [(item.name, item.tag, item.registry) for item in requirements] == [
         ("biocontainers/fastqc", "0.12.1", "quay.io"),
@@ -112,7 +125,7 @@ async def test_prefetch_service_enqueues_resolved_static_image_pulls(
         registry_id="registry-1",
         auth_config={"identitytoken": "token"},
     )
-    service = WorkflowImagePrefetchService(db_session, default_registry=registry)
+    service = WorkflowImagePrefetchService(db_session, selected_registry=registry)
 
     result = await service.prefetch_schema(
         _schema(
@@ -204,7 +217,68 @@ async def test_prefetch_workflow_uses_workflow_selected_registry(
     ]
 
 
-def test_resolver_uses_matching_registry_credentials_for_explicit_host():
+@pytest.mark.asyncio
+async def test_async_resolver_attaches_credentials_by_exact_normalized_endpoint(
+    db_session,
+):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    registry = await ContainerRegistryService(db_session).create_registry(
+        {
+            "name": "Harbor",
+            "endpoint": "https://harbor.example.test",
+            "namespace": "bio",
+            "credential_source": "stored",
+            "username": "robot",
+            "password": "secret",
+            "updated_by": "user-1",
+        }
+    )
+
+    requirements = await resolve_workflow_image_requirements_with_credentials(
+        db_session,
+        _schema("harbor.example.test/bio/tool:1.0"),
+        selected_registry=None,
+    )
+
+    assert len(requirements) == 1
+    requirement = requirements[0]
+    assert requirement.full_name == "harbor.example.test/bio/tool:1.0"
+    assert requirement.name == "bio/tool"
+    assert requirement.registry_id == str(registry.id)
+    assert requirement.auth_config == {"username": "robot", "password": "secret"}
+
+
+@pytest.mark.asyncio
+async def test_async_resolver_does_not_attach_credentials_for_nonmatching_endpoint(
+    db_session,
+):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    await ContainerRegistryService(db_session).create_registry(
+        {
+            "name": "Harbor",
+            "endpoint": "https://harbor.example.test",
+            "namespace": "bio",
+            "credential_source": "stored",
+            "username": "robot",
+            "password": "secret",
+            "updated_by": "user-1",
+        }
+    )
+
+    requirements = await resolve_workflow_image_requirements_with_credentials(
+        db_session,
+        _schema("quay.io/biocontainers/tool:1.0"),
+        selected_registry=None,
+    )
+
+    assert requirements[0].full_name == "quay.io/biocontainers/tool:1.0"
+    assert requirements[0].registry_id is None
+    assert requirements[0].auth_config is None
+
+
+def test_resolver_uses_matching_selected_registry_credentials_for_explicit_host():
     registry = WorkflowImageRegistry(
         endpoint="https://harbor.example.test",
         namespace="bio",
@@ -214,7 +288,7 @@ def test_resolver_uses_matching_registry_credentials_for_explicit_host():
 
     requirements = resolve_workflow_image_requirements(
         _schema("harbor.example.test/bio/bwa:0.7.17"),
-        default_registry=registry,
+        selected_registry=registry,
     )
 
     assert len(requirements) == 1
