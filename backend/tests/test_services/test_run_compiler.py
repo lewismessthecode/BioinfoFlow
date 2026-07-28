@@ -849,17 +849,26 @@ async def test_compile_wdl_uses_resolved_registry_images_in_runtime_and_source(
     project_id = uuid4()
     workflow_id = uuid4()
     project_home = tmp_path / "project-home"
-    workflow_path = tmp_path / "workflow.wdl"
+    workflow_bundle = tmp_path / "workflow-bundle"
+    workflow_bundle.mkdir()
+    workflow_path = workflow_bundle / "workflow.wdl"
+    imported_path = workflow_bundle / "tasks.wdl"
     workflow_path.write_text(
+        'version 1.0\n'
+        'import "tasks.wdl" as Tasks\n'
+        'workflow wf { call Tasks.align }\n',
+        encoding="utf-8",
+    )
+    imported_path.write_text(
         'version 1.0\n'
         'task align {\n'
         '  command <<< echo hi >>>\n'
         '  runtime { docker: "bwa:0.7.17" }\n'
-        '}\n'
-        'workflow wf { call align }\n',
+        '}\n',
         encoding="utf-8",
     )
     original_workflow_bytes = workflow_path.read_bytes()
+    original_import_bytes = imported_path.read_bytes()
 
     compiler = _make_compiler(storage=SimpleNamespace(resolve_asset=AsyncMock()))
     monkeypatch.setattr(run_compiler_module, "get_adapter", lambda engine: adapter)
@@ -891,6 +900,11 @@ async def test_compile_wdl_uses_resolved_registry_images_in_runtime_and_source(
         run_compiler_module,
         "workflow_entrypoint_path",
         lambda workflow: workflow_path,
+    )
+    monkeypatch.setattr(
+        run_compiler_module,
+        "workflow_bundle_home",
+        lambda workflow_id: workflow_bundle,
     )
 
     payload = RunCreate(project_id=project_id, workflow_id=workflow_id)
@@ -946,11 +960,107 @@ async def test_compile_wdl_uses_resolved_registry_images_in_runtime_and_source(
     )
     assert resolved_workflow_path != workflow_path
     assert resolved_workflow_path.exists()
-    assert f'docker: "{expected_image}"' in resolved_workflow_path.read_text(
+    resolved_import = resolved_workflow_path.parent / "tasks.wdl"
+    assert resolved_import.exists()
+    assert f'docker: "{expected_image}"' in resolved_import.read_text(
         encoding="utf-8"
     )
     assert workflow_path.read_bytes() == original_workflow_bytes
+    assert imported_path.read_bytes() == original_import_bytes
     assert compiled.launch.argv == ("miniwdl", "run", str(resolved_workflow_path))
+
+
+@pytest.mark.asyncio
+async def test_compile_github_wdl_materializes_and_rewrites_source_snapshot(
+    monkeypatch,
+    tmp_path,
+):
+    class FakeWDLAdapter:
+        engine_name = "wdl"
+        display_name = "MiniWDL"
+        binary = "miniwdl"
+        supports_native_resume = False
+
+        async def pre_submit(self, config: dict, workspace: str) -> dict:
+            return config
+
+        async def build_command(self, config: dict, workspace: str) -> list[str]:
+            return ["miniwdl", "run", config["workflow_path"]]
+
+    source_bundle = tmp_path / "github-source"
+    source_bundle.mkdir()
+    source_path = source_bundle / "workflow.wdl"
+    imported_path = source_bundle / "tasks.wdl"
+    source_path.write_text(
+        'version 1.0\nimport "tasks.wdl" as Tasks\nworkflow wf { call Tasks.align }\n',
+        encoding="utf-8",
+    )
+    imported_path.write_text(
+        'version 1.0\ntask align { command <<< echo hi >>> runtime { docker: "bwa:0.7.17" } }\n',
+        encoding="utf-8",
+    )
+    compiler = _make_compiler(storage=SimpleNamespace(resolve_asset=AsyncMock()))
+    monkeypatch.setattr(
+        run_compiler_module,
+        "get_adapter",
+        lambda engine: FakeWDLAdapter(),
+    )
+    monkeypatch.setattr(run_compiler_module, "generate_run_id", lambda: "run_github")
+    monkeypatch.setattr(
+        compiler,
+        "_resolve_workflow_image_registry",
+        AsyncMock(
+            return_value=WorkflowImageRegistry(
+                endpoint="https://harbor.example.test",
+                namespace="bio",
+                registry_id="registry-1",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        compiler,
+        "_materialize_runtime_inputs",
+        lambda resolved_values, **kwargs: resolved_values,
+    )
+    monkeypatch.setattr(compiler, "_build_engine_inputs", lambda **kwargs: ({}, {}, 0))
+
+    project_id = uuid4()
+    workflow_id = uuid4()
+    payload = RunCreate(project_id=project_id, workflow_id=workflow_id)
+    validated = ValidatedRun(
+        project=SimpleNamespace(
+            id=str(project_id),
+            storage_mode="external",
+            external_root_path=str(tmp_path / "project-home"),
+        ),
+        workflow=SimpleNamespace(
+            id=str(workflow_id),
+            name="github_wdl",
+            engine="wdl",
+            source="github",
+            source_ref=source_path.as_uri(),
+            version="main",
+            schema_json={
+                "workflow_name": "wf",
+                "tasks": [{"name": "align", "container": "bwa:0.7.17"}],
+            },
+        ),
+        spec=FormSpec(fields=[]),
+        submitted_values={},
+        resolved_values={},
+    )
+
+    compiled = await compiler._compile(payload, validated=validated)
+
+    resolved_entrypoint = Path(compiled.run.config["workflow_path"])
+    assert resolved_entrypoint.is_file()
+    resolved_import = resolved_entrypoint.parent / "tasks.wdl"
+    assert resolved_import.is_file()
+    assert (
+        'docker: "harbor.example.test/bio/bwa:0.7.17"'
+        in resolved_import.read_text(encoding="utf-8")
+    )
+    assert source_path.read_text(encoding="utf-8").startswith("version 1.0")
 
 
 @pytest.mark.asyncio

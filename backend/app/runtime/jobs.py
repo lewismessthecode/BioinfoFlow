@@ -16,6 +16,7 @@ from app.path_layout import workflow_entrypoint_path
 from app.runtime.events import publish_run_dag, publish_run_log, publish_run_status
 from app.services.dag_parser import DagParser
 from app.services.container_registry_service import ContainerRegistryService
+from app.services.docker_service import normalize_registry
 from app.services.trace_parser import TraceParser
 from app.utils.dag_builder import (
     build_dag_from_schema,
@@ -463,7 +464,7 @@ async def attach_required_image_auth(session: AsyncSession, config: dict) -> dic
         return config
 
     registry_service = ContainerRegistryService(session)
-    cache: dict[str, dict[str, str] | None] = {}
+    cache: dict[tuple[str, str], dict[str, str] | None] = {}
     resolved_images: list[Any] = []
     changed = False
     for image in required_images:
@@ -474,15 +475,21 @@ async def attach_required_image_auth(session: AsyncSession, config: dict) -> dic
         if not isinstance(registry_id, str) or not registry_id.strip():
             resolved_images.append(image)
             continue
-        if registry_id not in cache:
+        image_registry = normalize_registry(image.get("registry"))
+        cache_key = (registry_id, image_registry)
+        if cache_key not in cache:
             material = await registry_service.resolve_auth_material(registry_id)
+            if normalize_registry(material.endpoint) != image_registry:
+                cache[cache_key] = None
+                resolved_images.append(image)
+                continue
             auth_config: dict[str, str] = {}
             if material.username:
                 auth_config["username"] = material.username
             if material.password:
                 auth_config["password"] = material.password
-            cache[registry_id] = auth_config or None
-        auth_config = cache[registry_id]
+            cache[cache_key] = auth_config or None
+        auth_config = cache[cache_key]
         if auth_config is None:
             resolved_images.append(image)
             continue

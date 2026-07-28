@@ -644,6 +644,42 @@ async def test_wdl_adapter_pre_submit_pulls_missing_required_images():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "ubuntu@sha256:deadbeef",
+        "ubuntu:22.04@sha256:deadbeef",
+    ],
+)
+async def test_wdl_adapter_pre_submit_preserves_digest_pull_reference(reference):
+    class FakeDockerService:
+        def __init__(self):
+            self.pull_calls: list[tuple[str, str, str]] = []
+
+        async def is_available(self) -> bool:
+            return True
+
+        async def inspect_image(self, full_name: str):
+            return None
+
+        async def pull_image(self, name: str, tag: str, registry: str):
+            self.pull_calls.append((name, tag, registry))
+            yield {"status": "done"}
+
+    docker_service = FakeDockerService()
+    config = _wdl_config()
+    config["runtime"] = {"required_images": [reference]}
+
+    with patch(
+        "app.engine.adapters.wdl.DockerService",
+        return_value=docker_service,
+    ):
+        await WDLAdapter().pre_submit(config, "/workspace")
+
+    assert docker_service.pull_calls == [(reference, "", "docker.io")]
+
+
+@pytest.mark.asyncio
 async def test_wdl_adapter_pre_submit_uses_required_image_auth_config():
     class FakeDockerService:
         def __init__(self):

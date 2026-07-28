@@ -215,9 +215,7 @@ async def resolve_workflow_image_requirements_with_credentials(
         if normalized_host not in unresolved_hosts:
             continue
         current = registries_by_host.get(normalized_host)
-        if current is None or _registry_recency_key(registry) > _registry_recency_key(
-            current
-        ):
+        if current is None or str(registry.id) < str(current.id):
             registries_by_host[normalized_host] = registry
     resolved: list[WorkflowImageRequirement] = []
     materials: dict[str, WorkflowImageRegistry] = {}
@@ -241,14 +239,6 @@ async def resolve_workflow_image_requirements_with_credentials(
             )
         )
     return resolved
-
-
-def _registry_recency_key(registry: Any) -> tuple[bool, Any, str]:
-    return (
-        registry.updated_at is not None,
-        registry.updated_at,
-        str(registry.id),
-    )
 
 
 def resolved_workflow_container_images(
@@ -285,7 +275,12 @@ def resolve_container_image_reference(
     selected_registry: WorkflowImageRegistry | None,
 ) -> WorkflowImageRequirement:
     image = reference.strip()
-    name_part, tag = _split_tag(image)
+    digest = ""
+    name_and_tag = image
+    if "@" in image:
+        name_and_tag, digest_value = image.split("@", 1)
+        digest = f"@{digest_value}"
+    name_part, tag = _split_tag(name_and_tag)
     registry, name, explicit_registry = _split_registry(name_part)
     rewrite_applied = False
     auth_config: dict[str, Any] | None = None
@@ -308,10 +303,14 @@ def resolve_container_image_reference(
 
     if rewrite_applied:
         full_name = f"{registry}/{name}"
-        if _reference_has_tag(image):
+        if _reference_has_tag(name_and_tag):
             full_name = f"{full_name}:{tag}"
+        full_name = f"{full_name}{digest}"
     else:
         full_name = image
+    if digest:
+        name = full_name
+        tag = ""
     return WorkflowImageRequirement(
         source_reference=image,
         name=name,

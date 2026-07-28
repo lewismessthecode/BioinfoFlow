@@ -52,6 +52,25 @@ def test_resolver_preserves_unqualified_image_without_selected_registry():
     assert requirement.rewrite_applied is False
 
 
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "ubuntu@sha256:deadbeef",
+        "ubuntu:22.04@sha256:deadbeef",
+    ],
+)
+def test_resolver_preserves_digest_reference_as_atomic_pull_target(reference):
+    requirement = resolve_container_image_reference(
+        reference,
+        selected_registry=None,
+    )
+
+    assert requirement.full_name == reference
+    assert requirement.name == reference
+    assert requirement.tag == ""
+    assert requirement.registry == "docker.io"
+
+
 def test_resolver_rewrites_unqualified_images_with_selected_registry_namespace():
     registry = WorkflowImageRegistry(
         endpoint="http://10.227.4.56:80",
@@ -103,6 +122,88 @@ def test_resolver_never_rewrites_explicit_registry_when_selected_registry_is_con
     assert [item.explicit_registry for item in requirements] == [True, True]
     assert [item.rewrite_applied for item in requirements] == [False, False]
     assert [item.auth_config for item in requirements] == [None, None]
+
+
+@pytest.mark.asyncio
+async def test_explicit_registry_credentials_match_hostname_case_insensitively(
+    db_session,
+):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    registry = await ContainerRegistryService(db_session).create_registry(
+        {
+            "name": "Mixed case Harbor",
+            "endpoint": "https://Harbor.Example.Test:443",
+            "credential_source": "stored",
+            "username": "robot",
+            "password": "secret",
+            "updated_by": "user-1",
+        }
+    )
+
+    requirements = await resolve_workflow_image_requirements_with_credentials(
+        db_session,
+        _schema("harbor.example.test:443/team/tool:1"),
+        selected_registry=None,
+    )
+
+    assert requirements[0].registry_id == str(registry.id)
+    assert requirements[0].auth_config == {
+        "username": "robot",
+        "password": "secret",
+    }
+
+
+@pytest.mark.asyncio
+async def test_duplicate_registry_endpoints_choose_lowest_immutable_id(
+    db_session,
+    monkeypatch,
+):
+    older_id = "10000000-0000-0000-0000-000000000000"
+    newer_id = "20000000-0000-0000-0000-000000000000"
+    registries = [
+        SimpleNamespace(
+            id=newer_id,
+            endpoint="https://registry.example.test",
+            updated_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        ),
+        SimpleNamespace(
+            id=older_id,
+            endpoint="https://registry.example.test",
+            updated_at=datetime(2030, 1, 1, tzinfo=timezone.utc),
+        ),
+    ]
+
+    async def fake_list_registries(self):
+        return registries
+
+    async def fake_resolve_auth_material(self, registry_id):
+        return SimpleNamespace(
+            registry_id=registry_id,
+            endpoint="https://registry.example.test",
+            namespace=None,
+            username=f"user-{registry_id[0]}",
+            password="secret",
+        )
+
+    monkeypatch.setattr(
+        workflow_image_module.ContainerRegistryService,
+        "list_registries",
+        fake_list_registries,
+    )
+    monkeypatch.setattr(
+        workflow_image_module.ContainerRegistryService,
+        "resolve_auth_material",
+        fake_resolve_auth_material,
+    )
+
+    requirements = await resolve_workflow_image_requirements_with_credentials(
+        db_session,
+        _schema("registry.example.test/team/tool:1"),
+        selected_registry=None,
+    )
+
+    assert requirements[0].registry_id == older_id
 
 
 @pytest.mark.asyncio
@@ -163,6 +264,36 @@ async def test_prefetch_service_enqueues_resolved_static_image_pulls(
             "auth_config": None,
             "registry_id": None,
         },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_prefetch_service_preserves_digest_pull_references(
+    db_session,
+    monkeypatch,
+):
+    calls: list[dict] = []
+
+    class FakeImageService:
+        def __init__(self, session):
+            assert session is db_session
+
+        async def pull_image(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(id="image-1")
+
+    monkeypatch.setattr(workflow_image_module, "ImageService", FakeImageService)
+
+    await WorkflowImagePrefetchService(db_session).prefetch_schema(
+        _schema(
+            "ubuntu@sha256:deadbeef",
+            "ubuntu:22.04@sha256:cafebabe",
+        )
+    )
+
+    assert [(call["name"], call["tag"], call["registry"]) for call in calls] == [
+        ("ubuntu@sha256:deadbeef", "", "docker.io"),
+        ("ubuntu:22.04@sha256:cafebabe", "", "docker.io"),
     ]
 
 
@@ -289,7 +420,7 @@ async def test_async_resolver_attaches_credentials_by_exact_normalized_endpoint(
 
 
 @pytest.mark.asyncio
-async def test_async_resolver_uses_latest_registry_then_largest_id_for_duplicate_host(
+async def test_async_resolver_uses_lowest_immutable_id_for_duplicate_host(
     db_session,
     monkeypatch,
 ):
@@ -314,7 +445,7 @@ async def test_async_resolver_uses_latest_registry_then_largest_id_for_duplicate
         env_username_var="OLDER_USER",
         env_password_var="OLDER_PASSWORD",
     )
-    await service.registry_repo.create(
+    selected = await service.registry_repo.create(
         **common,
         id="00000000-0000-0000-0000-000000000001",
         name="Y latest lower id",
@@ -322,7 +453,7 @@ async def test_async_resolver_uses_latest_registry_then_largest_id_for_duplicate
         env_username_var="LOWER_USER",
         env_password_var="LOWER_PASSWORD",
     )
-    expected = await service.registry_repo.create(
+    await service.registry_repo.create(
         **common,
         id="00000000-0000-0000-0000-000000000002",
         name="A latest larger id",
@@ -343,10 +474,10 @@ async def test_async_resolver_uses_latest_registry_then_largest_id_for_duplicate
         selected_registry=None,
     )
 
-    assert requirements[0].registry_id == str(expected.id)
+    assert requirements[0].registry_id == str(selected.id)
     assert requirements[0].auth_config == {
-        "username": "expected-user",
-        "password": "expected-password",
+        "username": "lower-user",
+        "password": "lower-password",
     }
 
 
