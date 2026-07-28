@@ -108,6 +108,12 @@ async def test_workflows_create_wraps_service_and_emits_workflow_artifact(
     assert [artifact.type for artifact in artifacts] == ["workflow"]
 
 
+def test_workflows_create_exposes_local_bundle_path():
+    spec = build_default_tool_registry().get("workflows.create").spec
+
+    assert spec.input_schema["properties"]["bundle_path"]["type"] == "string"
+
+
 @pytest.mark.asyncio
 async def test_runs_submit_wraps_compiler_and_emits_run_artifact(
     db_session, monkeypatch

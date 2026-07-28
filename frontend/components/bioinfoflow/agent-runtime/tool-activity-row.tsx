@@ -30,13 +30,9 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
       activity.exitCode !== undefined ||
       activity.relatedFiles.length,
   )
-
-  return (
-    <div
-      className="grid gap-1 text-xs text-muted-foreground"
-      data-testid="agent-tool-activity-row"
-    >
-      <div className="group/row flex min-w-0 items-center gap-1.5">
+  const rowContent = (
+    <>
+      <div className="flex min-w-0 items-center gap-1.5">
         <ActivityStatusIcon status={activity.status} />
         <span className="min-w-0 truncate rounded-md bg-muted/45 px-1.5 py-0.5 font-mono text-[11px] text-foreground/65">
           {activity.name}
@@ -52,31 +48,46 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
           </span>
         ) : null}
         {hasDetails ? (
-          <button
-            type="button"
-            className={cn(
-              "ml-auto inline-flex shrink-0 items-center rounded-md p-0.5 text-muted-foreground opacity-0 transition-[background-color,color,opacity] hover:bg-muted/50 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring group-hover/row:opacity-100 group-focus-within/row:opacity-100",
-              expanded && "opacity-100",
-            )}
-            onClick={() => setExpanded((current) => !current)}
-            aria-expanded={expanded}
-            aria-controls={detailsId}
-            aria-label={expanded ? t("activity.details.hide") : t("activity.details.show")}
-          >
-            {expanded ? (
-              <ChevronDown className="h-3 w-3" />
-            ) : (
-              <ChevronRight className="h-3 w-3" />
-            )}
-          </button>
+          expanded ? (
+            <ChevronDown
+              aria-hidden="true"
+              className="ml-auto h-3 w-3 shrink-0 text-muted-foreground"
+            />
+          ) : (
+            <ChevronRight
+              aria-hidden="true"
+              className="ml-auto h-3 w-3 shrink-0 text-muted-foreground"
+            />
+          )
         ) : null}
       </div>
 
       {activity.summary || activity.inputPreview ? (
-        <p className="truncate text-muted-foreground sm:hidden">
+        <p aria-hidden="true" className="truncate text-muted-foreground sm:hidden">
           {activity.summary || activity.inputPreview}
         </p>
       ) : null}
+    </>
+  )
+
+  return (
+    <div
+      className="grid gap-1 text-xs text-muted-foreground"
+      data-testid="agent-tool-activity-row"
+    >
+      {hasDetails ? (
+        <button
+          type="button"
+          className="grid min-w-0 gap-1 rounded-md text-left transition-colors hover:bg-muted/25 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => setExpanded((current) => !current)}
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+        >
+          {rowContent}
+        </button>
+      ) : (
+        <div className="grid min-w-0 gap-1">{rowContent}</div>
+      )}
 
       {hasDetails && expanded ? (
         <div id={detailsId} className="grid gap-1.5 text-muted-foreground">
