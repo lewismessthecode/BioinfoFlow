@@ -1478,20 +1478,6 @@
       "selectLanguage": "语言",
       "github": "GitHub"
     },
-    "hero": {
-      "tagline": "本地优先的生物信息学平台",
-      "gpuPowered": "GPU 加速",
-      "title": "Bioinfoflow",
-      "titleSuffix": "让你在家运行 WGS。",
-      "description": "使用 RTX 4090 在 2 小时内完成完整的 30X 全基因组测序分析。",
-      "wgsHighlight": "个人使用免费。数据永不离开你的机器。",
-      "startFree": "立即开始",
-      "bookDemo": "了解更多",
-      "windowTitle": "bioinfoflow — 智能助手",
-      "chatExample": "使用 Parabricks 分析 /data/wgs 中的全基因组测序数据。",
-      "planningWorkflow": "规划 GPU 加速工作流中...",
-      "workflowDescription": "Parabricks Germline → FASTQ 到 BAM → VCF"
-    },
     "story": {
       "eyebrow": "本地运行的生物信息学 Agent",
       "title": "Bioinfoflow",
@@ -1521,65 +1507,6 @@
           "description": "状态、日志和结果集中记录，失败后也能接着查、接着跑。",
           "alt": "Bioinfoflow 运行页面，展示工作流状态和执行历史"
         }
-      }
-    },
-    "trustBar": {
-      "builtFor": "支持",
-      "rnaseq": "RNA-seq",
-      "chipseq": "ChIP-seq",
-      "variantCalling": "变异检测",
-      "singleCell": "单细胞",
-      "metagenomics": "宏基因组"
-    },
-    "productTabs": {
-      "title": "专为生信打造",
-      "subtitle": "从规划到运行再到监控，一站式搞定。",
-      "learnMore": "了解更多",
-      "agent": {
-        "label": "智能助手",
-        "title": "说人话，跑流程。",
-        "description": "描述分析目标，AI 自动选择最优流程、配置参数。不写代码，只聊科学。",
-        "chatExample1": "帮我分析 ChIP-seq 数据，找 H3K27ac 峰",
-        "chatExample2": "好的，我来配置 nf-core/chipseq + MACS2..."
-      },
-      "workflows": {
-        "label": "工作流",
-        "title": "nf-core 精选 + 自定义 WDL，开箱即用。",
-        "description": "一键调用经过验证的 nf-core 流程，也能接入自己的 pipeline。版本可控，结果可复现。"
-      },
-      "runs": {
-        "label": "运行记录",
-        "title": "追踪、恢复、重试。每一步都有迹可循。",
-        "description": "完整记录每次运行。失败可恢复，历史可追溯，审计无死角。"
-      },
-      "images": {
-        "label": "镜像",
-        "title": "Docker 环境，版本锁定。",
-        "description": "所有容器统一管理、版本追踪。每个步骤的运行环境都可复现。"
-      }
-    },
-    "bento": {
-      "title": "为什么选择 Bioinfoflow？",
-      "subtitle": "从零开始为计算生物学工作流构建。",
-      "gpu": {
-        "title": "GPU 加速 WGS",
-        "description": "使用 RTX 4090 在 2 小时内运行 30X 全基因组测序。基于 Parabricks，个人使用免费。"
-      },
-      "agentic": {
-        "title": "AI 智能规划",
-        "description": "用自然语言描述目标。AI 自动选工具、配参数、生成最优方案。"
-      },
-      "local": {
-        "title": "本地优先",
-        "description": "数据不出本地。在自己的服务器或集群上跑计算密集型任务。"
-      },
-      "artifacts": {
-        "title": "完全可复现",
-        "description": "每次运行的配置、样本表、环境都完整保存。几个月后再跑，结果一致。"
-      },
-      "observability": {
-        "title": "实时可观测",
-        "description": "DAG 可视化、日志流、资源监控。流程跑到哪，一目了然。"
       }
     },
     "capabilities": {
@@ -1650,58 +1577,6 @@
         "notCompatible": "需要 NVIDIA GPU",
         "noGpu": "未检测到 GPU",
         "cannotDetect": "请手动检查 NVIDIA GPU"
-      }
-    },
-    "howItWorks": {
-      "title": "四步上手",
-      "subtitle": "从科学问题到可复现结果。",
-      "step1": {
-        "title": "选择工作区",
-        "description": "指定本地数据目录。文件不动，原地分析。"
-      },
-      "step2": {
-        "title": "描述需求",
-        "description": "用自然语言告诉 AI 你想做什么分析。"
-      },
-      "step3": {
-        "title": "AI 规划",
-        "description": "自动选择最优流程，生成配置。"
-      },
-      "step4": {
-        "title": "运行监控",
-        "description": "本地执行，实时查看 DAG、日志和结果。"
-      }
-    },
-    "quote": {
-      "label": "我们的愿景",
-      "text": "用 AI 让计算生物学人人可用。"
-    },
-    "results": {
-      "title": "您将获得",
-      "subtitle": "让生物信息学工作流更快、更可靠的核心能力。",
-      "wgsSpeed": {
-        "title": "30X WGS 不到 2 小时",
-        "description": "在家用 RTX 4090 运行完整的全基因组测序分析。无需云端。"
-      },
-      "nlp": {
-        "title": "自然语言转流程",
-        "description": "用中文描述分析需求，获得配置好的可运行 pipeline。"
-      },
-      "zeroData": {
-        "title": "零数据迁移",
-        "description": "TB 级测序数据无需上传。文件留在本地，分析照样跑。"
-      },
-      "provenance": {
-        "title": "全链路溯源",
-        "description": "版本、参数、产出，每次运行都完整记录。随时可复现。"
-      },
-      "comparison": {
-        "title": "效率对比",
-        "manual": "传统手动配置",
-        "manualTime": "数小时 ~ 数天",
-        "withBioinfoflow": "Bioinfoflow",
-        "withBioinfoflowTime": "几分钟",
-        "note": "基于 RNA-seq 流程配置实测：手动 vs AI 辅助。"
       }
     },
     "security": {

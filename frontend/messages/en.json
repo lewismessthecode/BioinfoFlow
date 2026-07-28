@@ -1478,20 +1478,6 @@
       "selectLanguage": "Select language",
       "github": "GitHub"
     },
-    "hero": {
-      "tagline": "Local-first bioinformatics platform",
-      "gpuPowered": "GPU-Powered",
-      "title": "Bioinfoflow",
-      "titleSuffix": "runs WGS at home.",
-      "description": "Full 30X whole genome sequencing analysis in under 2 hours on your RTX 4090.",
-      "wgsHighlight": "Free for personal use. Your data never leaves your machine.",
-      "startFree": "Get started",
-      "bookDemo": "Learn more",
-      "windowTitle": "bioinfoflow — agent",
-      "chatExample": "Analyze my whole genome sequencing data from /data/wgs using Parabricks.",
-      "planningWorkflow": "Planning GPU-accelerated workflow...",
-      "workflowDescription": "Parabricks Germline → FASTQ to BAM → VCF"
-    },
     "story": {
       "eyebrow": "A local Agent for bioinformatics",
       "title": "Bioinfoflow",
@@ -1521,65 +1507,6 @@
           "description": "Follow status, logs, artifacts, and recovery history from one durable run record.",
           "alt": "Bioinfoflow runs view showing workflow status and execution history"
         }
-      }
-    },
-    "trustBar": {
-      "builtFor": "Built for",
-      "rnaseq": "RNA-seq",
-      "chipseq": "ChIP-seq",
-      "variantCalling": "Variant Calling",
-      "singleCell": "Single-cell",
-      "metagenomics": "Metagenomics"
-    },
-    "productTabs": {
-      "title": "Built for bioinformatics",
-      "subtitle": "Everything you need to plan, run, and monitor computational biology workflows.",
-      "learnMore": "Learn more",
-      "agent": {
-        "label": "Agent",
-        "title": "Ask in plain language. Get reproducible pipelines.",
-        "description": "Describe your analysis goal and let the agent plan the optimal workflow. No scripting required — just scientific intent.",
-        "chatExample1": "Analyze my ChIP-seq data for H3K27ac peaks",
-        "chatExample2": "I'll set up nf-core/chipseq with MACS2 peak calling..."
-      },
-      "workflows": {
-        "label": "Workflows",
-        "title": "Curated nf-core + local WDLs, ready to run.",
-        "description": "Access a registry of validated workflows from nf-core and your own custom pipelines. Version-controlled and reproducible."
-      },
-      "runs": {
-        "label": "Runs",
-        "title": "Trace, resume, or retry with full audit history.",
-        "description": "Every run is logged with full provenance. Resume failed jobs, compare runs, and maintain complete audit trails."
-      },
-      "images": {
-        "label": "Images",
-        "title": "Manage Docker runtimes with versioned certainty.",
-        "description": "All containers are tracked and versioned. Reproducible environments for every step of your pipeline."
-      }
-    },
-    "bento": {
-      "title": "Why Bioinfoflow?",
-      "subtitle": "Built from the ground up for computational biology workflows.",
-      "gpu": {
-        "title": "GPU-Accelerated WGS",
-        "description": "Run 30X whole genome sequencing in under 2 hours using your RTX 4090. Parabricks-powered, free for personal use."
-      },
-      "agentic": {
-        "title": "Agentic Planning",
-        "description": "Describe your analysis goal in plain language. The agent plans the optimal workflow, selects tools, and configures parameters."
-      },
-      "local": {
-        "title": "Local-First Compute",
-        "description": "Your data never leaves your infrastructure. Run compute-heavy workflows on your own machines or cluster."
-      },
-      "artifacts": {
-        "title": "Reproducible Artifacts",
-        "description": "Every run stores its config, samplesheet, and environment. Re-run any analysis months later with identical results."
-      },
-      "observability": {
-        "title": "Real-time Observability",
-        "description": "Watch your pipeline execute with DAG visualization, streaming logs, and resource utilization metrics."
       }
     },
     "capabilities": {
@@ -1650,58 +1577,6 @@
         "notCompatible": "NVIDIA GPU required",
         "noGpu": "No GPU detected",
         "cannotDetect": "Check your NVIDIA GPU manually"
-      }
-    },
-    "howItWorks": {
-      "title": "How it works",
-      "subtitle": "From biological question to reproducible results in four steps.",
-      "step1": {
-        "title": "Select Workspace",
-        "description": "Choose your local data folder. Your files stay where they are."
-      },
-      "step2": {
-        "title": "Describe Intent",
-        "description": "Tell the agent what analysis you need in plain language."
-      },
-      "step3": {
-        "title": "Agent Plans",
-        "description": "AI selects the optimal workflow and generates configuration."
-      },
-      "step4": {
-        "title": "Run & Monitor",
-        "description": "Execute locally with real-time DAG, logs, and results."
-      }
-    },
-    "quote": {
-      "label": "Our vision",
-      "text": "Make computational biology accessible to everyone, powered by AI."
-    },
-    "results": {
-      "title": "What you get",
-      "subtitle": "Core capabilities that make bioinformatics workflows faster and more reliable.",
-      "wgsSpeed": {
-        "title": "30X WGS in < 2 Hours",
-        "description": "Run complete whole genome sequencing analysis on your RTX 4090 at home. No cloud required."
-      },
-      "nlp": {
-        "title": "Natural Language to Pipeline",
-        "description": "Describe your analysis in plain English. Get a configured, ready-to-run workflow."
-      },
-      "zeroData": {
-        "title": "Zero Data Movement",
-        "description": "Process terabytes of sequencing data without uploading. Your files stay on your infrastructure."
-      },
-      "provenance": {
-        "title": "Full Provenance",
-        "description": "Every run captures exact versions, parameters, and outputs. Reproduce any analysis, anytime."
-      },
-      "comparison": {
-        "title": "Typical workflow comparison",
-        "manual": "Manual pipeline setup",
-        "manualTime": "Hours to days",
-        "withBioinfoflow": "With Bioinfoflow",
-        "withBioinfoflowTime": "Minutes",
-        "note": "Based on internal benchmarks comparing manual nf-core configuration vs. agent-assisted setup for RNA-seq workflows."
       }
     },
     "security": {
