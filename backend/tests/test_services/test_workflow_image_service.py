@@ -125,7 +125,7 @@ async def test_prefetch_service_enqueues_resolved_static_image_pulls(
         registry_id="registry-1",
         auth_config={"identitytoken": "token"},
     )
-    service = WorkflowImagePrefetchService(db_session, selected_registry=registry)
+    service = WorkflowImagePrefetchService(db_session)
 
     result = await service.prefetch_schema(
         _schema(
@@ -134,6 +134,7 @@ async def test_prefetch_service_enqueues_resolved_static_image_pulls(
             "${params.dynamic_image}",
         ),
         workflow_id="workflow-1",
+        selected_registry=registry,
     )
 
     assert [item.source_reference for item in result.enqueued] == [
@@ -215,6 +216,43 @@ async def test_prefetch_workflow_uses_workflow_selected_registry(
             "registry_id": None,
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_prefetch_workflow_ignores_stale_service_registry_without_binding(
+    db_session,
+    monkeypatch,
+):
+    calls: list[dict] = []
+
+    class FakeImageService:
+        def __init__(self, session):
+            assert session is db_session
+
+        async def pull_image(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(id="image-1")
+
+    monkeypatch.setattr(workflow_image_module, "ImageService", FakeImageService)
+    service = WorkflowImagePrefetchService(db_session)
+    service.selected_registry = WorkflowImageRegistry(
+        endpoint="https://registry.example.test",
+        namespace="private",
+        registry_id="registry-1",
+    )
+
+    await service.prefetch_workflow(
+        SimpleNamespace(
+            id="workflow-1",
+            container_registry_id=None,
+            schema_json=_schema("ubuntu:22.04"),
+        )
+    )
+
+    assert calls[0]["name"] == "ubuntu"
+    assert calls[0]["tag"] == "22.04"
+    assert calls[0]["registry"] == "docker.io"
+    assert calls[0]["auth_config"] is None
 
 
 @pytest.mark.asyncio
