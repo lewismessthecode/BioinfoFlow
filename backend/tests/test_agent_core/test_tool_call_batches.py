@@ -355,6 +355,78 @@ async def test_tool_batch_parallelizes_only_adjacent_safe_calls(
 
 
 @pytest.mark.asyncio
+async def test_plan_batch_denial_does_not_publish_partial_barrier(
+    db_session, monkeypatch
+):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="bypass",
+    )
+    session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"mode": "plan"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Prepare the Plan batch atomically.",
+    )
+    controller = AgentLoopController(db_session)
+    original_execute = controller.executor.execute
+    observed_before_barrier_commit: list[tuple[bool, int]] = []
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def observe_first_prepared_call(**kwargs):
+        result = await original_execute(**kwargs)
+        if kwargs["tool_call_ordinal"] == 0:
+            async with session_factory() as observer:
+                batch = await AgentToolCallBatchRepository(observer).get(
+                    kwargs["tool_batch_id"]
+                )
+                actions = await AgentActionRepository(observer).list_for_batch(
+                    kwargs["tool_batch_id"]
+                )
+                observed_before_barrier_commit.append((batch is not None, len(actions)))
+        return result
+
+    monkeypatch.setattr(controller.executor, "execute", observe_first_prepared_call)
+
+    await controller._execute_tool_calls(
+        agent_session=session,
+        turn=turn,
+        tool_calls=[
+            {
+                "id": "plan-denied",
+                "name": "bash",
+                "arguments": {"command": "touch output.txt"},
+            },
+            {"id": "plan-read", "name": "projects__list", "arguments": {}},
+        ],
+        provider="openai_compatible",
+        model="batch-model",
+    )
+
+    assert observed_before_barrier_commit == [(False, 0)]
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    assert {action.tool_call_id for action in actions} == {
+        "plan-denied",
+        "plan-read",
+    }
+    assert len({action.tool_batch_id for action in actions}) == 1
+
+
+@pytest.mark.asyncio
 async def test_three_approvals_continue_only_after_entire_batch_is_terminal(
     db_session,
     monkeypatch,

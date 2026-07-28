@@ -266,6 +266,17 @@ def test_explicit_allowed_tools_remains_an_authoritative_compatibility_path() ->
     assert exposed == {"projects.create", "runs.submit"}
 
 
+def test_subagent_execution_explicit_allowlist_matches_callable_surface() -> None:
+    exposure = ToolsetExposure(build_default_tool_registry())
+    kwargs = {
+        "policy": {"name": "execution", "allowed_tools": ["runs.submit"]},
+        "role": "subagent",
+    }
+
+    assert exposure.exposed_names(**kwargs) == {"runs.submit"}
+    assert exposure.callable_names(**kwargs) == {"runs.submit"}
+
+
 def test_retired_model_tools_cannot_be_revived_by_any_exposure_path() -> None:
     exposure = ToolsetExposure(build_default_tool_registry())
     retired = RETIRED_AGENT_TOOL_NAMES | {"web.fetch"}
