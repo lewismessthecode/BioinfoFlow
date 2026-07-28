@@ -92,7 +92,7 @@ class DockerService:
         parsed = urlparse(endpoint)
         if parsed.scheme != "http":
             return None
-        registry = normalize_registry(endpoint)
+        registry = registry_authority(endpoint)
 
         def _check() -> str | None:
             try:
@@ -135,7 +135,7 @@ class DockerService:
         configuration_error = await self.registry_configuration_error(endpoint)
         if configuration_error:
             return configuration_error
-        registry = normalize_registry(endpoint)
+        registry = registry_authority(endpoint)
         if auth_config:
 
             def _login() -> None:
@@ -347,6 +347,18 @@ def _split_registry(name: str) -> tuple[str, str]:
 
 
 def normalize_registry(registry: str | None) -> str:
+    return _normalized_registry(registry, strip_default_port=True)
+
+
+def registry_authority(registry: str | None) -> str:
+    return _normalized_registry(registry, strip_default_port=False)
+
+
+def _normalized_registry(
+    registry: str | None,
+    *,
+    strip_default_port: bool,
+) -> str:
     value = str(registry or "").strip().rstrip("/")
     if not value:
         return ""
@@ -361,6 +373,12 @@ def normalize_registry(registry: str | None) -> str:
         port = parsed.port
     except ValueError:
         return value.lower()
+    if strip_default_port and port in {80, 443} and (
+        not parsed.scheme
+        or (parsed.scheme == "http" and port == 80)
+        or (parsed.scheme == "https" and port == 443)
+    ):
+        port = None
     return f"{host}:{port}" if port is not None else host
 
 
@@ -372,7 +390,7 @@ def qualified_image_reference(name: str, tag: str, registry: str) -> str:
 
 
 def _apply_registry(name: str, registry: str) -> str:
-    registry = normalize_registry(registry)
+    registry = registry_authority(registry)
     if not registry or registry == "docker.io":
         return name
     detected_registry, _normalized_name = _split_registry(name)

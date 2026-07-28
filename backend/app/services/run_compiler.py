@@ -28,6 +28,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 from copy import deepcopy
 from dataclasses import dataclass
@@ -82,6 +83,7 @@ from app.services.workflow_image_service import (
     rewrite_wdl_static_container_literals,
     workflow_registry_from_auth_material,
 )
+from app.services.workflow_source import resolve_wdl_source_reference
 from app.utils.project_access import can_access_project
 
 
@@ -999,6 +1001,13 @@ class RunCompiler:
             workflow_path = str(workflow_entrypoint_path(workflow))
         elif getattr(workflow, "source_ref", None):
             workflow_path = str(workflow.source_ref)
+            if engine == WorkflowEngine.WDL.value:
+                workflow_path = resolve_wdl_source_reference(
+                    workflow_path,
+                    source=str(source_value),
+                    version=getattr(workflow, "version", None),
+                    entrypoint_relpath=getattr(workflow, "entrypoint_relpath", None),
+                )
 
         config = dict(config)
         if (
@@ -1378,7 +1387,7 @@ async def _write_resolved_wdl_workflow(
         return target_root / source_entrypoint.relative_to(source_root)
 
     document = await asyncio.to_thread(_load_wdl_source_document, workflow_path)
-    target = target_root / _wdl_source_name(workflow_path)
+    target = target_root / _remote_wdl_target_relpath(workflow, workflow_path)
     _materialize_wdl_document_tree(
         document,
         target=target,
@@ -1401,6 +1410,14 @@ def _wdl_source_name(source: str) -> str:
     return name if name.endswith(".wdl") else "workflow.wdl"
 
 
+def _remote_wdl_target_relpath(workflow, source: str) -> Path:
+    entrypoint = str(getattr(workflow, "entrypoint_relpath", None) or "").strip()
+    entrypoint_path = PurePosixPath(entrypoint)
+    if entrypoint and not entrypoint_path.is_absolute() and ".." not in entrypoint_path.parts:
+        return Path(*entrypoint_path.parts)
+    return Path(_wdl_source_name(source))
+
+
 def _materialize_wdl_document_tree(
     document,
     *,
@@ -1408,19 +1425,20 @@ def _materialize_wdl_document_tree(
     root: Path,
     image_registry: WorkflowImageRegistry,
 ) -> None:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        rewrite_wdl_static_container_literals(
-            document.source_text,
-            selected_registry=image_registry,
-        ),
-        encoding="utf-8",
-    )
+    content = document.source_text
     for imported in document.imports:
-        import_path = PurePosixPath(str(imported.uri))
-        if import_path.is_absolute() or ".." in import_path.parts:
-            raise ValueError("WDL import must be relative to the workflow source")
-        imported_target = target.parent.joinpath(*import_path.parts)
+        import_uri = str(imported.uri)
+        import_path = PurePosixPath(import_uri)
+        parsed_import = _parse_wdl_import_uri(import_uri)
+        if parsed_import:
+            digest = hashlib.sha256(import_uri.encode("utf-8")).hexdigest()[:12]
+            imported_target = root / "_imports" / digest / parsed_import
+            local_uri = Path(
+                os.path.relpath(imported_target, start=target.parent)
+            ).as_posix()
+            content = _rewrite_wdl_import_uri(content, import_uri, local_uri)
+        else:
+            imported_target = target.parent.joinpath(*import_path.parts)
         if not imported_target.resolve(strict=False).is_relative_to(
             root.resolve(strict=False)
         ):
@@ -1431,6 +1449,39 @@ def _materialize_wdl_document_tree(
             root=root,
             image_registry=image_registry,
         )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        rewrite_wdl_static_container_literals(
+            content,
+            selected_registry=image_registry,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _parse_wdl_import_uri(uri: str) -> str | None:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(uri)
+    if parsed.scheme in {"http", "https", "file"}:
+        return Path(parsed.path).name or "import.wdl"
+    path = PurePosixPath(uri)
+    if path.is_absolute():
+        return path.name or "import.wdl"
+    return None
+
+
+def _rewrite_wdl_import_uri(content: str, source_uri: str, local_uri: str) -> str:
+    pattern = re.compile(
+        rf"(?P<prefix>\bimport\s+)(?P<quote>[\"']){re.escape(source_uri)}(?P=quote)"
+    )
+    return pattern.sub(
+        lambda match: (
+            f"{match.group('prefix')}{match.group('quote')}"
+            f"{local_uri}{match.group('quote')}"
+        ),
+        content,
+    )
 
 
 def _rewrite_wdl_file(

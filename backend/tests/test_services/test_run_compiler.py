@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import textwrap
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -33,6 +33,7 @@ from app.services.run_compiler import (
     RunCompiler,
     ValidatedRun,
     _merge_config_patch,
+    _materialize_wdl_document_tree,
     _remove_config_override,
     _render_csv,
 )
@@ -1038,8 +1039,9 @@ async def test_compile_github_wdl_materializes_and_rewrites_source_snapshot(
             name="github_wdl",
             engine="wdl",
             source="github",
-            source_ref=source_path.as_uri(),
-            version="main",
+            source_ref="https://github.com/example/github-wdl.git",
+            version="v1.2.3",
+            entrypoint_relpath="workflows/main.wdl",
             schema_json={
                 "workflow_name": "wf",
                 "tasks": [{"name": "align", "container": "bwa:0.7.17"}],
@@ -1050,7 +1052,17 @@ async def test_compile_github_wdl_materializes_and_rewrites_source_snapshot(
         resolved_values={},
     )
 
-    compiled = await compiler._compile(payload, validated=validated)
+    import WDL
+
+    captured_sources: list[str] = []
+    original_load = WDL.load
+
+    def fake_load(source: str):
+        captured_sources.append(source)
+        return original_load(source_path.as_uri())
+
+    with patch("WDL.load", side_effect=fake_load):
+        compiled = await compiler._compile(payload, validated=validated)
 
     resolved_entrypoint = Path(compiled.run.config["workflow_path"])
     assert resolved_entrypoint.is_file()
@@ -1061,6 +1073,53 @@ async def test_compile_github_wdl_materializes_and_rewrites_source_snapshot(
         in resolved_import.read_text(encoding="utf-8")
     )
     assert source_path.read_text(encoding="utf-8").startswith("version 1.0")
+    assert captured_sources == [
+        "https://raw.githubusercontent.com/example/github-wdl/v1.2.3/workflows/main.wdl"
+    ]
+
+
+def test_materialize_remote_wdl_rewrites_absolute_import_to_local_snapshot(tmp_path):
+    remote_import = (
+        "https://raw.githubusercontent.com/example/shared/main/tasks/align.wdl"
+    )
+    imported_document = SimpleNamespace(
+        source_text=(
+            'version 1.0\ntask align { command <<< echo hi >>> '
+            'runtime { docker: "bwa:0.7.17" } }\n'
+        ),
+        imports=[],
+    )
+    document = SimpleNamespace(
+        source_text=(
+            f'version 1.0\nimport "{remote_import}" as Tasks\n'
+            "workflow wf { call Tasks.align }\n"
+        ),
+        imports=[SimpleNamespace(uri=remote_import, doc=imported_document)],
+    )
+    root = tmp_path / "snapshot"
+    target = root / "workflow.wdl"
+
+    _materialize_wdl_document_tree(
+        document,
+        target=target,
+        root=root,
+        image_registry=WorkflowImageRegistry(
+            endpoint="https://harbor.example.test",
+            namespace="bio",
+        ),
+    )
+
+    parent = target.read_text(encoding="utf-8")
+    assert remote_import not in parent
+    match = re.search(r'import "(?P<uri>[^"]+)" as Tasks', parent)
+    assert match is not None
+    imported_target = (target.parent / match.group("uri")).resolve()
+    assert imported_target.is_file()
+    assert imported_target.is_relative_to(root.resolve())
+    assert (
+        'docker: "harbor.example.test/bio/bwa:0.7.17"'
+        in imported_target.read_text(encoding="utf-8")
+    )
 
 
 @pytest.mark.asyncio

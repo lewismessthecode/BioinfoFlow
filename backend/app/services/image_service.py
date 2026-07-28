@@ -16,8 +16,8 @@ from app.services.container_registry_service import ContainerRegistryService
 from app.services.docker_service import (
     DockerImageInfo,
     DockerService,
-    normalize_registry,
     qualified_image_reference,
+    registry_authority,
 )
 from app.utils.authorization import can_access_project
 from app.utils.exceptions import ConfigurationError, PermissionDeniedError
@@ -147,7 +147,7 @@ class ImageService:
             registry = target.registry
             auth_config = target.auth_config
             registry_id = target.registry_id
-        registry = normalize_registry(registry) or "docker.io"
+        registry = registry_authority(registry) or "docker.io"
         full_name = qualified_image_reference(name, tag, registry)
         existing = await self.repo.get_by_full_name(full_name)
         if existing:

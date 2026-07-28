@@ -256,6 +256,37 @@ async def test_create_remote_workflow_prefetches_schema_images_after_registratio
 
 
 @pytest.mark.asyncio
+async def test_create_github_wdl_extracts_schema_from_resolved_raw_entrypoint(
+    db_session,
+):
+    source_ref = "https://github.com/example/genomics-workflows.git"
+    extractor = AsyncMock(return_value={"tasks": [], "inputs": [], "outputs": []})
+
+    with patch(
+        "app.services.workflow_service.SchemaExtractor.extract",
+        extractor,
+    ):
+        workflow = await WorkflowService(db_session).create_workflow(
+            {
+                "source": "github",
+                "source_ref": source_ref,
+                "engine": "wdl",
+                "name": f"github-wdl-{uuid4()}",
+                "version": "v2.1.0",
+                "entrypoint_relpath": "workflows/main.wdl",
+            }
+        )
+
+    extractor.assert_awaited_once_with(
+        "wdl",
+        "https://raw.githubusercontent.com/example/genomics-workflows/v2.1.0/workflows/main.wdl",
+        version="v2.1.0",
+    )
+    assert workflow.source_ref == source_ref
+    assert workflow.entrypoint_relpath == "workflows/main.wdl"
+
+
+@pytest.mark.asyncio
 async def test_create_workflow_persists_selected_registry_for_prefetch(db_session):
     from app.services.container_registry_service import ContainerRegistryService
 
