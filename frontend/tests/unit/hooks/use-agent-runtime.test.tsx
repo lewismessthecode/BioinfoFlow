@@ -330,6 +330,102 @@ describe("useAgentRuntime", () => {
     expect(mocks.updateAgentRuntimeSessionMode).not.toHaveBeenCalled()
   })
 
+  it("keeps pending mode while the post-turn authoritative refresh is unresolved", async () => {
+    const refresh = deferred<{
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }>()
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+
+    act(() => {
+      result.current.setMode("plan")
+    })
+    mocks.getAgentRuntimeState.mockReturnValueOnce(refresh.promise)
+    let sendPromise!: Promise<AgentRuntimeTurn | null>
+    act(() => {
+      sendPromise = result.current.send("Draft a plan")
+    })
+    await waitFor(() => expect(mocks.createAgentRuntimeTurn).toHaveBeenCalled())
+    await waitFor(() => expect(result.current.state.status).toBe("loading"))
+
+    expect(result.current.mode).toBe("plan")
+
+    await act(async () => {
+      refresh.resolve({
+        session: { ...session, toolset_policy: { name: "plan" } },
+        turns: [],
+        events: [],
+      })
+      await sendPromise
+    })
+    mocks.getAgentRuntimeState.mockResolvedValueOnce({
+      session: { ...session, toolset_policy: { name: "execution" } },
+      turns: [],
+      events: [],
+    })
+    await act(async () => {
+      await result.current.refreshState("session-1")
+    })
+
+    expect(result.current.mode).toBe("execution")
+  })
+
+  it("keeps pending mode after post-turn refresh failure and reuses it next turn", async () => {
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+
+    act(() => {
+      result.current.setMode("plan")
+    })
+    mocks.getAgentRuntimeState.mockRejectedValueOnce(new Error("Refresh unavailable"))
+    let firstTurn: AgentRuntimeTurn | null = null
+    await act(async () => {
+      firstTurn = await result.current.send("Draft a plan")
+    })
+
+    expect(firstTurn?.id).toBe("turn-1")
+    expect(result.current.mode).toBe("plan")
+
+    await act(async () => {
+      await result.current.send("Refine the plan")
+    })
+    expect(mocks.createAgentRuntimeTurn).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ mode: "plan" }),
+    )
+    expect(result.current.mode).toBe("plan")
+
+    mocks.getAgentRuntimeState
+      .mockResolvedValueOnce({
+        session: { ...session, toolset_policy: { name: "plan" } },
+        turns: [],
+        events: [],
+      })
+      .mockResolvedValueOnce({
+        session: { ...session, toolset_policy: { name: "execution" } },
+        turns: [],
+        events: [],
+      })
+    await act(async () => {
+      await result.current.refreshState("session-1")
+      await result.current.refreshState("session-1")
+    })
+
+    expect(result.current.mode).toBe("execution")
+  })
+
   it("keeps a pending mode when a stale refresh reports the server mode", async () => {
     const { result } = renderHook(() =>
       useAgentRuntime(null, {
