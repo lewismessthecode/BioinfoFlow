@@ -1001,6 +1001,32 @@ describe("AgentComposer", () => {
     expect(onModeChange).toHaveBeenCalledWith("plan")
   })
 
+  it("disables mode changes without disabling the composer", () => {
+    const onModeChange = vi.fn()
+    render(
+      <AgentComposer
+        value="Continue typing"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={true}
+        mode="execution"
+        modeDisabled
+        onModeChange={onModeChange}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    const textarea = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.keyDown(textarea, { key: "Tab", shiftKey: true })
+
+    expect(onModeChange).not.toHaveBeenCalled()
+    expect(screen.getByRole("button", { name: "Agent mode" })).toBeDisabled()
+    expect(textarea).toBeEnabled()
+  })
+
   it("renders context attachment chips", () => {
     const onRemoveContextAttachment = vi.fn()
     render(
