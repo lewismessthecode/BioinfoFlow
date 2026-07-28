@@ -822,6 +822,7 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         turn_id: str,
         session_updates: dict[str, object] | None = None,
         increment_policy_version: bool = False,
+        desired_toolset_policy: dict | None = None,
         user_parts: list[dict],
         user_metadata: dict,
         created_event_type: str,
@@ -830,10 +831,6 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         **data,
     ) -> AgentTurn | None:
         values = {"active_turn_id": turn_id, **(session_updates or {})}
-        if increment_policy_version:
-            values["permission_policy_version"] = (
-                AgentSession.permission_policy_version + 1
-            )
         active_turn_exists = (
             select(self.model.id)
             .where(
@@ -849,6 +846,9 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             )
             .exists()
         )
+        # Claiming the turn locks the latest session row. Compare the requested
+        # mode only after that claim so a concurrent policy update cannot leave
+        # the new turn attached to a stale toolset decision.
         result = await self.session.execute(
             update(AgentSession)
             .where(
@@ -859,11 +859,35 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
                 ),
             )
             .values(**values)
-            .execution_options(synchronize_session=False)
+            .returning(AgentSession)
+            .execution_options(populate_existing=True)
         )
-        if result.rowcount != 1:
+        claimed_session = result.scalar_one_or_none()
+        if claimed_session is None:
             await self.session.rollback()
             return None
+
+        toolset_changed = (
+            desired_toolset_policy is not None
+            and desired_toolset_policy != claimed_session.toolset_policy
+        )
+        if increment_policy_version or toolset_changed:
+            policy_values: dict[str, object] = {
+                "permission_policy_version": (
+                    AgentSession.permission_policy_version + 1
+                )
+            }
+            if toolset_changed:
+                policy_values["toolset_policy"] = desired_toolset_policy
+            await self.session.execute(
+                update(AgentSession)
+                .where(
+                    AgentSession.id == session_id,
+                    AgentSession.active_turn_id == turn_id,
+                )
+                .values(**policy_values)
+                .execution_options(synchronize_session=False)
+            )
 
         turn = self.model(id=UUID(turn_id), session_id=session_id, **data)
         ordering_index = int(
