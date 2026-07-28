@@ -284,6 +284,39 @@ async def test_child_plan_instruction_returns_plan_to_parent_without_exit_tool(
     assert "`exit_plan_mode`" not in mode
 
 
+@pytest.mark.asyncio
+async def test_root_worker_plan_instruction_returns_plan_to_caller_without_parent(
+    db_session,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        role_profile="worker",
+        toolset_policy={"name": "plan"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Investigate directly for the caller.",
+    )
+
+    instructions = await AgentContextAssembler(db_session)._instructions(
+        agent_session=session,
+        turn=turn,
+    )
+    mode = instructions.rsplit("\n\n## Mode\n", 1)[1]
+
+    assert "read-only investigation" in mode
+    assert "concrete plan" in mode
+    assert "user/caller" in mode
+    assert "parent" not in mode
+    assert "`exit_plan_mode`" not in mode
+
+
 def test_v11_system_prompt_defines_the_comprehensive_provider_neutral_agent_contract():
     snapshot = default_system_prompt_snapshot()
 
