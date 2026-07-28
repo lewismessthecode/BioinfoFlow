@@ -2770,8 +2770,29 @@ async def test_agent_toolsets_report_canonical_execution_and_plan_modes(async_cl
         "projects.workflows.bind",
     } <= set(toolsets["execution"])
     assert "plan" in toolsets
-    assert "exit_plan_mode" in toolsets["plan"]
-    assert "bash" not in toolsets["plan"]
+    plan_tools = set(toolsets["plan"])
+    assert {
+        "ask_user",
+        "bash",
+        "exit_plan_mode",
+        "projects.get",
+        "projects.list",
+        "projects.workflows.list",
+        "runs.inspect",
+        "runs.list",
+        "scheduler.resources",
+        "scheduler.status",
+        "workflows.inspect",
+        "workflows.list",
+    } <= plan_tools
+    assert {
+        "edit",
+        "write",
+        "todo_write",
+        "projects.workflows.bind",
+        "runs.submit",
+        "workflows.create",
+    }.isdisjoint(plan_tools)
 
 
 @pytest.mark.asyncio
