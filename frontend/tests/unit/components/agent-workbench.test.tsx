@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentWorkbench } from "@/components/bioinfoflow/agent-runtime/agent-workbench"
 import type {
+  AgentMode,
   AgentRuntimeArtifact,
   AgentRuntimeEvent,
   AgentRuntimeSession,
@@ -363,6 +364,8 @@ function setupRuntime({
   send,
   modelSelection,
   permissionMode = "guarded_auto",
+  mode = "execution",
+  setMode = vi.fn(),
   setPermissionMode = vi.fn(),
   permissionUpdate = {
     status: "idle" as const,
@@ -380,6 +383,8 @@ function setupRuntime({
   send?: ReturnType<typeof vi.fn>
   modelSelection?: { provider: string; model: string } | null
   permissionMode?: "ask_each_action" | "guarded_auto" | "bypass"
+  mode?: AgentMode
+  setMode?: ReturnType<typeof vi.fn>
   setPermissionMode?: ReturnType<typeof vi.fn>
   permissionUpdate?: {
     status: "idle" | "pending" | "success" | "error"
@@ -413,6 +418,8 @@ function setupRuntime({
     interrupt: vi.fn(),
     decideAction: vi.fn(),
     permissionMode,
+    mode,
+    setMode,
     setPermissionMode,
     permissionUpdate,
     retryPermissionModeUpdate: vi.fn(),
@@ -2523,6 +2530,24 @@ describe("AgentWorkbench", () => {
     )
   })
 
+  it("sends the selected mode with an immediate turn", async () => {
+    const send = vi.fn().mockResolvedValue(undefined)
+    setupRuntime({ send, mode: "plan" })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByLabelText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Draft a plan" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Draft a plan",
+        expect.objectContaining({ mode: "plan" }),
+      ),
+    )
+  })
+
   it("steers the active turn without interrupting or creating a new turn", async () => {
     writeAgentTurnPolicy("steer")
     configureModelForTest()
@@ -2753,6 +2778,8 @@ describe("AgentWorkbench", () => {
         status: "running" as "idle" | "loading" | "running" | "error",
         error: null,
       },
+      mode: "plan" as AgentMode,
+      setMode: vi.fn(),
       setActiveSessionId: vi.fn(),
       send,
       steer,
@@ -2776,10 +2803,14 @@ describe("AgentWorkbench", () => {
       timeline: [],
       status: "idle",
     }
+    runtime.mode = "execution"
     view.rerender(<AgentWorkbench />)
 
     await waitFor(() =>
-      expect(send).toHaveBeenCalledWith("Also check Deaf_20", expect.any(Object)),
+      expect(send).toHaveBeenCalledWith(
+        "Also check Deaf_20",
+        expect.objectContaining({ mode: "plan" }),
+      ),
     )
     expect(send).toHaveBeenCalledTimes(1)
     expect(steer).toHaveBeenCalledTimes(1)
@@ -2914,6 +2945,72 @@ describe("AgentWorkbench", () => {
     await waitFor(() =>
       expect(send).toHaveBeenCalledWith("Run Deaf_20 next", expect.any(Object)),
     )
+  })
+
+  it("keeps the submitted mode when a queued turn is released", async () => {
+    writeAgentTurnPolicy("queue")
+    configureModelForTest()
+    const send = vi.fn().mockResolvedValue(undefined)
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [{ ...baseTurn, id: "running-turn", status: "running" }],
+        events: [] as AgentRuntimeEvent[],
+        timeline: buildAgentRuntimeTimeline(
+          [{ ...baseTurn, id: "running-turn", status: "running" }],
+          [],
+        ),
+        status: "running" as "idle" | "loading" | "running" | "error",
+        error: null,
+      },
+      mode: "plan" as AgentMode,
+      setMode: vi.fn(),
+      setActiveSessionId: vi.fn(),
+      send,
+      interrupt: vi.fn(),
+      decideAction: vi.fn(),
+    }
+    useAgentRuntimeMock.mockReturnValue(runtime)
+    const view = render(<AgentWorkbench />)
+
+    const input = screen.getByLabelText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Queue this plan" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    runtime.mode = "execution"
+    runtime.state = {
+      ...runtime.state,
+      turns: [{ ...baseTurn, id: "running-turn", status: "completed" }],
+      timeline: buildAgentRuntimeTimeline(
+        [{ ...baseTurn, id: "running-turn", status: "completed" }],
+        [],
+      ),
+      status: "idle",
+    }
+    view.rerender(<AgentWorkbench />)
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Queue this plan",
+        expect.objectContaining({ mode: "plan" }),
+      ),
+    )
+  })
+
+  it("disables only the mode control while a turn is active", async () => {
+    configureModelForTest()
+    setupRuntime({
+      session: baseSession,
+      turns: [{ ...baseTurn, id: "running-turn", status: "running" }],
+      status: "running",
+    })
+
+    render(<AgentWorkbench />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-mode-chip")).toBeDisabled()
+      expect(screen.getByLabelText("Message Bioinfoflow...")).toBeEnabled()
+    })
   })
 
   it("drops queued drafts when the active conversation changes", async () => {

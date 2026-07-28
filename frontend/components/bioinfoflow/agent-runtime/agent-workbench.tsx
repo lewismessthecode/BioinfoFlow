@@ -74,6 +74,7 @@ import {
   type AgentRuntimeEvent,
   type AgentRuntimeSkill,
   type AgentRuntimeWorkflowMention,
+  type AgentMode,
   type AgentModelSelection,
   type AgentPendingStrategy,
   type AgentPermissionMode,
@@ -133,6 +134,7 @@ const WORKFLOW_MENTION_PATTERN = /(^|\s)@workflow(?=\s|$|[,.!?;:])/gi
 
 type PendingSubmission = {
   text: string
+  mode: AgentMode
   inputParts: AgentRuntimeInputPart[]
   inputDisplayParts?: AgentInputDisplayPart[] | null
   activeSkillNames: string[]
@@ -1060,6 +1062,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         executionScope: AgentExecutionScope = executionScopeForSelection(
           executionSelection,
         ),
+        modeSnapshot: AgentMode,
         optimisticTurnOverride?: AgentRuntimeTurn,
       ) => {
         const trimmedText = text.trim()
@@ -1091,6 +1094,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           return [...current, nextOptimisticTurn.id]
         })
         const request = send(trimmedText, {
+          mode: modeSnapshot,
           modelSelection,
           inputParts,
           activeSkillNames: activeSkillNamesSnapshot,
@@ -1124,6 +1128,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         activeSkillNamesSnapshot: string[],
         inputDisplayParts?: AgentInputDisplayPart[] | null,
         modelSelection = selectedModel,
+        modeSnapshot = agentMode,
       ) => {
         const trimmedText = text.trim()
         if (!trimmedText && !inputParts.some(isStructuredInputPart)) return
@@ -1136,6 +1141,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             inputDisplayParts,
             modelSelection,
             executionScope,
+            modeSnapshot,
           )
           return
         }
@@ -1156,6 +1162,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             ...current,
             {
               text: trimmedText,
+              mode: modeSnapshot,
               inputParts,
               inputDisplayParts,
               activeSkillNames: activeSkillNamesSnapshot,
@@ -1184,6 +1191,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             ...current,
             {
               text: trimmedText,
+              mode: modeSnapshot,
               inputParts,
               inputDisplayParts,
               activeSkillNames: activeSkillNamesSnapshot,
@@ -1247,6 +1255,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               ...current,
               {
                 text: trimmedText,
+                mode: modeSnapshot,
                 inputParts,
                 inputDisplayParts,
                 activeSkillNames: activeSkillNamesSnapshot,
@@ -1275,6 +1284,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       },
       [
         executionSelection,
+        agentMode,
         hasActiveTurn,
         hasInterruptibleBackendTurn,
         latestActiveBackendTurn,
@@ -1340,6 +1350,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           next.inputDisplayParts,
           next.modelSelection,
           next.executionScope,
+          next.mode,
           next.optimisticTurn,
         )
       }, 0)
@@ -1417,6 +1428,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               next.inputDisplayParts,
               next.modelSelection,
               next.executionScope,
+              next.mode,
               next.optimisticTurn,
             )
           } finally {
@@ -1488,6 +1500,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         activeSkillNamesSnapshot,
         inputDisplayParts,
         selectedModel,
+        agentMode,
       )
       setInput("")
       setContextAttachments([])
@@ -1518,6 +1531,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           turn.active_skill_names ?? [],
           inputDisplayPartsFromTurn(turn),
           turn.model_selection ?? null,
+          agentMode,
         )
         if (!request) {
           clearRetryingTurn(turn.id)
@@ -1528,7 +1542,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           () => clearRetryingTurn(turn.id),
         )
       },
-      [clearRetryingTurn, hasActiveTurn, submitTurn],
+      [agentMode, clearRetryingTurn, hasActiveTurn, submitTurn],
     )
 
     const focusNavbarSidecarToggle = useCallback(() => {
@@ -1751,7 +1765,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         isRunning={isRunning}
         disabled={disabled}
         mode={agentMode}
-        onModeChange={setMode ? (next) => void setMode(next) : undefined}
+        modeDisabled={hasActiveTurn}
+        onModeChange={setMode}
         permissionMode={permissionMode}
         onPermissionModeChange={requestPermissionMode}
         permissionUpdate={permissionUpdate}

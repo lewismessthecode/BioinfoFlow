@@ -71,6 +71,7 @@ type AgentComposerProps = {
   isRunning: boolean
   disabled?: boolean
   mode?: AgentMode
+  modeDisabled?: boolean
   onModeChange?: (mode: AgentMode) => void
   permissionMode?: AgentPermissionMode
   onPermissionModeChange?: (mode: AgentPermissionMode) => void
@@ -138,6 +139,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       isRunning,
       disabled = false,
       mode = "execution",
+      modeDisabled = false,
       onModeChange,
       permissionMode = "guarded_auto",
       onPermissionModeChange,
@@ -634,7 +636,12 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                   return
                 }
               }
-              if (event.key === "Tab" && event.shiftKey && onModeChange) {
+              if (
+                event.key === "Tab" &&
+                event.shiftKey &&
+                onModeChange &&
+                !modeDisabled
+              ) {
                 event.preventDefault()
                 onModeChange(mode === "plan" ? "execution" : "plan")
                 return
@@ -786,7 +793,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                       data-composer-chip="true"
                       data-mode={mode}
                       data-testid="agent-mode-chip"
-                      disabled={disabled}
+                      disabled={disabled || modeDisabled}
                       aria-label={t("mode.label")}
                     >
                       <span
