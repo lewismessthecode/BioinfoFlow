@@ -1,7 +1,7 @@
 "use client"
 
 import { useTranslations } from "next-intl"
-import { FileBox, FolderTree, Globe, X, type AppIcon } from "@/lib/icons"
+import { Bot, FileBox, FolderTree, Globe, X, type AppIcon } from "@/lib/icons"
 import { cn } from "@/lib/utils"
 
 import type { AgentTabbedPanelTab } from "./agent-tabbed-panel"
@@ -14,6 +14,7 @@ const TABS: Array<{
 }> = [
   { key: "preview", labelKey: "tabs.artifacts", iconName: "file-box", Icon: FileBox },
   { key: "files", labelKey: "tabs.files", iconName: "folder-tree", Icon: FolderTree },
+  { key: "agents", labelKey: "tabs.agents", iconName: "bot", Icon: Bot },
   { key: "browser", labelKey: "tabs.browser", iconName: "globe", Icon: Globe },
 ]
 

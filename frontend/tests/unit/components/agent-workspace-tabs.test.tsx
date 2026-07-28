@@ -24,6 +24,9 @@ describe("AgentWorkspaceTabs", () => {
     expect(within(tablist).getByRole("tab", { name: "tabs.files" })).toHaveTextContent(
       "tabs.files",
     )
+    expect(within(tablist).getByRole("tab", { name: "tabs.agents" })).toHaveTextContent(
+      "tabs.agents",
+    )
     expect(within(tablist).getByRole("tab", { name: "tabs.browser" })).toHaveTextContent(
       "tabs.browser",
     )

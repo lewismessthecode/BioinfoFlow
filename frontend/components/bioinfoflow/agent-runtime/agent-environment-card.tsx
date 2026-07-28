@@ -17,6 +17,7 @@ import {
   buildAgentRuntimeToolActivities,
   reduceAgentTree,
   resolveAgentExecutionTarget,
+  summarizeAgentTree,
   type AgentRuntimeArtifact,
   type AgentRuntimeEvent,
   type AgentRuntimeSession,
@@ -24,13 +25,13 @@ import {
 import { cn } from "@/lib/utils"
 import { todosFromArtifact } from "./artifact-viewers"
 import { TodoChecklist } from "./todo-checklist"
-import { AgentTree } from "./agent-tree"
 
 type AgentEnvironmentCardProps = {
   projectId?: string | null
   session?: AgentRuntimeSession | null
   events: AgentRuntimeEvent[]
   artifacts: AgentRuntimeArtifact[]
+  onOpenAgents?: () => void
 }
 
 export function AgentEnvironmentCard({
@@ -38,11 +39,13 @@ export function AgentEnvironmentCard({
   session,
   events,
   artifacts,
+  onOpenAgents,
 }: AgentEnvironmentCardProps) {
   const t = useTranslations("agentRuntime")
   const changes = summarizeChanges(events, artifacts)
   const activities = buildAgentRuntimeToolActivities(events)
   const agents = reduceAgentTree(events)
+  const agentSummary = summarizeAgentTree(agents)
   const latestTodos = latestTodoArtifact(artifacts)
   const todos = latestTodos ? todosFromArtifact(latestTodos) : []
   const completedTodos = todos.filter((todo) => todo.status === "completed").length
@@ -132,7 +135,21 @@ export function AgentEnvironmentCard({
         <div className="text-sm font-semibold text-muted-foreground">
           {t("agentTree.title")}
         </div>
-        <AgentTree agents={agents} />
+        <button
+          type="button"
+          onClick={onOpenAgents}
+          disabled={!onOpenAgents}
+          className="flex w-full items-center justify-between gap-3 rounded-[8px] bg-muted/35 px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted/55 disabled:cursor-default disabled:hover:bg-muted/35"
+          aria-label={t("agentWorkspace.open")}
+        >
+          <span>
+            {t("agentWorkspace.summary", {
+              total: agentSummary.total,
+              active: agentSummary.active,
+            })}
+          </span>
+          <span className="text-xs text-muted-foreground" aria-hidden="true">→</span>
+        </button>
       </section>
 
       <div className="my-4 border-t border-border/60" />

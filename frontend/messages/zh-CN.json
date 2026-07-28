@@ -3023,6 +3023,7 @@
       "artifacts": "产物",
       "progress": "进度",
       "files": "打开文件",
+      "agents": "子智能体",
       "browser": "浏览器"
     },
     "toolsPanel": {
@@ -3075,6 +3076,26 @@
       "noFinalText": "任务已完成，但没有最终摘要。",
       "unknownError": "子智能体未能完成任务。",
       "interrupted": "子智能体已被中断。"
+    },
+    "agentWorkspace": {
+      "title": "子智能体",
+      "empty": "暂无子智能体",
+      "open": "打开子智能体工作区",
+      "summary": "{total} 个子智能体 · {active} 个运行中",
+      "back": "返回子智能体列表",
+      "listLabel": "子智能体任务",
+      "detailLabel": "子智能体详情",
+      "sessionId": "会话",
+      "turnId": "轮次",
+      "model": "模型",
+      "requestedModel": "请求模型",
+      "fallback": "模型回退",
+      "terminationReason": "结束原因",
+      "tokenUsage": "Token",
+      "noSummary": "没有最终摘要",
+      "runningPreview": "正在执行分配的任务",
+      "pendingPreview": "正在准备子智能体",
+      "interruptedPreview": "子智能体已被中断"
     },
     "progress": {
       "tasks": "任务",

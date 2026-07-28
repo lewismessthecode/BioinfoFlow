@@ -84,6 +84,7 @@ vi.mock("next-intl", () => ({
       "tabs.preview": "Preview",
       "tabs.artifacts": "Artifacts",
       "tabs.files": "Files",
+      "tabs.agents": "Agents",
       "tabs.browser": "Browser",
       "artifacts.title": "Artifacts",
       "artifacts.count": `${values?.count ?? 0} artifacts`,
@@ -98,6 +99,10 @@ vi.mock("next-intl", () => ({
       "browser.title": "Browser",
       "browser.empty": "Enter a URL to preview a page.",
       "environment.open": "Open environment",
+      "agentWorkspace.open": "Open agents workspace",
+      "agentWorkspace.summary": `${values?.total ?? 0} agents · ${values?.active ?? 0} active`,
+      "agentWorkspace.listLabel": "Agent tasks",
+      "agentWorkspace.detailLabel": "Agent details",
       "environment.close": "Close environment",
       "environment.title": "Environment",
       "environment.changes": "Changes",
@@ -1441,6 +1446,41 @@ describe("AgentWorkbench", () => {
     expect(
       within(screen.getByTestId("artifact-panel")).queryByTestId("agent-environment-card"),
     ).not.toBeInTheDocument()
+  })
+
+  it("opens the dedicated agents workspace from the environment summary", async () => {
+    setupRuntime({
+      session: baseSession,
+      events: [
+        {
+          id: "agent-event",
+          session_id: "session-1",
+          turn_id: "turn-1",
+          seq: 2,
+          type: "agent.lifecycle",
+          payload: {
+            child_session_id: "child-1",
+            child_turn_id: "child-turn-1",
+            task_name: "/root/reader",
+            status: "running",
+          },
+          visibility: "user",
+          schema_version: 1,
+          created_at: "2026-07-28T00:00:00Z",
+          updated_at: "2026-07-28T00:00:00Z",
+        },
+      ],
+    })
+    render(<AgentWorkbench projectId="project-1" />)
+    render(<>{setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}</>)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open environment" }))
+    const openAgents = await screen.findByRole("button", { name: "Open agents workspace" })
+    fireEvent.click(openAgents)
+
+    expect(screen.queryByTestId("agent-environment-floating-panel")).not.toBeInTheDocument()
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("id", "agent-sidecar-panel-agents")
+    expect(screen.getByRole("option", { name: /reader/i })).toBeInTheDocument()
   })
 
   it("uses compact composer controls while the right drawer is open", async () => {
