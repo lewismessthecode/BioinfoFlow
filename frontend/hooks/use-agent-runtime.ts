@@ -64,6 +64,11 @@ type PermissionUpdateRequest = {
   rollbackSession: AgentRuntimeSession | null
 }
 
+type ModeIntentSnapshot = {
+  mode: AgentMode
+  generation: number
+}
+
 const DRAFT_PERMISSION_MODE_STORAGE_KEY = "bioinfoflow.agentRuntime.permissionMode:v2"
 const LEGACY_DRAFT_PERMISSION_MODE_STORAGE_KEY = "bioinfoflow.agentRuntime.permissionMode"
 const DEFAULT_PERMISSION_MODE: AgentPermissionMode = "guarded_auto"
@@ -120,6 +125,7 @@ export function useAgentRuntime(
   const lastPermissionUpdateRequestRef = useRef<PermissionUpdateRequest | null>(null)
   const pendingPermissionIntentRef = useRef<PermissionUpdateRequest | null>(null)
   const pendingModeRef = useRef<AgentMode | null>(pendingMode)
+  const modeIntentGenerationRef = useRef(0)
   const activeSessionId = isControlled
     ? options.activeSessionId || null
     : uncontrolledSessionId
@@ -166,18 +172,34 @@ export function useAgentRuntime(
     [],
   )
 
-  const clearPendingMode = useCallback((confirmedMode?: AgentMode) => {
-    if (confirmedMode && pendingModeRef.current !== confirmedMode) return
+  const capturePendingModeIntent = useCallback((): ModeIntentSnapshot | null => {
+    const pending = pendingModeRef.current
+    return pending
+      ? { mode: pending, generation: modeIntentGenerationRef.current }
+      : null
+  }, [])
+
+  const clearPendingMode = useCallback((snapshot?: ModeIntentSnapshot) => {
+    if (
+      snapshot &&
+      (modeIntentGenerationRef.current !== snapshot.generation ||
+        pendingModeRef.current !== snapshot.mode)
+    ) {
+      return
+    }
+    modeIntentGenerationRef.current += 1
     if (!pendingModeRef.current) return
     pendingModeRef.current = null
     setPendingMode(null)
   }, [])
 
   const confirmPendingMode = useCallback(
-    (session: AgentRuntimeSession | null | undefined) => {
-      const pending = pendingModeRef.current
-      if (pending && agentModeForSession(session) === pending) {
-        clearPendingMode(pending)
+    (
+      session: AgentRuntimeSession | null | undefined,
+      snapshot: ModeIntentSnapshot | null,
+    ) => {
+      if (snapshot && agentModeForSession(session) === snapshot.mode) {
+        clearPendingMode(snapshot)
       }
     },
     [clearPendingMode],
@@ -187,6 +209,7 @@ export function useAgentRuntime(
     const sequence = sessionListRefreshSequenceRef.current + 1
     sessionListRefreshSequenceRef.current = sequence
     const requestedActiveSessionId = activeSessionIdRef.current
+    const modeIntentSnapshot = capturePendingModeIntent()
     if (!requestedActiveSessionId) {
       dispatch({ type: "loading" })
     }
@@ -202,6 +225,7 @@ export function useAgentRuntime(
       if (requestedActiveSessionId) {
         confirmPendingMode(
           nextSessions.find((session) => session.id === requestedActiveSessionId),
+          modeIntentSnapshot,
         )
       }
       updateSessions((current) =>
@@ -232,6 +256,7 @@ export function useAgentRuntime(
     }
   }, [
     activeSessionId,
+    capturePendingModeIntent,
     confirmPendingMode,
     isControlledDraft,
     projectId,
@@ -289,6 +314,7 @@ export function useAgentRuntime(
   const refreshState = useCallback(async (sessionId: string) => {
     const sequence = stateRefreshSequenceRef.current + 1
     stateRefreshSequenceRef.current = sequence
+    const modeIntentSnapshot = capturePendingModeIntent()
     dispatch({ type: "loading" })
     try {
       const payload = await getAgentRuntimeState(sessionId, {
@@ -301,7 +327,7 @@ export function useAgentRuntime(
         limited: false,
       })
       const pendingIntent = pendingPermissionIntentRef.current
-      confirmPendingMode(payload.session)
+      confirmPendingMode(payload.session, modeIntentSnapshot)
       adoptPendingPermissionBaseline(pendingIntent, payload.session)
       rememberConfirmedSession(confirmedSessionsRef.current, payload.session)
       const loadedSession = sessionWithPendingPermissionIntent(
@@ -319,7 +345,7 @@ export function useAgentRuntime(
         message: error instanceof Error ? error.message : "Failed to load agent state",
       })
     }
-  }, [confirmPendingMode, updateSessions])
+  }, [capturePendingModeIntent, confirmPendingMode, updateSessions])
 
   useEffect(() => {
     if (!activeSessionId) return
@@ -475,8 +501,11 @@ export function useAgentRuntime(
         ),
       )
       if (!text && !hasStructuredInput) return null
+      const pendingModeSnapshot = capturePendingModeIntent()
       const modeSnapshot =
-        options?.mode ?? pendingModeRef.current ?? agentModeForSession(activeSessionRef.current)
+        options?.mode ??
+        pendingModeSnapshot?.mode ??
+        agentModeForSession(activeSessionRef.current)
       dispatch({ type: "loading" })
       try {
         const remoteConnectionId = Object.hasOwn(options ?? {}, "remoteConnectionId")
@@ -524,7 +553,9 @@ export function useAgentRuntime(
           metadata: metadataWithClientTimeZone(options?.metadata),
         })
         dispatch({ type: "turn.upsert", turn })
-        clearPendingMode(modeSnapshot)
+        if (pendingModeSnapshot?.mode === modeSnapshot) {
+          clearPendingMode(pendingModeSnapshot)
+        }
         await refreshState(session.id)
         return turn
       } catch (error) {
@@ -537,6 +568,7 @@ export function useAgentRuntime(
     },
     [
       activeSession,
+      capturePendingModeIntent,
       clearPendingMode,
       ensureSessionExecutionMetadata,
       ensureSessionWithMetadata,
@@ -618,6 +650,7 @@ export function useAgentRuntime(
     activeSession?.permission_mode ?? draftPermissionMode
 
   const setMode = useCallback((nextMode: AgentMode) => {
+    modeIntentGenerationRef.current += 1
     pendingModeRef.current = nextMode
     setPendingMode(nextMode)
   }, [])
