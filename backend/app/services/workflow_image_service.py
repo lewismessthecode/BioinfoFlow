@@ -79,14 +79,8 @@ class WorkflowImagePrefetchResult:
 
 
 class WorkflowImagePrefetchService:
-    def __init__(
-        self,
-        session: AsyncSession,
-        *,
-        selected_registry: WorkflowImageRegistry | None = None,
-    ) -> None:
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
-        self.selected_registry = selected_registry
 
     async def prefetch_workflow(self, workflow) -> WorkflowImagePrefetchResult:
         selected_registry = None
@@ -108,7 +102,6 @@ class WorkflowImagePrefetchService:
         selected_registry: WorkflowImageRegistry | None = None,
     ) -> WorkflowImagePrefetchResult:
         del workflow_id
-        selected_registry = selected_registry or self.selected_registry
         if selected_registry is None and project_id is not None:
             selected_registry = await self._load_project_registry(project_id=project_id)
 
