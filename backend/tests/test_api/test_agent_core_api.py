@@ -2790,6 +2790,7 @@ async def test_agent_toolsets_report_canonical_execution_and_plan_modes(async_cl
         "write",
         "todo_write",
         "projects.workflows.bind",
+        "remote.exec",
         "runs.submit",
         "workflows.create",
     }.isdisjoint(plan_tools)
