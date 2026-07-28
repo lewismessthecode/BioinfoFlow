@@ -16,7 +16,6 @@ class ContainerRegistryCreate(BaseModel):
     endpoint: str
     namespace: str | None = None
     insecure: bool = False
-    is_default: bool = False
     credential_source: RegistryCredentialSource = "none"
     env_username_var: str | None = None
     env_password_var: str | None = None
@@ -29,7 +28,6 @@ class ContainerRegistryUpdate(BaseModel):
     endpoint: str | None = None
     namespace: str | None = None
     insecure: bool | None = None
-    is_default: bool | None = None
     credential_source: RegistryCredentialSource | None = None
     env_username_var: str | None = None
     env_password_var: str | None = None
@@ -45,7 +43,6 @@ class ContainerRegistryRead(BaseModel):
     endpoint: str
     namespace: str | None = None
     insecure: bool
-    is_default: bool
     credential_source: RegistryCredentialSource
     env_username_var: str | None = None
     env_password_var: str | None = None

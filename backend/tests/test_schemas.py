@@ -13,6 +13,10 @@ from app.schemas.llm import (
     LlmProviderSetupRequest,
     LlmProviderUpdate,
 )
+from app.schemas.container_registry import (
+    ContainerRegistryCreate,
+    ContainerRegistryUpdate,
+)
 
 
 def test_meta_includes_timestamp_and_request_id():
@@ -50,6 +54,24 @@ def test_file_info_schema():
         modified_at=datetime.now(timezone.utc),
     )
     assert info.type == FileType.FILE
+
+
+def test_container_registry_create_ignores_legacy_is_default() -> None:
+    registry = ContainerRegistryCreate.model_validate(
+        {
+            "name": "Legacy Harbor",
+            "endpoint": "https://harbor.example.test",
+            "is_default": True,
+        }
+    )
+
+    assert "is_default" not in registry.model_dump()
+
+
+def test_container_registry_update_ignores_legacy_is_default() -> None:
+    registry = ContainerRegistryUpdate.model_validate({"is_default": True})
+
+    assert "is_default" not in registry.model_dump(exclude_unset=True)
 
 
 def test_provider_schema_defaults_wire_protocol_for_compatibility() -> None:

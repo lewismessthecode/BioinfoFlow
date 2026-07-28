@@ -3,9 +3,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy.exc import IntegrityError
 
-from app.models.container_registry import ContainerRegistry
 from app.models.project import Project
 from app.repositories.project_repo import ProjectRepository
 from app.utils.exceptions import NotFoundError
@@ -27,7 +25,6 @@ async def test_registry_service_resolves_stored_auth_material_and_redacts_reads(
             "endpoint": "https://harbor.example.test",
             "namespace": "bio",
             "insecure": False,
-            "is_default": True,
             "credential_source": ContainerRegistryCredentialSource.STORED,
             "username": "robot-user",
             "password": "top-secret-value",
@@ -49,6 +46,7 @@ async def test_registry_service_resolves_stored_auth_material_and_redacts_reads(
 
     read_payload = service.registry_read_dict(registry)
     assert read_payload["credential_source"] == "stored"
+    assert "is_default" not in read_payload
     assert read_payload["username_hint"] == "robo...user"
     assert read_payload["password_hint"] == "top-...alue"
     assert "username" not in read_payload
@@ -122,22 +120,13 @@ async def test_registry_service_reports_docker_runtime_configuration_error(
 
 
 @pytest.mark.asyncio
-async def test_registry_service_resolves_project_override_before_global_default(
+async def test_registry_service_returns_explicit_project_registry(
     db_session,
 ):
     from app.services.container_registry_service import ContainerRegistryService
 
     service = ContainerRegistryService(db_session)
-    default_registry = await service.create_registry(
-        {
-            "name": "Default registry",
-            "endpoint": "https://default-registry.example.test",
-            "is_default": True,
-            "credential_source": "none",
-            "updated_by": "user-1",
-        }
-    )
-    override_registry = await service.create_registry(
+    project_registry = await service.create_registry(
         {
             "name": "Project registry",
             "endpoint": "https://project-registry.example.test",
@@ -150,19 +139,25 @@ async def test_registry_service_resolves_project_override_before_global_default(
         description=None,
         user_id="user-1",
         workspace_id=DEFAULT_WORKSPACE_ID,
-        container_registry_id=str(override_registry.id),
+        container_registry_id=str(project_registry.id),
     )
     db_session.add(project)
     await db_session.commit()
     await db_session.refresh(project)
 
-    effective = await service.get_effective_registry(project_id=str(project.id))
-    assert effective is not None
-    assert str(effective.id) == str(override_registry.id)
+    registry = await service.get_project_registry(project_id=str(project.id))
 
-    fallback = await service.get_effective_registry(project_id=None)
-    assert fallback is not None
-    assert str(fallback.id) == str(default_registry.id)
+    assert registry is not None
+    assert str(registry.id) == str(project_registry.id)
+
+
+@pytest.mark.asyncio
+async def test_registry_service_returns_none_without_project(db_session):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    service = ContainerRegistryService(db_session)
+
+    assert await service.get_project_registry(project_id=None) is None
 
 
 @pytest.mark.asyncio
@@ -178,34 +173,6 @@ async def test_registry_service_looks_up_project_through_repository(
     service = ContainerRegistryService(db_session)
 
     with pytest.raises(NotFoundError, match=f"Project not found: {project_id}"):
-        await service.get_effective_registry(project_id=project_id)
+        await service.get_project_registry(project_id=project_id)
 
     project_get.assert_awaited_once_with(project_id)
-
-
-@pytest.mark.asyncio
-async def test_registry_default_is_enforced_by_database(db_session):
-    db_session.add_all(
-        [
-            ContainerRegistry(
-                name="Default one",
-                endpoint="https://one.example.test",
-                insecure=False,
-                is_default=True,
-                credential_source="none",
-                last_status="untested",
-            ),
-            ContainerRegistry(
-                name="Default two",
-                endpoint="https://two.example.test",
-                insecure=False,
-                is_default=True,
-                credential_source="none",
-                last_status="untested",
-            ),
-        ]
-    )
-
-    with pytest.raises(IntegrityError):
-        await db_session.commit()
-    await db_session.rollback()
