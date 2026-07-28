@@ -230,11 +230,9 @@ class DockerService:
 
         def _pull():
             repository = _apply_registry(name, registry)
-            kwargs: dict[str, Any] = {
-                "tag": tag,
-                "stream": True,
-                "decode": True,
-            }
+            kwargs: dict[str, Any] = {"stream": True, "decode": True}
+            if tag:
+                kwargs["tag"] = tag
             if auth_config is not None:
                 kwargs["auth_config"] = auth_config
             return self.client.api.pull(repository, **kwargs)
@@ -350,15 +348,27 @@ def _split_registry(name: str) -> tuple[str, str]:
 
 def normalize_registry(registry: str | None) -> str:
     value = str(registry or "").strip().rstrip("/")
-    if "://" in value:
-        parsed = urlparse(value)
-        if parsed.netloc:
-            value = parsed.netloc
-    return value
+    if not value:
+        return ""
+    parsed = urlparse(value if "://" in value else f"//{value}")
+    hostname = parsed.hostname
+    if hostname is None:
+        return value.lower()
+    host = hostname.lower()
+    if ":" in host:
+        host = f"[{host}]"
+    try:
+        port = parsed.port
+    except ValueError:
+        return value.lower()
+    return f"{host}:{port}" if port is not None else host
 
 
 def qualified_image_reference(name: str, tag: str, registry: str) -> str:
-    return f"{_apply_registry(name, registry)}:{tag or 'latest'}"
+    qualified_name = _apply_registry(name, registry)
+    if "@" in qualified_name:
+        return qualified_name
+    return f"{qualified_name}:{tag or 'latest'}"
 
 
 def _apply_registry(name: str, registry: str) -> str:

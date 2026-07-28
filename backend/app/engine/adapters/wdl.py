@@ -629,6 +629,9 @@ def _parse_image_reference(full_name: str) -> tuple[str, str, str]:
     ):
         registry, remainder = image.split("/", 1)
 
+    if "@" in remainder:
+        return image, "", registry
+
     tag = "latest"
     last_segment = remainder.rsplit("/", 1)[-1]
     if ":" in last_segment:

@@ -23,6 +23,7 @@ snapshot of what the scheduler will execute.
 from __future__ import annotations
 
 import csv
+import asyncio
 import hashlib
 import io
 import json
@@ -333,7 +334,7 @@ class RunCompiler:
                     selected_registry=image_registry,
                 )
             )
-            config = self._enrich_runtime(
+            config = await self._enrich_runtime(
                 config,
                 workflow=workflow,
                 workspace_path=workspace_path,
@@ -955,7 +956,7 @@ class RunCompiler:
                 managed[qualified] = outdir
         return managed
 
-    def _enrich_runtime(
+    async def _enrich_runtime(
         self,
         config: dict,
         *,
@@ -1006,8 +1007,9 @@ class RunCompiler:
             and image_registry is not None
         ):
             workflow_path = str(
-                _write_resolved_wdl_workflow(
-                    Path(workflow_path),
+                await _write_resolved_wdl_workflow(
+                    workflow,
+                    workflow_path=workflow_path,
                     layout=layout,
                     image_registry=image_registry,
                 )
@@ -1352,25 +1354,97 @@ def _merge_config_patch(config: dict, patch: dict) -> dict:
     return merged
 
 
-def _write_resolved_wdl_workflow(
-    workflow_path: Path,
+async def _write_resolved_wdl_workflow(
+    workflow,
     *,
+    workflow_path: str,
     layout: RunLayout,
     image_registry: WorkflowImageRegistry,
 ) -> Path:
-    if not workflow_path.is_file():
-        return workflow_path
-    content = workflow_path.read_text(encoding="utf-8")
+    target_root = layout.engine_workspace.parent / "workflow"
+    source_value = str(getattr(workflow.source, "value", workflow.source))
+    if source_value == "local":
+        source_root = workflow_bundle_home(str(workflow.id)).resolve()
+        source_entrypoint = Path(workflow_path).resolve()
+        if not source_entrypoint.is_file() or not source_entrypoint.is_relative_to(
+            source_root
+        ):
+            return Path(workflow_path)
+        if target_root.exists():
+            shutil.rmtree(target_root)
+        shutil.copytree(source_root, target_root)
+        for target in target_root.rglob("*.wdl"):
+            _rewrite_wdl_file(target, image_registry=image_registry)
+        return target_root / source_entrypoint.relative_to(source_root)
+
+    document = await asyncio.to_thread(_load_wdl_source_document, workflow_path)
+    target = target_root / _wdl_source_name(workflow_path)
+    _materialize_wdl_document_tree(
+        document,
+        target=target,
+        root=target_root,
+        image_registry=image_registry,
+    )
+    return target
+
+
+def _load_wdl_source_document(source: str):
+    import WDL
+
+    return WDL.load(source)
+
+
+def _wdl_source_name(source: str) -> str:
+    from urllib.parse import urlparse
+
+    name = Path(urlparse(source).path).name
+    return name if name.endswith(".wdl") else "workflow.wdl"
+
+
+def _materialize_wdl_document_tree(
+    document,
+    *,
+    target: Path,
+    root: Path,
+    image_registry: WorkflowImageRegistry,
+) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        rewrite_wdl_static_container_literals(
+            document.source_text,
+            selected_registry=image_registry,
+        ),
+        encoding="utf-8",
+    )
+    for imported in document.imports:
+        import_path = PurePosixPath(str(imported.uri))
+        if import_path.is_absolute() or ".." in import_path.parts:
+            raise ValueError("WDL import must be relative to the workflow source")
+        imported_target = target.parent.joinpath(*import_path.parts)
+        if not imported_target.resolve(strict=False).is_relative_to(
+            root.resolve(strict=False)
+        ):
+            raise ValueError("WDL import escapes the materialized workflow bundle")
+        _materialize_wdl_document_tree(
+            imported.doc,
+            target=imported_target,
+            root=root,
+            image_registry=image_registry,
+        )
+
+
+def _rewrite_wdl_file(
+    path: Path,
+    *,
+    image_registry: WorkflowImageRegistry,
+) -> None:
+    content = path.read_text(encoding="utf-8")
     resolved = rewrite_wdl_static_container_literals(
         content,
         selected_registry=image_registry,
     )
-    if resolved == content:
-        return workflow_path
-    target = layout.engine_workspace.parent / "workflow.resolved.wdl"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(resolved, encoding="utf-8")
-    return target
+    if resolved != content:
+        path.write_text(resolved, encoding="utf-8")
 
 
 def _is_absolute_or_home_path(value: str) -> bool:

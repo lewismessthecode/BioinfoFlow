@@ -174,3 +174,43 @@ async def test_attach_required_image_auth_uses_registry_id_without_persisting_se
         }
     ]
     assert "top-secret-value" not in str(config)
+
+
+@pytest.mark.asyncio
+async def test_attach_required_image_auth_rejects_registry_endpoint_changed_after_compile(
+    db_session,
+):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    service = ContainerRegistryService(db_session)
+    registry = await service.create_registry(
+        {
+            "name": "Mutable Harbor",
+            "endpoint": "https://old.example.test",
+            "credential_source": "stored",
+            "username": "robot-user",
+            "password": "top-secret-value",
+            "updated_by": "user-1",
+        }
+    )
+    await service.update_registry(
+        str(registry.id),
+        {"endpoint": "https://new.example.test", "updated_by": "user-2"},
+    )
+    config = {
+        "runtime": {
+            "required_images": [
+                {
+                    "full_name": "old.example.test/bio/bwa:0.7.17",
+                    "name": "bio/bwa",
+                    "tag": "0.7.17",
+                    "registry": "old.example.test",
+                    "registry_id": str(registry.id),
+                }
+            ]
+        }
+    }
+
+    resolved = await attach_required_image_auth(db_session, config)
+
+    assert "auth_config" not in resolved["runtime"]["required_images"][0]

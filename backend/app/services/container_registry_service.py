@@ -358,6 +358,8 @@ def _normalize_endpoint(value: Any, insecure: bool) -> str:
 
 def _image_reference_from_payload(name: str, tag: str | None) -> str:
     image = _required_text(name, "Image name is required")
+    if "@" in image:
+        return image
     last_segment = image.rsplit("/", 1)[-1]
     if ":" in last_segment:
         return image
@@ -365,6 +367,8 @@ def _image_reference_from_payload(name: str, tag: str | None) -> str:
 
 
 def _split_image_tag(full_name: str) -> tuple[str, str]:
+    if "@" in full_name:
+        return full_name, ""
     last_segment = full_name.rsplit("/", 1)[-1]
     if ":" in last_segment:
         name, tag = full_name.rsplit(":", 1)
