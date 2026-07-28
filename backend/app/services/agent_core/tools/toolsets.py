@@ -33,7 +33,7 @@ _CORE_READ_TOOLS = frozenset(
     }
 )
 _DEFAULT_TOOLS = _CORE_READ_TOOLS | {"ask_user"}
-_PLAN_TOOLS = _DEFAULT_TOOLS | {"exit_plan_mode", "todo_write"}
+_PLAN_TOOLS = _DEFAULT_TOOLS | {"exit_plan_mode"}
 _EXECUTION_TOOLS = _CORE_READ_TOOLS | {
     "ask_user",
     "bash",
@@ -192,24 +192,47 @@ class ToolsetExposure:
                 if policy_name == "execution":
                     names = set(_EXECUTION_TOOLS | extension_tools)
                 elif policy_name == "plan":
-                    names = set(_PLAN_TOOLS)
+                    names = _plan_tool_names(
+                        specs,
+                        role=role,
+                        execution_target=execution_target,
+                        execution_scope=execution_scope,
+                    )
                 else:
                     names = set(_DEFAULT_TOOLS)
                 if explicit_allowed is not None:
-                    names = set(explicit_allowed)
-                names.update(COLLABORATION_TOOL_NAMES - {"spawn_agent"})
+                    names &= explicit_allowed
+                if policy_name != "plan":
+                    names.update(COLLABORATION_TOOL_NAMES - {"spawn_agent"})
                 names -= {"spawn_agent", "ask_user", "exit_plan_mode"}
             else:
-                names = set(explicit_allowed or (_CORE_READ_TOOLS | extension_tools))
-                names &= {
-                    spec.name
-                    for spec in specs
-                    if spec.name in read_only and not spec.interaction
-                }
+                if policy_name == "plan":
+                    names = _plan_tool_names(
+                        specs,
+                        role=role,
+                        execution_target=execution_target,
+                        execution_scope=execution_scope,
+                    )
+                    if explicit_allowed is not None:
+                        names &= explicit_allowed
+                else:
+                    names = set(
+                        explicit_allowed or (_CORE_READ_TOOLS | extension_tools)
+                    )
+                    names &= {
+                        spec.name
+                        for spec in specs
+                        if spec.name in read_only and not spec.interaction
+                    }
         elif policy_name == "execution":
             names = set(_EXECUTION_TOOLS | extension_tools)
         elif policy_name == "plan":
-            names = set(_PLAN_TOOLS)
+            names = _plan_tool_names(
+                specs,
+                role=role,
+                execution_target=execution_target,
+                execution_scope=execution_scope,
+            )
         elif policy_name == "bio":
             names = set(_CORE_READ_TOOLS | _BIOINFO_READ_TOOLS)
         else:
@@ -226,7 +249,11 @@ class ToolsetExposure:
                         else set(capability_tools) & read_only
                     )
             if explicit_allowed is not None:
-                names = set(explicit_allowed)
+                names = (
+                    names & explicit_allowed
+                    if policy_name == "plan"
+                    else set(explicit_allowed)
+                )
 
         remote_target = is_remote_ssh_execution_target(execution_target)
         remote_selected = remote_target or (
@@ -322,7 +349,14 @@ class ToolsetExposure:
             if spec.risk_level == "read" and not spec.write_scope
         }
         if role in {"worker", "subagent"}:
-            if role == "subagent":
+            if policy_name == "plan":
+                names = _plan_tool_names(
+                    specs,
+                    role=role,
+                    execution_target=execution_target,
+                    execution_scope=execution_scope,
+                )
+            elif role == "subagent":
                 names = {spec.name for spec in specs if not spec.interaction}
                 names.discard("spawn_agent")
             else:
@@ -334,7 +368,12 @@ class ToolsetExposure:
         elif policy_name == "execution":
             names = {spec.name for spec in specs}
         elif policy_name == "plan":
-            names = set(read_only) | {"ask_user", "exit_plan_mode", "todo_write"}
+            names = _plan_tool_names(
+                specs,
+                role=role,
+                execution_target=execution_target,
+                execution_scope=execution_scope,
+            )
         elif policy_name == "bio":
             names = set(_CORE_READ_TOOLS | _BIOINFO_READ_TOOLS)
         else:
@@ -365,6 +404,46 @@ def _is_remote_ssh_compatible_tool(spec: AgentToolSpec) -> bool:
     if spec.name in _REMOTE_SSH_TARGET_NEUTRAL_TOOLS:
         return True
     return spec.name.startswith(_REMOTE_SSH_TARGET_PREFIXES)
+
+
+def _plan_tool_names(
+    specs: list[AgentToolSpec],
+    *,
+    role: str,
+    execution_target: dict | str | None,
+    execution_scope: dict | str | None,
+) -> set[str]:
+    """Return the single safe Plan surface shared by model and host checks."""
+    names = {
+        spec.name
+        for spec in specs
+        if spec.risk_level == "read"
+        and not spec.write_scope
+        and spec.name not in _MODEL_HIDDEN_TOOLS
+        and not spec.interaction
+    }
+    registered = {spec.name for spec in specs}
+    extension_tools = registered - _BUILTIN_TOOL_NAMES
+    if role == "worker":
+        names &= _CORE_READ_TOOLS | extension_tools
+    elif role == "subagent":
+        names &= _CORE_READ_TOOLS | {"list_agents"}
+    if role == "orchestrator":
+        names.update({"ask_user", "exit_plan_mode"})
+        remote_target = is_remote_ssh_execution_target(execution_target)
+        local_allowed = not remote_target and (
+            execution_scope is None
+            or execution_scope_allows_local(execution_scope)
+        )
+        remote_selected = remote_target or (
+            execution_scope_mode(execution_scope) == "manual"
+            and execution_scope_allows_remote(execution_scope)
+        )
+        if local_allowed:
+            names.add("bash")
+        if remote_selected:
+            names.add("remote.exec")
+    return names
 
 
 def model_tool_definitions(

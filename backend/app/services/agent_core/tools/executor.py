@@ -240,6 +240,26 @@ def _snapshot_with_command_risk(
     return {**snapshot, "command_risk": risk.audit_snapshot()}
 
 
+def _plan_command_is_allowed(
+    *,
+    tool_name: str,
+    toolset_policy: dict[str, Any],
+    risk: RiskAssessment,
+) -> bool:
+    if str(toolset_policy.get("name") or "default") != "plan":
+        return True
+    if tool_name not in {"bash", "remote.exec"}:
+        return True
+    return (
+        isinstance(risk, CommandRiskAssessment)
+        and risk.level in {"read", "act_low"}
+        and bool(risk.effects)
+        and set(risk.effects) == {"read"}
+        and not risk.hard_blocked
+        and not risk.requires_explicit_approval
+    )
+
+
 async def _snapshot_with_scope_remote_boundary(
     snapshot: dict[str, Any],
     action_input: dict[str, Any],
@@ -535,6 +555,21 @@ class AgentToolExecutor:
                 input=normalized_input,
             ),
         )
+        assessed_risk = (
+            requested_risk
+            if isinstance(requested_risk, RiskAssessment)
+            else self.action_service.risk_engine.assess(
+                kind="tool",
+                name=tool.spec.name,
+                requested_level=requested_risk,
+                input=normalized_input,
+            )
+        )
+        plan_command_denied = not _plan_command_is_allowed(
+            tool_name=tool.spec.name,
+            toolset_policy=toolset_policy,
+            risk=assessed_risk,
+        )
 
         action = await self.action_service.request_action(
             turn_id=context.turn_id,
@@ -543,8 +578,8 @@ class AgentToolExecutor:
             input=prepared_input,
             normalized_input=normalized_input,
             requested_risk=requested_risk,
-            permission_mode=permission_mode,
-            automation_mode=automation_mode,
+            permission_mode="bypass" if plan_command_denied else permission_mode,
+            automation_mode="advise_only" if plan_command_denied else automation_mode,
             read_scope=tool.spec.read_scope,
             write_scope=tool.spec.write_scope,
             rollback_hint=tool.spec.rollback_hint,
@@ -560,6 +595,14 @@ class AgentToolExecutor:
             commit=commit_action,
             expected_owner_token=context.expected_owner_token,
         )
+        if plan_command_denied:
+            return await self._fail_plan_command_permission(
+                action=action,
+                risk=assessed_risk,
+                permission_context_snapshot=permission_snapshot,
+                evaluated_policy_version=permission_context.policy_version,
+                expected_turn_owner_token=context.expected_owner_token,
+            )
         if action_requires_resume(action.status):
             if context.expected_owner_token is not None and commit_action:
                 action, owned = await self.action_repo.update_all_owned(
@@ -791,6 +834,82 @@ class AgentToolExecutor:
             error=error,
         )
 
+    async def _fail_plan_command_permission(
+        self,
+        *,
+        action,
+        risk: RiskAssessment,
+        permission_context_snapshot: dict[str, Any],
+        evaluated_policy_version: int,
+        expected_turn_owner_token: str | None,
+    ) -> ToolExecutionResult:
+        decision = {
+            "decision": "deny",
+            "reasons": ["Plan mode permits only deterministic read-only commands"],
+            "risk_level": risk.level,
+            "source": "plan_mode",
+            "evaluated_policy_version": evaluated_policy_version,
+            "requires_explicit_approval": risk.requires_explicit_approval,
+            "hard_blocked": bool(getattr(risk, "hard_blocked", False)),
+        }
+        if action.status == AgentActionStatus.REQUESTED:
+            return replace(
+                await self._fail_requested_permission(
+                    action=action,
+                    error_message=decision["reasons"][0],
+                    risk=risk,
+                    permission_decision=decision,
+                    evaluated_policy_version=evaluated_policy_version,
+                    permission_context_snapshot=permission_context_snapshot,
+                    expected_turn_owner_token=expected_turn_owner_token,
+                ),
+                permission_decision=decision,
+            )
+
+        error = {
+            "type": "PermissionDeniedError",
+            "message": decision["reasons"][0],
+        }
+        updates = {
+            "status": AgentActionStatus.FAILED,
+            "requires_resume": False,
+            "error": error,
+            "completed_at": datetime.now(timezone.utc),
+            "risk_level": risk.level,
+            "risk_reasons": risk.reasons,
+            "affected_resources": risk.affected_resources,
+            "permission_decision": decision,
+            "evaluated_policy_version": evaluated_policy_version,
+            "permission_context_snapshot": permission_context_snapshot,
+        }
+        if expected_turn_owner_token is None:
+            failed = await self.action_repo.update_all_pending(action, **updates)
+        else:
+            failed, owned = await self.action_repo.update_all_owned(
+                action,
+                expected_owner_token=expected_turn_owner_token,
+                **updates,
+            )
+            if not owned or failed is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
+        await self.ledger.append(
+            session_id=str(failed.session_id),
+            turn_id=str(failed.turn_id),
+            type=AgentEventType.ACTION_FAILED,
+            payload={"action_id": str(failed.id), "error": error},
+            commit=False,
+            expected_owner_token=expected_turn_owner_token,
+            owner_fenced=expected_turn_owner_token is not None,
+        )
+        await self.session.commit()
+        agent_metrics.increment("tools.failed")
+        return ToolExecutionResult(
+            action_id=str(failed.id),
+            status=failed.status,
+            permission_decision=decision,
+            error=error,
+        )
+
     async def _current_result(self, action_id: str, *, fallback) -> ToolExecutionResult:
         current = await self.action_repo.get_fresh(action_id)
         return ToolExecutionResult(
@@ -881,6 +1000,18 @@ class AgentToolExecutor:
             permission_snapshot=snapshot,
         )
         snapshot = _snapshot_with_command_risk(snapshot, current_risk)
+        if not _plan_command_is_allowed(
+            tool_name=tool.spec.name,
+            toolset_policy=snapshot["toolset_policy"],
+            risk=current_risk,
+        ):
+            return await self._fail_plan_command_permission(
+                action=action,
+                risk=current_risk,
+                permission_context_snapshot=snapshot,
+                evaluated_policy_version=permission_context.policy_version,
+                expected_turn_owner_token=context.expected_owner_token,
+            )
         fresh_decision = self.action_service.permission_policy.decide(
             risk=current_risk,
             permission_mode=permission_context.permission_mode,
