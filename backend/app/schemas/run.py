@@ -165,11 +165,3 @@ class RunRetryRequest(BaseModel):
         if self.values is not None and not isinstance(self.values, dict):
             raise ValueError("values must be an object keyed by form field ids")
         return self
-
-
-class RetryPolicyCreate(BaseModel):
-    max_retries: int = Field(default=0, ge=0, le=10)
-    delay_seconds: float = Field(default=30, ge=0)
-    backoff_multiplier: float = Field(default=2.0, ge=1.0)
-    max_delay_seconds: float = Field(default=600, ge=0)
-    retry_on: list[str] = Field(default_factory=list)

@@ -23,10 +23,6 @@ EXECUTION_TOOLSET_POLICY = {
     "name": "execution",
     "capabilities": ["bioinfo.read", "bioinfo.manage"],
 }
-# Read-only planning policy: core inspection plus planning helpers. Writes and
-# shell are hidden until exit_plan_mode flips the session to execution.
-PLAN_TOOLSET_POLICY = {"name": "plan"}
-
 _CORE_READ_TOOLS = frozenset(
     {
         "projects.list",
@@ -369,22 +365,6 @@ def _is_remote_ssh_compatible_tool(spec: AgentToolSpec) -> bool:
     if spec.name in _REMOTE_SSH_TARGET_NEUTRAL_TOOLS:
         return True
     return spec.name.startswith(_REMOTE_SSH_TARGET_PREFIXES)
-
-
-def provider_tool_specs(specs: Iterable[AgentToolSpec]) -> list[dict]:
-    tools: list[dict] = []
-    for spec in specs:
-        tools.append(
-            {
-                "type": "function",
-                "function": {
-                    "name": encode_provider_tool_name(spec.name),
-                    "description": spec.description,
-                    "parameters": spec.input_schema,
-                },
-            }
-        )
-    return tools
 
 
 def model_tool_definitions(

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_core import AgentActionStatus, AgentMemoryStatus
@@ -42,7 +40,6 @@ from app.services.agent_core.transcript import (
     provider_message_from_parts,
 )
 from app.services.agent_core.transcript.messages import (
-    model_input_parts_from_message,
     model_input_parts_from_message_async,
 )
 from app.services.model_runtime.contracts import InputPart
@@ -615,40 +612,6 @@ def _complete_provider_groups(messages: list[dict]) -> list[dict]:
     return complete
 
 
-def model_context_from_messages(messages: list[dict[str, Any]]) -> AgentModelContext:
-    instruction_parts: list[str] = []
-    input_items: list[InputPart] = []
-    for message in messages:
-        role = str(message.get("role") or "")
-        text = message.get("content") if isinstance(message.get("content"), str) else ""
-        if role == "system":
-            if text:
-                instruction_parts.append(text)
-            continue
-        parts: list[dict[str, Any]] = []
-        if text:
-            text_part: dict[str, Any] = {"type": "text", "text": text}
-            phase = message.get("phase")
-            if phase in {"commentary", "final_answer"}:
-                text_part["phase"] = phase
-            parts.append(text_part)
-        raw_calls = message.get("tool_calls")
-        if isinstance(raw_calls, list):
-            parts.append({"type": "tool_calls", "tool_calls": raw_calls})
-        input_items.extend(
-            model_input_parts_from_message(
-                role,
-                parts,
-                {
-                    "tool_call_id": message.get("tool_call_id"),
-                    "is_error": message.get("is_error", False),
-                },
-            )
-        )
-    return AgentModelContext(
-        instructions="\n\n".join(instruction_parts),
-        input_items=tuple(input_items),
-    )
 
 
 def _local_platform_context() -> str:

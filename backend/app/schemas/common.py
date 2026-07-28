@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -24,13 +24,3 @@ class ErrorDetail(BaseModel):
     code: str
     message: str
     details: Any | None = None
-
-
-DataT = TypeVar("DataT")
-
-
-class Envelope(BaseModel, Generic[DataT]):
-    success: bool
-    data: DataT | None = None
-    error: ErrorDetail | None = None
-    meta: Meta

@@ -189,20 +189,6 @@ def resolve_workflow_image_requirements(
     ]
 
 
-def resolved_workflow_container_images(
-    schema_json: dict | None,
-    *,
-    default_registry: WorkflowImageRegistry | None = None,
-) -> list[str]:
-    return [
-        requirement.full_name
-        for requirement in resolve_workflow_image_requirements(
-            schema_json,
-            default_registry=default_registry,
-        )
-    ]
-
-
 def runtime_workflow_container_images(
     schema_json: dict | None,
     *,

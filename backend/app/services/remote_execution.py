@@ -636,13 +636,6 @@ class _StreamOutputBudget:
             return kept, True
 
 
-def _limit_text(value: str, output_limit: int) -> tuple[str, bool]:
-    encoded = value.encode("utf-8")
-    if len(encoded) <= output_limit:
-        return value, False
-    return encoded[:output_limit].decode("utf-8", errors="replace"), True
-
-
 def _uses_stored_credential(connection: RemoteConnectionConfig) -> bool:
     return bool(connection.password or connection.private_key)
 

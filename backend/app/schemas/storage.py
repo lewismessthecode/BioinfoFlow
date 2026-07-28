@@ -17,12 +17,6 @@ class StorageSourceKind(str, Enum):
     DATABASE = "database"
 
 
-class AssetRef(BaseModel):
-    kind: str = "asset_ref"
-    uri: str
-    label: str | None = None
-
-
 class StorageSourceRead(BaseModel):
     id: str
     label: str
