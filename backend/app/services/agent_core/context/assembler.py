@@ -25,7 +25,11 @@ from app.services.agent_core.execution_target import (
     is_remote_ssh_execution_target,
 )
 from app.services.agent_core.plugins import AgentPluginRegistry
-from app.services.agent_core.sandbox import LocalFilesystemBoundaryResolver
+from app.services.agent_core.sandbox import (
+    LocalFilesystemBoundaryResolver,
+    SandboxRunner,
+    adapter_supports_docker_socket,
+)
 from app.services.agent_core.skills import (
     ActiveSkillResolutionError,
     AgentSkillRegistry,
@@ -393,10 +397,9 @@ class AgentContextAssembler:
                 "inspect it or invoke `bif`; use the exposed BioinfoFlow platform "
                 "tools."
             )
-            if any(
-                root not in boundary.write_roots
-                for root in boundary.sandbox_write_roots
-            ):
+            runner = SandboxRunner.from_settings()
+            adapter = runner.available_adapter() if runner.enabled else None
+            if adapter_supports_docker_socket(adapter, boundary.docker_socket_root):
                 lines.append(
                     "Agent Bash can use Docker directly through the configured "
                     "socket. Preserve every requested image reference exactly; "

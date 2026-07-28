@@ -20,6 +20,7 @@ class LocalFilesystemBoundary:
     write_roots: tuple[Path, ...]
     sandbox_read_roots: tuple[Path, ...]
     sandbox_write_roots: tuple[Path, ...]
+    docker_socket_root: Path | None
     protected_roots: tuple[Path, ...]
     policy: FilesystemPolicy
 
@@ -75,6 +76,7 @@ class LocalFilesystemBoundaryResolver:
             write_roots=tuple(policy.write_roots),
             sandbox_read_roots=tuple(sandbox_read_roots),
             sandbox_write_roots=tuple(sandbox_write_roots),
+            docker_socket_root=sandbox_docker_socket,
             protected_roots=tuple(protected_roots),
             policy=policy,
         )
@@ -112,6 +114,7 @@ async def local_boundary_from_tool_context(context) -> LocalFilesystemBoundary:
         write_roots=tuple(policy.write_roots),
         sandbox_read_roots=tuple(sandbox_read_roots),
         sandbox_write_roots=tuple(sandbox_write_roots),
+        docker_socket_root=sandbox_docker_socket,
         protected_roots=tuple(protected_roots),
         policy=policy,
     )

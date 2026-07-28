@@ -16,6 +16,7 @@ from app.services.agent_core.permissions.remote_boundary import RemoteBoundaryRe
 from app.services.agent_core.sandbox import (
     LocalFilesystemBoundaryResolver,
     SandboxRunner,
+    adapter_supports_docker_socket,
 )
 from app.utils.exceptions import PermissionDeniedError
 
@@ -119,17 +120,18 @@ class PermissionContextResolver:
                 str(root)[:1000]
                 for root in filesystem_boundary.sandbox_read_roots[:16]
             )
-            docker_socket_access = (
-                "read_write"
-                if any(
-                    root not in filesystem_boundary.write_roots
-                    for root in filesystem_boundary.sandbox_write_roots
-                )
-                else "unavailable"
-            )
             runner = SandboxRunner.from_settings()
             adapter = runner.available_adapter() if runner.enabled else None
             sandboxed = adapter is not None
+            docker_socket_access = (
+                "read_write"
+                if sandboxed
+                and adapter_supports_docker_socket(
+                    adapter,
+                    filesystem_boundary.docker_socket_root,
+                )
+                else "unavailable"
+            )
             boundary = {
                 "kind": "local",
                 "enforcement": "os_sandbox" if sandboxed else "none",

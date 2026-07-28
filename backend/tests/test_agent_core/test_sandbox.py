@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import platform
+import shlex
+import shutil
+import socket
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -413,6 +419,74 @@ def test_seatbelt_denies_attachment_writes_and_other_session_reads(tmp_path):
     assert "require-not" in profile
 
 
+@pytest.mark.skipif(
+    platform.system() != "Darwin" or shutil.which("sandbox-exec") is None,
+    reason="requires macOS sandbox-exec",
+)
+def test_seatbelt_allows_only_explicit_unix_socket_network_capability():
+    with tempfile.TemporaryDirectory(prefix="bif-seatbelt-", dir="/tmp") as raw_root:
+        root = Path(raw_root)
+        docker_socket = root / "docker.sock"
+        listener = socket.socket(socket.AF_UNIX)
+        listener.bind(str(docker_socket))
+        listener.listen(1)
+        other_socket = root / "other.sock"
+        other_listener = socket.socket(socket.AF_UNIX)
+        other_listener.bind(str(other_socket))
+        other_listener.listen(1)
+        tcp_listener = socket.socket(socket.AF_INET)
+        tcp_listener.bind(("127.0.0.1", 0))
+        tcp_listener.listen(1)
+
+        def run_client(client_code: str):
+            command = f"{shlex.quote(sys.executable)} -c {shlex.quote(client_code)}"
+            argv = SeatbeltAdapter().build_argv(
+                _spec(
+                    command=command,
+                    cwd=root,
+                    read_roots=[root, docker_socket],
+                    write_roots=[root, docker_socket],
+                    docker_socket_root=docker_socket.resolve(),
+                )
+            )
+            return subprocess.run(
+                argv,
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+
+        try:
+            allowed = run_client(
+                "import socket; "
+                "client = socket.socket(socket.AF_UNIX); "
+                f"client.connect({str(docker_socket)!r}); "
+                "client.close()"
+            )
+            other_unix = run_client(
+                "import socket; "
+                "client = socket.socket(socket.AF_UNIX); "
+                f"client.connect({str(other_socket)!r}); "
+                "client.close()"
+            )
+            tcp = run_client(
+                "import socket; "
+                "client = socket.socket(socket.AF_INET); "
+                f"client.connect(('127.0.0.1', {tcp_listener.getsockname()[1]})); "
+                "client.close()"
+            )
+        finally:
+            listener.close()
+            other_listener.close()
+            tcp_listener.close()
+
+    assert allowed.returncode == 0, allowed.stderr
+    assert other_unix.returncode != 0
+    assert tcp.returncode != 0
+
+
 def test_filesystem_policy_allows_absolute_path_inside_allowed_root(tmp_path):
     root = tmp_path / "root"
     root.mkdir()
@@ -517,6 +591,26 @@ def test_filesystem_policy_cannot_resolve_docker_socket_outside_ordinary_roots(
         policy.require_allowed_path(socket)
 
 
+def test_filesystem_policy_rejects_configured_docker_socket_inside_default_root(
+    tmp_path, monkeypatch
+):
+    docker_socket = tmp_path / "docker.sock"
+    ordinary_file = tmp_path / "result.txt"
+    ordinary_file.write_text("ok", encoding="utf-8")
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(tmp_path))
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+    monkeypatch.chdir(tmp_path)
+    unix_socket = socket.socket(socket.AF_UNIX)
+    unix_socket.bind(docker_socket.name)
+    try:
+        policy = FilesystemPolicy()
+        with pytest.raises(PermissionDeniedError, match="protected"):
+            policy.require_allowed_path(docker_socket)
+        assert policy.require_allowed_path(ordinary_file) == ordinary_file.resolve()
+    finally:
+        unix_socket.close()
+
+
 def test_container_repo_root_slash_does_not_block_declared_external_root(
     tmp_path, monkeypatch
 ):
@@ -556,6 +650,7 @@ def _spec(
     deny_read_roots=None,
     protected_roots=None,
     protected_read_roots=None,
+    docker_socket_root=None,
 ):
     from app.services.agent_core.sandbox.process_sandbox import SandboxSpec
 
@@ -567,5 +662,6 @@ def _spec(
         deny_read_roots=deny_read_roots or [],
         protected_roots=protected_roots or [],
         protected_read_roots=protected_read_roots or [],
+        docker_socket_root=docker_socket_root,
         allow_network=False,
     )

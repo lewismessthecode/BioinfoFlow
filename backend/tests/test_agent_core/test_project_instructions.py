@@ -226,11 +226,24 @@ async def test_context_assembler_injects_project_instructions_before_environment
     repo_root = tmp_path / "bioinfoflow-product"
     data_root = repo_root / "data"
     docker_socket = tmp_path / "docker.sock"
+    adapter = type(
+        "DockerSocketAdapter",
+        (),
+        {
+            "name": "seatbelt",
+            "supports_docker_socket": lambda self, root: root == docker_socket.resolve(),
+        },
+    )()
     repo_root.mkdir()
     data_root.mkdir()
     monkeypatch.setattr(settings, "repo_root", str(repo_root))
     monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
     monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+    monkeypatch.setattr(settings, "agent_sandbox_enabled", True)
+    monkeypatch.setattr(
+        "app.services.agent_core.context.assembler.SandboxRunner.available_adapter",
+        lambda self: adapter,
+    )
     (repo_root / "AGENTS.md").write_text("product source instruction", encoding="utf-8")
     project = Project(
         name="Instruction project",
@@ -343,7 +356,60 @@ async def test_context_assembler_omits_docker_guidance_for_protected_socket(
     monkeypatch.setattr(settings, "repo_root", str(repo_root))
     monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
     monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+    monkeypatch.setattr(settings, "agent_sandbox_enabled", True)
+    adapter = type(
+        "DockerSocketAdapter",
+        (),
+        {"name": "seatbelt", "supports_docker_socket": lambda self, root: True},
+    )()
+    monkeypatch.setattr(
+        "app.services.agent_core.context.assembler.SandboxRunner.available_adapter",
+        lambda self: adapter,
+    )
     monkeypatch.chdir(state_root)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Use Docker if available.",
+    )
+
+    unix_socket = socket.socket(socket.AF_UNIX)
+    unix_socket.bind(docker_socket.name)
+    try:
+        messages = await AgentContextAssembler(db_session).provider_messages(
+            agent_session=session,
+            turn=turn,
+        )
+    finally:
+        unix_socket.close()
+
+    assert DOCKER_SOCKET_AUTHORITY_GUIDANCE not in messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_context_assembler_omits_docker_guidance_when_sandbox_disabled(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    repo_root = tmp_path / "bioinfoflow-product"
+    data_root = repo_root / "data"
+    docker_socket = tmp_path / "docker.sock"
+    repo_root.mkdir()
+    data_root.mkdir()
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+    monkeypatch.setattr(settings, "agent_sandbox_enabled", False)
+    monkeypatch.chdir(tmp_path)
     service = AgentCoreService(db_session)
     session = await service.create_session(
         project_id=None,
