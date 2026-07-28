@@ -332,7 +332,6 @@ export type ContainerRegistryConfig = {
   namespace?: string | null
   provider?: string | null
   description?: string | null
-  is_default?: boolean | null
   insecure?: boolean | null
   credential_source?: "none" | "env" | "stored" | string | null
   env_username_var?: string | null

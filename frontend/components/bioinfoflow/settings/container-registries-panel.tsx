@@ -9,7 +9,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react"
-import { Loader2, PlayCircle, Plus, Star, Trash2 } from "@/lib/icons"
+import { Loader2, PlayCircle, Plus, Trash2 } from "@/lib/icons"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -37,7 +37,6 @@ type RegistryForm = {
   endpoint: string
   namespace: string
   insecure: boolean
-  is_default: boolean
   credential_source: CredentialSource
   existing_credential_source: CredentialSource | null
   env_username_var: string
@@ -52,7 +51,6 @@ const EMPTY_FORM: RegistryForm = {
   endpoint: "",
   namespace: "",
   insecure: false,
-  is_default: false,
   credential_source: "none",
   existing_credential_source: null,
   env_username_var: "",
@@ -100,11 +98,9 @@ export function ContainerRegistriesPanel() {
   const sortedRegistries = useMemo(
     () =>
       [...registries].sort((a, b) => {
-        if (a.is_default && !b.is_default) return -1
-        if (!a.is_default && b.is_default) return 1
-        return String(a.name ?? a.endpoint ?? "").localeCompare(
-          String(b.name ?? b.endpoint ?? ""),
-        )
+        const nameComparison = String(a.name ?? "").localeCompare(String(b.name ?? ""))
+        if (nameComparison !== 0) return nameComparison
+        return String(a.endpoint ?? "").localeCompare(String(b.endpoint ?? ""))
       }),
     [registries],
   )
@@ -141,7 +137,6 @@ export function ContainerRegistriesPanel() {
       endpoint: registry.endpoint ?? registry.registry ?? registry.host ?? registry.url ?? "",
       namespace: registry.namespace ?? "",
       insecure: Boolean(registry.insecure),
-      is_default: Boolean(registry.is_default),
       credential_source: credentialSource,
       existing_credential_source: credentialSource,
       env_username_var: registry.env_username_var ?? "",
@@ -195,19 +190,6 @@ export function ContainerRegistriesPanel() {
       toast.error(getApiErrorMessage(error, t("registries.testFailed")))
     } finally {
       setTestingId(null)
-    }
-  }
-
-  const makeDefault = async (registryId: string) => {
-    try {
-      await apiRequest(`/container-registries/${registryId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ is_default: true }),
-      })
-      toast.success(t("registries.defaultSaved"))
-      await loadRegistries()
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, t("registries.saveFailed")))
     }
   }
 
@@ -291,31 +273,17 @@ export function ContainerRegistriesPanel() {
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
-                <Label htmlFor="registry-default" className="text-sm">
-                  {t("registries.fields.default")}
-                </Label>
-                <Switch
-                  id="registry-default"
-                  checked={form.is_default}
-                  onCheckedChange={(checked) =>
-                    setFormField(setForm, "is_default", Boolean(checked))
-                  }
-                />
-              </div>
-              <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
-                <Label htmlFor="registry-insecure" className="text-sm">
-                  {t("registries.fields.insecure")}
-                </Label>
-                <Switch
-                  id="registry-insecure"
-                  checked={form.insecure}
-                  onCheckedChange={(checked) =>
-                    setFormField(setForm, "insecure", Boolean(checked))
-                  }
-                />
-              </div>
+            <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+              <Label htmlFor="registry-insecure" className="text-sm">
+                {t("registries.fields.insecure")}
+              </Label>
+              <Switch
+                id="registry-insecure"
+                checked={form.insecure}
+                onCheckedChange={(checked) =>
+                  setFormField(setForm, "insecure", Boolean(checked))
+                }
+              />
             </div>
 
             <div className="space-y-2">
@@ -425,7 +393,6 @@ export function ContainerRegistriesPanel() {
                   deleting={deletingId === registry.id}
                   onEdit={editRegistry}
                   onTest={(id) => void testRegistry(id)}
-                  onDefault={(id) => void makeDefault(id)}
                   onDelete={requestDeleteRegistry}
                 />
               ))}
@@ -477,7 +444,6 @@ function RegistryRow({
   deleting,
   onEdit,
   onTest,
-  onDefault,
   onDelete,
 }: {
   registry: ContainerRegistryConfig
@@ -485,7 +451,6 @@ function RegistryRow({
   deleting: boolean
   onEdit: (registry: ContainerRegistryConfig) => void
   onTest: (id: string) => void
-  onDefault: (id: string) => void
   onDelete: (registry: ContainerRegistryConfig) => void
 }) {
   const t = useTranslations("settings")
@@ -501,12 +466,6 @@ function RegistryRow({
             <h4 className="truncate text-sm font-semibold text-foreground">
               {registry.name || endpoint}
             </h4>
-            {registry.is_default ? (
-              <span className="inline-flex h-6 items-center gap-1 rounded-md border border-border bg-secondary/45 px-2 text-xs font-medium text-foreground">
-                <Star className="size-3" />
-                {t("registries.defaultBadge")}
-              </span>
-            ) : null}
             <span
               className={cn(
                 "inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium",
@@ -554,15 +513,6 @@ function RegistryRow({
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={Boolean(registry.is_default)}
-                onClick={() => onDefault(registryId)}
-              >
-                {t("registries.actions.makeDefault")}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
                 className="gap-2 text-destructive hover:text-destructive"
                 disabled={deleting}
                 onClick={() => onDelete(registry)}
@@ -592,7 +542,6 @@ function buildRegistryPayload(form: RegistryForm) {
     endpoint: form.endpoint.trim(),
     namespace: form.namespace.trim() || null,
     insecure: form.insecure,
-    is_default: form.is_default,
     credential_source: form.credential_source,
   }
 
