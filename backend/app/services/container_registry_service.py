@@ -6,7 +6,6 @@ import os
 from typing import Any
 from urllib.parse import urlparse
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.container_registry import (
@@ -23,7 +22,7 @@ from app.services.llm.credentials import (
     generate_credential_fingerprint,
     mask_secret,
 )
-from app.utils.exceptions import ConflictError, NotFoundError
+from app.utils.exceptions import NotFoundError
 
 
 @dataclass(frozen=True)
@@ -68,22 +67,13 @@ class ContainerRegistryService:
             "endpoint": endpoint,
             "namespace": _normalize_namespace(data.get("namespace")),
             "insecure": bool(data.get("insecure", False)),
-            "is_default": bool(data.get("is_default", False)),
             "last_status": ContainerRegistryStatus.UNTESTED,
             "last_error": None,
             "last_checked_at": None,
             "updated_by": data.get("updated_by"),
         }
         payload.update(_credential_payload(data, existing=None))
-        if payload["is_default"]:
-            await self.registry_repo.unset_default_except()
-        try:
-            return await self.registry_repo.create(**payload)
-        except IntegrityError as exc:
-            await self.registry_repo.session.rollback()
-            raise ConflictError(
-                "Only one container registry can be the default"
-            ) from exc
+        return await self.registry_repo.create(**payload)
 
     async def update_registry(
         self,
@@ -92,15 +82,7 @@ class ContainerRegistryService:
     ) -> ContainerRegistry:
         registry = await self.get_registry(registry_id)
         updates = _registry_updates(data, registry)
-        if updates.get("is_default") is True:
-            await self.registry_repo.unset_default_except(str(registry.id))
-        try:
-            return await self.registry_repo.update_all(registry, **updates)
-        except IntegrityError as exc:
-            await self.registry_repo.session.rollback()
-            raise ConflictError(
-                "Only one container registry can be the default"
-            ) from exc
+        return await self.registry_repo.update_all(registry, **updates)
 
     async def delete_registry(self, registry_id: str) -> None:
         registry = await self.get_registry(registry_id)
@@ -190,20 +172,19 @@ class ContainerRegistryService:
             registry_id=material.registry_id,
         )
 
-    async def get_effective_registry(
+    async def get_project_registry(
         self,
         *,
         project_id: str | None = None,
     ) -> ContainerRegistry | None:
-        if project_id:
-            project = await self.project_repo.get(project_id)
-            if project is None:
-                raise NotFoundError(f"Project not found: {project_id}")
-            if project.container_registry_id:
-                registry = await self.registry_repo.get(str(project.container_registry_id))
-                if registry is not None:
-                    return registry
-        return await self.registry_repo.get_default()
+        if project_id is None:
+            return None
+        project = await self.project_repo.get(project_id)
+        if project is None:
+            raise NotFoundError(f"Project not found: {project_id}")
+        if project.container_registry_id is None:
+            return None
+        return await self.registry_repo.get(str(project.container_registry_id))
 
     def registry_read_dict(self, registry: ContainerRegistry) -> dict[str, Any]:
         return {
@@ -212,7 +193,6 @@ class ContainerRegistryService:
             "endpoint": registry.endpoint,
             "namespace": registry.namespace,
             "insecure": registry.insecure,
-            "is_default": registry.is_default,
             "credential_source": registry.credential_source,
             "env_username_var": registry.env_username_var,
             "env_password_var": registry.env_password_var,
@@ -252,8 +232,6 @@ def _registry_updates(
         updates["insecure"] = bool(data["insecure"])
         endpoint = updates.get("endpoint", registry.endpoint)
         _normalize_endpoint(endpoint, updates["insecure"])
-    if "is_default" in data:
-        updates["is_default"] = bool(data["is_default"])
     if "updated_by" in data:
         updates["updated_by"] = data.get("updated_by")
 
