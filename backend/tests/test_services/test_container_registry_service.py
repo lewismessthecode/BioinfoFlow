@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 import pytest
@@ -8,6 +9,72 @@ from app.models.project import Project
 from app.repositories.project_repo import ProjectRepository
 from app.utils.exceptions import NotFoundError
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+@pytest.mark.asyncio
+async def test_registry_repository_get_by_endpoint_prefers_latest_record(db_session):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    service = ContainerRegistryService(db_session)
+    endpoint = "https://duplicate.example.test"
+    older_at = datetime(2026, 7, 27, tzinfo=timezone.utc)
+    latest_at = datetime(2026, 7, 28, tzinfo=timezone.utc)
+    common = {
+        "name": "Duplicate registry",
+        "endpoint": endpoint,
+        "insecure": False,
+        "credential_source": "none",
+        "last_status": "untested",
+    }
+    await service.registry_repo.create(
+        **common,
+        id="00000000-0000-0000-0000-000000000099",
+        updated_at=older_at,
+    )
+    await service.registry_repo.create(
+        **common,
+        id="00000000-0000-0000-0000-000000000001",
+        updated_at=latest_at,
+    )
+    expected = await service.registry_repo.create(
+        **common,
+        id="00000000-0000-0000-0000-000000000002",
+        updated_at=latest_at,
+    )
+
+    registry = await service.registry_repo.get_by_endpoint(endpoint)
+
+    assert registry is not None
+    assert str(registry.id) == str(expected.id)
+
+
+@pytest.mark.asyncio
+async def test_registry_repository_list_all_uses_id_as_final_tie_breaker(db_session):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    service = ContainerRegistryService(db_session)
+    common = {
+        "name": "Same registry",
+        "endpoint": "https://same.example.test",
+        "insecure": False,
+        "credential_source": "none",
+        "last_status": "untested",
+    }
+    await service.registry_repo.create(
+        **common,
+        id="00000000-0000-0000-0000-000000000002",
+    )
+    await service.registry_repo.create(
+        **common,
+        id="00000000-0000-0000-0000-000000000001",
+    )
+
+    registries = await service.registry_repo.list_all()
+
+    assert [str(registry.id) for registry in registries] == [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+    ]
 
 
 @pytest.mark.asyncio
