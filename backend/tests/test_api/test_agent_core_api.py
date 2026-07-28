@@ -75,6 +75,31 @@ async def test_execution_sessions_persist_canonical_toolset_policy(async_client)
 
 
 @pytest.mark.asyncio
+async def test_agent_session_mode_patch_returns_conflict_while_turn_active(
+    async_client,
+):
+    created_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"mode": "execution"},
+    )
+    assert created_response.status_code == 201
+    session = created_response.json()["data"]
+
+    turn_response = await async_client.post(
+        f"/api/v1/agent/sessions/{session['id']}/turns",
+        json={"input_text": "Keep running in execution mode."},
+    )
+    assert turn_response.status_code == 202
+
+    updated_response = await async_client.patch(
+        f"/api/v1/agent/sessions/{session['id']}",
+        json={"mode": "plan"},
+    )
+
+    assert updated_response.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_agent_turn_create_applies_requested_plan_mode_atomically(
     async_client,
     db_session,

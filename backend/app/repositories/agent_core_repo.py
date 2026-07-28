@@ -527,7 +527,7 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         session: AgentSession,
         *,
         increment_policy_version: bool,
-        require_target_mutable: bool = False,
+        require_no_active_turn: bool = False,
         commit: bool = True,
         **data: object,
     ) -> AgentSession | None:
@@ -537,7 +537,7 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
                 self.model.permission_policy_version + 1
             )
         conditions = [self.model.id == session.id]
-        if require_target_mutable:
+        if require_no_active_turn:
             conditions.append(~self._active_nonterminal_turn_exists())
             values["active_turn_id"] = None
         stmt = (

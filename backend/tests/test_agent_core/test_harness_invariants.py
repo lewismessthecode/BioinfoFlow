@@ -975,7 +975,6 @@ async def test_loop_refreshes_permission_context_before_each_model_iteration(
                         workspace_id=DEFAULT_WORKSPACE_ID,
                         user_id="dev",
                         updates={
-                            "mode": "plan",
                             "role_profile": "worker",
                         },
                     )
@@ -992,7 +991,7 @@ async def test_loop_refreshes_permission_context_before_each_model_iteration(
             else:
                 assert "bash" not in tool_names
                 assert "Role profile: worker" in system_text
-                assert "Toolset policy: plan" in system_text
+                assert "Toolset policy: execution" in system_text
                 yield TextDelta(text="Refreshed policy observed.")
                 yield CompletionMetadata(
                     response_id="chatcmpl-refresh-final",
