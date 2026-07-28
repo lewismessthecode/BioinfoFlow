@@ -67,7 +67,7 @@ export function RegisterPreviewPanel({
     ? getContainerRegistryLabel(
         selectedRegistryConfig ?? { name: selectedRegistry, registry: selectedRegistry },
       )
-    : tWorkflows("registerDialog.registry.automatic")
+    : tWorkflows("registerDialog.registry.asWritten")
 
   return (
     <aside className="relative rounded-2xl border border-border/60 bg-card/50 p-5 xl:sticky xl:top-0">

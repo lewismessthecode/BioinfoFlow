@@ -438,7 +438,7 @@ describe("WorkflowRegisterDialog", () => {
       "workflows.registerDialog.fields.imageRegistry"
     )
     expect(registrySelect).toHaveValue("")
-    expect(screen.getAllByText("workflows.registerDialog.registry.automatic").length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText("workflows.registerDialog.registry.asWritten").length).toBeGreaterThanOrEqual(1)
 
     fireEvent.change(registrySelect, { target: { value: "registry-harbor" } })
 
@@ -469,7 +469,7 @@ describe("WorkflowRegisterDialog", () => {
     )
   })
 
-  it("keeps automatic workflow registration free of registry ids", async () => {
+  it("keeps as-written workflow registration free of registry ids", async () => {
     const onRegistered = vi.fn()
 
     apiRequestMock.mockImplementation(async (path, options) => {
@@ -513,6 +513,7 @@ describe("WorkflowRegisterDialog", () => {
       "workflows.registerDialog.fields.imageRegistry"
     )
     expect(registrySelect).toHaveValue("")
+    expect(screen.getAllByText("workflows.registerDialog.registry.asWritten").length).toBeGreaterThanOrEqual(1)
 
     fireEvent.change(screen.getByLabelText("workflows.registerDialog.fields.pipelineName"), {
       target: { value: "nf-core/rnaseq" },
@@ -540,16 +541,34 @@ describe("WorkflowRegisterDialog", () => {
   it("submits a selected local bundle as multipart data and lets the user choose the entrypoint", async () => {
     const onRegistered = vi.fn()
 
-    apiRequestMock.mockResolvedValue({
-      data: {
-        id: "workflow-local-bundle-1",
-        name: "rnaseq-quant-mini",
-        source: "local",
-        engine: "nextflow",
-        version: "local",
-        entrypoint_relpath: "rnaseq_quant.nf",
-      },
-      meta: undefined,
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/container-registries") {
+        return {
+          data: [
+            {
+              id: "registry-harbor",
+              name: "Lab Harbor",
+              endpoint: "harbor.local:5000",
+              provider: "harbor",
+            },
+          ],
+          meta: undefined,
+        }
+      }
+      if (path === "/workflows/local-bundle" && options?.method === "POST") {
+        return {
+          data: {
+            id: "workflow-local-bundle-1",
+            name: "rnaseq-quant-mini",
+            source: "local",
+            engine: "nextflow",
+            version: "local",
+            entrypoint_relpath: "rnaseq_quant.nf",
+          },
+          meta: undefined,
+        }
+      }
+      throw new Error(`Unexpected path: ${path}`)
     })
 
     renderAppPage(
@@ -561,6 +580,10 @@ describe("WorkflowRegisterDialog", () => {
     )
 
     fireEvent.click(screen.getByRole("button", { name: "workflows.registerDialog.sourceTypes.local" }))
+    const registrySelect = await screen.findByLabelText(
+      "workflows.registerDialog.fields.imageRegistry"
+    )
+    fireEvent.change(registrySelect, { target: { value: "registry-harbor" } })
     const bundleInput = screen.getByLabelText("workflows.registerDialog.fields.bundleUpload")
     fireEvent.change(bundleInput, {
       target: {
@@ -602,6 +625,7 @@ describe("WorkflowRegisterDialog", () => {
       expect(formData.get("engine")).toBe("nextflow")
       expect(formData.get("name")).toBe("rnaseq-quant-mini")
       expect(formData.get("entrypoint_relpath")).toBe("rnaseq_quant.nf")
+      expect(formData.get("container_registry_id")).toBe("registry-harbor")
       const bundlePaths = JSON.parse(String(formData.get("bundle_paths"))) as string[]
       expect(bundlePaths).toHaveLength(3)
       expect([...bundlePaths].sort()).toEqual([
@@ -615,6 +639,74 @@ describe("WorkflowRegisterDialog", () => {
     expect(onRegistered).toHaveBeenCalledWith(
       expect.objectContaining({ id: "workflow-local-bundle-1", name: "rnaseq-quant-mini" })
     )
+  })
+
+  it("omits the registry id from multipart registration when image references are used as written", async () => {
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/container-registries") {
+        return {
+          data: [
+            {
+              id: "registry-harbor",
+              name: "Lab Harbor",
+              endpoint: "harbor.local:5000",
+              provider: "harbor",
+            },
+          ],
+          meta: undefined,
+        }
+      }
+      if (path === "/workflows/local-bundle" && options?.method === "POST") {
+        return {
+          data: {
+            id: "workflow-local-bundle-2",
+            name: "hello",
+            source: "local",
+            engine: "nextflow",
+            version: "local",
+            entrypoint_relpath: "hello.nf",
+          },
+          meta: undefined,
+        }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(
+      <WorkflowRegisterDialog
+        open
+        onOpenChange={() => {}}
+        onRegistered={() => {}}
+      />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "workflows.registerDialog.sourceTypes.local" }))
+    const registrySelect = await screen.findByLabelText(
+      "workflows.registerDialog.fields.imageRegistry"
+    )
+    expect(registrySelect).toHaveValue("")
+    expect(screen.getAllByText("workflows.registerDialog.registry.asWritten").length).toBeGreaterThanOrEqual(1)
+
+    fireEvent.change(screen.getByLabelText("workflows.registerDialog.fields.bundleUpload"), {
+      target: {
+        files: [
+          fileWithRelativePath(
+            "nextflow.enable.dsl=2\nworkflow { }\n",
+            "hello.nf",
+            "hello/hello.nf",
+            "application/octet-stream",
+          ),
+        ],
+      },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "workflows.registerDialog.actions.chooseEntrypoint" }))
+    const [entrypointOption] = await screen.findAllByText("hello.nf")
+    fireEvent.click(entrypointOption.closest("button") ?? entrypointOption)
+    fireEvent.click(screen.getByRole("button", { name: "workflows.register" }))
+
+    await waitFor(() => {
+      expect(latestBundleUpload().has("container_registry_id")).toBe(false)
+    })
   })
 
   it("uses a local-workflow specific fallback message when registration fails", async () => {

@@ -242,7 +242,7 @@ export function RegisterFormFields({
             )}
           >
             <option value={AUTOMATIC_REGISTRY_VALUE}>
-              {tWorkflows("registerDialog.registry.automatic")}
+              {tWorkflows("registerDialog.registry.asWritten")}
             </option>
             {imageRegistries.map((registry) => {
               const value = getContainerRegistrySelectValue(registry)

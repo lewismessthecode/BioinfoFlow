@@ -746,8 +746,8 @@
         "description": "Description (optional)"
       },
       "registry": {
-        "automatic": "Automatic",
-        "hint": "Optional. Automatic uses the configured default when available; explicit image hosts are kept as written."
+        "asWritten": "Use image references as written",
+        "hint": "Optional. Select a registry only when unqualified workflow images should be resolved through it; explicit image hosts are kept as written."
       },
       "localModes": {
         "bundle": "Bundle directory",
@@ -2316,8 +2316,6 @@
       "deleteConfirm": "Delete {name}?",
       "testOk": "Registry credentials are available.",
       "testFailed": "Registry check failed.",
-      "defaultSaved": "Default registry updated.",
-      "defaultBadge": "Default",
       "form": {
         "createTitle": "Add registry",
         "editTitle": "Edit registry",
@@ -2330,7 +2328,6 @@
         "name": "Name",
         "endpoint": "Endpoint",
         "namespace": "Namespace",
-        "default": "Default",
         "insecure": "HTTP",
         "credentials": "Credentials",
         "envUsername": "Username env",
@@ -2356,7 +2353,6 @@
       "actions": {
         "edit": "Edit",
         "test": "Test",
-        "makeDefault": "Make default",
         "delete": "Delete",
         "cancel": "Cancel"
       }

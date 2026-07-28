@@ -144,8 +144,6 @@ vi.mock("next-intl", () => ({
       "registries.deleteConfirm": "Delete registry?",
       "registries.testOk": "Registry OK",
       "registries.testFailed": "Registry test failed",
-      "registries.defaultSaved": "Default saved",
-      "registries.defaultBadge": "Default",
       "registries.form.createTitle": "Add registry",
       "registries.form.editTitle": "Edit registry",
       "registries.form.subtitle": "Use an endpoint",
@@ -155,7 +153,6 @@ vi.mock("next-intl", () => ({
       "registries.fields.name": "Name",
       "registries.fields.endpoint": "Endpoint",
       "registries.fields.namespace": "Namespace",
-      "registries.fields.default": "Default",
       "registries.fields.insecure": "HTTP",
       "registries.fields.credentials": "Credentials",
       "registries.fields.envUsername": "Username env",
@@ -173,7 +170,6 @@ vi.mock("next-intl", () => ({
       "registries.status.error": "Error",
       "registries.actions.edit": "Edit",
       "registries.actions.test": "Test",
-      "registries.actions.makeDefault": "Make default",
       "registries.actions.delete": "Delete",
     }
     return labels[key] ?? key
@@ -452,12 +448,22 @@ describe("SettingsPage", () => {
         return {
           data: [
             {
+              id: "registry-zeta",
+              name: "Zeta Registry",
+              endpoint: "zeta.example.com",
+              namespace: null,
+              insecure: false,
+              credential_source: "none",
+              last_status: "untested",
+              created_at: "2026-06-29T00:00:00Z",
+              updated_at: "2026-06-29T00:00:00Z",
+            },
+            {
               id: "registry-harbor",
               name: "Lab Harbor",
               endpoint: "http://10.227.4.56:80",
               namespace: "pipeline-dev",
               insecure: true,
-              is_default: true,
               credential_source: "stored",
               username_hint: "pipe...-dev",
               last_status: "untested",
@@ -470,16 +476,6 @@ describe("SettingsPage", () => {
       }
       if (path === "/container-registries" && options?.method === "POST") {
         const body = JSON.parse(String(options.body)) as Record<string, unknown>
-        expect(body).toEqual({
-          name: "Company Harbor",
-          endpoint: "http://10.227.4.56:80",
-          namespace: "pipeline-dev",
-          insecure: true,
-          is_default: true,
-          credential_source: "stored",
-          username: "pipeline-dev",
-          password: "secret",
-        })
         return {
           data: { id: "registry-new", ...body },
           meta: undefined,
@@ -531,7 +527,15 @@ describe("SettingsPage", () => {
 
     expect(await screen.findByText("Container Registries")).toBeInTheDocument()
     expect(await screen.findByText("Lab Harbor")).toBeInTheDocument()
+    const labRegistry = screen.getByText("Lab Harbor")
+    const zetaRegistry = screen.getByText("Zeta Registry")
+    expect(labRegistry.compareDocumentPosition(zetaRegistry)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
     expect(screen.getByText("http://10.227.4.56:80/pipeline-dev")).toBeInTheDocument()
+    expect(screen.queryByLabelText("Default")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Make default" })).not.toBeInTheDocument()
+    expect(screen.queryAllByText("Default")).toHaveLength(0)
 
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Company Harbor" },
@@ -543,7 +547,6 @@ describe("SettingsPage", () => {
       target: { value: "pipeline-dev" },
     })
     fireEvent.click(screen.getByLabelText("HTTP"))
-    fireEvent.click(screen.getByLabelText("Default"))
     fireEvent.change(screen.getByLabelText("Credentials"), {
       target: { value: "stored" },
     })
@@ -561,6 +564,18 @@ describe("SettingsPage", () => {
         expect.objectContaining({ method: "POST" }),
       )
     })
+    const createCall = apiRequestMock.mock.calls.find(
+      ([path, options]) => path === "/container-registries" && options?.method === "POST",
+    )
+    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
+      name: "Company Harbor",
+      endpoint: "http://10.227.4.56:80",
+      namespace: "pipeline-dev",
+      insecure: true,
+      credential_source: "stored",
+      username: "pipeline-dev",
+      password: "secret",
+    })
   })
 
   it("requires stored credentials when switching an edited registry to stored credentials", async () => {
@@ -574,7 +589,6 @@ describe("SettingsPage", () => {
               endpoint: "http://10.227.4.56:80",
               namespace: "pipeline-dev",
               insecure: true,
-              is_default: false,
               credential_source: "none",
               last_status: "untested",
             },

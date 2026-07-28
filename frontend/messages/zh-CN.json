@@ -746,8 +746,8 @@
         "description": "描述（可选）"
       },
       "registry": {
-        "automatic": "自动",
-        "hint": "可选。自动模式会优先使用已配置的默认仓库；带显式 host 的镜像引用会保持原样。"
+        "asWritten": "按镜像引用原样使用",
+        "hint": "可选。仅当未限定 host 的工作流镜像需要通过指定仓库解析时才选择仓库；带显式 host 的镜像引用保持原样。"
       },
       "localModes": {
         "bundle": "Bundle 目录",
@@ -2316,8 +2316,6 @@
       "deleteConfirm": "删除 {name}？",
       "testOk": "镜像仓库凭据可用。",
       "testFailed": "镜像仓库检查失败。",
-      "defaultSaved": "默认镜像仓库已更新。",
-      "defaultBadge": "默认",
       "form": {
         "createTitle": "添加镜像仓库",
         "editTitle": "编辑镜像仓库",
@@ -2330,7 +2328,6 @@
         "name": "名称",
         "endpoint": "Endpoint",
         "namespace": "Namespace",
-        "default": "默认",
         "insecure": "HTTP",
         "credentials": "凭据",
         "envUsername": "用户名环境变量",
@@ -2356,7 +2353,6 @@
       "actions": {
         "edit": "编辑",
         "test": "测试",
-        "makeDefault": "设为默认",
         "delete": "删除",
         "cancel": "取消"
       }
