@@ -48,10 +48,35 @@ installer may purge the marked Bioinfoflow home without Docker.
 The Docker Compose setup mounts:
 
 ```yaml
-- /var/run/docker.sock:/var/run/docker.sock
+- type: bind
+  source: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}
+  target: /var/run/docker.sock
+  read_only: false
 ```
 
-That gives the backend container access to the host Docker daemon. Use it only on trusted machines and trusted networks.
+`DOCKER_SOCKET_PATH` is the host path used by the Compose bind mount;
+`DOCKER_SOCKET=unix:///var/run/docker.sock` is the backend-visible URI. The
+socket must be writable for Docker API operations. It gives the backend, Agent
+Bash, and workflow execution complete authority over the host Docker daemon.
+Use it only on trusted machines and trusted networks.
+
+Bubblewrap and macOS Seatbelt constrain the local Bash process, not actions
+delegated to the Docker daemon. A sandboxed command that reaches the socket can
+ask the daemon to mount host paths, create networks, or start privileged
+workloads outside the sandbox's filesystem and network restrictions.
+
+For recovery, inspect rendered Compose state and recreate the backend:
+
+```bash
+docker compose config | sed -n '/backend:/,/frontend:/p'
+docker compose up -d --build --force-recreate backend
+```
+
+The backend must remain non-privileged and must not gain `SYS_ADMIN`. On Linux,
+Docker's default seccomp profile can block Bubblewrap's user-namespace probe
+with `No permissions to create new namespace`. Bioinfoflow therefore uses
+`seccomp:unconfined` for the backend while retaining the non-privileged and
+no-`SYS_ADMIN` boundaries.
 
 ## Authentication
 
@@ -172,6 +197,11 @@ ports directly to untrusted networks.
 The OS-level bash sandbox for AgentCore is required and fail-closed, with network
 access disabled by default and no per-command unsandboxed opt-out. Docker
 deployments may require host user-namespace and bubblewrap support.
+
+Sandbox availability diagnostics use four stable categories:
+`binary_missing` when the adapter executable is absent, `probe_exit` when the
+bounded probe returns non-zero, `probe_timeout` when it exceeds its deadline,
+and `probe_os_error` when the operating system cannot start or read the probe.
 
 Structured local file tools and all local writes are capability-based. The
 active project is read-write; reference/database roots are read-only; and

@@ -631,6 +631,61 @@
         "title": "AgentTurnCreate",
         "type": "object"
       },
+      "AgentTurnSteer": {
+        "properties": {
+          "active_skill_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Skill Names"
+          },
+          "input_parts": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Parts"
+          },
+          "input_text": {
+            "minLength": 1,
+            "title": "Input Text",
+            "type": "string"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "required": [
+          "input_text"
+        ],
+        "title": "AgentTurnSteer",
+        "type": "object"
+      },
       "BatchCreate": {
         "properties": {
           "description": {
@@ -826,6 +881,61 @@
         "title": "Body_load_image_tarball_api_v1_images_load_post",
         "type": "object"
       },
+      "Body_transcribe_speech_api_v1_speech_transcriptions_post": {
+        "properties": {
+          "file": {
+            "format": "binary",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_transcribe_speech_api_v1_speech_transcriptions_post",
+        "type": "object"
+      },
+      "Body_upload_attachments_api_v1_agent_sessions__session_id__attachments_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "format": "binary",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "relative_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relative Paths"
+          },
+          "source": {
+            "default": "clipboard",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "files"
+        ],
+        "title": "Body_upload_attachments_api_v1_agent_sessions__session_id__attachments_post",
+        "type": "object"
+      },
       "Body_upload_file_api_v1_files_upload_post": {
         "properties": {
           "file": {
@@ -963,11 +1073,6 @@
             "title": "Insecure",
             "type": "boolean"
           },
-          "is_default": {
-            "default": false,
-            "title": "Is Default",
-            "type": "boolean"
-          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -1074,17 +1179,6 @@
               }
             ],
             "title": "Insecure"
-          },
-          "is_default": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Default"
           },
           "name": {
             "anyOf": [
@@ -3302,6 +3396,186 @@
         ]
       }
     },
+    "/api/v1/agent/attachments/{attachment_id}": {
+      "delete": {
+        "operationId": "delete_attachment_api_v1_agent_attachments__attachment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Attachment",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/agent/attachments/{attachment_id}/preview": {
+      "get": {
+        "operationId": "preview_attachment_api_v1_agent_attachments__attachment_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Attachment",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/agent/context/search": {
+      "get": {
+        "operationId": "search_context_api_v1_agent_context_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "mixed",
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Context",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/v1/agent/fs/download": {
       "get": {
         "description": "Stream a file inside the allowed roots for preview or download.",
@@ -3396,7 +3670,7 @@
     },
     "/api/v1/agent/fs/tree": {
       "get": {
-        "description": "List the immediate children of a directory inside the allowed roots.\n\nRead-only and confined by :class:`FilesystemPolicy` to repo_root /\nbioinfoflow_home. Lazy (one level): the Files tab requests subdirectories on\nexpand rather than streaming the whole tree.",
+        "description": "List the immediate children of a directory inside the allowed roots.\n\nRead-only and confined by :class:`FilesystemPolicy` to agent data roots.\nLazy (one level): the Files tab requests subdirectories on\nexpand rather than streaming the whole tree.",
         "operationId": "get_fs_tree_api_v1_agent_fs_tree_get",
         "parameters": [
           {
@@ -4037,6 +4311,56 @@
         ]
       }
     },
+    "/api/v1/agent/sessions/{session_id}/attachments": {
+      "post": {
+        "operationId": "upload_attachments_api_v1_agent_sessions__session_id__attachments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_attachments_api_v1_agent_sessions__session_id__attachments_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Attachments",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/v1/agent/sessions/{session_id}/state": {
       "get": {
         "operationId": "get_session_state_api_v1_agent_sessions__session_id__state_get",
@@ -4066,6 +4390,21 @@
                 }
               ],
               "title": "Event Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "event_view",
+            "required": false,
+            "schema": {
+              "default": "full",
+              "enum": [
+                "full",
+                "transcript",
+                "public"
+              ],
+              "title": "Event View",
+              "type": "string"
             }
           }
         ],
@@ -4127,6 +4466,20 @@
               "default": true,
               "title": "Follow",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "event_view",
+            "required": false,
+            "schema": {
+              "default": "full",
+              "enum": [
+                "full",
+                "public"
+              ],
+              "title": "Event View",
+              "type": "string"
             }
           }
         ],
@@ -4521,6 +4874,20 @@
               "title": "After Seq",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "event_view",
+            "required": false,
+            "schema": {
+              "default": "full",
+              "enum": [
+                "full",
+                "public"
+              ],
+              "title": "Event View",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -4584,6 +4951,56 @@
           }
         },
         "summary": "Interrupt Turn",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/agent/turns/{turn_id}/steer": {
+      "post": {
+        "operationId": "steer_turn_api_v1_agent_turns__turn_id__steer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "title": "Turn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentTurnSteer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Steer Turn",
         "tags": [
           "agent"
         ]
@@ -8113,6 +8530,64 @@
         "summary": "Get Scheduler Status",
         "tags": [
           "scheduler"
+        ]
+      }
+    },
+    "/api/v1/speech/status": {
+      "get": {
+        "operationId": "speech_status_api_v1_speech_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Speech Status",
+        "tags": [
+          "speech"
+        ]
+      }
+    },
+    "/api/v1/speech/transcriptions": {
+      "post": {
+        "operationId": "transcribe_speech_api_v1_speech_transcriptions_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_transcribe_speech_api_v1_speech_transcriptions_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Transcribe Speech",
+        "tags": [
+          "speech"
         ]
       }
     },

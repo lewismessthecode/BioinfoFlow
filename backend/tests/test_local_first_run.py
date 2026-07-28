@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,32 @@ def _source_compose() -> dict:
 
 def _compose(filename: str) -> dict:
     return yaml.safe_load((ROOT / filename).read_text(encoding="utf-8"))
+
+
+def _render_compose(*filenames: str, env_file: str | None = None) -> dict:
+    command = ["docker", "compose"]
+    if env_file is not None:
+        command.extend(["--env-file", env_file])
+    for filename in filenames:
+        command.extend(["-f", filename])
+    command.extend(["config", "--format", "yaml"])
+
+    result = subprocess.run(
+        command,
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return yaml.safe_load(result.stdout)
+
+
+def _docker_socket_mount(backend: dict) -> dict:
+    return next(
+        volume
+        for volume in backend["volumes"]
+        if isinstance(volume, dict) and volume.get("target") == "/var/run/docker.sock"
+    )
 
 
 def test_source_compose_uses_optional_env_file() -> None:
@@ -60,6 +87,53 @@ def test_compose_backends_disable_seccomp_without_privileged_escalation(
     assert backend["security_opt"] == ["seccomp:unconfined"]
     assert backend.get("privileged", False) is False
     assert "SYS_ADMIN" not in backend.get("cap_add", [])
+
+
+@pytest.mark.parametrize(
+    ("filename", "env_file"),
+    [
+        ("docker-compose.yml", None),
+        ("docker-compose.local.yml", "scripts/tests/fixtures/local.env"),
+        ("docker-compose.prod.yml", None),
+    ],
+)
+def test_compose_backends_use_the_writable_host_socket_contract(
+    filename: str,
+    env_file: str | None,
+) -> None:
+    raw_backend = _compose(filename)["services"]["backend"]
+    raw_mount = _docker_socket_mount(raw_backend)
+
+    assert "DOCKER_SOCKET_PATH" in raw_mount["source"]
+    assert raw_mount["read_only"] is False
+    assert raw_backend["environment"]["DOCKER_SOCKET"] == (
+        "unix:///var/run/docker.sock"
+    )
+
+    rendered_backend = _render_compose(filename, env_file=env_file)["services"][
+        "backend"
+    ]
+    rendered_mount = _docker_socket_mount(rendered_backend)
+
+    assert rendered_mount["source"] == "/var/run/docker.sock"
+    assert rendered_mount.get("read_only", False) is False
+    assert rendered_backend["environment"]["DOCKER_SOCKET"] == (
+        "unix:///var/run/docker.sock"
+    )
+
+
+def test_gpu_override_preserves_backend_socket_and_seccomp_contracts() -> None:
+    backend = _render_compose("docker-compose.yml", "docker-compose.gpu.yml")[
+        "services"
+    ]["backend"]
+    socket_mount = _docker_socket_mount(backend)
+
+    assert backend["security_opt"] == ["seccomp:unconfined"]
+    assert backend.get("privileged", False) is False
+    assert "SYS_ADMIN" not in backend.get("cap_add", [])
+    assert socket_mount["source"] == "/var/run/docker.sock"
+    assert socket_mount.get("read_only", False) is False
+    assert backend["environment"]["DOCKER_SOCKET"] == "unix:///var/run/docker.sock"
 
 
 def test_docker_guide_explains_seccomp_tradeoff() -> None:

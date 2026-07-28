@@ -421,6 +421,33 @@ Inspect Bioinfoflow's stable GPU state with:
 curl -fsS http://localhost:8000/api/v1/system/gpu | jq '.data | {mode,state,detected_count,selected_count,selected_gpu_uuids,gpus}'
 ```
 
+### Docker socket and sandbox recovery
+
+Compose treats `DOCKER_SOCKET_PATH` as the host-side Unix socket path and always
+exposes it inside the backend as `DOCKER_SOCKET=unix:///var/run/docker.sock`.
+Inspect the effective contract before changing container privileges:
+
+```bash
+docker compose config | sed -n '/backend:/,/frontend:/p'
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml config | sed -n '/backend:/,/frontend:/p'
+```
+
+The rendered backend must retain the writable `/var/run/docker.sock` bind,
+`seccomp:unconfined`, `privileged: false`, and no `SYS_ADMIN` capability. After
+changing `.env` or a Compose file, recreate the backend instead of restarting it:
+
+```bash
+docker compose up -d --build --force-recreate backend
+```
+
+Do not troubleshoot Bubblewrap by enabling `privileged` or adding `SYS_ADMIN`.
+Docker's default Linux seccomp profile can make the Bubblewrap probe fail with
+`No permissions to create new namespace`; Bioinfoflow uses
+`seccomp:unconfined` while keeping the backend non-privileged so the
+unprivileged user-namespace probe can run. Sandbox availability reports one of
+four failure categories: `binary_missing`, `probe_exit`, `probe_timeout`, or
+`probe_os_error`.
+
 ### Authenticated run with published images
 
 The one-line localhost installer is the zero-configuration published-image
@@ -501,7 +528,6 @@ Container Registries** and add Harbor or another OCI registry:
 - **Endpoint**: `http://10.227.4.56:80`
 - **Namespace**: `pipeline-dev`
 - **HTTP**: enabled when the endpoint is plain HTTP
-- **Default**: enabled to make this the global workflow-image default
 - **Credentials**: `Stored credentials`, `Environment variables`, or
   `No credentials`
 
@@ -535,17 +561,17 @@ credentials are available.
 
 During workflow registration, the **Image Registry** selector is optional:
 
-- **Automatic** uses the global default registry for unqualified static workflow
-  images when one is configured. Explicit image hosts such as `quay.io/...` or
-  `10.227.4.56:80/...` are not rewritten.
-- Choosing a configured registry stores that workflow's registry choice and uses
-  it for registration-time prefetch.
-- If no registry is configured, Docker Hub/default Docker behavior remains in
-  place.
+- **Automatic** stores no workflow registry binding. If the project has no
+  explicit registry binding either, unqualified static images remain unchanged;
+  for example, `ubuntu:22.04` stays `ubuntu:22.04`.
+- Choosing a configured registry stores that workflow's explicit binding and
+  uses it for registration-time prefetch. An explicit workflow binding takes
+  precedence over a project binding.
+- Qualified image hosts such as `quay.io/...` or
+  `10.227.4.56:80/...` are always preserved.
 
 In team mode, ordinary members cannot manage registries or explicitly select a
-registry ID. They can still register workflows; automatic prefetch may use the
-admin-configured global default as a shared platform capability.
+registry ID. There is no global default workflow registry.
 
 AgentCore does not expose `images.*` tools. When an agent needs to inspect,
 pull, build, or remove a container image, it uses the `bash` tool and Docker CLI
@@ -558,18 +584,15 @@ remain the supported path for Bioinfoflow-managed image operations, including
 configured-registry selection, `registry_id`, and the owner/admin policy in team
 mode.
 
-The data model includes a project-level registry override for future policy, but
-the current UI exposes a global default plus per-workflow selection.
-
 For WDL, Bioinfoflow records static task `docker`/`container` images when the
 workflow is registered and prefetches missing required images before MiniWDL
-starts. When a configured registry applies, run compilation also uses a
-run-local WDL copy with those static container literals rewritten to the same
-resolved image names, so prefetch and execution agree. Dynamic container
-expressions are skipped and resolved at runtime. For Nextflow, Bioinfoflow
-enables Docker pull behavior when Docker is available and injects the configured
-registry prefix as `docker.registry` for unqualified process images. You can also
-write full Harbor image names directly in workflows:
+starts. Only an explicit workflow or project registry binding rewrites
+unqualified static image literals. Run compilation writes those changes to a
+run-local WDL copy; the registered source is never modified. Dynamic container
+expressions and qualified image hosts are preserved. For Nextflow, Bioinfoflow
+enables Docker pull behavior when Docker is available and injects an explicitly
+bound registry prefix as `docker.registry` for unqualified process images. You
+can also write full Harbor image names directly in workflows:
 
 ```text
 10.227.4.56:80/pipeline-dev/bwa:0.7.17
@@ -678,6 +701,12 @@ OS sandbox can enforce filesystem and network limits independently of the
 permission mode. SSH commands have the configured remote account's privileges;
 the remote root is only a working directory and risk-analysis hint, not
 confinement.
+
+One important exception is Docker daemon delegation. Agent Bash can use the
+mounted Docker socket and therefore has the Docker daemon's full authority.
+Bubblewrap or macOS Seatbelt filesystem/network restrictions constrain the
+local CLI process, but they do not constrain filesystem mounts, networking, or
+other actions that the Docker daemon performs on its behalf.
 
 For API automation, session updates accept:
 
