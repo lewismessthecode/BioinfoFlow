@@ -1798,6 +1798,113 @@ async def test_prepare_failure_repairs_every_call_with_terminal_result(
 
 
 @pytest.mark.asyncio
+async def test_stale_exposure_repairs_matching_tool_results_atomically(
+    db_session, db_engine, monkeypatch
+):
+    model_calls = 0
+    session_id: str | None = None
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def fake_invoke(_gateway, invocation: ModelInvocation):
+        nonlocal model_calls
+        model_calls += 1
+        yield ResponseStarted(streaming=False)
+        if model_calls == 1:
+            offered = {tool.name for tool in invocation.tools}
+            assert "write" in offered
+            assert session_id is not None
+            async with session_factory() as authorization_session:
+                repo = AgentSessionRepository(authorization_session)
+                authorized_session = await repo.get_fresh(session_id)
+                assert authorized_session is not None
+                await repo.update_all(
+                    authorized_session,
+                    toolset_policy={"name": "plan"},
+                    permission_policy_version=(
+                        authorized_session.permission_policy_version + 1
+                    ),
+                )
+            yield ToolCallDelta(
+                index=0,
+                call_id="stale-write-1",
+                name="write",
+                arguments_delta=json.dumps(
+                    {"path": "/tmp/stale-1.txt", "content": "one"}
+                ),
+            )
+            yield ToolCallDelta(
+                index=1,
+                call_id="stale-write-2",
+                name="write",
+                arguments_delta=json.dumps(
+                    {"path": "/tmp/stale-2.txt", "content": "two"}
+                ),
+            )
+            yield CompletionMetadata(response_id=None, finish_reason="tool_calls")
+            return
+        tool_results = [
+            item for item in invocation.input_items if isinstance(item, ToolResultPart)
+        ]
+        assert [item.call_id for item in tool_results] == [
+            "stale-write-1",
+            "stale-write-2",
+        ]
+        payloads = [json.loads(item.output) for item in tool_results]
+        assert all(payload["status"] == "failed" for payload in payloads)
+        assert all(
+            payload["error"]["category"] == "tool_result"
+            and payload["error"]["continuable"] is True
+            for payload in payloads
+        )
+        yield TextDelta(text="stale batch repaired")
+        yield CompletionMetadata(response_id=None, finish_reason="stop")
+
+    monkeypatch.setattr(ModelGateway, "invoke", fake_invoke)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    session = await service.session_repo.update_all(
+        session, toolset_policy={"name": "execution"}
+    )
+    session_id = str(session.id)
+    turn = await service.create_turn_record(
+        session_id=session_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Repair both stale calls.",
+    )
+
+    completed = await service.runtime.run_turn(str(turn.id))
+
+    assert completed.status == "completed"
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions.sort(key=lambda action: action.tool_call_ordinal)
+    assert [action.tool_call_id for action in actions] == [
+        "stale-write-1",
+        "stale-write-2",
+    ]
+    assert all(action.status == AgentActionStatus.FAILED for action in actions)
+    assert all(action.result is not None for action in actions)
+    assert all(
+        action.error["category"] == "tool_result"
+        and action.error["continuable"] is True
+        for action in actions
+    )
+    assert len({action.tool_batch_id for action in actions}) == 1
+    batch = await AgentToolCallBatchRepository(db_session).get(
+        str(actions[0].tool_batch_id)
+    )
+    assert batch is not None
+    assert batch.status == AgentToolCallBatchStatus.FAILED
+
+
+@pytest.mark.asyncio
 async def test_batch_flush_failure_rolls_back_and_repairs_complete_terminal_group(
     db_session, monkeypatch
 ):

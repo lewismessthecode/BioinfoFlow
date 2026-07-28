@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -86,9 +87,11 @@ class ToolCallBatchCoordinator:
         error_message: str,
         action_status: str = "failed",
         error_type: str = "BatchPreparationError",
+        error: dict[str, Any] | None = None,
+        result: dict[str, Any] | None = None,
         commit: bool = True,
     ) -> None:
-        error = {"type": error_type, "message": error_message}
+        action_error = error or {"type": error_type, "message": error_message}
         existing = {
             action.tool_call_ordinal: action
             for action in await self.actions.list_for_batch(batch_id)
@@ -109,7 +112,8 @@ class ToolCallBatchCoordinator:
                     normalized_input=tool_call.get("arguments") or {},
                     risk_level="act_high",
                     status=action_status,
-                    error=error,
+                    result=result,
+                    error=action_error,
                     completed_at=datetime.now(timezone.utc),
                 )
             elif action.status not in {"completed", "failed", "cancelled", "rejected"}:
@@ -118,7 +122,8 @@ class ToolCallBatchCoordinator:
                     action,
                     status=action_status,
                     requires_resume=False,
-                    error=error,
+                    result=result,
+                    error=action_error,
                     completed_at=datetime.now(timezone.utc),
                 )
         if commit:
