@@ -48,7 +48,7 @@ describe("public SEO metadata", () => {
     const enMessages = JSON.parse(readFileSync(resolve(process.cwd(), "messages/en.json"), "utf8"))
     const zhMessages = JSON.parse(readFileSync(resolve(process.cwd(), "messages/zh-CN.json"), "utf8"))
 
-    expect(enMessages.landing.hero.title).toBe("Bioinfoflow")
-    expect(zhMessages.landing.hero.title).toBe("Bioinfoflow")
+    expect(enMessages.landing.story.title).toBe("Bioinfoflow")
+    expect(zhMessages.landing.story.title).toBe("Bioinfoflow")
   })
 })
