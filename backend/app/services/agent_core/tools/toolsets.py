@@ -443,7 +443,7 @@ def _plan_tool_names(
             names.add("bash")
         if remote_selected:
             names.add("remote.exec")
-    return names
+    return names & registered
 
 
 def model_tool_definitions(

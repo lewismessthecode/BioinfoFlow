@@ -1,6 +1,8 @@
 import pytest
 
 from app.services.agent_core.tools import build_default_tool_registry
+from app.services.agent_core.tools.registry import AgentToolRegistry
+from app.services.agent_core.tools.specs import AgentToolSpec
 from app.services.agent_core.tools.toolsets import (
     EXECUTION_TOOLSET_POLICY,
     ToolsetExposure,
@@ -25,6 +27,20 @@ RETIRED_AGENT_TOOL_NAMES = frozenset(
         "images.pull",
     }
 )
+
+
+class _CustomReadTool:
+    spec = AgentToolSpec(
+        name="custom.inspect",
+        description="Inspect custom state.",
+        input_schema={"type": "object", "additionalProperties": False},
+        output_schema={"type": "object"},
+        risk_level="read",
+    )
+
+    async def run(self, input, context):
+        del input, context
+        return {}
 
 
 def test_canonical_execution_policy_exposes_platform_lifecycle_tools() -> None:
@@ -110,6 +126,26 @@ def test_plan_model_visible_and_host_callable_static_surfaces_match() -> None:
     }
 
     assert exposure.exposed_names(**kwargs) == exposure.callable_names(**kwargs)
+
+
+@pytest.mark.parametrize("include_custom", [False, True])
+def test_plan_surfaces_include_only_registered_tools(include_custom: bool) -> None:
+    registry = AgentToolRegistry()
+    if include_custom:
+        registry.register(_CustomReadTool())
+    exposure = ToolsetExposure(registry)
+    kwargs = {
+        "policy": {"name": "plan"},
+        "execution_scope": {
+            "mode": "manual",
+            "selected_targets": [{"type": "local"}],
+        },
+    }
+
+    expected = {"custom.inspect"} if include_custom else set()
+
+    assert exposure.exposed_names(**kwargs) == expected
+    assert exposure.callable_names(**kwargs) == expected
 
 
 @pytest.mark.parametrize("role", ["worker", "subagent"])
