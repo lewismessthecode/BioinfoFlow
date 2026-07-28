@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,6 +16,7 @@ import pytest
 from app.config import settings
 from app.services.agent_core.sandbox.process_sandbox import (
     BubblewrapAdapter,
+    SandboxAvailability,
     SandboxRunner,
     SandboxUnavailableError,
     SeatbeltAdapter,
@@ -28,11 +30,30 @@ class _FakeAdapter:
         self.name = name
         self._available = available
 
+    def availability(self) -> SandboxAvailability:
+        return SandboxAvailability(
+            adapter=self.name,
+            executable=f"/usr/bin/{self.name}",
+            available=self._available,
+            failure_category=None if self._available else "probe_exit",
+            failure_message=None if self._available else "fake probe failed",
+        )
+
     def available(self) -> bool:
-        return self._available
+        return self.availability().available
 
     def build_argv(self, spec) -> list[str]:
         return ["fake-sandbox", spec.command]
+
+
+def test_sandbox_availability_is_immutable_and_slotted():
+    availability = SandboxAvailability("bubblewrap", "/usr/bin/bwrap", True)
+
+    assert availability.failure_category is None
+    assert availability.failure_message is None
+    assert not hasattr(availability, "__dict__")
+    with pytest.raises(FrozenInstanceError):
+        availability.available = False
 
 
 def test_disabled_runner_runs_plain_bash(tmp_path):
@@ -64,7 +85,12 @@ def test_fail_closed_raises_when_no_adapter_available(tmp_path):
         fail_closed=True,
         adapters=[_FakeAdapter(name="fake", available=False)],
     )
-    with pytest.raises(SandboxUnavailableError):
+    with pytest.raises(
+        SandboxUnavailableError,
+        match=(
+            "agent sandbox unavailable: fake probe_exit: fake probe failed"
+        ),
+    ):
         runner.build(command="echo hi", cwd=tmp_path, read_roots=[], write_roots=[])
 
 
@@ -174,18 +200,18 @@ def test_bubblewrap_is_unavailable_when_binary_is_missing(monkeypatch):
         unexpected_run,
     )
 
-    assert BubblewrapAdapter().available() is False
+    assert BubblewrapAdapter().availability() == SandboxAvailability(
+        adapter="bubblewrap",
+        executable=None,
+        available=False,
+        failure_category="binary_missing",
+        failure_message="bwrap executable not found",
+    )
     assert run_calls == 0
 
 
-@pytest.mark.parametrize(
-    ("returncode", "expected"),
-    [(0, True), (1, False)],
-)
-def test_bubblewrap_availability_requires_successful_user_namespace_probe(
-    monkeypatch, returncode, expected
-):
-    executable = f"/usr/bin/bwrap-exit-{returncode}"
+def test_bubblewrap_availability_reports_successful_user_namespace_probe(monkeypatch):
+    executable = "/usr/bin/bwrap-success"
     monkeypatch.setattr(
         "app.services.agent_core.sandbox.process_sandbox.shutil.which",
         lambda _name: executable,
@@ -194,13 +220,17 @@ def test_bubblewrap_availability_requires_successful_user_namespace_probe(
 
     def fake_run(argv, **kwargs):
         calls.append((argv, kwargs))
-        return SimpleNamespace(returncode=returncode)
+        return SimpleNamespace(returncode=0, stderr="")
 
     monkeypatch.setattr(
         "app.services.agent_core.sandbox.process_sandbox.subprocess.run", fake_run
     )
 
-    assert BubblewrapAdapter().available() is expected
+    assert BubblewrapAdapter().availability() == SandboxAvailability(
+        adapter="bubblewrap",
+        executable=executable,
+        available=True,
+    )
     assert calls == [
         (
             [
@@ -219,11 +249,39 @@ def test_bubblewrap_availability_requires_successful_user_namespace_probe(
             {
                 "check": False,
                 "stdout": subprocess.DEVNULL,
-                "stderr": subprocess.DEVNULL,
+                "stderr": subprocess.PIPE,
+                "text": True,
                 "timeout": 2.0,
             },
         )
     ]
+
+
+def test_bubblewrap_availability_reports_probe_exit_with_sanitized_bounded_stderr(
+    monkeypatch,
+):
+    executable = "/usr/bin/bwrap-exit"
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.shutil.which",
+        lambda _name: executable,
+    )
+    raw_stderr = "bwrap:\x00 No\n permissions\t" + "x" * 500
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stderr=raw_stderr),
+    )
+
+    result = BubblewrapAdapter().availability()
+
+    assert result.adapter == "bubblewrap"
+    assert result.executable == executable
+    assert result.available is False
+    assert result.failure_category == "probe_exit"
+    assert result.failure_message.startswith("bwrap: No permissions ")
+    assert "\n" not in result.failure_message
+    assert "\t" not in result.failure_message
+    assert "\x00" not in result.failure_message
+    assert len(result.failure_message) == 400
 
 
 def test_bubblewrap_availability_treats_probe_timeout_as_unavailable(monkeypatch):
@@ -239,7 +297,35 @@ def test_bubblewrap_availability_treats_probe_timeout_as_unavailable(monkeypatch
         "app.services.agent_core.sandbox.process_sandbox.subprocess.run", timed_out
     )
 
-    assert BubblewrapAdapter().available() is False
+    assert BubblewrapAdapter().availability() == SandboxAvailability(
+        adapter="bubblewrap",
+        executable="/usr/bin/bwrap-timeout",
+        available=False,
+        failure_category="probe_timeout",
+        failure_message="probe timed out after 2 seconds",
+    )
+
+
+def test_bubblewrap_availability_reports_probe_os_error(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.shutil.which",
+        lambda _name: "/usr/bin/bwrap-os-error",
+    )
+
+    def os_error(*_args, **_kwargs):
+        raise OSError("permission\n denied")
+
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.subprocess.run", os_error
+    )
+
+    assert BubblewrapAdapter().availability() == SandboxAvailability(
+        adapter="bubblewrap",
+        executable="/usr/bin/bwrap-os-error",
+        available=False,
+        failure_category="probe_os_error",
+        failure_message="permission denied",
+    )
 
 
 def test_bubblewrap_availability_probe_is_cached_across_adapters(monkeypatch):
@@ -252,13 +338,20 @@ def test_bubblewrap_availability_probe_is_cached_across_adapters(monkeypatch):
     def fake_run(*_args, **_kwargs):
         nonlocal calls
         calls += 1
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=1, stderr="cached diagnostic")
 
     monkeypatch.setattr(
         "app.services.agent_core.sandbox.process_sandbox.subprocess.run", fake_run
     )
-    assert BubblewrapAdapter().available() is True
-    assert BubblewrapAdapter().available() is True
+    first = BubblewrapAdapter().availability()
+    second = BubblewrapAdapter().availability()
+    assert first == second == SandboxAvailability(
+        adapter="bubblewrap",
+        executable="/usr/bin/bwrap-cross-adapter-cache",
+        available=False,
+        failure_category="probe_exit",
+        failure_message="cached diagnostic",
+    )
     assert calls == 1
 
 
@@ -277,20 +370,41 @@ def test_bubblewrap_availability_reprobes_after_cache_ttl(monkeypatch):
     def fake_run(*_args, **_kwargs):
         nonlocal calls
         calls += 1
-        return SimpleNamespace(returncode=next(returncodes))
+        returncode = next(returncodes)
+        return SimpleNamespace(
+            returncode=returncode,
+            stderr="expired diagnostic" if returncode else "",
+        )
 
     monkeypatch.setattr(
         "app.services.agent_core.sandbox.process_sandbox.subprocess.run", fake_run
     )
 
-    assert BubblewrapAdapter(clock=clock).available() is False
-    assert BubblewrapAdapter(clock=clock).available() is False
+    assert BubblewrapAdapter(clock=clock).availability().failure_message == (
+        "expired diagnostic"
+    )
+    assert BubblewrapAdapter(clock=clock).availability().failure_message == (
+        "expired diagnostic"
+    )
     assert calls == 1
 
-    now += 31.0
+    now += 30.0
 
     assert BubblewrapAdapter(clock=clock).available() is True
     assert calls == 2
+
+
+def test_seatbelt_availability_uses_common_diagnostic_shape(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.shutil.which",
+        lambda name: "/usr/bin/sandbox-exec" if name == "sandbox-exec" else None,
+    )
+
+    assert SeatbeltAdapter().availability() == SandboxAvailability(
+        adapter="seatbelt",
+        executable="/usr/bin/sandbox-exec",
+        available=True,
+    )
 
 
 def test_bubblewrap_mounts_tmpfs_before_capability_roots_under_tmp(tmp_path):

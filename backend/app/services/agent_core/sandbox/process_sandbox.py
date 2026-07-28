@@ -76,8 +76,19 @@ class SandboxResult:
     sandboxed: bool
 
 
+@dataclass(frozen=True, slots=True)
+class SandboxAvailability:
+    adapter: str
+    executable: str | None
+    available: bool
+    failure_category: str | None = None
+    failure_message: str | None = None
+
+
 class SandboxAdapter(Protocol):
     name: str
+
+    def availability(self) -> SandboxAvailability: ...
 
     def available(self) -> bool: ...
 
@@ -91,7 +102,7 @@ class BubblewrapAdapter:
 
     name = "bubblewrap"
     _availability_cache: ClassVar[
-        dict[tuple[str, tuple[str, ...]], tuple[float, bool]]
+        dict[tuple[str, tuple[str, ...]], tuple[float, SandboxAvailability]]
     ] = {}
     _availability_cache_lock: ClassVar[threading.Lock] = threading.Lock()
 
@@ -104,10 +115,16 @@ class BubblewrapAdapter:
         with cls._availability_cache_lock:
             cls._availability_cache.clear()
 
-    def available(self) -> bool:
+    def availability(self) -> SandboxAvailability:
         executable = shutil.which("bwrap")
         if executable is None:
-            return False
+            return SandboxAvailability(
+                adapter=self.name,
+                executable=None,
+                available=False,
+                failure_category="binary_missing",
+                failure_message="bwrap executable not found",
+            )
 
         cache_key = (executable, _BWRAP_PROBE_ARGS)
         now = self._clock()
@@ -124,15 +141,48 @@ class BubblewrapAdapter:
                     [executable, *_BWRAP_PROBE_ARGS],
                     check=False,
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
                     timeout=_BWRAP_PROBE_TIMEOUT_SECONDS,
                 )
-            except (OSError, subprocess.TimeoutExpired):
-                available = False
+            except subprocess.TimeoutExpired:
+                result = SandboxAvailability(
+                    adapter=self.name,
+                    executable=executable,
+                    available=False,
+                    failure_category="probe_timeout",
+                    failure_message="probe timed out after 2 seconds",
+                )
+            except OSError as exc:
+                result = SandboxAvailability(
+                    adapter=self.name,
+                    executable=executable,
+                    available=False,
+                    failure_category="probe_os_error",
+                    failure_message=_sanitize_diagnostic(str(exc)),
+                )
             else:
-                available = probe.returncode == 0
-            self._availability_cache[cache_key] = (now, available)
-            return available
+                if probe.returncode == 0:
+                    result = SandboxAvailability(
+                        adapter=self.name,
+                        executable=executable,
+                        available=True,
+                    )
+                else:
+                    message = _sanitize_diagnostic(probe.stderr)
+                    result = SandboxAvailability(
+                        adapter=self.name,
+                        executable=executable,
+                        available=False,
+                        failure_category="probe_exit",
+                        failure_message=message
+                        or f"probe exited with status {probe.returncode}",
+                    )
+            self._availability_cache[cache_key] = (now, result)
+            return result
+
+    def available(self) -> bool:
+        return self.availability().available
 
     def supports_docker_socket(self, root: Path) -> bool:
         return root.exists()
@@ -180,8 +230,24 @@ class SeatbeltAdapter:
 
     name = "seatbelt"
 
+    def availability(self) -> SandboxAvailability:
+        executable = shutil.which("sandbox-exec")
+        if executable is None:
+            return SandboxAvailability(
+                adapter=self.name,
+                executable=None,
+                available=False,
+                failure_category="binary_missing",
+                failure_message="sandbox-exec executable not found",
+            )
+        return SandboxAvailability(
+            adapter=self.name,
+            executable=executable,
+            available=True,
+        )
+
     def available(self) -> bool:
-        return shutil.which("sandbox-exec") is not None
+        return self.availability().available
 
     def supports_docker_socket(self, root: Path) -> bool:
         return root.exists()
@@ -264,8 +330,11 @@ class NoSandboxAdapter:
 
     name = "none"
 
+    def availability(self) -> SandboxAvailability:
+        return SandboxAvailability(self.name, None, True)
+
     def available(self) -> bool:
-        return True
+        return self.availability().available
 
     def supports_docker_socket(self, root: Path) -> bool:
         del root
@@ -295,13 +364,15 @@ class SandboxRunner:
         self.adapters = adapters if adapters is not None else _default_adapters()
 
     @classmethod
-    def from_settings(cls) -> "SandboxRunner":
+    def from_settings(cls, source: object | None = None) -> "SandboxRunner":
+        if source is None:
+            source = settings
         return cls(
-            enabled=bool(settings.agent_sandbox_enabled),
-            fail_closed=bool(getattr(settings, "agent_sandbox_fail_closed", True)),
-            allow_network=bool(getattr(settings, "agent_sandbox_allow_network", False)),
+            enabled=bool(getattr(source, "agent_sandbox_enabled")),
+            fail_closed=bool(getattr(source, "agent_sandbox_fail_closed", True)),
+            allow_network=bool(getattr(source, "agent_sandbox_allow_network", False)),
             allow_unsandboxed=bool(
-                getattr(settings, "agent_sandbox_allow_unsandboxed", False)
+                getattr(source, "agent_sandbox_allow_unsandboxed", False)
             ),
         )
 
@@ -331,12 +402,13 @@ class SandboxRunner:
                 _NO_SANDBOX.build_argv(_spec(command, cwd)), "none", False
             )
 
-        adapter = self.available_adapter()
+        adapter, availability = self._select_adapter()
         if adapter is None:
             if self.fail_closed:
-                raise SandboxUnavailableError(
-                    "agent_sandbox_enabled is true but no OS sandbox (bwrap/sandbox-exec) is available"
-                )
+                detail = f"{availability.adapter} {availability.failure_category}"
+                if availability.failure_message:
+                    detail += f": {availability.failure_message}"
+                raise SandboxUnavailableError(f"agent sandbox unavailable: {detail}")
             return SandboxResult(
                 _NO_SANDBOX.build_argv(_spec(command, cwd)), "none", False
             )
@@ -354,15 +426,29 @@ class SandboxRunner:
         )
         return SandboxResult(adapter.build_argv(spec), adapter.name, True)
 
-    def _select_adapter(self) -> SandboxAdapter | None:
+    def _select_adapter(self) -> tuple[SandboxAdapter | None, SandboxAvailability]:
+        unavailable: SandboxAvailability | None = None
         for adapter in self.adapters:
-            if adapter.available():
-                return adapter
-        return None
+            availability = adapter.availability()
+            if availability.available:
+                return adapter, availability
+            if unavailable is None:
+                unavailable = availability
+        return None, unavailable or SandboxAvailability(
+            adapter="none",
+            executable=None,
+            available=False,
+            failure_category="binary_missing",
+            failure_message="no sandbox adapter configured",
+        )
 
     def available_adapter(self) -> SandboxAdapter | None:
         """Return the OS sandbox adapter currently available for this runner."""
-        return self._select_adapter()
+        return self._select_adapter()[0]
+
+    def availability(self) -> SandboxAvailability:
+        """Return the selected adapter's complete availability diagnostic."""
+        return self._select_adapter()[1]
 
 
 def adapter_supports_docker_socket(
@@ -407,6 +493,13 @@ def _dedupe(values: list[str]) -> list[str]:
             seen.add(value)
             result.append(value)
     return result
+
+
+def _sanitize_diagnostic(message: str | None) -> str:
+    printable = "".join(
+        character if character.isprintable() else " " for character in message or ""
+    )
+    return " ".join(printable.split())[:400]
 
 
 def _outside_protected(roots: list[Path], protected_roots: list[Path]) -> list[Path]:
