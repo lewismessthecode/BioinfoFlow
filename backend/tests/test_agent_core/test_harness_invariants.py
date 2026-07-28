@@ -849,7 +849,7 @@ async def test_unexposed_tool_is_denied_before_argument_validation(db_session):
     executor = AgentToolExecutor(db_session, build_default_tool_registry())
     with pytest.raises(PermissionDeniedError, match="not exposed"):
         await executor.execute(
-            tool_name="bash",
+            tool_name="write",
             input={},
             context=AgentToolContext(
                 db=db_session,
@@ -859,6 +859,7 @@ async def test_unexposed_tool_is_denied_before_argument_validation(db_session):
                 turn_id=str(turn.id),
             ),
             toolset_policy={"name": "default"},
+            require_model_exposure=True,
         )
 
 
@@ -1038,6 +1039,7 @@ async def test_plan_approval_switches_to_execution_and_continues_same_turn(
     await _seed_catalog_model(db_session)
 
     calls = 0
+    written_path = settings.deliveries_root / "plan-approval-act-tool.txt"
 
     class PlanApprovalGateway:
         async def invoke(
@@ -1062,9 +1064,34 @@ async def test_plan_approval_switches_to_execution_and_continues_same_turn(
                     response_id="chatcmpl-plan-approval",
                     finish_reason="tool_calls",
                 )
+            elif calls == 2:
+                assert {"bash", "edit", "write"} <= tool_names
+                assert "exit_plan_mode" not in tool_names
+                yield ToolCallDelta(
+                    index=0,
+                    call_id="tool-call-write-after-plan",
+                    name="write",
+                    arguments_delta=json.dumps(
+                        {
+                            "path": str(written_path),
+                            "content": "implemented after plan approval\n",
+                        }
+                    ),
+                )
+                yield CompletionMetadata(
+                    response_id="chatcmpl-execution-tool",
+                    finish_reason="tool_calls",
+                )
             else:
                 assert {"bash", "edit", "write"} <= tool_names
                 assert "exit_plan_mode" not in tool_names
+                tool_result = next(
+                    item
+                    for item in invocation.input_items
+                    if isinstance(item, ToolResultPart)
+                    and item.call_id == "tool-call-write-after-plan"
+                )
+                assert "bytes_written" in tool_result.output
                 yield TextDelta(text="Implementation complete.")
                 yield CompletionMetadata(
                     response_id="chatcmpl-execution-final",
@@ -1077,6 +1104,7 @@ async def test_plan_approval_switches_to_execution_and_continues_same_turn(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
+        permission_mode="bypass",
         toolset_policy={"name": "plan"},
     )
     turn = await service.create_turn_record(
@@ -1113,7 +1141,19 @@ async def test_plan_approval_switches_to_execution_and_continues_same_turn(
     resumed_action = await AgentActionRepository(db_session).get(str(actions[0].id))
     assert resumed_action.status == AgentActionStatus.COMPLETED
     assert resumed_action.result == {"approved": True}
-    assert calls == 2
+    resumed_actions = await AgentActionRepository(db_session).list_for_turn(
+        str(turn.id)
+    )
+    assert len(resumed_actions) == 2
+    actions_by_name = {action.name: action for action in resumed_actions}
+    assert actions_by_name["exit_plan_mode"].status == AgentActionStatus.COMPLETED
+    assert actions_by_name["write"].status == AgentActionStatus.COMPLETED
+    assert actions_by_name["write"].result == {
+        "path": str(written_path),
+        "bytes_written": len("implemented after plan approval\n".encode()),
+    }
+    assert written_path.read_text() == "implemented after plan approval\n"
+    assert calls == 3
 
 
 @pytest.mark.asyncio
