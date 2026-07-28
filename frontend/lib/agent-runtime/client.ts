@@ -267,6 +267,7 @@ export const updateAgentRuntimeSessionMetadata = async (
 export const createAgentRuntimeTurn = async (input: {
   sessionId: string
   inputText: string
+  mode?: AgentMode
   inputParts?: AgentRuntimeInputPart[] | null
   activeSkillNames?: string[] | null
   modelSelection?: AgentModelSelection | null
@@ -280,6 +281,7 @@ export const createAgentRuntimeTurn = async (input: {
       method: "POST",
       body: JSON.stringify({
         input_text: input.inputText,
+        mode: input.mode,
         input_parts: agentRuntimeInputPartsForRequest(input.inputParts),
         ...(input.activeSkillNames?.length
           ? { active_skill_names: input.activeSkillNames }
