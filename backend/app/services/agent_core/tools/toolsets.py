@@ -162,7 +162,15 @@ class ToolsetExposure:
         )
         if not skills_available:
             names.discard("skills.load")
-        return [self.registry.get(name).spec for name in sorted(names)]
+        specs = self.registry.list_specs()
+        plan_names = _plan_tool_names(
+            specs,
+            role=role,
+            execution_target=execution_target,
+            execution_scope=execution_scope,
+        )
+        exposed = [self.registry.get(name).spec for name in names]
+        return sorted(exposed, key=lambda spec: _tool_spec_order_key(spec, plan_names))
 
     def exposed_names(
         self,
@@ -412,6 +420,21 @@ def _is_remote_ssh_compatible_tool(spec: AgentToolSpec) -> bool:
     if spec.name in _REMOTE_SSH_TARGET_NEUTRAL_TOOLS:
         return True
     return spec.name.startswith(_REMOTE_SSH_TARGET_PREFIXES)
+
+
+def _tool_spec_order_key(
+    spec: AgentToolSpec,
+    plan_names: set[str],
+) -> tuple[int, str]:
+    if spec.name in plan_names and not spec.interaction:
+        tier = 0
+    elif spec.name == "ask_user":
+        tier = 1
+    elif spec.name == "exit_plan_mode":
+        tier = 2
+    else:
+        tier = 3
+    return tier, spec.name
 
 
 def _plan_tool_names(

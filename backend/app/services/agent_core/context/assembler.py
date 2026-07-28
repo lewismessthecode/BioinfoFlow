@@ -369,6 +369,7 @@ class AgentContextAssembler:
         skills_context = self._skills_context(turn, skill_registry=skill_registry)
         if skills_context:
             system_sections.append(skills_context)
+        system_sections.append(_mode_context(agent_session))
         return "\n\n".join(section for section in system_sections if section)
 
     async def _environment_context(
@@ -378,9 +379,6 @@ class AgentContextAssembler:
         execution_target: dict[str, str],
     ) -> str:
         """Render dynamic context without contradicting the current target."""
-        toolset = (getattr(agent_session, "toolset_policy", None) or {}).get(
-            "name"
-        ) or "default"
         remote_target = is_remote_ssh_execution_target(execution_target)
         lines: list[str] = ["## Environment"]
         if not remote_target:
@@ -423,13 +421,7 @@ class AgentContextAssembler:
         lines.append(
             f"- Role profile: {getattr(agent_session, 'role_profile', 'bioinformatician')}"
         )
-        lines.append(f"- Toolset policy: {toolset}")
         lines.append(f"- Execution target: {execution_target.get('type', 'local')}")
-        if toolset == "plan":
-            lines.append(
-                "- PLAN MODE: read and search tools only. Investigate, then call "
-                "exit_plan_mode with a concrete plan to request approval to act."
-            )
 
         if remote_target:
             remote_context = await render_remote_connection_context(
@@ -626,6 +618,21 @@ def _complete_provider_groups(messages: list[dict]) -> list[dict]:
     return complete
 
 
+def _mode_context(agent_session) -> str:
+    policy_name = str(
+        (getattr(agent_session, "toolset_policy", None) or {}).get("name") or "default"
+    )
+    if policy_name == "plan":
+        guidance = (
+            "Use the available tools for read-only investigation, then call "
+            "`exit_plan_mode` with a concrete plan to request approval to act."
+        )
+    else:
+        guidance = (
+            "Use the available tools and permission mode to carry out the user's "
+            "request."
+        )
+    return f"## Mode\n{guidance}"
 
 
 def _local_platform_context() -> str:
