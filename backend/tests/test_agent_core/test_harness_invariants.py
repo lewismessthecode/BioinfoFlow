@@ -23,6 +23,7 @@ from app.repositories.agent_core_repo import (
 )
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core import service as service_module
+from app.services.agent_core.context.assembler import AgentContextAssembler
 from app.services.agent_core.context.system_prompt import (
     default_system_prompt_snapshot,
     resolve_system_prompt_prefix,
@@ -205,6 +206,49 @@ async def test_session_mode_updates_use_canonical_execution_policy(db_session):
         updates={"mode": "default"},
     )
     assert default_session.toolset_policy == {"name": "default"}
+
+
+@pytest.mark.asyncio
+async def test_mode_instruction_is_the_only_mode_specific_prompt_suffix(db_session):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Investigate the workspace.",
+    )
+    assembler = AgentContextAssembler(db_session)
+
+    execution_instructions = await assembler._instructions(
+        agent_session=session,
+        turn=turn,
+    )
+    session.toolset_policy = {"name": "plan"}
+    plan_instructions = await assembler._instructions(
+        agent_session=session,
+        turn=turn,
+    )
+
+    execution_prefix, execution_marker, execution_mode = (
+        execution_instructions.rpartition("\n\n## Mode\n")
+    )
+    plan_prefix, plan_marker, plan_mode = plan_instructions.rpartition("\n\n## Mode\n")
+
+    assert execution_marker == plan_marker == "\n\n## Mode\n"
+    assert execution_prefix == plan_prefix
+    assert "Toolset policy" not in execution_prefix
+    assert "PLAN MODE" not in plan_prefix
+    assert "available tools" in execution_mode
+    assert "permission mode" in execution_mode
+    assert "read-only investigation" in plan_mode
+    assert "`exit_plan_mode`" in plan_mode
+    assert "concrete plan" in plan_mode
 
 
 def test_v11_system_prompt_defines_the_comprehensive_provider_neutral_agent_contract():
@@ -992,7 +1036,10 @@ async def test_loop_refreshes_permission_context_before_each_model_iteration(
             else:
                 assert "bash" not in tool_names
                 assert "Role profile: worker" in system_text
-                assert "Toolset policy: execution" in system_text
+                assert system_text.endswith(
+                    "## Mode\nUse the available tools and permission mode to carry "
+                    "out the user's request."
+                )
                 yield TextDelta(text="Refreshed policy observed.")
                 yield CompletionMetadata(
                     response_id="chatcmpl-refresh-final",

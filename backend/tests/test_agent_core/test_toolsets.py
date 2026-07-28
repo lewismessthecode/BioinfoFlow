@@ -194,6 +194,57 @@ def test_exposed_specs_keep_skill_loader_when_skills_are_available() -> None:
     assert "skills.load" in {spec.name for spec in specs}
 
 
+def test_plan_and_execution_tool_schemas_keep_stable_shared_prefix() -> None:
+    exposure = ToolsetExposure(build_default_tool_registry())
+    execution_scope = {
+        "mode": "manual",
+        "selected_targets": [{"type": "local"}],
+    }
+
+    plan_specs = exposure.exposed_specs(
+        policy={"name": "plan"},
+        execution_scope=execution_scope,
+    )
+    execution_specs = exposure.exposed_specs(
+        policy=EXECUTION_TOOLSET_POLICY,
+        execution_scope=execution_scope,
+    )
+    shared_names = {spec.name for spec in plan_specs} & {
+        spec.name for spec in execution_specs
+    }
+    plan_shared = [spec for spec in plan_specs if spec.name in shared_names]
+    execution_shared = [spec for spec in execution_specs if spec.name in shared_names]
+
+    assert plan_shared == execution_shared
+    assert plan_specs[: len(plan_shared)] == plan_shared
+    assert execution_specs[: len(execution_shared)] == execution_shared
+    assert {spec.name for spec in plan_specs[len(plan_shared) :]} == {"exit_plan_mode"}
+    assert execution_specs[len(execution_shared) :]
+
+
+def test_exposed_specs_order_is_independent_of_registry_registration_order() -> None:
+    default_registry = build_default_tool_registry()
+    reversed_registry = AgentToolRegistry()
+    for name in reversed(sorted(default_registry.names())):
+        reversed_registry.register(default_registry.get(name))
+    execution_scope = {
+        "mode": "manual",
+        "selected_targets": [{"type": "local"}],
+    }
+
+    for policy in ({"name": "plan"}, EXECUTION_TOOLSET_POLICY):
+        default_specs = ToolsetExposure(default_registry).exposed_specs(
+            policy=policy,
+            execution_scope=execution_scope,
+        )
+        reversed_specs = ToolsetExposure(reversed_registry).exposed_specs(
+            policy=policy,
+            execution_scope=execution_scope,
+        )
+
+        assert default_specs == reversed_specs
+
+
 def test_execution_uses_only_unnamespaced_general_purpose_tools() -> None:
     registry = build_default_tool_registry()
     exposed = ToolsetExposure(registry).exposed_names(policy={"name": "execution"})
