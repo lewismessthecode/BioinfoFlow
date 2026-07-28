@@ -74,6 +74,87 @@ async def test_execution_sessions_persist_canonical_toolset_policy(async_client)
     )
 
 
+@pytest.mark.asyncio
+async def test_agent_turn_create_applies_requested_plan_mode_atomically(
+    async_client,
+    db_session,
+):
+    created_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"mode": "execution"},
+    )
+    assert created_response.status_code == 201
+    session = created_response.json()["data"]
+    assert session["permission_policy_version"] == 1
+
+    turn_response = await async_client.post(
+        f"/api/v1/agent/sessions/{session['id']}/turns",
+        json={
+            "input_text": "Inspect",
+            "mode": "plan",
+            "execution_target": {"type": "local"},
+        },
+    )
+    assert turn_response.status_code == 202
+    turn = turn_response.json()["data"]
+
+    updated = await AgentCoreService(db_session).session_repo.get_fresh(session["id"])
+    assert updated is not None
+    assert updated.toolset_policy == {"name": "plan"}
+    assert str(updated.active_turn_id) == turn["id"]
+    assert updated.permission_policy_version == 2
+
+
+@pytest.mark.asyncio
+async def test_agent_turn_create_without_mode_preserves_session_policy(async_client):
+    created_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"mode": "plan"},
+    )
+    assert created_response.status_code == 201
+    session = created_response.json()["data"]
+
+    turn_response = await async_client.post(
+        f"/api/v1/agent/sessions/{session['id']}/turns",
+        json={"input_text": "Inspect"},
+    )
+    assert turn_response.status_code == 202
+
+    session_response = await async_client.get(
+        f"/api/v1/agent/sessions/{session['id']}"
+    )
+    assert session_response.status_code == 200
+    updated = session_response.json()["data"]
+    assert updated["toolset_policy"] == {"name": "plan"}
+    assert updated["permission_policy_version"] == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_turn_create_with_matching_mode_does_not_increment_policy_version(
+    async_client,
+):
+    created_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"mode": "execution"},
+    )
+    assert created_response.status_code == 201
+    session = created_response.json()["data"]
+
+    turn_response = await async_client.post(
+        f"/api/v1/agent/sessions/{session['id']}/turns",
+        json={"input_text": "Inspect", "mode": "execution"},
+    )
+    assert turn_response.status_code == 202
+
+    session_response = await async_client.get(
+        f"/api/v1/agent/sessions/{session['id']}"
+    )
+    assert session_response.status_code == 200
+    updated = session_response.json()["data"]
+    assert updated["toolset_policy"] == EXECUTION_TOOLSET_POLICY
+    assert updated["permission_policy_version"] == 1
+
+
 def _install_fake_completion(monkeypatch, completion) -> None:
     gateway = ModelGateway(backend=_FakeBackend(completion))
     monkeypatch.setattr(
