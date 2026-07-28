@@ -448,7 +448,7 @@ async def test_resume_rechecks_exposure_with_fresh_permission_context(
                 session_id=str(session.id),
                 workspace_id=DEFAULT_WORKSPACE_ID,
                 user_id="dev",
-                updates={"mode": "plan"},
+                updates={"role_profile": "worker"},
             )
 
         resumed = await executor.resume_action(
@@ -981,7 +981,7 @@ async def test_noop_turn_target_and_toolset_activation_do_not_increment_version(
     service = AgentCoreService(db_session)
     await _complete_and_release_turn(db_session, session, turn)
 
-    await service.create_turn_record(
+    same_target_turn = await service.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
@@ -992,6 +992,7 @@ async def test_noop_turn_target_and_toolset_activation_do_not_increment_version(
     fresh = await service.session_repo.get_fresh(str(session.id))
     assert fresh.permission_policy_version == 1
 
+    await _complete_and_release_turn(db_session, session, same_target_turn)
     changed = await service.update_session(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,

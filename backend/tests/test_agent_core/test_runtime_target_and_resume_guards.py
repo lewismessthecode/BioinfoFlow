@@ -267,11 +267,15 @@ async def test_update_session_rejects_mode_change_until_active_turn_is_terminal(
 ):
     await _workspace(db_session)
     service = AgentCoreService(db_session)
+    restricted_execution_policy = {
+        "name": "execution",
+        "allowed_tools": ["projects.list"],
+    }
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
-        toolset_policy={"name": "execution"},
+        toolset_policy=restricted_execution_policy,
     )
     turn = await service.create_turn_record(
         session_id=str(session.id),
@@ -294,7 +298,8 @@ async def test_update_session_rejects_mode_change_until_active_turn_is_terminal(
         user_id="dev",
         updates={"mode": "execution"},
     )
-    assert unchanged.toolset_policy["name"] == "execution"
+    assert unchanged.toolset_policy == restricted_execution_policy
+    assert unchanged.permission_policy_version == 1
 
     await service.turn_repo.update_all(turn, status=AgentTurnStatus.COMPLETED)
     updated_session = await service.update_session(
