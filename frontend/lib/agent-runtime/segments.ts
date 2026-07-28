@@ -289,7 +289,13 @@ function finalizeToolActivities(
   turn: AgentRuntimeTurn,
   activities: AgentRuntimeToolActivity[],
 ) {
-  if (turn.status !== "failed" && turn.status !== "cancelled") return activities
+  if (
+    turn.status !== "completed" &&
+    turn.status !== "failed" &&
+    turn.status !== "cancelled"
+  ) {
+    return activities
+  }
   const terminalStatus = turn.status
   return activities.map((activity) =>
     ["building", "requested", "waiting", "running"].includes(activity.status)
