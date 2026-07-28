@@ -820,7 +820,11 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                       <DropdownMenuItem
                         key={optionMode}
                         className="items-center gap-1.5 rounded-[7px] px-2 py-1.5 text-xs"
-                        onSelect={() => onModeChange(optionMode)}
+                        disabled={disabled || modeDisabled}
+                        onSelect={() => {
+                          if (disabled || modeDisabled) return
+                          onModeChange(optionMode)
+                        }}
                       >
                         <span
                           className={cn(
