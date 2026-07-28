@@ -393,6 +393,17 @@ class AgentContextAssembler:
                 "inspect it or invoke `bif`; use the exposed BioinfoFlow platform "
                 "tools."
             )
+            if any(
+                root not in boundary.write_roots
+                for root in boundary.sandbox_write_roots
+            ):
+                lines.append(
+                    "Agent Bash can use Docker directly through the configured "
+                    "socket. Preserve every requested image reference exactly; "
+                    "only qualify or change its registry when the user explicitly "
+                    "scopes that registry, and do not substitute an unrelated image. "
+                    "The Docker socket grants full authority over the Docker daemon."
+                )
         lines.append(f"- Workspace: {agent_session.workspace_id}")
         if not remote_target:
             lines.append(

@@ -149,10 +149,6 @@ class FilesystemPolicy:
         if _is_relative_to(target, state_root):
             raise PermissionDeniedError(f"Path is protected: {target}")
 
-        docker_socket = _docker_socket_path()
-        if docker_socket is not None and target == docker_socket:
-            raise PermissionDeniedError(f"Path is protected: {target}")
-
         repo_root = Path(settings.repo_root).expanduser().resolve()
         data_root = Path(settings.bioinfoflow_home).expanduser().resolve()
         if repo_root == Path("/"):
@@ -193,10 +189,3 @@ def _resolved_unique(roots: list[Path], *, allow_empty: bool = False) -> list[Pa
     if not result and not allow_empty:
         raise ValueError("filesystem policy requires at least one root")
     return result
-
-
-def _docker_socket_path() -> Path | None:
-    value = str(getattr(settings, "docker_socket", "") or "")
-    if not value.startswith("unix://"):
-        return None
-    return Path(value.removeprefix("unix://")).expanduser().resolve()

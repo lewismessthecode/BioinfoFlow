@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shlex
+import socket
 import sys
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from app.services.agent_core.tools.execution.shell import (
     _agent_browser_process_context,
     _normalize_agent_browser_command,
 )
+from app.services.agent_core.sandbox import local_boundary_from_tool_context
 from app.services.agent_core.tools.web.public_url_policy import PublicUrl
 from app.utils.exceptions import PermissionDeniedError
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -881,6 +883,43 @@ async def test_bash_sandbox_receives_only_current_session_attachment_root(
         current_root.is_relative_to(root) for root in captured["protected_roots"]
     )
     assert captured["protected_read_roots"] == [current_root]
+
+
+@pytest.mark.asyncio
+async def test_bash_sandbox_receives_docker_socket_without_expanding_file_policy(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(tmp_path))
+    docker_socket = tmp_path / "docker.sock"
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+    monkeypatch.chdir(tmp_path)
+    captured = {}
+
+    def capture_build(self, **kwargs):
+        captured.update(kwargs)
+        return type("SandboxResult", (), {"argv": ["bash", "-lc", "true"]})()
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.execution.shell.SandboxRunner.build",
+        capture_build,
+    )
+    unix_socket = socket.socket(socket.AF_UNIX)
+    unix_socket.bind(docker_socket.name)
+    try:
+        _dispatcher, context, _workspace_root = await _shell_context(db_session)
+        boundary = await local_boundary_from_tool_context(context)
+        await ExecuteShellTool().run({"command": "true"}, context)
+    finally:
+        unix_socket.close()
+
+    resolved_socket = docker_socket.resolve()
+    assert resolved_socket not in boundary.policy.read_roots
+    assert resolved_socket not in boundary.policy.write_roots
+    assert resolved_socket in captured["read_roots"]
+    assert resolved_socket in captured["write_roots"]
+    assert resolved_socket not in captured["protected_roots"]
 
 
 @pytest.mark.asyncio

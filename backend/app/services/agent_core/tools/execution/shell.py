@@ -161,7 +161,8 @@ class ExecuteShellTool:
         # The OS sandbox — not the risk classifier — is the real boundary. When
         # enabled it confines writes to session capability roots. Bubblewrap also
         # confines reads to those roots; macOS Seatbelt applies permanent deny
-        # rules for product source, internal state, and the Docker socket.
+        # rules for product source and internal state. The Docker socket is a
+        # separate Bash-only capability when a configured Unix socket exists.
         runner = SandboxRunner.from_settings()
         if not runner.enabled:
             raise SandboxUnavailableError(
@@ -170,8 +171,8 @@ class ExecuteShellTool:
         sandbox = runner.build(
             command=command,
             cwd=process_cwd,
-            read_roots=[*boundary.read_roots, session_attachment_root],
-            write_roots=list(boundary.write_roots),
+            read_roots=[*boundary.sandbox_read_roots, session_attachment_root],
+            write_roots=list(boundary.sandbox_write_roots),
             protected_roots=list(boundary.protected_roots),
             protected_read_roots=[session_attachment_root],
         )
