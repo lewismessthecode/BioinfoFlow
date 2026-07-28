@@ -49,13 +49,15 @@ export function AgentTranscript({
   timeline,
   onDecision,
   onRetryTurn,
-  responseActionsBusy = false,
+  retryingTurnId = null,
+  responseActionsDisabled = false,
   eventWindowLimited = false,
 }: {
   timeline: AgentRuntimeTimelineEntry[]
   onDecision?: AgentDecisionHandler
   onRetryTurn?: AgentRetryHandler
-  responseActionsBusy?: boolean
+  retryingTurnId?: string | null
+  responseActionsDisabled?: boolean
   eventWindowLimited?: boolean
 }) {
   const t = useTranslations("agentRuntime")
@@ -146,7 +148,8 @@ export function AgentTranscript({
                       text={responseText}
                       turn={entry.turn}
                       onRetryTurn={onRetryTurn}
-                      busy={responseActionsBusy}
+                      retrying={retryingTurnId === entry.turn.id}
+                      disabled={responseActionsDisabled}
                     />
                   ) : null}
                 </div>
@@ -708,12 +711,14 @@ function ResponseActionBar({
   text,
   turn,
   onRetryTurn,
-  busy,
+  retrying,
+  disabled,
 }: {
   text: string
   turn: AgentRuntimeTurn
   onRetryTurn?: AgentRetryHandler
-  busy: boolean
+  retrying: boolean
+  disabled: boolean
 }) {
   const t = useTranslations("agentRuntime")
   const locale = useLocale()
@@ -755,7 +760,7 @@ function ResponseActionBar({
       : copyState === "failed"
         ? copyFailedLabel
         : copyLabel
-  const currentRetryLabel = busy ? retryingLabel : retryLabel
+  const currentRetryLabel = retrying ? retryingLabel : retryLabel
 
   return (
     <div
@@ -789,11 +794,11 @@ function ResponseActionBar({
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
             aria-label={currentRetryLabel}
             title={currentRetryLabel}
-            aria-busy={busy}
-            disabled={!onRetryTurn || busy}
+            aria-busy={retrying}
+            disabled={!onRetryTurn || disabled}
             onClick={() => onRetryTurn?.(turn)}
           >
-            {busy ? (
+            {retrying ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <RotateCcw className="h-3.5 w-3.5" />

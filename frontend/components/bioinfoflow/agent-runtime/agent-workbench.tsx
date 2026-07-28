@@ -336,6 +336,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       value: ExecutionTargetSelection
     } | null>(null)
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
+    const [retryingTurnId, setRetryingTurnId] = useState<string | null>(null)
+    const retryingTurnIdRef = useRef<string | null>(null)
+    const retrySawActiveTurnRef = useRef(false)
     const [optimisticTurns, setOptimisticTurns] = useState<AgentRuntimeTurn[]>([])
     const [optimisticSteerEvents, setOptimisticSteerEvents] = useState<
       AgentRuntimeEvent[]
@@ -506,6 +509,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const disabled = !workspaceEnabled
     const visibleOptimisticTurns = optimisticTurns.filter(
       (optimisticTurn) =>
+        (optimisticTurn.session_id === submissionSessionId ||
+          optimisticTurn.session_id === "pending-session") &&
         !state.turns.some((turn) => turn.id === optimisticTurn.id),
     )
     const transcriptTimeline = useMemo(() => {
@@ -539,6 +544,28 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       visibleOptimisticTurns.some((turn) =>
         inFlightOptimisticTurnIds.includes(turn.id),
       )
+    const clearRetryingTurn = useCallback((turnId?: string) => {
+      if (turnId && retryingTurnIdRef.current !== turnId) return
+      retryingTurnIdRef.current = null
+      retrySawActiveTurnRef.current = false
+      setRetryingTurnId(null)
+    }, [])
+
+    useEffect(() => {
+      clearRetryingTurn()
+    }, [clearRetryingTurn, state.session?.id])
+
+    useEffect(() => {
+      if (!retryingTurnId) {
+        retrySawActiveTurnRef.current = false
+        return
+      }
+      if (hasActiveTurn) {
+        retrySawActiveTurnRef.current = true
+        return
+      }
+      if (retrySawActiveTurnRef.current) clearRetryingTurn(retryingTurnId)
+    }, [clearRetryingTurn, hasActiveTurn, retryingTurnId])
     const artifactEventCount = useMemo(
       () => state.events.filter((event) => event.type === "artifact.created").length,
       [state.events],
@@ -1063,20 +1090,23 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           if (current.includes(nextOptimisticTurn.id)) return current
           return [...current, nextOptimisticTurn.id]
         })
-        void send(trimmedText, {
+        const request = send(trimmedText, {
           modelSelection,
           inputParts,
           activeSkillNames: activeSkillNamesSnapshot,
           executionScope,
           metadata,
-        }).then(() => {
+        })
+        const clearOptimisticTurn = () => {
           setOptimisticTurns((current) =>
             current.filter((turn) => turn.id !== nextOptimisticTurn.id),
           )
           setInFlightOptimisticTurnIds((current) =>
             current.filter((id) => id !== nextOptimisticTurn.id),
           )
-        })
+        }
+        void request.then(clearOptimisticTurn, clearOptimisticTurn)
+        return request
       },
       [
         executionSelection,
@@ -1099,7 +1129,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         if (!trimmedText && !inputParts.some(isStructuredInputPart)) return
         const executionScope = executionScopeForSelection(executionSelection)
         if (!hasActiveTurn) {
-          sendTurn(
+          return sendTurn(
             trimmedText,
             inputParts,
             activeSkillNamesSnapshot,
@@ -1470,6 +1500,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
     const retryTurn = useCallback(
       (turn: AgentRuntimeTurn) => {
+        if (retryingTurnIdRef.current || hasActiveTurn) return
         const text = turn.input_text.trim()
         const inputParts =
           turn.input_parts && turn.input_parts.length
@@ -1478,15 +1509,26 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               ? [{ type: "text" as const, text }]
               : []
         if (!text && !inputParts.some(isStructuredInputPart)) return
-        submitTurn(
+        retryingTurnIdRef.current = turn.id
+        retrySawActiveTurnRef.current = false
+        setRetryingTurnId(turn.id)
+        const request = submitTurn(
           text,
           inputParts,
           turn.active_skill_names ?? [],
           inputDisplayPartsFromTurn(turn),
           turn.model_selection ?? null,
         )
+        if (!request) {
+          clearRetryingTurn(turn.id)
+          return
+        }
+        void request.then(
+          () => clearRetryingTurn(turn.id),
+          () => clearRetryingTurn(turn.id),
+        )
       },
-      [submitTurn],
+      [clearRetryingTurn, hasActiveTurn, submitTurn],
     )
 
     const focusNavbarSidecarToggle = useCallback(() => {
@@ -1858,7 +1900,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 timeline={transcriptTimeline}
                 onDecision={decideActionWithFocus}
                 onRetryTurn={retryTurn}
-                responseActionsBusy={hasActiveTurn}
+                retryingTurnId={retryingTurnId}
+                responseActionsDisabled={hasActiveTurn || retryingTurnId !== null}
                 eventWindowLimited={eventWindowLimited}
               />
             </>
