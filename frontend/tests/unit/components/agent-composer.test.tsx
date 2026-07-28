@@ -1027,6 +1027,47 @@ describe("AgentComposer", () => {
     expect(textarea).toBeEnabled()
   })
 
+  it("disables an already-open mode menu when mode changes become unavailable", async () => {
+    const onModeChange = vi.fn()
+    const view = render(
+      <AgentComposer
+        value="Continue typing"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        mode="execution"
+        onModeChange={onModeChange}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Agent mode" }))
+    const planItem = await screen.findByRole("menuitem", { name: "Plan" })
+
+    view.rerender(
+      <AgentComposer
+        value="Continue typing"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={true}
+        mode="execution"
+        modeDisabled
+        onModeChange={onModeChange}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    expect(planItem).toHaveAttribute("data-disabled")
+    fireEvent.click(planItem)
+    expect(onModeChange).not.toHaveBeenCalled()
+  })
+
   it("renders context attachment chips", () => {
     const onRemoveContextAttachment = vi.fn()
     render(

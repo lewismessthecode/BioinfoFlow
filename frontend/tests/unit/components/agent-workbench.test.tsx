@@ -2707,6 +2707,54 @@ describe("AgentWorkbench", () => {
     expect(calls).toEqual(["send:First turn", "steer:Second turn"])
   })
 
+  it("keeps the submitted mode when pending guidance becomes a new turn", async () => {
+    writeAgentTurnPolicy("steer")
+    configureModelForTest()
+    let resolveFirstSend: (() => void) | undefined
+    const send = vi.fn()
+      .mockImplementationOnce(
+        () => new Promise<void>((resolve) => { resolveFirstSend = resolve }),
+      )
+      .mockResolvedValue(undefined)
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [] as AgentRuntimeTurn[],
+        events: [] as AgentRuntimeEvent[],
+        timeline: [] as ReturnType<typeof buildAgentRuntimeTimeline>,
+        status: "idle" as "idle" | "loading" | "running" | "error",
+        error: null,
+      },
+      mode: "plan" as AgentMode,
+      setMode: vi.fn(),
+      setActiveSessionId: vi.fn(),
+      send,
+      steer: vi.fn(),
+      interrupt: vi.fn(),
+      decideAction: vi.fn(),
+    }
+    useAgentRuntimeMock.mockReturnValue(runtime)
+    const view = render(<AgentWorkbench />)
+
+    const input = screen.getByLabelText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "First turn" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+    fireEvent.change(input, { target: { value: "Second turn" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(send).toHaveBeenCalledTimes(1)
+    runtime.mode = "execution"
+    view.rerender(<AgentWorkbench />)
+    await act(async () => resolveFirstSend?.())
+
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+    expect(send).toHaveBeenNthCalledWith(
+      2,
+      "Second turn",
+      expect.objectContaining({ mode: "plan" }),
+    )
+  })
+
   it("steers multiple drafts in FIFO order after an optimistic turn becomes active", async () => {
     writeAgentTurnPolicy("steer")
     configureModelForTest()
