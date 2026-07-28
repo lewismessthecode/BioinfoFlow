@@ -1057,12 +1057,12 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         text: string,
         inputParts: AgentRuntimeInputPart[],
         activeSkillNamesSnapshot: string[],
+        modeSnapshot: AgentMode,
         inputDisplayParts?: AgentInputDisplayPart[] | null,
         modelSelection = selectedModel,
         executionScope: AgentExecutionScope = executionScopeForSelection(
           executionSelection,
         ),
-        modeSnapshot: AgentMode,
         optimisticTurnOverride?: AgentRuntimeTurn,
       ) => {
         const trimmedText = text.trim()
@@ -1138,10 +1138,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             trimmedText,
             inputParts,
             activeSkillNamesSnapshot,
+            modeSnapshot,
             inputDisplayParts,
             modelSelection,
             executionScope,
-            modeSnapshot,
           )
           return
         }
@@ -1347,10 +1347,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           next.text,
           next.inputParts,
           next.activeSkillNames,
+          next.mode,
           next.inputDisplayParts,
           next.modelSelection,
           next.executionScope,
-          next.mode,
           next.optimisticTurn,
         )
       }, 0)
@@ -1425,10 +1425,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               next.text,
               next.inputParts,
               next.activeSkillNames,
+              next.mode,
               next.inputDisplayParts,
               next.modelSelection,
               next.executionScope,
-              next.mode,
               next.optimisticTurn,
             )
           } finally {
