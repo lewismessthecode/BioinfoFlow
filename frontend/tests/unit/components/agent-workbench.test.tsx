@@ -1661,6 +1661,132 @@ describe("AgentWorkbench", () => {
     expect(send).toHaveBeenCalledTimes(1)
   })
 
+  it("marks only the source response as retrying and blocks duplicate retry sends", async () => {
+    const send = vi.fn(() => new Promise(() => {}))
+    setupRuntime({
+      turns: [
+        {
+          ...baseTurn,
+          id: "turn-prior",
+          input_text: "Inspect the workflow.",
+          final_text: "The workflow is valid.",
+        },
+        {
+          ...baseTurn,
+          id: "turn-retry",
+          input_text: "Summarize the run.",
+          final_text: "The run completed.",
+        },
+      ],
+      send,
+    })
+
+    render(<AgentWorkbench projectId="project-1" />)
+
+    const initialRetryButtons = screen.getAllByRole("button", { name: "Retry response" })
+    fireEvent.click(initialRetryButtons[1])
+
+    const retryingButton = await screen.findByRole("button", { name: "Regenerating..." })
+    const idleButton = screen.getByRole("button", { name: "Retry response" })
+    expect(retryingButton).toBeDisabled()
+    expect(idleButton).toBeDisabled()
+
+    fireEvent.click(retryingButton)
+    fireEvent.click(idleButton)
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  it("clears the retry marker after the retry request completes", async () => {
+    let resolveSend: (() => void) | undefined
+    const send = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSend = resolve
+        }),
+    )
+    setupRuntime({ turns: [baseTurn], send })
+
+    render(<AgentWorkbench projectId="project-1" />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry response" }))
+    expect(
+      await screen.findByRole("button", { name: "Regenerating..." }),
+    ).toBeDisabled()
+
+    await act(async () => resolveSend?.())
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Regenerating..." })).not.toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Retry response" })).toBeEnabled()
+    })
+  })
+
+  it("clears the retry marker after the retry request fails", async () => {
+    let rejectSend: ((error: Error) => void) | undefined
+    const failedRequest = new Promise<void>((_resolve, reject) => {
+      rejectSend = reject
+    })
+    const originalThen = failedRequest.then.bind(failedRequest)
+    failedRequest.then = ((...args: Parameters<typeof failedRequest.then>) => {
+      const next = originalThen(...args)
+      void next.catch(() => undefined)
+      return next
+    }) as typeof failedRequest.then
+    const send = vi.fn(() => failedRequest)
+    setupRuntime({ turns: [baseTurn], send })
+
+    render(<AgentWorkbench projectId="project-1" />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry response" }))
+    expect(
+      await screen.findByRole("button", { name: "Regenerating..." }),
+    ).toBeDisabled()
+
+    await act(async () => rejectSend?.(new Error("request failed")))
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Regenerating..." })).not.toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Retry response" })).toBeEnabled()
+    })
+  })
+
+  it("clears the retry marker when the active session changes", async () => {
+    const send = vi.fn(() => new Promise(() => {}))
+    setupRuntime({ session: baseSession, turns: [baseTurn], send })
+    const { rerender } = render(<AgentWorkbench projectId="project-1" />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry response" }))
+    expect(
+      await screen.findByRole("button", { name: "Regenerating..." }),
+    ).toBeDisabled()
+
+    setupRuntime({
+      session: { ...baseSession, id: "session-2" },
+      turns: [{ ...baseTurn, id: "turn-session-2", session_id: "session-2" }],
+      send,
+    })
+    rerender(<AgentWorkbench projectId="project-1" />)
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Regenerating..." })).not.toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Retry response" })).toBeEnabled()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry response" }))
+    expect(send).toHaveBeenCalledTimes(2)
+
+    setupRuntime({ session: baseSession, turns: [baseTurn], send })
+    rerender(<AgentWorkbench projectId="project-1" />)
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Regenerating..." })).not.toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Retry response" })).toHaveAttribute(
+        "aria-busy",
+        "false",
+      )
+    })
+  })
+
   it("preserves workflow token display metadata when retrying a completed turn", async () => {
     const send = vi.fn(() => new Promise(() => {}))
     setupRuntime({
