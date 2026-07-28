@@ -245,6 +245,32 @@ def test_exposed_specs_order_is_independent_of_registry_registration_order() -> 
         assert default_specs == reversed_specs
 
 
+def test_remote_subagent_plan_and_execution_keep_stable_shared_prefix() -> None:
+    exposure = ToolsetExposure(build_default_tool_registry())
+    kwargs = {
+        "role": "subagent",
+        "execution_target": {
+            "type": "remote_ssh",
+            "connection_id": "conn-1",
+        },
+    }
+
+    plan_specs = exposure.exposed_specs(policy={"name": "plan"}, **kwargs)
+    execution_specs = exposure.exposed_specs(policy={"name": "execution"}, **kwargs)
+    shared_names = {spec.name for spec in plan_specs} & {
+        spec.name for spec in execution_specs
+    }
+    plan_shared = [spec for spec in plan_specs if spec.name in shared_names]
+    execution_shared = [spec for spec in execution_specs if spec.name in shared_names]
+
+    assert plan_shared == execution_shared
+    assert plan_specs == plan_shared
+    assert execution_specs[: len(execution_shared)] == execution_shared
+    assert {"remote.connections.list", "remote.list_dir", "remote.read_file"} <= {
+        spec.name for spec in plan_shared
+    }
+
+
 def test_execution_uses_only_unnamespaced_general_purpose_tools() -> None:
     registry = build_default_tool_registry()
     exposed = ToolsetExposure(registry).exposed_names(policy={"name": "execution"})
