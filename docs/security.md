@@ -209,8 +209,12 @@ administrators may declare extra read-write roots with
 `AGENT_FILESYSTEM_ROOTS`. Container deployments must mount those paths at the
 same absolute paths. Bubblewrap also limits shell reads to mounted capabilities.
 Native macOS Seatbelt retains host-user reads for runtime compatibility while
-explicitly denying BioinfoFlow product source, internal state databases, and the
-Docker socket. Those protected resources are never approvable.
+permanently denying BioinfoFlow product source and internal state databases.
+A configured, existing Unix Docker socket is a Bash-only exception: a
+Bubblewrap bind or Seatbelt exact network-outbound rule makes that socket
+available to Bash, but not to structured file tools. Socket access carries full
+Docker daemon authority. The permanently protected product source and internal
+database resources are never approvable.
 
 The sandbox and approval policy are separate controls:
 

@@ -166,6 +166,29 @@ def test_env_example_is_optional_local_customization() -> None:
     assert "# BIOINFOFLOW_BIND_HOST=0.0.0.0" in env_example
 
 
+def test_backend_env_example_scopes_compose_socket_path_to_repo_root() -> None:
+    env_example = (ROOT / "backend" / ".env.example").read_text(encoding="utf-8")
+
+    assert "# DOCKER_SOCKET_PATH=" not in env_example
+    assert "repo-root `.env`" in env_example
+    assert "shell that starts Docker Compose" in env_example
+    assert "# DOCKER_SOCKET=unix:///var/run/docker.sock" in env_example
+
+
+def test_security_docs_describe_the_bash_only_docker_socket_exception() -> None:
+    security = (ROOT / "docs" / "security.md").read_text(encoding="utf-8")
+    normalized_security = " ".join(security.split())
+
+    assert (
+        "explicitly denying BioinfoFlow product source, internal state databases, and the Docker socket"
+        not in normalized_security
+    )
+    assert "Bash-only exception" in normalized_security
+    assert "Bubblewrap bind" in normalized_security
+    assert "Seatbelt exact network-outbound rule" in normalized_security
+    assert "full Docker daemon authority" in normalized_security
+
+
 def test_local_image_compose_uses_the_shared_bind_host_override() -> None:
     compose = yaml.safe_load(
         (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
