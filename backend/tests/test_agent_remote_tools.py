@@ -2500,14 +2500,28 @@ def test_remote_ssh_toolset_exposure_hides_local_and_platform_tools():
     assert {"skills.list", "plugins.list"}.isdisjoint(execution_tools)
     assert {"todo_write", "ask_user"} <= execution_tools
 
-    assert "remote.exec" not in plan_tools
     assert {
+        "remote.exec",
+        "remote.connections.list",
         "remote.read_file",
-        "todo_write",
+        "remote.list_dir",
         "ask_user",
         "exit_plan_mode",
     } <= plan_tools
-    assert "bash" not in plan_tools
+    assert {
+        "bash",
+        "edit",
+        "write",
+        "todo_write",
+        "projects.workflows.bind",
+        "runs.submit",
+        "workflows.create",
+        "spawn_agent",
+        "send_message",
+        "followup_task",
+        "interrupt_agent",
+    }.isdisjoint(plan_tools)
+    assert not any(name.startswith(hidden_prefixes) for name in plan_tools)
 
     assert {
         "remote.connections.list",
