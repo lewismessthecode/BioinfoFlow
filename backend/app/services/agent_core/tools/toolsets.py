@@ -201,8 +201,12 @@ class ToolsetExposure:
                 else:
                     names = set(_DEFAULT_TOOLS)
                 if explicit_allowed is not None:
-                    names &= explicit_allowed
-                if policy_name != "plan":
+                    names = (
+                        names & explicit_allowed
+                        if policy_name == "plan"
+                        else set(explicit_allowed)
+                    )
+                if policy_name != "plan" and explicit_allowed is None:
                     names.update(COLLABORATION_TOOL_NAMES - {"spawn_agent"})
                 names -= {"spawn_agent", "ask_user", "exit_plan_mode"}
             else:

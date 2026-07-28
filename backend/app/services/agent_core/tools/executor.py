@@ -544,17 +544,6 @@ class AgentToolExecutor:
             permission_context,
             permission_snapshot=permission_snapshot,
         )
-        permission_snapshot = _snapshot_with_command_risk(
-            permission_snapshot,
-            requested_risk
-            if isinstance(requested_risk, RiskAssessment)
-            else self.action_service.risk_engine.assess(
-                kind="tool",
-                name=tool.spec.name,
-                requested_level=requested_risk,
-                input=normalized_input,
-            ),
-        )
         assessed_risk = (
             requested_risk
             if isinstance(requested_risk, RiskAssessment)
@@ -564,6 +553,10 @@ class AgentToolExecutor:
                 requested_level=requested_risk,
                 input=normalized_input,
             )
+        )
+        permission_snapshot = _snapshot_with_command_risk(
+            permission_snapshot,
+            assessed_risk,
         )
         plan_command_denied = not _plan_command_is_allowed(
             tool_name=tool.spec.name,
@@ -577,7 +570,7 @@ class AgentToolExecutor:
             name=tool.spec.name,
             input=prepared_input,
             normalized_input=normalized_input,
-            requested_risk=requested_risk,
+            requested_risk=assessed_risk,
             permission_mode="bypass" if plan_command_denied else permission_mode,
             automation_mode="advise_only" if plan_command_denied else automation_mode,
             read_scope=tool.spec.read_scope,
@@ -602,6 +595,7 @@ class AgentToolExecutor:
                 permission_context_snapshot=permission_snapshot,
                 evaluated_policy_version=permission_context.policy_version,
                 expected_turn_owner_token=context.expected_owner_token,
+                commit=commit_action,
             )
         if action_requires_resume(action.status):
             if context.expected_owner_token is not None and commit_action:
@@ -798,6 +792,7 @@ class AgentToolExecutor:
         evaluated_policy_version: int | None = None,
         permission_context_snapshot: dict[str, Any] | None = None,
         expected_turn_owner_token: str | None = None,
+        commit: bool = True,
     ) -> ToolExecutionResult:
         error = {"type": "PermissionDeniedError", "message": error_message}
         failed = await self.action_repo.fail_requested(
@@ -826,7 +821,8 @@ class AgentToolExecutor:
             expected_owner_token=expected_turn_owner_token,
             owner_fenced=expected_turn_owner_token is not None,
         )
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
         agent_metrics.increment("tools.failed")
         return ToolExecutionResult(
             action_id=str(failed.id),
@@ -842,6 +838,7 @@ class AgentToolExecutor:
         permission_context_snapshot: dict[str, Any],
         evaluated_policy_version: int,
         expected_turn_owner_token: str | None,
+        commit: bool = True,
     ) -> ToolExecutionResult:
         decision = {
             "decision": "deny",
@@ -862,6 +859,7 @@ class AgentToolExecutor:
                     evaluated_policy_version=evaluated_policy_version,
                     permission_context_snapshot=permission_context_snapshot,
                     expected_turn_owner_token=expected_turn_owner_token,
+                    commit=commit,
                 ),
                 permission_decision=decision,
             )
@@ -882,7 +880,7 @@ class AgentToolExecutor:
             "evaluated_policy_version": evaluated_policy_version,
             "permission_context_snapshot": permission_context_snapshot,
         }
-        if expected_turn_owner_token is None:
+        if not commit or expected_turn_owner_token is None:
             failed = await self.action_repo.update_all_pending(action, **updates)
         else:
             failed, owned = await self.action_repo.update_all_owned(
@@ -901,7 +899,8 @@ class AgentToolExecutor:
             expected_owner_token=expected_turn_owner_token,
             owner_fenced=expected_turn_owner_token is not None,
         )
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
         agent_metrics.increment("tools.failed")
         return ToolExecutionResult(
             action_id=str(failed.id),
