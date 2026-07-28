@@ -63,13 +63,24 @@ Use it only on trusted machines and trusted networks.
 Bubblewrap and macOS Seatbelt constrain the local Bash process, not actions
 delegated to the Docker daemon. A sandboxed command that reaches the socket can
 ask the daemon to mount host paths, create networks, or start privileged
-workloads outside the sandbox's filesystem and network restrictions.
-
-For recovery, inspect rendered Compose state and recreate the backend:
+workloads outside the sandbox's filesystem and network restrictions. For
+recovery, use the same Compose file set that started the deployment for both
+inspection and backend recreation:
 
 ```bash
-docker compose config | sed -n '/backend:/,/frontend:/p'
-docker compose up -d --build --force-recreate backend
+# Source-build deployment:
+docker compose -f docker-compose.yml config
+docker compose -f docker-compose.yml up -d --build --force-recreate backend
+
+# Published production images:
+docker compose -f docker-compose.prod.yml config
+docker compose -f docker-compose.prod.yml up -d --force-recreate backend
+
+# Append the GPU override to whichever base command started the deployment:
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml config
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build --force-recreate backend
+docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml config
+docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --force-recreate backend
 ```
 
 The backend must remain non-privileged and must not gain `SYS_ADMIN`. On Linux,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -18,19 +19,26 @@ def _compose(filename: str) -> dict:
     return yaml.safe_load((ROOT / filename).read_text(encoding="utf-8"))
 
 
-def _render_compose(*filenames: str, env_file: str | None = None) -> dict:
+def _render_compose(
+    *filenames: str,
+    env_file: str | None = None,
+    docker_socket_path: str | None = None,
+) -> dict:
     command = ["docker", "compose"]
     if env_file is not None:
         command.extend(["--env-file", env_file])
     for filename in filenames:
         command.extend(["-f", filename])
     command.extend(["config", "--format", "yaml"])
+    environment = os.environ.copy()
+    environment["DOCKER_SOCKET_PATH"] = docker_socket_path or "/var/run/docker.sock"
 
     result = subprocess.run(
         command,
         cwd=ROOT,
         check=True,
         capture_output=True,
+        env=environment,
         text=True,
     )
     return yaml.safe_load(result.stdout)
@@ -136,6 +144,31 @@ def test_gpu_override_preserves_backend_socket_and_seccomp_contracts() -> None:
     assert backend["environment"]["DOCKER_SOCKET"] == "unix:///var/run/docker.sock"
 
 
+def test_compose_render_default_ignores_the_calling_shell_socket_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DOCKER_SOCKET_PATH", "/Users/example/.docker/run/docker.sock")
+
+    backend = _render_compose("docker-compose.yml")["services"]["backend"]
+    socket_mount = _docker_socket_mount(backend)
+
+    assert socket_mount["source"] == "/var/run/docker.sock"
+
+
+def test_compose_render_supports_a_custom_docker_desktop_socket_path() -> None:
+    custom_path = "/Users/example/.docker/run/docker.sock"
+
+    backend = _render_compose(
+        "docker-compose.yml",
+        docker_socket_path=custom_path,
+    )["services"]["backend"]
+    socket_mount = _docker_socket_mount(backend)
+
+    assert socket_mount["source"] == custom_path
+    assert socket_mount["target"] == "/var/run/docker.sock"
+    assert backend["environment"]["DOCKER_SOCKET"] == "unix:///var/run/docker.sock"
+
+
 def test_docker_guide_explains_seccomp_tradeoff() -> None:
     guide = (ROOT / "docs" / "getting-started" / "docker.md").read_text(
         encoding="utf-8"
@@ -166,6 +199,22 @@ def test_env_example_is_optional_local_customization() -> None:
     assert "# BIOINFOFLOW_BIND_HOST=0.0.0.0" in env_example
 
 
+def test_root_env_example_separates_compose_and_native_socket_settings() -> None:
+    env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
+    normalized_env_example = " ".join(env_example.split())
+
+    assert (
+        "Compose users should set only `DOCKER_SOCKET_PATH`" in normalized_env_example
+    )
+    assert "`DOCKER_SOCKET` is hard-coded" in normalized_env_example
+    assert (
+        "Changing `DOCKER_SOCKET` in the repo-root `.env` does not affect Compose"
+        in normalized_env_example
+    )
+    assert "native backend or `backend/.env`" in normalized_env_example
+    assert "# DOCKER_SOCKET=" not in env_example
+
+
 def test_backend_env_example_scopes_compose_socket_path_to_repo_root() -> None:
     env_example = (ROOT / "backend" / ".env.example").read_text(encoding="utf-8")
 
@@ -187,6 +236,47 @@ def test_security_docs_describe_the_bash_only_docker_socket_exception() -> None:
     assert "Bubblewrap bind" in normalized_security
     assert "Seatbelt exact network-outbound rule" in normalized_security
     assert "full Docker daemon authority" in normalized_security
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    ["RUNBOOK.md", "docs/getting-started/docker.md", "docs/security.md"],
+)
+def test_docker_recovery_docs_use_the_deployment_compose_file_set(
+    relative_path: str,
+) -> None:
+    documentation = (ROOT / relative_path).read_text(encoding="utf-8")
+    normalized_documentation = " ".join(documentation.split())
+
+    assert (
+        "same Compose file set that started the deployment" in normalized_documentation
+    )
+    assert "docker compose -f docker-compose.yml config" in documentation
+    assert "docker compose -f docker-compose.prod.yml config" in documentation
+    assert (
+        "docker compose -f docker-compose.yml -f docker-compose.gpu.yml config"
+        in documentation
+    )
+    assert (
+        "docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml config"
+        in documentation
+    )
+    assert (
+        "docker compose -f docker-compose.yml up -d --build --force-recreate backend"
+        in documentation
+    )
+    assert (
+        "docker compose -f docker-compose.prod.yml up -d --force-recreate backend"
+        in documentation
+    )
+    assert (
+        "docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build --force-recreate backend"
+        in documentation
+    )
+    assert (
+        "docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --force-recreate backend"
+        in documentation
+    )
 
 
 def test_local_image_compose_uses_the_shared_bind_host_override() -> None:

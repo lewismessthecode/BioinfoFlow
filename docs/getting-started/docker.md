@@ -400,11 +400,23 @@ cache expires. The diagnostic category is one of `binary_missing`, `probe_exit`,
 `probe_timeout`, or `probe_os_error`. On Linux, Docker's default seccomp profile
 can surface `No permissions to create new namespace`; inspect the rendered
 Compose configuration and recreate the backend rather than adding `privileged`
-or `SYS_ADMIN`:
+or `SYS_ADMIN`. Use the same Compose file set that started the deployment for
+both inspection and recovery:
 
 ```bash
-docker compose config | sed -n '/backend:/,/frontend:/p'
-docker compose up -d --build --force-recreate backend
+# Source-build deployment:
+docker compose -f docker-compose.yml config
+docker compose -f docker-compose.yml up -d --build --force-recreate backend
+
+# Published production images:
+docker compose -f docker-compose.prod.yml config
+docker compose -f docker-compose.prod.yml up -d --force-recreate backend
+
+# Append the GPU override to whichever base command started the deployment:
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml config
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build --force-recreate backend
+docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml config
+docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --force-recreate backend
 ```
 
 The backend socket gives Agent Bash complete Docker daemon authority.
