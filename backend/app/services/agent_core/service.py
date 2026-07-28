@@ -332,6 +332,11 @@ class AgentCoreService:
             and _normalized_execution_scope(update_data["session_metadata"])
             != _normalized_execution_scope(session.session_metadata)
         )
+        mode_changed = (
+            "toolset_policy" in update_data
+            and _normalized_toolset(update_data["toolset_policy"])[0]
+            != _normalized_toolset(session.toolset_policy)[0]
+        )
         wakeups: list[tuple[str, str, str]] = []
         reconciliation = {
             "affected_count": 0,
@@ -343,14 +348,16 @@ class AgentCoreService:
                 updated = await self.session_repo.update_with_policy_version(
                     session,
                     increment_policy_version=policy_changed,
-                    require_target_mutable=target_changed or scope_changed,
+                    require_no_active_turn=(
+                        target_changed or scope_changed or mode_changed
+                    ),
                     commit=False,
                     **update_data,
                 )
                 if updated is None:
                     raise ConflictError(
-                        "Execution target or scope cannot change while an agent "
-                        "turn is active"
+                        "Execution target, scope, or mode cannot change while an "
+                        "agent turn is active"
                     )
             else:
                 updated = await self.session_repo.get_fresh(str(session.id))

@@ -262,6 +262,52 @@ async def test_update_session_rejects_scope_change_until_active_turn_is_terminal
 
 
 @pytest.mark.asyncio
+async def test_update_session_rejects_mode_change_until_active_turn_is_terminal(
+    db_session: AsyncSession,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        toolset_policy={"name": "execution"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep this turn in execution mode.",
+    )
+
+    with pytest.raises(ConflictError):
+        await service.update_session(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            updates={"mode": "plan"},
+        )
+
+    unchanged = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"mode": "execution"},
+    )
+    assert unchanged.toolset_policy["name"] == "execution"
+
+    await service.turn_repo.update_all(turn, status=AgentTurnStatus.COMPLETED)
+    updated_session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"mode": "plan"},
+    )
+
+    assert updated_session.toolset_policy == {"name": "plan"}
+
+
+@pytest.mark.asyncio
 async def test_target_update_and_turn_claim_are_one_atomic_decision(
     db_session: AsyncSession,
     db_engine,
