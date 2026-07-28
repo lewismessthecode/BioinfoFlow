@@ -15,6 +15,7 @@ silently running the command unconfined.
 
 from __future__ import annotations
 
+import json
 import platform
 import shutil
 import subprocess
@@ -64,6 +65,7 @@ class SandboxSpec:
     deny_read_roots: list[Path] = field(default_factory=list)
     protected_roots: list[Path] = field(default_factory=list)
     protected_read_roots: list[Path] = field(default_factory=list)
+    docker_socket_root: Path | None = None
     allow_network: bool = False
 
 
@@ -78,6 +80,8 @@ class SandboxAdapter(Protocol):
     name: str
 
     def available(self) -> bool: ...
+
+    def supports_docker_socket(self, root: Path) -> bool: ...
 
     def build_argv(self, spec: SandboxSpec) -> list[str]: ...
 
@@ -130,6 +134,9 @@ class BubblewrapAdapter:
             self._availability_cache[cache_key] = (now, available)
             return available
 
+    def supports_docker_socket(self, root: Path) -> bool:
+        return root.exists()
+
     def build_argv(self, spec: SandboxSpec) -> list[str]:
         argv: list[str] = ["bwrap", *_BWRAP_USER_NAMESPACE_ARGS]
         for directory in _LINUX_SYSTEM_RO:
@@ -176,6 +183,9 @@ class SeatbeltAdapter:
     def available(self) -> bool:
         return shutil.which("sandbox-exec") is not None
 
+    def supports_docker_socket(self, root: Path) -> bool:
+        return root.exists()
+
     def build_argv(self, spec: SandboxSpec) -> list[str]:
         profile = self._profile(spec)
         return ["sandbox-exec", "-p", profile, "bash", "-lc", spec.command]
@@ -194,7 +204,15 @@ class SeatbeltAdapter:
         write_rules = "\n".join(
             f'    (subpath "{path}")' for path in _dedupe(write_roots)
         )
-        network_rule = "(allow network*)" if spec.allow_network else "(deny network*)"
+        if spec.allow_network:
+            network_rule = "(allow network*)"
+        elif spec.docker_socket_root is not None:
+            network_rule = (
+                "(allow network-outbound "
+                f"(literal {json.dumps(str(spec.docker_socket_root))}))"
+            )
+        else:
+            network_rule = "(deny network*)"
         protected_read_roots = [
             str(root) for root in _existing(spec.protected_read_roots)
         ]
@@ -249,6 +267,10 @@ class NoSandboxAdapter:
     def available(self) -> bool:
         return True
 
+    def supports_docker_socket(self, root: Path) -> bool:
+        del root
+        return False
+
     def build_argv(self, spec: SandboxSpec) -> list[str]:
         return ["bash", "-lc", spec.command]
 
@@ -293,6 +315,7 @@ class SandboxRunner:
         deny_read_roots: list[Path] | None = None,
         protected_roots: list[Path] | None = None,
         protected_read_roots: list[Path] | None = None,
+        docker_socket_root: Path | None = None,
         disable_requested: bool = False,
     ) -> SandboxResult:
         if not self.enabled:
@@ -326,6 +349,7 @@ class SandboxRunner:
             deny_read_roots=list(deny_read_roots or []),
             protected_roots=protected_roots or [],
             protected_read_roots=protected_read_roots or [],
+            docker_socket_root=docker_socket_root,
             allow_network=self.allow_network,
         )
         return SandboxResult(adapter.build_argv(spec), adapter.name, True)
@@ -339,6 +363,16 @@ class SandboxRunner:
     def available_adapter(self) -> SandboxAdapter | None:
         """Return the OS sandbox adapter currently available for this runner."""
         return self._select_adapter()
+
+
+def adapter_supports_docker_socket(
+    adapter: SandboxAdapter | None,
+    root: Path | None,
+) -> bool:
+    if adapter is None or root is None:
+        return False
+    supports = getattr(adapter, "supports_docker_socket", None)
+    return bool(supports is not None and supports(root))
 
 
 def _default_adapters() -> list[SandboxAdapter]:

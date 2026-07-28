@@ -149,6 +149,7 @@ async def test_local_boundary_exposes_existing_unix_docker_socket_only_to_sandbo
     assert resolved_socket not in boundary.write_roots
     assert resolved_socket in boundary.sandbox_read_roots
     assert resolved_socket in boundary.sandbox_write_roots
+    assert boundary.docker_socket_root == resolved_socket
     assert resolved_socket not in boundary.protected_roots
     assert socket_root.resolve() not in boundary.read_roots
     with pytest.raises(PermissionDeniedError, match="outside allowed roots"):
@@ -189,6 +190,7 @@ async def test_local_boundary_keeps_docker_socket_inside_ordinary_root_bash_only
         boundary.policy.require_parent_dir(resolved_socket)
     assert resolved_socket in boundary.sandbox_read_roots
     assert resolved_socket in boundary.sandbox_write_roots
+    assert boundary.docker_socket_root == resolved_socket
     assert resolved_socket not in boundary.protected_roots
 
 
@@ -216,6 +218,7 @@ async def test_fallback_boundary_keeps_docker_socket_inside_ordinary_root_bash_o
         boundary.policy.require_parent_dir(resolved_socket)
     assert resolved_socket in boundary.sandbox_read_roots
     assert resolved_socket in boundary.sandbox_write_roots
+    assert boundary.docker_socket_root == resolved_socket
     assert resolved_socket not in boundary.protected_roots
 
 
@@ -249,6 +252,7 @@ async def test_local_boundary_rejects_docker_socket_under_protected_ancestor(
     resolved_socket = docker_socket.resolve()
     assert resolved_socket not in boundary.sandbox_read_roots
     assert resolved_socket not in boundary.sandbox_write_roots
+    assert boundary.docker_socket_root is None
     assert state_root.resolve() in boundary.protected_roots
     with pytest.raises(PermissionDeniedError):
         boundary.policy.require_allowed_path(resolved_socket)
@@ -280,3 +284,4 @@ async def test_local_boundary_omits_unavailable_docker_socket_from_sandbox_roots
 
     assert docker_socket.resolve() not in boundary.sandbox_read_roots
     assert docker_socket.resolve() not in boundary.sandbox_write_roots
+    assert boundary.docker_socket_root is None

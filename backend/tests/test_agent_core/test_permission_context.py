@@ -3,6 +3,7 @@ from __future__ import annotations
 import socket
 import pytest
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.agent_core import AgentAction, AgentSession, AgentTurnStatus
@@ -528,6 +529,19 @@ async def test_local_permission_snapshot_reports_docker_socket_sandbox_capabilit
     from app.services.agent_core.permissions.context import PermissionContextResolver
 
     docker_socket = tmp_path / "docker.sock"
+    adapter = type(
+        "DockerSocketAdapter",
+        (),
+        {
+            "name": "seatbelt",
+            "supports_docker_socket": lambda self, root: root == docker_socket.resolve(),
+        },
+    )()
+    monkeypatch.setattr(settings, "agent_sandbox_enabled", True)
+    monkeypatch.setattr(
+        "app.services.agent_core.permissions.context.SandboxRunner.available_adapter",
+        lambda self: adapter,
+    )
     monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
     monkeypatch.chdir(tmp_path)
     unix_socket = socket.socket(socket.AF_UNIX)
@@ -571,6 +585,124 @@ async def test_local_permission_snapshot_reports_unavailable_docker_socket(
         )
     ).snapshot()
 
+    assert snapshot["boundary"]["docker_socket_access"] == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_local_permission_snapshot_requires_enabled_sandbox_for_docker_socket(
+    db_session,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+
+    docker_socket = tmp_path / "docker.sock"
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(tmp_path))
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+    monkeypatch.setattr(settings, "agent_sandbox_enabled", False)
+    monkeypatch.chdir(tmp_path)
+    unix_socket = socket.socket(socket.AF_UNIX)
+    unix_socket.bind(docker_socket.name)
+    try:
+        session, _turn = await _create_session_and_turn(db_session)
+        snapshot = (
+            await PermissionContextResolver(db_session).resolve(
+                session_id=str(session.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+            )
+        ).snapshot()
+    finally:
+        unix_socket.close()
+
+    assert snapshot["boundary"]["docker_socket_access"] == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_local_permission_snapshot_requires_available_socket_adapter(
+    db_session,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+
+    docker_socket = tmp_path / "docker.sock"
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(tmp_path))
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+    monkeypatch.setattr(settings, "agent_sandbox_enabled", True)
+    monkeypatch.setattr(
+        "app.services.agent_core.permissions.context.SandboxRunner.available_adapter",
+        lambda self: None,
+    )
+    monkeypatch.chdir(tmp_path)
+    unix_socket = socket.socket(socket.AF_UNIX)
+    unix_socket.bind(docker_socket.name)
+    try:
+        session, _turn = await _create_session_and_turn(db_session)
+        snapshot = (
+            await PermissionContextResolver(db_session).resolve(
+                session_id=str(session.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+            )
+        ).snapshot()
+    finally:
+        unix_socket.close()
+
+    assert snapshot["boundary"]["docker_socket_access"] == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_local_permission_snapshot_does_not_infer_docker_from_extra_root(
+    db_session,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+
+    session, _turn = await _create_session_and_turn(db_session)
+    ordinary_root = tmp_path / "ordinary"
+    extra_root = tmp_path / "extra-capability"
+    ordinary_root.mkdir()
+    extra_root.mkdir()
+
+    async def fake_resolve(self, agent_session):
+        del self, agent_session
+        return SimpleNamespace(
+            read_roots=(ordinary_root,),
+            write_roots=(ordinary_root,),
+            sandbox_read_roots=(ordinary_root, extra_root),
+            sandbox_write_roots=(ordinary_root, extra_root),
+            docker_socket_root=None,
+        )
+
+    adapter = type(
+        "DockerSocketAdapter",
+        (),
+        {
+            "name": "seatbelt",
+            "supports_docker_socket": lambda self, root: True,
+        },
+    )()
+    monkeypatch.setattr(settings, "agent_sandbox_enabled", True)
+    monkeypatch.setattr(
+        "app.services.agent_core.permissions.context.LocalFilesystemBoundaryResolver.resolve",
+        fake_resolve,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.permissions.context.SandboxRunner.available_adapter",
+        lambda self: adapter,
+    )
+
+    snapshot = (
+        await PermissionContextResolver(db_session).resolve(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+    ).snapshot()
+
+    assert str(extra_root) in snapshot["effective_roots"]
     assert snapshot["boundary"]["docker_socket_access"] == "unavailable"
 
 

@@ -919,6 +919,7 @@ async def test_bash_sandbox_receives_docker_socket_without_expanding_file_policy
     assert resolved_socket not in boundary.policy.write_roots
     assert resolved_socket in captured["read_roots"]
     assert resolved_socket in captured["write_roots"]
+    assert captured["docker_socket_root"] == resolved_socket
     assert resolved_socket not in captured["protected_roots"]
 
 

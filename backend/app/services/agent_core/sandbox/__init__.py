@@ -8,6 +8,7 @@ from app.services.agent_core.sandbox.process_sandbox import (
     SandboxResult,
     SandboxRunner,
     SandboxUnavailableError,
+    adapter_supports_docker_socket,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "SandboxResult",
     "SandboxRunner",
     "SandboxUnavailableError",
+    "adapter_supports_docker_socket",
 ]

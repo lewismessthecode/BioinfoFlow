@@ -173,6 +173,7 @@ class ExecuteShellTool:
             cwd=process_cwd,
             read_roots=[*boundary.sandbox_read_roots, session_attachment_root],
             write_roots=list(boundary.sandbox_write_roots),
+            docker_socket_root=boundary.docker_socket_root,
             protected_roots=list(boundary.protected_roots),
             protected_read_roots=[session_attachment_root],
         )
