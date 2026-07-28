@@ -23,6 +23,10 @@ EXECUTION_TOOLSET_POLICY = {
     "name": "execution",
     "capabilities": ["bioinfo.read", "bioinfo.manage"],
 }
+# Read-only planning policy: registered inspection tools plus planning helpers.
+# Target-compatible command tools are exposed behind the deterministic read guard.
+PLAN_TOOLSET_POLICY = {"name": "plan"}
+
 _CORE_READ_TOOLS = frozenset(
     {
         "projects.list",
