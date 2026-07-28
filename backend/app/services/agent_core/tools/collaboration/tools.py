@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
+
+
 class SpawnAgentTool:
     spec = AgentToolSpec(
         name="spawn_agent",
@@ -42,15 +46,21 @@ class SpawnAgentTool:
             AgentCollaborationService,
         )
 
-        result = await AgentCollaborationService(context.db).spawn_agent(
-            parent_session_id=context.session_id,
-            parent_turn_id=context.turn_id,
-            task_name=input.get("task_name"),
-            message=input.get("message"),
-            fork_turns=input.get("fork_turns", "all"),
-            model=input.get("model"),
-            reasoning_effort=input.get("reasoning_effort"),
+        session_factory = async_sessionmaker(
+            bind=context.db.bind,
+            expire_on_commit=False,
+            class_=AsyncSession,
         )
+        async with session_factory() as spawn_session:
+            result = await AgentCollaborationService(spawn_session).spawn_agent(
+                parent_session_id=context.session_id,
+                parent_turn_id=context.turn_id,
+                task_name=input.get("task_name"),
+                message=input.get("message"),
+                fork_turns=input.get("fork_turns", "all"),
+                model=input.get("model"),
+                reasoning_effort=input.get("reasoning_effort"),
+            )
         return asdict(result)
 
 
