@@ -9,7 +9,11 @@ import shlex
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.agent_core import AgentActionStatus, AgentTurnStatus
+from app.models.agent_core import (
+    AgentActionStatus,
+    AgentToolCallBatchStatus,
+    AgentTurnStatus,
+)
 from app.models.llm import (
     LlmCredentialSource,
     LlmModel,
@@ -23,6 +27,8 @@ from app.repositories.agent_core_repo import (
     AgentActionRepository,
     AgentEventRepository,
     AgentMessageRepository,
+    AgentSessionRepository,
+    AgentToolCallBatchRepository,
     AgentTurnRepository,
 )
 from app.services.agent_core import AgentCoreService
@@ -1117,6 +1123,136 @@ async def test_tool_call_result_continues_through_gateway(db_session) -> None:
         isinstance(item, ToolResultPart) and item.call_id == "call-projects"
         for item in gateway.invocations[1].input_items
     )
+
+
+@pytest.mark.asyncio
+async def test_two_spawn_agent_tool_calls_complete_without_stranding_batch(
+    db_session,
+    monkeypatch,
+) -> None:
+    session, turn = await _turn(
+        db_session,
+        input_text="Delegate two independent inspections, then summarize.",
+    )
+    turn.model_profile_snapshot = {
+        "resolved_model_id": "parent-model-id",
+        "resolved_model_selection": {
+            "provider": "openai_compatible",
+            "model": "parent-model",
+        },
+        "resolved_model_capabilities": {"supports_reasoning": True},
+        "resolved_runtime_strategy": {
+            "allow_thinking": True,
+            "reasoning_effort": "medium",
+        },
+    }
+    await db_session.commit()
+
+    queued_child_turns: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda turn_id, session_id: queued_child_turns.append((turn_id, session_id)),
+    )
+    gateway = FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="call-spawn-reader",
+                name="spawn_agent",
+                arguments_delta=json.dumps(
+                    {
+                        "task_name": "reader",
+                        "message": "Inspect the README.",
+                        "fork_turns": "none",
+                    }
+                ),
+            ),
+            ToolCallDelta(
+                index=1,
+                call_id="call-spawn-tester",
+                name="spawn_agent",
+                arguments_delta=json.dumps(
+                    {
+                        "task_name": "tester",
+                        "message": "Inspect the test suite.",
+                        "fork_turns": "none",
+                    }
+                ),
+            ),
+            CompletionMetadata(
+                response_id="chatcmpl-spawn-batch",
+                finish_reason="tool_calls",
+            ),
+        ),
+        (
+            TextDelta(text="Both inspections are queued."),
+            CompletionMetadata(
+                response_id="chatcmpl-spawn-final", finish_reason="stop"
+            ),
+        ),
+    )
+
+    controller = AgentLoopController(db_session, model_gateway=gateway)
+    result = await asyncio.wait_for(
+        controller.run_turn(
+            turn_id=str(turn.id),
+            target=_target(),
+            capabilities=RuntimeCapabilities(supports_tools=True),
+            strategy=RuntimeStrategy(allow_tools=True),
+        ),
+        timeout=5,
+    )
+    await controller.complete_turn_from_result(turn=turn, result=result)
+
+    assert result.termination_reason == "assistant_final"
+    assert result.final_text == "Both inspections are queued."
+    assert len(gateway.invocations) == 2
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions.sort(key=lambda action: action.tool_call_ordinal)
+    assert [action.status for action in actions] == [
+        AgentActionStatus.COMPLETED,
+        AgentActionStatus.COMPLETED,
+    ]
+    assert len({action.tool_batch_id for action in actions}) == 1
+    batch = await AgentToolCallBatchRepository(db_session).get(
+        str(actions[0].tool_batch_id)
+    )
+    assert batch is not None
+    assert batch.status == AgentToolCallBatchStatus.TERMINAL
+    children = await AgentSessionRepository(db_session).list_agent_tree(
+        str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    child_sessions = children[1:]
+    assert {child.agent_name for child in child_sessions} == {"reader", "tester"}
+    expected_queued_turns = {
+        (str(child.active_turn_id), str(child.id)) for child in child_sessions
+    }
+    assert set(queued_child_turns) == expected_queued_turns
+    child_turns = [
+        await AgentTurnRepository(db_session).get(child_turn_id)
+        for child_turn_id, _child_session_id in expected_queued_turns
+    ]
+    assert all(child_turn is not None for child_turn in child_turns)
+    assert all(
+        child_turn.status == AgentTurnStatus.QUEUED for child_turn in child_turns
+    )
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+    completed_action_indices = [
+        index
+        for index, event in enumerate(events)
+        if event.type == AgentEventType.ACTION_COMPLETED
+        and event.payload.get("tool_call_id")
+        in {"call-spawn-reader", "call-spawn-tester"}
+    ]
+    turn_completed_index = next(
+        index
+        for index, event in enumerate(events)
+        if event.type == AgentEventType.TURN_COMPLETED
+    )
+    assert len(completed_action_indices) == 2
+    assert all(index < turn_completed_index for index in completed_action_indices)
 
 
 @pytest.mark.asyncio

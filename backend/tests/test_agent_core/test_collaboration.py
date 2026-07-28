@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.agent_core import (
+    AgentActionStatus,
     AgentAttachment,
     AgentAttachmentStatus,
     AgentMessage,
@@ -26,7 +27,11 @@ from app.models.llm import (
     LlmProviderCredential,
 )
 from app.models.workspace import Workspace, WorkspaceMembership
-from app.repositories.agent_core_repo import AgentSessionRepository, AgentTurnRepository
+from app.repositories.agent_core_repo import (
+    AgentActionRepository,
+    AgentSessionRepository,
+    AgentTurnRepository,
+)
 from app.services.agent_core.collaboration.context_fork import (
     InvalidForkTurnsError,
     fork_agent_context,
@@ -40,6 +45,8 @@ from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.service import AgentCoreService
 from app.services.agent_core.transcript.messages import parts_to_text
+from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
+from app.services.agent_core.tools.executor import AgentToolExecutor
 from app.services.llm.credentials import encrypt_secret
 from app.services.llm.catalog import ExactModelProbeResult
 from app.services.llm.probe import LlmProviderProbeResult
@@ -1395,6 +1402,72 @@ async def test_spawn_agent_rejects_duplicate_and_capacity(db_session, monkeypatc
             message="work",
             fork_turns="none",
         )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_spawn_agent_tool_fails_action_without_missing_greenlet(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _seed_workspace(db_session)
+    root, turn = await _create_parent_turn(db_session)
+    root.toolset_policy = {"name": "execution"}
+    await db_session.commit()
+    enqueued: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.collaboration.service.enqueue_turn_run",
+        lambda turn_id, session_id: enqueued.append((turn_id, session_id)),
+    )
+    executor = AgentToolExecutor(db_session, build_default_tool_registry())
+    context = AgentToolContext(
+        db=db_session,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        session_id=str(root.id),
+        turn_id=str(turn.id),
+    )
+
+    first = await executor.execute(
+        tool_name="spawn_agent",
+        input={
+            "task_name": "reader",
+            "message": "Inspect the README.",
+            "fork_turns": "none",
+        },
+        context=context,
+        toolset_policy={"name": "execution"},
+    )
+    second = await executor.execute(
+        tool_name="spawn_agent",
+        input={
+            "task_name": "reader",
+            "message": "Inspect the README again.",
+            "fork_turns": "none",
+        },
+        context=context,
+        toolset_policy={"name": "execution"},
+    )
+
+    assert first.status == AgentActionStatus.COMPLETED
+    assert second.status == AgentActionStatus.FAILED
+    assert second.error is not None
+    assert second.error["message"] == "agent_name_reserved"
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    assert len(actions) == 2
+    assert {action.status for action in actions} == {
+        AgentActionStatus.COMPLETED,
+        AgentActionStatus.FAILED,
+    }
+    failed_action = next(
+        action for action in actions if action.status == AgentActionStatus.FAILED
+    )
+    completed_action = next(
+        action for action in actions if action.status == AgentActionStatus.COMPLETED
+    )
+    assert failed_action.error["message"] == "agent_name_reserved"
+    assert completed_action.result["task_name"] == "/root/reader"
+    assert completed_action.result["status"] == "pending_init"
+    assert len(enqueued) == 1
 
 
 @pytest.mark.asyncio
