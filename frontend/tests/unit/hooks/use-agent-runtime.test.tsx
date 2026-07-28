@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   getAgentRuntimeState: vi.fn(),
   listAgentRuntimeSessions: vi.fn(),
   updateAgentRuntimeSessionMetadata: vi.fn(),
+  updateAgentRuntimeSessionMode: vi.fn(),
   updateAgentRuntimeSessionPermissionMode: vi.fn(),
 }))
 
@@ -37,6 +38,7 @@ vi.mock("@/lib/agent-runtime", async (importOriginal) => {
     listAgentRuntimeSessions: mocks.listAgentRuntimeSessions,
     subscribeAgentRuntimeEvents: mocks.subscribeAgentRuntimeEvents,
     updateAgentRuntimeSessionMetadata: mocks.updateAgentRuntimeSessionMetadata,
+    updateAgentRuntimeSessionMode: mocks.updateAgentRuntimeSessionMode,
     updateAgentRuntimeSessionPermissionMode: mocks.updateAgentRuntimeSessionPermissionMode,
   }
 })
@@ -101,6 +103,7 @@ describe("useAgentRuntime", () => {
       updated_at: "2026-06-08T00:00:00Z",
     })
     mocks.updateAgentRuntimeSessionMetadata.mockResolvedValue(session)
+    mocks.updateAgentRuntimeSessionMode.mockResolvedValue(session)
     mocks.updateAgentRuntimeSessionPermissionMode.mockResolvedValue(session)
     mocks.interruptAgentRuntimeTurn.mockResolvedValue({
       ...turn,
@@ -298,6 +301,199 @@ describe("useAgentRuntime", () => {
         ],
         activeSkillNames: ["nextflow-debugging"],
       }),
+    )
+  })
+
+  it("keeps selected mode local and sends it with the next turn", async () => {
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+
+    act(() => {
+      result.current.setMode("plan")
+    })
+
+    expect(result.current.mode).toBe("plan")
+    expect(mocks.updateAgentRuntimeSessionMode).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await result.current.send("Draft a plan")
+    })
+
+    expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "plan" }),
+    )
+    expect(mocks.updateAgentRuntimeSessionMode).not.toHaveBeenCalled()
+  })
+
+  it("keeps a pending mode when a stale refresh reports the server mode", async () => {
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+
+    act(() => {
+      result.current.setMode("plan")
+    })
+    mocks.getAgentRuntimeState.mockResolvedValueOnce({
+      session: { ...session, toolset_policy: { name: "execution" } },
+      turns: [],
+      events: [],
+    })
+    await act(async () => {
+      await result.current.refreshState("session-1")
+    })
+
+    expect(result.current.mode).toBe("plan")
+  })
+
+  it("clears a pending mode after an authoritative refresh confirms it", async () => {
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+
+    act(() => {
+      result.current.setMode("plan")
+    })
+    mocks.getAgentRuntimeState.mockResolvedValueOnce({
+      session: { ...session, toolset_policy: { name: "plan" } },
+      turns: [],
+      events: [],
+    })
+    await act(async () => {
+      await result.current.refreshState("session-1")
+    })
+    expect(result.current.mode).toBe("plan")
+
+    mocks.getAgentRuntimeState.mockResolvedValueOnce({
+      session: { ...session, toolset_policy: { name: "execution" } },
+      turns: [],
+      events: [],
+    })
+    await act(async () => {
+      await result.current.refreshState("session-1")
+    })
+
+    expect(result.current.mode).toBe("execution")
+  })
+
+  it("clears a pending mode when the active session changes", async () => {
+    const session2 = { ...session, id: "session-2" }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])
+    const { result, rerender } = renderHook(
+      ({ activeSessionId }: { activeSessionId: string }) =>
+        useAgentRuntime(null, {
+          activeSessionId,
+          onActiveSessionIdChange: vi.fn(),
+        }),
+      { initialProps: { activeSessionId: "session-1" } },
+    )
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+
+    act(() => {
+      result.current.setMode("plan")
+    })
+    expect(result.current.mode).toBe("plan")
+
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session: session2,
+      turns: [],
+      events: [],
+    })
+    rerender({ activeSessionId: "session-2" })
+    await waitFor(() => expect(result.current.session?.id).toBe("session-2"))
+    rerender({ activeSessionId: "" })
+
+    expect(result.current.mode).toBe("execution")
+  })
+
+  it("refreshes after an approval decision event and adopts server execution mode", async () => {
+    const planSession = { ...session, toolset_policy: { name: "plan" } }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([planSession])
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session: planSession,
+      turns: [],
+      events: [],
+    })
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(result.current.mode).toBe("plan"))
+    await waitFor(() => expect(mocks.subscribeAgentRuntimeEvents).toHaveBeenCalled())
+    const callsBefore = mocks.getAgentRuntimeState.mock.calls.length
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session: { ...session, toolset_policy: { name: "execution" } },
+      turns: [],
+      events: [],
+    })
+
+    act(() => {
+      mocks.subscribeAgentRuntimeEvents.mock.calls[0][0].onEvent({
+        ...event,
+        id: "event-decision",
+        seq: 2,
+        type: "action.decision_recorded",
+      })
+    })
+
+    await waitFor(() =>
+      expect(mocks.getAgentRuntimeState.mock.calls.length).toBeGreaterThan(callsBefore),
+    )
+    await waitFor(() =>
+      expect(result.current.state.session?.toolset_policy).toEqual({
+        name: "execution",
+      }),
+    )
+    await waitFor(() => expect(result.current.mode).toBe("execution"))
+  })
+
+  it("uses one mode snapshot for a newly created session and its first turn", async () => {
+    const creation = deferred<AgentRuntimeSession>()
+    mocks.createAgentRuntimeSession.mockReturnValueOnce(creation.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    act(() => {
+      result.current.setMode("plan")
+    })
+    let sendPromise!: Promise<AgentRuntimeTurn | null>
+    act(() => {
+      sendPromise = result.current.send("Draft a plan")
+    })
+    await waitFor(() =>
+      expect(mocks.createAgentRuntimeSession).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: "plan" }),
+      ),
+    )
+
+    act(() => {
+      result.current.setMode("execution")
+    })
+    await act(async () => {
+      creation.resolve({ ...session, toolset_policy: { name: "plan" } })
+      await sendPromise
+    })
+
+    expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "plan" }),
     )
   })
 

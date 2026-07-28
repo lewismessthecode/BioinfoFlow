@@ -150,6 +150,20 @@ describe("agent runtime client", () => {
     })
   })
 
+  it("serializes selected agent mode when creating a turn", async () => {
+    await createAgentRuntimeTurn({
+      sessionId: "session-1",
+      inputText: "Draft a plan",
+      mode: "plan",
+    })
+
+    const body = JSON.parse(apiRequestMock.mock.calls[0][1].body)
+    expect(body).toMatchObject({
+      input_text: "Draft a plan",
+      mode: "plan",
+    })
+  })
+
   it("posts steering guidance with transcript display metadata", async () => {
     apiRequestMock.mockResolvedValueOnce({
       data: { steer_id: "steer-1", turn_id: "turn-1", delivery: "pending" },
