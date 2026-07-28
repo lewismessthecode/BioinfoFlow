@@ -154,6 +154,68 @@ async def test_explicit_registry_credentials_match_hostname_case_insensitively(
     }
 
 
+@pytest.mark.parametrize(
+    ("endpoint", "insecure", "image"),
+    [
+        ("https://Harbor.Example.Test:443", False, "harbor.example.test/team/tool:1"),
+        ("http://Registry.Example.Test:80", True, "registry.example.test/team/tool:1"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_explicit_registry_credentials_ignore_scheme_default_port(
+    db_session,
+    endpoint,
+    insecure,
+    image,
+):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    registry = await ContainerRegistryService(db_session).create_registry(
+        {
+            "name": f"Default port registry {endpoint}",
+            "endpoint": endpoint,
+            "insecure": insecure,
+            "credential_source": "stored",
+            "username": "robot",
+            "password": "secret",
+            "updated_by": "user-1",
+        }
+    )
+
+    requirements = await resolve_workflow_image_requirements_with_credentials(
+        db_session,
+        _schema(image),
+        selected_registry=None,
+    )
+
+    assert requirements[0].registry_id == str(registry.id)
+
+
+@pytest.mark.asyncio
+async def test_explicit_registry_credentials_preserve_nondefault_port(db_session):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    registry = await ContainerRegistryService(db_session).create_registry(
+        {
+            "name": "Nondefault port registry",
+            "endpoint": "https://Harbor.Example.Test:8443",
+            "credential_source": "stored",
+            "username": "robot",
+            "password": "secret",
+            "updated_by": "user-1",
+        }
+    )
+
+    requirements = await resolve_workflow_image_requirements_with_credentials(
+        db_session,
+        _schema("harbor.example.test:8443/team/tool:1"),
+        selected_registry=None,
+    )
+
+    assert requirements[0].registry_id == str(registry.id)
+    assert requirements[0].registry == "harbor.example.test:8443"
+
+
 @pytest.mark.asyncio
 async def test_duplicate_registry_endpoints_choose_lowest_immutable_id(
     db_session,

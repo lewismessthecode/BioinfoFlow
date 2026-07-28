@@ -15,7 +15,11 @@ from app.models.container_registry import (
 )
 from app.repositories.container_registry_repo import ContainerRegistryRepository
 from app.repositories.project_repo import ProjectRepository
-from app.services.docker_service import DockerService, normalize_registry
+from app.services.docker_service import (
+    DockerService,
+    normalize_registry,
+    registry_authority,
+)
 from app.services.llm.credentials import (
     decrypt_secret,
     encrypt_secret,
@@ -150,7 +154,9 @@ class ContainerRegistryService:
             name_part
         )
         if explicit_registry:
-            registry_matches = detected_registry == normalize_registry(material.endpoint)
+            registry_matches = normalize_registry(
+                detected_registry
+            ) == normalize_registry(material.endpoint)
             return ContainerRegistryImageTarget(
                 name=image_name,
                 tag=resolved_tag,
@@ -167,7 +173,7 @@ class ContainerRegistryService:
         return ContainerRegistryImageTarget(
             name=image_name,
             tag=resolved_tag,
-            registry=normalize_registry(material.endpoint),
+            registry=registry_authority(material.endpoint),
             auth_config=_auth_config_from_material(material),
             registry_id=material.registry_id,
         )
@@ -379,7 +385,7 @@ def _split_image_tag(full_name: str) -> tuple[str, str]:
 def _split_image_registry(name: str) -> tuple[str, str, bool]:
     parts = name.split("/", 1)
     if len(parts) == 2 and _looks_like_registry(parts[0]):
-        return normalize_registry(parts[0]), parts[1], True
+        return registry_authority(parts[0]), parts[1], True
     return "docker.io", name, False
 
 

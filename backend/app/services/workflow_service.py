@@ -23,6 +23,7 @@ from app.path_layout import (
 from app.repositories.workflow_repo import WorkflowRepository
 from app.services.workflow_form_spec import reconcile_workflow_form_spec
 from app.services.workflow_image_service import WorkflowImagePrefetchService
+from app.services.workflow_source import resolve_wdl_source_reference
 from app.services.workflow_validator import WorkflowValidator
 from app.services.demo_contract import DEMO_WORKFLOW
 from app.utils.exceptions import ConflictError, PermissionDeniedError
@@ -216,10 +217,16 @@ class WorkflowService:
         if source != WorkflowSource.LOCAL:
             if not name or not version or not engine:
                 raise ValueError("workflow requires name, version, and engine")
+            schema_source = str(source_ref)
+            if engine == WorkflowEngine.WDL:
+                schema_source = resolve_wdl_source_reference(
+                    schema_source,
+                    source=source.value,
+                    version=version,
+                    entrypoint_relpath=entrypoint_relpath,
+                )
             schema_json = await SchemaExtractor().extract(
-                engine.value,
-                str(source_ref),
-                version=version,
+                engine.value, schema_source, version=version
             )
 
         if not name or not version or not engine:

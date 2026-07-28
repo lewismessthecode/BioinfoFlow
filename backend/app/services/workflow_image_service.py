@@ -10,7 +10,7 @@ from app.services.container_registry_service import (
     ContainerRegistryAuthMaterial,
     ContainerRegistryService,
 )
-from app.services.docker_service import normalize_registry
+from app.services.docker_service import normalize_registry, registry_authority
 from app.services.image_service import DockerUnavailableError, ImageService
 
 
@@ -23,7 +23,7 @@ class WorkflowImageRegistry:
 
     @property
     def normalized_endpoint(self) -> str:
-        return normalize_registry(self.endpoint)
+        return registry_authority(self.endpoint)
 
     @property
     def normalized_namespace(self) -> str | None:
@@ -31,7 +31,7 @@ class WorkflowImageRegistry:
         return namespace or None
 
     def matches_registry(self, registry: str) -> bool:
-        return self.normalized_endpoint == normalize_registry(registry)
+        return normalize_registry(self.endpoint) == normalize_registry(registry)
 
     @property
     def image_prefix(self) -> str:
@@ -201,7 +201,7 @@ async def resolve_workflow_image_requirements_with_credentials(
         selected_registry=selected_registry,
     )
     unresolved_hosts = {
-        requirement.registry
+        normalize_registry(requirement.registry)
         for requirement in requirements
         if requirement.explicit_registry and requirement.registry_id is None
     }
@@ -220,7 +220,7 @@ async def resolve_workflow_image_requirements_with_credentials(
     resolved: list[WorkflowImageRequirement] = []
     materials: dict[str, WorkflowImageRegistry] = {}
     for requirement in requirements:
-        registry = registries_by_host.get(requirement.registry)
+        registry = registries_by_host.get(normalize_registry(requirement.registry))
         if registry is None or requirement.registry_id is not None:
             resolved.append(requirement)
             continue
@@ -339,7 +339,7 @@ def _reference_has_tag(full_name: str) -> bool:
 def _split_registry(name: str) -> tuple[str, str, bool]:
     parts = name.split("/", 1)
     if len(parts) == 2 and _looks_like_registry(parts[0]):
-        return normalize_registry(parts[0]), parts[1], True
+        return registry_authority(parts[0]), parts[1], True
     return "docker.io", name, False
 
 
