@@ -114,16 +114,23 @@ class WorkflowImagePrefetchService:
         enqueued: list[WorkflowImageRequirement] = []
         failed: list[WorkflowImagePrefetchFailure] = []
         for requirement in requirements:
+            pull_name = requirement.name
+            pull_tag: str | None = requirement.tag
+            registry_id = None
+            if requirement.registry_id is not None:
+                pull_name = requirement.full_name
+                pull_tag = None
+                registry_id = requirement.registry_id
             try:
                 await image_service.pull_image(
-                    name=requirement.name,
-                    tag=requirement.tag,
+                    name=pull_name,
+                    tag=pull_tag,
                     registry=requirement.registry,
                     project_id=None,
                     user_id=None,
                     workspace_id=None,
                     auth_config=requirement.auth_config,
-                    registry_id=None,
+                    registry_id=registry_id,
                 )
             except DockerUnavailableError as exc:
                 failed.append(
@@ -202,11 +209,16 @@ async def resolve_workflow_image_requirements_with_credentials(
         return requirements
 
     registry_service = ContainerRegistryService(session)
-    registries_by_host = {
-        normalize_registry(registry.endpoint): registry
-        for registry in await registry_service.list_registries()
-        if normalize_registry(registry.endpoint) in unresolved_hosts
-    }
+    registries_by_host: dict[str, Any] = {}
+    for registry in await registry_service.list_registries():
+        normalized_host = normalize_registry(registry.endpoint)
+        if normalized_host not in unresolved_hosts:
+            continue
+        current = registries_by_host.get(normalized_host)
+        if current is None or _registry_recency_key(registry) > _registry_recency_key(
+            current
+        ):
+            registries_by_host[normalized_host] = registry
     resolved: list[WorkflowImageRequirement] = []
     materials: dict[str, WorkflowImageRegistry] = {}
     for requirement in requirements:
@@ -229,6 +241,14 @@ async def resolve_workflow_image_requirements_with_credentials(
             )
         )
     return resolved
+
+
+def _registry_recency_key(registry: Any) -> tuple[bool, Any, str]:
+    return (
+        registry.updated_at is not None,
+        registry.updated_at,
+        str(registry.id),
+    )
 
 
 def resolved_workflow_container_images(

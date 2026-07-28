@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -143,14 +144,14 @@ async def test_prefetch_service_enqueues_resolved_static_image_pulls(
     ]
     assert calls == [
         {
-            "name": "team-a/bwa",
-            "tag": "0.7.17",
+            "name": "registry.example.com/team-a/bwa:0.7.17",
+            "tag": None,
             "registry": "registry.example.com",
             "project_id": None,
             "user_id": None,
             "workspace_id": None,
             "auth_config": {"identitytoken": "token"},
-            "registry_id": None,
+            "registry_id": "registry-1",
         },
         {
             "name": "biocontainers/fastqc",
@@ -206,14 +207,14 @@ async def test_prefetch_workflow_uses_workflow_selected_registry(
 
     assert calls == [
         {
-            "name": "selected/bwa",
-            "tag": "0.7.17",
+            "name": "selected-registry.example.test/selected/bwa:0.7.17",
+            "tag": None,
             "registry": "selected-registry.example.test",
             "project_id": None,
             "user_id": None,
             "workspace_id": None,
             "auth_config": {"username": "robot", "password": "secret"},
-            "registry_id": None,
+            "registry_id": str(registry.id),
         },
     ]
 
@@ -285,6 +286,68 @@ async def test_async_resolver_attaches_credentials_by_exact_normalized_endpoint(
     assert requirement.name == "bio/tool"
     assert requirement.registry_id == str(registry.id)
     assert requirement.auth_config == {"username": "robot", "password": "secret"}
+
+
+@pytest.mark.asyncio
+async def test_async_resolver_uses_latest_registry_then_largest_id_for_duplicate_host(
+    db_session,
+    monkeypatch,
+):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    service = ContainerRegistryService(db_session)
+    endpoint = "https://duplicate.example.test"
+    older_at = datetime(2026, 7, 27, tzinfo=timezone.utc)
+    latest_at = datetime(2026, 7, 28, tzinfo=timezone.utc)
+    common = {
+        "endpoint": endpoint,
+        "namespace": "bio",
+        "insecure": False,
+        "credential_source": "env",
+        "last_status": "untested",
+    }
+    await service.registry_repo.create(
+        **common,
+        id="00000000-0000-0000-0000-000000000099",
+        name="Z older registry",
+        updated_at=older_at,
+        env_username_var="OLDER_USER",
+        env_password_var="OLDER_PASSWORD",
+    )
+    await service.registry_repo.create(
+        **common,
+        id="00000000-0000-0000-0000-000000000001",
+        name="Y latest lower id",
+        updated_at=latest_at,
+        env_username_var="LOWER_USER",
+        env_password_var="LOWER_PASSWORD",
+    )
+    expected = await service.registry_repo.create(
+        **common,
+        id="00000000-0000-0000-0000-000000000002",
+        name="A latest larger id",
+        updated_at=latest_at,
+        env_username_var="EXPECTED_USER",
+        env_password_var="EXPECTED_PASSWORD",
+    )
+    monkeypatch.setenv("OLDER_USER", "older-user")
+    monkeypatch.setenv("OLDER_PASSWORD", "older-password")
+    monkeypatch.setenv("LOWER_USER", "lower-user")
+    monkeypatch.setenv("LOWER_PASSWORD", "lower-password")
+    monkeypatch.setenv("EXPECTED_USER", "expected-user")
+    monkeypatch.setenv("EXPECTED_PASSWORD", "expected-password")
+
+    requirements = await resolve_workflow_image_requirements_with_credentials(
+        db_session,
+        _schema("duplicate.example.test/bio/tool:1.0"),
+        selected_registry=None,
+    )
+
+    assert requirements[0].registry_id == str(expected.id)
+    assert requirements[0].auth_config == {
+        "username": "expected-user",
+        "password": "expected-password",
+    }
 
 
 @pytest.mark.asyncio
