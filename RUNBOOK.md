@@ -425,11 +425,20 @@ curl -fsS http://localhost:8000/api/v1/system/gpu | jq '.data | {mode,state,dete
 
 Compose treats `DOCKER_SOCKET_PATH` as the host-side Unix socket path and always
 exposes it inside the backend as `DOCKER_SOCKET=unix:///var/run/docker.sock`.
-Inspect the effective contract before changing container privileges:
+Always use the same Compose file set that started the deployment for both
+inspection and recovery. Inspect the effective contract before changing
+container privileges:
 
 ```bash
-docker compose config | sed -n '/backend:/,/frontend:/p'
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml config | sed -n '/backend:/,/frontend:/p'
+# Source-build deployment:
+docker compose -f docker-compose.yml config
+
+# Published production images:
+docker compose -f docker-compose.prod.yml config
+
+# If GPU override was used, append it to the original base command:
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml config
+docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml config
 ```
 
 The rendered backend must retain the writable `/var/run/docker.sock` bind,
@@ -437,7 +446,15 @@ The rendered backend must retain the writable `/var/run/docker.sock` bind,
 changing `.env` or a Compose file, recreate the backend instead of restarting it:
 
 ```bash
-docker compose up -d --build --force-recreate backend
+# Source-build deployment:
+docker compose -f docker-compose.yml up -d --build --force-recreate backend
+
+# Published production images:
+docker compose -f docker-compose.prod.yml up -d --force-recreate backend
+
+# Source or production deployment with the GPU override:
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build --force-recreate backend
+docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --force-recreate backend
 ```
 
 Do not troubleshoot Bubblewrap by enabling `privileged` or adding `SYS_ADMIN`.
