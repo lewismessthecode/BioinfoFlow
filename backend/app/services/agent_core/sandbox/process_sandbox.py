@@ -143,6 +143,8 @@ class BubblewrapAdapter:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=_BWRAP_PROBE_TIMEOUT_SECONDS,
                 )
             except subprocess.TimeoutExpired:
@@ -153,7 +155,7 @@ class BubblewrapAdapter:
                     failure_category="probe_timeout",
                     failure_message="probe timed out after 2 seconds",
                 )
-            except OSError as exc:
+            except (OSError, UnicodeError) as exc:
                 result = SandboxAvailability(
                     adapter=self.name,
                     executable=executable,

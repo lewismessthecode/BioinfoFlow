@@ -251,6 +251,8 @@ def test_bubblewrap_availability_reports_successful_user_namespace_probe(monkeyp
                 "stdout": subprocess.DEVNULL,
                 "stderr": subprocess.PIPE,
                 "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
                 "timeout": 2.0,
             },
         )
@@ -265,7 +267,7 @@ def test_bubblewrap_availability_reports_probe_exit_with_sanitized_bounded_stder
         "app.services.agent_core.sandbox.process_sandbox.shutil.which",
         lambda _name: executable,
     )
-    raw_stderr = "bwrap:\x00 No\n permissions\t" + "x" * 500
+    raw_stderr = "bwrap:\ufffd\x00 No\n permissions\t" + "x" * 500
     monkeypatch.setattr(
         "app.services.agent_core.sandbox.process_sandbox.subprocess.run",
         lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stderr=raw_stderr),
@@ -277,7 +279,7 @@ def test_bubblewrap_availability_reports_probe_exit_with_sanitized_bounded_stder
     assert result.executable == executable
     assert result.available is False
     assert result.failure_category == "probe_exit"
-    assert result.failure_message.startswith("bwrap: No permissions ")
+    assert result.failure_message.startswith("bwrap:\ufffd No permissions ")
     assert "\n" not in result.failure_message
     assert "\t" not in result.failure_message
     assert "\x00" not in result.failure_message
@@ -325,6 +327,32 @@ def test_bubblewrap_availability_reports_probe_os_error(monkeypatch):
         available=False,
         failure_category="probe_os_error",
         failure_message="permission denied",
+    )
+
+
+def test_bubblewrap_availability_reports_unicode_decode_error(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.shutil.which",
+        lambda _name: "/usr/bin/bwrap-unicode-error",
+    )
+
+    def unicode_error(*_args, **_kwargs):
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(
+        "app.services.agent_core.sandbox.process_sandbox.subprocess.run", unicode_error
+    )
+
+    result = BubblewrapAdapter().availability()
+
+    assert result == SandboxAvailability(
+        adapter="bubblewrap",
+        executable="/usr/bin/bwrap-unicode-error",
+        available=False,
+        failure_category="probe_os_error",
+        failure_message=(
+            "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+        ),
     )
 
 
