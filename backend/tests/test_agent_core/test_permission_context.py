@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 import pytest
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -8,6 +9,7 @@ from app.models.agent_core import AgentAction, AgentSession, AgentTurnStatus
 from app.models.remote_connection import RemoteConnection
 from app.models.project import Project
 from app.models.workspace import Workspace
+from app.config import settings
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
     AgentEventRepository,
@@ -515,6 +517,61 @@ async def test_permission_context_is_deeply_immutable_and_snapshot_isolated(
     assert "credential" not in context.snapshot()["toolset_policy"]
     assert context.boundary["enforcement"] != "workspace"
     assert context.snapshot()["effective_roots"]
+
+
+@pytest.mark.asyncio
+async def test_local_permission_snapshot_reports_docker_socket_sandbox_capability(
+    db_session,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+
+    docker_socket = tmp_path / "docker.sock"
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+    monkeypatch.chdir(tmp_path)
+    unix_socket = socket.socket(socket.AF_UNIX)
+    unix_socket.bind(docker_socket.name)
+    try:
+        session, _turn = await _create_session_and_turn(db_session)
+        snapshot = (
+            await PermissionContextResolver(db_session).resolve(
+                session_id=str(session.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+            )
+        ).snapshot()
+    finally:
+        unix_socket.close()
+
+    assert snapshot["boundary"]["docker_socket_access"] == "read_write"
+    assert str(docker_socket.resolve()) in snapshot["effective_roots"]
+
+
+@pytest.mark.asyncio
+async def test_local_permission_snapshot_reports_unavailable_docker_socket(
+    db_session,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+
+    monkeypatch.setattr(
+        settings,
+        "docker_socket",
+        f"unix://{tmp_path / 'missing-docker.sock'}",
+    )
+    session, _turn = await _create_session_and_turn(db_session)
+
+    snapshot = (
+        await PermissionContextResolver(db_session).resolve(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+    ).snapshot()
+
+    assert snapshot["boundary"]["docker_socket_access"] == "unavailable"
 
 
 @pytest.mark.asyncio

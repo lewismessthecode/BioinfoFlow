@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -24,6 +25,9 @@ from app.workspace import DEFAULT_WORKSPACE_ID
 PRODUCT_SOURCE_BOUNDARY_GUIDANCE = (
     "BioinfoFlow product source is not part of this workspace. Do not inspect it or "
     "invoke `bif`; use the exposed BioinfoFlow platform tools."
+)
+DOCKER_SOCKET_AUTHORITY_GUIDANCE = (
+    "The Docker socket grants full authority over the Docker daemon."
 )
 
 
@@ -221,10 +225,12 @@ async def test_context_assembler_injects_project_instructions_before_environment
     await _workspace(db_session)
     repo_root = tmp_path / "bioinfoflow-product"
     data_root = repo_root / "data"
+    docker_socket = tmp_path / "docker.sock"
     repo_root.mkdir()
     data_root.mkdir()
     monkeypatch.setattr(settings, "repo_root", str(repo_root))
     monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
     (repo_root / "AGENTS.md").write_text("product source instruction", encoding="utf-8")
     project = Project(
         name="Instruction project",
@@ -254,10 +260,16 @@ async def test_context_assembler_injects_project_instructions_before_environment
         input_text="Use the repo rules.",
     )
 
-    messages = await AgentContextAssembler(db_session).provider_messages(
-        agent_session=session,
-        turn=turn,
-    )
+    monkeypatch.chdir(tmp_path)
+    unix_socket = socket.socket(socket.AF_UNIX)
+    unix_socket.bind(docker_socket.name)
+    try:
+        messages = await AgentContextAssembler(db_session).provider_messages(
+            agent_session=session,
+            turn=turn,
+        )
+    finally:
+        unix_socket.close()
     system_content = messages[0]["content"]
 
     assert [message["role"] for message in messages] == ["system", "user"]
@@ -272,6 +284,10 @@ async def test_context_assembler_injects_project_instructions_before_environment
     assert f"- Working directory: {repo_root}\n" not in system_content
     environment_context = system_content[system_content.index("## Environment") :]
     assert environment_context.count(PRODUCT_SOURCE_BOUNDARY_GUIDANCE) == 1
+    assert "Agent Bash can use Docker directly" in environment_context
+    assert "Preserve every requested image reference exactly" in environment_context
+    assert "do not substitute an unrelated image" in environment_context
+    assert DOCKER_SOCKET_AUTHORITY_GUIDANCE in environment_context
     assert str(repo_root) not in PRODUCT_SOURCE_BOUNDARY_GUIDANCE
     assert messages[-1]["content"].endswith("\n\nUse the repo rules.")
 
@@ -308,6 +324,7 @@ async def test_context_assembler_omits_product_source_boundary_for_remote_target
     assert "## Environment" in messages[0]["content"]
     assert "- Execution target: remote_ssh" in messages[0]["content"]
     assert PRODUCT_SOURCE_BOUNDARY_GUIDANCE not in messages[0]["content"]
+    assert DOCKER_SOCKET_AUTHORITY_GUIDANCE not in messages[0]["content"]
 
 
 @pytest.mark.asyncio

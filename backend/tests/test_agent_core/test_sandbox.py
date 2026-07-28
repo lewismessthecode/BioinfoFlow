@@ -503,15 +503,17 @@ def test_filesystem_policy_denies_protected_path_before_allowed_root(tmp_path):
         policy.require_allowed_path(source)
 
 
-def test_filesystem_policy_denies_docker_socket_even_inside_allowed_root(
+def test_filesystem_policy_cannot_resolve_docker_socket_outside_ordinary_roots(
     tmp_path, monkeypatch
 ):
     socket = tmp_path / "docker.sock"
     socket.touch()
     monkeypatch.setattr(settings, "docker_socket", f"unix://{socket}")
-    policy = FilesystemPolicy(allowed_roots=[tmp_path])
+    ordinary_root = tmp_path / "ordinary"
+    ordinary_root.mkdir()
+    policy = FilesystemPolicy(allowed_roots=[ordinary_root])
 
-    with pytest.raises(PermissionDeniedError, match="protected"):
+    with pytest.raises(PermissionDeniedError, match="outside allowed roots"):
         policy.require_allowed_path(socket)
 
 

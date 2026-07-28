@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 from types import SimpleNamespace
 
 import pytest
@@ -107,3 +108,75 @@ async def test_workspace_scoped_boundary_defaults_to_deliveries(
 
     assert boundary.working_directory == deliveries_root()
     assert deliveries_root() in boundary.write_roots
+
+
+@pytest.mark.asyncio
+async def test_local_boundary_exposes_existing_unix_docker_socket_only_to_sandbox(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "bioinfoflow-product"
+    data_root = repo_root / "data"
+    socket_root = tmp_path / "docker-runtime"
+    docker_socket = socket_root / "docker.sock"
+    repo_root.mkdir()
+    data_root.mkdir()
+    socket_root.mkdir()
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
+    monkeypatch.setattr(
+        settings,
+        "agent_filesystem_roots",
+        str(socket_root),
+        raising=False,
+    )
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+
+    monkeypatch.chdir(socket_root)
+    unix_socket = socket.socket(socket.AF_UNIX)
+    unix_socket.bind(docker_socket.name)
+    try:
+        boundary = await LocalFilesystemBoundaryResolver(db_session).resolve(
+            SimpleNamespace(project_id=None, workspace_id=DEFAULT_WORKSPACE_ID)
+        )
+    finally:
+        unix_socket.close()
+
+    resolved_socket = docker_socket.resolve()
+    assert resolved_socket not in boundary.read_roots
+    assert resolved_socket not in boundary.write_roots
+    assert resolved_socket in boundary.sandbox_read_roots
+    assert resolved_socket in boundary.sandbox_write_roots
+    assert resolved_socket not in boundary.protected_roots
+    assert socket_root.resolve() not in boundary.read_roots
+    with pytest.raises(PermissionDeniedError, match="outside allowed roots"):
+        boundary.policy.require_allowed_path(resolved_socket)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("socket_kind", ["missing", "regular"])
+async def test_local_boundary_omits_unavailable_docker_socket_from_sandbox_roots(
+    db_session,
+    tmp_path,
+    monkeypatch,
+    socket_kind,
+):
+    repo_root = tmp_path / "bioinfoflow-product"
+    data_root = repo_root / "data"
+    docker_socket = tmp_path / "docker.sock"
+    repo_root.mkdir()
+    data_root.mkdir()
+    if socket_kind == "regular":
+        docker_socket.write_text("not a socket", encoding="utf-8")
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
+    monkeypatch.setattr(settings, "agent_filesystem_roots", "", raising=False)
+    monkeypatch.setattr(settings, "docker_socket", f"unix://{docker_socket}")
+
+    boundary = await LocalFilesystemBoundaryResolver(db_session).resolve(
+        SimpleNamespace(project_id=None, workspace_id=DEFAULT_WORKSPACE_ID)
+    )
+
+    assert docker_socket.resolve() not in boundary.sandbox_read_roots
+    assert docker_socket.resolve() not in boundary.sandbox_write_roots

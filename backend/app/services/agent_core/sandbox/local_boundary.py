@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +18,8 @@ class LocalFilesystemBoundary:
     working_directory: Path
     read_roots: tuple[Path, ...]
     write_roots: tuple[Path, ...]
+    sandbox_read_roots: tuple[Path, ...]
+    sandbox_write_roots: tuple[Path, ...]
     protected_roots: tuple[Path, ...]
     policy: FilesystemPolicy
 
@@ -47,10 +50,19 @@ class LocalFilesystemBoundaryResolver:
             protected_roots=protected_roots,
             default_root=working_directory,
         )
+        docker_socket = _existing_unix_docker_socket()
+        sandbox_read_roots = _dedupe(
+            [*policy.read_roots, *([docker_socket] if docker_socket else [])]
+        )
+        sandbox_write_roots = _dedupe(
+            [*policy.write_roots, *([docker_socket] if docker_socket else [])]
+        )
         return LocalFilesystemBoundary(
             working_directory=working_directory.resolve(),
             read_roots=tuple(policy.read_roots),
             write_roots=tuple(policy.write_roots),
+            sandbox_read_roots=tuple(sandbox_read_roots),
+            sandbox_write_roots=tuple(sandbox_write_roots),
             protected_roots=tuple(policy.protected_roots),
             policy=policy,
         )
@@ -60,10 +72,19 @@ async def local_boundary_from_tool_context(context) -> LocalFilesystemBoundary:
     if getattr(context, "db", None) is not None and hasattr(context, "workspace_id"):
         return await LocalFilesystemBoundaryResolver(context.db).resolve(context)
     policy = FilesystemPolicy()
+    docker_socket = _existing_unix_docker_socket()
+    sandbox_read_roots = _dedupe(
+        [*policy.read_roots, *([docker_socket] if docker_socket else [])]
+    )
+    sandbox_write_roots = _dedupe(
+        [*policy.write_roots, *([docker_socket] if docker_socket else [])]
+    )
     return LocalFilesystemBoundary(
         working_directory=policy.default_root,
         read_roots=tuple(policy.read_roots),
         write_roots=tuple(policy.write_roots),
+        sandbox_read_roots=tuple(sandbox_read_roots),
+        sandbox_write_roots=tuple(sandbox_write_roots),
         protected_roots=tuple(policy.protected_roots),
         policy=policy,
     )
@@ -94,9 +115,6 @@ def _protected_roots() -> list[Path]:
     repo_root = Path(settings.repo_root).expanduser().resolve()
     data_root = Path(settings.bioinfoflow_home).expanduser().resolve()
     protected = [Path(settings.state_root).expanduser().resolve()]
-    docker_socket = _docker_socket_path()
-    if docker_socket is not None:
-        protected.append(docker_socket)
 
     backend_root = Path(BACKEND_ROOT).resolve()
     for name in ("app", "alembic", "scripts", "tests"):
@@ -144,3 +162,14 @@ def _docker_socket_path() -> Path | None:
     if not value.startswith("unix://"):
         return None
     return Path(value.removeprefix("unix://")).expanduser().resolve()
+
+
+def _existing_unix_docker_socket() -> Path | None:
+    docker_socket = _docker_socket_path()
+    if docker_socket is None:
+        return None
+    try:
+        mode = docker_socket.stat().st_mode
+    except OSError:
+        return None
+    return docker_socket if stat.S_ISSOCK(mode) else None

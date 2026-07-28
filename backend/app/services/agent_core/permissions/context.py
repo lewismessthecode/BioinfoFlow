@@ -116,7 +116,16 @@ class PermissionContextResolver:
                 self.repository.session
             ).resolve(agent_session)
             effective_roots = tuple(
-                str(root)[:1000] for root in filesystem_boundary.read_roots[:16]
+                str(root)[:1000]
+                for root in filesystem_boundary.sandbox_read_roots[:16]
+            )
+            docker_socket_access = (
+                "read_write"
+                if any(
+                    root not in filesystem_boundary.write_roots
+                    for root in filesystem_boundary.sandbox_write_roots
+                )
+                else "unavailable"
             )
             runner = SandboxRunner.from_settings()
             adapter = runner.available_adapter() if runner.enabled else None
@@ -129,6 +138,7 @@ class PermissionContextResolver:
                 "filesystem_policy": "capability_roots",
                 "roots_enforced_by": "os_sandbox" if sandboxed else "application_policy",
                 "network_allowed": runner.allow_network if sandboxed else True,
+                "docker_socket_access": docker_socket_access,
             }
         role_profile = str(agent_session.role_profile)
         context = PermissionContext(
