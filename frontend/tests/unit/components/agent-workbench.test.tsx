@@ -1478,6 +1478,9 @@ describe("AgentWorkbench", () => {
     const openAgents = await screen.findByRole("button", { name: "Open agents workspace" })
     fireEvent.click(openAgents)
 
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1/artifacts")
+    })
     expect(screen.queryByTestId("agent-environment-floating-panel")).not.toBeInTheDocument()
     expect(screen.getByRole("tabpanel")).toHaveAttribute("id", "agent-sidecar-panel-agents")
     expect(screen.getByRole("option", { name: /reader/i })).toBeInTheDocument()
