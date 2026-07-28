@@ -25,9 +25,7 @@ const auditedSemanticSources = [
   "components/bioinfoflow/run-stage-panel.tsx",
   "components/bioinfoflow/settings/llm-catalog-panel.tsx",
   "components/auth/demo-auth-screen.tsx",
-  "components/landing/bento-grid.tsx",
   "components/landing/hardware-section.tsx",
-  "components/landing/hero-section.tsx",
 ] as const
 
 const retiredSemanticColors =
