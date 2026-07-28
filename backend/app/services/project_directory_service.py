@@ -527,14 +527,6 @@ def _entry_matches_identity(
     )
 
 
-def _entry_is_directory(parent_fd: int, name: str) -> bool:
-    try:
-        entry_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
-    except OSError:
-        return False
-    return stat.S_ISDIR(entry_stat.st_mode)
-
-
 def _entry_exists_at(parent_fd: int, name: str) -> bool:
     try:
         os.stat(name, dir_fd=parent_fd, follow_symlinks=False)

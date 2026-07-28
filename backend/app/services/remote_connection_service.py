@@ -46,17 +46,6 @@ class RemoteConnectionTester(Protocol):
     ) -> RemoteConnectionTestResult: ...
 
 
-class UnavailableRemoteConnectionTester:
-    async def test(
-        self, connection: RemoteConnectionConfig
-    ) -> RemoteConnectionTestResult:
-        del connection
-        return RemoteConnectionTestResult(
-            status=RemoteConnectionStatus.ERROR,
-            error="SSH connection testing is not configured",
-        )
-
-
 class SshRemoteConnectionTester:
     def __init__(self, executor: SshRemoteExecutor | None = None) -> None:
         self.executor = executor or SshRemoteExecutor()

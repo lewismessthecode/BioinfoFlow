@@ -1,8 +1,6 @@
 """Run lifecycle operations extracted from RunService.
 
-Contains create_run, cancel_run, resume_run, retry_run, cleanup_run,
-get_logs, append_run_log, and all supporting preflight / validation
-helpers.
+Contains cancel, resume, retry, cleanup, log, and output operations.
 
 All callers should import RunService from run_service.py — never import
 this module directly.
@@ -54,11 +52,9 @@ from app.services.run_dispatch import (
 )
 from app.services.run_helpers import (
     binary_exists as _h_binary_exists,
-    build_resolved_runspec,
     config_helper,
     copy_config,
     expand_brace_glob_patterns,
-    generate_run_id,
     has_glob,
     is_external_reference,
     is_path_like_key,
@@ -67,10 +63,8 @@ from app.services.run_helpers import (
     now as utc_now,
     resolve_resume_token,
     safe_workspace,
-    sync_run_config_aliases,
 )
 from app.services.run_input_policy import is_managed_run_directory_name
-from app.services.run_profile_service import RunProfileService
 from app.services.workflow_form_spec import effective_workflow_form_spec
 from app.utils.exceptions import PermissionDeniedError
 from app.utils.project_access import can_access_run_project
@@ -89,7 +83,6 @@ class RunLifecycleService:
         self.project_repo = ProjectRepository(session)
         self.workflow_repo = WorkflowRepository(session)
         self.binding_repo = ProjectWorkflowBindingRepository(session)
-        self.profile_service = RunProfileService()
         self.authorization = AuthorizationService(session)
         self._dispatcher = dispatcher or get_run_dispatcher()
         self._archive = RunArchiveService(self.project_repo)
@@ -547,24 +540,6 @@ class RunLifecycleService:
 
     # ── preflight ─────────────────────────────────────────────────────────
 
-    async def _preflight_run(
-        self,
-        *,
-        workflow,
-        workspace_path: Path,
-        params: dict,
-        inputs: dict,
-    ) -> None:
-        engine = str(getattr(workflow.engine, "value", workflow.engine))
-        self._require_engine_binary(engine)
-        self._require_workflow_source(workflow)
-        self._validate_path_like_values(
-            workspace_path=workspace_path, payload=params, label="param"
-        )
-        self._validate_path_like_values(
-            workspace_path=workspace_path, payload=inputs, label="input"
-        )
-
     def _require_engine_binary(self, engine: str) -> None:
         binary: str | None = None
         try:
@@ -636,13 +611,6 @@ class RunLifecycleService:
 
             raise WorkflowNotEnabledError("workflow not enabled for project")
 
-    async def _persist_run_archive(
-        self, *, run: Run, workspace_path: Path, engine: str
-    ) -> None:
-        await self._archive.persist_run_archive(
-            run=run, workspace_path=workspace_path, engine=engine
-        )
-
     async def _require_run_access(
         self,
         run: Run,
@@ -680,13 +648,6 @@ class RunLifecycleService:
             raise FileNotFoundError("run not found")
         return await self._normalize_run_status(run)
 
-    def _build_resolved_runspec(
-        self, *, workspace_path: Path, params: dict, inputs: dict
-    ) -> dict:
-        return build_resolved_runspec(
-            workspace_path=workspace_path, params=params, inputs=inputs
-        )
-
     def _resolve_resume_token(self, run: Run) -> str | None:
         return resolve_resume_token(run)
 
@@ -709,9 +670,6 @@ class RunLifecycleService:
         await publish_run_status(run, message="Run cancelled")
         return run
 
-    def _generate_run_id(self) -> str:
-        return generate_run_id()
-
     def _safe_workspace(self, root: Path, relative_path: str) -> Path:
         return safe_workspace(root, relative_path)
 
@@ -726,29 +684,6 @@ class RunLifecycleService:
 
     def _audit(self) -> AuditService:
         return AuditService(self.session)
-
-    async def _finalize_new_run(
-        self,
-        run: Run,
-        *,
-        action: str,
-        message: str,
-        details: dict | None = None,
-        priority: str = "normal",
-    ) -> Run:
-        """Queue a newly created run: update status, audit, publish, dispatch."""
-        run = await self.repo.update(run, status=RunStatus.QUEUED.value)
-        await self._audit().log(
-            action=action,
-            resource_type="run",
-            resource_id=run.run_id,
-            project_id=str(run.project_id),
-            actor="api",
-            details=details or {},
-        )
-        await publish_run_status(run, message=message)
-        self._dispatcher.dispatch(run.run_id, priority=priority)
-        return run
 
     async def _compile_replayed_run(
         self,
@@ -883,24 +818,6 @@ class RunLifecycleService:
         if not payload:
             return None
         return RunOptions.model_validate(payload)
-
-    def _sync_run_config_aliases(
-        self,
-        config: dict,
-        *,
-        params: dict | None = None,
-        inputs: dict | None = None,
-        config_overrides: dict | None = None,
-        resolved_runspec: dict | None = None,
-    ) -> dict:
-        return sync_run_config_aliases(
-            config,
-            params=params,
-            inputs=inputs,
-            config_overrides=config_overrides,
-            resolved_runspec=resolved_runspec,
-        )
-
 
 def _values_from_engine_payloads(
     *,

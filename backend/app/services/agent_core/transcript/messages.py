@@ -241,20 +241,6 @@ def responses_continuation_from_metadata(
     )
 
 
-def latest_responses_continuation(
-    messages: list[Any],
-    *,
-    turn_id: str | None = None,
-    target: ModelTarget | None = None,
-) -> ResponsesContinuation | None:
-    anchor = latest_responses_continuation_anchor(
-        messages,
-        turn_id=turn_id,
-        target=target,
-    )
-    return anchor.continuation if anchor is not None else None
-
-
 def latest_responses_continuation_anchor(
     messages: list[Any],
     *,

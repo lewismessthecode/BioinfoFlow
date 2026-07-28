@@ -1321,10 +1321,6 @@ def _inline_code_contains_known_hardline(code: str) -> bool:
     return False
 
 
-def _first_positional(args: list[str]) -> str | None:
-    return next((arg for arg in args if not arg.startswith("-")), None)
-
-
 def _systemctl_verb(args: list[str]) -> tuple[str | None, bool]:
     remaining, confident = _skip_wrapper_options(
         list(args),

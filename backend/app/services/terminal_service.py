@@ -583,13 +583,6 @@ class TerminalSessionManager:
                 async with self._lock:
                     self._evict_session_locked(session)
 
-    async def _running_session(self, session_id: str) -> _TerminalSession:
-        async with self._lock:
-            session = self._require_session(session_id)
-            if session.status != "running":
-                raise KeyError(session_id)
-            return session
-
     async def _interactive_session(self, session_id: str) -> _TerminalSession:
         async with self._lock:
             session = self._require_session(session_id)

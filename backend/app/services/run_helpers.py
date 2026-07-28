@@ -5,14 +5,11 @@ Every function here is stateless — it depends only on its arguments.
 
 from __future__ import annotations
 
-import csv
-import io
 import json
 import re
 import secrets
 import shutil
 import uuid
-from collections.abc import Callable, Sequence
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -393,35 +390,3 @@ def build_mock_variant_dag(source_dag: dict, variant: str) -> dict:
 
 def now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-# ── samplesheet CSV writer ───────────────────────────────────────────────────
-
-
-def write_samplesheet_csv(
-    workspace_path: Path,
-    samples: list[dict],
-    dest: Path,
-    *,
-    headers: Sequence[str],
-    extract_row: Callable[[dict], tuple[list[str], list[str]]],
-    error_label: str,
-) -> None:
-    """Write a samplesheet CSV for any input mode.
-
-    *extract_row* receives a sample dict and returns
-    ``(csv_values, relative_file_paths)`` — values to write and paths
-    to validate inside *workspace_path*.  Raise ``ValueError`` with
-    *error_label* when required fields are missing.
-    """
-    buf = io.StringIO()
-    writer = csv.writer(buf, lineterminator="\n")
-    writer.writerow(headers)
-    for row in samples:
-        values, rel_paths = extract_row(row)
-        for rp in rel_paths:
-            resolved = safe_workspace(workspace_path, rp)
-            if not resolved.exists():
-                raise FileNotFoundError(f"sample {error_label} not found")
-        writer.writerow(values)
-    dest.write_text(buf.getvalue(), encoding="utf-8")

@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 
 PROMPT_SNAPSHOT_ID = "bioinfoflow-agent-v11"
-
-_VERSION_RE = re.compile(r"-v(\d+)$")
-
 
 # The stable identity prefix. This is the cache-stable portion of the system
 # prompt: it must stay byte-identical across turns so providers can reuse the
@@ -434,14 +430,6 @@ def default_system_prompt_snapshot(
             f"{normalized_instructions}"
         )
     return SystemPromptSnapshot(id=PROMPT_SNAPSHOT_ID, content=content)
-
-
-def snapshot_version(snapshot_id: str | None) -> int:
-    """Parse the trailing ``-v<N>`` from a snapshot id, defaulting to 0."""
-    if not snapshot_id:
-        return 0
-    match = _VERSION_RE.search(str(snapshot_id))
-    return int(match.group(1)) if match else 0
 
 
 def resolve_system_prompt_prefix(stored_snapshot: dict | None) -> str:
