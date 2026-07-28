@@ -92,7 +92,8 @@ describe("ProgressTab", () => {
 })
 
 describe("AgentEnvironmentCard", () => {
-  it("shows the live child agent tree from lifecycle events", () => {
+  it("shows only a child-agent summary entry and opens the workspace", () => {
+    const onOpenAgents = vi.fn()
     render(
       <AgentEnvironmentCard
         projectId="project-1"
@@ -117,11 +118,16 @@ describe("AgentEnvironmentCard", () => {
           },
         ]}
         artifacts={[]}
+        onOpenAgents={onOpenAgents}
       />,
     )
 
-    expect(screen.getByText("/root/reader")).toBeInTheDocument()
-    expect(screen.getByText("cheap-model")).toBeInTheDocument()
+    expect(screen.queryByText("/root/reader")).not.toBeInTheDocument()
+    expect(screen.queryByText("cheap-model")).not.toBeInTheDocument()
+    const open = screen.getByRole("button", { name: "agentWorkspace.open" })
+    expect(open).toHaveTextContent("agentWorkspace.summary")
+    fireEvent.click(open)
+    expect(onOpenAgents).toHaveBeenCalledTimes(1)
   })
 
   it("shows the normalized remote execution target without implying every tool is remote", () => {
@@ -526,9 +532,11 @@ describe("AgentTabbedPanel", () => {
     expect(screen.queryByText("artifacts.count")).not.toBeInTheDocument()
     const artifactsTab = screen.getByRole("tab", { name: "tabs.artifacts" })
     const filesTab = screen.getByRole("tab", { name: "tabs.files" })
+    const agentsTab = screen.getByRole("tab", { name: "tabs.agents" })
     const browserTab = screen.getByRole("tab", { name: "tabs.browser" })
     expect(within(artifactsTab).queryByText("tabs.artifacts")).not.toBeInTheDocument()
     expect(within(filesTab).queryByText("tabs.files")).not.toBeInTheDocument()
+    expect(within(agentsTab).queryByText("tabs.agents")).not.toBeInTheDocument()
     expect(within(browserTab).queryByText("tabs.browser")).not.toBeInTheDocument()
     expect(artifactsTab).toHaveAttribute(
       "aria-selected",
@@ -548,6 +556,46 @@ describe("AgentTabbedPanel", () => {
       key: "ArrowRight",
     })
     expect(onActiveTabChange).toHaveBeenCalledWith("files")
+  })
+
+  it("renders lifecycle events in the dedicated agents workspace", () => {
+    render(
+      <AgentTabbedPanel
+        projectId="project-1"
+        sessionId={null}
+        events={[
+          {
+            id: "agent-event",
+            session_id: "session-1",
+            turn_id: "turn-1",
+            seq: 1,
+            type: "agent.lifecycle",
+            payload: {
+              child_session_id: "child-1",
+              child_turn_id: "child-turn-1",
+              task_name: "/root/reader",
+              status: "completed",
+              final_text: "README inspected.",
+            },
+            visibility: "user",
+            schema_version: 1,
+            created_at: "2026-07-28T00:00:00Z",
+            updated_at: "2026-07-28T00:00:00Z",
+          },
+        ]}
+        activeTab="agents"
+        onActiveTabChange={vi.fn()}
+        browserInput=""
+        browserSrc=""
+        onBrowserInputChange={vi.fn()}
+        onBrowserSrcChange={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole("listbox", { name: "agentWorkspace.listLabel" })).toBeInTheDocument()
+    expect(screen.getAllByText("README inspected.")).toHaveLength(2)
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("id", "agent-sidecar-panel-agents")
   })
 
   it("can render desktop sidecar content without local toolbar chrome", () => {

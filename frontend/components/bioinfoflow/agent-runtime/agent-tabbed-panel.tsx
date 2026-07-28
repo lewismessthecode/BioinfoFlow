@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react"
-import { FileBox, FolderTree, Globe, RotateCw, type AppIcon, X } from "@/lib/icons"
+import { Bot, FileBox, FolderTree, Globe, RotateCw, type AppIcon, X } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -10,17 +10,19 @@ import {
   decisionScrollTargetId,
   deliverableArtifacts,
   listAgentRuntimeSessionArtifacts,
+  reduceAgentTree,
   type AgentRuntimeArtifact,
   type AgentRuntimeEvent,
 } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 import { ArtifactPreviewDrawer } from "./artifact-preview-drawer"
+import { AgentWorkspace } from "./agent-workspace"
 import { BrowserTab } from "./browser-tab"
 import { jumpToDecisionTarget } from "./decision-focus"
 import { getPendingActions } from "./pending-actions"
 import { WorkspaceExplorerPanel } from "./workspace-explorer-panel"
 
-export type AgentTabbedPanelTab = "files" | "preview" | "browser"
+export type AgentTabbedPanelTab = "files" | "preview" | "agents" | "browser"
 
 type AgentTabbedPanelProps = {
   projectId?: string | null
@@ -48,6 +50,7 @@ const TABS: Array<{
 }> = [
   { key: "preview", labelKey: "tabs.artifacts", iconName: "file-box", Icon: FileBox },
   { key: "files", labelKey: "tabs.files", iconName: "folder-tree", Icon: FolderTree },
+  { key: "agents", labelKey: "tabs.agents", iconName: "bot", Icon: Bot },
   { key: "browser", labelKey: "tabs.browser", iconName: "globe", Icon: Globe },
 ]
 
@@ -136,6 +139,7 @@ export function AgentTabbedPanel({
   const effectiveArtifactError =
     sessionId && artifactStateMatchesRequest ? artifactLoadState.error : null
   const pendingDecision = useMemo(() => getPendingActions(events)[0] ?? null, [events])
+  const agents = useMemo(() => reduceAgentTree(events), [events])
   const pendingDecisionActionId = pendingDecision
     ? String(pendingDecision.payload.action_id || "")
     : null
@@ -276,7 +280,9 @@ export function AgentTabbedPanel({
             ? "overflow-y-auto p-3"
             : activeTab === "files"
               ? "overflow-hidden"
-              : "overflow-hidden p-3",
+              : activeTab === "agents"
+                ? "overflow-hidden"
+                : "overflow-hidden p-3",
         )}
         role="tabpanel"
         id={`agent-sidecar-panel-${activeTab}`}
@@ -293,6 +299,9 @@ export function AgentTabbedPanel({
             hasSession={Boolean(sessionId)}
             onRetry={() => setArtifactReloadNonce((value) => value + 1)}
           />
+        ) : null}
+        {activeTab === "agents" ? (
+          <AgentWorkspace agents={agents} variant={variant} />
         ) : null}
         {activeTab === "browser" ? (
           <BrowserTab

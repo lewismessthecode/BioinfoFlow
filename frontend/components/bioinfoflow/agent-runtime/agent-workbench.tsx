@@ -1650,6 +1650,12 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       })
     }, [])
 
+    const openAgentsWorkspace = useCallback(() => {
+      setEnvironmentOpen(false)
+      setActiveSidecarTab("agents")
+      setSidecarOpen(true)
+    }, [])
+
     const resizeSidecar = useCallback((delta: number) => {
       setSidecarWidth((current) => {
         const visibleWidth = clampSidecarWidth(current, sidecarMaxWidth)
@@ -2017,6 +2023,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 session={state.session}
                 events={state.events}
                 artifacts={transcriptArtifacts}
+                onOpenAgents={openAgentsWorkspace}
               />
             </div>
           ) : null}

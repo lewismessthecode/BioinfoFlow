@@ -295,6 +295,7 @@ export type AgentTreeNode = {
   taskPath: string
   status: AgentLifecycleStatus
   sequence: number
+  updatedAt?: string | null
   requestedModel?: string | null
   effectiveModel?: string | null
   modelFallback?: boolean

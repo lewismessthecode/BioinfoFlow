@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { reduceAgentTree } from "@/lib/agent-runtime/agent-tree"
+import { reduceAgentTree, summarizeAgentTree } from "@/lib/agent-runtime/agent-tree"
 import type { AgentRuntimeEvent } from "@/lib/agent-runtime/types"
 
 describe("reduceAgentTree", () => {
@@ -81,6 +81,23 @@ describe("reduceAgentTree", () => {
     expect(tree[0].errorMessage).toBeUndefined()
     expect(tree[0].terminationReason).toBeUndefined()
     expect(tree[0].tokenUsage).toBeUndefined()
+  })
+
+  it("summarizes active, completed, and attention states", () => {
+    const summary = summarizeAgentTree([
+      reduceAgentTree([lifecycle(1, "pending", "/root/pending", "pending_init")])[0],
+      reduceAgentTree([lifecycle(2, "running", "/root/running", "running")])[0],
+      reduceAgentTree([lifecycle(3, "done", "/root/done", "completed")])[0],
+      reduceAgentTree([lifecycle(4, "failed", "/root/failed", "errored")])[0],
+      reduceAgentTree([lifecycle(5, "stopped", "/root/stopped", "interrupted")])[0],
+    ])
+
+    expect(summary).toEqual({
+      total: 5,
+      active: 2,
+      completed: 1,
+      attention: 2,
+    })
   })
 })
 

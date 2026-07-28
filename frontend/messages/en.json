@@ -3023,6 +3023,7 @@
       "artifacts": "Artifacts",
       "progress": "Progress",
       "files": "Files",
+      "agents": "Agents",
       "browser": "Browser"
     },
     "toolsPanel": {
@@ -3075,6 +3076,26 @@
       "noFinalText": "Completed without a final summary.",
       "unknownError": "Agent failed before completing the task.",
       "interrupted": "Agent was interrupted."
+    },
+    "agentWorkspace": {
+      "title": "Agents",
+      "empty": "No agents yet",
+      "open": "Open agents workspace",
+      "summary": "{total, plural, one {# agent} other {# agents}} · {active} active",
+      "back": "Back to agents",
+      "listLabel": "Agent tasks",
+      "detailLabel": "Agent details",
+      "sessionId": "Session",
+      "turnId": "Turn",
+      "model": "Model",
+      "requestedModel": "Requested model",
+      "fallback": "Fallback",
+      "terminationReason": "Termination",
+      "tokenUsage": "Tokens",
+      "noSummary": "No final summary",
+      "runningPreview": "Working on the assigned task",
+      "pendingPreview": "Preparing the child agent",
+      "interruptedPreview": "Agent was interrupted"
     },
     "progress": {
       "tasks": "Tasks",

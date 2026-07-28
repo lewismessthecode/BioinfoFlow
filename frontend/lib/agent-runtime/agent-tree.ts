@@ -42,6 +42,7 @@ export function reduceAgentTree(events: AgentRuntimeEvent[]): AgentTreeNode[] {
         stringValue(event.payload.task_name) ?? previous?.taskPath ?? `/root/${childSessionId}`,
       status,
       sequence: event.seq,
+      updatedAt: event.created_at ?? previous?.updatedAt,
       requestedModel: valueOrPrevious(
         event.payload.requested_model,
         previous?.requestedModel,
@@ -81,6 +82,23 @@ export function reduceAgentTree(events: AgentRuntimeEvent[]): AgentTreeNode[] {
 
   return [...agents.values()].sort(
     (a, b) => a.taskPath.localeCompare(b.taskPath) || a.childSessionId.localeCompare(b.childSessionId),
+  )
+}
+
+export function summarizeAgentTree(agents: AgentTreeNode[]) {
+  return agents.reduce(
+    (summary, agent) => {
+      summary.total += 1
+      if (agent.status === "pending_init" || agent.status === "running") {
+        summary.active += 1
+      } else if (agent.status === "completed") {
+        summary.completed += 1
+      } else {
+        summary.attention += 1
+      }
+      return summary
+    },
+    { total: 0, active: 0, completed: 0, attention: 0 },
   )
 }
 
