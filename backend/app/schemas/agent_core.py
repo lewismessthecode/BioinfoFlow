@@ -315,6 +315,7 @@ class AgentContextSearchRead(BaseModel):
 
 class AgentTurnCreate(BaseModel):
     input_text: str
+    mode: AgentMode | None = None
     input_parts: list[dict] | None = None
     active_skill_names: list[str] | None = None
     model_profile_id: UUID | None = None

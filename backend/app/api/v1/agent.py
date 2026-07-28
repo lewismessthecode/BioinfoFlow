@@ -495,6 +495,7 @@ async def create_turn(
         workspace_id=user.workspace_id,
         user_id=user.id,
         input_text=payload.input_text,
+        mode=payload.mode,
         input_parts=payload.input_parts,
         active_skill_names=payload.active_skill_names,
         model_profile_id=str(payload.model_profile_id)

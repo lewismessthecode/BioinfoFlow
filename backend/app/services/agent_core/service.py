@@ -62,7 +62,10 @@ from app.services.agent_core.skills import (
     normalize_skill_names,
     resolve_active_skills,
 )
-from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
+from app.services.agent_core.tools.toolsets import (
+    EXECUTION_TOOLSET_POLICY,
+    PLAN_TOOLSET_POLICY,
+)
 from app.services.agent_core.tools.batches import ToolCallBatchCoordinator
 from app.services.agent_core.transcript import (
     AgentTranscriptStore,
@@ -468,6 +471,7 @@ class AgentCoreService:
         workspace_id: str,
         user_id: str,
         input_text: str,
+        mode: str | None = None,
         input_parts: list[dict] | None = None,
         active_skill_names: list[str] | None = None,
         model_profile_id: str | None = None,
@@ -484,6 +488,19 @@ class AgentCoreService:
         )
         session_updates: dict[str, object] = {}
         increment_policy_version = False
+        requested_toolset_policy = (
+            PLAN_TOOLSET_POLICY
+            if mode == "plan"
+            else EXECUTION_TOOLSET_POLICY
+            if mode == "execution"
+            else None
+        )
+        if (
+            requested_toolset_policy is not None
+            and requested_toolset_policy != session.toolset_policy
+        ):
+            session_updates["toolset_policy"] = requested_toolset_policy
+            increment_policy_version = True
         if execution_target is not None:
             previous_target = execution_target_from_session(session)
             next_metadata = session_metadata_with_execution_target(
@@ -491,9 +508,13 @@ class AgentCoreService:
                 execution_target,
             )
             session_updates["session_metadata"] = next_metadata
-            increment_policy_version = previous_target != normalize_execution_target(
-                None,
-                metadata=next_metadata,
+            increment_policy_version = (
+                increment_policy_version
+                or previous_target
+                != normalize_execution_target(
+                    None,
+                    metadata=next_metadata,
+                )
             )
         if execution_scope is not None:
             previous_target = execution_target_from_session(session)
@@ -624,6 +645,7 @@ class AgentCoreService:
         workspace_id: str,
         user_id: str,
         input_text: str,
+        mode: str | None = None,
         input_parts: list[dict] | None = None,
         active_skill_names: list[str] | None = None,
         model_profile_id: str | None = None,
@@ -637,6 +659,7 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
             input_text=input_text,
+            mode=mode,
             input_parts=input_parts,
             active_skill_names=active_skill_names,
             model_profile_id=model_profile_id,
