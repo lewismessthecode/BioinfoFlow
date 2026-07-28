@@ -75,10 +75,10 @@ from app.services.storage_service import StorageService
 from app.services.workflow_form_spec import effective_workflow_form_spec
 from app.services.container_registry_service import ContainerRegistryService
 from app.services.workflow_image_service import (
+    WorkflowImageRequirement,
     WorkflowImageRegistry,
+    resolve_workflow_image_requirements_with_credentials,
     rewrite_wdl_static_container_literals,
-    runtime_workflow_container_images,
-    workflow_container_images,
     workflow_registry_from_auth_material,
 )
 from app.utils.project_access import can_access_project
@@ -326,12 +326,13 @@ class RunCompiler:
                 workflow,
                 project_id=str(payload.project_id),
             )
-            if engine == WorkflowEngine.NEXTFLOW.value and image_registry is not None:
-                _set_config_override(
-                    config,
-                    "docker.registry",
-                    image_registry.image_prefix,
+            image_requirements = (
+                await resolve_workflow_image_requirements_with_credentials(
+                    self.session,
+                    getattr(workflow, "schema_json", None),
+                    selected_registry=image_registry,
                 )
+            )
             config = self._enrich_runtime(
                 config,
                 workflow=workflow,
@@ -340,9 +341,19 @@ class RunCompiler:
                 run_id=run_id,
                 engine=engine,
                 image_registry=image_registry,
+                image_requirements=image_requirements,
             )
             if extra_config:
                 config = _merge_config_patch(config, extra_config)
+            if engine == WorkflowEngine.NEXTFLOW.value:
+                if image_registry is not None:
+                    _set_config_override(
+                        config,
+                        "docker.registry",
+                        image_registry.image_prefix,
+                    )
+                else:
+                    _remove_config_override(config, "docker.registry")
 
             # ── build launch spec via adapter ──────────────────────────────────
             # Run pre_submit + build_command here (not just at dispatch) so
@@ -953,7 +964,8 @@ class RunCompiler:
         layout: RunLayout,
         run_id: str,
         engine: str,
-        image_registry: WorkflowImageRegistry | None = None,
+        image_requirements: list[WorkflowImageRequirement],
+        image_registry: WorkflowImageRegistry | None,
     ) -> dict:
         """Add runtime paths the adapter needs at command-build time.
 
@@ -968,10 +980,9 @@ class RunCompiler:
             (layout.audit / "trace.tsv").relative_to(workspace_path)
         )
         runtime["work_dir"] = str(layout.engine_workspace.relative_to(workspace_path))
-        required_images = _required_container_images(
-            getattr(workflow, "schema_json", None),
-            image_registry=image_registry,
-        )
+        required_images = [
+            requirement.runtime_dict() for requirement in image_requirements
+        ]
         if required_images:
             runtime["required_images"] = required_images
         if engine == WorkflowEngine.WDL.value:
@@ -1032,7 +1043,7 @@ class RunCompiler:
         if registry_id:
             material = await registry_service.resolve_auth_material(str(registry_id))
             return workflow_registry_from_auth_material(material)
-        registry = await registry_service.get_effective_registry(project_id=project_id)
+        registry = await registry_service.get_project_registry(project_id=project_id)
         if registry is None:
             return None
         material = await registry_service.resolve_auth_material(str(registry.id))
@@ -1303,19 +1314,6 @@ def _merge_values_with_defaults(
     return merged
 
 
-def _required_container_images(
-    schema_json: dict | None,
-    *,
-    image_registry: WorkflowImageRegistry | None = None,
-) -> list[Any]:
-    if image_registry is not None:
-        return runtime_workflow_container_images(
-            schema_json,
-            default_registry=image_registry,
-        )
-    return workflow_container_images(schema_json)
-
-
 def _set_config_override(config: dict, key: str, value: Any) -> None:
     overrides = dict(config.get("config_overrides") or {})
     overrides[key] = value
@@ -1324,6 +1322,18 @@ def _set_config_override(config: dict, key: str, value: Any) -> None:
     request = dict(config.get("request") or {})
     request_overrides = dict(request.get("config_overrides") or {})
     request_overrides[key] = value
+    request["config_overrides"] = request_overrides
+    config["request"] = request
+
+
+def _remove_config_override(config: dict, key: str) -> None:
+    overrides = dict(config.get("config_overrides") or {})
+    overrides.pop(key, None)
+    config["config_overrides"] = overrides
+
+    request = dict(config.get("request") or {})
+    request_overrides = dict(request.get("config_overrides") or {})
+    request_overrides.pop(key, None)
     request["config_overrides"] = request_overrides
     config["request"] = request
 
@@ -1353,7 +1363,7 @@ def _write_resolved_wdl_workflow(
     content = workflow_path.read_text(encoding="utf-8")
     resolved = rewrite_wdl_static_container_literals(
         content,
-        default_registry=image_registry,
+        selected_registry=image_registry,
     )
     if resolved == content:
         return workflow_path

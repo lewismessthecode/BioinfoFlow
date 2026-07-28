@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import re
 from typing import Any
 
@@ -10,7 +10,7 @@ from app.services.container_registry_service import (
     ContainerRegistryAuthMaterial,
     ContainerRegistryService,
 )
-from app.services.docker_service import normalize_registry, qualified_image_reference
+from app.services.docker_service import normalize_registry
 from app.services.image_service import DockerUnavailableError, ImageService
 
 
@@ -83,10 +83,10 @@ class WorkflowImagePrefetchService:
         self,
         session: AsyncSession,
         *,
-        default_registry: WorkflowImageRegistry | None = None,
+        selected_registry: WorkflowImageRegistry | None = None,
     ) -> None:
         self.session = session
-        self.default_registry = default_registry
+        self.selected_registry = selected_registry
 
     async def prefetch_workflow(self, workflow) -> WorkflowImagePrefetchResult:
         selected_registry = None
@@ -96,7 +96,7 @@ class WorkflowImagePrefetchService:
         return await self.prefetch_schema(
             getattr(workflow, "schema_json", None),
             workflow_id=str(getattr(workflow, "id", "")),
-            registry=selected_registry,
+            selected_registry=selected_registry,
         )
 
     async def prefetch_schema(
@@ -105,16 +105,17 @@ class WorkflowImagePrefetchService:
         *,
         workflow_id: str | None = None,
         project_id: str | None = None,
-        registry: WorkflowImageRegistry | None = None,
+        selected_registry: WorkflowImageRegistry | None = None,
     ) -> WorkflowImagePrefetchResult:
         del workflow_id
-        selected_registry = registry or self.default_registry
-        if selected_registry is None:
-            selected_registry = await self._load_default_registry(project_id=project_id)
+        selected_registry = selected_registry or self.selected_registry
+        if selected_registry is None and project_id is not None:
+            selected_registry = await self._load_project_registry(project_id=project_id)
 
-        requirements = resolve_workflow_image_requirements(
+        requirements = await resolve_workflow_image_requirements_with_credentials(
+            self.session,
             schema_json,
-            default_registry=selected_registry,
+            selected_registry=selected_registry,
         )
         image_service = ImageService(self.session)
         enqueued: list[WorkflowImageRequirement] = []
@@ -142,13 +143,13 @@ class WorkflowImagePrefetchService:
             enqueued.append(requirement)
         return WorkflowImagePrefetchResult(enqueued=enqueued, failed=failed)
 
-    async def _load_default_registry(
+    async def _load_project_registry(
         self,
         *,
         project_id: str | None,
     ) -> WorkflowImageRegistry | None:
         registry_service = ContainerRegistryService(self.session)
-        registry = await registry_service.get_effective_registry(project_id=project_id)
+        registry = await registry_service.get_project_registry(project_id=project_id)
         if registry is None:
             return None
         material = await registry_service.resolve_auth_material(str(registry.id))
@@ -181,24 +182,86 @@ def workflow_container_images(schema_json: dict | None) -> list[str]:
 def resolve_workflow_image_requirements(
     schema_json: dict | None,
     *,
-    default_registry: WorkflowImageRegistry | None = None,
+    selected_registry: WorkflowImageRegistry | None = None,
 ) -> list[WorkflowImageRequirement]:
     return [
-        resolve_container_image_reference(image, default_registry=default_registry)
+        resolve_container_image_reference(image, selected_registry=selected_registry)
         for image in workflow_container_images(schema_json)
+    ]
+
+
+async def resolve_workflow_image_requirements_with_credentials(
+    session: AsyncSession,
+    schema_json: dict | None,
+    *,
+    selected_registry: WorkflowImageRegistry | None,
+) -> list[WorkflowImageRequirement]:
+    requirements = resolve_workflow_image_requirements(
+        schema_json,
+        selected_registry=selected_registry,
+    )
+    unresolved_hosts = {
+        requirement.registry
+        for requirement in requirements
+        if requirement.explicit_registry and requirement.registry_id is None
+    }
+    if not unresolved_hosts:
+        return requirements
+
+    registry_service = ContainerRegistryService(session)
+    registries_by_host = {
+        normalize_registry(registry.endpoint): registry
+        for registry in await registry_service.list_registries()
+        if normalize_registry(registry.endpoint) in unresolved_hosts
+    }
+    resolved: list[WorkflowImageRequirement] = []
+    materials: dict[str, WorkflowImageRegistry] = {}
+    for requirement in requirements:
+        registry = registries_by_host.get(requirement.registry)
+        if registry is None or requirement.registry_id is not None:
+            resolved.append(requirement)
+            continue
+        registry_id = str(registry.id)
+        material_registry = materials.get(registry_id)
+        if material_registry is None:
+            material_registry = workflow_registry_from_auth_material(
+                await registry_service.resolve_auth_material(registry_id)
+            )
+            materials[registry_id] = material_registry
+        resolved.append(
+            replace(
+                requirement,
+                registry_id=material_registry.registry_id,
+                auth_config=material_registry.auth_config,
+            )
+        )
+    return resolved
+
+
+def resolved_workflow_container_images(
+    schema_json: dict | None,
+    *,
+    selected_registry: WorkflowImageRegistry | None = None,
+) -> list[str]:
+    return [
+        requirement.full_name
+        for requirement in resolve_workflow_image_requirements(
+            schema_json,
+            selected_registry=selected_registry,
+        )
     ]
 
 
 def runtime_workflow_container_images(
     schema_json: dict | None,
     *,
-    default_registry: WorkflowImageRegistry | None = None,
+    selected_registry: WorkflowImageRegistry | None = None,
 ) -> list[dict[str, Any]]:
     return [
         requirement.runtime_dict()
         for requirement in resolve_workflow_image_requirements(
             schema_json,
-            default_registry=default_registry,
+            selected_registry=selected_registry,
         )
     ]
 
@@ -206,7 +269,7 @@ def runtime_workflow_container_images(
 def resolve_container_image_reference(
     reference: str,
     *,
-    default_registry: WorkflowImageRegistry | None,
+    selected_registry: WorkflowImageRegistry | None,
 ) -> WorkflowImageRequirement:
     image = reference.strip()
     name_part, tag = _split_tag(image)
@@ -215,22 +278,27 @@ def resolve_container_image_reference(
     auth_config: dict[str, Any] | None = None
     registry_id: str | None = None
 
-    if not explicit_registry and default_registry is not None:
-        default_endpoint = default_registry.normalized_endpoint
-        if default_endpoint:
-            namespace = default_registry.normalized_namespace
+    if not explicit_registry and selected_registry is not None:
+        selected_endpoint = selected_registry.normalized_endpoint
+        if selected_endpoint:
+            namespace = selected_registry.normalized_namespace
             if namespace:
                 name = f"{namespace}/{name}"
-            registry = default_endpoint
+            registry = selected_endpoint
             rewrite_applied = True
-            auth_config = default_registry.auth_config
-            registry_id = default_registry.registry_id
-    elif explicit_registry and default_registry is not None:
-        if default_registry.matches_registry(registry):
-            auth_config = default_registry.auth_config
-            registry_id = default_registry.registry_id
+            auth_config = selected_registry.auth_config
+            registry_id = selected_registry.registry_id
+    elif explicit_registry and selected_registry is not None:
+        if selected_registry.matches_registry(registry):
+            auth_config = selected_registry.auth_config
+            registry_id = selected_registry.registry_id
 
-    full_name = qualified_image_reference(name, tag, registry)
+    if rewrite_applied:
+        full_name = f"{registry}/{name}"
+        if _reference_has_tag(image):
+            full_name = f"{full_name}:{tag}"
+    else:
+        full_name = image
     return WorkflowImageRequirement(
         source_reference=image,
         name=name,
@@ -250,6 +318,10 @@ def _split_tag(full_name: str) -> tuple[str, str]:
         name, tag = full_name.rsplit(":", 1)
         return name, tag
     return full_name, "latest"
+
+
+def _reference_has_tag(full_name: str) -> bool:
+    return ":" in full_name.rsplit("/", 1)[-1]
 
 
 def _split_registry(name: str) -> tuple[str, str, bool]:
@@ -298,9 +370,9 @@ _WDL_CONTAINER_LITERAL_RE = re.compile(
 def rewrite_wdl_static_container_literals(
     content: str,
     *,
-    default_registry: WorkflowImageRegistry | None,
+    selected_registry: WorkflowImageRegistry | None,
 ) -> str:
-    if default_registry is None:
+    if selected_registry is None:
         return content
 
     def replace(match: re.Match[str]) -> str:
@@ -309,7 +381,7 @@ def rewrite_wdl_static_container_literals(
             return match.group(0)
         requirement = resolve_container_image_reference(
             image,
-            default_registry=default_registry,
+            selected_registry=selected_registry,
         )
         if requirement.full_name == image:
             return match.group(0)
