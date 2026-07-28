@@ -16,6 +16,7 @@ from app.repositories.agent_core_repo import (
     AgentActionRepository,
     AgentEventRepository,
     AgentMessageRepository,
+    AgentSessionRepository,
     AgentTurnRepository,
 )
 from app.services.agent_core import AgentCoreService
@@ -29,7 +30,15 @@ from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.tools.executor import ToolExecutionResult
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.model_runtime.errors import ModelError
-from app.services.model_runtime.contracts import ModelInvocation
+from app.services.model_runtime.contracts import (
+    CompletionMetadata,
+    ModelInvocation,
+    ResponseStarted,
+    TextDelta,
+    ToolCallDelta,
+    ToolResultPart,
+)
+from app.services.model_runtime.gateway import ModelGateway
 import app.services.agent_core.runner as runner_module
 from app.workspace import DEFAULT_WORKSPACE_ID
 from app.models.workspace import Workspace
@@ -1162,8 +1171,10 @@ async def test_runtime_fails_visibly_when_model_calls_unexposed_tool(
             pass
 
         class FakeFunction:
-            name = "bash"
-            arguments = json.dumps({"command": "echo should-not-run"})
+            name = "write"
+            arguments = json.dumps(
+                {"path": "/tmp/never-offered.txt", "content": "should-not-run"}
+            )
 
         class FakeToolCall:
             id = "tool-call-unexposed"
@@ -1210,6 +1221,99 @@ async def test_runtime_fails_visibly_when_model_calls_unexposed_tool(
     assert "not exposed" in (failed_turn.error_message or "")
     assert events[-1].type == "turn.failed"
     assert events[-1].payload["error_code"] == "tool_not_exposed"
+
+
+@pytest.mark.asyncio
+async def test_runtime_recovers_when_previously_offered_tool_becomes_unexposed(
+    db_session, db_engine, monkeypatch
+):
+    model_calls = 0
+    session_id: str | None = None
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def fake_invoke(_gateway, invocation: ModelInvocation):
+        nonlocal model_calls
+        model_calls += 1
+        yield ResponseStarted(streaming=False)
+        if model_calls == 1:
+            offered = {tool.name for tool in invocation.tools}
+            assert "write" in offered
+            assert session_id is not None
+            async with session_factory() as authorization_session:
+                repo = AgentSessionRepository(authorization_session)
+                authorized_session = await repo.get_fresh(session_id)
+                assert authorized_session is not None
+                await repo.update_all(
+                    authorized_session,
+                    toolset_policy={"name": "plan"},
+                    permission_policy_version=(
+                        authorized_session.permission_policy_version + 1
+                    ),
+                )
+
+            yield ToolCallDelta(
+                index=0,
+                call_id="tool-call-stale-offer",
+                name="write",
+                arguments_delta=json.dumps(
+                    {"path": "/tmp/stale-offer.txt", "content": "not written"}
+                ),
+            )
+            yield CompletionMetadata(response_id=None, finish_reason="tool_calls")
+        else:
+            tool_results = [
+                item
+                for item in invocation.input_items
+                if isinstance(item, ToolResultPart)
+            ]
+            assert [item.call_id for item in tool_results] == ["tool-call-stale-offer"]
+            payload = json.loads(tool_results[0].output)
+            assert payload["status"] == "failed"
+            assert payload["error"]["category"] == "tool_result"
+            assert payload["error"]["continuable"] is True
+            yield TextDelta(text="Recovered after the stale offer.")
+            yield CompletionMetadata(response_id=None, finish_reason="stop")
+
+    monkeypatch.setattr(
+        ModelGateway,
+        "invoke",
+        fake_invoke,
+    )
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="stale-offer-model")
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    session = await service.session_repo.update_all(
+        session, toolset_policy={"name": "execution"}
+    )
+    session_id = str(session.id)
+    turn = await service.create_turn_record(
+        session_id=session_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Use the tool that was offered to you.",
+    )
+
+    completed_turn = await service.runtime.run_turn(str(turn.id))
+
+    assert model_calls == 2
+    assert completed_turn.status == "completed"
+    assert completed_turn.final_text == "Recovered after the stale offer."
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    assert len(actions) == 1
+    assert actions[0].tool_call_id == "tool-call-stale-offer"
+    assert actions[0].status == AgentActionStatus.FAILED
+    assert actions[0].error["category"] == "tool_result"
+    assert actions[0].error["continuable"] is True
 
 
 @pytest.mark.asyncio

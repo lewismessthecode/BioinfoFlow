@@ -297,6 +297,7 @@ class AgentLoopController:
                 if tools_enabled
                 else []
             )
+            offered_tool_names = frozenset(spec.name for spec in visible_tools)
             continuation_anchor = await self._responses_continuation_anchor(
                 turn,
                 target=target,
@@ -428,6 +429,7 @@ class AgentLoopController:
                         expected_execution_target=expected_execution_target,
                         expected_execution_scope=expected_execution_scope,
                         skills_available=skills_available,
+                        offered_tool_names=offered_tool_names,
                     )
                     if active_continuation_batch_id is not None:
                         active_continuation_batch_id = None
@@ -829,6 +831,7 @@ class AgentLoopController:
         expected_execution_target: dict[str, str] | None = None,
         expected_execution_scope: dict[str, Any] | None = None,
         skills_available: bool = True,
+        offered_tool_names: frozenset[str] = frozenset(),
     ) -> tuple[bool, list[str], str | None]:
         session_id = str(agent_session.id)
         turn_id = str(turn.id)
@@ -845,6 +848,10 @@ class AgentLoopController:
             expected_owner_token=self._execution_owner_token,
         )
         prepared: list[tuple[dict[str, Any], str, ToolExecutionResult]] = []
+        canonical_tool_names = [
+            decode_provider_tool_name(tool_call["name"]) for tool_call in tool_calls
+        ]
+        preparing_tool_name: str | None = None
         try:
             locked_session = await self.sessions.lock_policy(session_id)
             if locked_session is None:
@@ -894,8 +901,10 @@ class AgentLoopController:
                 commit=False,
                 owner_fence_held=self._execution_owner_token is not None,
             )
-            for ordinal, tool_call in enumerate(tool_calls):
-                tool_name = decode_provider_tool_name(tool_call["name"])
+            for ordinal, (tool_call, tool_name) in enumerate(
+                zip(tool_calls, canonical_tool_names, strict=True)
+            ):
+                preparing_tool_name = tool_name
                 result = await self.executor.execute(
                     tool_name=tool_name,
                     input=tool_call["arguments"],
@@ -963,6 +972,52 @@ class AgentLoopController:
             )
             raise exc
         except Exception as exc:  # noqa: BLE001 - replace with a complete terminal batch
+            stale_exposure_candidate = (
+                isinstance(exc, PermissionDeniedError)
+                and _tool_permission_error_code(exc) == "tool_not_exposed"
+                and preparing_tool_name is not None
+                and bool(canonical_tool_names)
+                and all(name in offered_tool_names for name in canonical_tool_names)
+            )
+            recoverable_stale_exposure = False
+            if stale_exposure_candidate:
+                fresh_permission_context, _ = await PermissionContextResolver(
+                    self.db
+                ).resolve_with_session(
+                    session_id=session_id,
+                    workspace_id=str(turn.workspace_id),
+                    user_id=turn.user_id,
+                )
+                fresh_snapshot = fresh_permission_context.snapshot()
+                recoverable_stale_exposure = not self.executor.exposure.decide(
+                    tool_name=preparing_tool_name,
+                    policy=fresh_snapshot["toolset_policy"],
+                    role=fresh_permission_context.role,
+                    execution_target=fresh_snapshot["execution_target"],
+                    execution_scope=fresh_snapshot.get("execution_scope"),
+                    model_visible=True,
+                    skills_available=skills_available,
+                ).allowed
+            repair_error = None
+            repair_result = None
+            error_type = "BatchPreparationError"
+            error_message = str(exc)
+            if recoverable_stale_exposure:
+                error_type = "StaleToolExposure"
+                error_message = (
+                    "The tool was offered to the model for this invocation but is "
+                    "no longer exposed under the current authorization."
+                )
+                repair_error = {
+                    "type": error_type,
+                    "message": error_message,
+                    "category": "tool_result",
+                    "continuable": True,
+                }
+                repair_result = {
+                    "ok": False,
+                    "reason": "stale_tool_exposure",
+                }
             await self._persist_failed_preparation_batch(
                 batch_id=batch_id,
                 session_id=session_id,
@@ -976,13 +1031,31 @@ class AgentLoopController:
                 wire_protocol=wire_protocol,
                 action_status=AgentActionStatus.FAILED,
                 batch_status=AgentToolCallBatchStatus.FAILED,
-                error_type="BatchPreparationError",
-                error_message=str(exc),
+                error_type=error_type,
+                error_message=error_message,
+                action_error=repair_error,
+                action_result=repair_result,
                 prior_continuation_batch_id=prior_continuation_batch_id,
             )
-            if isinstance(exc, PermissionDeniedError):
+            if (
+                isinstance(exc, PermissionDeniedError)
+                and not recoverable_stale_exposure
+            ):
                 raise
             self._current_prepared_batch_id = None
+            if recoverable_stale_exposure:
+                repaired_actions = await self.actions.list_for_batch(batch_id)
+                repaired_actions.sort(key=lambda action: action.tool_call_ordinal)
+                return (
+                    False,
+                    [
+                        _tool_result_signature(
+                            action.name, _tool_result_for_terminal_action(action)
+                        )
+                        for action in repaired_actions
+                    ],
+                    None,
+                )
             return False, [], None
 
         fresh_turn = await self._ensure_turn_allows_tool_execution(turn_id)
@@ -1126,6 +1199,8 @@ class AgentLoopController:
         batch_status: str,
         error_type: str,
         error_message: str,
+        action_error: dict[str, Any] | None = None,
+        action_result: dict[str, Any] | None = None,
         prior_continuation_batch_id: str | None = None,
     ) -> None:
         await self.db.rollback()
@@ -1170,6 +1245,8 @@ class AgentLoopController:
             error_message=error_message,
             action_status=action_status,
             error_type=error_type,
+            error=action_error,
+            result=action_result,
             commit=False,
         )
         await self.tool_batches.batches.update_all_pending(
