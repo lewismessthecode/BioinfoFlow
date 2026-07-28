@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -471,7 +471,7 @@ class AgentCoreService:
         workspace_id: str,
         user_id: str,
         input_text: str,
-        mode: str | None = None,
+        mode: Literal["plan", "execution"] | None = None,
         input_parts: list[dict] | None = None,
         active_skill_names: list[str] | None = None,
         model_profile_id: str | None = None,
@@ -481,6 +481,8 @@ class AgentCoreService:
         metadata: dict | None = None,
         commit: bool = True,
     ):
+        if mode not in {None, "plan", "execution"}:
+            raise BadRequestError(f"Unsupported agent mode: {mode}")
         session = await self.require_session(
             session_id=session_id,
             workspace_id=workspace_id,
@@ -495,12 +497,6 @@ class AgentCoreService:
             if mode == "execution"
             else None
         )
-        if (
-            requested_toolset_policy is not None
-            and requested_toolset_policy != session.toolset_policy
-        ):
-            session_updates["toolset_policy"] = requested_toolset_policy
-            increment_policy_version = True
         if execution_target is not None:
             previous_target = execution_target_from_session(session)
             next_metadata = session_metadata_with_execution_target(
@@ -607,6 +603,7 @@ class AgentCoreService:
             turn_id=turn_id,
             session_updates=session_updates,
             increment_policy_version=increment_policy_version,
+            desired_toolset_policy=requested_toolset_policy,
             user_parts=transcript_parts,
             user_metadata=message_metadata_with_temporal_context(
                 {"turn_id": turn_id},
@@ -645,7 +642,7 @@ class AgentCoreService:
         workspace_id: str,
         user_id: str,
         input_text: str,
-        mode: str | None = None,
+        mode: Literal["plan", "execution"] | None = None,
         input_parts: list[dict] | None = None,
         active_skill_names: list[str] | None = None,
         model_profile_id: str | None = None,

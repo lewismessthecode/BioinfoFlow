@@ -19,7 +19,7 @@ from app.services.agent_core.execution_target import (
     session_metadata_with_execution_target,
 )
 from app.services.model_runtime.gateway import ModelGateway
-from app.utils.exceptions import ConflictError
+from app.utils.exceptions import BadRequestError, ConflictError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -333,6 +333,122 @@ async def test_target_update_and_turn_claim_are_one_atomic_decision(
         stored_session.active_turn_id == str(turn.id)
         and stored_session.session_metadata["execution_target"] == remote_target
     )
+
+
+@pytest.mark.asyncio
+async def test_requested_mode_and_turn_claim_are_one_atomic_decision(
+    db_session: AsyncSession,
+    db_engine,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    session = await AgentCoreService(db_session).create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        toolset_policy={"name": "plan"},
+    )
+    session_id = str(session.id)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    claim_ready = asyncio.Event()
+    release_claim = asyncio.Event()
+
+    async with maker() as turn_db, maker() as update_db:
+        turn_service = AgentCoreService(turn_db)
+        original_claim = turn_service.turn_repo.create_with_session_claim
+
+        async def claim_after_policy_update(*args, **kwargs):
+            claim_ready.set()
+            await release_claim.wait()
+            return await original_claim(*args, **kwargs)
+
+        monkeypatch.setattr(
+            turn_service.turn_repo,
+            "create_with_session_claim",
+            claim_after_policy_update,
+        )
+        turn_task = asyncio.create_task(
+            turn_service.create_turn_record(
+                session_id=session_id,
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                input_text="Keep this turn in the requested plan mode.",
+                mode="plan",
+            )
+        )
+        await asyncio.wait_for(claim_ready.wait(), timeout=1)
+
+        updated = await AgentCoreService(update_db).update_session(
+            session_id=session_id,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            updates={"mode": "execution"},
+        )
+        assert updated.toolset_policy["name"] == "execution"
+        release_claim.set()
+        turn = await turn_task
+
+    async with maker() as inspect_db:
+        stored = await AgentCoreService(inspect_db).session_repo.get_fresh(session_id)
+    assert stored.active_turn_id == str(turn.id)
+    assert stored.toolset_policy == {"name": "plan"}
+    assert stored.permission_policy_version == 3
+
+
+@pytest.mark.asyncio
+async def test_failed_turn_claim_does_not_change_requested_mode_or_policy_version(
+    db_session: AsyncSession,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        toolset_policy={"name": "execution"},
+    )
+    session_id = str(session.id)
+    active_turn = await service.create_turn_record(
+        session_id=session_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep the session claimed.",
+    )
+    active_turn_id = str(active_turn.id)
+
+    with pytest.raises(ConflictError, match="another turn is active"):
+        await service.create_turn_record(
+            session_id=session_id,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="This claim must fail atomically.",
+            mode="plan",
+        )
+
+    stored = await service.session_repo.get_fresh(session_id)
+    assert stored.active_turn_id == active_turn_id
+    assert stored.toolset_policy == {"name": "execution"}
+    assert stored.permission_policy_version == 1
+
+
+@pytest.mark.asyncio
+async def test_create_turn_record_rejects_unknown_mode(db_session: AsyncSession):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    with pytest.raises(BadRequestError, match="Unsupported agent mode"):
+        await service.create_turn_record(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="Reject an invalid mode.",
+            mode="invalid",
+        )
 
 
 @pytest.mark.asyncio
