@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 import re
 
 import app.database as app_database
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, StatementError
 
 from app.services.agent_core.observability import truncate_log_value
 from app.services.agent_core.runtime import AgentCoreRuntime
@@ -119,6 +119,8 @@ def _exception_log_fields(exc: BaseException) -> dict[str, str]:
 
 def _safe_exception_message(exc: BaseException) -> str | None:
     if isinstance(exc, IntegrityError):
+        return _first_safe_line(str(getattr(exc, "orig", None) or exc))
+    if isinstance(exc, StatementError):
         return _first_safe_line(str(getattr(exc, "orig", None) or exc))
     return None
 

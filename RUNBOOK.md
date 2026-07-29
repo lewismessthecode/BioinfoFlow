@@ -442,8 +442,9 @@ docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml config
 ```
 
 The rendered backend must retain the writable `/var/run/docker.sock` bind,
-`seccomp:unconfined`, `privileged: false`, and no `SYS_ADMIN` capability. After
-changing `.env` or a Compose file, recreate the backend instead of restarting it:
+`seccomp:unconfined`, `apparmor:unconfined`, `privileged: false`, and no
+`SYS_ADMIN` capability. After changing `.env` or a Compose file, recreate the
+backend instead of restarting it:
 
 ```bash
 # Source-build deployment:
@@ -458,12 +459,14 @@ docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --forc
 ```
 
 Do not troubleshoot Bubblewrap by enabling `privileged` or adding `SYS_ADMIN`.
-Docker's default Linux seccomp profile can make the Bubblewrap probe fail with
-`No permissions to create new namespace`; Bioinfoflow uses
-`seccomp:unconfined` while keeping the backend non-privileged so the
-unprivileged user-namespace probe can run. Sandbox availability reports one of
-four failure categories: `binary_missing`, `probe_exit`, `probe_timeout`, or
-`probe_os_error`.
+Docker's default Linux seccomp profile can make the probe fail with
+`No permissions to create new namespace`; an enforcing container AppArmor
+profile can separately fail mount propagation with
+`Failed to make / slave: Permission denied`. Bioinfoflow disables both outer
+filters for the backend while keeping the container non-privileged; Bubblewrap
+then supplies the per-command filesystem and network boundary. Sandbox
+availability reports one of four failure categories: `binary_missing`,
+`probe_exit`, `probe_timeout`, or `probe_os_error`.
 
 ### Authenticated run with published images
 

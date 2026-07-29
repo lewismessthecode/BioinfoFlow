@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import json
+import math
+from datetime import date, datetime, time
+from decimal import Decimal
+from enum import Enum
+from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from app.utils.exceptions import BadRequestError
 
@@ -45,6 +51,51 @@ def validate_tool_output(output: dict[str, Any], schema: dict[str, Any]) -> dict
         raise BadRequestError("tool output must be an object")
     _validate_schema(output, schema, path="output")
     return output
+
+
+def normalize_tool_output(output: dict[str, Any]) -> dict[str, Any]:
+    """Convert validated tool output into strict JSON-compatible data."""
+    normalized = _normalize_json_value(output, path="output")
+    if not isinstance(normalized, dict):  # pragma: no cover - guarded by typing
+        raise BadRequestError("tool output must be an object")
+    return normalized
+
+
+def _normalize_json_value(value: Any, *, path: str) -> Any:
+    if isinstance(value, Enum):
+        return _normalize_json_value(value.value, path=path)
+    if value is None or isinstance(value, (bool, str, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise BadRequestError(f"{path} must be a finite JSON number")
+        return value
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise BadRequestError(f"{path} must be a finite JSON number")
+        number = float(value)
+        if not math.isfinite(number):
+            raise BadRequestError(f"{path} must be a finite JSON number")
+        return number
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, (date, time, UUID, Path)):
+        return str(value)
+    if isinstance(value, dict):
+        normalized: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise BadRequestError(f"{path} contains a non-string JSON key")
+            normalized[key] = _normalize_json_value(item, path=f"{path}.{key}")
+        return normalized
+    if isinstance(value, (list, tuple)):
+        return [
+            _normalize_json_value(item, path=f"{path}[{index}]")
+            for index, item in enumerate(value)
+        ]
+    raise BadRequestError(
+        f"{path} value of type {type(value).__name__} is not JSON-serializable"
+    )
 
 
 def _validate_schema(value: Any, schema: dict[str, Any], *, path: str) -> None:

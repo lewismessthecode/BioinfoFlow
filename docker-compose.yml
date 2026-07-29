@@ -38,12 +38,13 @@ services:
       ASR_MODEL: ${ASR_MODEL:-}
       ASR_LANGUAGE: ${ASR_LANGUAGE:-zh}
       ASR_CONTEXT_TERMS: ${ASR_CONTEXT_TERMS:-["Bioinfoflow","Nextflow","MiniWDL","FASTQ"]}
-    # Bubblewrap user namespaces are blocked by Docker's default seccomp policy.
-    # This disables seccomp filtering for the backend container; it does not
-    # make the container privileged or add SYS_ADMIN. Deployments may replace
-    # it with a validated custom seccomp profile that permits the required calls.
+    # Bubblewrap needs user and mount namespaces inside the backend container.
+    # Docker's seccomp and AppArmor defaults can independently block them. These
+    # exceptions keep the container non-privileged and do not add SYS_ADMIN;
+    # Bubblewrap remains the per-command confinement boundary.
     security_opt:
       - seccomp:unconfined
+      - apparmor:unconfined
     volumes:
       - ${BIOINFOFLOW_HOME:-${PWD}/data}:${BIOINFOFLOW_HOME:-${PWD}/data}
       - type: bind

@@ -148,6 +148,12 @@ class AgentCoreRuntime:
                 )
             except TurnOwnershipLostError:
                 return await self._read_turn_after_ownership_loss(str(turn.id))
+            except Exception as exc:  # noqa: BLE001 - terminalize background failures
+                return await self._terminalize_unexpected_turn_failure(
+                    turn_id=turn_id,
+                    ownership=ownership,
+                    exc=exc,
+                )
 
     async def _read_turn_after_ownership_loss(self, turn_id: str):
         await self.turn_repo.session.rollback()
@@ -299,6 +305,45 @@ class AgentCoreRuntime:
                 )
             except TurnOwnershipLostError:
                 return await self._read_turn_after_ownership_loss(str(turn.id))
+            except Exception as exc:  # noqa: BLE001 - terminalize background failures
+                return await self._terminalize_unexpected_turn_failure(
+                    turn_id=str(turn.id),
+                    ownership=ownership,
+                    exc=exc,
+                )
+
+    async def _terminalize_unexpected_turn_failure(
+        self,
+        *,
+        turn_id: str,
+        ownership: TurnOwnership,
+        exc: Exception,
+    ):
+        await self.db.rollback()
+        logger.error(
+            "agent_core.turn.unexpected_failure",
+            turn_id=turn_id,
+            exception_type=type(exc).__name__,
+        )
+        turn = await self.turn_repo.get_fresh(turn_id)
+        if turn is None:
+            return None
+        if turn.status in {
+            AgentTurnStatus.COMPLETED,
+            AgentTurnStatus.FAILED,
+            AgentTurnStatus.CANCELLED,
+        }:
+            await self._release_active_if_terminal(turn)
+            return turn
+        try:
+            return await self._fail_turn(
+                turn,
+                error_message="The agent runtime failed unexpectedly.",
+                error_code="agent_runtime_failed",
+                ownership=ownership,
+            )
+        except TurnOwnershipLostError:
+            return await self._read_turn_after_ownership_loss(turn_id)
 
     async def _resume_claimed_turn(
         self,

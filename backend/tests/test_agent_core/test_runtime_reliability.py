@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import json
 
 import pytest
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings, settings
@@ -100,6 +100,60 @@ async def _child_session(service: AgentCoreService):
     child.agent_name = "reader"
     await service.db.commit()
     return child
+
+
+@pytest.mark.asyncio
+async def test_runtime_terminalizes_unexpected_statement_error_after_claim(
+    db_session,
+    monkeypatch,
+) -> None:
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Trigger an unexpected persistence failure.",
+    )
+
+    async def fail_claimed_turn(self, *, turn, session, ownership):
+        del session, ownership
+        await self.turn_repo.update_all(turn, loop_state={"bad": object()})
+
+    monkeypatch.setattr(AgentCoreRuntime, "_run_claimed_turn", fail_claimed_turn)
+
+    failed_turn = await service.runtime.run_turn(str(turn.id))
+    refreshed_session = await AgentSessionRepository(db_session).get(str(session.id))
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+
+    assert failed_turn.status == AgentTurnStatus.FAILED
+    assert failed_turn.error_code == "agent_runtime_failed"
+    assert failed_turn.owner_token is None
+    assert failed_turn.completed_at is not None
+    assert refreshed_session.active_turn_id is None
+    assert events[-1].type == "turn.failed"
+
+
+def test_runner_logs_statement_error_origin_without_sql_parameters() -> None:
+    error = StatementError(
+        "tool result persistence failed",
+        "UPDATE agent_actions SET result=?",
+        {"result": "sentinel-secret-result"},
+        TypeError("Object of type datetime is not JSON serializable"),
+    )
+
+    fields = runner_module._exception_log_fields(error)
+
+    assert fields == {
+        "exception_type": "StatementError",
+        "exception_message": "Object of type datetime is not JSON serializable",
+    }
+    assert "sentinel-secret-result" not in str(fields)
 
 
 @pytest.mark.asyncio

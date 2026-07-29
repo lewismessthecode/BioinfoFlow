@@ -87,12 +87,15 @@ def test_source_compose_defaults_to_loopback_dev_auth() -> None:
     "filename",
     ["docker-compose.yml", "docker-compose.local.yml", "docker-compose.prod.yml"],
 )
-def test_compose_backends_disable_seccomp_without_privileged_escalation(
+def test_compose_backends_allow_nested_sandbox_without_privileged_escalation(
     filename: str,
 ) -> None:
     backend = _compose(filename)["services"]["backend"]
 
-    assert backend["security_opt"] == ["seccomp:unconfined"]
+    assert backend["security_opt"] == [
+        "seccomp:unconfined",
+        "apparmor:unconfined",
+    ]
     assert backend.get("privileged", False) is False
     assert "SYS_ADMIN" not in backend.get("cap_add", [])
 
@@ -136,7 +139,10 @@ def test_gpu_override_preserves_backend_socket_and_seccomp_contracts() -> None:
     ]["backend"]
     socket_mount = _docker_socket_mount(backend)
 
-    assert backend["security_opt"] == ["seccomp:unconfined"]
+    assert backend["security_opt"] == [
+        "seccomp:unconfined",
+        "apparmor:unconfined",
+    ]
     assert backend.get("privileged", False) is False
     assert "SYS_ADMIN" not in backend.get("cap_add", [])
     assert socket_mount["source"] == "/var/run/docker.sock"
@@ -169,14 +175,16 @@ def test_compose_render_supports_a_custom_docker_desktop_socket_path() -> None:
     assert backend["environment"]["DOCKER_SOCKET"] == "unix:///var/run/docker.sock"
 
 
-def test_docker_guide_explains_seccomp_tradeoff() -> None:
+def test_docker_guide_explains_outer_sandbox_tradeoffs() -> None:
     guide = (ROOT / "docs" / "getting-started" / "docker.md").read_text(
         encoding="utf-8"
     )
     normalized_guide = " ".join(guide.split())
 
-    assert "disables Docker's seccomp syscall filter" in normalized_guide
-    assert "validated custom seccomp profile" in normalized_guide
+    assert "seccomp:unconfined" in normalized_guide
+    assert "apparmor:unconfined" in normalized_guide
+    assert "Failed to make / slave: Permission denied" in normalized_guide
+    assert "validated custom seccomp and AppArmor profiles" in normalized_guide
 
 
 def test_published_image_compose_fails_closed_to_personal_auth() -> None:
