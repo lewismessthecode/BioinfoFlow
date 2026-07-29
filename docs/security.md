@@ -86,8 +86,10 @@ docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --forc
 The backend must remain non-privileged and must not gain `SYS_ADMIN`. On Linux,
 Docker's default seccomp profile can block Bubblewrap's user-namespace probe
 with `No permissions to create new namespace`. Bioinfoflow therefore uses
-`seccomp:unconfined` for the backend while retaining the non-privileged and
-no-`SYS_ADMIN` boundaries.
+`seccomp:unconfined` and `apparmor:unconfined` for the backend while retaining
+the non-privileged and no-`SYS_ADMIN` boundaries. Seccomp permits the user
+namespace syscall; the AppArmor exception permits the mount propagation setup
+inside that namespace. Bubblewrap remains the per-command confinement layer.
 
 ## Authentication
 

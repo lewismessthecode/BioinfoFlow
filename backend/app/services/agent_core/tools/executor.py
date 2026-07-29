@@ -38,6 +38,7 @@ from app.services.agent_core.permissions.command_risk import (
 from app.services.agent_core.tools.approval import action_requires_resume
 from app.services.agent_core.tools.middleware import (
     normalize_tool_input,
+    normalize_tool_output,
     validate_tool_output,
 )
 from app.services.agent_core.tools.registry import AgentToolRegistry
@@ -1185,7 +1186,8 @@ class AgentToolExecutor:
             )
             await execution_context.ensure_turn_ownership()
             validated_result = validate_tool_output(raw_result, tool.spec.output_schema)
-            result, summary = normalize_tool_result(validated_result)
+            normalized_result = normalize_tool_output(validated_result)
+            result, summary = normalize_tool_result(normalized_result)
             result_error = tool_result_error(tool, result)
         except TurnOwnershipLostError:
             await self.session.rollback()

@@ -388,20 +388,21 @@ same explicit-selection rules: full image names can be pulled directly,
 Automatic keeps an unqualified name unchanged, and explicit `registry_id` use is
 limited to owners/admins in team mode.
 
-The bundled Compose files enable `seccomp:unconfined` for the backend so
-Bubblewrap can create its unprivileged user namespace. This setting disables
-Docker's seccomp syscall filter for the whole backend container. It does not make
-the container privileged or add `SYS_ADMIN`, but it is still a meaningful
-security tradeoff. A deployment may replace it with a validated custom seccomp
-profile that permits the required namespace calls. Sandbox selection still
-treats Bubblewrap as unavailable unless a bounded runtime probe can create that
-namespace successfully; probe results are cached briefly and retried after the
-cache expires. The diagnostic category is one of `binary_missing`, `probe_exit`,
-`probe_timeout`, or `probe_os_error`. On Linux, Docker's default seccomp profile
-can surface `No permissions to create new namespace`; inspect the rendered
-Compose configuration and recreate the backend rather than adding `privileged`
-or `SYS_ADMIN`. Use the same Compose file set that started the deployment for
-both inspection and recovery:
+The bundled Compose files enable `seccomp:unconfined` and
+`apparmor:unconfined` for the backend so Bubblewrap can create its unprivileged
+user and mount namespaces. The outer filters fail at different stages:
+seccomp commonly reports `No permissions to create new namespace`, while an
+enforcing container AppArmor profile can report
+`Failed to make / slave: Permission denied`. Disabling both policies for the
+backend is a meaningful security tradeoff, but it does not make the container
+privileged or add `SYS_ADMIN`; Bubblewrap remains the per-command filesystem
+and network confinement boundary. A deployment may replace these settings with
+validated custom seccomp and AppArmor profiles that permit the required
+namespace operations. Sandbox selection still treats Bubblewrap as unavailable
+unless a bounded runtime probe succeeds. Inspect the rendered Compose
+configuration and recreate the backend rather than adding `privileged` or
+`SYS_ADMIN`. Use the same Compose file set that started the deployment for both
+inspection and recovery:
 
 ```bash
 # Source-build deployment:
