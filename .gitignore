@@ -108,6 +108,8 @@ data/
 # Generated documentation artifacts
 /docs/*
 /docs/_legacy/
+!/docs/agents/
+!/docs/agents/**
 !/docs/README.md
 !/docs/architecture.md
 !/docs/getting-started/
