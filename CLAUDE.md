@@ -3,6 +3,20 @@
 This file is the working guide for coding agents in Bioinfoflow. Keep it short,
 actionable, and specific to this repo.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs for this repo live as GitHub issues; use the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repo with root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
+
 ## First Steps
 
 - Always run `rtk git branch --show-current` and `rtk git worktree list` before
