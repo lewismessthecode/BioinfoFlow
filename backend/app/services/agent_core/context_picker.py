@@ -2,16 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import select
-
 from app.models.agent_core import AgentAttachmentStatus
 from app.models.project import Project
-from app.models.project_workflow_binding import ProjectWorkflowBinding
-from app.models.workflow import Workflow
 from app.path_layout import project_home
 from app.repositories.agent_core_repo import AgentAttachmentRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.run_repo import RunRepository
+from app.repositories.workflow_repo import WorkflowRepository
 from app.schemas.agent_core import (
     AgentContextSearchItem,
     AgentContextSearchRead,
@@ -39,6 +36,7 @@ class AgentContextPicker:
         self.projects = ProjectRepository(db)
         self.attachments = AgentAttachmentRepository(db)
         self.runs = RunRepository(db)
+        self.workflows = WorkflowRepository(db)
 
     async def search(
         self,
@@ -195,26 +193,12 @@ class AgentContextPicker:
         project_id: str | None,
         limit: int,
     ) -> list[AgentContextSearchItem]:
-        stmt = select(Workflow)
         if project_id:
             await self._require_project(project_id, workspace_id)
-            stmt = stmt.join(
-                ProjectWorkflowBinding,
-                ProjectWorkflowBinding.workflow_id == Workflow.id,
-            ).where(ProjectWorkflowBinding.project_id == project_id)
-        if query:
-            escaped = _like_query(query)
-            stmt = stmt.where(Workflow.name.ilike(f"%{escaped}%", escape="\\"))
-        workflows = list(
-            (
-                await self.db.execute(
-                    stmt.order_by(Workflow.created_at.desc(), Workflow.id.desc()).limit(
-                        limit
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        workflows = await self.workflows.search_context(
+            query=query,
+            project_id=project_id,
+            limit=limit,
         )
         return [
             AgentContextSearchItem(

@@ -6,17 +6,18 @@ from typing import Any
 
 from pydantic import ValidationError
 from pypdf import PdfReader
-from sqlalchemy import select
 
 from app.config import settings
 from app.models.agent_core import AgentAttachmentStatus, AgentSession
 from app.models.project import Project
-from app.models.project_workflow_binding import ProjectWorkflowBinding
-from app.models.run import Run
-from app.models.workflow import Workflow
 from app.path_layout import project_home, safe_join
 from app.repositories.agent_core_repo import AgentAttachmentRepository
 from app.repositories.project_repo import ProjectRepository
+from app.repositories.project_workflow_binding_repo import (
+    ProjectWorkflowBindingRepository,
+)
+from app.repositories.run_repo import RunRepository
+from app.repositories.workflow_repo import WorkflowRepository
 from app.schemas.agent_core import (
     AGENT_INPUT_PARTS_ADAPTER,
     AgentDirectoryRefInputPart,
@@ -47,6 +48,9 @@ class AgentInputResolver:
         self.attachments = AgentAttachmentRepository(db)
         self.attachment_service = AgentAttachmentService(db)
         self.projects = ProjectRepository(db)
+        self.runs = RunRepository(db)
+        self.workflows = WorkflowRepository(db)
+        self.bindings = ProjectWorkflowBindingRepository(db)
         self.legacy_file_resolver = legacy_file_resolver
         self.legacy_workflow_resolver = legacy_workflow_resolver
 
@@ -213,17 +217,10 @@ class AgentInputResolver:
         session: AgentSession,
         part: AgentRunRefInputPart,
     ) -> dict[str, str]:
-        row = (
-            await self.db.execute(
-                select(Run, Workflow.name)
-                .join(Project, Project.id == Run.project_id)
-                .outerjoin(Workflow, Workflow.id == Run.workflow_id)
-                .where(
-                    Run.run_id == part.run_id,
-                    Project.workspace_id == session.workspace_id,
-                )
-            )
-        ).first()
+        row = await self.runs.get_context_snapshot(
+            run_id=part.run_id,
+            workspace_id=str(session.workspace_id),
+        )
         if row is None:
             raise NotFoundError("Run not found")
         run, workflow_name = row
@@ -261,18 +258,16 @@ class AgentInputResolver:
             )
             return text_part(f"Workflow context: {scope}")
 
-        workflow = await self.db.get(Workflow, str(part.workflow_id))
+        workflow = await self.workflows.get(str(part.workflow_id))
         if workflow is None:
             raise NotFoundError("Workflow not found")
         if part.project_id is not None:
             project = await self._require_project(session, str(part.project_id))
-            binding = await self.db.scalar(
-                select(ProjectWorkflowBinding.id).where(
-                    ProjectWorkflowBinding.project_id == project.id,
-                    ProjectWorkflowBinding.workflow_id == workflow.id,
-                )
+            is_bound = await self.bindings.is_enabled(
+                project_id=str(project.id),
+                workflow_id=str(workflow.id),
             )
-            if binding is None:
+            if not is_bound:
                 raise PermissionDeniedError("Workflow is not bound to the project")
         return text_part(
             "\n".join(
