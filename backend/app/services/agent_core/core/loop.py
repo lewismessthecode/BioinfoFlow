@@ -310,7 +310,6 @@ class AgentLoopController:
             model_context = await self.context.model_context(
                 agent_session=agent_session,
                 turn=turn,
-                exposed_tools=visible_tools,
                 skill_registry=skill_registry,
                 skip_compaction=(
                     continuation_anchor is not None

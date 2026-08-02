@@ -78,7 +78,6 @@ class AgentContextAssembler:
         *,
         agent_session,
         turn,
-        exposed_tools=None,
         skip_compaction: bool = False,
     ) -> list[dict]:
         await self._repair_incomplete_tool_groups(
@@ -95,7 +94,6 @@ class AgentContextAssembler:
                 "content": await self._instructions(
                     agent_session=agent_session,
                     turn=turn,
-                    exposed_tools=exposed_tools,
                 ),
             }
         ]
@@ -277,7 +275,6 @@ class AgentContextAssembler:
         *,
         agent_session,
         turn,
-        exposed_tools=None,
         skill_registry: AgentSkillRegistry | None = None,
         skip_compaction: bool = False,
     ) -> AgentModelContext:
@@ -312,7 +309,6 @@ class AgentContextAssembler:
             instructions=await self._instructions(
                 agent_session=agent_session,
                 turn=turn,
-                exposed_tools=exposed_tools,
                 skill_registry=skill_registry,
             ),
             input_items=tuple(input_items),
@@ -341,10 +337,8 @@ class AgentContextAssembler:
         *,
         agent_session,
         turn,
-        exposed_tools=None,
         skill_registry: AgentSkillRegistry | None = None,
     ) -> str:
-        del exposed_tools
         execution_target = execution_target_from_session(agent_session)
         system_sections = [resolve_system_prompt_prefix(agent_session.prompt_snapshot)]
         project_instruction_context = await self.project_instructions.resolve(
