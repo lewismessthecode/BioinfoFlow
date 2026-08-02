@@ -1121,6 +1121,22 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       ],
     )
 
+    const sendPendingSubmission = useCallback(
+      (submission: PendingSubmission) => {
+        sendTurn(
+          submission.text,
+          submission.inputParts,
+          submission.activeSkillNames,
+          submission.mode,
+          submission.inputDisplayParts,
+          submission.modelSelection,
+          submission.executionScope,
+          submission.optimisticTurn,
+        )
+      },
+      [sendTurn],
+    )
+
     const submitTurn = useCallback(
       (
         text: string,
@@ -1146,6 +1162,17 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           return
         }
 
+        const pendingSubmission = {
+          text: trimmedText,
+          mode: modeSnapshot,
+          inputParts,
+          inputDisplayParts,
+          activeSkillNames: activeSkillNamesSnapshot,
+          modelSelection,
+          executionScope,
+          sessionId: submissionSessionId,
+        }
+
         if (turnPolicy === "queue") {
           const nextOptimisticTurn = createOptimisticTurn({
             text: trimmedText,
@@ -1161,15 +1188,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setQueuedSubmissions((current) => [
             ...current,
             {
-              text: trimmedText,
-              mode: modeSnapshot,
-              inputParts,
-              inputDisplayParts,
-              activeSkillNames: activeSkillNamesSnapshot,
-              modelSelection,
-              executionScope,
+              ...pendingSubmission,
               optimisticTurn: nextOptimisticTurn,
-              sessionId: submissionSessionId,
             },
           ])
           return
@@ -1190,15 +1210,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setPendingSteerSubmissions((current) => [
             ...current,
             {
-              text: trimmedText,
-              mode: modeSnapshot,
-              inputParts,
-              inputDisplayParts,
-              activeSkillNames: activeSkillNamesSnapshot,
-              modelSelection,
-              executionScope,
+              ...pendingSubmission,
               optimisticTurn: nextOptimisticTurn,
-              sessionId: submissionSessionId,
             },
           ])
           return
@@ -1254,13 +1267,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             setPendingSteerSubmissions((current) => [
               ...current,
               {
-                text: trimmedText,
-                mode: modeSnapshot,
-                inputParts,
-                inputDisplayParts,
-                activeSkillNames: activeSkillNamesSnapshot,
-                modelSelection,
-                executionScope,
+                ...pendingSubmission,
                 optimisticTurn: createOptimisticTurn({
                   text: trimmedText,
                   inputParts,
@@ -1269,7 +1276,6 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                   sessionId: submissionSessionId,
                   projectId,
                 }),
-                sessionId: submissionSessionId,
                 steerSealed: true,
                 optimisticSteerEventId: optimisticSteerId,
               },
@@ -1343,19 +1349,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         setQueuedSubmissions((current) =>
           current[0] === next ? current.slice(1) : current,
         )
-        sendTurn(
-          next.text,
-          next.inputParts,
-          next.activeSkillNames,
-          next.mode,
-          next.inputDisplayParts,
-          next.modelSelection,
-          next.executionScope,
-          next.optimisticTurn,
-        )
+        sendPendingSubmission(next)
       }, 0)
       return () => window.clearTimeout(timer)
-    }, [hasActiveTurn, queuedSubmissions, sendTurn, submissionSessionId])
+    }, [hasActiveTurn, queuedSubmissions, sendPendingSubmission, submissionSessionId])
 
     useEffect(() => {
       if (!pendingSteerSubmissions.length || pendingSteerInFlight) return
@@ -1421,16 +1418,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 current.filter((event) => event.id !== next.optimisticSteerEventId),
               )
             }
-            sendTurn(
-              next.text,
-              next.inputParts,
-              next.activeSkillNames,
-              next.mode,
-              next.inputDisplayParts,
-              next.modelSelection,
-              next.executionScope,
-              next.optimisticTurn,
-            )
+            sendPendingSubmission(next)
           } finally {
             setPendingSteerInFlight(false)
           }
@@ -1442,7 +1430,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       latestActiveBackendTurn,
       pendingSteerInFlight,
       pendingSteerSubmissions,
-      sendTurn,
+      sendPendingSubmission,
       steer,
       submissionSessionId,
     ])
