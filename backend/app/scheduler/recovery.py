@@ -7,10 +7,10 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.run import Run, RunStatus
-from app.runtime.jobs import _duration_seconds, _now
 from app.schemas.run import RunErrorCode, RunErrorStage
 from app.scheduler.models import ScheduledTask, TaskState
 from app.utils.logging import get_logger
+from app.utils.time import duration_seconds, utc_now
 
 
 logger = get_logger(__name__)
@@ -43,10 +43,10 @@ async def recover_orphan_runs(
     ``scheduled_tasks_available=False`` preserves the legacy compatibility mode:
     it applies the same run staleness policy without querying the task table.
     """
-    stale_cutoff = _now() - timedelta(minutes=stale_timeout_minutes)
+    stale_cutoff = utc_now() - timedelta(minutes=stale_timeout_minutes)
     heartbeat_cutoff = None
     if worker_heartbeat_grace_seconds is not None:
-        heartbeat_cutoff = _now() - timedelta(
+        heartbeat_cutoff = utc_now() - timedelta(
             seconds=worker_heartbeat_grace_seconds
         )
 
@@ -114,8 +114,8 @@ async def recover_orphan_runs(
             if not include_error_details:
                 error_json = None
 
-            completed_at = _now()
-            duration_seconds = _duration_seconds(run.started_at, completed_at)
+            completed_at = utc_now()
+            run_duration_seconds = duration_seconds(run.started_at, completed_at)
             update_conditions = [
                 Run.run_id == run.run_id,
                 Run.status.in_(RUN_ACTIVE_STATUSES),
@@ -134,7 +134,7 @@ async def recover_orphan_runs(
                         error_message=error_message,
                         error_json=error_json,
                         completed_at=completed_at,
-                        duration_seconds=duration_seconds,
+                        duration_seconds=run_duration_seconds,
                     )
                 )
             if update_result.rowcount == 1:
