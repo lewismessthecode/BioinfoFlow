@@ -17,7 +17,6 @@ const mocks = vi.hoisted(() => ({
   getAgentRuntimeState: vi.fn(),
   listAgentRuntimeSessions: vi.fn(),
   updateAgentRuntimeSessionMetadata: vi.fn(),
-  updateAgentRuntimeSessionMode: vi.fn(),
   updateAgentRuntimeSessionPermissionMode: vi.fn(),
 }))
 
@@ -38,7 +37,6 @@ vi.mock("@/lib/agent-runtime", async (importOriginal) => {
     listAgentRuntimeSessions: mocks.listAgentRuntimeSessions,
     subscribeAgentRuntimeEvents: mocks.subscribeAgentRuntimeEvents,
     updateAgentRuntimeSessionMetadata: mocks.updateAgentRuntimeSessionMetadata,
-    updateAgentRuntimeSessionMode: mocks.updateAgentRuntimeSessionMode,
     updateAgentRuntimeSessionPermissionMode: mocks.updateAgentRuntimeSessionPermissionMode,
   }
 })
@@ -103,7 +101,6 @@ describe("useAgentRuntime", () => {
       updated_at: "2026-06-08T00:00:00Z",
     })
     mocks.updateAgentRuntimeSessionMetadata.mockResolvedValue(session)
-    mocks.updateAgentRuntimeSessionMode.mockResolvedValue(session)
     mocks.updateAgentRuntimeSessionPermissionMode.mockResolvedValue(session)
     mocks.interruptAgentRuntimeTurn.mockResolvedValue({
       ...turn,
@@ -318,7 +315,6 @@ describe("useAgentRuntime", () => {
     })
 
     expect(result.current.mode).toBe("plan")
-    expect(mocks.updateAgentRuntimeSessionMode).not.toHaveBeenCalled()
 
     await act(async () => {
       await result.current.send("Draft a plan")
@@ -327,7 +323,6 @@ describe("useAgentRuntime", () => {
     expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
       expect.objectContaining({ mode: "plan" }),
     )
-    expect(mocks.updateAgentRuntimeSessionMode).not.toHaveBeenCalled()
   })
 
   it("keeps pending mode while the post-turn authoritative refresh is unresolved", async () => {

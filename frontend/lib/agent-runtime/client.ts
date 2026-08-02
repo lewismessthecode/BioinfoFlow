@@ -207,17 +207,6 @@ export const getAgentRuntimeSession = async (sessionId: string) => {
   return response.data
 }
 
-export const updateAgentRuntimeSessionMode = async (
-  sessionId: string,
-  mode: AgentMode,
-) => {
-  const response = await apiRequest<AgentRuntimeSession>(
-    `/agent/sessions/${sessionId}`,
-    { method: "PATCH", body: JSON.stringify({ mode }) },
-  )
-  return response.data
-}
-
 export const updateAgentRuntimeSessionPermissionMode = async (
   sessionId: string,
   permissionMode: AgentPermissionMode,
