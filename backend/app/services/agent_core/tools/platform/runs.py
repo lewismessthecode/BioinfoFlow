@@ -286,7 +286,10 @@ class ResumeRunTool:
 class CleanupRunTool:
     spec = AgentToolSpec(
         name="runs.cleanup",
-        description="Clean workflow runtime work directories for a run.",
+        description=(
+            "Delete the entire canonical run directory for a run, including its "
+            "inputs, audit data, results, and runtime work files."
+        ),
         input_schema={
             "type": "object",
             "properties": {"run_id": {"type": "string"}},
@@ -301,8 +304,11 @@ class CleanupRunTool:
         risk_level="destructive",
         read_scope=["runs"],
         write_scope=["runs", "files"],
-        audit="Clean run working files.",
-        rollback_hint="Cleaned runtime work files cannot be restored automatically.",
+        audit="Delete the canonical run directory and all files stored under it.",
+        rollback_hint=(
+            "The canonical run directory and its inputs, audit data, results, and "
+            "runtime work files cannot be restored automatically."
+        ),
     )
 
     async def run(

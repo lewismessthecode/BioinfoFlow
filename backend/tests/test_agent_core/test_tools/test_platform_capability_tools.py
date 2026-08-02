@@ -15,6 +15,7 @@ from app.services.agent_core.tools import (
     AgentToolDispatcher,
     build_default_tool_registry,
 )
+from app.services.agent_core.tools.platform.runs import CleanupRunTool
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -31,6 +32,7 @@ async def _context(
         created_by_user_id="dev",
         workspace_id=DEFAULT_WORKSPACE_ID,
     )
+
     db_session.add_all([workspace, project])
     await db_session.commit()
     await db_session.refresh(project)
@@ -58,6 +60,13 @@ async def _context(
             turn_id=str(turn.id),
         ),
     )
+
+
+def test_cleanup_tool_spec_describes_the_full_run_directory_scope() -> None:
+    assert "entire canonical run directory" in CleanupRunTool.spec.description
+    assert "inputs" in CleanupRunTool.spec.description
+    assert "results" in CleanupRunTool.spec.description
+    assert "all files stored under it" in CleanupRunTool.spec.audit
 
 
 @pytest.mark.asyncio
