@@ -114,3 +114,35 @@ async def test_file_scope_includes_uploaded_files_and_folders(db_session) -> Non
 
     assert {item.kind for item in result.results} == {"file", "directory"}
     assert all("attachment_id" in item.input_part for item in result.results)
+
+
+@pytest.mark.asyncio
+async def test_file_search_excludes_sensitive_project_paths(db_session) -> None:
+    db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
+    await db_session.commit()
+    project = await create_project(
+        db_session,
+        name="Sensitive context project",
+        storage_mode="managed",
+    )
+    root = project_home(project)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / ".env.local").write_text("TOKEN=secret", encoding="utf-8")
+    (root / "safe.txt").write_text("safe", encoding="utf-8")
+    ssh_dir = root / ".ssh"
+    ssh_dir.mkdir()
+    (ssh_dir / "id_ed25519").write_text("private key", encoding="utf-8")
+
+    result = await AgentContextPicker(db_session).search(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        query="",
+        scope="file",
+        project_id=str(project.id),
+    )
+
+    labels = {item.label for item in result.results}
+    assert "safe.txt" in labels
+    assert ".env.local" not in labels
+    assert ".ssh" not in labels
+    assert "id_ed25519" not in labels

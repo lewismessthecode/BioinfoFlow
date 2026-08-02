@@ -28,6 +28,10 @@ from app.schemas.agent_core import (
     AgentWorkflowRefInputPart,
 )
 from app.services.agent_core.attachments import AgentAttachmentService
+from app.services.agent_core.context.security import (
+    is_sensitive_context_path,
+    safe_manifest_paths,
+)
 from app.services.agent_core.transcript.messages import text_part
 from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 
@@ -120,6 +124,10 @@ class AgentInputResolver:
                         detail="high",
                     )
                 ]
+            if is_sensitive_context_path(Path(attachment.filename)):
+                raise PermissionDeniedError(
+                    "File cannot be attached to agent context: sensitive path"
+                )
             root = self.attachment_service.validated_root(attachment)
             original = safe_join(
                 root,
@@ -169,8 +177,16 @@ class AgentInputResolver:
             )
             if attachment.kind != "folder":
                 raise BadRequestError("directory_ref requires a folder attachment")
+            if is_sensitive_context_path(Path(attachment.filename)):
+                raise PermissionDeniedError(
+                    "Directory cannot be attached to agent context: sensitive path"
+                )
             manifest = list(
                 (attachment.attachment_metadata or {}).get("manifest") or []
+            )
+            manifest = safe_manifest_paths(
+                self.attachment_service.validated_root(attachment) / "files",
+                manifest,
             )
             reference = {
                 "type": "directory_ref",
@@ -407,6 +423,10 @@ def _project_target(
         relative_path,
         escape_message="Project reference escapes its root",
     )
+    if is_sensitive_context_path(target):
+        raise PermissionDeniedError(
+            "Project reference cannot be attached to agent context: sensitive path"
+        )
     if allow_directory:
         if not target.is_dir() or target.is_symlink():
             raise NotFoundError("Referenced directory is not available")
@@ -421,6 +441,8 @@ def _local_directory_manifest(root: Path) -> list[str]:
         if len(manifest) >= _DIRECTORY_MANIFEST_LIMIT:
             break
         if candidate.is_symlink() or not candidate.is_file():
+            continue
+        if is_sensitive_context_path(candidate):
             continue
         manifest.append(candidate.relative_to(root).as_posix())
     return manifest

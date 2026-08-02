@@ -16,7 +16,7 @@ from app.models.workflow import Workflow, WorkflowEngine, WorkflowSource
 from app.models.workspace import Workspace
 from app.path_layout import agent_attachment_root, project_home
 from app.services.agent_core.input_resolver import AgentInputResolver
-from app.utils.exceptions import BadRequestError, NotFoundError
+from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -190,6 +190,62 @@ async def test_directory_ref_emits_bounded_manifest_and_read_guidance(
     assert "After entering execution mode, use bash" in context
     assert "attachments.search" not in context
     assert "attachments.read" not in context
+
+
+@pytest.mark.asyncio
+async def test_directory_ref_filters_sensitive_manifest_paths(db_session) -> None:
+    session = await _seed_session(db_session)
+    manifest = ["safe.txt", ".env.local", ".ssh/id_ed25519", "results.db"]
+    attachment = await _seed_attachment(
+        db_session,
+        session,
+        kind="folder",
+        mime_type="application/x-directory",
+        filename="project",
+        metadata={"manifest": manifest},
+    )
+
+    parts = await AgentInputResolver(db_session).resolve(
+        agent_session=session,
+        input_text="Inspect.",
+        input_parts=[{"type": "directory_ref", "attachment_id": str(attachment.id)}],
+    )
+
+    context = "\n".join(part.get("text", "") for part in parts)
+    assert "safe.txt" in context
+    assert ".env.local" not in context
+    assert ".ssh/id_ed25519" not in context
+    assert "results.db" not in context
+
+
+@pytest.mark.asyncio
+async def test_project_file_ref_rejects_sensitive_paths(db_session) -> None:
+    db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
+    project = Project(
+        name="Sensitive project",
+        user_id="dev",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+    root = project_home(project)
+    root.mkdir(parents=True)
+    (root / ".env.local").write_text("TOKEN=secret", encoding="utf-8")
+    session = await _seed_session(db_session, project=project)
+
+    with pytest.raises(PermissionDeniedError):
+        await AgentInputResolver(db_session).resolve(
+            agent_session=session,
+            input_text="Read.",
+            input_parts=[
+                {
+                    "type": "file_ref",
+                    "project_id": str(project.id),
+                    "path": ".env.local",
+                }
+            ],
+        )
 
 
 @pytest.mark.asyncio
