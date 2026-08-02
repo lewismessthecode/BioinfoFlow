@@ -56,6 +56,22 @@ class RunRepository(BaseRepository[Run]):
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
+    async def get_context_snapshot(
+        self, *, run_id: str, workspace_id: str
+    ) -> tuple[Run, str | None] | None:
+        """Get a workspace-scoped run and its workflow name for agent context."""
+        stmt = (
+            select(self.model, Workflow.name)
+            .join(Project, Project.id == self.model.project_id)
+            .outerjoin(Workflow, Workflow.id == self.model.workflow_id)
+            .where(
+                self.model.run_id == run_id,
+                Project.workspace_id == workspace_id,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.first()
+
     async def search_context(
         self,
         *,
