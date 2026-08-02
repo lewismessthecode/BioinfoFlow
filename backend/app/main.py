@@ -13,7 +13,6 @@ from app.database import close_db, init_db, verify_database_schema_current
 from app.engine.local import LocalBackend
 from app.path_layout import assert_identity_mount, ensure_platform_layout
 from app.runtime.background_tasks import background_tasks
-from app.runtime.jobs import recover_stale_runs
 from app.runtime.task_runner import task_runner
 from app.scheduler.config import SchedulerConfig
 from app.scheduler.monitor import ResourceMonitor
@@ -87,13 +86,6 @@ async def lifespan(app: FastAPI):
         )
     set_run_scheduler(scheduler)
     set_run_dispatcher(SchedulerDispatcher(scheduler))
-    await recover_stale_runs(
-        stale_after_minutes=settings.scheduler_stale_timeout_minutes
-    )
-    logger.info(
-        "startup.run_recovery.complete",
-        stale_after_minutes=settings.scheduler_stale_timeout_minutes,
-    )
     async with app.state_db_session() as session:
         recovered_turns = await AgentCoreService(session).recover_orphaned_turns()
         await session.commit()
