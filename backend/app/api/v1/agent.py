@@ -63,9 +63,9 @@ from app.services.agent_core.model_selection import (
     session_model_selection_from_metadata,
 )
 from app.services.agent_core.tools import build_default_tool_registry
+from app.services.agent_core.permissions.capabilities import CapabilityPolicy
 from app.services.agent_core.tools.toolsets import (
     EXECUTION_TOOLSET_POLICY,
-    ToolsetExposure,
 )
 from app.services.project_service import ProjectService
 from app.utils.responses import success_response
@@ -1029,7 +1029,7 @@ def _is_previewable_binary(path: Path, mime_type: str) -> bool:
 @router.get("/toolsets")
 async def list_toolsets(request: Request):
     registry = build_default_tool_registry()
-    exposure = ToolsetExposure(registry)
+    exposure = CapabilityPolicy(registry)
     return success_response(
         {
             "toolsets": [

@@ -25,6 +25,7 @@ from app.services.agent_core.execution_target import (
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.ownership import TurnOwnershipLostError
+from app.services.agent_core.permissions.capabilities import CapabilityPolicy
 from app.services.agent_core.permissions.context import (
     PermissionContext,
     PermissionContextResolver,
@@ -48,7 +49,6 @@ from app.services.agent_core.tools.specs import (
     AgentToolContext,
     tool_result_error,
 )
-from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.utils.exceptions import BadRequestError, ConflictError, PermissionDeniedError
 
 
@@ -239,26 +239,6 @@ def _snapshot_with_command_risk(
     if not isinstance(risk, CommandRiskAssessment):
         return snapshot
     return {**snapshot, "command_risk": risk.audit_snapshot()}
-
-
-def _plan_command_is_allowed(
-    *,
-    tool_name: str,
-    toolset_policy: dict[str, Any],
-    risk: RiskAssessment,
-) -> bool:
-    if str(toolset_policy.get("name") or "default") != "plan":
-        return True
-    if tool_name not in {"bash", "remote.exec"}:
-        return True
-    return (
-        isinstance(risk, CommandRiskAssessment)
-        and risk.level in {"read", "act_low"}
-        and bool(risk.effects)
-        and set(risk.effects) == {"read"}
-        and not risk.hard_blocked
-        and not risk.requires_explicit_approval
-    )
 
 
 async def _snapshot_with_scope_remote_boundary(
@@ -457,7 +437,8 @@ class AgentToolExecutor:
     def __init__(self, session: AsyncSession, registry: AgentToolRegistry):
         self.session = session
         self.registry = registry
-        self.exposure = ToolsetExposure(registry)
+        self.capabilities = CapabilityPolicy(registry)
+        self.exposure = self.capabilities.exposure
         self.action_service = AgentActionService(session)
         self.action_repo = AgentActionRepository(session)
         self.artifact_repo = AgentArtifactRepository(session)
@@ -559,7 +540,7 @@ class AgentToolExecutor:
             permission_snapshot,
             assessed_risk,
         )
-        plan_command_denied = not _plan_command_is_allowed(
+        plan_command_denied = not self.capabilities.plan_command_allowed(
             tool_name=tool.spec.name,
             toolset_policy=toolset_policy,
             risk=assessed_risk,
@@ -996,7 +977,7 @@ class AgentToolExecutor:
             permission_snapshot=snapshot,
         )
         snapshot = _snapshot_with_command_risk(snapshot, current_risk)
-        if not _plan_command_is_allowed(
+        if not self.capabilities.plan_command_allowed(
             tool_name=tool.spec.name,
             toolset_policy=snapshot["toolset_policy"],
             risk=current_risk,
