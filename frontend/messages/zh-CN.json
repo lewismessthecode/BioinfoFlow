@@ -1951,22 +1951,6 @@
       "deleted": "通知已删除"
     }
   },
-  "welcome": {
-    "eyebrow": "分析工作区",
-    "title": "开始你的第一次分析",
-    "subtitle": "选择一个项目模板，或创建自定义工作区。只要项目建立起来，Bioinfoflow 就能把对话、文件和运行结果组织在同一个上下文里。",
-    "blankName": "空白工作区",
-    "blankDescription": "从一个空项目开始，自由探索",
-    "wgsName": "全基因组测序分析",
-    "wgsDescription": "全基因组测序变异检测",
-    "rnaseqName": "RNA-seq 分析",
-    "rnaseqDescription": "差异基因表达分析",
-    "createFromTemplate": "使用模板",
-    "createFromTemplateNamed": "使用{name}",
-    "customProjectLabel": "自定义设置",
-    "customProjectDescription": "如果你需要自定义目录结构、命名方式或工作区路径，可以从空白项目开始并自行配置。",
-    "customProject": "创建自定义项目"
-  },
   "connections": {
     "title": "SSH 主机",
     "subtitle": "管理远程工作和工作流运行使用的 SSH 主机。",
@@ -1998,7 +1982,7 @@
       "general": "常规",
       "sshPort": "SSH 端口",
       "credentials": "凭据",
-      "agentSkill": "Host Skill",
+      "agentSkill": "主机端技能",
       "advancedSsh": "高级 SSH 设置"
     },
     "fields": {
@@ -2012,7 +1996,7 @@
       "auth": "认证方式",
       "sshAlias": "SSH 配置 Host",
       "keyPath": "后端密钥文件路径",
-      "skillInstructions": "Host Skill"
+      "skillInstructions": "主机端技能"
     },
     "status": {
       "online": "在线",

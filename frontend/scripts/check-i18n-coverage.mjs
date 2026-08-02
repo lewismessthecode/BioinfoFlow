@@ -233,6 +233,52 @@ function findMatches(content, needle) {
   return matches
 }
 
+const NON_COPY_VALUE_PATTERNS = [
+  /^(?:https?:\/\/|\/)/,
+  /[{}\t]/,
+  /\b(?:BAM|CPU|DAG|GPU|HPC|HTML|JSON|PDF|SSH|URL|URI)\b/,
+  /^Chat Completions$/,
+]
+
+/**
+ * Keep this guard narrow enough to avoid flagging technical literals while
+ * still catching ordinary English UI copy left untranslated in Chinese.
+ *
+ * @param {unknown} value
+ */
+function isUserFacingEnglishCopy(value) {
+  if (typeof value !== "string") return false
+
+  const normalized = value.trim()
+  if (!normalized || !/[a-z]/.test(normalized) || !/\s/.test(normalized)) return false
+
+  return !NON_COPY_VALUE_PATTERNS.some((pattern) => pattern.test(normalized))
+}
+
+/**
+ * @param {Record<string, unknown>} messagesEn
+ * @param {Record<string, unknown>} messagesZh
+ */
+function findIdenticalUserFacingTranslations(messagesEn, messagesZh) {
+  const identical = []
+
+  const walk = (english, chinese, prefix = "") => {
+    for (const [key, value] of Object.entries(english)) {
+      const path = prefix ? `${prefix}.${key}` : key
+      const chineseValue = chinese?.[key]
+
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        walk(value, chineseValue, path)
+      } else if (value === chineseValue && isUserFacingEnglishCopy(value)) {
+        identical.push({ key: path, value })
+      }
+    }
+  }
+
+  walk(messagesEn, messagesZh)
+  return identical
+}
+
 async function main() {
   // Guard: keep `en.json` and `zh-CN.json` keysets in sync.
   const messagesEn = JSON.parse(await fs.readFile(path.join(ROOT, "frontend/messages/en.json"), "utf8"))
@@ -270,6 +316,17 @@ async function main() {
       if (missingInEn.length > 80) console.error(`  ... +${missingInEn.length - 80} more`)
       console.error("")
     }
+    process.exit(1)
+  }
+
+  const identicalUserFacingTranslations = findIdenticalUserFacingTranslations(messagesEn, messagesZh)
+
+  if (identicalUserFacingTranslations.length) {
+    console.error(`FAIL: Found ${identicalUserFacingTranslations.length} identical English/Chinese user-facing values:\n`)
+    for (const item of identicalUserFacingTranslations) {
+      console.error(`  - ${item.key}: ${JSON.stringify(item.value)}`)
+    }
+    console.error("")
     process.exit(1)
   }
 
