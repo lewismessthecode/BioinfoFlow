@@ -115,15 +115,41 @@ def test_plan_derives_registered_read_platform_surface() -> None:
     }.isdisjoint(exposed)
 
 
-def test_plan_model_visible_and_host_callable_static_surfaces_match() -> None:
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {
+                "execution_scope": {
+                    "mode": "manual",
+                    "selected_targets": [{"type": "local"}],
+                }
+            },
+            id="local-scope",
+        ),
+        pytest.param(
+            {
+                "execution_target": {"type": "local"},
+                "execution_scope": {
+                    "mode": "manual",
+                    "selected_targets": [
+                        {"type": "remote_ssh", "connection_id": "conn-1"}
+                    ],
+                },
+            },
+            id="remote-only-scope",
+        ),
+        pytest.param(
+            {"execution_target": {"type": "remote_ssh", "connection_id": "conn-1"}},
+            id="remote-target",
+        ),
+    ],
+)
+def test_plan_model_visible_and_host_callable_static_surfaces_match(
+    kwargs: dict,
+) -> None:
     exposure = ToolsetExposure(build_default_tool_registry())
-    kwargs = {
-        "policy": {"name": "plan"},
-        "execution_scope": {
-            "mode": "manual",
-            "selected_targets": [{"type": "local"}],
-        },
-    }
+    kwargs = {"policy": {"name": "plan"}, **kwargs}
 
     assert exposure.exposed_names(**kwargs) == exposure.callable_names(**kwargs)
 

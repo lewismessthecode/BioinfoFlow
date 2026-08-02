@@ -290,21 +290,12 @@ class ToolsetExposure:
 
         names &= registered
         names -= _MODEL_HIDDEN_TOOLS
-        scope_allows_remote = execution_scope_allows_remote(execution_scope)
-        remote_only_scope = (
-            execution_scope is not None
-            and scope_allows_remote
-            and not execution_scope_allows_local(execution_scope)
+        return _filter_names_for_execution_scope(
+            names,
+            specs=specs,
+            execution_target=execution_target,
+            execution_scope=execution_scope,
         )
-        if is_remote_ssh_execution_target(execution_target) or remote_only_scope:
-            names &= {
-                spec.name for spec in specs if _is_remote_ssh_compatible_tool(spec)
-            }
-        elif execution_scope is not None and not scope_allows_remote:
-            names = {name for name in names if not name.startswith("remote.")}
-        elif execution_target is not None and not scope_allows_remote:
-            names = {name for name in names if not name.startswith("remote.")}
-        return names
 
     def decide(
         self,
@@ -404,27 +395,42 @@ class ToolsetExposure:
         allowed_tools = policy.get("allowed_tools")
         if isinstance(allowed_tools, list) and allowed_tools:
             names &= {str(name) for name in allowed_tools}
-        scope_allows_remote = execution_scope_allows_remote(execution_scope)
-        remote_only_scope = (
-            execution_scope is not None
-            and scope_allows_remote
-            and not execution_scope_allows_local(execution_scope)
+        return _filter_names_for_execution_scope(
+            names,
+            specs=specs,
+            execution_target=execution_target,
+            execution_scope=execution_scope,
         )
-        if is_remote_ssh_execution_target(execution_target) or remote_only_scope:
-            names &= {
-                spec.name for spec in specs if _is_remote_ssh_compatible_tool(spec)
-            }
-        elif execution_scope is not None and not scope_allows_remote:
-            names = {name for name in names if not name.startswith("remote.")}
-        elif execution_target is not None and not scope_allows_remote:
-            names = {name for name in names if not name.startswith("remote.")}
-        return names
 
 
 def _is_remote_ssh_compatible_tool(spec: AgentToolSpec) -> bool:
     if spec.name in _REMOTE_SSH_TARGET_NEUTRAL_TOOLS:
         return True
     return spec.name.startswith(_REMOTE_SSH_TARGET_PREFIXES)
+
+
+def _filter_names_for_execution_scope(
+    names: set[str],
+    *,
+    specs: list[AgentToolSpec],
+    execution_target: dict | str | None,
+    execution_scope: dict | str | None,
+) -> set[str]:
+    scope_allows_remote = execution_scope_allows_remote(execution_scope)
+    remote_only_scope = (
+        execution_scope is not None
+        and scope_allows_remote
+        and not execution_scope_allows_local(execution_scope)
+    )
+    if is_remote_ssh_execution_target(execution_target) or remote_only_scope:
+        names &= {
+            spec.name for spec in specs if _is_remote_ssh_compatible_tool(spec)
+        }
+    elif execution_scope is not None and not scope_allows_remote:
+        names = {name for name in names if not name.startswith("remote.")}
+    elif execution_target is not None and not scope_allows_remote:
+        names = {name for name in names if not name.startswith("remote.")}
+    return names
 
 
 def _tool_spec_order_key(
