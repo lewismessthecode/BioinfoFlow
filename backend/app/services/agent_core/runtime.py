@@ -196,17 +196,11 @@ class AgentCoreRuntime:
         fresh_turn = await self.turn_repo.get(turn_id)
         if fresh_turn is None:
             return None
-        completed = await AgentLoopController(
-            self.turn_repo.session,
-            model_gateway=self.model_gateway,
-            ownership=ownership,
-        ).complete_turn_from_result(
+        return await self._complete_claimed_turn(
             turn=fresh_turn,
             result=result,
+            ownership=ownership,
         )
-        await self._release_active_if_terminal(completed)
-        await self._enqueue_persisted_resume_intent(completed)
-        return completed
 
     async def resume_turn_after_action(self, action_id: str):
         action_repo = AgentActionRepository(self.turn_repo.session)
@@ -322,6 +316,19 @@ class AgentCoreRuntime:
         except TurnOwnershipLostError:
             return await self._read_turn_after_ownership_loss(turn_id)
 
+    async def _complete_claimed_turn(self, *, turn, result, ownership: TurnOwnership):
+        completed = await AgentLoopController(
+            self.turn_repo.session,
+            model_gateway=self.model_gateway,
+            ownership=ownership,
+        ).complete_turn_from_result(
+            turn=turn,
+            result=result,
+        )
+        await self._release_active_if_terminal(completed)
+        await self._enqueue_persisted_resume_intent(completed)
+        return completed
+
     async def _resume_claimed_turn(
         self,
         *,
@@ -392,17 +399,11 @@ class AgentCoreRuntime:
         fresh_turn = await self.turn_repo.get(turn_id)
         if fresh_turn is None:
             return None
-        completed = await AgentLoopController(
-            self.turn_repo.session,
-            model_gateway=self.model_gateway,
-            ownership=ownership,
-        ).complete_turn_from_result(
+        return await self._complete_claimed_turn(
             turn=fresh_turn,
             result=result,
+            ownership=ownership,
         )
-        await self._release_active_if_terminal(completed)
-        await self._enqueue_persisted_resume_intent(completed)
-        return completed
 
     async def _publish_child_running_best_effort(
         self,
