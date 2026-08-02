@@ -139,6 +139,105 @@ async def test_runtime_terminalizes_unexpected_statement_error_after_claim(
     assert events[-1].type == "turn.failed"
 
 
+@pytest.mark.asyncio
+async def test_runtime_terminalizes_unexpected_statement_error_after_resume_claim(
+    db_session,
+    monkeypatch,
+    run_shell_without_platform_sandbox,
+) -> None:
+    async def request_approval(*args, **kwargs):
+        del args, kwargs
+
+        class FakeResponse:
+            usage = None
+
+        class FakeChoice:
+            pass
+
+        class FakeMessage:
+            content = ""
+
+        class FakeFunction:
+            name = "bash"
+            arguments = json.dumps(
+                {
+                    "command": 'sh -c \': "$COMMAND"; printf "%s\\n" approved\'',
+                    "cwd": str(settings.deliveries_root),
+                }
+            )
+
+        class FakeToolCall:
+            id = "tool-call-resume-error"
+            function = FakeFunction()
+
+        message = FakeMessage()
+        message.tool_calls = [FakeToolCall()]
+        choice = FakeChoice()
+        choice.message = message
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    async def fail_resumed_turn(
+        self,
+        *,
+        action_id,
+        action_repo,
+        action,
+        turn,
+        session,
+        ownership,
+    ):
+        del action_id, action_repo, action, session, ownership
+        await self.turn_repo.update_all(turn, loop_state={"bad": object()})
+
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        request_approval,
+    )
+    monkeypatch.setattr(AgentCoreRuntime, "_resume_claimed_turn", fail_resumed_turn)
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="resume-error-model")
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    session = await service.session_repo.update_all(
+        session,
+        toolset_policy={"name": "execution"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Trigger an unexpected resume persistence failure.",
+    )
+
+    waiting_turn = await service.runtime.run_turn(str(turn.id))
+    action = (await AgentActionRepository(db_session).list_for_turn(str(turn.id)))[0]
+    assert waiting_turn.status == AgentTurnStatus.WAITING_APPROVAL
+    await service.decide_action(
+        action_id=str(action.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+
+    failed_turn = await service.runtime.resume_turn_after_action(str(action.id))
+    refreshed_session = await AgentSessionRepository(db_session).get(str(session.id))
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+
+    assert failed_turn.status == AgentTurnStatus.FAILED
+    assert failed_turn.error_code == "agent_runtime_failed"
+    assert failed_turn.owner_token is None
+    assert failed_turn.completed_at is not None
+    assert refreshed_session.active_turn_id is None
+    assert events[-1].type == "turn.failed"
+
+
 def test_runner_logs_statement_error_origin_without_sql_parameters() -> None:
     error = StatementError(
         "tool result persistence failed",
