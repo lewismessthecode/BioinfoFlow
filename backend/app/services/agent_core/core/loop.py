@@ -287,7 +287,7 @@ class AgentLoopController:
             skill_registry = AgentSkillRegistry.from_default_roots()
             skills_available = bool(skill_registry.list())
             visible_tools = (
-                self.executor.exposure.exposed_specs(
+                self.executor.capabilities.exposed_specs(
                     policy=permission_snapshot["toolset_policy"],
                     role=permission_context.role,
                     execution_target=expected_execution_target,
@@ -992,7 +992,7 @@ class AgentLoopController:
                 fresh_snapshot = fresh_permission_context.snapshot()
                 fresh_exposed_tool_names = {
                     spec.name
-                    for spec in self.executor.exposure.exposed_specs(
+                    for spec in self.executor.capabilities.exposed_specs(
                         policy=fresh_snapshot["toolset_policy"],
                         role=fresh_permission_context.role,
                         execution_target=fresh_snapshot["execution_target"],
