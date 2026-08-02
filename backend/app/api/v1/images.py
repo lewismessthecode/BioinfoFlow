@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
 from app.api.error_handler import handle_api_errors
+from app.api.upload_limits import UploadTooLargeError, read_upload_limited
 from app.auth.session import AuthUser
 from app.config import settings
 from app.schemas.image import ImagePullRequest, ImageRead
@@ -126,8 +127,9 @@ async def load_image_tarball(
     db: AsyncSession = Depends(get_db),
 ):
     service = ImageService(db)
-    content = await file.read()
-    if len(content) > settings.max_image_upload_size_bytes:
+    try:
+        content = await read_upload_limited(file, settings.max_image_upload_size_bytes)
+    except UploadTooLargeError:
         return error_response(
             code="FILE_TOO_LARGE",
             message=f"Image tarball exceeds maximum upload size of {settings.max_image_upload_size_bytes} bytes",

@@ -7,11 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
 from app.api.error_handler import handle_api_errors
+from app.api.upload_limits import UploadTooLargeError, read_upload_limited
 from app.auth.session import AuthUser
 from app.config import settings
 from app.schemas.storage import StorageScanRequest
 from app.services.storage_service import StorageService
-from app.utils.responses import success_response
+from app.utils.responses import error_response, success_response
 
 
 router = APIRouter(prefix="/storage", tags=["storage"])
@@ -121,10 +122,14 @@ async def upload_storage(
     db: AsyncSession = Depends(get_db),
 ):
     del user
-    content = await file.read()
-    if len(content) > settings.max_upload_size_bytes:
-        raise ValueError(
-            f"File exceeds maximum upload size of {settings.max_upload_size_bytes} bytes"
+    try:
+        content = await read_upload_limited(file, settings.max_upload_size_bytes)
+    except UploadTooLargeError:
+        return error_response(
+            code="FILE_TOO_LARGE",
+            message=f"File exceeds maximum upload size of {settings.max_upload_size_bytes} bytes",
+            status_code=413,
+            request=request,
         )
     service = StorageService(db)
     data = await service.upload(

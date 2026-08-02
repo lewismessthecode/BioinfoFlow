@@ -9,8 +9,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db
+from app.api.deps import get_current_user, get_db
 from app.auth.dependencies import resolve_websocket_user
+from app.auth.session import AuthUser
 from app.models.run import Run
 from app.models.workflow import Workflow
 from app.scheduler.resources import SystemResources
@@ -96,8 +97,10 @@ async def _enrich_active_runs(
 @router.get("/status")
 async def get_scheduler_status(
     request: Request,
+    user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    del user
     scheduler = get_run_scheduler()
     if scheduler is None:
         data = {
@@ -129,7 +132,11 @@ async def get_scheduler_status(
 
 
 @router.get("/resources")
-async def get_scheduler_resources(request: Request):
+async def get_scheduler_resources(
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+):
+    del user
     scheduler = get_run_scheduler()
     snapshot = scheduler.get_resource_snapshot() if scheduler is not None else None
     return success_response(
@@ -142,7 +149,10 @@ async def get_scheduler_resources(request: Request):
 
 
 @router.get("/resources/stream")
-async def stream_scheduler_resources(request: Request):
+async def stream_scheduler_resources(
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+):
     """Server-sent events feed for the live resource monitor.
 
     Emits a combined frame (resources + enriched active_runs + queue_depth)
@@ -152,6 +162,7 @@ async def stream_scheduler_resources(request: Request):
     Unlike ``/events/stream``, this feed is host-scoped (not project-scoped):
     resource snapshots describe the backend host, not a tenant's project.
     """
+    del user
     return StreamingResponse(
         resource_stream_generator(
             request=request,

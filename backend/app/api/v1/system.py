@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_admin
+from app.api.deps import get_current_user, get_db, require_admin
+from app.auth.session import AuthUser
 from app.config import settings
 from app.models.llm import LlmProvider, LlmProviderCredential
 from app.models.project import Project
@@ -108,8 +109,12 @@ async def health_check(request: Request):
 
 
 @router.get("/gpu")
-async def get_gpu_status(request: Request):
+async def get_gpu_status(
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+):
     """Get detailed GPU status and compatibility info."""
+    del user
     gpu_service = get_gpu_service()
     status = await gpu_service.get_status()
 
@@ -158,8 +163,12 @@ async def get_gpu_status(request: Request):
 
 
 @router.get("/gpu/metrics")
-async def get_gpu_metrics(request: Request):
+async def get_gpu_metrics(
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+):
     """Get real-time GPU metrics for monitoring."""
+    del user
     gpu_service = get_gpu_service()
     metrics = await gpu_service.get_gpu_metrics()
 
@@ -330,8 +339,13 @@ def _next_action(checks: list[dict]) -> dict[str, str]:
 
 
 @router.get("/readiness")
-async def get_readiness(request: Request, db: AsyncSession = Depends(get_db)):
+async def get_readiness(
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """First-run readiness checklist for web onboarding and ``bif doctor``."""
+    del user
     docker_service = DockerService()
     docker_available = await docker_service.is_available()
     nvidia_runtime = (
