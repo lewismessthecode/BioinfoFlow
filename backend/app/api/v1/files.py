@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
 from app.api.error_handler import handle_api_errors
+from app.api.upload_limits import UploadTooLargeError, read_upload_limited
 from app.auth.session import AuthUser
 from app.config import settings
 from app.schemas.file import FileScanRequest, FileWriteRequest, FileUploadResponse
@@ -137,8 +138,9 @@ async def upload_file(
     db: AsyncSession = Depends(get_db),
 ):
     service = FileService(db)
-    content = await file.read()
-    if len(content) > settings.max_upload_size_bytes:
+    try:
+        content = await read_upload_limited(file, settings.max_upload_size_bytes)
+    except UploadTooLargeError:
         return error_response(
             code="FILE_TOO_LARGE",
             message=f"File exceeds maximum upload size of {settings.max_upload_size_bytes} bytes",

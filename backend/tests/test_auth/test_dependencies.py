@@ -144,6 +144,23 @@ async def test_get_current_user_no_cookie(auth_client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_host_monitoring_endpoints_require_auth(
+    auth_client: AsyncClient,
+) -> None:
+    for path in (
+        "/api/v1/scheduler/status",
+        "/api/v1/scheduler/resources",
+        "/api/v1/system/gpu",
+        "/api/v1/system/gpu/metrics",
+        "/api/v1/system/readiness",
+    ):
+        response = await auth_client.get(path)
+        assert response.status_code == 401, path
+
+    assert (await auth_client.get("/api/v1/system/ping")).status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_get_current_user_valid_cookie(auth_client: AsyncClient) -> None:
     """Request with valid session cookie should succeed."""
     auth_client.cookies.set("better-auth.session_token", "valid-session-token")

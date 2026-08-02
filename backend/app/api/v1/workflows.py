@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
 from app.api.error_handler import handle_api_errors
+from app.api.upload_limits import UploadTooLargeError, read_upload_limited
 from app.auth.session import AuthUser
 from app.schemas.form_spec import to_read_projection
 from app.schemas.workflow import WorkflowCreate, WorkflowRead, WorkflowUpdate
@@ -208,15 +209,19 @@ async def create_local_bundle_workflow(
     uploaded_files: list[dict[str, object]] = []
     total_bytes = 0
     for relpath, upload in zip(parsed_paths, bundle_files, strict=False):
-        content = await upload.read()
-        total_bytes += len(content)
-        if total_bytes > MAX_WORKFLOW_CONTENT_BYTES:
+        try:
+            content = await read_upload_limited(
+                upload,
+                MAX_WORKFLOW_CONTENT_BYTES - total_bytes,
+            )
+        except UploadTooLargeError:
             return error_response(
                 code="PAYLOAD_TOO_LARGE",
                 message="Workflow bundle exceeds the 50 MB limit",
                 status_code=413,
                 request=request,
             )
+        total_bytes += len(content)
         uploaded_files.append({"relpath": relpath, "content": content})
 
     service = WorkflowService(db)
