@@ -481,6 +481,9 @@ async def test_child_running_observability_failure_does_not_abort_resume(
     assert completed.status == AgentTurnStatus.COMPLETED
     assert completed.final_text == "Resumed child completed."
     assert completed.owner_token is None
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+    resumed_start = [event for event in events if event.type == "turn.started"][-1]
+    assert resumed_start.payload["resume_action_id"] == str(action.id)
     assert "sentinel-resume-publication-secret" not in caplog.text
 
 
