@@ -1951,22 +1951,6 @@
       "deleted": "Notification deleted"
     }
   },
-  "welcome": {
-    "eyebrow": "Analysis Workspace",
-    "title": "Start your first analysis",
-    "subtitle": "Choose a project template or create a custom workspace. Once a project exists, Bioinfoflow can keep chats, files, and runs aligned in one place.",
-    "blankName": "Blank Workspace",
-    "blankDescription": "Start with an empty project for ad hoc exploration",
-    "wgsName": "WGS Analysis",
-    "wgsDescription": "Whole genome sequencing variant calling",
-    "rnaseqName": "RNA-seq Analysis",
-    "rnaseqDescription": "Differential gene expression analysis",
-    "createFromTemplate": "Use Template",
-    "createFromTemplateNamed": "Use {name}",
-    "customProjectLabel": "Custom Setup",
-    "customProjectDescription": "Need a custom folder structure, naming scheme, or workspace path? Start with a blank project and configure it yourself.",
-    "customProject": "Create a custom project"
-  },
   "connections": {
     "title": "SSH hosts",
     "subtitle": "Manage saved SSH hosts for remote work and workflow runs.",
