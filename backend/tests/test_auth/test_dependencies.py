@@ -98,7 +98,11 @@ async def auth_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "auth_enabled", True)
     monkeypatch.setattr(settings, "better_auth_db_path", str(db_path))
 
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    state_db_path = tmp_path / "bioinfoflow.db"
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{state_db_path}",
+        future=True,
+    )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await stamp_database_revision(engine)
