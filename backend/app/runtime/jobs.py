@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -25,6 +25,7 @@ from app.utils.dag_builder import (
 )
 from app.utils.dag_matcher import DagMatcher
 from app.utils.logging import get_logger
+from app.utils.time import duration_seconds, utc_now
 
 
 logger = get_logger(__name__)
@@ -34,20 +35,13 @@ if TYPE_CHECKING:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 def _duration_seconds(
     started_at: datetime | None, completed_at: datetime | None
 ) -> int | None:
-    if not started_at or not completed_at:
-        return None
-    # Normalize both to UTC-aware datetimes to avoid offset-naive vs offset-aware errors
-    if started_at.tzinfo is None:
-        started_at = started_at.replace(tzinfo=timezone.utc)
-    if completed_at.tzinfo is None:
-        completed_at = completed_at.replace(tzinfo=timezone.utc)
-    return int((completed_at - started_at).total_seconds())
+    return duration_seconds(started_at, completed_at)
 
 
 async def recover_stale_runs(

@@ -71,6 +71,8 @@ async def test_recover_stale_runs_marks_queued_and_running_as_failed(
     assert queued_refreshed.status == RunStatus.FAILED.value
     assert running_refreshed.error_message.startswith("Run recovery:")
     assert queued_refreshed.error_message.startswith("Run recovery:")
+    assert running_refreshed.error_json is None
+    assert queued_refreshed.error_json is None
 
 
 @pytest.mark.asyncio
