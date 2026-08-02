@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import app.database as app_database
-from sqlalchemy import and_, exists, func, or_, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -15,7 +15,6 @@ from app.engine.local import LocalBackend
 from app.engine.registry import get_adapter
 from app.models.run import Run, RunStatus
 from app.models.run_config import RunConfigHelper
-from app.schemas.run import RunErrorCode, RunErrorStage
 from app.models.workflow import Workflow, WorkflowEngine
 from app.path_layout import project_home, run_audit_root, run_engine_workspace
 from app.repositories.project_repo import ProjectRepository
@@ -35,6 +34,11 @@ from app.scheduler.hooks import RunCompletionHooks
 from app.scheduler.models import ScheduledTask, TaskState
 from app.scheduler.monitor import ResourceMonitor
 from app.scheduler.queue import TaskQueue
+from app.scheduler.recovery import (
+    RUN_ACTIVE_STATUSES,
+    _ensure_utc,
+    recover_orphan_runs,
+)
 from app.scheduler.resources import SystemResources
 from app.scheduler.slots import SlotTracker
 from app.scheduler.retry import RetryEvaluator
@@ -46,12 +50,6 @@ from app.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def _ensure_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
 DEFAULT_STATE_COUNTS = {
     "queued": 0,
     "dispatched": 0,
@@ -59,14 +57,6 @@ DEFAULT_STATE_COUNTS = {
     "failed": 0,
     "cancelled": 0,
 }
-
-RUN_ACTIVE_STATUSES = (
-    RunStatus.PENDING.value,
-    RunStatus.QUEUED.value,
-    RunStatus.PREPARING.value,
-    RunStatus.RUNNING.value,
-)
-
 
 @dataclass(frozen=True, slots=True)
 class ExecutionLease:
@@ -355,103 +345,13 @@ class RunScheduler:
         * fine-grained: worker heartbeat older than ``worker_heartbeat_grace_seconds``
           for a run in RUNNING state — indicates the worker died mid-execution.
         """
-        stale_cutoff = _now() - timedelta(minutes=self.config.stale_timeout_minutes)
-        heartbeat_cutoff = _now() - timedelta(
-            seconds=self.config.worker_heartbeat_grace_seconds
-        )
-        try:
-            async with self._session_factory() as session:
-                stale_condition = or_(
-                    and_(
-                        Run.started_at.is_not(None),
-                        Run.started_at <= stale_cutoff,
-                    ),
-                    and_(Run.started_at.is_(None), Run.created_at <= stale_cutoff),
-                    and_(
-                        Run.status == RunStatus.RUNNING.value,
-                        Run.last_heartbeat_at.is_not(None),
-                        Run.last_heartbeat_at <= heartbeat_cutoff,
-                    ),
-                )
-                stmt = select(Run).where(
-                    Run.status.in_([RunStatus.QUEUED.value, RunStatus.RUNNING.value]),
-                    stale_condition,
-                )
-                active_task_absent = None
-                if self._scheduled_tasks_available:
-                    task_exists = exists(
-                        select(ScheduledTask.id).where(
-                            ScheduledTask.run_id == Run.run_id,
-                            ScheduledTask.state.in_(
-                                [TaskState.QUEUED.value, TaskState.DISPATCHED.value]
-                            ),
-                        )
-                    )
-                    active_task_absent = ~task_exists
-                    stmt = stmt.where(~task_exists)
-
-                result = await session.execute(stmt)
-                stale_runs = result.scalars().all()
-
-                recovered_runs: list[Run] = []
-                for run in stale_runs:
-                    heartbeat_stale = (
-                        run.last_heartbeat_at is not None
-                        and _ensure_utc(run.last_heartbeat_at) <= heartbeat_cutoff
-                    )
-                    if heartbeat_stale:
-                        error_message = "Worker heartbeat lost; marking run as failed"
-                        error_json = {
-                            "stage": RunErrorStage.EXECUTION,
-                            "code": RunErrorCode.WORKER_LOST,
-                            "message": error_message,
-                            "hint": "The worker handling this run stopped responding. "
-                            "Retry to start a new run.",
-                        }
-                    else:
-                        error_message = (
-                            "Run recovery: marked stale after service restart"
-                        )
-                        error_json = {
-                            "stage": RunErrorStage.EXECUTION,
-                            "code": RunErrorCode.RUN_STALE,
-                            "message": error_message,
-                            "hint": "The scheduler restarted while this run was in flight.",
-                        }
-                    completed_at = _now()
-                    duration_seconds = _duration_seconds(run.started_at, completed_at)
-                    with session.no_autoflush:
-                        update_conditions = [
-                            Run.run_id == run.run_id,
-                            Run.status.in_(RUN_ACTIVE_STATUSES),
-                            stale_condition,
-                        ]
-                        if active_task_absent is not None:
-                            update_conditions.append(active_task_absent)
-                        update_result = await session.execute(
-                            update(Run)
-                            .where(*update_conditions)
-                            .values(
-                                status=RunStatus.FAILED.value,
-                                error_message=error_message,
-                                error_json=error_json,
-                                completed_at=completed_at,
-                                duration_seconds=duration_seconds,
-                            )
-                        )
-                    if update_result.rowcount == 1:
-                        recovered_runs.append(run)
-                if recovered_runs:
-                    await session.commit()
-                    for run in recovered_runs:
-                        await session.refresh(run)
-                else:
-                    await session.rollback()
-        except OperationalError as exc:
-            if "no such table: runs" not in str(exc).lower():
-                raise
-            logger.info("scheduler.recovery.skipped_missing_runs_table")
-            return 0
+        async with self._session_factory() as session:
+            recovered_runs = await recover_orphan_runs(
+                session,
+                stale_timeout_minutes=self.config.stale_timeout_minutes,
+                worker_heartbeat_grace_seconds=self.config.worker_heartbeat_grace_seconds,
+                scheduled_tasks_available=self._scheduled_tasks_available,
+            )
 
         for run in recovered_runs:
             await publish_run_status(run, message=run.error_message or "Run failed")

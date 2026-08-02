@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.models.run import Run, RunStatus
+from app.models.run import RunStatus
 from app.models.run_config import RunConfigHelper
 from app.engine.backend import EngineEvent, EngineEventType
 from app.path_layout import workflow_entrypoint_path
@@ -73,44 +71,22 @@ async def recover_stale_runs(
 async def _recover_stale_runs_in_session(
     *, session: AsyncSession, stale_after_minutes: int
 ) -> int:
-    cutoff = _now() - timedelta(minutes=stale_after_minutes)
-    stmt = select(Run).where(
-        Run.status.in_([RunStatus.QUEUED.value, RunStatus.RUNNING.value])
+    from app.scheduler.recovery import recover_orphan_runs
+
+    recovered_runs = await recover_orphan_runs(
+        session,
+        stale_timeout_minutes=stale_after_minutes,
+        worker_heartbeat_grace_seconds=None,
+        scheduled_tasks_available=False,
+        include_error_details=False,
     )
-    try:
-        result = await session.execute(stmt)
-    except OperationalError as exc:
-        if "no such table: runs" not in str(exc).lower():
-            raise
-        logger.info("run.recovery.skipped_missing_runs_table")
-        return 0
-    candidates = result.scalars().all()
-
-    recovered = 0
-    now = _now()
-    for run in candidates:
-        stale_anchor = run.started_at or run.created_at
-        if stale_anchor is None:
-            continue
-        if stale_anchor.tzinfo is None:
-            stale_anchor = stale_anchor.replace(tzinfo=timezone.utc)
-        if stale_anchor > cutoff:
-            continue
-
-        run.status = RunStatus.FAILED.value
-        run.error_message = "Run recovery: marked stale after service restart"
-        run.completed_at = now
-        run.duration_seconds = _duration_seconds(run.started_at, run.completed_at)
-        recovered += 1
-
-    if recovered:
-        await session.commit()
+    if recovered_runs:
         logger.warning(
             "run.recovery.completed",
-            recovered=recovered,
+            recovered=len(recovered_runs),
             stale_after_minutes=stale_after_minutes,
         )
-    return recovered
+    return len(recovered_runs)
 
 
 async def execute_run(run_id: str) -> None:
