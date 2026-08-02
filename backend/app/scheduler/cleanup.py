@@ -100,15 +100,3 @@ class WorkDirCleaner:
         del runtime
         del engine
         return [workspace_path / "runs" / run_id]
-
-    def _resolve_path(self, workspace_path: Path, value: str | Path) -> Path:
-        path = Path(value)
-        return path if path.is_absolute() else workspace_path / path
-
-    def _unique_paths(self, paths: list[Path]) -> list[Path]:
-        seen: dict[str, Path] = {}
-        for path in paths:
-            key = str(path.resolve(strict=False))
-            if key not in seen:
-                seen[key] = path
-        return list(seen.values())
