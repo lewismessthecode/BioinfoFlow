@@ -20,7 +20,13 @@ class ToolDispatchResult:
 
 
 class AgentToolDispatcher:
-    """Compatibility facade for callers that predate the harness executor."""
+    """Compatibility facade for callers that predate the harness executor.
+
+    New turn execution goes through ``AgentToolExecutor`` directly. Keep this
+    adapter until the existing import and test-facing dispatch surface is
+    intentionally migrated; its result shape is part of that compatibility
+    contract.
+    """
 
     def __init__(self, session: AsyncSession, registry: AgentToolRegistry):
         self.executor = AgentToolExecutor(session, registry)
