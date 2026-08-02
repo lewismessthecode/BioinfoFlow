@@ -22,6 +22,9 @@ from app.repositories.agent_user_settings_repo import AgentUserSettingsRepositor
 from app.repositories.project_repo import ProjectRepository
 from app.schemas.agent_core import AgentTurnSteerRead
 from app.services.agent_core.attachments import AgentAttachmentService
+from app.services.agent_core.context.security import (
+    is_sensitive_context_path as _is_sensitive_context_path,
+)
 from app.services.agent_core.events import AgentEventType, compact_transcript_events
 from app.services.agent_core.execution_target import (
     normalize_execution_scope,
@@ -1789,16 +1792,6 @@ def _generated_session_title(input_text: str) -> str:
 
 
 _FILE_REF_MAX_BYTES = 64 * 1024
-_DENIED_CONTEXT_NAMES = {
-    ".env",
-    "better-auth.db",
-    "bioinfoflow.db",
-    "id_dsa",
-    "id_ecdsa",
-    "id_ed25519",
-    "id_rsa",
-}
-_DENIED_CONTEXT_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
 _WORKFLOW_REF_ALLOWED_KEYS = frozenset(
     {
         "kind",
@@ -1936,15 +1929,6 @@ def _optional_workflow_ref_string(part: dict, key: str) -> str:
             f"{_WORKFLOW_REF_MAX_FIELD_LENGTH} characters"
         )
     return normalized
-
-
-def _is_sensitive_context_path(path) -> bool:
-    name = path.name.lower()
-    if name in _DENIED_CONTEXT_NAMES:
-        return True
-    if name.startswith(".env."):
-        return True
-    return path.is_file() and path.suffix.lower() in _DENIED_CONTEXT_SUFFIXES
 
 
 def _same_action_decision(current: dict | None, requested: dict) -> bool:

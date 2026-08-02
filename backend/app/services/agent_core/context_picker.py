@@ -9,6 +9,7 @@ from app.repositories.agent_core_repo import AgentAttachmentRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.run_repo import RunRepository
 from app.repositories.workflow_repo import WorkflowRepository
+from app.services.agent_core.context.security import is_sensitive_context_path
 from app.schemas.agent_core import (
     AgentContextSearchItem,
     AgentContextSearchRead,
@@ -32,7 +33,6 @@ _IGNORED_NAMES = {
 
 class AgentContextPicker:
     def __init__(self, db) -> None:
-        self.db = db
         self.projects = ProjectRepository(db)
         self.attachments = AgentAttachmentRepository(db)
         self.runs = RunRepository(db)
@@ -140,6 +140,8 @@ class AgentContextPicker:
             )
             for attachment in attachments:
                 if attachment.status != AgentAttachmentStatus.READY:
+                    continue
+                if is_sensitive_context_path(Path(attachment.filename)):
                     continue
                 if folded and folded not in attachment.filename.casefold():
                     continue
@@ -278,12 +280,10 @@ def _search_local_paths(root: Path, folded_query: str):
             part.lower() in _IGNORED_NAMES for part in relative_parts
         ):
             continue
+        if is_sensitive_context_path(path):
+            continue
         relative = path.relative_to(root).as_posix()
         if folded_query and folded_query not in relative.casefold():
             continue
         matches.append(path)
     return matches
-
-
-def _like_query(query: str) -> str:
-    return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
