@@ -53,6 +53,20 @@ If RTK has a compact filter, it uses it. Otherwise it passes the command through
   `BIOINFOFLOW_HOME`.
 - Canonical setup and troubleshooting live in `RUNBOOK.md`.
 
+## Installation and Deployment
+
+- For a user-facing localhost trial, use the latest release installer:
+  `curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh`.
+- For source development, use the repository Compose stack; it builds local
+  images and stores data under `data/` by default.
+- For shared or remote access, use the source Compose stack with explicit
+  personal/team auth, public URLs, CORS origins, trusted hosts, and stable
+  secrets. The published frontend image targets localhost unless built with a
+  matching `NEXT_PUBLIC_API_BASE_URL`.
+- `deploy.sh` is not required by the release installer. Keep it for local image
+  builds, GHCR publishing, multi-architecture image release, and offline SSH
+  deployment. Its `sync` flow needs a matching remote `.env`.
+
 ## Repo Map
 
 - `backend/app/api/`: HTTP endpoints.
@@ -70,12 +84,26 @@ If RTK has a compact filter, it uses it. Otherwise it passes the command through
 
 ## Common Commands
 
-Repo setup / Docker, from repo root:
+Release localhost installer (user-facing, outside the repo):
+
+```bash
+curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh
+~/.bioinfoflow/install/install.sh --update
+```
+
+Source-build Docker, from repo root:
+
+```bash
+rtk docker compose up -d --build
+rtk docker compose logs -f backend frontend
+```
+
+Published images, from repo root:
 
 ```bash
 rtk cp .env.example .env
-rtk docker compose up -d --build
-rtk docker compose logs -f backend frontend
+rtk docker compose -f docker-compose.prod.yml pull
+rtk docker compose -f docker-compose.prod.yml up -d
 ```
 
 Backend, from `backend/`:

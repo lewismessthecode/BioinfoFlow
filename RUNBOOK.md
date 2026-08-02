@@ -10,7 +10,7 @@ workspace. It requires Docker Desktop or Docker Engine with Compose 2.24+ and a
 local Unix-socket Docker context.
 
 The latest numeric release publishes `install.sh`, `docker-compose.local.yml`,
-and `SHA256SUMS`. Install it with:
+`bioinfoflow-skills.tar.gz`, and `SHA256SUMS`. Install it with:
 
 ```bash
 curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh
@@ -34,7 +34,7 @@ Do not run the repository copy of `scripts/install.sh` directly: release
 packaging embeds the matching version and publishes the checksums it verifies.
 
 The installer pulls the matching `amd64` or `arm64` images, waits for both
-services to become healthy, and opens `http://localhost:3000`. A fresh local
+services to become healthy, and opens `http://localhost:3000` by default. A fresh local
 workspace opens in the Agent experience with a managed **Bioinfoflow Demo**
 project, a registered WDL workflow, and small sample-sheet/FASTQ inputs. Connect
 one model in the composer, then choose a short demo starter such as **Check and
@@ -94,6 +94,50 @@ before changing that boundary.
 If you only remember one rule, remember this:
 
 > Localhost needs no `.env`; use the repo-root `.env` only for explicit overrides or shared deployment.
+
+## Choose a Deployment Path
+
+Use the release installer for a normal localhost trial. It manages the complete
+`~/.bioinfoflow` home, uses development auth, binds only to loopback, and does
+not read the repository `.env`.
+
+Use the source Compose stack for development, voice sidecars, custom frontend
+build arguments, or shared/remote deployments that need personal or team auth:
+
+```bash
+docker compose up -d --build
+```
+
+Use `docker-compose.prod.yml` when pre-built images are appropriate. Its
+published frontend image is built for localhost, so a shared or remote browser
+deployment needs a frontend image built with the target
+`NEXT_PUBLIC_API_BASE_URL`; the source-build path is the default for that case.
+
+### `deploy.sh` status
+
+`deploy.sh` is not the localhost installer and is not needed for ordinary local
+installation. Keep it for deployment workflows that the release installer does
+not provide:
+
+- `build`: build one Linux architecture locally.
+- `push`: push architecture-specific images to GHCR.
+- `release`: build and push multi-architecture backend/frontend images.
+- `setup` and `sync`: copy the production Compose file and perform offline SSH
+  deployment by transferring and loading image tarballs.
+
+Typical offline deployment:
+
+```bash
+./deploy.sh setup user@server [remote_dir]
+NEXT_PUBLIC_API_BASE_URL=http://server:8000/api/v1 \
+  ./deploy.sh sync --arch amd64 user@server [remote_dir]
+```
+
+Before `sync`, configure the remote `.env`, including auth credentials, data
+root, public URLs, and the same `IMAGE_TAG` used for the local build. The
+frontend API URL is a build-time value. The formal GitHub release workflow,
+not `deploy.sh release`, packages and publishes the versioned localhost
+installer assets.
 
 ## 1. Environment Variables: One Rule, Not Three
 
