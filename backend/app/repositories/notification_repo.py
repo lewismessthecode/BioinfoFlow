@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from app.models.notification import NotificationConfig
+from app.models.project import Project
 from app.repositories.base import BaseRepository
 
 
@@ -15,8 +16,11 @@ class NotificationRepository(BaseRepository[NotificationConfig]):
         project_id: str | None = None,
         trigger: str | None = None,
         enabled: bool | None = None,
+        workspace_id: str | None = None,
     ) -> list[NotificationConfig]:
-        stmt = select(self.model).order_by(
+        stmt = select(self.model).join(
+            Project, Project.id == self.model.project_id
+        ).order_by(
             self.model.created_at.asc(),
             self.model.id.asc(),
         )
@@ -24,5 +28,10 @@ class NotificationRepository(BaseRepository[NotificationConfig]):
         if enabled is not None:
             filters["enabled"] = enabled
         stmt = self._apply_filters(stmt, filters)
+        if workspace_id is not None:
+            stmt = stmt.where(
+                Project.workspace_id == workspace_id,
+                Project.user_id != "system",
+            )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

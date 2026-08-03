@@ -31,6 +31,8 @@ async def create_notification(
     service = NotificationService(db)
     config = await service.create_config(
         project_id=str(payload.project_id),
+        user_id=user.id,
+        workspace_id=user.workspace_id,
         channel=payload.channel.value,
         trigger=payload.trigger.value,
         config=payload.config,
@@ -48,7 +50,12 @@ async def list_notifications(
     db: AsyncSession = Depends(get_db),
 ):
     service = NotificationService(db)
-    configs = await service.list_configs(project_id=project_id, trigger=trigger)
+    configs = await service.list_configs(
+        project_id=project_id,
+        trigger=trigger,
+        user_id=user.id,
+        workspace_id=user.workspace_id,
+    )
     return success_response([_serialize(config) for config in configs], request=request)
 
 
@@ -60,7 +67,11 @@ async def delete_notification(
     db: AsyncSession = Depends(get_db),
 ):
     service = NotificationService(db)
-    deleted = await service.delete_config(notification_id)
+    deleted = await service.delete_config(
+        notification_id,
+        user_id=user.id,
+        workspace_id=user.workspace_id,
+    )
     if not deleted:
         return error_response(
             code="NOT_FOUND",
