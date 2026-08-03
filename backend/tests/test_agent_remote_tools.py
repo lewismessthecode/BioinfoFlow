@@ -59,6 +59,17 @@ def _tool_context_without_session(db_session) -> AgentToolContext:
     )
 
 
+@pytest.mark.asyncio
+async def test_remote_connection_discovery_is_empty_without_configured_nodes(db_session):
+    tool = RemoteConnectionsListTool(
+        resolver_factory=lambda _db: StaticRemoteConnectionResolver([])
+    )
+
+    result = await tool.run({}, _tool_context(db_session))
+
+    assert result == {"connections": [], "total_count": 0}
+
+
 async def _create_agent_session(
     db_session,
     *,
@@ -833,6 +844,20 @@ async def test_remote_connections_list_reads_workspace_database_connections(db_s
             "skill_summary": "Use the shared module stack.",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_auto_connection_discovery_returns_empty_for_new_session(db_session):
+    agent_session = await _create_agent_session(
+        db_session,
+        session_metadata={"execution_scope": {"mode": "auto"}},
+    )
+
+    result = await RemoteConnectionsListTool().run(
+        {}, _tool_context(db_session, session_id=str(agent_session.id))
+    )
+
+    assert result == {"connections": [], "total_count": 0}
 
 
 @pytest.mark.asyncio

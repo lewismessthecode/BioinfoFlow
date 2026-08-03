@@ -21,6 +21,7 @@ terminals use backend-managed SSH PTY sessions.
   root path.
 - Select a connection in the Agent composer.
 - Let AgentCore use `remote.connections.list`, `remote.read_file`, `remote.list_dir`, and `remote.exec` against the selected connection.
+- In **Auto** mode, let AgentCore discover an authorized connection and choose it from task context.
 
 Remote command output is recorded as Agent action output. Command-style remote outputs can also appear as artifacts in the workbench.
 
@@ -197,7 +198,16 @@ host or container SSH environment.
 
 ## Use A Connection With AgentCore
 
-Select a remote connection in the Agent composer before sending a message. Bioinfoflow stores the selected connection id in the Agent session metadata.
+Select a remote connection in the Agent composer before sending a message when
+you want to fence the agent to one or more explicit hosts. Bioinfoflow stores
+the selected connection id in the Agent session metadata.
+
+When the composer is set to **Auto**, AgentCore receives both local and remote
+execution tools. It first calls `remote.connections.list`, then chooses an
+authorized SSH connection only when the available connection metadata and task
+require it. An empty list is a valid zero-configuration state: the agent stays
+local and uses local tools, so a new project does not need a preconfigured SSH
+node.
 
 When a connection is selected, AgentCore receives remote context and can use these tools:
 
