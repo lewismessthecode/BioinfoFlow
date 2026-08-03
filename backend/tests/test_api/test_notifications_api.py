@@ -4,7 +4,11 @@ from uuid import uuid4
 
 import pytest
 
+from app.api.deps import get_current_user
+from app.auth.session import AuthUser
+from app.main import app
 from app.models.project import Project
+from app.models.workspace import Workspace
 
 
 @pytest.mark.asyncio
@@ -170,6 +174,76 @@ async def test_notification_delete_nonexistent_returns_404(async_client):
     assert resp.status_code == 404
     assert resp.json()["success"] is False
     assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_notification_crud_is_scoped_to_callers_workspace(
+    async_client, db_session, tmp_path
+):
+    """Notification CRUD must not cross workspace project boundaries."""
+    workspace_b_id = "00000000-0000-0000-0000-000000000002"
+    db_session.add(
+        Workspace(
+            id=workspace_b_id,
+            name="Workspace B",
+            slug="workspace-b",
+            is_default=False,
+        )
+    )
+    project_b = Project(
+        name="Foreign Notification Project",
+        storage_mode="external",
+        external_root_path=str(tmp_path),
+        user_id="owner-b",
+        workspace_id=workspace_b_id,
+    )
+    db_session.add(project_b)
+    await db_session.commit()
+    await db_session.refresh(project_b)
+
+    # Seed the foreign notification through the service so the route checks
+    # exercise an existing object for both read and delete.
+    from app.services.notification_service import NotificationService
+
+    config = await NotificationService(db_session).create_config(
+        project_id=str(project_b.id),
+        user_id="owner-b",
+        workspace_id=workspace_b_id,
+        channel="webhook",
+        trigger="on_complete",
+        config={"url": "https://foreign.example/hook"},
+    )
+
+    async def current_user() -> AuthUser:
+        return AuthUser(
+            id="member-a",
+            name="Member A",
+            email="member-a@example.test",
+            role="member",
+            workspace_id="00000000-0000-0000-0000-000000000001",
+        )
+
+    app.dependency_overrides[get_current_user] = current_user
+    try:
+        list_resp = await async_client.get("/api/v1/notifications")
+        assert list_resp.status_code == 200
+        assert list_resp.json()["data"] == []
+
+        create_resp = await async_client.post(
+            "/api/v1/notifications",
+            json={
+                "project_id": str(project_b.id),
+                "channel": "webhook",
+                "trigger": "on_complete",
+                "config": {"url": "https://attacker.example/hook"},
+            },
+        )
+        assert create_resp.status_code == 404
+
+        delete_resp = await async_client.delete(f"/api/v1/notifications/{config.id}")
+        assert delete_resp.status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.mark.asyncio
