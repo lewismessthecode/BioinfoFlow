@@ -12,6 +12,14 @@ import pytest
 
 from app.models.project import Project
 from app.services.notification_service import NotificationService
+from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+USER_ID = "dev"
+
+
+def _identity() -> dict[str, str]:
+    return {"user_id": USER_ID, "workspace_id": DEFAULT_WORKSPACE_ID}
 
 
 @pytest.mark.asyncio
@@ -25,6 +33,7 @@ async def test_create_config_succeeds_with_valid_input(db_session):
     service = NotificationService(db_session)
     config = await service.create_config(
         project_id=str(project.id),
+        **_identity(),
         channel="webhook",
         trigger="on_complete",
         config={"url": "https://hooks.example.com/test"},
@@ -46,6 +55,7 @@ async def test_create_config_raises_on_missing_project(db_session):
     with pytest.raises(FileNotFoundError, match="project not found"):
         await service.create_config(
             project_id=str(uuid4()),
+            **_identity(),
             channel="webhook",
             trigger="on_complete",
             config={"url": "https://example.com/hook"},
@@ -65,6 +75,7 @@ async def test_create_config_raises_on_unsupported_channel(db_session):
     with pytest.raises(ValueError, match="unsupported notification channel"):
         await service.create_config(
             project_id=str(project.id),
+            **_identity(),
             channel="email",
             trigger="on_complete",
             config={"url": "https://example.com/hook"},
@@ -84,6 +95,7 @@ async def test_create_config_raises_on_missing_url(db_session):
     with pytest.raises(ValueError, match="webhook url is required"):
         await service.create_config(
             project_id=str(project.id),
+            **_identity(),
             channel="webhook",
             trigger="on_complete",
             config={"url": ""},
@@ -101,16 +113,17 @@ async def test_delete_config_removes_existing(db_session):
     service = NotificationService(db_session)
     config = await service.create_config(
         project_id=str(project.id),
+        **_identity(),
         channel="webhook",
         trigger="on_complete",
         config={"url": "https://example.com/hook"},
     )
 
-    result = await service.delete_config(str(config.id))
+    result = await service.delete_config(str(config.id), **_identity())
     assert result is True
 
     # Verify it's gone
-    configs = await service.list_configs(project_id=str(project.id))
+    configs = await service.list_configs(project_id=str(project.id), **_identity())
     assert len(configs) == 0
 
 
@@ -118,5 +131,5 @@ async def test_delete_config_removes_existing(db_session):
 async def test_delete_config_returns_false_for_nonexistent(db_session):
     """Deleting a nonexistent config should return False."""
     service = NotificationService(db_session)
-    result = await service.delete_config(str(uuid4()))
+    result = await service.delete_config(str(uuid4()), **_identity())
     assert result is False

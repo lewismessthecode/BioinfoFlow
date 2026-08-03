@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from app.services.notification_service import _is_private_url
+from app.services.notification_service import (
+    _is_private_url,
+    _resolve_webhook_destination,
+)
 
 
 class TestSsrfPrevention:
@@ -57,3 +60,34 @@ class TestSsrfPrevention:
 
     def test_blocks_empty_hostname(self):
         assert _is_private_url("not-a-url") is True
+
+    def test_pins_approved_dns_answers_for_the_request(self):
+        """A later DNS answer cannot replace the validated public address."""
+        with patch(
+            "app.services.notification_service.socket.getaddrinfo",
+            side_effect=[
+                [(2, 1, 0, "", ("93.184.216.34", 443))],
+                [(2, 1, 0, "", ("169.254.169.254", 443))],
+            ],
+        ) as mock_getaddrinfo:
+            destination = _resolve_webhook_destination(
+                "https://attacker-controlled.example/hook"
+            )
+
+            assert destination is not None
+            assert destination.addresses == (("93.184.216.34", 2),)
+            assert mock_getaddrinfo.call_count == 1
+
+            # The connection resolver consumes the pinned destination instead
+            # of performing a second system DNS lookup.
+            import asyncio
+
+            from app.services.notification_service import _PinnedResolver
+
+            resolved = asyncio.run(
+                _PinnedResolver(destination).resolve(
+                    destination.hostname, destination.port
+                )
+            )
+            assert resolved[0]["host"] == "93.184.216.34"
+            assert mock_getaddrinfo.call_count == 1
