@@ -94,13 +94,18 @@ remain independent.
 Remote Connections live under the `/api/v1/connections` API and the
 `frontend/app/(app)/connections/` route.
 
-They are workspace-scoped SSH profiles with five authentication methods:
+They are workspace-scoped SSH profiles with six authentication methods:
 
 - password
 - pasted private key
 - SSH config alias
 - backend key file path
 - backend SSH agent
+- a single saved jump host
+
+Jump connections resolve one direct connection in the same workspace and run
+the target command through that host's SSH environment. Nested jump connections
+are not supported.
 
 For the simple Termius-style path, Bioinfoflow stores encrypted passwords or
 private key contents and uses an in-process SSH client with bounded output. Host
