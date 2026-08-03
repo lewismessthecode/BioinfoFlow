@@ -10,9 +10,8 @@ Source-of-truth documentation for the Bioinfoflow platform, written against the 
 
 ## Guides
 
-- [Remote Connections](guides/remote-connections.md): save SSH profiles, test backend SSH access, open remote project terminals, stream probes, and use selected hosts with AgentCore.
+- [Remote Connections](guides/remote-connections.md): save SSH profiles and Host Skills, test hosts, use a single jump host, open remote project terminals, stream probes, and give selected hosts to the Agent.
 - [Voice Dictation Deployment](deployment/voice-dictation.md): connect the composer to Fun-ASR, faster-whisper, or an external OpenAI-compatible transcription service.
-- [Storage And Data Layout](concepts/storage.md): use managed project storage, external project roots, shared references, and run outputs.
 - [Parabricks WGS Workflows](workflows/parabricks-wgs.md): run the included NVIDIA Parabricks v4.7.0 Nextflow and WDL examples.
 
 ## Reference

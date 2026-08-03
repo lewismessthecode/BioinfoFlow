@@ -20,12 +20,12 @@ explicit overrides or a personal/team deployment.
 
 If startup fails with a schema message or SQLite errors like
 `no such column: projects.is_default`, the local database is behind the code.
-From `backend/`, run:
+For the default repo-local data root, run this from `backend/`:
 
 ```bash
 uv run alembic current
 uv run alembic upgrade head
-sqlite3 bioinfoflow.db "PRAGMA table_info(projects);"
+sqlite3 ../data/state/bioinfoflow.db "PRAGMA table_info(projects);"
 ```
 
 The final command should show an `is_default` column on `projects`.
@@ -111,7 +111,7 @@ Notes:
 - Put upstream-delivered input files under `./data/sources/deliveries/...`.
 - Put references and indexes under `./data/sources/reference/...`.
 - The Docker socket is mounted to enable image inspection and pulls.
-- Nextflow/MiniWDL binaries must be available inside the container if you plan to execute workflows.
+- The backend image includes Nextflow and MiniWDL. Custom bare-metal paths can be supplied with `NEXTFLOW_BIN` and `MINIWDL_BIN`.
 
 ### Input Placement Rules
 
