@@ -197,7 +197,7 @@ function launchCanvasConfetti() {
       vy:
         emitter.velocityY[0] +
         Math.random() * (emitter.velocityY[1] - emitter.velocityY[0]),
-      gravity: 0.15 + Math.random() * 0.04,
+      gravity: 0.21 + Math.random() * 0.05,
       drift: emitter.drift + (Math.random() - 0.5) * 0.09,
       drag: 0.995 - Math.random() * 0.003,
       size: 6 + Math.random() * 8.5,
@@ -210,7 +210,7 @@ function launchCanvasConfetti() {
   )
 
   let frame = 0
-  const maxFrames = 132
+  const maxFrames = 96
 
   function draw() {
     if (!canvas.isConnected) {
@@ -230,7 +230,7 @@ function launchCanvasConfetti() {
       particle.y += particle.vy
       particle.vy += particle.gravity
       particle.rotation += particle.rotationVelocity
-      particle.opacity = Math.max(0, particle.opacity - 0.0038)
+      particle.opacity = Math.max(0, particle.opacity - 0.0065)
 
       context.save()
       context.translate(particle.x, particle.y)

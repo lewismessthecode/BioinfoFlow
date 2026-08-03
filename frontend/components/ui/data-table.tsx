@@ -65,7 +65,7 @@ export function DataTable<T>({
                 key={col.key}
                 scope="col"
                 className={cn(
-                  "text-xs font-medium text-muted-foreground px-4 py-2.5",
+                  "whitespace-nowrap text-xs font-medium text-muted-foreground px-4 py-2.5",
                   col.width,
                   col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
                   col.headerClassName,

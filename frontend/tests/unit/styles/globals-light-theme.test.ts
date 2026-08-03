@@ -22,7 +22,7 @@ describe("globals.css theme tokens", () => {
       "--composer-shadow: 0 1px 2px rgba(15, 15, 15, 0.032), 0 10px 24px rgba(15, 15, 15, 0.028);",
     )
     expect(css).toContain(
-      '--font-sans: "Geist Sans", "SF Pro Display", "Helvetica Neue", system-ui',
+      '--font-sans: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", system-ui',
     )
 
     expect(css).not.toContain("--background: #fbfbfa;")

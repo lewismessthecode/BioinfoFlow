@@ -53,7 +53,7 @@ export function SidebarNav({ collapsed }: SidebarNavProps) {
             href={item.href}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "group relative flex h-[30px] items-center gap-2 rounded-[7px] border border-transparent px-2.5 text-[12px] font-medium leading-none transition-colors duration-150 outline-none focus-visible:bg-sidebar-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-sidebar-ring/45",
+              "group relative flex h-[30px] items-center gap-2 rounded-[7px] border border-transparent px-2.5 text-[12px] font-medium leading-[1.25] transition-colors duration-150 outline-none focus-visible:bg-sidebar-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-sidebar-ring/45",
               isActive
                 ? "bg-sidebar-foreground/[0.08] text-sidebar-foreground"
                 : "text-sidebar-foreground/82 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
