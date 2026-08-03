@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,12 @@ from app.services.agent_core.context.security import (
     safe_manifest_paths,
 )
 from app.services.agent_core.transcript.messages import text_part
+from app.services.demo_contract import (
+    DEMO_STARTER_PRESET,
+    DEMO_STARTER_VALUES,
+    DEMO_WORKFLOW,
+    demo_project_id,
+)
 from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 
 
@@ -277,6 +284,7 @@ class AgentInputResolver:
         workflow = await self.workflows.get(str(part.workflow_id))
         if workflow is None:
             raise NotFoundError("Workflow not found")
+        project = None
         if part.project_id is not None:
             project = await self._require_project(session, str(part.project_id))
             is_bound = await self.bindings.is_enabled(
@@ -285,17 +293,42 @@ class AgentInputResolver:
             )
             if not is_bound:
                 raise PermissionDeniedError("Workflow is not bound to the project")
-        return text_part(
-            "\n".join(
+        lines = [
+            "Referenced workflow (server-validated):",
+            f"Workflow ID: {workflow.id}",
+            f"Name: {workflow.name}",
+            f"Version: {workflow.version}",
+            f"Engine: {workflow.engine.value if hasattr(workflow.engine, 'value') else workflow.engine}",
+        ]
+        if part.starter_preset:
+            if (
+                part.starter_preset != DEMO_STARTER_PRESET
+                or project is None
+                or str(project.id) != demo_project_id(str(session.workspace_id))
+                or not DEMO_WORKFLOW.matches(workflow)
+            ):
+                raise BadRequestError("Starter preset does not match this workflow")
+            payload = {
+                "project_id": str(project.id),
+                "workflow_id": str(workflow.id),
+                "values": dict(DEMO_STARTER_VALUES),
+            }
+            lines.extend(
                 [
-                    "Referenced workflow (server-validated):",
-                    f"Workflow ID: {workflow.id}",
-                    f"Name: {workflow.name}",
-                    f"Version: {workflow.version}",
-                    f"Engine: {workflow.engine.value if hasattr(workflow.engine, 'value') else workflow.engine}",
+                    f"Starter preset (server-validated): {DEMO_STARTER_PRESET}",
+                    "Submit exactly once with runs.submit using this payload:",
+                    json.dumps(payload, indent=2, sort_keys=True),
+                    (
+                        "asset://project is already the project data root; do not "
+                        "insert an extra data/ path segment."
+                    ),
+                    (
+                        "After submission, use the returned public run_id with all "
+                        "runs.* inspection tools."
+                    ),
                 ]
             )
-        )
+        return text_part("\n".join(lines))
 
     async def _require_attachment(self, session: AgentSession, attachment_id: str):
         attachment = await self.attachments.get_owned(

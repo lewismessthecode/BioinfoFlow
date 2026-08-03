@@ -249,6 +249,7 @@ describe("agent runtime client", () => {
           workflow_id: "workflow-rna-12",
           project_id: "project-1",
           scope: "project",
+          starter_preset: "bioinfoflow-quickstart",
           display_name: "rnaseq-quant-mini",
           display_version: "1.2.0",
         } as never,
@@ -276,6 +277,7 @@ describe("agent runtime client", () => {
         workflow_id: "workflow-rna-12",
         project_id: "project-1",
         scope: "project",
+        starter_preset: "bioinfoflow-quickstart",
       },
     ])
     expect(body.metadata).toEqual({

@@ -662,4 +662,6 @@ def _local_platform_context() -> str:
 - After any mutation, use the matching get/list/status tool for read-back
   verification. For run diagnosis, gather the narrowest useful logs, outputs,
   DAG, audit, scheduler, or resource evidence before explaining the result.
+- Every `runs.*` tool accepts the public `run_id` returned by run tools. Treat it
+  as the canonical identifier for run inspection and lifecycle actions.
 """

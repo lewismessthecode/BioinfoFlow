@@ -277,12 +277,17 @@ class AgentWorkflowRefInputPart(_AgentInputPartBase):
     workflow_id: UUID | None = None
     project_id: UUID | None = None
     scope: Literal["project", "global"] | None = None
+    starter_preset: Literal["bioinfoflow-quickstart"] | None = None
 
     @model_validator(mode="after")
     def validate_reference(self):
         if not any((self.workflow_id, self.project_id, self.scope)):
             raise ValueError(
                 "workflow_ref requires workflow_id, project_id, or scope"
+            )
+        if self.starter_preset and not (self.workflow_id and self.project_id):
+            raise ValueError(
+                "workflow_ref starter_preset requires workflow_id and project_id"
             )
         return self
 
