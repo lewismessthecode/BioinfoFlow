@@ -58,6 +58,9 @@ case "$*" in
   "context inspect "*) printf '%s\n' "${FAKE_DOCKER_ENDPOINT:-unix:///var/run/docker.sock}" ;;
   context\ inspect*) printf '%s\n' "${FAKE_DOCKER_ENDPOINT:-unix:///var/run/docker.sock}" ;;
   *" pull"*) [ "${FAKE_PULL_FAIL:-0}" = 0 ] ;;
+  *" config --images"*)
+    printf '%s\n' 'ghcr.io/lewismessthecode/bioinfoflow-backend:test' 'ghcr.io/lewismessthecode/bioinfoflow-frontend:test'
+    ;;
   *" up -d"*) [ "${FAKE_UP_FAIL:-0}" = 0 ] ;;
   *" stop"*) [ "${FAKE_STOP_FAIL:-0}" = 0 ] ;;
   *" run --rm --no-deps --entrypoint /bin/chown backend -R "*) [ "${FAKE_CHOWN_FAIL:-0}" = 0 ] ;;
@@ -333,7 +336,7 @@ teardown_case
 
 setup_case
 run_installer BIOINFOFLOW_VERSION=1.2.3 FRONTEND_PORT=3100 BACKEND_PORT=8100 ARGS=--no-open
-if [ "$STATUS" -eq 0 ] && assert_contains "$OUTPUT" "Stable release 1.2.3" && assert_contains "$OUTPUT" "Release assets verified" && assert_contains "$OUTPUT" "Downloading container images" && assert_contains "$OUTPUT" "Starting Bioinfoflow" && assert_contains "$OUTPUT" "Backend: http://localhost:8100" && assert_contains "$OUTPUT" "Bioinfoflow: http://localhost:3100" && grep -q 'curl -fsSL ' "$CALLS"; then pass "prints concise stable installation stages"; else fail "prints concise stable installation stages (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"; fi
+if [ "$STATUS" -eq 0 ] && assert_contains "$OUTPUT" "Stable release 1.2.3" && assert_contains "$OUTPUT" "Release assets verified" && assert_contains "$OUTPUT" "Downloading container images" && assert_contains "$OUTPUT" "per-layer progress" && assert_contains "$OUTPUT" "Images to download" && assert_contains "$OUTPUT" "Health checks: attempt" && assert_contains "$OUTPUT" "Starting Bioinfoflow" && assert_contains "$OUTPUT" "Backend: http://localhost:8100" && assert_contains "$OUTPUT" "Bioinfoflow: http://localhost:3100" && grep -q -- '--progress=auto pull' "$CALLS" && grep -q 'curl -fsSL ' "$CALLS"; then pass "prints stable installation stages and progress details"; else fail "prints stable installation stages and progress details (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"; fi
 teardown_case
 
 setup_case

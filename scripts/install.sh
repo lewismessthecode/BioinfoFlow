@@ -309,8 +309,18 @@ show_diagnostics() {
   say "Recovery commands:" >&2
   printf '  docker compose --project-name bioinfoflow --env-file %s -f %s ps\n' "$diagnostic_env" "$diagnostic_compose" >&2
   printf '  docker compose --project-name bioinfoflow --env-file %s -f %s logs --tail 100\n' "$diagnostic_env" "$diagnostic_compose" >&2
-  printf '  docker compose --project-name bioinfoflow --env-file %s -f %s pull\n' "$diagnostic_env" "$diagnostic_compose" >&2
+  printf '  docker compose --project-name bioinfoflow --env-file %s -f %s --progress=auto pull\n' "$diagnostic_env" "$diagnostic_compose" >&2
   printf '  docker compose --project-name bioinfoflow --env-file %s -f %s up -d --remove-orphans\n' "$diagnostic_env" "$diagnostic_compose" >&2
+}
+
+show_image_plan() {
+  image_list=$(compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" config --images 2>/dev/null || true)
+  [ -n "$image_list" ] || return 0
+  say "Images to download:"
+  printf '%s\n' "$image_list" | while IFS= read -r image_name; do
+    [ -n "$image_name" ] || continue
+    printf '  - %s\n' "$image_name"
+  done
 }
 
 if [ ! -f "$COMPOSE_FILE" ] && command -v lsof >/dev/null 2>&1; then
@@ -486,9 +496,9 @@ fail_transaction() {
 }
 
 stage "Downloading container images (the first install may take several minutes)"
-if ! compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" pull > "$TMP_DIR/pull.log" 2>&1; then
-  say "Image download output:" >&2
-  sed -n '1,120p' "$TMP_DIR/pull.log" >&2
+say "Docker will show per-layer progress below; cached layers may complete immediately."
+show_image_plan
+if ! compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" --progress=auto pull; then
   fail_transaction "failed to pull Bioinfoflow images"
 fi
 if [ "$LEGACY_LAYOUT" -eq 1 ]; then
@@ -517,8 +527,13 @@ if ! compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" up -d --re
 fi
 
 stage "Waiting for frontend and backend health checks"
+say "  Backend: http://127.0.0.1:$BACKEND_PORT/api/v1/system/ping"
+say "  Frontend: http://127.0.0.1:$FRONTEND_PORT/"
 attempt=1
 while [ "$attempt" -le "$HEALTH_ATTEMPTS" ]; do
+  if [ "$attempt" -eq 1 ] || [ $((attempt % 5)) -eq 0 ]; then
+    say "  Health checks: attempt $attempt/$HEALTH_ATTEMPTS"
+  fi
   if curl -fsS "http://127.0.0.1:$BACKEND_PORT/api/v1/system/ping" >/dev/null 2>&1 && curl -fsS "http://127.0.0.1:$FRONTEND_PORT/" >/dev/null 2>&1; then
     mv "$TMP_DIR/install.sh" "$INSTALLED_INSTALLER"
     mv "$TMP_DIR/docker-compose.local.yml" "$COMPOSE_FILE"
