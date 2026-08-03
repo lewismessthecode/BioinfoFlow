@@ -303,6 +303,9 @@ function agentRuntimeInputPartsForRequest(
       if (Object.hasOwn(part, "scope")) {
         requestPart.scope = part.scope
       }
+      if (Object.hasOwn(part, "starter_preset")) {
+        requestPart.starter_preset = part.starter_preset
+      }
       return requestPart
     }
     if (!("type" in part)) return part
@@ -312,7 +315,7 @@ function agentRuntimeInputPartsForRequest(
       directory_ref: ["attachment_id", "project_id", "path", "label"],
       image_ref: ["attachment_id", "detail"],
       run_ref: ["run_id"],
-      workflow_ref: ["workflow_id", "project_id", "scope"],
+      workflow_ref: ["workflow_id", "project_id", "scope", "starter_preset"],
     }
     for (const key of requestKeys[part.type] ?? []) {
       if (Object.hasOwn(part, key)) requestPart[key] = (part as unknown as Record<string, unknown>)[key]

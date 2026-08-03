@@ -165,6 +165,7 @@ async def test_runs_submit_wraps_compiler_and_emits_run_artifact(
 
     assert result.status == "completed"
     assert result.result["run"]["run_id"] == "run-abc123"
+    assert "id" not in result.result["run"]
 
     artifacts = await AgentCoreService(db_session).list_artifacts_for_turn(
         turn_id=context.turn_id,

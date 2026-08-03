@@ -153,6 +153,7 @@ export type AgentRuntimeWorkflowRefPart = {
   workflow_id?: string | null
   project_id?: string | null
   scope?: "project" | "global"
+  starter_preset?: "bioinfoflow-quickstart"
   display_name?: string | null
   display_version?: string | null
 }
@@ -162,6 +163,7 @@ export type AgentRuntimeStructuredWorkflowRefPart = {
   workflow_id?: string | null
   project_id?: string | null
   scope?: "project" | "global"
+  starter_preset?: "bioinfoflow-quickstart"
   display_name?: string | null
   display_version?: string | null
 }

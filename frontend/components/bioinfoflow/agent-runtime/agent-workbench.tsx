@@ -1313,7 +1313,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         }
         const inputParts: AgentRuntimeInputPart[] = [
           { type: "text", text: prompt },
-          workflowMentionInputPart(demoWorkflow),
+          {
+            ...workflowMentionInputPart(demoWorkflow),
+            starter_preset: "bioinfoflow-quickstart",
+          },
         ]
         const inputDisplayParts: AgentInputDisplayPart[] = [
           {

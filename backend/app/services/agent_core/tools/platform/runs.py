@@ -518,7 +518,6 @@ class InspectRunTool:
 
 def _run_payload(run) -> dict:
     return {
-        "id": str(run.id),
         "run_id": run.run_id,
         "project_id": str(run.project_id),
         "workflow_id": str(run.workflow_id) if run.workflow_id else None,

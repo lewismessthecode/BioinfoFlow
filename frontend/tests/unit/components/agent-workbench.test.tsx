@@ -622,6 +622,7 @@ describe("AgentWorkbench", () => {
             workflow_id: "workflow-demo",
             project_id: "project-demo",
             scope: "project",
+            starter_preset: "bioinfoflow-quickstart",
             display_name: "bioinfoflow-quickstart",
             display_version: "1.0.0",
           },

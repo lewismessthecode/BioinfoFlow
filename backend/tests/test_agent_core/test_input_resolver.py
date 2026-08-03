@@ -16,6 +16,7 @@ from app.models.workflow import Workflow, WorkflowEngine, WorkflowSource
 from app.models.workspace import Workspace
 from app.path_layout import agent_attachment_root, project_home
 from app.services.agent_core.input_resolver import AgentInputResolver
+from app.services.demo_bootstrap_service import DemoBootstrapService
 from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -320,6 +321,43 @@ async def test_run_ref_uses_server_trusted_run_snapshot(db_session) -> None:
     assert "Status: failed" in text
     assert "Workflow: rnaseq" in text
     assert "Error: Process exited 1" in text
+
+
+@pytest.mark.asyncio
+async def test_demo_workflow_starter_preset_resolves_canonical_run_values(
+    db_session,
+) -> None:
+    db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
+    await db_session.commit()
+    bootstrap = await DemoBootstrapService(db_session).bootstrap(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    project = await db_session.get(Project, bootstrap["demo_project_id"])
+    assert project is not None
+    session = await _seed_session(db_session, project=project)
+
+    parts = await AgentInputResolver(db_session).resolve(
+        agent_session=session,
+        input_text="Check and run the demo workflow.",
+        input_parts=[
+            {
+                "type": "workflow_ref",
+                "workflow_id": bootstrap["workflow_id"],
+                "project_id": bootstrap["demo_project_id"],
+                "scope": "project",
+                "starter_preset": "bioinfoflow-quickstart",
+            }
+        ],
+    )
+
+    text = "\n".join(part.get("text", "") for part in parts)
+    assert "Starter preset (server-validated): bioinfoflow-quickstart" in text
+    assert '"samples_tsv": "asset://project/samples.tsv"' in text
+    assert '"sample_a_fastq": "asset://project/sample-a.fastq"' in text
+    assert '"sample_b_fastq": "asset://project/sample-b.fastq"' in text
+    assert "asset://project is already the project data root" in text
+    assert "asset://project/data/" not in text
 
 
 @pytest.mark.asyncio

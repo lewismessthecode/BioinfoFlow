@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import AsyncIterator
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +24,11 @@ from app.repositories.project_workflow_binding_repo import (
 )
 from app.repositories.project_workflow_pin_repo import ProjectWorkflowPinRepository
 from app.repositories.workflow_repo import WorkflowRepository
-from app.services.demo_contract import DEMO_WORKFLOW
+from app.services.demo_contract import (
+    DEMO_STARTER_VALUES,
+    DEMO_WORKFLOW,
+    demo_project_id,
+)
 from app.services.project_directory_service import (
     ManagedProjectReservation,
     ProjectDirectoryService,
@@ -107,12 +111,7 @@ class DemoBootstrapService:
                 raise
 
     async def _bootstrap_locked(self, *, workspace_id: str, user_id: str) -> dict:
-        project_id = str(
-            uuid5(
-                NAMESPACE_URL,
-                f"bioinfoflow:quickstart-project:{workspace_id}",
-            )
-        )
+        project_id = demo_project_id(workspace_id)
         project = await self.project_repo.get(project_id)
         created = False
         reservation: ManagedProjectReservation | None = None
@@ -348,11 +347,7 @@ class DemoBootstrapService:
                 "scope": "project",
                 "project_id": project_id,
             },
-            "values": {
-                "samples_tsv": "asset://project/samples.tsv",
-                "sample_a_fastq": "asset://project/sample-a.fastq",
-                "sample_b_fastq": "asset://project/sample-b.fastq",
-            },
+            "values": dict(DEMO_STARTER_VALUES),
         }
 
     @staticmethod

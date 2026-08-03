@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Mapping
 from uuid import NAMESPACE_URL, uuid5
 
 
@@ -57,6 +59,20 @@ class DemoWorkflowContract:
 
 def _value(value: object) -> str:
     return str(getattr(value, "value", value) or "")
+
+
+DEMO_STARTER_PRESET = "bioinfoflow-quickstart"
+DEMO_STARTER_VALUES: Mapping[str, str] = MappingProxyType(
+    {
+        "samples_tsv": "asset://project/samples.tsv",
+        "sample_a_fastq": "asset://project/sample-a.fastq",
+        "sample_b_fastq": "asset://project/sample-b.fastq",
+    }
+)
+
+
+def demo_project_id(workspace_id: str) -> str:
+    return str(uuid5(NAMESPACE_URL, f"bioinfoflow:quickstart-project:{workspace_id}"))
 
 
 DEMO_WORKFLOW = DemoWorkflowContract(
