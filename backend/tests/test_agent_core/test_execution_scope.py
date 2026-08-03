@@ -152,7 +152,7 @@ def test_manual_remote_only_multi_scope_exposes_only_remote_compatible_tools():
     assert "files.write" not in names
 
 
-def test_remote_connection_discovery_is_exposed_only_when_remote_is_selected():
+def test_remote_connection_discovery_is_exposed_for_auto_selection():
     exposure = ToolsetExposure(build_default_tool_registry())
 
     auto_names = exposure.exposed_names(
@@ -169,7 +169,7 @@ def test_remote_connection_discovery_is_exposed_only_when_remote_is_selected():
         },
     )
 
-    assert "remote.connections.list" not in auto_names
+    assert "remote.connections.list" in auto_names
     assert "remote.connections.list" in manual_names
 
 
@@ -205,7 +205,7 @@ def test_plan_exposes_bash_only_for_local_scope():
     assert "bash" not in remote_names
 
 
-def test_plan_exposes_remote_exec_only_for_selected_remote_scope():
+def test_plan_exposes_remote_exec_for_auto_selection():
     exposure = ToolsetExposure(build_default_tool_registry())
 
     auto_names = exposure.exposed_names(
@@ -222,6 +222,23 @@ def test_plan_exposes_remote_exec_only_for_selected_remote_scope():
         },
     )
 
-    assert "remote.exec" not in auto_names
+    assert "remote.exec" in auto_names
     assert "remote.exec" in remote_names
     assert "bash" not in remote_names
+
+
+def test_execution_exposes_local_and_remote_tools_for_auto_selection():
+    exposure = ToolsetExposure(build_default_tool_registry())
+
+    auto_names = exposure.exposed_names(
+        policy={"name": "execution"},
+        execution_scope={"mode": "auto"},
+    )
+
+    assert "bash" in auto_names
+    assert {
+        "remote.connections.list",
+        "remote.exec",
+        "remote.list_dir",
+        "remote.read_file",
+    } <= auto_names

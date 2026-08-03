@@ -837,6 +837,10 @@ def test_normal_execution_exposes_small_capability_surface_without_retired_tools
         "list_agents",
         "projects.list",
         "runs.inspect",
+        "remote.connections.list",
+        "remote.exec",
+        "remote.list_dir",
+        "remote.read_file",
         "send_message",
         "skills.load",
         "spawn_agent",
@@ -846,7 +850,7 @@ def test_normal_execution_exposes_small_capability_surface_without_retired_tools
         "workflows.inspect",
         "write",
     }
-    assert len(exposed) == 16
+    assert len(exposed) == 20
     assert RETIRED_AGENT_TOOL_NAMES.isdisjoint(registry.names())
     assert {"memory.list", "runs.get", "workflows.get"} <= registry.names()
 

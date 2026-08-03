@@ -148,7 +148,9 @@ class RemoteConnectionsListTool:
             "List SSH-backed remote connections available in the current workspace. "
             "In auto target mode, call this before choosing a machine, then copy the "
             "returned opaque connection_id exactly into a remote operation. In manual "
-            "mode, only user-selected connections are returned."
+            "mode, only user-selected connections are returned. If the result is empty, "
+            "no SSH node is configured; continue with local tools instead of calling a "
+            "remote tool."
         ),
         input_schema={
             "type": "object",

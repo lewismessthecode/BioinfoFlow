@@ -278,7 +278,7 @@ class ToolsetExposure:
 
         remote_target = is_remote_ssh_execution_target(execution_target)
         remote_selected = remote_target or (
-            execution_scope_mode(execution_scope) == "manual"
+            execution_scope_mode(execution_scope) in {"auto", "manual"}
             and execution_scope_allows_remote(execution_scope)
         )
         if remote_selected and explicit_allowed is None:
@@ -478,7 +478,7 @@ def _plan_tool_names(
             or execution_scope_allows_local(execution_scope)
         )
         remote_selected = remote_target or (
-            execution_scope_mode(execution_scope) == "manual"
+            execution_scope_mode(execution_scope) in {"auto", "manual"}
             and execution_scope_allows_remote(execution_scope)
         )
         if local_allowed:
