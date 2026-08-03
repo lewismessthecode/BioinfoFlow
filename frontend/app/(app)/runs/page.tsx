@@ -146,27 +146,30 @@ export default function RunsPage() {
     {
       key: "runId",
       header: tRuns("runId"),
-      cell: (run) => <span className="font-mono text-sm text-foreground">{run.run_id}</span>,
+      cellClassName: "whitespace-nowrap",
+      cell: (run) => <span className="font-mono text-sm text-foreground whitespace-nowrap">{run.run_id}</span>,
     },
     {
       key: "workflow",
       header: tRuns("workflow"),
+      cellClassName: "whitespace-nowrap",
       cell: (run) =>
         run.workflow_id ? (
           <Link
             href={`/workflows/${run.workflow_id}`}
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground hover:underline underline-offset-4"
+            className="whitespace-nowrap text-sm text-muted-foreground transition-colors hover:text-foreground hover:underline underline-offset-4"
             onClick={(event) => event.stopPropagation()}
           >
             {getPipelineName(run)}
           </Link>
         ) : (
-          <span className="text-sm text-muted-foreground">{getPipelineName(run)}</span>
+          <span className="whitespace-nowrap text-sm text-muted-foreground">{getPipelineName(run)}</span>
         ),
     },
     {
       key: "status",
       header: tRuns("status"),
+      cellClassName: "whitespace-nowrap",
       cell: (run) => (
         <StatusBadge variant={runStatusVariant[run.status]}>
           {tStatus(runStatusLabel[run.status])}
@@ -176,28 +179,29 @@ export default function RunsPage() {
     {
       key: "startTime",
       header: tRuns("startTime"),
-      headerClassName: "hidden md:table-cell",
-      cellClassName: "hidden md:table-cell text-sm text-muted-foreground",
+      headerClassName: "hidden whitespace-nowrap md:table-cell",
+      cellClassName: "hidden whitespace-nowrap text-sm text-muted-foreground md:table-cell",
       cell: (run) => formatDateTime(run.started_at),
     },
     {
       key: "duration",
       header: tRuns("duration"),
-      headerClassName: "hidden md:table-cell",
-      cellClassName: "hidden md:table-cell text-sm text-muted-foreground font-mono",
+      headerClassName: "hidden whitespace-nowrap md:table-cell",
+      cellClassName: "hidden whitespace-nowrap text-sm text-muted-foreground font-mono md:table-cell",
       cell: (run) => formatDuration(run.duration_seconds),
     },
     {
       key: "samples",
       header: tRuns("samples"),
-      headerClassName: "hidden lg:table-cell",
-      cellClassName: "hidden lg:table-cell text-sm text-muted-foreground",
+      headerClassName: "hidden whitespace-nowrap lg:table-cell",
+      cellClassName: "hidden whitespace-nowrap text-sm text-muted-foreground lg:table-cell",
       cell: (run) => run.samples_count,
     },
     {
       key: "actions",
       header: tRuns("actions"),
       align: "right",
+      cellClassName: "whitespace-nowrap",
       cell: (run) => (
         <RunRowActions
           run={run}
