@@ -213,6 +213,7 @@ async def test_notification_crud_is_scoped_to_callers_workspace(
         trigger="on_complete",
         config={"url": "https://foreign.example/hook"},
     )
+    config_id = str(config.id)
 
     async def current_user() -> AuthUser:
         return AuthUser(
@@ -240,8 +241,12 @@ async def test_notification_crud_is_scoped_to_callers_workspace(
         )
         assert create_resp.status_code == 404
 
-        delete_resp = await async_client.delete(f"/api/v1/notifications/{config.id}")
+        delete_resp = await async_client.delete(f"/api/v1/notifications/{config_id}")
         assert delete_resp.status_code == 404
+
+        db_session.expire_all()
+        persisted = await NotificationService(db_session).repo.get(config_id)
+        assert persisted is not None
     finally:
         app.dependency_overrides.pop(get_current_user, None)
 
