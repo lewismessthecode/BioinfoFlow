@@ -348,7 +348,11 @@ if [ "$HAD_PREVIOUS" -eq 1 ] && grep -Fqx "BIOINFOFLOW_HOME=$LEGACY_DATA_DIR" "$
 fi
 
 SEED_SKILLS=0
-if [ "$HAD_PREVIOUS" -eq 0 ] && [ ! -e "$SKILLS_DIR" ]; then
+if [ "$LEGACY_LAYOUT" -eq 0 ] && [ ! -e "$SKILLS_DIR" ]; then
+  SEED_SKILLS=1
+elif [ "$LEGACY_LAYOUT" -eq 0 ] && [ -d "$SKILLS_DIR" ] && [ -z "$(find "$SKILLS_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+  # A bind mount or an interrupted/older install can leave the mount source as
+  # an empty directory. Its existence does not mean bundled skills are ready.
   SEED_SKILLS=1
 fi
 [ ! -e "$SKILLS_DIR" ] || [ -d "$SKILLS_DIR" ] || die_with_hint "skills path is not a directory: $SKILLS_DIR" "Move that path aside and retry."
@@ -515,9 +519,13 @@ if [ "$LEGACY_LAYOUT" -eq 1 ]; then
   MIGRATED_LEGACY_THIS_RUN=1
 fi
 if [ "$SEED_SKILLS" -eq 1 ]; then
+  if [ -d "$SKILLS_DIR" ]; then
+    rmdir "$SKILLS_DIR" || die_with_hint "skills directory is not empty" "Preserve the existing skills under $SKILLS_DIR, then retry the installation."
+  fi
   mv "$STAGED_SKILLS" "$SKILLS_DIR"
   chmod 700 "$SKILLS_DIR"
   SEEDED_SKILLS_THIS_RUN=1
+  success "Bundled NGS skills installed in $SKILLS_DIR"
 fi
 stage "Starting Bioinfoflow"
 if ! compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" up -d --remove-orphans > "$TMP_DIR/up.log" 2>&1; then

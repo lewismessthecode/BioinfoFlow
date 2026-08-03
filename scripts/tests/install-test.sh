@@ -268,6 +268,19 @@ fi
 teardown_case
 
 setup_case
+mkdir -p "$HOME_DIR/.bioinfoflow/skills"
+run_installer ARGS=--no-open
+if [ "$STATUS" -eq 0 ] && \
+   [ -f "$HOME_DIR/.bioinfoflow/skills/ngs-analysis-router/SKILL.md" ] && \
+   [ -f "$HOME_DIR/.bioinfoflow/skills/ngs-runtime-env/SKILL.md" ] && \
+   grep -q 'bioinfoflow-skills.tar.gz' "$CALLS"; then
+  pass "fresh install repairs an empty pre-existing skills directory"
+else
+  fail "fresh install repairs an empty pre-existing skills directory (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"
+fi
+teardown_case
+
+setup_case
 run_installer BIOINFOFLOW_VERSION=v1.0.0 ARGS=--no-open
 printf '%s\n' 'user modified skill' > "$HOME_DIR/.bioinfoflow/skills/ngs-analysis-router/SKILL.md"
 : > "$CALLS"
