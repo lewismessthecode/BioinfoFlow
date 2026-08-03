@@ -86,6 +86,7 @@ See [Parabricks WGS workflows](docs/workflows/parabricks-wgs.md).
 ## Quick links
 
 - [Documentation home](docs/README.md)
+- [Demo workflow](demo/nfcore-rnaseq/README.md)
 - [Remote Connections](docs/guides/remote-connections.md)
 - [Storage and data layout](docs/concepts/storage.md)
 - [Architecture](docs/architecture.md)
