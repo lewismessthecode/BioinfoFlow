@@ -717,6 +717,11 @@ async def test_runtime_approval_resume_uses_remaining_turn_budget(
         "prompt_tokens": 9,
         "completion_tokens": 14,
         "total_tokens": 23,
+        "last_usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 11,
+            "total_tokens": 18,
+        },
     }
 
 

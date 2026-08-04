@@ -54,6 +54,19 @@ export type AgentTokenUsageSummary = {
   max_output_tokens?: number | null
   turns_with_usage: number
   raw_totals: Record<string, number>
+  current_context?: AgentCurrentContextUsage | null
+}
+
+export type AgentCurrentContextUsage = {
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  cached_input_tokens?: number | null
+  reasoning_tokens?: number | null
+  context_window?: number | null
+  source: "reported" | "estimated" | "unknown"
+  provider?: string | null
+  model?: string | null
 }
 
 export type AgentRuntimeSkill = {

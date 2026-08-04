@@ -14,7 +14,7 @@ describe("agent token usage helpers", () => {
     expect(compactTokenCount(2_400_000, "en")).toBe("2.4M")
   })
 
-  it("builds a view model from cumulative usage with a context window", () => {
+  it("keeps current context usage separate from cumulative session usage", () => {
     const summary: AgentTokenUsageSummary = {
       has_token_usage: true,
       input_tokens: 97_000,
@@ -26,6 +26,17 @@ describe("agent token usage helpers", () => {
       max_output_tokens: 8_192,
       turns_with_usage: 3,
       raw_totals: {},
+      current_context: {
+        input_tokens: 100_000,
+        output_tokens: 1_200,
+        total_tokens: 101_200,
+        cached_input_tokens: 12_000,
+        reasoning_tokens: 600,
+        context_window: 258_000,
+        source: "reported",
+        provider: "anthropic",
+        model: "claude-sonnet-4",
+      },
     }
 
     expect(tokenUsageViewFromSummary(summary, "en")).toEqual({
@@ -39,7 +50,53 @@ describe("agent token usage helpers", () => {
       percentUsed: 39,
       percentRemaining: 61,
       status: "normal",
+      currentContextInputLabel: "100K",
+      currentContextOutputLabel: "1.2K",
+      currentContextTotalLabel: "101.2K",
+      currentContextSource: "reported",
+      providerLabel: "anthropic",
+      modelLabel: "claude-sonnet-4",
     })
+  })
+
+  it("uses current context rather than cumulative session total for the percentage", () => {
+    const summary: AgentTokenUsageSummary = {
+      has_token_usage: true,
+      input_tokens: 300_000,
+      output_tokens: 20_000,
+      total_tokens: 320_000,
+      context_window: 258_000,
+      turns_with_usage: 4,
+      raw_totals: {},
+      current_context: {
+        input_tokens: 100_000,
+        output_tokens: 2_000,
+        total_tokens: 102_000,
+        context_window: 258_000,
+        source: "reported",
+        provider: "openai",
+        model: "gpt-5",
+      },
+    }
+
+    expect(tokenUsageViewFromSummary(summary, "en")?.percentUsed).toBe(39)
+  })
+
+  it("keeps the meter unknown when current context or its window is unavailable", () => {
+    expect(
+      tokenUsageViewFromSummary(
+        {
+          has_token_usage: true,
+          input_tokens: 300_000,
+          output_tokens: 20_000,
+          total_tokens: 320_000,
+          context_window: 258_000,
+          turns_with_usage: 4,
+          raw_totals: {},
+        },
+        "en",
+      ),
+    ).toMatchObject({ percentUsed: null, percentRemaining: null })
   })
 
   it("does not build a view model when no real usage exists", () => {

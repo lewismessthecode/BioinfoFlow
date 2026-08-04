@@ -13,14 +13,24 @@ export type AgentTokenUsageView = {
   percentUsed: number | null
   percentRemaining: number | null
   status: AgentTokenUsageStatus
+  currentContextInputLabel: string | null
+  currentContextOutputLabel: string | null
+  currentContextTotalLabel: string | null
+  currentContextSource: "reported" | "estimated" | "unknown" | null
+  providerLabel: string | null
+  modelLabel: string | null
 }
 
 export function tokenUsageViewFromSummary(
   summary?: AgentTokenUsageSummary | null,
   locale?: string,
 ): AgentTokenUsageView | null {
-  if (!summary?.has_token_usage || summary.total_tokens <= 0) return null
-  const percentUsed = usagePercent(summary.total_tokens, summary.context_window)
+  if (!summary?.has_token_usage) return null
+  const currentContext = summary.current_context
+  const percentUsed = usagePercent(
+    currentContext?.input_tokens,
+    currentContext?.context_window,
+  )
   return {
     totalLabel: compactTokenCount(summary.total_tokens, locale),
     inputLabel: compactTokenCount(summary.input_tokens, locale),
@@ -34,9 +44,12 @@ export function tokenUsageViewFromSummary(
         ? null
         : compactTokenCount(summary.reasoning_tokens, locale),
     contextWindowLabel:
-      summary.context_window == null
+      (currentContext?.context_window ?? summary.context_window) == null
         ? null
-        : compactTokenCount(summary.context_window, locale),
+        : compactTokenCount(
+            currentContext?.context_window ?? summary.context_window!,
+            locale,
+          ),
     maxOutputLabel:
       summary.max_output_tokens == null
         ? null
@@ -44,6 +57,21 @@ export function tokenUsageViewFromSummary(
     percentUsed,
     percentRemaining: percentUsed == null ? null : Math.max(100 - percentUsed, 0),
     status: tokenUsageStatus(percentUsed),
+    currentContextInputLabel:
+      currentContext == null
+        ? null
+        : compactTokenCount(currentContext.input_tokens, locale),
+    currentContextOutputLabel:
+      currentContext == null
+        ? null
+        : compactTokenCount(currentContext.output_tokens, locale),
+    currentContextTotalLabel:
+      currentContext == null
+        ? null
+        : compactTokenCount(currentContext.total_tokens, locale),
+    currentContextSource: currentContext?.source ?? null,
+    providerLabel: currentContext?.provider ?? null,
+    modelLabel: currentContext?.model ?? null,
   }
 }
 
@@ -61,7 +89,7 @@ export function tokenUsageStatus(percentUsed?: number | null): AgentTokenUsageSt
   return "normal"
 }
 
-function usagePercent(totalTokens: number, contextWindow?: number | null) {
-  if (!contextWindow || contextWindow <= 0) return null
-  return Math.min(Math.round((totalTokens / contextWindow) * 100), 100)
+function usagePercent(inputTokens?: number, contextWindow?: number | null) {
+  if (inputTokens == null || !contextWindow || contextWindow <= 0) return null
+  return Math.min(Math.round((inputTokens / contextWindow) * 100), 100)
 }

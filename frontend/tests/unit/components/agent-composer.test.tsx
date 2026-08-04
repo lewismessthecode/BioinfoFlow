@@ -125,8 +125,19 @@ vi.mock("next-intl", () => ({
       "tokenUsage.label": "Tokens",
       "tokenUsage.display": `${values?.value ?? ""} tokens`,
       "tokenUsage.compactDisplay": `${values?.value ?? ""}`,
-      "tokenUsage.aria": `${values?.total ?? ""} tokens used in this session. ${values?.input ?? ""} input, ${values?.output ?? ""} output.`,
+      "tokenUsage.aria": `${values?.percent ?? ""} context used. ${values?.total ?? ""} tokens used in this session. ${values?.input ?? ""} input, ${values?.output ?? ""} output.`,
+      "tokenUsage.ariaUnknown": `Context usage is unavailable. ${values?.total ?? ""} tokens used in this session. ${values?.input ?? ""} input, ${values?.output ?? ""} output.`,
       "tokenUsage.title": "Context window",
+      "tokenUsage.unknown": "Context usage unavailable",
+      "tokenUsage.currentContext": "Current context",
+      "tokenUsage.sessionTotal": "Session total",
+      "tokenUsage.total": "Total",
+      "tokenUsage.source": "Source",
+      "tokenUsage.sourceValues.reported": "Reported",
+      "tokenUsage.sourceValues.estimated": "Estimated",
+      "tokenUsage.sourceValues.unknown": "Unknown",
+      "tokenUsage.provider": "Provider",
+      "tokenUsage.model": "Model",
       "tokenUsage.used": "Used",
       "tokenUsage.remaining": "remaining",
       "tokenUsage.input": "Input",
@@ -1433,7 +1444,7 @@ describe("AgentComposer", () => {
     expect(screen.getByRole("link", { name: "Configure providers" })).toHaveClass("max-w-9")
   })
 
-  it("shows cumulative token usage with accessible details", async () => {
+  it("shows current context usage separately from cumulative session usage", async () => {
     render(
       <AgentComposer
         value="Run QC"
@@ -1455,21 +1466,61 @@ describe("AgentComposer", () => {
           max_output_tokens: 8_192,
           turns_with_usage: 2,
           raw_totals: {},
+          current_context: {
+            input_tokens: 100_000,
+            output_tokens: 1_200,
+            total_tokens: 101_200,
+            context_window: 258_000,
+            source: "reported",
+            provider: "anthropic",
+            model: "claude-sonnet-4",
+          },
         }}
       />,
     )
 
     const trigger = screen.getByRole("button", {
-      name: "100K tokens used in this session. 97K input, 3K output.",
+      name: /39% context used.*100K tokens used in this session/i,
     })
-    expect(trigger).toHaveTextContent("100K tokens")
+    expect(trigger).toHaveTextContent("39%")
 
     fireEvent.click(trigger)
 
     expect(await screen.findByText("Context window")).toBeInTheDocument()
-    expect(screen.getByText("39%")).toBeInTheDocument()
+    expect(screen.getAllByText("39%").length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText("61% remaining")).toBeInTheDocument()
     expect(screen.getByText("258K")).toBeInTheDocument()
+    expect(screen.getByText("Current context")).toBeInTheDocument()
+    expect(screen.getByText("Session total")).toBeInTheDocument()
+  })
+
+  it("shows an unknown meter after compaction when no current context is reported", () => {
+    render(
+      <AgentComposer
+        value="Run QC"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        tokenUsageSummary={{
+          has_token_usage: true,
+          input_tokens: 300_000,
+          output_tokens: 20_000,
+          total_tokens: 320_000,
+          context_window: 258_000,
+          turns_with_usage: 4,
+          raw_totals: {},
+          current_context: null,
+        }}
+      />,
+    )
+
+    const trigger = screen.getByTestId("token-usage-meter")
+    expect(trigger).toHaveTextContent("—")
+    expect(trigger).toHaveAccessibleName(/context usage is unavailable/i)
   })
 
   it("uses the compact token label when composer controls are compressed", () => {
@@ -1493,14 +1544,14 @@ describe("AgentComposer", () => {
           max_output_tokens: null,
           turns_with_usage: 1,
           raw_totals: {},
+          current_context: null,
         }}
       />,
     )
 
-    expect(screen.getByRole("button", { name: /12.4K tokens used/ })).toHaveTextContent(
-      "12.4K",
+    expect(screen.getByRole("button", { name: /Context usage is unavailable/ })).toHaveTextContent(
+      "—",
     )
-    expect(screen.queryByText("12.4K tokens")).not.toBeInTheDocument()
   })
 
   it("surfaces manual execution target changes", async () => {

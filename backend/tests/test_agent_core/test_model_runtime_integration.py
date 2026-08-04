@@ -32,7 +32,11 @@ from app.repositories.agent_core_repo import (
     AgentTurnRepository,
 )
 from app.services.agent_core import AgentCoreService
-from app.services.agent_core.core.loop import AgentLoopController
+from app.services.agent_core.core.loop import (
+    AgentLoopController,
+    _clear_last_usage,
+    _set_last_usage,
+)
 from app.services.agent_core.core.runtime_strategy import (
     RuntimeCapabilities,
     RuntimeStrategy,
@@ -80,6 +84,39 @@ def _approval_shell(command: str) -> str:
     return "sh -c " + shlex.quote(f': "$COMMAND"; {command}')
 
 
+def test_context_compaction_marks_latest_usage_unknown() -> None:
+    usage = {
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "total_tokens": 120,
+        "last_usage": {"prompt_tokens": 100},
+    }
+
+    assert _clear_last_usage(usage) == {
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "total_tokens": 120,
+        "last_usage": None,
+    }
+    assert _clear_last_usage(None) == {"last_usage": None}
+
+
+def test_successful_model_call_without_usage_clears_stale_latest_usage() -> None:
+    usage = {
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "total_tokens": 120,
+        "last_usage": {"prompt_tokens": 100},
+    }
+
+    assert _set_last_usage(usage, None) == {
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "total_tokens": 120,
+        "last_usage": None,
+    }
+
+
 class FakeModelGateway:
     def __init__(self, *responses: tuple[ModelEvent, ...] | Exception) -> None:
         self.responses = list(responses)
@@ -92,6 +129,41 @@ class FakeModelGateway:
             raise response
         for event in response:
             yield event
+
+
+class UsageThenFailureGateway:
+    async def invoke(self, invocation: ModelInvocation) -> AsyncIterator[ModelEvent]:
+        yield UsageReport(input_tokens=12, output_tokens=5, total_tokens=17)
+        raise ModelError(
+            category="service_unavailable",
+            message="The provider failed after reporting usage.",
+            retryable=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_model_failure_preserves_usage_received_before_stream_error(db_session) -> None:
+    _session, turn = await _turn(db_session, input_text="Keep partial usage.")
+    gateway = UsageThenFailureGateway()
+
+    result = await AgentLoopController(db_session, model_gateway=gateway).run_turn(
+        turn_id=str(turn.id),
+        target=_target(),
+        capabilities=RuntimeCapabilities(supports_tools=False),
+        strategy=RuntimeStrategy(allow_tools=False),
+    )
+
+    assert result.termination_reason == "model_failed"
+    assert result.token_usage == {
+        "prompt_tokens": 12,
+        "completion_tokens": 5,
+        "total_tokens": 17,
+        "last_usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 5,
+            "total_tokens": 17,
+        },
+    }
 
 
 class BlockingFinalGateway:
@@ -593,6 +665,11 @@ async def test_normal_turn_runs_through_injected_model_gateway(db_session) -> No
         "prompt_tokens": 12,
         "completion_tokens": 5,
         "total_tokens": 17,
+        "last_usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 5,
+            "total_tokens": 17,
+        },
     }
     assert len(gateway.invocations) == 1
     invocation = gateway.invocations[0]
@@ -1433,6 +1510,13 @@ async def test_approval_resume_survives_controller_restart(
     session, turn = await _turn(db_session, input_text="Run the approved command.")
     gateway = FakeModelGateway(
         (
+            UsageReport(
+                input_tokens=12,
+                output_tokens=5,
+                total_tokens=17,
+                cached_input_tokens=3,
+                reasoning_tokens=4,
+            ),
             ToolCallDelta(
                 index=0,
                 call_id="call-bash",
@@ -1449,6 +1533,13 @@ async def test_approval_resume_survives_controller_restart(
             ),
         ),
         (
+            UsageReport(
+                input_tokens=20,
+                output_tokens=7,
+                total_tokens=27,
+                cached_input_tokens=5,
+                reasoning_tokens=6,
+            ),
             TextDelta(text=f"Continued after {decision}."),
             CompletionMetadata(response_id="chatcmpl-resumed", finish_reason="stop"),
         ),
@@ -1461,6 +1552,23 @@ async def test_approval_resume_survives_controller_restart(
     )
 
     assert waiting.termination_reason == "waiting_approval"
+    assert waiting.token_usage == {
+        "prompt_tokens": 12,
+        "completion_tokens": 5,
+        "total_tokens": 17,
+        "cached_input_tokens": 3,
+        "reasoning_tokens": 4,
+        "last_usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 5,
+            "total_tokens": 17,
+            "cached_input_tokens": 3,
+            "reasoning_tokens": 4,
+        },
+    }
+    persisted = await AgentTurnRepository(db_session).get_fresh(str(turn.id))
+    assert persisted is not None
+    assert persisted.token_usage == waiting.token_usage
     actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
     assert len(actions) == 1
     service = AgentCoreService(db_session)
@@ -1482,6 +1590,20 @@ async def test_approval_resume_survives_controller_restart(
 
     assert result.termination_reason == "assistant_final"
     assert result.final_text == f"Continued after {decision}."
+    assert result.token_usage == {
+        "prompt_tokens": 32,
+        "completion_tokens": 12,
+        "total_tokens": 44,
+        "cached_input_tokens": 8,
+        "reasoning_tokens": 10,
+        "last_usage": {
+            "prompt_tokens": 20,
+            "completion_tokens": 7,
+            "total_tokens": 27,
+            "cached_input_tokens": 5,
+            "reasoning_tokens": 6,
+        },
+    }
     tool_result = next(
         item
         for item in gateway.invocations[1].input_items
@@ -1503,6 +1625,46 @@ async def test_approval_resume_survives_controller_restart(
         "tool",
         "assistant",
     ]
+
+
+@pytest.mark.asyncio
+async def test_model_failure_preserves_persisted_last_usage(db_session) -> None:
+    _session, turn = await _turn(db_session, input_text="Retry this request.")
+    persisted_usage = {
+        "prompt_tokens": 12,
+        "completion_tokens": 5,
+        "total_tokens": 17,
+        "cached_input_tokens": 3,
+        "reasoning_tokens": 4,
+        "last_usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 5,
+            "total_tokens": 17,
+            "cached_input_tokens": 3,
+            "reasoning_tokens": 4,
+        },
+    }
+    await AgentTurnRepository(db_session).update_all(
+        turn,
+        token_usage=persisted_usage,
+    )
+    gateway = FakeModelGateway(
+        ModelError(
+            category="service_unavailable",
+            message="The provider is unavailable.",
+            retryable=False,
+        )
+    )
+
+    result = await AgentLoopController(db_session, model_gateway=gateway).run_turn(
+        turn_id=str(turn.id),
+        target=_target(),
+        capabilities=RuntimeCapabilities(supports_tools=False),
+        strategy=RuntimeStrategy(allow_tools=False),
+    )
+
+    assert result.termination_reason == "model_failed"
+    assert result.token_usage == persisted_usage
 
 
 @pytest.mark.asyncio
