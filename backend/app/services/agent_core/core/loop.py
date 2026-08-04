@@ -130,6 +130,7 @@ class _ModelTurnResult:
     thinking: str
     tool_calls: list[_PendingToolCall]
     token_usage: dict[str, Any] | None
+    last_usage: dict[str, int] | None
     continuation: ResponsesContinuation | None
     warnings: list[ModelWarning]
 
@@ -170,6 +171,8 @@ class AgentLoopController:
         self.model_gateway = model_gateway or ModelGateway()
         self.ownership = ownership
         self._execution_owner_token = owner_token
+        self._partial_usage: dict[str, Any] | None = None
+        self._partial_last_usage: dict[str, int] | None = None
 
     async def run_turn(
         self,
@@ -322,6 +325,18 @@ class AgentLoopController:
                     metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
                 )
                 continuation = None
+            if model_context.compacted:
+                token_usage = _clear_last_usage(token_usage)
+                turn = await self._checkpoint_loop_state(
+                    turn,
+                    budget=budget,
+                    token_usage=token_usage,
+                    progress=_progress_payload(
+                        previous_tool_call_signatures,
+                        previous_tool_result_signatures,
+                        repeated_tool_call_count,
+                    ),
+                )
             invocation = ModelInvocation(
                 target=target,
                 instructions=model_context.instructions,
@@ -375,6 +390,12 @@ class AgentLoopController:
                 model_error = (
                     exc.to_public_dict() if isinstance(exc, ModelError) else None
                 )
+                if self._partial_usage:
+                    token_usage = _merge_usage(token_usage, self._partial_usage)
+                    token_usage = _set_last_usage(
+                        token_usage,
+                        self._partial_last_usage,
+                    )
                 return LoopResult(
                     termination_reason="model_failed",
                     final_text=None,
@@ -390,6 +411,7 @@ class AgentLoopController:
                 )
 
             token_usage = _merge_usage(token_usage, streamed.token_usage)
+            token_usage = _set_last_usage(token_usage, streamed.last_usage)
             turn = await self._checkpoint_loop_state(
                 turn,
                 budget=budget,
@@ -1902,6 +1924,7 @@ class AgentLoopController:
         thinking_parts: list[str] = []
         tool_calls: dict[int, _PendingToolCall] = {}
         usage: dict[str, Any] | None = None
+        last_usage: dict[str, int] | None = None
         text_index = 0
         thinking_index = 0
         thinking_completed = False
@@ -1910,6 +1933,8 @@ class AgentLoopController:
         warnings: list[ModelWarning] = []
         semantic_output_emitted = False
 
+        self._partial_usage = None
+        self._partial_last_usage = None
         event_stream = self.model_gateway.invoke(invocation)
         try:
             async with asyncio.timeout(_model_attempt_timeout_seconds()):
@@ -2026,7 +2051,14 @@ class AgentLoopController:
                                     },
                                 )
                     elif isinstance(event, UsageReport):
-                        usage = _merge_usage(usage, _usage_dict(event))
+                        usage_report = _usage_dict(event)
+                        usage = _merge_usage(usage, usage_report)
+                        last_usage = usage_report
+                        self._partial_usage = _merge_usage(
+                            self._partial_usage,
+                            usage_report,
+                        )
+                        self._partial_last_usage = usage_report
                     elif isinstance(event, ModelWarning):
                         warnings.append(event)
                         await self.ledger.append(
@@ -2101,6 +2133,7 @@ class AgentLoopController:
             thinking=thinking_text,
             tool_calls=completed_calls,
             token_usage=usage,
+            last_usage=last_usage,
             continuation=continuation,
             warnings=warnings,
         )
@@ -2467,6 +2500,23 @@ def _merge_usage(
         else:
             merged[key] = value
     return merged
+
+
+def _set_last_usage(
+    current: dict[str, Any] | None,
+    last_usage: dict[str, int] | None,
+) -> dict[str, Any] | None:
+    if not current and not last_usage:
+        return current
+    updated = dict(current or {})
+    updated["last_usage"] = dict(last_usage) if last_usage else None
+    return updated
+
+
+def _clear_last_usage(current: dict[str, Any] | None) -> dict[str, Any] | None:
+    updated = dict(current or {})
+    updated["last_usage"] = None
+    return updated
 
 
 def _turn_lease_duration():

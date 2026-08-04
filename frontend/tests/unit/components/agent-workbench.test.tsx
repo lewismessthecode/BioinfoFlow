@@ -177,8 +177,19 @@ vi.mock("next-intl", () => ({
       "tokenUsage.label": "Tokens",
       "tokenUsage.display": `${values?.value ?? ""} tokens`,
       "tokenUsage.compactDisplay": `${values?.value ?? ""}`,
-      "tokenUsage.aria": `${values?.total ?? ""} tokens used in this session. ${values?.input ?? ""} input, ${values?.output ?? ""} output.`,
+      "tokenUsage.aria": `${values?.percent ?? ""} context used. ${values?.total ?? ""} tokens used in this session. ${values?.input ?? ""} input, ${values?.output ?? ""} output.`,
+      "tokenUsage.ariaUnknown": `Context usage is unavailable. ${values?.total ?? ""} tokens used in this session. ${values?.input ?? ""} input, ${values?.output ?? ""} output.`,
       "tokenUsage.title": "Context window",
+      "tokenUsage.unknown": "Context usage unavailable",
+      "tokenUsage.currentContext": "Current context",
+      "tokenUsage.sessionTotal": "Session total",
+      "tokenUsage.total": "Total",
+      "tokenUsage.source": "Source",
+      "tokenUsage.sourceValues.reported": "Reported",
+      "tokenUsage.sourceValues.estimated": "Estimated",
+      "tokenUsage.sourceValues.unknown": "Unknown",
+      "tokenUsage.provider": "Provider",
+      "tokenUsage.model": "Model",
       "tokenUsage.used": "Used",
       "tokenUsage.remaining": "remaining",
       "tokenUsage.input": "Input",
@@ -1644,6 +1655,15 @@ describe("AgentWorkbench", () => {
           max_output_tokens: null,
           turns_with_usage: 2,
           raw_totals: {},
+          current_context: {
+            input_tokens: 100_000,
+            output_tokens: 1_200,
+            total_tokens: 101_200,
+            context_window: 258_000,
+            source: "reported",
+            provider: "anthropic",
+            model: "claude-sonnet-4",
+          },
         },
       },
       turns: [baseTurn],
@@ -1656,9 +1676,9 @@ describe("AgentWorkbench", () => {
     })
     expect(
       screen.getByRole("button", {
-        name: "100K tokens used in this session. 97K input, 3K output.",
+        name: "39% context used. 100K tokens used in this session. 97K input, 3K output.",
       }),
-    ).toHaveTextContent("100K tokens")
+    ).toHaveTextContent("39%")
   })
 
   it("retries a completed turn through the existing send path and shows a duplicate optimistic turn", async () => {

@@ -37,6 +37,7 @@ from app.schemas.agent_core import (
     AgentSettingsRead,
     AgentSettingsUpdate,
     AgentSkillRead,
+    AgentCurrentContextUsage,
     AgentTokenUsageSummary,
     AgentTurnCreate,
     AgentTurnRead,
@@ -688,6 +689,12 @@ async def _token_usage_summary_for_turns(
         usage = getattr(turn, "token_usage", None)
         if not isinstance(usage, dict) or not usage:
             continue
+        has_numeric_usage = any(
+            key != "last_usage" and _int_token_value(value) is not None
+            for key, value in usage.items()
+        )
+        if not has_numeric_usage and not isinstance(usage.get("last_usage"), dict):
+            continue
         turns_with_usage += 1
         for key, value in usage.items():
             numeric_value = _int_token_value(value)
@@ -729,9 +736,22 @@ async def _token_usage_summary_for_turns(
             reasoning_tokens += reasoning_count
             reasoning_tokens_reported = True
 
+    latest_context_turn = next(
+        (
+            turn
+            for turn in reversed(turns)
+            if isinstance(getattr(turn, "token_usage", None), dict)
+            and "last_usage" in getattr(turn, "token_usage", None)
+        ),
+        None,
+    )
     context_window = None
     max_output_tokens = None
-    model_id = _latest_resolved_model_id(turns)
+    model_id = (
+        _resolved_model_id_for_turn(latest_context_turn)
+        if latest_context_turn is not None
+        else _latest_resolved_model_id(turns)
+    )
     if model_id:
         model = await LlmModelRepository(db).get_visible(
             model_id,
@@ -741,6 +761,55 @@ async def _token_usage_summary_for_turns(
         if model is not None:
             context_window = model.context_length
             max_output_tokens = model.max_output_tokens
+
+    current_context = None
+    if latest_context_turn is not None and isinstance(
+        latest_context_turn.token_usage.get("last_usage"), dict
+    ):
+        usage = latest_context_turn.token_usage["last_usage"]
+        current_input = _first_int_token_value(usage, "prompt_tokens", "input_tokens")
+        current_output = _first_int_token_value(
+            usage, "completion_tokens", "output_tokens"
+        )
+        current_total = _first_int_token_value(usage, "total_tokens")
+        if current_total is None:
+            current_total = (current_input or 0) + (current_output or 0)
+        current_cached = _first_int_token_value(usage, "cached_input_tokens")
+        if current_cached is None:
+            prompt_details = usage.get("prompt_tokens_details")
+            if isinstance(prompt_details, dict):
+                current_cached = _first_int_token_value(
+                    prompt_details, "cached_tokens"
+                )
+        current_reasoning = _first_int_token_value(usage, "reasoning_tokens")
+        if current_reasoning is None:
+            completion_details = usage.get("completion_tokens_details")
+            if isinstance(completion_details, dict):
+                current_reasoning = _first_int_token_value(
+                    completion_details, "reasoning_tokens"
+                )
+        snapshot = getattr(latest_context_turn, "model_profile_snapshot", None) or {}
+        selection = snapshot.get("resolved_model_selection")
+        target = snapshot.get("resolved_model_target")
+        provider = None
+        model_name = None
+        if isinstance(selection, dict):
+            provider = selection.get("provider")
+            model_name = selection.get("model")
+        if isinstance(target, dict):
+            provider = provider or target.get("provider_kind")
+            model_name = model_name or target.get("model_name")
+        current_context = AgentCurrentContextUsage(
+            input_tokens=current_input or 0,
+            output_tokens=current_output or 0,
+            total_tokens=current_total,
+            cached_input_tokens=current_cached,
+            reasoning_tokens=current_reasoning,
+            context_window=context_window,
+            source="reported",
+            provider=str(provider) if provider else None,
+            model=str(model_name) if model_name else None,
+        )
 
     return AgentTokenUsageSummary(
         has_token_usage=turns_with_usage > 0,
@@ -755,6 +824,7 @@ async def _token_usage_summary_for_turns(
         max_output_tokens=max_output_tokens,
         turns_with_usage=turns_with_usage,
         raw_totals=raw_totals,
+        current_context=current_context,
     )
 
 
@@ -765,6 +835,13 @@ def _latest_resolved_model_id(turns: list) -> str | None:
             snapshot.get("resolved_model_id"), str
         ):
             return snapshot["resolved_model_id"]
+    return None
+
+
+def _resolved_model_id_for_turn(turn) -> str | None:
+    snapshot = getattr(turn, "model_profile_snapshot", None)
+    if isinstance(snapshot, dict) and isinstance(snapshot.get("resolved_model_id"), str):
+        return snapshot["resolved_model_id"]
     return None
 
 

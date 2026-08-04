@@ -875,10 +875,6 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                 compact={compactControls}
               />
             ) : null}
-            <AgentTokenUsageBadge
-              summary={tokenUsageSummary}
-              compact={compactControls}
-            />
             <div className="ml-auto flex min-w-0 items-center gap-1.5">
               {voice.state === "recording" ? (
                 <div
@@ -913,6 +909,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                   {t("voice.failed")}
                 </button>
               ) : null}
+              <AgentTokenUsageBadge summary={tokenUsageSummary} />
               <Button
                 type="button"
                 variant="ghost"
@@ -1327,29 +1324,35 @@ function workflowRemoveName(workflow: AgentRuntimeWorkflowMention) {
 
 function AgentTokenUsageBadge({
   summary,
-  compact,
 }: {
   summary?: AgentTokenUsageSummary | null
-  compact?: boolean
 }) {
   const t = useTranslations("agentRuntime")
   const locale = useLocale()
   const view = tokenUsageViewFromSummary(summary, locale)
   if (!view) return null
 
-  const display = compact
-    ? t("tokenUsage.compactDisplay", { value: view.totalLabel })
-    : t("tokenUsage.display", { value: view.totalLabel })
-  const ariaLabel = t("tokenUsage.aria", {
-    total: view.totalLabel,
-    input: view.inputLabel,
-    output: view.outputLabel,
-  })
+  const ariaLabel =
+    view.percentUsed == null
+      ? t("tokenUsage.ariaUnknown", {
+          total: view.totalLabel,
+          input: view.inputLabel,
+          output: view.outputLabel,
+        })
+      : t("tokenUsage.aria", {
+          percent: `${view.percentUsed}%`,
+          total: view.totalLabel,
+          input: view.inputLabel,
+          output: view.outputLabel,
+        })
+  const progress = view.percentUsed == null ? 0 : view.percentUsed / 100
+  const circumference = 2 * Math.PI * 15
+  const strokeOffset = circumference * (1 - progress)
   const toneClass =
     view.status === "critical"
-      ? "border-error-border bg-error-muted text-error-foreground"
+      ? "text-error-foreground"
       : view.status === "warning"
-        ? "border-foreground/12 bg-foreground/[0.045] text-foreground/72"
+        ? "text-foreground/72"
         : ""
 
   return (
@@ -1358,15 +1361,45 @@ function AgentTokenUsageBadge({
         <button
           type="button"
           aria-label={ariaLabel}
+          data-testid="token-usage-meter"
           className={cn(
-            composerSelectorChipClassName,
-            "hidden shrink-0 items-center tabular-nums focus-visible:outline-none sm:inline-flex",
-            compact ? "max-w-[5.75rem]" : "max-w-[8rem]",
+            "relative hidden size-9 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold tabular-nums transition-colors hover:bg-foreground/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex",
             toneClass,
           )}
-          data-composer-chip="true"
         >
-          <span className="min-w-0 truncate">{display}</span>
+          <svg
+            aria-hidden="true"
+            className="absolute inset-0 size-9 -rotate-90"
+            viewBox="0 0 36 36"
+          >
+            <circle
+              cx="18"
+              cy="18"
+              r="15"
+              fill="none"
+              className="stroke-foreground/10"
+              strokeWidth="2.5"
+            />
+            <circle
+              cx="18"
+              cy="18"
+              r="15"
+              fill="none"
+              className={cn(
+                "stroke-foreground/55 transition-[stroke-dashoffset] duration-200",
+                view.status === "critical"
+                  ? "stroke-error"
+                  : view.status === "warning"
+                    ? "stroke-foreground/70"
+                    : null,
+              )}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeOffset}
+            />
+          </svg>
+          <span className="relative">{view.percentUsed == null ? "—" : `${view.percentUsed}%`}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -1381,7 +1414,7 @@ function AgentTokenUsageBadge({
               {t("tokenUsage.title")}
             </div>
             <div className="font-mono text-sm font-semibold tabular-nums text-foreground">
-              {view.percentUsed == null ? view.totalLabel : `${view.percentUsed}%`}
+              {view.percentUsed == null ? t("tokenUsage.unknown") : `${view.percentUsed}%`}
             </div>
           </div>
           {view.percentUsed == null ? null : (
@@ -1407,15 +1440,54 @@ function AgentTokenUsageBadge({
               </div>
             </div>
           )}
+          <div className="grid gap-2 border-t border-border/70 pt-2">
+            <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              {t("tokenUsage.currentContext")}
+            </div>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+              <TokenUsageStat
+                label={t("tokenUsage.input")}
+                value={view.currentContextInputLabel ?? t("tokenUsage.unknown")}
+              />
+              {view.currentContextOutputLabel ? (
+                <TokenUsageStat
+                  label={t("tokenUsage.output")}
+                  value={view.currentContextOutputLabel}
+                />
+              ) : null}
+              {view.currentContextTotalLabel ? (
+                <TokenUsageStat
+                  label={t("tokenUsage.total")}
+                  value={view.currentContextTotalLabel}
+                />
+              ) : null}
+              <TokenUsageStat
+                label={t("tokenUsage.window")}
+                value={view.contextWindowLabel ?? t("tokenUsage.unknown")}
+              />
+              {view.currentContextSource ? (
+                <TokenUsageStat
+                  label={t("tokenUsage.source")}
+                  value={t(`tokenUsage.sourceValues.${view.currentContextSource}`)}
+                />
+              ) : null}
+              {view.providerLabel ? (
+                <TokenUsageStat label={t("tokenUsage.provider")} value={view.providerLabel} />
+              ) : null}
+              {view.modelLabel ? (
+                <TokenUsageStat label={t("tokenUsage.model")} value={view.modelLabel} />
+              ) : null}
+            </dl>
+          </div>
+          <div className="grid gap-2 border-t border-border/70 pt-2">
+            <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              {t("tokenUsage.sessionTotal")}
+            </div>
+            <TokenUsageStat label={t("tokenUsage.total")} value={view.totalLabel} />
+          </div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
             <TokenUsageStat label={t("tokenUsage.input")} value={view.inputLabel} />
             <TokenUsageStat label={t("tokenUsage.output")} value={view.outputLabel} />
-            {view.contextWindowLabel ? (
-              <TokenUsageStat
-                label={t("tokenUsage.window")}
-                value={view.contextWindowLabel}
-              />
-            ) : null}
             {view.maxOutputLabel ? (
               <TokenUsageStat
                 label={t("tokenUsage.maxOutput")}

@@ -94,6 +94,19 @@ class AgentTokenUsageSummary(BaseModel):
     max_output_tokens: int | None = None
     turns_with_usage: int = 0
     raw_totals: dict[str, int] = Field(default_factory=dict)
+    current_context: "AgentCurrentContextUsage | None" = None
+
+
+class AgentCurrentContextUsage(BaseModel):
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    cached_input_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    context_window: int | None = None
+    source: Literal["reported", "estimated", "unknown"] = "unknown"
+    provider: str | None = None
+    model: str | None = None
 
 
 class AgentSkillRead(BaseModel):

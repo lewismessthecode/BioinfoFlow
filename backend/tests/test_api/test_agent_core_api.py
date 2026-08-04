@@ -824,6 +824,11 @@ async def test_agent_core_session_turn_event_and_artifact_contract(
         "prompt_tokens": 6,
         "completion_tokens": 10,
         "total_tokens": 16,
+        "last_usage": {
+            "prompt_tokens": 6,
+            "completion_tokens": 10,
+            "total_tokens": 16,
+        },
     }
     assert turn["model_selection"] == {"model_id": model["id"]}
     assert turn["model_profile_snapshot"]["resolved_model_selection"] == {
@@ -1442,10 +1447,21 @@ async def test_agent_session_state_includes_cumulative_token_usage_summary(
         "output_tokens": 200,
         "cached_input_tokens": 25,
         "reasoning_tokens": 45,
+        "last_usage": {
+            "input_tokens": 100_000,
+            "output_tokens": 2_000,
+            "total_tokens": 102_000,
+            "cached_input_tokens": 25,
+            "reasoning_tokens": 45,
+        },
     }
     second_turn_row.model_profile_snapshot = {
         **(second_turn_row.model_profile_snapshot or {}),
         "resolved_model_id": model["id"],
+        "resolved_model_selection": {
+            "provider": "openai_compatible",
+            "model": "agent-test-model",
+        },
     }
     empty_turn_row.token_usage = None
     await db_session.commit()
@@ -1473,7 +1489,19 @@ async def test_agent_session_state_includes_cumulative_token_usage_summary(
             "reasoning_tokens": 45,
             "total_tokens": 1500,
         },
+        "current_context": {
+            "input_tokens": 100000,
+            "output_tokens": 2000,
+            "total_tokens": 102000,
+            "cached_input_tokens": 25,
+            "reasoning_tokens": 45,
+            "context_window": 128000,
+            "source": "reported",
+            "provider": "openai_compatible",
+            "model": "agent-test-model",
+        },
     }
+
 
 
 @pytest.mark.asyncio
