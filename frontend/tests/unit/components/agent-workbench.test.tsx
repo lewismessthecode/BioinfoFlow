@@ -649,6 +649,86 @@ describe("AgentWorkbench", () => {
     ).toBe(false)
   })
 
+  it("renders the user turn before send resolves and keeps streamed text after session promotion", async () => {
+    const send = vi.fn(() => new Promise<undefined>(() => {}))
+    const runtime = {
+      state: {
+        session: null,
+        turns: [] as AgentRuntimeTurn[],
+        events: [] as AgentRuntimeEvent[],
+        timeline: buildAgentRuntimeTimeline([], []),
+        status: "idle" as const,
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      ensureSession: vi.fn().mockResolvedValue(baseSession),
+      send,
+      steer: vi.fn(),
+      interrupt: vi.fn(),
+      decideAction: vi.fn(),
+      permissionMode: "guarded_auto" as const,
+      mode: "execution" as const,
+      setMode: vi.fn(),
+      setPermissionMode: vi.fn(),
+      permissionUpdate: {
+        status: "idle" as const,
+        mode: null,
+        pendingStrategy: null,
+        reconciliation: null,
+        error: null,
+      },
+      retryPermissionModeUpdate: vi.fn(),
+    }
+    useAgentRuntimeMock.mockReturnValue(runtime)
+    configureModelForTest()
+
+    const view = render(<AgentWorkbench />)
+    const input = screen.getByLabelText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Explain this workflow" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(await screen.findByTestId("agent-user-message")).toHaveTextContent(
+      "Explain this workflow",
+    )
+    expect(send).toHaveBeenCalledWith(
+      "Explain this workflow",
+      expect.objectContaining({ mode: "execution" }),
+    )
+
+    const streamingTurn = {
+      ...baseTurn,
+      input_text: "Explain this workflow",
+      status: "running" as const,
+      final_text: null,
+      updated_at: "2026-06-09T00:00:01Z",
+    }
+    const streamingEvent: AgentRuntimeEvent = {
+      ...waitingDecisionEvent,
+      id: "event-streaming-text",
+      type: "assistant.text.delta",
+      payload: { message_id: "message-1", delta: "The workflow starts with" },
+    }
+    runtime.state = {
+      session: baseSession,
+      turns: [streamingTurn],
+      events: [streamingEvent],
+      timeline: buildAgentRuntimeTimeline([streamingTurn], [streamingEvent]),
+      status: "running",
+      error: null,
+    }
+    await act(async () => {
+      view.rerender(<AgentWorkbench activeSessionId="session-1" />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(screen.getByText("The workflow starts with")).toBeInTheDocument()
+    const userMessages = screen.getAllByTestId("agent-user-message")
+    expect(userMessages).toHaveLength(2)
+    for (const userMessage of userMessages) {
+      expect(userMessage).toHaveTextContent("Explain this workflow")
+    }
+  })
+
   it("opens model connection instead of submitting the primary demo starter without a model", () => {
     firstRunContextMock = demoFirstRunContext()
     const send = vi.fn().mockResolvedValue(undefined)
