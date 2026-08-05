@@ -20,9 +20,11 @@ const RIGHT_SIDEBAR_DEFAULT = 400
 export default function AgentPage() {
   const { selectedProjectId, conversationProjectId, activeConversationId } = useProjectContext()
 
+  // A draft gets an active conversation id during submit; remounting here would
+  // discard its optimistic turn and live stream subscription.
   return (
     <AgentPageContent
-      key={`${selectedProjectId || "no-selected"}:${conversationProjectId || "no-conversation-project"}:${activeConversationId || "draft"}`}
+      key={`${selectedProjectId || "no-selected"}:${conversationProjectId || "no-conversation-project"}`}
       selectedProjectId={selectedProjectId}
       conversationProjectId={conversationProjectId}
       activeConversationId={activeConversationId}

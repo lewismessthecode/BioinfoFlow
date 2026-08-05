@@ -15,6 +15,7 @@ const useParamsMock = vi.fn(() => ({ sessionId: "session-9" }))
 const workspaceShellMock = vi.fn(() => undefined)
 const getAgentRuntimeSessionMock = vi.fn()
 const apiRequestMock = vi.fn()
+let agentWorkbenchMounts = 0
 
 vi.mock("@/hooks/use-events", () => ({
   useEvents: (...args: unknown[]) => useEventsMock(...args),
@@ -47,16 +48,35 @@ vi.mock("@/components/bioinfoflow/agent-runtime/agent-workbench", () => ({
     activeSessionId,
     workspaceEnabled,
     className,
+    onActiveSessionIdChange,
   }: {
     projectId?: string
     activeSessionId?: string
     workspaceEnabled?: boolean
     className?: string
-  }) => (
-    <div data-testid="agent-workbench" className={className}>
-      agent-workbench:{projectId || "none"}|session:{activeSessionId || "draft"}|workspace:{workspaceEnabled ? "on" : "off"}
-    </div>
-  ),
+    onActiveSessionIdChange?: (sessionId: string) => void
+  }) => {
+    const [message, setMessage] = React.useState("")
+    React.useEffect(() => {
+      agentWorkbenchMounts += 1
+    }, [])
+
+    return (
+      <div data-testid="agent-workbench" className={className}>
+        agent-workbench:{projectId || "none"}|session:{activeSessionId || "draft"}|workspace:{workspaceEnabled ? "on" : "off"}
+        <button
+          type="button"
+          onClick={() => {
+            setMessage("draft message")
+            onActiveSessionIdChange?.("session-9")
+          }}
+        >
+          send optimistic message
+        </button>
+        <span data-testid="agent-workbench-message">{message}</span>
+      </div>
+    )
+  },
 }))
 
 vi.mock("@/components/bioinfoflow/live-deck", () => ({
@@ -113,6 +133,7 @@ describe("AgentPage", () => {
     useParamsMock.mockReset()
     useParamsMock.mockReturnValue({ sessionId: "session-9" })
     getAgentRuntimeSessionMock.mockReset()
+    agentWorkbenchMounts = 0
     getAgentRuntimeSessionMock.mockResolvedValue({
       id: "session-9",
       project_id: "project-2",
@@ -130,6 +151,17 @@ describe("AgentPage", () => {
     apiRequestMock.mockResolvedValue({
       data: { id: "project-default", name: "Inbox", is_default: true },
     })
+  })
+
+  it("does not remount the workbench while a draft becomes a conversation", async () => {
+    renderAppPage(<AgentPage />)
+
+    fireEvent.click(screen.getByRole("button", { name: "send optimistic message" }))
+
+    expect(await screen.findByTestId("agent-workbench-message")).toHaveTextContent(
+      "draft message",
+    )
+    expect(agentWorkbenchMounts).toBe(1)
   })
 
   it("keeps the right sidebar hidden by default and toggles with the keyboard shortcut", async () => {
