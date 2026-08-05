@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 while it remains under active pre-1.0 development.
 
+## [0.3.0](https://github.com/lewismessthecode/BioinfoFlow/compare/0.2.0...0.3.0) (2026-08-05)
+
+
+### Features
+
+* add composer context usage meter ([429ef1b](https://github.com/lewismessthecode/BioinfoFlow/commit/429ef1bee529e62f96a9a827a46ae1bd043d5391))
+
+
+### Bug Fixes
+
+* enable auto remote selection ([#221](https://github.com/lewismessthecode/BioinfoFlow/issues/221)) ([1eadcfd](https://github.com/lewismessthecode/BioinfoFlow/commit/1eadcfd9ea06dfe701970251a2c3193b152eedf9))
+* **frontend:** enforce localized connection skill copy ([873dbe6](https://github.com/lewismessthecode/BioinfoFlow/commit/873dbe6c583c8fbb36c66b53fb33149d03f167b5))
+* make agent demo first run deterministic ([6f1ac83](https://github.com/lewismessthecode/BioinfoFlow/commit/6f1ac83852e6b18a08c645e20ba705263d80610b))
+* polish runs table and celebration motion ([0abfb36](https://github.com/lewismessthecode/BioinfoFlow/commit/0abfb36e7ecfa54aad29e3921f53855798c24123))
+* preserve agent streaming during conversation promotion ([3c59010](https://github.com/lewismessthecode/BioinfoFlow/commit/3c590105369955f9af0fe2915c7275bc202069a1))
+* restore Linux agent tool reliability ([c228808](https://github.com/lewismessthecode/BioinfoFlow/commit/c228808d0a60ae988735226dce860e0a1a3e9bef))
+* **scheduler:** avoid duplicate startup recovery ([b1ddf88](https://github.com/lewismessthecode/BioinfoFlow/commit/b1ddf8864b709771a2863de2fd53d5ad15e44cd7))
+* **security:** block sensitive agent context paths ([c0c51e4](https://github.com/lewismessthecode/BioinfoFlow/commit/c0c51e490dc2db4547472987255dcdfa17cf5564))
+* **security:** harden monitoring and upload endpoints ([348d313](https://github.com/lewismessthecode/BioinfoFlow/commit/348d3134bc5026641c109d117a128c1fedbbfd6b))
+* **security:** harden notification delivery ([0b311d7](https://github.com/lewismessthecode/BioinfoFlow/commit/0b311d72756e8f5d0758c7ff202e8329c028f612))
+* seed skills in empty install directories ([e79eb7b](https://github.com/lewismessthecode/BioinfoFlow/commit/e79eb7b5425d8f4da6ffff9cbc99869c5ea92839))
+* show installer download progress ([3af2165](https://github.com/lewismessthecode/BioinfoFlow/commit/3af2165e25014bd1681b8e0e07fed06be3dab292))
+
 ## [0.2.0](https://github.com/lewismessthecode/BioinfoFlow/compare/0.1.0...0.2.0) (2026-07-28)
 
 
