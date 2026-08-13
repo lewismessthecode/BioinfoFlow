@@ -19,6 +19,8 @@ Source-of-truth documentation for the Bioinfoflow platform, written against the 
 - [CLI Reference](reference/cli.md): `bif` commands, backend target selection, JSON output, and scripting behavior.
 - [Architecture Reference](reference/architecture.md): backend, frontend, engine, scheduler, realtime, auth, AgentCore, and remote connection boundaries.
 - [Glossary](reference/glossary.md): Bioinfoflow-specific terms.
+- [Complete Agent Harness Rearchitecture](plans/2026-08-13-complete-agent-harness-rearchitecture.md):
+  the accepted single-harness, five-tool clean-break plan for `/agent`.
 - [Security Notes](security.md): Docker socket, auth, host allowlists, and deployment boundaries.
 
 ## Operations And Development
