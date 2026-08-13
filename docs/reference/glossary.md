@@ -77,6 +77,11 @@ dispatches only when enough slots and resources are available.
 
 ## Agent Terms
 
+The planned Agent Core replacement intentionally reduces the vocabulary to
+Session, Run, History Entry, Tool Call, Tool Result, User Interaction, Context,
+Compaction, Checkpoint, and Workspace Runtime. See
+[Complete Agent Harness Rearchitecture](../plans/2026-08-13-complete-agent-harness-rearchitecture.md).
+
 ### Agent Runtime
 
 The default agent orchestration path under `backend/app/services/agent_core/`.
