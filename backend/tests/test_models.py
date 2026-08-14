@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from app.models import (
-    AgentAction,
     AgentArtifact,
-    AgentEvent,
-    AgentMemory,
+    AgentEntry,
+    AgentRun,
     AgentSession,
-    AgentTurn,
     DockerImage,
     Project,
     Run,
@@ -23,11 +21,9 @@ def test_model_imports():
     assert Run.__tablename__ == "runs"
     assert DockerImage.__tablename__ == "docker_images"
     assert AgentSession.__tablename__ == "agent_sessions"
-    assert AgentTurn.__tablename__ == "agent_turns"
-    assert AgentEvent.__tablename__ == "agent_events"
-    assert AgentAction.__tablename__ == "agent_actions"
+    assert AgentRun.__tablename__ == "agent_runs"
+    assert AgentEntry.__tablename__ == "agent_entries"
     assert AgentArtifact.__tablename__ == "agent_artifacts"
-    assert AgentMemory.__tablename__ == "agent_memories"
 
 
 def test_run_status_includes_pending():

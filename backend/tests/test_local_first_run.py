@@ -240,10 +240,13 @@ def test_security_docs_describe_the_bash_only_docker_socket_exception() -> None:
         "explicitly denying BioinfoFlow product source, internal state databases, and the Docker socket"
         not in normalized_security
     )
-    assert "Bash-only exception" in normalized_security
-    assert "Bubblewrap bind" in normalized_security
-    assert "Seatbelt exact network-outbound rule" in normalized_security
-    assert "full Docker daemon authority" in normalized_security
+    assert "complete authority over the host Docker daemon" in normalized_security
+    assert (
+        "Bubblewrap and macOS Seatbelt constrain the local Bash process, not actions delegated to the Docker daemon"
+        in normalized_security
+    )
+    assert "A sandboxed command that reaches the socket" in normalized_security
+    assert "start privileged workloads outside the sandbox" in normalized_security
 
 
 @pytest.mark.parametrize(

@@ -1,8 +1,9 @@
-"""Tests for AgentCore CLI commands."""
+"""CLI acceptance tests for the complete Agent Harness surface."""
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import ANY, AsyncMock, patch
 
@@ -41,48 +42,70 @@ def _stream(items: list[SSEEvent]):
     return _factory
 
 
-def _session_payload(session_id: str = "session-1") -> dict[str, Any]:
+def _session(session_id: str = "session-1") -> dict[str, Any]:
     return {
         "id": session_id,
-        "project_id": "p-1",
+        "user_id": "user-1",
+        "workspace_id": "00000000-0000-0000-0000-000000000001",
+        "project_id": "00000000-0000-0000-0000-000000000002",
         "title": "QC triage",
-        "role_profile": "bioinformatician",
-        "permission_mode": "guarded_auto",
-        "automation_mode": "assisted",
+        "permission_mode": "ask_dangerous",
         "status": "active",
-        "created_at": "2026-06-04T00:00:00Z",
-        "updated_at": "2026-06-04T00:00:00Z",
+        "created_at": "2026-08-14T00:00:00Z",
+        "updated_at": "2026-08-14T00:00:00Z",
     }
 
 
-def _turn_payload(turn_id: str = "turn-1") -> dict[str, Any]:
+def _snapshot(session_id: str = "session-1") -> dict[str, Any]:
     return {
-        "id": turn_id,
+        "session": _session(session_id),
+        "current_run": None,
+        "entries": [],
+        "revision": 0,
+    }
+
+
+def _artifact(artifact_id: str = "artifact-1") -> dict[str, Any]:
+    return {
+        "id": artifact_id,
         "session_id": "session-1",
-        "project_id": "p-1",
-        "input_text": "hello",
-        "status": "completed",
-        "final_text": "AgentCore session is active.",
-        "created_at": "2026-06-04T00:00:00Z",
-        "updated_at": "2026-06-04T00:00:00Z",
+        "run_id": "run-1",
+        "type": "file",
+        "title": "QC report",
+        "summary": "All samples passed.",
+        "payload": {"sample_count": 12},
+        "file_path": "/results/qc-report.html",
+        "resource_ref": None,
+        "created_at": "2026-08-14T00:00:00Z",
+        "updated_at": "2026-08-14T00:00:00Z",
     }
 
 
 class TestAgentSession:
-    def test_creates_session(self, runner: CliRunner) -> None:
-        resp = make_envelope(_session_payload())
-
-        with patch(f"{_A}.api_post", new_callable=AsyncMock, return_value=resp) as post:
+    def test_creates_session_and_prints_snapshot_session_id(
+        self, runner: CliRunner
+    ) -> None:
+        with patch(
+            f"{_A}.api_post",
+            new_callable=AsyncMock,
+            return_value=make_envelope(_snapshot()),
+        ) as post:
             result = runner.invoke(
                 app,
                 [
                     "--project",
-                    "p-1",
+                    "00000000-0000-0000-0000-000000000002",
                     "agent",
                     "session",
                     "create",
                     "--title",
                     "QC triage",
+                    "--permission-mode",
+                    "full_access",
+                    "--provider",
+                    "openai",
+                    "--model",
+                    "gpt-5.6",
                 ],
             )
 
@@ -90,170 +113,234 @@ class TestAgentSession:
         assert "session-1" in result.stdout
         post.assert_awaited_once()
         assert post.await_args.args[1] == "/agent/sessions"
-        assert post.await_args.args[2]["project_id"] == "p-1"
-        assert post.await_args.args[2]["title"] == "QC triage"
+        assert post.await_args.args[2] == {
+            "project_id": "00000000-0000-0000-0000-000000000002",
+            "title": "QC triage",
+            "permission_mode": "full_access",
+            "provider": "openai",
+            "model": "gpt-5.6",
+        }
 
     def test_lists_sessions(self, runner: CliRunner) -> None:
-        resp = make_envelope([_session_payload()])
-
-        with patch(f"{_A}.api_get", new_callable=AsyncMock, return_value=resp) as get:
+        with patch(
+            f"{_A}.api_get",
+            new_callable=AsyncMock,
+            return_value=make_envelope([_session()]),
+        ) as get:
             result = runner.invoke(app, ["agent", "session", "list"])
 
         assert result.exit_code == 0
         assert "session-1" in result.stdout
-        get.assert_awaited_once_with(ANY, "/agent/sessions", {})
+        get.assert_awaited_once_with(ANY, "/agent/sessions")
 
-    def test_shows_session(self, runner: CliRunner) -> None:
-        resp = make_envelope(_session_payload())
-
-        with patch(f"{_A}.api_get", new_callable=AsyncMock, return_value=resp) as get:
-            result = runner.invoke(app, ["agent", "session", "show", "session-1"])
+    def test_shows_session_snapshot(self, runner: CliRunner) -> None:
+        with patch(
+            f"{_A}.api_get",
+            new_callable=AsyncMock,
+            return_value=make_envelope(_snapshot()),
+        ) as get:
+            result = runner.invoke(
+                app, ["--output", "json", "agent", "session", "show", "session-1"]
+            )
 
         assert result.exit_code == 0
-        assert "QC triage" in result.stdout
-        get.assert_awaited_once()
-        assert get.await_args.args[1] == "/agent/sessions/session-1"
+        assert json.loads(result.stdout)["data"]["session"]["id"] == "session-1"
+        get.assert_awaited_once_with(ANY, "/agent/sessions/session-1/snapshot")
 
     def test_deletes_session(self, runner: CliRunner) -> None:
-        resp = make_envelope({})
-
         with patch(
-            f"{_A}.api_delete", new_callable=AsyncMock, return_value=resp
+            f"{_A}.api_delete",
+            new_callable=AsyncMock,
+            return_value=make_envelope(None),
         ) as delete:
             result = runner.invoke(app, ["agent", "session", "delete", "session-1"])
 
         assert result.exit_code == 0
         assert "deleted" in result.stdout
-        delete.assert_awaited_once()
-        assert delete.await_args.args[1] == "/agent/sessions/session-1"
+        delete.assert_awaited_once_with(ANY, "/agent/sessions/session-1")
 
 
-class TestAgentSend:
-    def test_send_creates_workspace_session_when_project_is_missing(
+class TestAgentPrompt:
+    def test_send_dispatches_prompt_to_existing_session(
         self, runner: CliRunner
     ) -> None:
-        session_resp = make_envelope(_session_payload())
-        turn_resp = make_envelope(_turn_payload())
-
         with patch(
-            "app.cli.client.ApiClient.post",
+            f"{_A}.api_post",
             new_callable=AsyncMock,
-            side_effect=[session_resp, turn_resp],
-        ) as post:
-            result = runner.invoke(app, ["agent", "send", "hello"])
-
-        assert result.exit_code == 0
-        assert [call.args[0] for call in post.await_args_list] == [
-            "/agent/sessions",
-            "/agent/sessions/session-1/turns",
-        ]
-        assert post.await_args_list[0].args[1] == {}
-
-    def test_send_uses_existing_session_and_turn_endpoint(
-        self, runner: CliRunner
-    ) -> None:
-        turn_resp = make_envelope(_turn_payload())
-
-        with patch(
-            "app.cli.client.ApiClient.post",
-            new_callable=AsyncMock,
-            return_value=turn_resp,
+            return_value=make_envelope(_snapshot()),
         ) as post:
             result = runner.invoke(
                 app,
-                ["agent", "send", "hello", "--session", "session-1"],
+                [
+                    "agent",
+                    "send",
+                    "inspect the samples",
+                    "--session",
+                    "session-1",
+                    "--attachment",
+                    "00000000-0000-0000-0000-000000000003",
+                ],
             )
 
         assert result.exit_code == 0
-        assert "AgentCore session is active." in result.stdout
         post.assert_awaited_once()
-        assert post.await_args.args[0] == "/agent/sessions/session-1/turns"
-        assert post.await_args.args[1] == {"input_text": "hello"}
-        assert "/agent/message" not in str(post.await_args_list)
-        assert "/agent/conversations" not in str(post.await_args_list)
+        assert post.await_args.args[1] == "/agent/sessions/session-1/commands"
+        payload = post.await_args.args[2]
+        assert payload["type"] == "prompt"
+        assert payload["text"] == "inspect the samples"
+        assert payload["attachment_ids"] == ["00000000-0000-0000-0000-000000000003"]
+        assert payload["command_id"]
 
-    def test_send_creates_session_then_turn(self, runner: CliRunner) -> None:
-        session_resp = make_envelope(_session_payload())
-        turn_resp = make_envelope(_turn_payload())
-
+    def test_send_creates_session_before_prompt_when_session_is_omitted(
+        self, runner: CliRunner
+    ) -> None:
         with patch(
-            "app.cli.client.ApiClient.post",
+            f"{_A}.api_post",
             new_callable=AsyncMock,
-            side_effect=[session_resp, turn_resp],
+            side_effect=[make_envelope(_snapshot()), make_envelope(_snapshot())],
         ) as post:
             result = runner.invoke(
                 app,
-                ["--project", "p-1", "agent", "send", "hello"],
+                [
+                    "--project",
+                    "00000000-0000-0000-0000-000000000002",
+                    "agent",
+                    "send",
+                    "hello",
+                    "--title",
+                    "Fresh session",
+                ],
             )
 
         assert result.exit_code == 0
         assert "session-1" in result.stdout
-        assert "--session session-1" in result.stdout
-        assert [call.args[0] for call in post.await_args_list] == [
+        assert [call.args[1] for call in post.await_args_list] == [
             "/agent/sessions",
-            "/agent/sessions/session-1/turns",
+            "/agent/sessions/session-1/commands",
         ]
-        assert post.await_args_list[0].args[1]["project_id"] == "p-1"
-        assert post.await_args_list[1].args[1] == {"input_text": "hello"}
+        assert post.await_args_list[0].args[2] == {
+            "project_id": "00000000-0000-0000-0000-000000000002",
+            "title": "Fresh session",
+            "permission_mode": "ask_dangerous",
+        }
+        assert post.await_args_list[1].args[2]["type"] == "prompt"
 
 
-class TestAgentChat:
-    def test_chat_allows_workspace_session_when_project_is_missing(
+class TestAgentCommands:
+    @pytest.mark.parametrize(
+        ("argv", "expected"),
+        [
+            (
+                ["agent", "steer", "session-1", "focus on RNA"],
+                {"type": "steer", "text": "focus on RNA"},
+            ),
+            (
+                [
+                    "agent",
+                    "follow-up",
+                    "session-1",
+                    "then summarize",
+                    "--attachment",
+                    "00000000-0000-0000-0000-000000000004",
+                ],
+                {
+                    "type": "follow_up",
+                    "text": "then summarize",
+                    "attachment_ids": ["00000000-0000-0000-0000-000000000004"],
+                },
+            ),
+            (
+                ["agent", "cancel", "session-1", "--reason", "user stopped"],
+                {"type": "cancel", "reason": "user stopped"},
+            ),
+        ],
+    )
+    def test_dispatches_commands(
+        self, runner: CliRunner, argv: list[str], expected: dict[str, Any]
+    ) -> None:
+        with patch(
+            f"{_A}.api_post",
+            new_callable=AsyncMock,
+            return_value=make_envelope(_snapshot()),
+        ) as post:
+            result = runner.invoke(app, argv)
+
+        assert result.exit_code == 0
+        payload = post.await_args.args[2]
+        command_id = payload.pop("command_id")
+        assert command_id
+        assert payload == expected
+
+    def test_respond_dispatches_structured_interaction_response(
         self, runner: CliRunner
     ) -> None:
-        with patch(f"{_A}._chat_loop", new_callable=AsyncMock) as loop:
-            result = runner.invoke(app, ["agent", "chat"])
+        with patch(
+            f"{_A}.api_post",
+            new_callable=AsyncMock,
+            return_value=make_envelope(_snapshot()),
+        ) as post:
+            result = runner.invoke(
+                app,
+                [
+                    "agent",
+                    "respond",
+                    "session-1",
+                    "interaction-1",
+                    "--response-json",
+                    '{"approved": true}',
+                ],
+            )
 
         assert result.exit_code == 0
-        loop.assert_called_once()
-        assert loop.call_args.args[2] is None
+        payload = post.await_args.args[2]
+        assert payload["type"] == "respond"
+        assert payload["interaction_id"] == "interaction-1"
+        assert payload["response"] == {"approved": True}
 
-    def test_chat_starts_loop(self, runner: CliRunner) -> None:
-        with patch(f"{_A}._chat_loop", new_callable=AsyncMock) as loop:
-            result = runner.invoke(app, ["--project", "p-1", "agent", "chat"])
-
-        assert result.exit_code == 0
-        loop.assert_called_once()
-
-
-class TestAgentEvents:
-    def test_lists_turn_events(self, runner: CliRunner) -> None:
-        resp = make_envelope(
+    def test_respond_rejects_non_object_json(self, runner: CliRunner) -> None:
+        result = runner.invoke(
+            app,
             [
-                {
-                    "id": "event-1",
-                    "turn_id": "turn-1",
-                    "seq": 1,
-                    "type": "turn.created",
-                    "visibility": "user",
-                    "payload": {"input_text": "hello"},
-                    "created_at": "2026-06-04T00:00:00Z",
-                }
-            ]
+                "agent",
+                "respond",
+                "session-1",
+                "interaction-1",
+                "--response-json",
+                "[]",
+            ],
         )
 
-        with patch(f"{_A}.api_get", new_callable=AsyncMock, return_value=resp) as get:
-            result = runner.invoke(app, ["agent", "events", "turn-1"])
+        assert result.exit_code == 2
+        assert "JSON object" in result.stdout
+
+
+class TestAgentSnapshotAndEvents:
+    def test_snapshot_reads_authoritative_snapshot(self, runner: CliRunner) -> None:
+        with patch(
+            f"{_A}.api_get",
+            new_callable=AsyncMock,
+            return_value=make_envelope(_snapshot()),
+        ) as get:
+            result = runner.invoke(
+                app, ["--output", "json", "agent", "snapshot", "session-1"]
+            )
 
         assert result.exit_code == 0
-        assert "turn.created" in result.stdout
-        get.assert_awaited_once()
-        assert get.await_args.args[1] == "/agent/turns/turn-1/events"
-        assert get.await_args.args[2] == {"after_seq": 0}
+        assert json.loads(result.stdout)["data"]["revision"] == 0
+        get.assert_awaited_once_with(ANY, "/agent/sessions/session-1/snapshot")
 
-    def test_stream_outputs_sse_events(self, runner: CliRunner) -> None:
+    def test_events_streams_session_sse(self, runner: CliRunner) -> None:
         events = [
             SSEEvent(
-                id="event-1",
-                event="assistant.text.completed",
-                data=json.dumps(
-                    {
-                        "type": "assistant.text.completed",
-                        "payload": {"text": "done"},
-                    }
-                ),
+                id=None,
+                event="snapshot",
+                data=json.dumps({"type": "snapshot", "snapshot": _snapshot()}),
             ),
-            SSEEvent(id=None, event="ready", data='{"status":"replayed"}'),
+            SSEEvent(
+                id=None,
+                event="assistant.delta",
+                data='{"type":"assistant.delta","run_id":"run-1","delta":"done"}',
+            ),
         ]
 
         with patch(
@@ -262,132 +349,84 @@ class TestAgentEvents:
         ) as stream:
             result = runner.invoke(
                 app,
-                ["--output", "json", "agent", "stream", "session-1"],
+                ["--output", "json", "agent", "events", "session-1"],
             )
 
         assert result.exit_code == 0
         lines = [json.loads(line) for line in result.stdout.splitlines()]
-        assert lines[0]["event"] == "assistant.text.completed"
-        assert lines[1]["event"] == "ready"
-        stream.assert_called_once_with(
-            "/agent/sessions/session-1/stream", {"after_seq": 0}
-        )
+        assert [line["event"] for line in lines] == ["snapshot", "assistant.delta"]
+        stream.assert_called_once_with("/agent/sessions/session-1/events")
 
 
-class TestAgentTurn:
-    def test_lists_session_turns(self, runner: CliRunner) -> None:
-        resp = make_envelope([_turn_payload()])
-
-        with patch(f"{_A}.api_get", new_callable=AsyncMock, return_value=resp) as get:
-            result = runner.invoke(app, ["agent", "turn", "list", "session-1"])
-
-        assert result.exit_code == 0
-        assert "turn-1" in result.stdout
-        get.assert_awaited_once()
-        assert get.await_args.args[1] == "/agent/sessions/session-1/turns"
-
-    def test_cancels_turn(self, runner: CliRunner) -> None:
-        resp = make_envelope({**_turn_payload(), "status": "cancelled"})
-
-        with patch(f"{_A}.api_post", new_callable=AsyncMock, return_value=resp) as post:
-            result = runner.invoke(app, ["agent", "turn", "cancel", "turn-1"])
-
-        assert result.exit_code == 0
-        assert "cancelled" in result.stdout
-        post.assert_awaited_once()
-        assert post.await_args.args[1] == "/agent/turns/turn-1/cancel"
-
-
-class TestAgentAction:
-    def test_approves_action(self, runner: CliRunner) -> None:
-        resp = make_envelope({"id": "action-1", "status": "completed"})
-
-        with patch(f"{_A}.api_post", new_callable=AsyncMock, return_value=resp) as post:
-            result = runner.invoke(
-                app, ["agent", "action", "approve", "action-1", "--note", "ok"]
-            )
-
-        assert result.exit_code == 0
-        assert "approved" in result.stdout
-        post.assert_awaited_once()
-        assert post.await_args.args[1] == "/agent/actions/action-1/decision"
-        assert post.await_args.args[2] == {"decision": "approve", "note": "ok"}
-
-    def test_rejects_action(self, runner: CliRunner) -> None:
-        resp = make_envelope({"id": "action-1", "status": "rejected"})
-
-        with patch(f"{_A}.api_post", new_callable=AsyncMock, return_value=resp) as post:
-            result = runner.invoke(app, ["agent", "action", "reject", "action-1"])
-
-        assert result.exit_code == 0
-        assert "rejected" in result.stdout
-        post.assert_awaited_once()
-        assert post.await_args.args[2] == {"decision": "reject"}
-
-
-class TestAgentArtifacts:
-    def test_lists_turn_artifacts(self, runner: CliRunner) -> None:
-        resp = make_envelope(
-            [
-                {
-                    "id": "artifact-1",
-                    "turn_id": "turn-1",
-                    "type": "log_summary",
-                    "title": "Shell output",
-                    "summary": "exit 0",
-                    "created_at": "2026-06-04T00:00:00Z",
-                }
-            ]
-        )
-
-        with patch(f"{_A}.api_get", new_callable=AsyncMock, return_value=resp) as get:
-            result = runner.invoke(app, ["agent", "artifacts", "list", "turn-1"])
-
-        assert result.exit_code == 0
-        assert "Shell output" in result.stdout
-        get.assert_awaited_once()
-        assert get.await_args.args[1] == "/agent/turns/turn-1/artifacts"
-
+class TestAgentArtifact:
     def test_lists_session_artifacts(self, runner: CliRunner) -> None:
-        resp = make_envelope([])
-
-        with patch(f"{_A}.api_get", new_callable=AsyncMock, return_value=resp) as get:
-            result = runner.invoke(
-                app,
-                ["agent", "artifacts", "list", "session-1", "--scope", "session"],
-            )
+        with patch(
+            f"{_A}.api_get",
+            new_callable=AsyncMock,
+            return_value=make_envelope([_artifact()]),
+        ) as get:
+            result = runner.invoke(app, ["agent", "artifact", "list", "session-1"])
 
         assert result.exit_code == 0
-        get.assert_awaited_once()
-        assert get.await_args.args[1] == "/agent/sessions/session-1/artifacts"
+        assert "QC report" in result.stdout
+        get.assert_awaited_once_with(ANY, "/agent/sessions/session-1/artifacts")
 
     def test_shows_artifact(self, runner: CliRunner) -> None:
-        resp = make_envelope(
-            {
-                "id": "artifact-1",
-                "type": "report",
-                "title": "Run summary",
-                "summary": "All samples passed.",
-                "payload": {"sample_count": 12},
-            }
-        )
-
-        with patch(f"{_A}.api_get", new_callable=AsyncMock, return_value=resp) as get:
-            result = runner.invoke(app, ["agent", "artifacts", "show", "artifact-1"])
+        with patch(
+            f"{_A}.api_get",
+            new_callable=AsyncMock,
+            return_value=make_envelope(_artifact()),
+        ) as get:
+            result = runner.invoke(
+                app, ["--output", "json", "agent", "artifact", "show", "artifact-1"]
+            )
 
         assert result.exit_code == 0
-        assert "Run summary" in result.stdout
-        get.assert_awaited_once()
-        assert get.await_args.args[1] == "/agent/artifacts/artifact-1"
+        assert json.loads(result.stdout)["data"]["id"] == "artifact-1"
+        get.assert_awaited_once_with(ANY, "/agent/artifacts/artifact-1")
+
+    def test_downloads_artifact(self, runner: CliRunner, tmp_path: Path) -> None:
+        destination = tmp_path / "qc-report.html"
+        with patch(
+            f"{_A}.api_download",
+            new_callable=AsyncMock,
+            return_value=destination,
+        ) as download:
+            result = runner.invoke(
+                app,
+                [
+                    "--output",
+                    "json",
+                    "agent",
+                    "artifact",
+                    "download",
+                    "artifact-1",
+                    "--output",
+                    str(destination),
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert json.loads(result.stdout)["data"] == {
+            "artifact_id": "artifact-1",
+            "path": str(destination),
+        }
+        download.assert_awaited_once_with(
+            ANY, "/agent/artifacts/artifact-1/download", destination
+        )
 
 
-class TestLegacyAgentCommands:
-    def test_legacy_approvals_group_is_removed(self, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["agent", "approvals", "list", "conv-1"])
-
-        assert result.exit_code != 0
-
-    def test_legacy_history_command_is_removed(self, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["agent", "history", "conv-1"])
-
-        assert result.exit_code != 0
+class TestRemovedAgentCoreCommands:
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["agent", "turn", "list", "session-1"],
+            ["agent", "action", "approve", "action-1"],
+            ["agent", "approvals", "list", "session-1"],
+            ["agent", "history", "session-1"],
+        ],
+    )
+    def test_legacy_command_is_removed(
+        self, runner: CliRunner, argv: list[str]
+    ) -> None:
+        assert runner.invoke(app, argv).exit_code == 2

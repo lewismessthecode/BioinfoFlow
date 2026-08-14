@@ -71,18 +71,18 @@ class TestHelp:
         assert result.exit_code == 0
         for sub in [
             "send",
-            "chat",
-            "events",
-            "stream",
+            "steer",
+            "follow-up",
+            "respond",
             "cancel",
+            "snapshot",
+            "events",
             "session",
-            "turn",
-            "action",
-            "artifacts",
+            "artifact",
         ]:
             assert sub in result.stdout
-        for legacy_sub in ["history", "status", "trace", "approvals"]:
-            assert legacy_sub not in result.stdout
+        for legacy_sub in ["history", "status", "trace", "approvals", "turn", "action"]:
+            assert f"│ {legacy_sub} " not in result.stdout
 
 
 class TestFlagValidation:
@@ -105,7 +105,10 @@ class TestFlagValidation:
     ) -> None:
         captured: dict[str, str] = {}
 
-        def fake_transport_init(self, base_url: str) -> None:
+        def fake_transport_init(
+            self, base_url: str, *, bearer_token: str | None = None
+        ) -> None:
+            del bearer_token
             captured["base_url"] = base_url
             self._base_url = base_url
             self._client = None
@@ -126,6 +129,35 @@ class TestFlagValidation:
 
         assert result.exit_code == 0
         assert captured["base_url"] == "https://api.example.test/api/v1"
+
+    def test_agent_token_is_read_from_environment(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, str | None] = {}
+
+        def fake_transport_init(
+            self, base_url: str, *, bearer_token: str | None = None
+        ) -> None:
+            captured["base_url"] = base_url
+            captured["bearer_token"] = bearer_token
+            self._base_url = base_url
+            self._client = None
+
+        monkeypatch.setenv("BIOFLOW_AGENT_TOKEN", "short-lived-secret")
+        monkeypatch.setattr(
+            "app.cli.transport.RemoteTransport.__init__",
+            fake_transport_init,
+        )
+        with patch(
+            "app.cli.commands.project.api_get",
+            new_callable=AsyncMock,
+            return_value=make_envelope([]),
+        ):
+            result = runner.invoke(app, ["project", "list"])
+
+        assert result.exit_code == 0
+        assert captured["bearer_token"] == "short-lived-secret"
+        assert "short-lived-secret" not in result.output
 
 
 class TestNoArgsShowsHelp:

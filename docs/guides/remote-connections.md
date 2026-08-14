@@ -1,33 +1,49 @@
 # Remote Connections
 
-Remote Connections let Bioinfoflow store SSH connection profiles and Host Skills
-for use from the web UI and AgentCore runtime.
+Remote Connections let Bioinfoflow store SSH connection profiles and operational
+notes for the web UI, remote project terminals, and Agent Harness workspaces.
 
 Use this feature when you want Bioinfoflow to diagnose or inspect a remote
-server, open a project terminal, run existing commands, inspect files, or give
-the agent access to a selected host. AgentCore has no dedicated remote file-write
-tool; `remote.exec` commands can still modify the remote host when policy allows
-them. The browser never opens an SSH session directly. The frontend calls the
-Bioinfoflow backend, and the backend performs the SSH operation. Command-style
-probes and AgentCore tools stay bounded by timeouts and output limits; project
-terminals use backend-managed SSH PTY sessions.
+server, open a project terminal, or bind an Agent Session to a remote project.
+The browser never opens an SSH session directly. The frontend calls the
+Bioinfoflow backend, and the backend performs the SSH operation. Probes and
+Harness tools use bounded output and timeouts; project terminals use
+backend-managed SSH PTY sessions.
 
 ## What You Can Do
 
-- Save SSH profiles and Host Skill instructions per workspace.
+- Save SSH profiles and operational notes per workspace.
 - Test a connection from the Connections page.
 - Run a short streamed probe command and see output in the UI.
 - Open an interactive terminal for a remote project in its configured remote
   root path.
-- Select a connection in the Agent composer.
-- Let AgentCore use `remote.connections.list`, `remote.read_file`, `remote.list_dir`, and `remote.exec` against the selected connection.
-- In **Auto** mode, let AgentCore discover an authorized connection and choose it from task context.
+- Bind a project to a connection and let the Harness use its normal `read`,
+  `bash`, `edit`, `write`, and `ask_user` tools inside that remote workspace.
 
-Remote command output is recorded as Agent action output. Command-style remote outputs can also appear as artifacts in the workbench.
+Remote tool calls and results are recorded in canonical Session history. Large
+command output may be stored as an Artifact.
 
 ## Requirements
 
 The Bioinfoflow backend host must be able to reach the remote SSH server.
+
+Agent tools additionally require `bwrap` (Bubblewrap), a trusted shell, and
+Python 3 on the remote host. Bioinfoflow verifies that these runtime components
+are outside writable project roots and fails closed when it cannot establish
+the remote sandbox. Connection tests and interactive terminals have their own
+execution paths and do not prove Harness sandbox readiness.
+
+Remote Agent workspaces also need to call the Bioinfoflow API through `bif`.
+Set `BIOINFOFLOW_PUBLIC_API_BASE_URL` to an HTTP(S) API URL reachable from the
+remote host, including `/api/v1`, for example:
+
+```env
+BIOINFOFLOW_PUBLIC_API_BASE_URL=https://bioinfoflow.example/api/v1
+```
+
+Bioinfoflow rejects remote Agent sessions when this value is missing or points
+to localhost. Local Agent workspaces may omit it and use the local development
+default.
 
 For Docker deployments, remember that SSH runs from inside the backend
 container. Backend-specific paths and sockets must exist inside that container,
@@ -79,13 +95,13 @@ them or introduce SSH agent forwarding.
 The initial implementation supports exactly one direct jump connection. A
 connection using jump mode cannot be selected as another connection's jump
 host. The same resolved route is used for connection tests, streamed probes,
-remote directory and file browsing, AgentCore remote tools, and remote project
+remote directory and file browsing, Harness workspaces, and remote project
 terminals.
 
-### Host Skill
+### Connection Notes
 
-The Host Skill field tells the agent how to use this server after connecting.
-Keep it operational and specific. Good examples include:
+The Host Skill field stores operational notes about the server. Good examples
+include:
 
 - default working directories
 - company CLI tools such as `phoenix`
@@ -95,9 +111,9 @@ Keep it operational and specific. Good examples include:
 - directories the agent may read or write
 - commands the agent should avoid
 
-Host Skill instructions are not a workflow abstraction. Bioinfoflow still gives
-the agent generic SSH command and file tools; the instructions teach the agent
-how to use the remote environment already provided by your team.
+These notes are not an authorization or sandbox policy. Put required Agent
+instructions in the project's `AGENTS.md` or a discoverable Skill; the Harness
+loads those through its stable prompt and normal `read` tool.
 
 ## Advanced SSH Setup
 
@@ -196,50 +212,33 @@ client. SSH config aliases, backend key-file paths, and backend ssh-agent
 connections use the backend's system `ssh` binary so they inherit the backend
 host or container SSH environment.
 
-## Use A Connection With AgentCore
+## Use A Remote Project With The Agent Harness
 
-Select a remote connection in the Agent composer before sending a message when
-you want to fence the agent to one or more explicit hosts. Bioinfoflow stores
-the selected connection id in the Agent session metadata.
+Create or select a project whose storage mode is remote, with one saved
+connection and one absolute remote root. The Session snapshots that project and
+connection; it cannot switch to another SSH target through a tool argument.
 
-When the composer is set to **Auto**, AgentCore receives both local and remote
-execution tools. It first calls `remote.connections.list`, then chooses an
-authorized SSH connection only when the available connection metadata and task
-require it. An empty list is a valid zero-configuration state: the agent stays
-local and uses local tools, so a new project does not need a preconfigured SSH
-node.
+Local and remote Sessions expose the same five tools:
 
-When a connection is selected, AgentCore receives remote context and can use these tools:
+| Tool | Remote behavior |
+| --- | --- |
+| `read` | Read a bounded text page or supported image inside allowed roots |
+| `bash` | Run a command inside verified remote Bubblewrap confinement |
+| `edit` | Replace exact text and return a diff |
+| `write` | Create or replace a file and return a diff |
+| `ask_user` | Pause for a question, confirmation, or recovery choice |
 
-| Tool | Purpose | Risk |
-| --- | --- | --- |
-| `remote.connections.list` | List selected remote connections visible to the session | read |
-| `remote.read_file` | Read bounded text from a remote file | read |
-| `remote.list_dir` | List bounded remote directory entries | read |
-| `remote.exec` | Run a short remote diagnostic command | assessed per command and SSH target |
+Bioinfoflow product operations use `bif --output json` through `bash`. For this
+path, the remote host must reach `BIOINFOFLOW_PUBLIC_API_BASE_URL`, and a trusted
+remote `bif` executable must exist outside writable project roots. The Harness
+passes its short-lived scoped token through stdin only for one proven plain
+`bif` command; shell composition and `--base-url` overrides do not receive it.
 
-Prefer `remote.read_file` and `remote.list_dir` for bounded read-only inspection.
-`remote.exec` shares the local command-risk vocabulary but is adjusted for the
-selected SSH identity and remote boundary. A safe read whose path can be bounded
-may remain low risk. Writes, network access, destructive commands, protected
-resources, variable or home-relative paths, outside-root paths, and uncertain
-option or symlink behavior are escalated when safety cannot be proven.
-
-The selected connection is part of the authorization context. A tool call may
-not switch to another connection id. The configured remote root is used as a
-working directory and a risk-analysis root; it is not a chroot, container, or
-OS sandbox. A command has the privileges of the configured remote user plus any
-sudo, ACL, scheduler, and server policy available to that account.
-
-Changing the Agent permission mode affects the next authorization evaluation,
-including during an active turn. With waiting tool approvals, the UI asks
-whether to update future operations only or also approve eligible waiting tools.
-User questions and plan approval are never bulk-approved.
-
-**Full access** skips all Bioinfoflow risk prompts for this selected host. It
-auto-approves elevated and protected-resource actions while retaining their
-risk audit data. It does not grant additional SSH privileges, and catastrophic
-commands remain hard blocked.
+The permission modes are `read_only`, `ask_dangerous`, and `full_access`.
+`full_access` reduces prompts but cannot expand sandbox roots, change the saved
+connection, grant sudo, or bypass Bioinfoflow API authorization. Commands that
+explicitly require confirmation still pause through the same `ask_user`
+interaction channel.
 
 ## Current Limits
 
@@ -266,6 +265,9 @@ If a test fails, check the backend environment first:
 - Advanced backend SSH methods use system `ssh` and require the target host to
   accept `BatchMode=yes` SSH commands. Remote project terminals also require
   PTY allocation on the target host.
+- Agent Harness tools require a trusted remote `bwrap`, shell, and Python 3.
+- Remote `bif` commands require `BIOINFOFLOW_PUBLIC_API_BASE_URL` to be reachable
+  from the SSH host and a trusted `bif` executable on that host.
 
 For a connection using **Via jump host**, troubleshoot the two sessions in
 order:

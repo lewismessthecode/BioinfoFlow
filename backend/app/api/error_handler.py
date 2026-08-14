@@ -27,7 +27,7 @@ import inspect
 import logging
 from typing import Any, Callable
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 from app.utils.exceptions import AppError
 from app.utils.responses import error_response
@@ -79,6 +79,8 @@ def _build_wrapper(
         request = _resolve_request(args, kwargs, sig)
         try:
             return await fn(*args, **kwargs)
+        except HTTPException:
+            raise
         except AppError as exc:
             return error_response(
                 code=exc.code,

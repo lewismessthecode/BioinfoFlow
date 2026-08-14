@@ -52,13 +52,10 @@ class ResponsesCodec:
             continuation = None
         if continuation is not None:
             input_items.extend(
-                _jsonable(item)
-                for item in continuation.opaque_output_items()
+                _jsonable(item) for item in continuation.opaque_output_items()
             )
         canonical_input_count = (
-            continuation.canonical_input_count
-            if continuation is not None
-            else 0
+            continuation.canonical_input_count if continuation is not None else 0
         )
         pending_user_parts: list[TextPart | ImagePart] = []
         for item in invocation.input_items[canonical_input_count:]:

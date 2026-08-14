@@ -15,6 +15,13 @@ from app.database import Base, stamp_database_revision
 from app.main import app as fastapi_app
 import app.database as app_database
 import app.models  # noqa: F401
+from app.auth.agent_tokens import AgentTokenService
+from app.models.agent_harness import AgentHarnessRun, AgentHarnessSession
+from app.models.project import Project
+from app.models.remote_connection import RemoteConnection
+from app.models.run import Run
+from app.repositories.agent_harness_repo import RunFence
+from app.workspace import DEFAULT_WORKSPACE_ID
 
 
 def _create_better_auth_db(db_path: Path) -> None:
@@ -85,7 +92,15 @@ def _seed_auth_db(db_path: Path) -> None:
 
 
 def _iso_utc(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return (
+        value.astimezone(timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def _active_test_fence() -> RunFence:
+    return RunFence(owner="auth-test-worker", generation=1)
 
 
 @pytest_asyncio.fixture
@@ -169,6 +184,112 @@ async def test_get_current_user_valid_cookie(auth_client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_current_user_valid_agent_bearer(auth_client: AsyncClient) -> None:
+    async with app_database.async_session_maker() as session:
+        bound_project = Project(
+            name="Bound",
+            user_id="test-user-1",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+        )
+        other_project = Project(
+            name="Other",
+            user_id="test-user-1",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+        )
+        session.add_all((bound_project, other_project))
+        await session.flush()
+        session.add_all(
+            (
+                Run(
+                    run_id="bound-run",
+                    project_id=str(bound_project.id),
+                    status="completed",
+                    config={},
+                ),
+                Run(
+                    run_id="other-run",
+                    project_id=str(other_project.id),
+                    status="completed",
+                    config={},
+                ),
+            )
+        )
+        agent_session = AgentHarnessSession(
+            user_id="test-user-1",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            project_id=str(bound_project.id),
+            permission_mode="ask_dangerous",
+            prompt_snapshot={"content": "test"},
+            history_revision=0,
+            command_queue=[],
+            command_ids=[],
+            status="active",
+        )
+        session.add(agent_session)
+        await session.flush()
+        agent_run = AgentHarnessRun(
+            session_id=str(agent_session.id),
+            status="running",
+            lease_owner="auth-test-worker",
+            lease_generation=1,
+            lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            command_queue=[],
+            command_ids=[],
+        )
+        session.add(agent_run)
+        await session.commit()
+        grant = await AgentTokenService(session).issue(
+            user_id="test-user-1",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            session_id=str(agent_session.id),
+            run_id=str(agent_run.id),
+            fence=_active_test_fence(),
+        )
+        bound_project_id = str(bound_project.id)
+        other_project_id = str(other_project.id)
+
+    response = await auth_client.get(
+        "/api/v1/projects",
+        headers={"Authorization": f"Bearer {grant.token}"},
+    )
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["data"]] == [bound_project_id]
+
+    outside = await auth_client.get(
+        f"/api/v1/projects/{other_project_id}",
+        headers={"Authorization": f"Bearer {grant.token}"},
+    )
+    assert outside.status_code == 403
+
+    runs = await auth_client.get(
+        "/api/v1/runs",
+        headers={"Authorization": f"Bearer {grant.token}"},
+    )
+    assert runs.status_code == 200
+    assert [item["run_id"] for item in runs.json()["data"]] == ["bound-run"]
+
+    outside_run = await auth_client.get(
+        "/api/v1/runs/other-run",
+        headers={"Authorization": f"Bearer {grant.token}"},
+    )
+    assert outside_run.status_code == 403
+
+    legacy_files = await auth_client.get(
+        "/api/v1/files",
+        params={"project_id": bound_project_id},
+        headers={"Authorization": f"Bearer {grant.token}"},
+    )
+    assert legacy_files.status_code == 403
+
+    undeclared = await auth_client.get(
+        "/api/v1/llm/providers",
+        headers={"Authorization": f"Bearer {grant.token}"},
+    )
+    assert undeclared.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_get_current_user_signed_cookie_value(auth_client: AsyncClient) -> None:
     """Signed Better Auth cookies should validate against the raw DB token."""
     auth_client.cookies.set(
@@ -195,6 +316,163 @@ async def test_get_current_user_auth_disabled(
     monkeypatch.setattr(settings, "auth_enabled", True)
     response = await auth_client.get("/api/v1/projects")
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_dev_auth_rejects_an_explicit_invalid_agent_bearer(
+    auth_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "auth_mode", "dev")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+
+    response = await auth_client.get(
+        "/api/v1/projects",
+        headers={"Authorization": "Bearer invalid"},
+    )
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_dev_auth_agent_bearer_requires_endpoint_opt_in(
+    auth_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "auth_mode", "dev")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    async with app_database.async_session_maker() as session:
+        agent_session = AgentHarnessSession(
+            user_id="dev",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            permission_mode="ask_dangerous",
+            prompt_snapshot={"content": "test"},
+            history_revision=0,
+            command_queue=[],
+            command_ids=[],
+            status="active",
+        )
+        session.add(agent_session)
+        await session.flush()
+        agent_run = AgentHarnessRun(
+            session_id=str(agent_session.id),
+            status="running",
+            lease_owner="auth-test-worker",
+            lease_generation=1,
+            lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            command_queue=[],
+            command_ids=[],
+        )
+        session.add(agent_run)
+        await session.commit()
+        grant = await AgentTokenService(session).issue(
+            user_id="dev",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            session_id=str(agent_session.id),
+            run_id=str(agent_run.id),
+            fence=_active_test_fence(),
+        )
+
+    response = await auth_client.get(
+        "/api/v1/llm/providers",
+        headers={"Authorization": f"Bearer {grant.token}"},
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_dev_auth_agent_bearer_enforces_project_and_connection_scopes(
+    auth_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "auth_mode", "dev")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    async with app_database.async_session_maker() as session:
+        bound_connection = RemoteConnection(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            name="Bound connection",
+            host="bound.example.com",
+            port=22,
+            username="agent",
+            auth_method="agent",
+        )
+        other_connection = RemoteConnection(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            name="Other connection",
+            host="other.example.com",
+            port=22,
+            username="agent",
+            auth_method="agent",
+        )
+        session.add_all((bound_connection, other_connection))
+        await session.flush()
+        bound_project = Project(
+            name="Bound",
+            user_id="dev",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            storage_mode="remote",
+            remote_connection_id=str(bound_connection.id),
+            remote_root_path="/work/bound",
+        )
+        other_project = Project(
+            name="Other",
+            user_id="dev",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+        )
+        session.add_all((bound_project, other_project))
+        await session.flush()
+        agent_session = AgentHarnessSession(
+            user_id="dev",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            project_id=str(bound_project.id),
+            workspace_snapshot={"remote_connection": {"id": str(bound_connection.id)}},
+            permission_mode="ask_dangerous",
+            prompt_snapshot={"content": "test"},
+            history_revision=0,
+            command_queue=[],
+            command_ids=[],
+            status="active",
+        )
+        session.add(agent_session)
+        await session.flush()
+        agent_run = AgentHarnessRun(
+            session_id=str(agent_session.id),
+            status="running",
+            lease_owner="auth-test-worker",
+            lease_generation=1,
+            lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            command_queue=[],
+            command_ids=[],
+        )
+        session.add(agent_run)
+        await session.commit()
+        grant = await AgentTokenService(session).issue(
+            user_id="dev",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            session_id=str(agent_session.id),
+            run_id=str(agent_run.id),
+            fence=_active_test_fence(),
+        )
+        bound_project_id = str(bound_project.id)
+        other_project_id = str(other_project.id)
+        bound_connection_id = str(bound_connection.id)
+        other_connection_id = str(other_connection.id)
+
+    headers = {"Authorization": f"Bearer {grant.token}"}
+    assert (
+        await auth_client.get(f"/api/v1/projects/{bound_project_id}", headers=headers)
+    ).status_code == 200
+    assert (
+        await auth_client.get(f"/api/v1/projects/{other_project_id}", headers=headers)
+    ).status_code == 403
+    assert (
+        await auth_client.get(
+            f"/api/v1/connections/{bound_connection_id}", headers=headers
+        )
+    ).status_code == 200
+    assert (
+        await auth_client.get(
+            f"/api/v1/connections/{other_connection_id}", headers=headers
+        )
+    ).status_code == 403
 
 
 @pytest.mark.asyncio

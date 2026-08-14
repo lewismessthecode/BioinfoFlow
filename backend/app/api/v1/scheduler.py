@@ -4,12 +4,24 @@ import asyncio
 import contextlib
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import (
+    declare_agent_token_access,
+    get_current_user,
+    get_db,
+    require_agent_scope,
+)
 from app.auth.dependencies import resolve_websocket_user
 from app.auth.session import AuthUser
 from app.models.run import Run
@@ -94,12 +106,13 @@ async def _enrich_active_runs(
     ]
 
 
-@router.get("/status")
+@router.get("/status", dependencies=[Depends(declare_agent_token_access)])
 async def get_scheduler_status(
     request: Request,
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, allow_projectless=True)
     del user
     scheduler = get_run_scheduler()
     if scheduler is None:
@@ -131,11 +144,12 @@ async def get_scheduler_status(
     )
 
 
-@router.get("/resources")
+@router.get("/resources", dependencies=[Depends(declare_agent_token_access)])
 async def get_scheduler_resources(
     request: Request,
     user: AuthUser = Depends(get_current_user),
 ):
+    require_agent_scope(request, allow_projectless=True)
     del user
     scheduler = get_run_scheduler()
     snapshot = scheduler.get_resource_snapshot() if scheduler is not None else None

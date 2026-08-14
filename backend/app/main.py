@@ -18,7 +18,6 @@ from app.scheduler.config import SchedulerConfig
 from app.scheduler.monitor import ResourceMonitor
 from app.scheduler.scheduler import RunScheduler
 from app.services.workspace_service import WorkspaceService
-from app.services.agent_core import AgentCoreService
 from app.services.run_dispatch import (
     SchedulerDispatcher,
     set_run_dispatcher,
@@ -27,6 +26,11 @@ from app.services.run_dispatch import (
 from app.services.llm.bootstrap import sync_environment_llm_catalog
 from app.startup_logging import log_startup_banner, log_startup_summary
 from app.services.terminal_service import terminal_manager
+from app.services.agent_harness.runtime import agent_runtime
+from app.services.agent_harness.assets import (
+    migrate_legacy_agent_attachments,
+    recover_agent_session_file_tombstones,
+)
 from app.utils.exceptions import AppError, http_error_code
 from app.utils.logging import (
     bind_request_id,
@@ -49,12 +53,17 @@ async def lifespan(app: FastAPI):
     logger.info("startup.begin", app=settings.app_name, version=settings.app_version)
     assert_identity_mount()
     ensure_platform_layout()
-    log_startup_summary(settings)
-    logger.info("startup.platform_layout.ready")
     await init_db()
     await verify_database_schema_current()
     logger.info("startup.database.ready")
+    migrated_attachments = migrate_legacy_agent_attachments()
+    log_startup_summary(settings)
+    logger.info(
+        "startup.platform_layout.ready",
+        migrated_legacy_attachments=migrated_attachments,
+    )
     async with app.state_db_session() as session:
+        await recover_agent_session_file_tombstones(session)
         workspace_service = WorkspaceService(session)
         await workspace_service.ensure_default_workspace()
         await sync_environment_llm_catalog(session)
@@ -86,10 +95,8 @@ async def lifespan(app: FastAPI):
         )
     set_run_scheduler(scheduler)
     set_run_dispatcher(SchedulerDispatcher(scheduler))
-    async with app.state_db_session() as session:
-        recovered_turns = await AgentCoreService(session).recover_orphaned_turns()
-        await session.commit()
-    logger.info("startup.agent_core_recovery.complete", **recovered_turns)
+    recovered_agent_runs = await agent_runtime.recover()
+    logger.info("startup.agent_harness.ready", recovered_runs=recovered_agent_runs)
     await task_runner.start()
     logger.info("startup.task_runner.ready")
     await background_tasks.start()
@@ -97,6 +104,16 @@ async def lifespan(app: FastAPI):
     logger.info("startup.ready")
     yield
     logger.info("shutdown.begin")
+    # Stop the other SQLite writers before releasing Agent Harness leases.
+    # Otherwise scheduler/background commits can race the final lease update
+    # during process shutdown and leave teardown failing with ``database is
+    # locked`` even though the active Run itself remains recoverable.
+    set_run_scheduler(None)
+    set_run_dispatcher(None)
+    await background_tasks.stop()
+    logger.info("shutdown.background_tasks.complete")
+    await task_runner.stop()
+    logger.info("shutdown.task_runner.complete")
     await terminal_manager.shutdown()
     logger.info("shutdown.terminals.complete")
     if monitor is not None:
@@ -105,12 +122,8 @@ async def lifespan(app: FastAPI):
     if scheduler is not None:
         await scheduler.stop()
         logger.info("shutdown.scheduler.complete")
-    set_run_scheduler(None)
-    set_run_dispatcher(None)
-    await background_tasks.stop()
-    logger.info("shutdown.background_tasks.complete")
-    await task_runner.stop()
-    logger.info("shutdown.task_runner.complete")
+    await agent_runtime.shutdown()
+    logger.info("shutdown.agent_harness.complete")
     await close_db()
     logger.info("shutdown.database.complete")
 

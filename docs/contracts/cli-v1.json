@@ -19,14 +19,14 @@
                 "allow_interspersed_args": true,
                 "chain": false,
                 "commands": [],
-                "help": "Approve a waiting AgentCore action.",
+                "help": "Download an artifact file to a local path.",
                 "help_option_names": [
                   "-h",
                   "--help"
                 ],
                 "ignore_unknown_options": false,
                 "invoke_without_command": false,
-                "name": "approve",
+                "name": "download",
                 "no_args_is_help": false,
                 "parameters": [
                   {
@@ -35,13 +35,13 @@
                     "default": null,
                     "envvar": null,
                     "flag_value": null,
-                    "help": "AgentCore action ID",
+                    "help": null,
                     "is_eager": false,
                     "is_flag": false,
                     "kind": "argument",
-                    "metavar": "ACTION_ID",
+                    "metavar": "ARTIFACT_ID",
                     "multiple": false,
-                    "name": "ACTION_ID",
+                    "name": "ARTIFACT_ID",
                     "nargs": 1,
                     "required": true,
                     "type": {
@@ -50,188 +50,42 @@
                     }
                   },
                   {
-                    "aliases": [],
+                    "aliases": [
+                      "-o"
+                    ],
                     "count": false,
                     "default": null,
                     "envvar": null,
                     "flag_value": null,
-                    "help": "Decision note",
+                    "help": "Destination path",
                     "is_eager": false,
                     "is_flag": false,
                     "kind": "option",
-                    "metavar": "TEXT",
+                    "metavar": "PATH",
                     "multiple": false,
-                    "name": "--note",
+                    "name": "--output",
                     "nargs": 1,
-                    "required": false,
+                    "required": true,
                     "type": {
-                      "name": "text",
-                      "param_type": "String"
+                      "allow_dash": false,
+                      "dir_okay": true,
+                      "exists": false,
+                      "file_okay": true,
+                      "name": "path",
+                      "param_type": "TyperPath",
+                      "readable": true,
+                      "writable": false
                     }
                   }
                 ],
-                "path": "bif agent action approve"
+                "path": "bif agent artifact download"
               },
               {
                 "allow_extra_args": false,
                 "allow_interspersed_args": true,
                 "chain": false,
                 "commands": [],
-                "help": "Approve a waiting AgentCore action with modified input.",
-                "help_option_names": [
-                  "-h",
-                  "--help"
-                ],
-                "ignore_unknown_options": false,
-                "invoke_without_command": false,
-                "name": "modify",
-                "no_args_is_help": false,
-                "parameters": [
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": null,
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "AgentCore action ID",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "argument",
-                    "metavar": "ACTION_ID",
-                    "multiple": false,
-                    "name": "ACTION_ID",
-                    "nargs": 1,
-                    "required": true,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  },
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": null,
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "Modified action input as JSON object",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "option",
-                    "metavar": "TEXT",
-                    "multiple": false,
-                    "name": "--input-json",
-                    "nargs": 1,
-                    "required": true,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  },
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": null,
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "Decision note",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "option",
-                    "metavar": "TEXT",
-                    "multiple": false,
-                    "name": "--note",
-                    "nargs": 1,
-                    "required": false,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  }
-                ],
-                "path": "bif agent action modify"
-              },
-              {
-                "allow_extra_args": false,
-                "allow_interspersed_args": true,
-                "chain": false,
-                "commands": [],
-                "help": "Reject a waiting AgentCore action.",
-                "help_option_names": [
-                  "-h",
-                  "--help"
-                ],
-                "ignore_unknown_options": false,
-                "invoke_without_command": false,
-                "name": "reject",
-                "no_args_is_help": false,
-                "parameters": [
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": null,
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "AgentCore action ID",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "argument",
-                    "metavar": "ACTION_ID",
-                    "multiple": false,
-                    "name": "ACTION_ID",
-                    "nargs": 1,
-                    "required": true,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  },
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": null,
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "Decision note",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "option",
-                    "metavar": "TEXT",
-                    "multiple": false,
-                    "name": "--note",
-                    "nargs": 1,
-                    "required": false,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  }
-                ],
-                "path": "bif agent action reject"
-              }
-            ],
-            "help": "Approve, reject, or modify AgentCore actions.",
-            "help_option_names": [
-              "-h",
-              "--help"
-            ],
-            "ignore_unknown_options": false,
-            "invoke_without_command": false,
-            "name": "action",
-            "no_args_is_help": true,
-            "parameters": [],
-            "path": "bif agent action"
-          },
-          {
-            "allow_extra_args": true,
-            "allow_interspersed_args": false,
-            "chain": false,
-            "commands": [
-              {
-                "allow_extra_args": false,
-                "allow_interspersed_args": true,
-                "chain": false,
-                "commands": [],
-                "help": "List AgentCore artifacts for a turn or session.",
+                "help": "List artifacts created by all runs in a session.",
                 "help_option_names": [
                   "-h",
                   "--help"
@@ -247,71 +101,13 @@
                     "default": null,
                     "envvar": null,
                     "flag_value": null,
-                    "help": "Turn ID by default, or session ID",
+                    "help": null,
                     "is_eager": false,
                     "is_flag": false,
                     "kind": "argument",
-                    "metavar": "TARGET_ID",
+                    "metavar": "SESSION_ID",
                     "multiple": false,
-                    "name": "TARGET_ID",
-                    "nargs": 1,
-                    "required": true,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  },
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": "turn",
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "Artifact scope: turn or session",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "option",
-                    "metavar": "TEXT",
-                    "multiple": false,
-                    "name": "--scope",
-                    "nargs": 1,
-                    "required": false,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  }
-                ],
-                "path": "bif agent artifacts list"
-              },
-              {
-                "allow_extra_args": false,
-                "allow_interspersed_args": true,
-                "chain": false,
-                "commands": [],
-                "help": "Open an AgentCore artifact file path with the operating system.",
-                "help_option_names": [
-                  "-h",
-                  "--help"
-                ],
-                "ignore_unknown_options": false,
-                "invoke_without_command": false,
-                "name": "open",
-                "no_args_is_help": false,
-                "parameters": [
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": null,
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "AgentCore artifact ID",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "argument",
-                    "metavar": "ARTIFACT_ID",
-                    "multiple": false,
-                    "name": "ARTIFACT_ID",
+                    "name": "SESSION_ID",
                     "nargs": 1,
                     "required": true,
                     "type": {
@@ -320,14 +116,14 @@
                     }
                   }
                 ],
-                "path": "bif agent artifacts open"
+                "path": "bif agent artifact list"
               },
               {
                 "allow_extra_args": false,
                 "allow_interspersed_args": true,
                 "chain": false,
                 "commands": [],
-                "help": "Show an AgentCore artifact.",
+                "help": "Show artifact metadata and structured payload.",
                 "help_option_names": [
                   "-h",
                   "--help"
@@ -343,7 +139,7 @@
                     "default": null,
                     "envvar": null,
                     "flag_value": null,
-                    "help": "AgentCore artifact ID",
+                    "help": null,
                     "is_eager": false,
                     "is_flag": false,
                     "kind": "argument",
@@ -358,27 +154,27 @@
                     }
                   }
                 ],
-                "path": "bif agent artifacts show"
+                "path": "bif agent artifact show"
               }
             ],
-            "help": "List, show, and open AgentCore artifacts.",
+            "help": "List, inspect, and download Agent Harness artifacts.",
             "help_option_names": [
               "-h",
               "--help"
             ],
             "ignore_unknown_options": false,
             "invoke_without_command": false,
-            "name": "artifacts",
+            "name": "artifact",
             "no_args_is_help": true,
             "parameters": [],
-            "path": "bif agent artifacts"
+            "path": "bif agent artifact"
           },
           {
             "allow_extra_args": false,
             "allow_interspersed_args": true,
             "chain": false,
             "commands": [],
-            "help": "Cancel an AgentCore turn.",
+            "help": "Cancel the active run.",
             "help_option_names": [
               "-h",
               "--help"
@@ -394,15 +190,35 @@
                 "default": null,
                 "envvar": null,
                 "flag_value": null,
-                "help": "AgentCore turn ID",
+                "help": null,
                 "is_eager": false,
                 "is_flag": false,
                 "kind": "argument",
-                "metavar": "TURN_ID",
+                "metavar": "SESSION_ID",
                 "multiple": false,
-                "name": "TURN_ID",
+                "name": "SESSION_ID",
                 "nargs": 1,
                 "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
+              },
+              {
+                "aliases": [],
+                "count": false,
+                "default": null,
+                "envvar": null,
+                "flag_value": null,
+                "help": null,
+                "is_eager": false,
+                "is_flag": false,
+                "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
+                "name": "--reason",
+                "nargs": 1,
+                "required": false,
                 "type": {
                   "name": "text",
                   "param_type": "String"
@@ -416,85 +232,7 @@
             "allow_interspersed_args": true,
             "chain": false,
             "commands": [],
-            "help": "Interactive AgentCore chat REPL.",
-            "help_option_names": [
-              "-h",
-              "--help"
-            ],
-            "ignore_unknown_options": false,
-            "invoke_without_command": false,
-            "name": "chat",
-            "no_args_is_help": false,
-            "parameters": [
-              {
-                "aliases": [],
-                "count": false,
-                "default": null,
-                "envvar": null,
-                "flag_value": null,
-                "help": "Project ID",
-                "is_eager": false,
-                "is_flag": false,
-                "kind": "option",
-                "metavar": "TEXT",
-                "multiple": false,
-                "name": "--project",
-                "nargs": 1,
-                "required": false,
-                "type": {
-                  "name": "text",
-                  "param_type": "String"
-                }
-              },
-              {
-                "aliases": [],
-                "count": false,
-                "default": null,
-                "envvar": null,
-                "flag_value": null,
-                "help": "Resume AgentCore session",
-                "is_eager": false,
-                "is_flag": false,
-                "kind": "option",
-                "metavar": "TEXT",
-                "multiple": false,
-                "name": "--session",
-                "nargs": 1,
-                "required": false,
-                "type": {
-                  "name": "text",
-                  "param_type": "String"
-                }
-              },
-              {
-                "aliases": [],
-                "count": false,
-                "default": null,
-                "envvar": null,
-                "flag_value": null,
-                "help": "Model profile for each turn",
-                "is_eager": false,
-                "is_flag": false,
-                "kind": "option",
-                "metavar": "TEXT",
-                "multiple": false,
-                "name": "--model-profile",
-                "nargs": 1,
-                "required": false,
-                "type": {
-                  "name": "text",
-                  "param_type": "String"
-                }
-              }
-            ],
-            "path": "bif agent chat"
-          },
-          {
-            "allow_extra_args": false,
-            "allow_interspersed_args": true,
-            "chain": false,
-            "commands": [],
-            "help": "List persisted AgentCore events for a turn.",
+            "help": "Stream the session snapshot and live Harness events over SSE.",
             "help_option_names": [
               "-h",
               "--help"
@@ -510,43 +248,18 @@
                 "default": null,
                 "envvar": null,
                 "flag_value": null,
-                "help": "AgentCore turn ID",
+                "help": null,
                 "is_eager": false,
                 "is_flag": false,
                 "kind": "argument",
-                "metavar": "TURN_ID",
+                "metavar": "SESSION_ID",
                 "multiple": false,
-                "name": "TURN_ID",
+                "name": "SESSION_ID",
                 "nargs": 1,
                 "required": true,
                 "type": {
                   "name": "text",
                   "param_type": "String"
-                }
-              },
-              {
-                "aliases": [],
-                "count": false,
-                "default": 0,
-                "envvar": null,
-                "flag_value": null,
-                "help": "Replay after seq",
-                "is_eager": false,
-                "is_flag": false,
-                "kind": "option",
-                "metavar": "INTEGER RANGE",
-                "multiple": false,
-                "name": "--after-seq",
-                "nargs": 1,
-                "required": false,
-                "type": {
-                  "clamp": false,
-                  "max": null,
-                  "max_open": false,
-                  "min": 0,
-                  "min_open": false,
-                  "name": "integer range",
-                  "param_type": "IntRange"
                 }
               }
             ],
@@ -557,14 +270,14 @@
             "allow_interspersed_args": true,
             "chain": false,
             "commands": [],
-            "help": "Interrupt an AgentCore turn.",
+            "help": "Queue a prompt to start after the active run completes.",
             "help_option_names": [
               "-h",
               "--help"
             ],
             "ignore_unknown_options": false,
             "invoke_without_command": false,
-            "name": "interrupt",
+            "name": "follow-up",
             "no_args_is_help": false,
             "parameters": [
               {
@@ -573,45 +286,27 @@
                 "default": null,
                 "envvar": null,
                 "flag_value": null,
-                "help": "AgentCore turn ID",
+                "help": null,
                 "is_eager": false,
                 "is_flag": false,
                 "kind": "argument",
-                "metavar": "TURN_ID",
+                "metavar": "SESSION_ID",
                 "multiple": false,
-                "name": "TURN_ID",
+                "name": "SESSION_ID",
                 "nargs": 1,
                 "required": true,
                 "type": {
                   "name": "text",
                   "param_type": "String"
                 }
-              }
-            ],
-            "path": "bif agent interrupt"
-          },
-          {
-            "allow_extra_args": false,
-            "allow_interspersed_args": true,
-            "chain": false,
-            "commands": [],
-            "help": "Send a single message as a new AgentCore turn.",
-            "help_option_names": [
-              "-h",
-              "--help"
-            ],
-            "ignore_unknown_options": false,
-            "invoke_without_command": false,
-            "name": "send",
-            "no_args_is_help": false,
-            "parameters": [
+              },
               {
                 "aliases": [],
                 "count": false,
                 "default": null,
                 "envvar": null,
                 "flag_value": null,
-                "help": "Message to send",
+                "help": null,
                 "is_eager": false,
                 "is_flag": false,
                 "kind": "argument",
@@ -631,15 +326,53 @@
                 "default": null,
                 "envvar": null,
                 "flag_value": null,
-                "help": "Project ID",
+                "help": "Attachment ID; repeat for multiple attachments",
                 "is_eager": false,
                 "is_flag": false,
                 "kind": "option",
                 "metavar": "TEXT",
-                "multiple": false,
-                "name": "--project",
+                "multiple": true,
+                "name": "--attachment",
                 "nargs": 1,
                 "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
+              }
+            ],
+            "path": "bif agent follow-up"
+          },
+          {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
+            "commands": [],
+            "help": "Answer a pending question, confirmation, or recovery interaction.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
+            "name": "respond",
+            "no_args_is_help": false,
+            "parameters": [
+              {
+                "aliases": [],
+                "count": false,
+                "default": null,
+                "envvar": null,
+                "flag_value": null,
+                "help": null,
+                "is_eager": false,
+                "is_flag": false,
+                "kind": "argument",
+                "metavar": "SESSION_ID",
+                "multiple": false,
+                "name": "SESSION_ID",
+                "nargs": 1,
+                "required": true,
                 "type": {
                   "name": "text",
                   "param_type": "String"
@@ -651,7 +384,85 @@
                 "default": null,
                 "envvar": null,
                 "flag_value": null,
-                "help": "Existing AgentCore session ID",
+                "help": null,
+                "is_eager": false,
+                "is_flag": false,
+                "kind": "argument",
+                "metavar": "INTERACTION_ID",
+                "multiple": false,
+                "name": "INTERACTION_ID",
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
+              },
+              {
+                "aliases": [],
+                "count": false,
+                "default": null,
+                "envvar": null,
+                "flag_value": null,
+                "help": null,
+                "is_eager": false,
+                "is_flag": false,
+                "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
+                "name": "--response-json",
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
+              }
+            ],
+            "path": "bif agent respond"
+          },
+          {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
+            "commands": [],
+            "help": "Send a prompt, creating a session automatically when needed.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
+            "name": "send",
+            "no_args_is_help": false,
+            "parameters": [
+              {
+                "aliases": [],
+                "count": false,
+                "default": null,
+                "envvar": null,
+                "flag_value": null,
+                "help": null,
+                "is_eager": false,
+                "is_flag": false,
+                "kind": "argument",
+                "metavar": "MESSAGE",
+                "multiple": false,
+                "name": "MESSAGE",
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
+              },
+              {
+                "aliases": [],
+                "count": false,
+                "default": null,
+                "envvar": null,
+                "flag_value": null,
+                "help": "Existing session ID; omit to create one",
                 "is_eager": false,
                 "is_flag": false,
                 "kind": "option",
@@ -671,13 +482,73 @@
                 "default": null,
                 "envvar": null,
                 "flag_value": null,
-                "help": "Model profile for this turn",
+                "help": "Attachment ID; repeat for multiple attachments",
+                "is_eager": false,
+                "is_flag": false,
+                "kind": "option",
+                "metavar": "TEXT",
+                "multiple": true,
+                "name": "--attachment",
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
+              },
+              {
+                "aliases": [],
+                "count": false,
+                "default": null,
+                "envvar": null,
+                "flag_value": null,
+                "help": "Project for an automatically created session",
                 "is_eager": false,
                 "is_flag": false,
                 "kind": "option",
                 "metavar": "TEXT",
                 "multiple": false,
-                "name": "--model-profile",
+                "name": "--project",
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
+              },
+              {
+                "aliases": [],
+                "count": false,
+                "default": null,
+                "envvar": null,
+                "flag_value": null,
+                "help": "Title for an automatically created session",
+                "is_eager": false,
+                "is_flag": false,
+                "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
+                "name": "--title",
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
+              },
+              {
+                "aliases": [],
+                "count": false,
+                "default": "ask_dangerous",
+                "envvar": null,
+                "flag_value": null,
+                "help": "Permission mode for an automatically created session",
+                "is_eager": false,
+                "is_flag": false,
+                "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
+                "name": "--permission-mode",
                 "nargs": 1,
                 "required": false,
                 "type": {
@@ -698,7 +569,7 @@
                 "allow_interspersed_args": true,
                 "chain": false,
                 "commands": [],
-                "help": "Create an AgentCore session.",
+                "help": "Create a durable Agent Harness session.",
                 "help_option_names": [
                   "-h",
                   "--help"
@@ -751,30 +622,10 @@
                   {
                     "aliases": [],
                     "count": false,
-                    "default": "bioinformatician",
+                    "default": "ask_dangerous",
                     "envvar": null,
                     "flag_value": null,
-                    "help": "Agent role profile",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "option",
-                    "metavar": "TEXT",
-                    "multiple": false,
-                    "name": "--role-profile",
-                    "nargs": 1,
-                    "required": false,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  },
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": "guarded_auto",
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "Permission mode",
+                    "help": "Session permission mode",
                     "is_eager": false,
                     "is_flag": false,
                     "kind": "option",
@@ -791,16 +642,16 @@
                   {
                     "aliases": [],
                     "count": false,
-                    "default": "assisted",
+                    "default": null,
                     "envvar": null,
                     "flag_value": null,
-                    "help": "Automation mode",
+                    "help": "Model record ID",
                     "is_eager": false,
                     "is_flag": false,
                     "kind": "option",
                     "metavar": "TEXT",
                     "multiple": false,
-                    "name": "--automation-mode",
+                    "name": "--model-id",
                     "nargs": 1,
                     "required": false,
                     "type": {
@@ -814,13 +665,53 @@
                     "default": null,
                     "envvar": null,
                     "flag_value": null,
-                    "help": "Default model profile ID",
+                    "help": "Model profile ID",
                     "is_eager": false,
                     "is_flag": false,
                     "kind": "option",
                     "metavar": "TEXT",
                     "multiple": false,
-                    "name": "--model-profile",
+                    "name": "--profile-id",
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
+                  },
+                  {
+                    "aliases": [],
+                    "count": false,
+                    "default": null,
+                    "envvar": null,
+                    "flag_value": null,
+                    "help": "Model provider",
+                    "is_eager": false,
+                    "is_flag": false,
+                    "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
+                    "name": "--provider",
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
+                  },
+                  {
+                    "aliases": [],
+                    "count": false,
+                    "default": null,
+                    "envvar": null,
+                    "flag_value": null,
+                    "help": "Provider model name",
+                    "is_eager": false,
+                    "is_flag": false,
+                    "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
+                    "name": "--model",
                     "nargs": 1,
                     "required": false,
                     "type": {
@@ -836,7 +727,7 @@
                 "allow_interspersed_args": true,
                 "chain": false,
                 "commands": [],
-                "help": "Delete an AgentCore session.",
+                "help": "Delete a session and cancel any active run.",
                 "help_option_names": [
                   "-h",
                   "--help"
@@ -852,7 +743,7 @@
                     "default": null,
                     "envvar": null,
                     "flag_value": null,
-                    "help": "AgentCore session ID",
+                    "help": null,
                     "is_eager": false,
                     "is_flag": false,
                     "kind": "argument",
@@ -874,7 +765,7 @@
                 "allow_interspersed_args": true,
                 "chain": false,
                 "commands": [],
-                "help": "List AgentCore sessions.",
+                "help": "List Agent Harness sessions.",
                 "help_option_names": [
                   "-h",
                   "--help"
@@ -883,28 +774,7 @@
                 "invoke_without_command": false,
                 "name": "list",
                 "no_args_is_help": false,
-                "parameters": [
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": null,
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "Project ID",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "option",
-                    "metavar": "TEXT",
-                    "multiple": false,
-                    "name": "--project",
-                    "nargs": 1,
-                    "required": false,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  }
-                ],
+                "parameters": [],
                 "path": "bif agent session list"
               },
               {
@@ -912,7 +782,7 @@
                 "allow_interspersed_args": true,
                 "chain": false,
                 "commands": [],
-                "help": "Show an AgentCore session.",
+                "help": "Show the authoritative snapshot for a session.",
                 "help_option_names": [
                   "-h",
                   "--help"
@@ -928,7 +798,7 @@
                     "default": null,
                     "envvar": null,
                     "flag_value": null,
-                    "help": "AgentCore session ID",
+                    "help": null,
                     "is_eager": false,
                     "is_flag": false,
                     "kind": "argument",
@@ -944,47 +814,9 @@
                   }
                 ],
                 "path": "bif agent session show"
-              },
-              {
-                "allow_extra_args": false,
-                "allow_interspersed_args": true,
-                "chain": false,
-                "commands": [],
-                "help": "Show the durable AgentCore session state projection.",
-                "help_option_names": [
-                  "-h",
-                  "--help"
-                ],
-                "ignore_unknown_options": false,
-                "invoke_without_command": false,
-                "name": "state",
-                "no_args_is_help": false,
-                "parameters": [
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": null,
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "AgentCore session ID",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "argument",
-                    "metavar": "SESSION_ID",
-                    "multiple": false,
-                    "name": "SESSION_ID",
-                    "nargs": 1,
-                    "required": true,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  }
-                ],
-                "path": "bif agent session state"
               }
             ],
-            "help": "Manage AgentCore sessions.",
+            "help": "Create and manage Agent Harness sessions.",
             "help_option_names": [
               "-h",
               "--help"
@@ -1001,14 +833,14 @@
             "allow_interspersed_args": true,
             "chain": false,
             "commands": [],
-            "help": "Stream AgentCore session events as SSE projections or NDJSON.",
+            "help": "Read the authoritative Session, Run, and history snapshot.",
             "help_option_names": [
               "-h",
               "--help"
             ],
             "ignore_unknown_options": false,
             "invoke_without_command": false,
-            "name": "stream",
+            "name": "snapshot",
             "no_args_is_help": false,
             "parameters": [
               {
@@ -1017,7 +849,45 @@
                 "default": null,
                 "envvar": null,
                 "flag_value": null,
-                "help": "AgentCore session ID",
+                "help": null,
+                "is_eager": false,
+                "is_flag": false,
+                "kind": "argument",
+                "metavar": "SESSION_ID",
+                "multiple": false,
+                "name": "SESSION_ID",
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
+              }
+            ],
+            "path": "bif agent snapshot"
+          },
+          {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
+            "commands": [],
+            "help": "Inject guidance at the active run's next safe point.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
+            "name": "steer",
+            "no_args_is_help": false,
+            "parameters": [
+              {
+                "aliases": [],
+                "count": false,
+                "default": null,
+                "envvar": null,
+                "flag_value": null,
+                "help": null,
                 "is_eager": false,
                 "is_flag": false,
                 "kind": "argument",
@@ -1034,220 +904,28 @@
               {
                 "aliases": [],
                 "count": false,
-                "default": 0,
+                "default": null,
                 "envvar": null,
                 "flag_value": null,
-                "help": "Replay after seq",
+                "help": null,
                 "is_eager": false,
                 "is_flag": false,
-                "kind": "option",
-                "metavar": "INTEGER RANGE",
+                "kind": "argument",
+                "metavar": "MESSAGE",
                 "multiple": false,
-                "name": "--after-seq",
+                "name": "MESSAGE",
                 "nargs": 1,
-                "required": false,
+                "required": true,
                 "type": {
-                  "clamp": false,
-                  "max": null,
-                  "max_open": false,
-                  "min": 0,
-                  "min_open": false,
-                  "name": "integer range",
-                  "param_type": "IntRange"
+                  "name": "text",
+                  "param_type": "String"
                 }
               }
             ],
-            "path": "bif agent stream"
-          },
-          {
-            "allow_extra_args": false,
-            "allow_interspersed_args": true,
-            "chain": false,
-            "commands": [],
-            "help": "List AgentCore toolsets exposed by the backend.",
-            "help_option_names": [
-              "-h",
-              "--help"
-            ],
-            "ignore_unknown_options": false,
-            "invoke_without_command": false,
-            "name": "toolsets",
-            "no_args_is_help": false,
-            "parameters": [],
-            "path": "bif agent toolsets"
-          },
-          {
-            "allow_extra_args": true,
-            "allow_interspersed_args": false,
-            "chain": false,
-            "commands": [
-              {
-                "allow_extra_args": false,
-                "allow_interspersed_args": true,
-                "chain": false,
-                "commands": [],
-                "help": "Cancel an AgentCore turn.",
-                "help_option_names": [
-                  "-h",
-                  "--help"
-                ],
-                "ignore_unknown_options": false,
-                "invoke_without_command": false,
-                "name": "cancel",
-                "no_args_is_help": false,
-                "parameters": [
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": null,
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "AgentCore turn ID",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "argument",
-                    "metavar": "TURN_ID",
-                    "multiple": false,
-                    "name": "TURN_ID",
-                    "nargs": 1,
-                    "required": true,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  }
-                ],
-                "path": "bif agent turn cancel"
-              },
-              {
-                "allow_extra_args": false,
-                "allow_interspersed_args": true,
-                "chain": false,
-                "commands": [],
-                "help": "Interrupt an AgentCore turn through the harness interrupt path.",
-                "help_option_names": [
-                  "-h",
-                  "--help"
-                ],
-                "ignore_unknown_options": false,
-                "invoke_without_command": false,
-                "name": "interrupt",
-                "no_args_is_help": false,
-                "parameters": [
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": null,
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "AgentCore turn ID",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "argument",
-                    "metavar": "TURN_ID",
-                    "multiple": false,
-                    "name": "TURN_ID",
-                    "nargs": 1,
-                    "required": true,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  }
-                ],
-                "path": "bif agent turn interrupt"
-              },
-              {
-                "allow_extra_args": false,
-                "allow_interspersed_args": true,
-                "chain": false,
-                "commands": [],
-                "help": "List turns for an AgentCore session.",
-                "help_option_names": [
-                  "-h",
-                  "--help"
-                ],
-                "ignore_unknown_options": false,
-                "invoke_without_command": false,
-                "name": "list",
-                "no_args_is_help": false,
-                "parameters": [
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": null,
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "AgentCore session ID",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "argument",
-                    "metavar": "SESSION_ID",
-                    "multiple": false,
-                    "name": "SESSION_ID",
-                    "nargs": 1,
-                    "required": true,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  }
-                ],
-                "path": "bif agent turn list"
-              },
-              {
-                "allow_extra_args": false,
-                "allow_interspersed_args": true,
-                "chain": false,
-                "commands": [],
-                "help": "Show an AgentCore turn.",
-                "help_option_names": [
-                  "-h",
-                  "--help"
-                ],
-                "ignore_unknown_options": false,
-                "invoke_without_command": false,
-                "name": "show",
-                "no_args_is_help": false,
-                "parameters": [
-                  {
-                    "aliases": [],
-                    "count": false,
-                    "default": null,
-                    "envvar": null,
-                    "flag_value": null,
-                    "help": "AgentCore turn ID",
-                    "is_eager": false,
-                    "is_flag": false,
-                    "kind": "argument",
-                    "metavar": "TURN_ID",
-                    "multiple": false,
-                    "name": "TURN_ID",
-                    "nargs": 1,
-                    "required": true,
-                    "type": {
-                      "name": "text",
-                      "param_type": "String"
-                    }
-                  }
-                ],
-                "path": "bif agent turn show"
-              }
-            ],
-            "help": "Inspect and cancel AgentCore turns.",
-            "help_option_names": [
-              "-h",
-              "--help"
-            ],
-            "ignore_unknown_options": false,
-            "invoke_without_command": false,
-            "name": "turn",
-            "no_args_is_help": true,
-            "parameters": [],
-            "path": "bif agent turn"
+            "path": "bif agent steer"
           }
         ],
-        "help": "AgentCore session, turn, action, event, and artifact commands.",
+        "help": "Use the complete BioinfoFlow Agent Harness.",
         "help_option_names": [
           "-h",
           "--help"
@@ -1553,46 +1231,6 @@
                 "metavar": "TEXT",
                 "multiple": false,
                 "name": "--run",
-                "nargs": 1,
-                "required": false,
-                "type": {
-                  "name": "text",
-                  "param_type": "String"
-                }
-              },
-              {
-                "aliases": [],
-                "count": false,
-                "default": null,
-                "envvar": null,
-                "flag_value": null,
-                "help": "AgentCore session ID filter",
-                "is_eager": false,
-                "is_flag": false,
-                "kind": "option",
-                "metavar": "TEXT",
-                "multiple": false,
-                "name": "--session",
-                "nargs": 1,
-                "required": false,
-                "type": {
-                  "name": "text",
-                  "param_type": "String"
-                }
-              },
-              {
-                "aliases": [],
-                "count": false,
-                "default": null,
-                "envvar": null,
-                "flag_value": null,
-                "help": "AgentCore turn ID filter",
-                "is_eager": false,
-                "is_flag": false,
-                "kind": "option",
-                "metavar": "TEXT",
-                "multiple": false,
-                "name": "--turn",
                 "nargs": 1,
                 "required": false,
                 "type": {

@@ -372,10 +372,45 @@ if [ ! -e "$HOME_MARKER" ]; then
   : > "$HOME_MARKER"
   chmod 600 "$HOME_MARKER"
 fi
+STATE_ROLLBACK_ROOT="$INSTALL_DIR/.update-state-rollback"
+if [ -e "$STATE_ROLLBACK_ROOT" ] || [ -L "$STATE_ROLLBACK_ROOT" ]; then
+  die_with_hint "an unfinished update state snapshot exists at $STATE_ROLLBACK_ROOT" "Preserve $STATE_ROLLBACK_ROOT and $MANAGED_ROOT, then inspect the previous update before retrying."
+fi
 TMP_DIR=$(mktemp -d "$INSTALL_DIR/.install.XXXXXX")
-# shellcheck disable=SC2329 # Invoked by the trap below.
-cleanup() { rm -rf "$TMP_DIR"; }
-trap cleanup EXIT HUP INT TERM
+ROLLBACK_REQUIRED=0
+ROLLBACK_DONE=0
+CLEANUP_RUNNING=0
+
+# shellcheck disable=SC2329 # Invoked by the traps below.
+cleanup_resources() {
+  [ "$CLEANUP_RUNNING" -eq 0 ] || return 0
+  CLEANUP_RUNNING=1
+  if [ "$ROLLBACK_REQUIRED" -eq 1 ]; then
+    rollback_transaction || true
+  fi
+  rm -rf "$TMP_DIR" 2>/dev/null || true
+}
+
+# shellcheck disable=SC2329 # Invoked by the traps below.
+cleanup_on_exit() {
+  cleanup_status=$?
+  trap - EXIT HUP INT TERM
+  cleanup_resources
+  exit "$cleanup_status"
+}
+
+# shellcheck disable=SC2329 # Invoked by the traps below.
+cleanup_on_signal() {
+  signal_status=$1
+  trap - EXIT HUP INT TERM
+  cleanup_resources
+  exit "$signal_status"
+}
+
+trap cleanup_on_exit EXIT
+trap 'cleanup_on_signal 129' HUP
+trap 'cleanup_on_signal 130' INT
+trap 'cleanup_on_signal 143' TERM
 
 if [ "$ACTION" = update ] && [ "$VERSION_EXPLICIT" -eq 0 ]; then
   curl -fsSL --retry 2 --connect-timeout 15 -o "$TMP_DIR/latest-release.json" "$LATEST_RELEASE_URL" || die_with_hint "latest release lookup failed" "Check network access, or retry with --version followed by a known release tag."
@@ -391,11 +426,38 @@ curl -fsSL --retry 2 --connect-timeout 15 -o "$TMP_DIR/SHA256SUMS" "$ASSET_BASE/
 if [ "$SEED_SKILLS" -eq 1 ]; then
   command -v tar >/dev/null 2>&1 || die_with_hint "tar is required to install bundled skills" "Install tar and retry."
   curl -fsSL --retry 2 --connect-timeout 15 -o "$TMP_DIR/bioinfoflow-skills.tar.gz" "$ASSET_BASE/bioinfoflow-skills.tar.gz" || die_with_hint "skills archive download failed" "Check that release tag '$REQUESTED_VERSION' includes bioinfoflow-skills.tar.gz and retry."
-  sed -n '/[[:space:]]install\.sh$/p; /[[:space:]]docker-compose\.local\.yml$/p; /[[:space:]]bioinfoflow-skills\.tar\.gz$/p' "$TMP_DIR/SHA256SUMS" > "$TMP_DIR/assets.sha256"
-  [ "$(sed -n '$=' "$TMP_DIR/assets.sha256")" = 3 ] || die_with_hint "checksum manifest must contain installer, Compose, and skills assets" "Do not bypass verification; retry the same release or choose another published release tag."
-else
-  sed -n '/[[:space:]]install\.sh$/p; /[[:space:]]docker-compose\.local\.yml$/p' "$TMP_DIR/SHA256SUMS" > "$TMP_DIR/assets.sha256"
-  [ "$(sed -n '$=' "$TMP_DIR/assets.sha256")" = 2 ] || die_with_hint "checksum manifest must contain install.sh and docker-compose.local.yml" "Do not bypass verification; retry the same release or choose another published release tag."
+fi
+
+append_unique_checksum() {
+  checksum_asset=$1
+  awk -v asset="$checksum_asset" '
+    {
+      filename = $NF
+      sub(/^\*/, "", filename)
+      component_count = split(filename, components, "/")
+      if (components[component_count] == asset) {
+        matching_entries++
+        if (filename == asset) {
+          exact_entries++
+          exact_line = $0
+        }
+      }
+    }
+    END {
+      if (matching_entries == 1 && exact_entries == 1) {
+        print exact_line
+        exit 0
+      }
+      exit 1
+    }
+  ' "$TMP_DIR/SHA256SUMS" >> "$TMP_DIR/assets.sha256"
+}
+
+: > "$TMP_DIR/assets.sha256"
+append_unique_checksum install.sh || die_with_hint "checksum manifest must contain exactly one unambiguous install.sh entry" "Do not bypass verification; retry the same release or choose another published release tag."
+append_unique_checksum docker-compose.local.yml || die_with_hint "checksum manifest must contain exactly one unambiguous docker-compose.local.yml entry" "Do not bypass verification; retry the same release or choose another published release tag."
+if [ "$SEED_SKILLS" -eq 1 ]; then
+  append_unique_checksum bioinfoflow-skills.tar.gz || die_with_hint "checksum manifest must contain exactly one unambiguous bioinfoflow-skills.tar.gz entry" "Do not bypass verification; retry the same release or choose another published release tag."
 fi
 if command -v sha256sum >/dev/null 2>&1; then
   (cd "$TMP_DIR" && sha256sum -c assets.sha256 >/dev/null 2>&1) || die_with_hint "checksum verification failed" "Do not bypass verification; retry to replace the downloaded release assets."
@@ -463,8 +525,147 @@ chmod 700 "$TMP_DIR/install.sh"
 chmod 600 "$TMP_DIR/docker-compose.local.yml" "$TMP_DIR/.env" "$TMP_DIR/VERSION"
 
 SEEDED_SKILLS_THIS_RUN=0
+STATE_BACKUP_ACTIVE=0
+STATE_EXISTED_BEFORE_SNAPSHOT=0
+CONTROL_BACKUP_ACTIVE=0
+NEW_STACK_ATTEMPTED=0
+if [ "$LEGACY_LAYOUT" -eq 1 ]; then
+  TRANSACTION_STATE_DIR="$LEGACY_DATA_DIR/state"
+else
+  TRANSACTION_STATE_DIR="$STATE_DIR"
+fi
+
+restore_state_snapshot() {
+  [ "$STATE_BACKUP_ACTIVE" -eq 1 ] || return 0
+  if [ -d "$STATE_ROLLBACK_ROOT/state" ]; then
+    if ! rm -rf "$TRANSACTION_STATE_DIR"; then
+      printf 'Warning: failed to remove state changed by the new release; the pre-upgrade snapshot remains at %s.\n' "$STATE_ROLLBACK_ROOT" >&2
+      return 1
+    fi
+    if ! mkdir -p "$(dirname "$TRANSACTION_STATE_DIR")" || ! mv "$STATE_ROLLBACK_ROOT/state" "$TRANSACTION_STATE_DIR"; then
+      printf 'Warning: failed to restore the pre-upgrade state from %s.\n' "$STATE_ROLLBACK_ROOT" >&2
+      return 1
+    fi
+  elif [ "$STATE_EXISTED_BEFORE_SNAPSHOT" -eq 0 ]; then
+    if ! rm -rf "$TRANSACTION_STATE_DIR"; then
+      printf 'Warning: failed to remove state created by the new release; the pre-upgrade snapshot marker remains at %s.\n' "$STATE_ROLLBACK_ROOT" >&2
+      return 1
+    fi
+  fi
+  if ! rm -rf "$STATE_ROLLBACK_ROOT"; then
+    printf 'Warning: the state was restored but the empty rollback directory could not be removed: %s.\n' "$STATE_ROLLBACK_ROOT" >&2
+    return 1
+  fi
+  STATE_BACKUP_ACTIVE=0
+}
+
+restart_previous_after_snapshot_error() {
+  if ! compose up -d --remove-orphans >/dev/null 2>&1; then
+    printf 'Warning: the previous Bioinfoflow release could not be restarted automatically after the snapshot error.\n' >&2
+  fi
+}
+
+prepare_control_snapshot() {
+  if [ "$HAD_PREVIOUS" -eq 0 ]; then
+    CONTROL_BACKUP_ACTIVE=1
+    return 0
+  fi
+  mkdir "$TMP_DIR/previous-control" || return 1
+  for control_name in install.sh docker-compose.local.yml .env VERSION; do
+    if [ -e "$INSTALL_DIR/$control_name" ]; then
+      cp -p "$INSTALL_DIR/$control_name" "$TMP_DIR/previous-control/$control_name" || return 1
+      : > "$TMP_DIR/previous-control/$control_name.present"
+    fi
+  done
+  CONTROL_BACKUP_ACTIVE=1
+}
+
+restore_control_snapshot() {
+  [ "$CONTROL_BACKUP_ACTIVE" -eq 1 ] || return 0
+  control_restore_failed=0
+  if [ "$HAD_PREVIOUS" -eq 1 ]; then
+    for control_name in install.sh docker-compose.local.yml .env VERSION; do
+      if [ -f "$TMP_DIR/previous-control/$control_name.present" ]; then
+        if ! cp -p "$TMP_DIR/previous-control/$control_name" "$INSTALL_DIR/$control_name"; then
+          printf 'Warning: failed to restore the pre-upgrade control file %s.\n' "$control_name" >&2
+          control_restore_failed=1
+        fi
+      elif ! rm -f "$INSTALL_DIR/$control_name"; then
+        printf 'Warning: failed to remove the newly written control file %s.\n' "$control_name" >&2
+        control_restore_failed=1
+      fi
+    done
+  elif ! rm -f "$INSTALLED_INSTALLER" "$COMPOSE_FILE" "$ENV_FILE" "$VERSION_FILE"; then
+    printf 'Warning: failed to remove control files written by the interrupted fresh install.\n' >&2
+    control_restore_failed=1
+  fi
+  [ "$control_restore_failed" -eq 0 ] || return 1
+  CONTROL_BACKUP_ACTIVE=0
+}
+
+prepare_state_snapshot() {
+  [ "$HAD_PREVIOUS" -eq 1 ] || return 0
+  stage "Saving the pre-upgrade application state"
+  if ! compose stop >/dev/null 2>&1; then
+    compose up -d --remove-orphans >/dev/null 2>&1 || true
+    die_with_hint "the installed stack could not be stopped for a consistent state snapshot" "Resolve the Compose stop error and retry. The previous release and application state were preserved."
+  fi
+  installed_uid=$(sed -n 's/^BIOINFOFLOW_INSTALL_UID=//p' "$ENV_FILE" | sed -n '1p')
+  installed_gid=$(sed -n 's/^BIOINFOFLOW_INSTALL_GID=//p' "$ENV_FILE" | sed -n '1p')
+  case "$installed_uid" in
+    ''|*[!0-9]*)
+      restart_previous_after_snapshot_error
+      die_with_hint "managed environment does not record a valid installer user ID for the state snapshot" "Restore the generated environment file and retry. The previous release and application state were preserved."
+      ;;
+  esac
+  case "$installed_gid" in
+    ''|*[!0-9]*)
+      restart_previous_after_snapshot_error
+      die_with_hint "managed environment does not record a valid installer group ID for the state snapshot" "Restore the generated environment file and retry. The previous release and application state were preserved."
+      ;;
+  esac
+  if ! compose run --rm --no-deps --entrypoint /bin/chown backend -R "$installed_uid:$installed_gid" "$TRANSACTION_STATE_DIR" >/dev/null 2>&1; then
+    restart_previous_after_snapshot_error
+    die_with_hint "Docker could not make the stopped application state readable for backup" "Resolve the container ownership error and retry. The previous release and application state were preserved."
+  fi
+
+  if ! mkdir "$STATE_ROLLBACK_ROOT" || ! chmod 700 "$STATE_ROLLBACK_ROOT"; then
+    rm -rf "$STATE_ROLLBACK_ROOT" 2>/dev/null || true
+    restart_previous_after_snapshot_error
+    die_with_hint "the pre-upgrade state snapshot directory could not be created" "Check free space and permissions under $INSTALL_DIR, then retry. The previous release and application state were preserved."
+  fi
+  STATE_BACKUP_ACTIVE=1
+  if [ -e "$TRANSACTION_STATE_DIR" ]; then
+    STATE_EXISTED_BEFORE_SNAPSHOT=1
+    if ! mv "$TRANSACTION_STATE_DIR" "$STATE_ROLLBACK_ROOT/state"; then
+      restore_state_snapshot || true
+      restart_previous_after_snapshot_error
+      die_with_hint "the pre-upgrade application state could not be moved into the snapshot" "Check free space and permissions under $MANAGED_ROOT, then retry. The previous release and application state were preserved."
+    fi
+    if ! cp -pPR "$STATE_ROLLBACK_ROOT/state" "$TRANSACTION_STATE_DIR"; then
+      if ! restore_state_snapshot; then
+        die_with_hint "the pre-upgrade application state copy and automatic restore both failed" "Keep containers stopped and restore $STATE_ROLLBACK_ROOT/state to $TRANSACTION_STATE_DIR before restarting the previous release."
+      fi
+      restart_previous_after_snapshot_error
+      die_with_hint "the pre-upgrade application state could not be copied" "Free enough disk space for a temporary copy of the state directory and retry. The previous state was restored."
+    fi
+  fi
+  success "Pre-upgrade application state saved"
+}
 
 rollback_transaction() {
+  [ "$ROLLBACK_DONE" -eq 0 ] || return 0
+  ROLLBACK_DONE=1
+  ROLLBACK_REQUIRED=0
+  if [ "$NEW_STACK_ATTEMPTED" -eq 1 ]; then
+    if ! compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" down --remove-orphans >/dev/null 2>&1; then
+      printf 'Warning: the failed new release could not be stopped; the pre-upgrade state snapshot remains at %s and was not restored while containers may still be writing.\n' "$STATE_ROLLBACK_ROOT" >&2
+      return 0
+    fi
+    NEW_STACK_ATTEMPTED=0
+  fi
+  control_restore_failed=0
+  restore_control_snapshot || control_restore_failed=1
   if [ "$MIGRATED_LEGACY_THIS_RUN" -eq 1 ]; then
     mkdir -p "$LEGACY_DATA_DIR"
     for runtime_name in skills state projects sources; do
@@ -477,8 +678,14 @@ rollback_transaction() {
     done
     MIGRATED_LEGACY_THIS_RUN=0
   fi
+  if ! restore_state_snapshot; then
+    printf 'Warning: the previous release was not restarted because its application state could not be restored automatically.\n' >&2
+    return 0
+  fi
   if [ "$HAD_PREVIOUS" -eq 1 ]; then
-    if compose up -d --remove-orphans >/dev/null 2>&1; then
+    if [ "$control_restore_failed" -eq 1 ]; then
+      printf 'Warning: the previous Bioinfoflow release was not restarted because its control files could not be restored automatically.\n' >&2
+    elif compose up -d --remove-orphans >/dev/null 2>&1; then
       printf 'Previous Bioinfoflow release %s was restored and restarted.\n' "$PREVIOUS_VERSION" >&2
     else
       printf 'Warning: previous Bioinfoflow release %s remains configured but could not be restarted automatically.\n' "$PREVIOUS_VERSION" >&2
@@ -490,6 +697,25 @@ rollback_transaction() {
     rm -rf "$SKILLS_DIR"
     SEEDED_SKILLS_THIS_RUN=0
   fi
+}
+
+commit_transaction() {
+  trap '' HUP INT TERM
+  if ! rm -rf "$STATE_ROLLBACK_ROOT"; then
+    trap 'cleanup_on_signal 129' HUP
+    trap 'cleanup_on_signal 130' INT
+    trap 'cleanup_on_signal 143' TERM
+    return 1
+  fi
+  STATE_BACKUP_ACTIVE=0
+  CONTROL_BACKUP_ACTIVE=0
+  NEW_STACK_ATTEMPTED=0
+  MIGRATED_LEGACY_THIS_RUN=0
+  ROLLBACK_REQUIRED=0
+  ROLLBACK_DONE=1
+  trap 'cleanup_on_signal 129' HUP
+  trap 'cleanup_on_signal 130' INT
+  trap 'cleanup_on_signal 143' TERM
 }
 
 fail_transaction() {
@@ -505,29 +731,32 @@ show_image_plan
 if ! compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" --progress=auto pull; then
   fail_transaction "failed to pull Bioinfoflow images"
 fi
+ROLLBACK_REQUIRED=1
+prepare_state_snapshot
 if [ "$LEGACY_LAYOUT" -eq 1 ]; then
+  MIGRATED_LEGACY_THIS_RUN=1
   for runtime_name in skills state projects sources; do
     legacy_path="$LEGACY_DATA_DIR/$runtime_name"
     current_path="$MANAGED_ROOT/$runtime_name"
     if [ -e "$legacy_path" ]; then
-      mv "$legacy_path" "$current_path"
+      mv "$legacy_path" "$current_path" || fail_transaction "failed to stage the legacy $runtime_name directory for upgrade"
     else
-      mkdir -p "$current_path"
+      mkdir -p "$current_path" || fail_transaction "failed to create the upgraded $runtime_name directory"
     fi
   done
-  chmod 700 "$SKILLS_DIR" "$STATE_DIR" "$PROJECTS_DIR" "$SOURCES_DIR"
-  MIGRATED_LEGACY_THIS_RUN=1
+  chmod 700 "$SKILLS_DIR" "$STATE_DIR" "$PROJECTS_DIR" "$SOURCES_DIR" || fail_transaction "failed to secure the migrated runtime directories"
 fi
 if [ "$SEED_SKILLS" -eq 1 ]; then
   if [ -d "$SKILLS_DIR" ]; then
-    rmdir "$SKILLS_DIR" || die_with_hint "skills directory is not empty" "Preserve the existing skills under $SKILLS_DIR, then retry the installation."
+    rmdir "$SKILLS_DIR" || fail_transaction "skills directory is not empty; preserve its contents and retry"
   fi
-  mv "$STAGED_SKILLS" "$SKILLS_DIR"
-  chmod 700 "$SKILLS_DIR"
+  mv "$STAGED_SKILLS" "$SKILLS_DIR" || fail_transaction "failed to install the staged skills"
   SEEDED_SKILLS_THIS_RUN=1
+  chmod 700 "$SKILLS_DIR" || fail_transaction "failed to secure the installed skills directory"
   success "Bundled NGS skills installed in $SKILLS_DIR"
 fi
 stage "Starting Bioinfoflow"
+NEW_STACK_ATTEMPTED=1
 if ! compose_with "$TMP_DIR/.env" "$TMP_DIR/docker-compose.local.yml" up -d --remove-orphans > "$TMP_DIR/up.log" 2>&1; then
   say "Startup output:" >&2
   sed -n '1,120p' "$TMP_DIR/up.log" >&2
@@ -543,14 +772,16 @@ while [ "$attempt" -le "$HEALTH_ATTEMPTS" ]; do
     say "  Health checks: attempt $attempt/$HEALTH_ATTEMPTS"
   fi
   if curl -fsS "http://127.0.0.1:$BACKEND_PORT/api/v1/system/ping" >/dev/null 2>&1 && curl -fsS "http://127.0.0.1:$FRONTEND_PORT/" >/dev/null 2>&1; then
-    mv "$TMP_DIR/install.sh" "$INSTALLED_INSTALLER"
-    mv "$TMP_DIR/docker-compose.local.yml" "$COMPOSE_FILE"
-    mv "$TMP_DIR/.env" "$ENV_FILE"
-    mv "$TMP_DIR/VERSION" "$VERSION_FILE"
-    if [ "$MIGRATED_LEGACY_THIS_RUN" -eq 1 ]; then
+    prepare_control_snapshot || fail_transaction "failed to preserve the pre-upgrade control files"
+    cp -p "$TMP_DIR/install.sh" "$INSTALLED_INSTALLER"
+    cp -p "$TMP_DIR/docker-compose.local.yml" "$COMPOSE_FILE"
+    cp -p "$TMP_DIR/.env" "$ENV_FILE"
+    cp -p "$TMP_DIR/VERSION" "$VERSION_FILE"
+    migrated_legacy_on_commit=$MIGRATED_LEGACY_THIS_RUN
+    commit_transaction
+    if [ "$migrated_legacy_on_commit" -eq 1 ]; then
       rm -f "$LEGACY_DATA_DIR/.managed-by-bioinfoflow"
       rmdir "$LEGACY_DATA_DIR" 2>/dev/null || true
-      MIGRATED_LEGACY_THIS_RUN=0
     fi
     success "Bioinfoflow $REQUESTED_VERSION is ready"
     say "Bioinfoflow: http://localhost:$FRONTEND_PORT"

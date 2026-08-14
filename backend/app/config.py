@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     repo_root: str = str(REPO_ROOT)
     bioinfoflow_home: str = "data"
     bioinfoflow_skills_root: str = ""
+    # Public API endpoint injected into `bif` inside Agent workspaces. Remote
+    # SSH workspaces require an address reachable from the remote machine.
+    bioinfoflow_public_api_base_url: str = ""
     # Path Contract v3: identity-mount invariant. When the backend runs in a
     # container, BIOINFOFLOW_HOME_HOST must equal BIOINFOFLOW_HOME (the compose
     # volume must be `-v ${BIOINFOFLOW_HOME}:${BIOINFOFLOW_HOME}`). Leave empty
@@ -98,20 +101,9 @@ class Settings(BaseSettings):
 
     # Agent / LLM
     agent_sandbox_enabled: bool = True  # Required OS confinement for agent bash
-    # When sandboxing is enabled but no OS sandbox binary is available, refuse to
-    # run unconfined (fail closed) rather than silently dropping the boundary.
-    agent_sandbox_fail_closed: bool = True
     # Allow the sandboxed process to reach the network. Off by default.
     agent_sandbox_allow_network: bool = False
-    # Permit a bash call to opt out of the sandbox via dangerously_disable_sandbox.
-    agent_sandbox_allow_unsandboxed: bool = False
-    # Additional local read-write capability roots for the agent. Use the OS
-    # path separator (`:` on Unix, `;` on Windows). Container deployments must
-    # mount the same paths and should run the backend with a non-root UID/GID.
-    agent_filesystem_roots: str = ""
     agent_max_tokens: int = 16384
-    agent_observability: bool = True
-    agent_log_truncate_chars: int = 1200
     agent_max_iterations: int = 90  # Per-turn loop safety limit
     removed_agent_max_rounds: str | None = Field(
         default=None,
@@ -122,15 +114,14 @@ class Settings(BaseSettings):
     agent_retry_base_delay_seconds: float = 0.25
     agent_retry_max_delay_seconds: float = 2.0
     agent_model_attempt_timeout_seconds: float = 120.0
-    agent_turn_lease_seconds: int = 300
-    agent_collaboration_max_slots: int = 8
-    agent_compact_threshold: int = 50000  # Auto-compact token threshold
+    agent_run_timeout_seconds: float = 3600.0
+    agent_run_token_budget: int = 1_000_000
+    agent_run_lease_seconds: int = 300
     agent_project_instructions_max_bytes: int = 32768
     agent_attachment_file_max_bytes: int = 25 * 1024 * 1024
     agent_attachment_image_max_bytes: int = 20 * 1024 * 1024
     agent_attachment_folder_max_bytes: int = 100 * 1024 * 1024
     agent_attachment_folder_max_files: int = 1000
-    agent_attachment_turn_max_images: int = 10
     agent_attachment_text_max_bytes: int = 64 * 1024
     agent_attachment_pdf_max_pages: int = 200
     agent_attachment_orphan_ttl_seconds: int = 24 * 60 * 60
@@ -160,12 +151,6 @@ class Settings(BaseSettings):
     asr_context_terms: list[str] = ["Bioinfoflow", "Nextflow", "MiniWDL", "FASTQ"]
     asr_max_upload_size_bytes: int = 20 * 1024 * 1024
     asr_timeout_seconds: float = 90.0
-
-    # Extended thinking
-    agent_thinking_enabled: bool = True
-    agent_thinking_budget: int = 10000
-    agent_thinking_effort: str = "medium"
-    agent_thinking_level: str = "medium"
 
     scheduler_total_slots: int = 0  # 0 = auto-detect (cpu_count)
     scheduler_max_workers: int = 0  # 0 = same as total_slots

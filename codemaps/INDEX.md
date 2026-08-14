@@ -1,6 +1,6 @@
 # Codemaps Index
 
-**Last Updated:** 2026-07-11
+**Last Updated:** 2026-08-14
 
 These maps summarize the current source tree. They are contributor orientation,
 not a replacement for the user-facing documentation or generated API schema.
@@ -8,8 +8,8 @@ not a replacement for the user-facing documentation or generated API schema.
 ## Areas
 
 - [Architecture](architecture.md): system boundaries and runtime flows.
-- [Backend](backend.md): FastAPI routers, services, repositories, workflow engines, scheduler, AgentCore, and CLI.
-- [Frontend](frontend.md): Next.js routes, shared UI, AgentCore workbench, auth, and client data flow.
+- [Backend](backend.md): FastAPI routers, services, repositories, workflow engines, scheduler, the complete Agent Harness, and CLI.
+- [Frontend](frontend.md): Next.js routes, shared UI, auth, client data flow, and the backend Agent Harness contract the frontend must adopt.
 - [Data](data.md): current ORM domains, repositories, schemas, migrations, and frontend contracts.
 - [Dependencies](dependencies.md): declared runtime packages and external systems.
 

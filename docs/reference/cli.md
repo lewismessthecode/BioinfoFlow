@@ -48,6 +48,10 @@ Environment variables:
 - `BIOFLOW_PROJECT`
 - `BIOFLOW_OUTPUT`
 
+`BIOFLOW_AGENT_TOKEN` is an internal, short-lived Harness credential. The
+Harness supplies it only to scoped `bif` calls; users should not store it in CLI
+configuration or long-lived environment files.
+
 ## Backend Target
 
 `bif` is an HTTP client for a running Bioinfoflow backend. Start the backend
@@ -70,19 +74,23 @@ The CLI includes these command groups:
 - `agent`
 - `doctor`
 
-The `agent` group includes interactive and scripting commands for AgentCore:
+The `agent` group is the CLI adapter for the complete Agent Harness:
 
 - `agent send`
-- `agent chat`
-- `agent events`
-- `agent stream`
+- `agent steer`
+- `agent follow-up`
+- `agent respond`
 - `agent cancel`
-- `agent interrupt`
-- `agent toolsets`
-- `agent session`
-- `agent turn`
-- `agent action`
-- `agent artifacts`
+- `agent snapshot`
+- `agent events`
+- `agent session create|list|show|delete`
+- `agent artifact list|show|download`
+
+The five Harness command types are `prompt`, `steer`, `follow_up`, `respond`,
+and `cancel`. `agent send` submits `prompt`; the remaining commands map directly
+to the corresponding durable Session command. `agent events` is snapshot-first
+SSE; reconnecting fetches a fresh authoritative snapshot before applying new
+live events.
 
 Use command-specific help for exact parameters:
 
@@ -90,7 +98,7 @@ Use command-specific help for exact parameters:
 uv run bif run --help
 uv run bif workflow --help
 uv run bif agent --help
-uv run bif agent action --help
+uv run bif agent session --help
 ```
 
 ## JSON Output
@@ -126,4 +134,6 @@ uv run bif events stream
 uv run bif open agent
 uv run bif agent session list
 uv run bif agent send --session <session-id> "Check the latest run logs"
+uv run bif agent steer <session-id> "Inspect the failed task first"
+uv run bif agent snapshot <session-id>
 ```

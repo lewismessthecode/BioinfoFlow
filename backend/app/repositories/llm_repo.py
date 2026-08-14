@@ -55,7 +55,9 @@ class LlmProviderRepository(BaseRepository[LlmProvider]):
     ) -> LlmProvider | None:
         stmt = select(self.model).where(
             self.model.id == provider_id,
-            _visible_provider_clause(self.model, workspace_id=workspace_id, user_id=user_id),
+            _visible_provider_clause(
+                self.model, workspace_id=workspace_id, user_id=user_id
+            ),
         )
         if enabled_only:
             stmt = stmt.where(self.model.enabled.is_(True))
@@ -162,7 +164,9 @@ class LlmModelProfileRepository(BaseRepository[LlmModelProfile]):
     ) -> LlmModelProfile | None:
         stmt = select(self.model).where(
             self.model.id == profile_id,
-            _visible_provider_clause(self.model, workspace_id=workspace_id, user_id=user_id),
+            _visible_provider_clause(
+                self.model, workspace_id=workspace_id, user_id=user_id
+            ),
         )
         if enabled_only:
             stmt = stmt.where(self.model.enabled.is_(True))
@@ -177,7 +181,11 @@ class LlmProviderCredentialRepository(BaseRepository[LlmProviderCredential]):
         self,
         provider_id: str,
     ) -> LlmProviderCredential | None:
-        stmt = select(self.model).where(self.model.provider_id == provider_id)
+        stmt = (
+            select(self.model)
+            .where(self.model.provider_id == provider_id)
+            .execution_options(populate_existing=True)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

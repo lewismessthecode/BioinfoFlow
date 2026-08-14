@@ -5,11 +5,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app.database import get_alembic_head_revision
-
-
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 PREVIOUS_REVISION = "0045_agent_turn_owner_token"
+TARGET_REVISION = "0046_agent_permission_policy"
 
 
 def _run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -65,7 +63,7 @@ def test_permission_policy_migration_defaults_existing_sessions_and_actions(
         )
         connection.commit()
 
-    upgraded = _run_alembic(db_path, "upgrade", "head")
+    upgraded = _run_alembic(db_path, "upgrade", TARGET_REVISION)
     assert upgraded.returncode == 0, upgraded.stderr
 
     with sqlite3.connect(db_path) as connection:
@@ -78,8 +76,10 @@ def test_permission_policy_migration_defaults_existing_sessions_and_actions(
             "FROM agent_actions WHERE id = ?",
             (action_id,),
         ).fetchone()
-        revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
+        revision = connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone()
 
     assert session_row == (1,)
     assert action_row == (None, None)
-    assert revision == (get_alembic_head_revision(),)
+    assert revision == (TARGET_REVISION,)

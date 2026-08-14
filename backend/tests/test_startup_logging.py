@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from app.startup_logging import build_startup_summary, log_startup_summary
-from app.services.agent_core.sandbox import SandboxAvailability
+from app.services.agent_harness.sandbox import SandboxAvailability
 
 
 def _settings(tmp_path: Path):
@@ -34,12 +34,8 @@ def _settings(tmp_path: Path):
         scheduler_safety_disk_gb=10.0,
         agent_max_tokens=16384,
         agent_max_iterations=90,
-        agent_compact_threshold=50000,
         agent_sandbox_enabled=False,
-        agent_sandbox_fail_closed=True,
         agent_sandbox_allow_network=False,
-        agent_sandbox_allow_unsandboxed=False,
-        agent_observability=True,
         langsmith_tracing=True,
         cors_origins=["http://localhost:5173"],
         cors_origin_regex=r"^https?://localhost",
@@ -84,19 +80,22 @@ def test_build_startup_summary_surfaces_operational_config_without_secrets(tmp_p
     assert summary["storage"]["roots"]["deliveries"].endswith("/sources/deliveries")
     assert summary["workflow_engines"]["nextflow_bin"] == "/usr/local/bin/nextflow"
     assert summary["scheduler"]["max_concurrency"] == 4
-    assert summary["agent_core"]["runtime"] == "agent_core"
-    assert summary["agent_core"]["model_source"] == "llm_catalog"
-    assert summary["agent_core"]["max_iterations"] == 90
-    assert summary["agent_core"]["sandbox"] == {
+    assert summary["agent_harness"]["runtime"] == "agent_harness"
+    assert summary["agent_harness"]["model_source"] == "llm_catalog"
+    assert summary["agent_harness"]["max_iterations"] == 90
+    assert "compact_threshold" not in summary["agent_harness"]
+    assert summary["agent_harness"]["sandbox"] == {
         "enabled": False,
-        "fail_closed": True,
         "adapter": None,
         "executable": None,
         "available": None,
         "category": None,
         "message": None,
     }
-    assert "max_rounds" not in summary["agent_core"]
+    assert "observability" not in summary["agent_harness"]
+    assert summary["agent_harness"]["langsmith_tracing"] is True
+    assert "max_rounds" not in summary["agent_harness"]
+    assert "agent_core" not in summary
     assert "agent" not in summary
     assert "hermes" not in repr(summary).lower()
     assert "legacy" not in repr(summary).lower()
@@ -130,9 +129,8 @@ def test_build_startup_summary_reports_sandbox_probe_diagnostic(tmp_path, monkey
 
     summary = build_startup_summary(source)
 
-    assert summary["agent_core"]["sandbox"] == {
+    assert summary["agent_harness"]["sandbox"] == {
         "enabled": True,
-        "fail_closed": True,
         "adapter": "bubblewrap",
         "executable": "/usr/bin/bwrap",
         "available": False,
@@ -153,10 +151,10 @@ def test_build_startup_summary_does_not_raise_when_sandbox_probe_crashes(
 
     summary = build_startup_summary(source)
 
-    assert summary["agent_core"]["sandbox"]["enabled"] is True
-    assert summary["agent_core"]["sandbox"]["available"] is False
-    assert summary["agent_core"]["sandbox"]["category"] == "probe_os_error"
-    assert summary["agent_core"]["sandbox"]["message"] == "unexpected probe error"
+    assert summary["agent_harness"]["sandbox"]["enabled"] is True
+    assert summary["agent_harness"]["sandbox"]["available"] is False
+    assert summary["agent_harness"]["sandbox"]["category"] == "probe_os_error"
+    assert summary["agent_harness"]["sandbox"]["message"] == "unexpected probe error"
 
 
 def test_log_startup_summary_emits_named_structured_event(tmp_path):

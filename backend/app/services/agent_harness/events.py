@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+import asyncio
+from collections import defaultdict
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
+from uuid import UUID
+
+from app.services.agent_harness.contracts import (
+    AgentEvent,
+    SessionSnapshot,
+    SnapshotEvent,
+)
+
+
+_SUBSCRIBER_QUEUE_CAPACITY = 256
+
+
+class AgentEventHub:
+    """Live event fan-out; durable truth always comes from the snapshot."""
+
+    def __init__(self) -> None:
+        self._subscribers: dict[str, set[asyncio.Queue[AgentEvent]]] = defaultdict(set)
+        self._lock = asyncio.Lock()
+
+    async def publish(self, session_id: str | UUID, event: AgentEvent) -> None:
+        key = str(session_id)
+        async with self._lock:
+            subscribers = self._subscribers.get(key)
+            if subscribers is None:
+                return
+            for queue in tuple(subscribers):
+                try:
+                    queue.put_nowait(event)
+                except asyncio.QueueFull:
+                    subscribers.discard(queue)
+                    _close_queue(queue)
+            if not subscribers:
+                self._subscribers.pop(key, None)
+
+    async def stream(
+        self,
+        session_id: str | UUID,
+        snapshot: Callable[[], Awaitable[SessionSnapshot]],
+    ) -> AsyncIterator[AgentEvent]:
+        key = str(session_id)
+        queue: asyncio.Queue[AgentEvent | _StreamClosed] = asyncio.Queue(
+            maxsize=_SUBSCRIBER_QUEUE_CAPACITY
+        )
+        async with self._lock:
+            self._subscribers[key].add(queue)
+        try:
+            yield SnapshotEvent(snapshot=await snapshot())
+            while True:
+                event = await queue.get()
+                if isinstance(event, _StreamClosed):
+                    return
+                yield event
+        finally:
+            async with self._lock:
+                subscribers = self._subscribers.get(key)
+                if subscribers is not None:
+                    subscribers.discard(queue)
+                    if not subscribers:
+                        self._subscribers.pop(key, None)
+
+    async def close(self) -> None:
+        async with self._lock:
+            queues = [
+                queue for queues in self._subscribers.values() for queue in queues
+            ]
+            self._subscribers.clear()
+        for queue in queues:
+            _close_queue(queue)
+
+
+@dataclass(frozen=True)
+class _StreamClosed:
+    pass
+
+
+_STREAM_CLOSED = _StreamClosed()
+
+
+def _close_queue(queue: asyncio.Queue[AgentEvent | _StreamClosed]) -> None:
+    while True:
+        try:
+            queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+    queue.put_nowait(_STREAM_CLOSED)
+
+
+__all__ = ["AgentEventHub"]

@@ -61,9 +61,7 @@ class TestRunWatch:
             patch(f"{_R}.api_get", new_callable=AsyncMock, return_value=resp),
             patch(f"{_R}._watch_stream", new_callable=AsyncMock) as mock_stream,
         ):
-            result = runner.invoke(
-                app, ["--project", "p-1", "run", "watch", "r-42"]
-            )
+            result = runner.invoke(app, ["--project", "p-1", "run", "watch", "r-42"])
         assert result.exit_code == 0
         mock_stream.assert_called_once()
 
@@ -126,29 +124,7 @@ class TestEventsStream:
         assert params["project_id"] == "p-1"
         assert params["run_id"] == "r-42"
 
-    def test_stream_with_agent_core_filters(self, runner: CliRunner) -> None:
-        with patch(f"{_E}._stream", new_callable=AsyncMock) as mock_fn:
-            result = runner.invoke(
-                app,
-                [
-                    "--project",
-                    "p-1",
-                    "events",
-                    "stream",
-                    "--session",
-                    "session-1",
-                    "--turn",
-                    "turn-1",
-                ],
-            )
-        assert result.exit_code == 0
-        params = mock_fn.call_args[0][2]
-        assert params["session_id"] == "session-1"
-        assert params["turn_id"] == "turn-1"
-
-    def test_stream_rejects_legacy_conversation_filter(
-        self, runner: CliRunner
-    ) -> None:
+    def test_stream_rejects_legacy_conversation_filter(self, runner: CliRunner) -> None:
         result = runner.invoke(
             app,
             [
@@ -159,6 +135,17 @@ class TestEventsStream:
                 "--conversation",
                 "conv-1",
             ],
+        )
+
+        assert result.exit_code != 0
+
+    @pytest.mark.parametrize("option", ["--session", "--turn"])
+    def test_stream_rejects_legacy_agent_filters(
+        self, runner: CliRunner, option: str
+    ) -> None:
+        result = runner.invoke(
+            app,
+            ["--project", "p-1", "events", "stream", option, "legacy-id"],
         )
 
         assert result.exit_code != 0

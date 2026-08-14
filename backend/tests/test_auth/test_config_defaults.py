@@ -69,7 +69,37 @@ def test_legacy_hermes_agent_settings_are_ignored() -> None:
     assert not hasattr(settings, "agent_hermes_max_concurrency")
 
 
-def test_agent_collaboration_slots_default_to_eight() -> None:
+def test_agent_run_lease_seconds_binds_from_new_environment_name(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_RUN_LEASE_SECONDS", "45")
+
     settings = Settings(_env_file=None)
 
-    assert settings.agent_collaboration_max_slots == 8
+    assert settings.agent_run_lease_seconds == 45
+    assert not hasattr(settings, "agent_turn_lease_seconds")
+
+
+def test_legacy_agent_turn_lease_environment_name_is_ignored(monkeypatch) -> None:
+    monkeypatch.delenv("AGENT_RUN_LEASE_SECONDS", raising=False)
+    monkeypatch.setenv("AGENT_TURN_LEASE_SECONDS", "12")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.agent_run_lease_seconds == 300
+
+
+def test_removed_agent_settings_are_not_part_of_the_configuration_contract() -> None:
+    removed = {
+        "agent_collaboration_max_slots",
+        "agent_attachment_turn_max_images",
+        "agent_log_truncate_chars",
+        "agent_compact_threshold",
+        "agent_filesystem_roots",
+        "agent_observability",
+        "agent_sandbox_fail_closed",
+        "agent_thinking_enabled",
+        "agent_thinking_budget",
+        "agent_thinking_effort",
+        "agent_thinking_level",
+    }
+
+    assert removed.isdisjoint(Settings.model_fields)

@@ -6,9 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app.database import get_alembic_head_revision
-
-
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 PR125_HEAD = "0045_agent_turn_owner_token"
 EXPECTED_HEAD = "0058_remove_container_registry_default"
@@ -65,7 +62,7 @@ def test_permission_migrations_upgrade_pr125_database_without_rewriting_turn(
         )
         connection.commit()
 
-    upgraded = _run_alembic(db_path, "upgrade", "head")
+    upgraded = _run_alembic(db_path, "upgrade", EXPECTED_HEAD)
     assert upgraded.returncode == 0, upgraded.stderr or upgraded.stdout
 
     with sqlite3.connect(db_path) as connection:
@@ -96,12 +93,11 @@ def test_permission_migrations_upgrade_pr125_database_without_rewriting_turn(
         "permission_context_snapshot",
     } <= action_columns
     assert "agent_tool_call_batches" in tables
-    assert get_alembic_head_revision() == EXPECTED_HEAD
 
 
 def test_permission_migrations_downgrade_preserves_pr125_schema(tmp_path: Path) -> None:
     db_path = tmp_path / "pr125-downgrade.db"
-    upgraded = _run_alembic(db_path, "upgrade", "head")
+    upgraded = _run_alembic(db_path, "upgrade", EXPECTED_HEAD)
     assert upgraded.returncode == 0, upgraded.stderr or upgraded.stdout
 
     downgraded = _run_alembic(db_path, "downgrade", PR125_HEAD)

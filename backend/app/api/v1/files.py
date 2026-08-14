@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import (
+    get_current_user,
+    get_db,
+    require_agent_scope,
+)
 from app.api.error_handler import handle_api_errors
 from app.api.upload_limits import UploadTooLargeError, read_upload_limited
 from app.auth.session import AuthUser
@@ -15,7 +19,10 @@ from app.services.file_service import FileService
 from app.utils.responses import error_response, success_response
 
 
-router = APIRouter(prefix="/files", tags=["files"])
+router = APIRouter(
+    prefix="/files",
+    tags=["files"],
+)
 
 
 @router.get("")
@@ -30,9 +37,13 @@ async def list_files(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     service = FileService(db)
     data = await service.list_files(
-        project_id=project_id, path=path, recursive=recursive, pattern=pattern,
+        project_id=project_id,
+        path=path,
+        recursive=recursive,
+        pattern=pattern,
         data_root=data_root,
         user_id=user.id,
         workspace_id=user.workspace_id,
@@ -53,6 +64,7 @@ async def read_file(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     service = FileService(db)
     data = await service.read_file(
         project_id=project_id,
@@ -76,6 +88,7 @@ async def download_file(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     service = FileService(db)
     target, root = await service.resolve_path(
         project_id=project_id,
@@ -115,6 +128,7 @@ async def write_file(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=payload.project_id)
     service = FileService(db)
     data = await service.write_file(
         project_id=payload.project_id,
@@ -137,6 +151,7 @@ async def upload_file(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     service = FileService(db)
     try:
         content = await read_upload_limited(file, settings.max_upload_size_bytes)
@@ -171,6 +186,7 @@ async def scan_directory(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=payload.project_id)
     service = FileService(db)
     data = await service.scan_directory(
         project_id=payload.project_id,
@@ -194,6 +210,7 @@ async def delete_path(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     service = FileService(db)
     data = await service.delete_path(
         project_id=project_id,

@@ -77,89 +77,97 @@ dispatches only when enough slots and resources are available.
 
 ## Agent Terms
 
-The planned Agent Core replacement intentionally reduces the vocabulary to
-Session, Run, History Entry, Tool Call, Tool Result, User Interaction, Context,
-Compaction, Checkpoint, and Workspace Runtime. See
-[Complete Agent Harness Rearchitecture](../plans/2026-08-13-complete-agent-harness-rearchitecture.md).
+The production vocabulary is intentionally small: Session, Run, History Entry,
+Tool Call, Tool Result, User Interaction, Context, Compaction, Checkpoint, and
+Workspace Runtime.
 
-### Agent Runtime
+### Agent Harness
 
-The default agent orchestration path under `backend/app/services/agent_core/`.
-It stores durable sessions, turns, actions, artifacts, model selection, prompt
-snapshots, toolset policy, and context policy.
+The single agent runtime under `backend/app/services/agent_harness/`. It owns
+context assembly, model invocation, the model-tool loop, user interaction,
+compression, retry, cancellation, and recovery. It is not selected through an
+engine registry.
 
-### Tool Dispatch
+### Session
 
-The map from model tool requests to Python tool implementations. Tools implement
-the `AgentTool` protocol and describe themselves with `AgentToolSpec`, including
-input/output schemas, risk level, scopes, timeout, audit text, and optional
-artifact policy.
+A durable conversation container bound to a user and workspace, optionally a
+project. It stores model, workspace, permission, and stable prompt snapshots.
 
-### Toolset
+### Run
 
-The policy that decides which registered tools are visible to the agent. Current
-toolsets are `default`, `plan`, the read-only `bio` policy, and `execution`.
+One continuous unit of work started by a prompt. A Run may be queued, running,
+waiting for the user, completed, failed, or cancelled. A Session has at most one
+active Run.
 
-### Approval
+### History Entry
 
-The review gate produced by permission policy and risk assessment. Approval
-decisions are conditional database transitions, so duplicate submissions do not
-intentionally enqueue the same action twice.
+One append-only canonical history record. Entry types are message,
+interaction request, interaction response, compaction, and notice. Old
+conversations render from entries without requiring the original Harness
+process or checkpoint.
+
+### Tool Call And Tool Result
+
+A model request for one of `read`, `bash`, `edit`, `write`, or `ask_user`, and
+the ordered result returned to the model. Both are stored as canonical history
+content.
+
+### User Interaction
+
+The single persisted request/response channel for questions, dangerous-command
+confirmation, and recovery choices.
 
 ### Permission Mode
 
-The policy that decides when AgentCore asks before a tool action. The modes are
-`ask_each_action`, `guarded_auto`, and `bypass`. Permission mode is separate from
-the local OS sandbox and from SSH account authority.
+The Session policy controlling tool availability and confirmations. Modes are
+`read_only`, `ask_dangerous`, and `full_access`. Permission mode does not grant
+filesystem, network, SSH, or Bioinfoflow API authority.
 
 ### Full Access
 
-The UI name for `bypass` permission mode. It auto-approves ordinary, external,
-elevated, and scoped destructive actions on the selected target.
-High-confidence catastrophic actions still require explicit approval, while
-protected-resource, authorization, and target violations remain denied.
-Classification is not complete confinement; the true execution boundary is an
-enabled local OS sandbox or the remote account and server controls. Explicit
-user or plan interactions and workspace policy remain independent.
+The most permissive Session mode. It reduces confirmation prompts but does not
+override explicit-confirmation rules, hard workspace boundaries, OS sandboxing,
+remote account authority, or server-side API authorization.
 
-### Permission Policy Version
+### Context And Compaction
 
-A monotonic session counter advanced when authorization-relevant state changes.
-AgentCore resolves it freshly before authorizing a tool and records the evaluated
-version and bounded context snapshot on each new action.
+Context is the provider request derived from the stable prompt snapshot,
+attachments, compaction summaries, and recent permanent history. Compaction
+appends a continuity summary; it does not delete the original entries.
 
-### Pending Strategy
+### Checkpoint
 
-The effect of a permission update on already waiting tools. `future_only` is the
-backward-compatible default. `approve_pending_tools` also approves eligible
-waiting tool actions atomically, but excludes user-input and plan interactions.
+Private unfinished-Run state used only for same-version recovery. It is not the
+conversation rendering source. Invalid or incompatible checkpoints fall back to
+permanent history, and unknown Bash effects are never silently replayed.
 
-### Tool-call Batch
+### Workspace Runtime
 
-The durable continuation barrier for one assistant response containing tool
-calls. The model continues only after every call has one terminal result and one
-worker conditionally claims the batch continuation.
+The local or remote SSH adapter behind the same five tools. It enforces root
+boundaries, command sandboxing, cancellation, output limits, and secret
+redaction. Remote execution additionally requires a verified Bubblewrap sandbox
+on the SSH host.
 
 ### Execution Boundary
 
-The authority and confinement that actually apply to a tool process. A local
-command may have an enforced OS sandbox; an SSH command instead has the selected
-remote Unix account's privileges and server controls. A working directory is not
-an execution boundary.
+The authority and confinement that actually apply to a tool process. Local Bash
+uses Bubblewrap on Linux or Seatbelt on macOS. Remote tools use a verified
+Bubblewrap sandbox inside the selected SSH account. Server ACLs, sudo rules,
+scheduler policy, and Bioinfoflow API authorization remain independent layers.
 
 ### Remote Connection
 
 A workspace-scoped SSH profile stored by Bioinfoflow. It can use an SSH config
 alias, a backend-visible key file path, the backend user's SSH agent, a stored
 password, or a stored private key. Remote Connections support backend tests,
-streamed probes, interactive project terminals, and selected AgentCore remote
-tools. See `docs/guides/remote-connections.md` for the full setup model.
+streamed probes, interactive project terminals, and remote Harness workspaces.
+See `docs/guides/remote-connections.md` for the full setup model.
 
 ### Agent Skill
 
-Connection- or workflow-specific instructions that guide AgentCore behavior.
-For Remote Connections, skill text usually describes remote paths, modules,
-service endpoints, and operational rules.
+A reusable instruction package whose `SKILL.md` can be read by the Harness with
+the normal `read` tool. Session prompt snapshots list available skill names,
+descriptions, and paths without adding a dedicated skill-loading model tool.
 
 ## Abbreviations
 

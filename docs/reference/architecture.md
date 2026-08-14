@@ -1,7 +1,7 @@
 # Architecture Reference
 
 This page describes the implementation boundaries for the Bioinfoflow backend,
-frontend, workflow engine, scheduler, AgentCore runtime, and remote connection
+frontend, workflow engine, scheduler, Agent Harness, and remote connection
 features.
 
 ## Backend
@@ -18,7 +18,7 @@ Startup lifecycle:
 6. start the persistent run scheduler and resource monitor
 7. wire run dispatch through `SchedulerDispatcher`
 8. recover stale runs
-9. recover orphaned AgentCore turns
+9. recover unfinished Agent Harness Runs from durable history and checkpoints
 10. start task runners and remaining background tasks
 
 Core backend areas:
@@ -113,112 +113,82 @@ Remote Connections are used for diagnostics and agent-assisted inspection; they
 can also back interactive project terminals, but they do not dispatch workflow
 runs.
 
-## AgentCore Runtime
+## Agent Harness
 
-AgentCore lives under:
-
-```text
-backend/app/services/agent_core/
-```
-
-Durable agent sessions record role profile, permission mode, automation mode,
-model selection, prompt snapshot, toolset policy, context policy, and session
-metadata. Authorization-relevant changes also advance a monotonic
-`permission_policy_version`. Turns are queued as background tasks; each turn
-publishes persisted events that the frontend consumes through SSE.
-
-The runtime flow is:
+The production Harness lives under:
 
 ```text
-user input
-  -> AgentCore service
-  -> async runtime loop
-  -> fresh permission-context resolver
-  -> durable tool-call batch barrier
-  -> tool dispatcher and conditional action claim
-  -> persisted actions, events, and artifacts
-  -> frontend SSE stream
+backend/app/services/agent_harness/
 ```
 
-Tools implement the `AgentTool` protocol and define an `AgentToolSpec` with
-input and output schemas, risk level, scopes, timeout, audit text, and optional
-artifact policy. Tools are registered through `build_default_tool_registry()`.
+`AgentHarness` is the single deep module used by HTTP, SSE, and `bif agent`. Its
+public operations are opening a Session, dispatching a command, reading an
+authoritative snapshot, and streaming events. Commands are limited to:
 
-Toolsets are:
+- `prompt`: start a Run
+- `steer`: add guidance at the next safe point of the active Run
+- `follow_up`: queue the next Run
+- `respond`: answer a question, confirmation, or recovery interaction
+- `cancel`: cancel the active Run
 
-- `default`: read-oriented tools for inspection
-- `plan`: planning and clarification tools
-- `bio`: read-only bioinformatics and platform inspection tools
-- `execution`: all registered tools, still subject to permission policy
+One Session has at most one active Run. The Harness owns context assembly,
+provider calls, tool iteration, streaming, compression, retries, cancellation,
+and recovery. `backend/app/services/model_runtime/` handles provider wire
+protocols but does not control the agent loop.
 
-Permission modes control approval behavior:
+The model-visible tool surface is fixed to:
 
-- `ask_each_action`: ask before every non-read side effect
-- `guarded_auto`: allow reads and low-risk actions, ask for elevated risk
-- `bypass` (shown as **Full access**): auto-approve ordinary, external,
-  elevated, and scoped destructive actions without a risk prompt
+- `read`
+- `bash`
+- `edit`
+- `write`
+- `ask_user`
 
-Automation policy, hard blocks, interaction requirements, and the execution
-boundary remain independent. Full access does not grant new OS or SSH
-privileges. High-confidence catastrophic commands still require explicit
-approval, while protected-resource, authorization, and target violations remain
-denied. This classifier is defense in depth rather than confinement: the true
-boundary is the active local OS sandbox or the remote account and server policy.
-Mandatory user and plan interactions remain independent.
+`bash` covers ordinary shell programs and authenticated `bif --output json`
+operations. Bioinfoflow does not expose one model tool for each platform API.
+The executor validates arguments, applies permission and command-risk rules,
+serializes Bash and same-path mutations where required, permits independent
+reads, and commits results in model call order. A pending `ask_user` interaction
+pauses the Run until the user responds.
 
-`PermissionContextResolver` forces a fresh session read immediately before tool
-exposure and risk evaluation. It resolves a coherent snapshot of policy version,
-permission and automation modes, role/toolset, execution target, effective roots,
-local sandbox state, or selected SSH identity. Each action records
-`evaluated_policy_version` and a bounded `permission_context_snapshot`, including
-structured command-risk data when applicable. A policy update that commits
-before a later evaluation is therefore visible during the same active turn.
+Permission modes are `read_only`, `ask_dangerous`, and `full_access`.
+`read_only` blocks mutable tools and non-read-only Bash. `ask_dangerous` asks for
+destructive or critical commands. Commands explicitly marked as requiring
+confirmation still ask in every mode. Hard workspace, authorization, and
+sandbox violations are always blocked.
 
-Each assistant message containing tool calls creates an
-`agent_tool_call_batches` row. Actions keep the batch id, provider call id, and
-stable ordinal. The batch is the continuation barrier: every provider tool call
-receives exactly one terminal result before the model can continue. Interaction
-tools are exclusive; siblings are explicitly cancelled or deferred rather than
-executed behind a user prompt. The database, not an in-process queue, is the
-correctness source.
+Durable state is split by purpose:
 
-Approval, execution, and continuation transitions use compare-and-set updates:
+- `agent_sessions`: user, workspace, optional project, model, workspace runtime,
+  prompt, and permission snapshots
+- `agent_runs`: one continuous unit of work, current phase, lease, draft,
+  progress, checkpoint, usage, and termination state
+- `agent_entries`: the append-only Session history and interaction
+  history
+- `agent_attachments` and `agent_artifacts`: input files, multimodal content,
+  large command output, and downloadable results
 
-```text
-waiting_decision -> requested or rejected
-requested -> running
-ready batch -> continuing -> terminal
-```
+Entries are messages, interaction requests, interaction responses, compaction
+summaries, or notices. Historical rendering and later context assembly use
+entries, not private checkpoints. Compression appends a summary while retaining
+the original entries.
 
-Duplicate decisions and workers therefore cannot intentionally claim the same
-side effect or continuation twice. Recovery is batch-first: waiting approvals
-stay waiting, requested actions are re-enqueued, all-terminal batches can claim
-one continuation, and an action found running after process loss fails the turn
-for manual reconciliation instead of being replayed. Legacy actions without
-batch or audit metadata remain readable and use the compatibility recovery path.
+Checkpoints fence unfinished state with the Harness version and history
+revision. `read` is safe to retry, `edit` and `write` require verification, and
+unknown `bash` effects require a user recovery choice. Invalid or incompatible
+checkpoints fall back to permanent history.
 
-Session updates accept `pending_strategy`. Omitting it uses `future_only`, which
-changes later evaluations only. `approve_pending_tools` atomically updates the
-policy and approves eligible waiting tool actions, while excluding user-input
-and plan-approval interactions; the response includes affected, excluded, and
-already-resolved counts.
+SSE is snapshot-first. A connection receives the authoritative Session/Run
+snapshot and then only `run.updated`, `assistant.delta`, `tool.updated`,
+`interaction.requested`, and `entry.committed` changes. Reconnect by fetching a
+new authoritative snapshot and then applying only new live changes.
 
-Local shell and remote SSH execution use the same structured command assessor.
-It records semantic effects, confidence, referenced paths, protected resources,
-target identity, and whether a boundary is actually enforced. Local sandboxed
-commands can rely on the active OS adapter. Unsandboxed local and SSH commands
-cannot: SSH is authorized by the selected remote Unix account and server policy,
-and a remote working root is not confinement. Unknown, outside-root, or
-symlink-sensitive remote paths are elevated for approval outside bypass mode
-when safety cannot be proven.
-Protected command destinations are detected lexically, including common link,
-archive-extraction, and synchronization forms. This analysis does not resolve
-pre-existing filesystem symlinks or inspect archive members, so it is defense in
-depth rather than an OS boundary. Opaque archive extraction, process
-substitution, executable heredocs, compound shell grammar, and wrapper options
-that cannot be parsed confidently are marked as requiring explicit review for
-guarded modes, but Full access auto-approves them. Actual confinement comes from
-the active local sandbox or the remote Unix account and server controls.
+For `bif` calls, the Harness issues a short-lived token scoped to the current
+user, workspace, Session, Run, project, and remote connection. Only its hash is
+stored. The plaintext is injected only for a proven plain `bif` command, is
+revoked when the Run or Session ends, and must not appear in argv, history,
+logs, tool output, or artifacts. The API still reloads the user and applies
+route-level project and connection scope checks.
 
 ## Remote Connections
 
@@ -270,13 +240,17 @@ supplies credentials only for the outer saved connection. The inner command is
 executed by the jump host's local OpenSSH client and inherits that host's SSH
 config, agent, keys, and known-host policy. Only one direct hop is supported.
 The resolver and nested-command flow are shared by connection tests, streamed
-probes, remote file and directory operations, AgentCore remote tools, and
-remote project terminal PTYs.
+probes, remote project terminals, and the Harness workspace adapter.
 
-AgentCore remote tools only resolve connections explicitly selected in the
-current agent session. `remote.read_file` and `remote.list_dir` are preferred
-for bounded inspection. `remote.exec` is assessed per command and target rather
-than assigned one static risk: safe reads can remain low risk, while writes,
-network access, destructive operations, protected resources, uncertain paths,
-or a connection mismatch are escalated or blocked. The configured remote root
-is a working directory and policy signal, not an OS confinement boundary.
+A Session bound to a remote project keeps the same five model tools as a local
+Session. `read`, `edit`, and `write` use bounded remote helpers; `bash` runs on
+the selected SSH host. Before any of these operations, the adapter verifies a
+remote Bubblewrap executable and trusted shell/Python runtime outside writable
+project roots. It binds only declared read/write roots and fails closed when the
+sandbox cannot be established. The remote account, ACLs, sudo policy, and
+scheduler controls remain independent server-side boundaries.
+
+Remote authenticated `bif` use additionally requires a trusted remote `bif`
+executable and a non-loopback `BIOINFOFLOW_PUBLIC_API_BASE_URL` reachable from
+the SSH host. The scoped Agent token is sent through stdin for the proven plain
+`bif` invocation rather than embedded in SSH or shell argv.

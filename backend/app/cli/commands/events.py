@@ -18,12 +18,6 @@ def events_stream(
     ctx: typer.Context,
     project_id: str | None = typer.Option(None, "--project", help="Project ID"),
     run_id: str | None = typer.Option(None, "--run", help="Run ID filter"),
-    session_id: str | None = typer.Option(
-        None, "--session", help="AgentCore session ID filter"
-    ),
-    turn_id: str | None = typer.Option(
-        None, "--turn", help="AgentCore turn ID filter"
-    ),
 ) -> None:
     """Stream raw SSE events (NDJSON in json mode, styled in human mode)."""
     cli_ctx, r = unpack_ctx(ctx)
@@ -33,10 +27,6 @@ def events_stream(
     params: dict = {"project_id": pid}
     if run_id:
         params["run_id"] = run_id
-    if session_id:
-        params["session_id"] = session_id
-    if turn_id:
-        params["turn_id"] = turn_id
     cli_ctx.run(_stream(cli_ctx, r, params))
 
 

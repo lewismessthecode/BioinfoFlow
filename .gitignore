@@ -88,6 +88,7 @@ worktrees/
 # log*  <-- Commented out to allow logo.tsx
 results/
 history*
+!backend/app/services/agent_harness/history.py
 
 # Database files (CRITICAL - prevents tracking runtime data)
 *.db

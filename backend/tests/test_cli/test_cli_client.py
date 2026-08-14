@@ -139,6 +139,16 @@ class TestRemoteTransport:
         await transport.close()
         await transport.close()  # should not raise
 
+    @pytest.mark.asyncio
+    async def test_agent_token_is_sent_as_bearer_header(self) -> None:
+        token = "secret-agent-token"
+        transport = RemoteTransport(TEST_BASE_URL, bearer_token=token)
+        client = await transport.get_client()
+
+        assert client.headers["Authorization"] == f"Bearer {token}"
+        assert token not in repr(transport)
+        await transport.close()
+
 
 class TestApiError:
     def test_api_error_str(self) -> None:

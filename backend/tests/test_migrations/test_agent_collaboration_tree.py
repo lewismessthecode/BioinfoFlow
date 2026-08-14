@@ -10,6 +10,7 @@ import pytest
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 PREVIOUS_REVISION = "0055_merge_agent_heads"
+TARGET_REVISION = "0056_agent_collaboration_tree"
 
 
 def _run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -59,12 +60,13 @@ def test_agent_collaboration_migration_keeps_legacy_sessions_nullable_and_enforc
         )
         connection.commit()
 
-    upgraded = _run_alembic(db_path, "upgrade", "head")
+    upgraded = _run_alembic(db_path, "upgrade", TARGET_REVISION)
     assert upgraded.returncode == 0, upgraded.stderr
 
     with sqlite3.connect(db_path) as connection:
         columns = {
-            row[1]: row for row in connection.execute("PRAGMA table_info(agent_sessions)")
+            row[1]: row
+            for row in connection.execute("PRAGMA table_info(agent_sessions)")
         }
         legacy = connection.execute(
             "SELECT parent_session_id, root_session_id, agent_name, collaboration_slot, "
@@ -72,7 +74,8 @@ def test_agent_collaboration_migration_keeps_legacy_sessions_nullable_and_enforc
             (root_id,),
         ).fetchone()
         indexes = {
-            row[1]: row for row in connection.execute("PRAGMA index_list(agent_sessions)")
+            row[1]: row
+            for row in connection.execute("PRAGMA index_list(agent_sessions)")
         }
 
         child_columns = (
@@ -91,7 +94,12 @@ def test_agent_collaboration_migration_keeps_legacy_sessions_nullable_and_enforc
         with pytest.raises(sqlite3.IntegrityError):
             connection.execute(
                 f"INSERT INTO agent_sessions ({child_columns}) VALUES ({child_values})",
-                ("00000000-0000-0000-0000-000000000014", workspace_id, root_id, root_id),
+                (
+                    "00000000-0000-0000-0000-000000000014",
+                    workspace_id,
+                    root_id,
+                    root_id,
+                ),
             )
 
     expected_columns = {
@@ -126,7 +134,7 @@ def test_agent_collaboration_migration_keeps_legacy_sessions_nullable_and_enforc
         "ix_agent_sessions_spawned_by_turn_id",
     }.isdisjoint(downgraded_indexes)
 
-    reupgraded = _run_alembic(db_path, "upgrade", "head")
+    reupgraded = _run_alembic(db_path, "upgrade", TARGET_REVISION)
     assert reupgraded.returncode == 0, reupgraded.stderr
     reupgraded_columns, reupgraded_indexes = _agent_session_schema(db_path)
     assert expected_columns <= reupgraded_columns

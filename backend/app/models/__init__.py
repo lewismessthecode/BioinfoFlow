@@ -1,26 +1,14 @@
 from app.models.base import Base, GUID, TimestampMixin, UUIDMixin
 from app.models.agent_user_settings import AgentUserSettings
-from app.models.agent_core import (
-    AgentAction,
-    AgentActionStatus,
-    AgentAttachment,
-    AgentAttachmentStatus,
-    AgentArtifact,
-    AgentEvent,
-    AgentEventVisibility,
-    AgentMessage,
-    AgentMessageStatus,
-    AgentMemory,
-    AgentMemoryStatus,
-    AgentSession,
-    AgentSessionStatus,
-    AgentToolCallBatch,
-    AgentToolCallBatchStatus,
-    AgentTurn,
-    AgentTurnStatus,
+from app.models.agent_harness import (
+    AgentHarnessArtifact,
+    AgentHarnessAttachment,
+    AgentHarnessEntry,
+    AgentHarnessRun,
+    AgentHarnessSession,
 )
+from app.models.agent_token import AgentToken
 from app.models.audit_log import AuditLog
-from app.enums import ApprovalStatus
 from app.models.batch import Batch, BatchRun, BatchStatus
 from app.models.image import DockerImage, ImageStatus
 from app.models.llm import (
@@ -52,29 +40,30 @@ from app.models.workflow import Workflow, WorkflowEngine, WorkflowSource
 from app.models.workspace import Workspace, WorkspaceMembership
 from app.scheduler.models import ScheduledTask, TaskPriority, TaskState
 
+
+AgentSession = AgentHarnessSession
+AgentRun = AgentHarnessRun
+AgentEntry = AgentHarnessEntry
+AgentAttachment = AgentHarnessAttachment
+AgentArtifact = AgentHarnessArtifact
+
 __all__ = [
     "Base",
     "GUID",
     "TimestampMixin",
     "UUIDMixin",
     "AgentUserSettings",
+    "AgentToken",
     "AgentSession",
-    "AgentSessionStatus",
-    "AgentTurn",
-    "AgentTurnStatus",
-    "AgentEvent",
-    "AgentEventVisibility",
-    "AgentMessage",
-    "AgentMessageStatus",
-    "AgentAction",
-    "AgentActionStatus",
+    "AgentRun",
+    "AgentEntry",
     "AgentAttachment",
-    "AgentAttachmentStatus",
-    "AgentToolCallBatch",
-    "AgentToolCallBatchStatus",
     "AgentArtifact",
-    "AgentMemory",
-    "AgentMemoryStatus",
+    "AgentHarnessSession",
+    "AgentHarnessRun",
+    "AgentHarnessEntry",
+    "AgentHarnessAttachment",
+    "AgentHarnessArtifact",
     "LlmProvider",
     "LlmProviderCredential",
     "LlmCredentialSource",
@@ -103,7 +92,6 @@ __all__ = [
     "DockerImage",
     "ImageStatus",
     "AuditLog",
-    "ApprovalStatus",
     "Batch",
     "BatchRun",
     "BatchStatus",

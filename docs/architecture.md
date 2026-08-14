@@ -13,8 +13,8 @@ bioinformatics workflows on infrastructure you control.
 - Nextflow and WDL/MiniWDL execution live behind a workflow engine abstraction.
 - A persistent scheduler owns queue depth, slots, resource checks, retries,
   timeouts, cleanup, and run completion hooks.
-- AgentCore provides durable agent sessions, streamed turns, tool actions,
-  artifacts, approvals, skills, subagents, and bounded tool execution.
+- Agent Harness owns durable sessions, the model-tool loop, streamed Run state,
+  history, recovery, attachments, artifacts, and bounded tool execution.
 - Remote Connections store SSH metadata for diagnostics, remote project
   terminals, and agent-assisted inspection. SSH is not the workflow dispatch
   backend.
@@ -39,55 +39,43 @@ The run service is intentionally thin. New business logic should go into focused
 submission, DAG, lifecycle, archive, dispatch, scheduler, or engine modules
 instead of growing a catch-all facade.
 
-## Agent Runtime
+## Agent Harness
 
-Agent Runtime lives in:
-
-```text
-backend/app/services/agent_core/
-```
-
-AgentCore stores sessions, turns, actions, artifacts, model selection, prompt
-snapshots, toolset policy, and context policy in the backend database. Turns run
-as asynchronous tasks and publish persisted events that the frontend reads over
-SSE.
-
-The default flow is:
+The complete Harness lives under:
 
 ```text
-user input
-  -> AgentCore service
-  -> async runtime loop
-  -> fresh, versioned permission context
-  -> durable tool-call batch and approval barrier
-  -> tool dispatch
-  -> persisted actions, events, and artifacts
-  -> frontend SSE stream
+backend/app/services/agent_harness/
 ```
 
-Tools implement the `AgentTool` protocol and describe themselves with
-`AgentToolSpec`. Model-visible toolsets expose `write`, `edit`, `bash`, approved
-platform/coordination tools, `web.search`, and SSH remote tools where the target
-requires them. Toolsets include
-`default`, `plan`, the read-only `bio` policy, and `execution`; higher-risk
-actions can pause for approval before they run.
+It is the single owner of context assembly, model invocation, tool execution,
+user interaction, compression, retries, cancellation, and same-version
+recovery. One prompt starts one Run, and one Session has at most one active Run.
+The public command surface is deliberately small: `prompt`, `steer`,
+`follow_up`, `respond`, and `cancel`.
 
-Permission mode is an approval policy, not an operating-system capability.
-AgentCore resolves the current session policy and execution target immediately
-before authorizing each tool call. Authorization-relevant changes increment a
-monotonic policy version, and actions record the version and bounded context
-used for their decision. A model response containing several tool calls is
-stored as one durable batch: every call must have a terminal result before one
-database-claimed continuation may invoke the model again.
+```text
+command -> durable history -> context -> model -> tools -> results
+              ^                                      |
+              +------ compression and recovery ------+
+```
 
-"Full access" is the UI name for bypassing risk approvals on ordinary,
-external, elevated, and scoped destructive actions for the selected target.
-High-confidence catastrophic actions still require explicit approval;
-protected-resource, authorization, and target violations remain denied. The
-classifier is not a complete shell security boundary: actual confinement comes
-from an enabled local OS sandbox or, for SSH, the remote account and server
-controls. Explicit user/plan interactions and workspace or administrator policy
-remain independent.
+The model sees exactly five tools: `read`, `bash`, `edit`, `write`, and
+`ask_user`. Bioinfoflow product operations use the authenticated `bif --output
+json` CLI through `bash`; the platform does not mirror every product operation
+as a model tool. Tool calls and results are appended to canonical history, and
+the Harness continues the model only after the current ordered results are
+available.
+
+Sessions use `read_only`, `ask_dangerous`, or `full_access`. These modes control
+tool availability and confirmation prompts; they never expand filesystem,
+network, SSH, or server-side authorization. Dangerous confirmations, ordinary
+questions, and recovery choices all use the same persisted user-interaction
+channel.
+
+Canonical history is append-only and independent from private Run checkpoints.
+Checkpoint state is only for resuming unfinished work. If recovery cannot trust
+it, the Harness falls back to saved history. A `bash` operation that may have
+started but lacks a committed result is never silently replayed.
 
 ## Remote Connections
 
@@ -116,15 +104,16 @@ and PTY allocation for project terminals. The UI can test a connection, stream a
 short probe command over WebSocket, and open an interactive terminal for remote
 projects.
 
-When a user selects a connection in the Agent composer, AgentCore can expose
-read-only remote file and directory inspection tools plus `remote.exec` for
-short diagnostic commands. Local shell and remote SSH commands share one
-command-risk vocabulary, but risk is adjusted for the actual target. A safe,
-bounded remote read may be low risk; writes, network activity, destructive
-commands, uncertain paths, and protected resources receive stronger handling.
-The remote working root is a navigation default and risk signal, not a security
-boundary: SSH commands have the authority of the selected remote account and
-the remote server's controls.
+For a remote project, the same five Harness tools operate through its selected
+SSH connection and remote root. Remote file helpers and Bash run inside a
+verified Bubblewrap sandbox on the remote host; if Bubblewrap or its trusted
+runtime paths cannot be verified, execution fails closed. The SSH account,
+server ACLs, and scheduler policy remain additional authority boundaries.
+
+Remote `bif` calls require `BIOINFOFLOW_PUBLIC_API_BASE_URL` to be reachable
+from the SSH host. The short-lived Agent token is supplied only to a proven
+plain `bif` invocation and is not placed in shell argv, history, logs, or
+artifacts.
 
 ## Local-First Path Model
 

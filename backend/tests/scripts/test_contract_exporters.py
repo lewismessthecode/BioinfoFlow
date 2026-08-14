@@ -45,10 +45,25 @@ def _command_by_path(contract: dict[str, Any], path: str) -> dict[str, Any]:
 
 def _parameter_by_name(command: dict[str, Any], name: str) -> dict[str, Any]:
     return next(
-        parameter
-        for parameter in command["parameters"]
-        if parameter["name"] == name
+        parameter for parameter in command["parameters"] if parameter["name"] == name
     )
+
+
+def _success_data_schema(
+    contract: dict[str, Any],
+    *,
+    path: str,
+    method: str,
+    status: str = "200",
+) -> dict[str, Any]:
+    response_schema = contract["paths"][path][method]["responses"][status]["content"][
+        "application/json"
+    ]["schema"]
+    assert response_schema["$ref"].startswith("#/components/schemas/")
+    envelope = contract["components"]["schemas"][
+        response_schema["$ref"].rsplit("/", 1)[-1]
+    ]
+    return envelope["properties"]["data"]
 
 
 def test_openapi_export_is_deterministic_and_preserves_full_schema(
@@ -69,12 +84,15 @@ def test_openapi_export_is_deterministic_and_preserves_full_schema(
     assert isinstance(app_version, str)
     expected_schema["info"]["title"] = f"{app_name} API"
     expected_schema["info"]["version"] = app_version
-    expected_text = json.dumps(
-        expected_schema,
-        ensure_ascii=False,
-        indent=2,
-        sort_keys=True,
-    ) + "\n"
+    expected_text = (
+        json.dumps(
+            expected_schema,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
     assert output_path.read_text(encoding="utf-8") == expected_text
 
     exported_schema = json.loads(expected_text)
@@ -93,9 +111,9 @@ def test_openapi_export_is_deterministic_and_preserves_full_schema(
     }
     assert exported_operation_ids
     assert exported_operation_ids == app_operation_ids
-    assert exported_schema["components"]["schemas"] == app_schema["components"][
-        "schemas"
-    ]
+    assert (
+        exported_schema["components"]["schemas"] == app_schema["components"]["schemas"]
+    )
 
 
 def test_openapi_export_ignores_app_identity_environment_overrides(
@@ -119,6 +137,147 @@ def test_openapi_export_ignores_app_identity_environment_overrides(
     assert overridden_path.read_text(encoding="utf-8") == ordinary_path.read_text(
         encoding="utf-8"
     )
+
+
+def test_agent_openapi_contract_describes_the_harness_wire_protocol(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "openapi.json"
+    result = _run_exporter("export_openapi_contract.py", str(output_path))
+    assert result.returncode == 0, result.stderr
+    contract = json.loads(output_path.read_text(encoding="utf-8"))
+
+    create = contract["paths"]["/api/v1/agent/sessions"]["post"]
+    assert "201" in create["responses"]
+    assert "200" not in create["responses"]
+    create_body = create["requestBody"]["content"]["application/json"]["schema"]
+    create_request = contract["components"]["schemas"][
+        create_body["$ref"].rsplit("/", 1)[-1]
+    ]
+    assert create_request["additionalProperties"] is False
+    create_schema = create["responses"]["201"]["content"]["application/json"]["schema"]
+    assert create_schema["$ref"].startswith("#/components/schemas/")
+    create_envelope = contract["components"]["schemas"][
+        create_schema["$ref"].rsplit("/", 1)[-1]
+    ]
+    assert create_envelope["properties"]["success"]["const"] is True
+    assert create_envelope["properties"]["data"] == {
+        "$ref": "#/components/schemas/SessionSnapshot"
+    }
+    assert create_envelope["properties"]["meta"] == {
+        "$ref": "#/components/schemas/Meta"
+    }
+
+    command = contract["paths"]["/api/v1/agent/sessions/{session_id}/commands"]["post"]
+    assert "202" in command["responses"]
+    assert "200" not in command["responses"]
+    command_body = command["requestBody"]["content"]["application/json"]["schema"]
+    assert command_body["discriminator"]["propertyName"] == "type"
+    assert set(command_body["discriminator"]["mapping"]) == {
+        "prompt",
+        "steer",
+        "follow_up",
+        "respond",
+        "cancel",
+    }
+    assert {item["$ref"].rsplit("/", 1)[-1] for item in command_body["oneOf"]} == {
+        "PromptCommand",
+        "SteerCommand",
+        "FollowUpCommand",
+        "RespondCommand",
+        "CancelCommand",
+    }
+    command_schema = command["responses"]["202"]["content"]["application/json"][
+        "schema"
+    ]
+    assert command_schema == create_schema
+
+    list_sessions_data = _success_data_schema(
+        contract,
+        path="/api/v1/agent/sessions",
+        method="get",
+    )
+    assert list_sessions_data["type"] == "array"
+    assert list_sessions_data["items"] == {
+        "$ref": "#/components/schemas/AgentSessionSummary"
+    }
+
+    upload = contract["paths"]["/api/v1/agent/sessions/{session_id}/attachments"][
+        "post"
+    ]
+    assert "201" in upload["responses"]
+    assert "200" not in upload["responses"]
+    upload_data = _success_data_schema(
+        contract,
+        path="/api/v1/agent/sessions/{session_id}/attachments",
+        method="post",
+        status="201",
+    )
+    assert upload_data["type"] == "array"
+    assert upload_data["items"] == {"$ref": "#/components/schemas/AgentAttachmentView"}
+
+    for snapshot_path in (
+        "/api/v1/agent/sessions/{session_id}",
+        "/api/v1/agent/sessions/{session_id}/snapshot",
+    ):
+        assert _success_data_schema(
+            contract,
+            path=snapshot_path,
+            method="get",
+        ) == {"$ref": "#/components/schemas/SessionSnapshot"}
+
+    artifact_list_data = _success_data_schema(
+        contract,
+        path="/api/v1/agent/sessions/{session_id}/artifacts",
+        method="get",
+    )
+    assert artifact_list_data["type"] == "array"
+    assert artifact_list_data["items"] == {
+        "$ref": "#/components/schemas/AgentArtifactView"
+    }
+    assert _success_data_schema(
+        contract,
+        path="/api/v1/agent/artifacts/{artifact_id}",
+        method="get",
+    ) == {"$ref": "#/components/schemas/AgentArtifactView"}
+
+    for binary_path in (
+        "/api/v1/agent/attachments/{attachment_id}/preview",
+        "/api/v1/agent/artifacts/{artifact_id}/download",
+    ):
+        binary_content = contract["paths"][binary_path]["get"]["responses"]["200"][
+            "content"
+        ]
+        assert binary_content == {
+            "application/octet-stream": {
+                "schema": {"type": "string", "format": "binary"}
+            }
+        }
+
+    delete = contract["paths"]["/api/v1/agent/sessions/{session_id}"]["delete"]
+    assert "204" in delete["responses"]
+    assert "200" not in delete["responses"]
+    assert "content" not in delete["responses"]["204"]
+
+    events = contract["paths"]["/api/v1/agent/sessions/{session_id}/events"]["get"]
+    event_content = events["responses"]["200"]["content"]
+    assert set(event_content) == {"text/event-stream"}
+    event_schema = event_content["text/event-stream"]["schema"]
+    assert event_schema["type"] == "string"
+    assert "oneOf" not in event_schema
+    assert "discriminator" not in event_schema
+    assert "event:" in event_schema["description"]
+    assert "data:" in event_schema["description"]
+    event_data_schema = event_schema["x-sse-data-schema"]
+    assert event_data_schema["discriminator"]["propertyName"] == "type"
+    assert {item["$ref"].rsplit("/", 1)[-1] for item in event_data_schema["oneOf"]} == {
+        "SnapshotEvent",
+        "RunUpdatedEvent",
+        "AssistantDeltaEvent",
+        "ToolUpdatedEvent",
+        "InteractionRequestedEvent",
+        "EntryCommittedEvent",
+    }
 
 
 def test_cli_export_is_deterministic_and_captures_visible_command_tree(
@@ -218,19 +377,13 @@ def test_cli_export_is_deterministic_and_captures_visible_command_tree(
         "--no-overwrite"
     ]
 
-    after_seq = _parameter_by_name(
-        _command_by_path(contract, "bif agent events"),
-        "--after-seq",
+    agent_events = _command_by_path(contract, "bif agent events")
+    session_argument = _parameter_by_name(agent_events, "SESSION_ID")
+    assert session_argument["kind"] == "argument"
+    assert session_argument["required"] is True
+    assert all(
+        parameter["name"] != "--after-seq" for parameter in agent_events["parameters"]
     )
-    assert after_seq["type"] == {
-        "clamp": False,
-        "max": None,
-        "max_open": False,
-        "min": 0,
-        "min_open": False,
-        "name": "integer range",
-        "param_type": "IntRange",
-    }
 
     version = _parameter_by_name(contract["command"], "--version")
     assert version["is_eager"] is True
