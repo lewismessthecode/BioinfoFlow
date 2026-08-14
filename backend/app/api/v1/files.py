@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
+    declare_agent_token_access,
     get_current_user,
     get_db,
     require_agent_scope,
@@ -22,6 +23,7 @@ from app.utils.responses import error_response, success_response
 router = APIRouter(
     prefix="/files",
     tags=["files"],
+    dependencies=[Depends(declare_agent_token_access)],
 )
 
 

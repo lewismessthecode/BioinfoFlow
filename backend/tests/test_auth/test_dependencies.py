@@ -275,12 +275,22 @@ async def test_get_current_user_valid_agent_bearer(auth_client: AsyncClient) -> 
     )
     assert outside_run.status_code == 403
 
-    legacy_files = await auth_client.get(
+    bound_files = await auth_client.get(
         "/api/v1/files",
-        params={"project_id": bound_project_id},
+        params={
+            "project_id": bound_project_id,
+            "path": "missing-agent-token-scope-check",
+        },
         headers={"Authorization": f"Bearer {grant.token}"},
     )
-    assert legacy_files.status_code == 403
+    assert bound_files.status_code == 404
+
+    outside_files = await auth_client.get(
+        "/api/v1/files",
+        params={"project_id": other_project_id},
+        headers={"Authorization": f"Bearer {grant.token}"},
+    )
+    assert outside_files.status_code == 403
 
     undeclared = await auth_client.get(
         "/api/v1/llm/providers",
