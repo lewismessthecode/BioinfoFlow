@@ -1499,13 +1499,15 @@ def test_agent_token_is_redacted_before_tool_output_is_published() -> None:
 
 
 def test_long_lived_credentials_are_not_inherited_or_injected(tmp_path: Path) -> None:
+    trusted_bin = tmp_path.parent / f"{tmp_path.name}-trusted-bin"
+    trusted_bin.mkdir()
     backend = LocalWorkspaceBackend(
         working_directory=tmp_path,
         read_roots=(tmp_path,),
         write_roots=(tmp_path,),
         sandbox_runner=None,
         base_environment={
-            "PATH": "/bin",
+            "PATH": str(trusted_bin),
             "HOME": "/Users/agent",
             "LANG": "en_US.UTF-8",
             "OPENAI_API_KEY": "long-lived",
@@ -1529,7 +1531,7 @@ def test_long_lived_credentials_are_not_inherited_or_injected(tmp_path: Path) ->
     )
 
     assert environment == {
-        "PATH": "/bin",
+        "PATH": str(trusted_bin.resolve()),
         "HOME": "/Users/agent",
         "LANG": "en_US.UTF-8",
         "BIOFLOW_AGENT_TOKEN": "short-lived",

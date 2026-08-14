@@ -194,6 +194,17 @@ async def test_new_session_freezes_current_custom_instructions_for_model_calls(
     await asyncio.wait_for(model.invoked.wait(), timeout=1)
     assert "Use the validated reference first." in model.instructions[0]
     assert "Use the experimental reference instead." not in model.instructions[0]
+    for _ in range(100):
+        snapshot = await async_client.get(
+            f"/api/v1/agent/sessions/{session_id}/snapshot"
+        )
+        assert snapshot.status_code == 200
+        current_run = snapshot.json()["data"]["current_run"]
+        if current_run is not None and current_run["status"] == "completed":
+            break
+        await asyncio.sleep(0.01)
+    else:
+        pytest.fail("background Agent run did not complete")
 
 
 @pytest.mark.asyncio
