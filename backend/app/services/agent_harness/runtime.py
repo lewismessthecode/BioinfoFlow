@@ -42,6 +42,7 @@ class AgentRuntime:
         self._harness_factory = harness_factory
         self.event_hub = AgentEventHub()
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._finishing_runs: set[str] = set()
         self._cancellations: dict[str, asyncio.Event] = {}
         self._run_tokens: dict[str, str] = {}
         self._owner = f"process:{uuid4()}"
@@ -112,19 +113,15 @@ class AgentRuntime:
     async def shutdown(self) -> None:
         self._shutting_down = True
         scheduled = tuple(self._tasks.items())
-        for _, task in scheduled:
-            if not task.cancelling():
+        for run_id, task in scheduled:
+            if run_id not in self._finishing_runs and not task.cancelling():
                 task.cancel()
         if scheduled:
             await asyncio.gather(
                 *(task for _, task in scheduled), return_exceptions=True
             )
-        for run_id, _ in scheduled:
-            async with self._session_factory() as db:
-                await AgentHarnessRepository(db).release_run_lease(
-                    run_id, owner=self._owner
-                )
         self._tasks.clear()
+        self._finishing_runs.clear()
         self._cancellations.clear()
         self._run_tokens.clear()
         await self.event_hub.close()
@@ -247,18 +244,22 @@ class AgentRuntime:
                             error=str(exc),
                         )
             finally:
-                heartbeat.cancel()
-                cancel_watcher.cancel()
-                await asyncio.gather(
-                    heartbeat,
-                    cancel_watcher,
-                    return_exceptions=True,
-                )
-                async with self._session_factory() as release_db:
-                    await AgentHarnessRepository(release_db).release_run_lease(
-                        run_id,
-                        owner=self._owner,
+                self._finishing_runs.add(run_id)
+                try:
+                    heartbeat.cancel()
+                    cancel_watcher.cancel()
+                    await asyncio.gather(
+                        heartbeat,
+                        cancel_watcher,
+                        return_exceptions=True,
                     )
+                    async with self._session_factory() as release_db:
+                        await AgentHarnessRepository(release_db).release_run_lease(
+                            run_id,
+                            owner=self._owner,
+                        )
+                finally:
+                    self._finishing_runs.discard(run_id)
 
         task = asyncio.create_task(execute(), name=f"agent-{operation}:{run_id}")
         self._tasks[run_id] = task

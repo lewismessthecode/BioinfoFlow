@@ -655,6 +655,8 @@ async def test_runtime_shutdown_does_not_reschedule_commands_after_task_snapshot
         class_=AsyncSession,
     )
     release_started = asyncio.Event()
+    release_allowed = asyncio.Event()
+    release_cancelled = asyncio.Event()
     original_release = AgentHarnessRepository.release_run_lease
     release_calls = 0
 
@@ -663,7 +665,11 @@ async def test_runtime_shutdown_does_not_reschedule_commands_after_task_snapshot
         release_calls += 1
         if release_calls == 1:
             release_started.set()
-            await asyncio.Future()
+            try:
+                await release_allowed.wait()
+            except asyncio.CancelledError:
+                release_cancelled.set()
+                raise
         return await original_release(repository, run_id, owner=owner)
 
     monkeypatch.setattr(
@@ -704,7 +710,16 @@ async def test_runtime_shutdown_does_not_reschedule_commands_after_task_snapshot
         CancelCommand(command_id="cancel-before-shutdown", reason="user_cancelled"),
     )
 
-    await runtime.shutdown()
+    shutdown_task = asyncio.create_task(runtime.shutdown())
+    try:
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert not shutdown_task.done()
+        assert not release_cancelled.is_set()
+    finally:
+        release_allowed.set()
+        await asyncio.gather(shutdown_task, return_exceptions=True)
+
     await asyncio.sleep(0)
     current = asyncio.current_task()
     leaked = [
@@ -721,7 +736,17 @@ async def test_runtime_shutdown_does_not_reschedule_commands_after_task_snapshot
 
     assert leaked_names == []
     assert not claim_started.is_set()
+    assert not release_cancelled.is_set()
+    assert release_calls == 1
     assert runtime._tasks == {}
+
+    async with session_factory() as db:
+        persisted = await AgentHarnessRepository(db).get_run(
+            str(waiting.current_run.id)
+        )
+    assert persisted is not None
+    assert persisted.lease_owner is None
+    assert persisted.lease_expires_at is None
 
 
 @pytest.mark.asyncio
