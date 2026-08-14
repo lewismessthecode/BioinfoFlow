@@ -7,13 +7,22 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import (
+    declare_agent_token_access,
+    get_current_user,
+    get_db,
+    require_agent_scope,
+)
 from app.api.error_handler import handle_api_errors
 from app.api.upload_limits import UploadTooLargeError, read_upload_limited
 from app.auth.session import AuthUser
 from app.schemas.form_spec import to_read_projection
 from app.schemas.workflow import WorkflowCreate, WorkflowRead, WorkflowUpdate
 from app.services.workflow_form_spec import effective_workflow_form_spec
+from app.services.project_workflow_service import ProjectWorkflowService
+from app.repositories.project_workflow_binding_repo import (
+    ProjectWorkflowBindingRepository,
+)
 from app.services.workflow_service import WorkflowService
 from app.services.workflow_validator import WorkflowValidator
 from app.utils.dag_builder import build_dag_from_schema
@@ -24,7 +33,11 @@ from app.utils.responses import error_response, success_response
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/workflows", tags=["workflows"])
+router = APIRouter(
+    prefix="/workflows",
+    tags=["workflows"],
+    dependencies=[Depends(declare_agent_token_access)],
+)
 
 MAX_WORKFLOW_CONTENT_BYTES = 50 * 1024 * 1024  # 50 MB
 
@@ -43,6 +56,23 @@ def _normalize_workflow_id(workflow_id: str) -> str | None:
     return workflow_id
 
 
+async def _require_workflow_scope(
+    request: Request,
+    db: AsyncSession,
+    workflow_id: str,
+) -> None:
+    context = getattr(request.state, "agent_token", None)
+    if context is None:
+        return
+    require_agent_scope(request, project_id=context.project_id)
+    enabled = await ProjectWorkflowBindingRepository(db).is_enabled(
+        project_id=context.project_id,
+        workflow_id=workflow_id,
+    )
+    if not enabled:
+        raise PermissionDeniedError("Workflow is outside the Agent project scope")
+
+
 @router.get("")
 async def list_workflows(
     request: Request,
@@ -53,6 +83,21 @@ async def list_workflows(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    agent_scope = getattr(request.state, "agent_token", None)
+    if agent_scope is not None:
+        require_agent_scope(request, project_id=agent_scope.project_id)
+        groups = await ProjectWorkflowService(db).list_project_workflows(
+            project_id=agent_scope.project_id
+        )
+        workflows = {
+            str(workflow.id): workflow
+            for group in groups
+            for workflow in group["versions"]
+        }
+        return success_response(
+            [_serialize(item) for item in workflows.values()],
+            request=request,
+        )
     service = WorkflowService(db)
     workflows, pagination = await service.list_workflows(
         limit=limit, cursor=cursor, search=search, source=source
@@ -69,6 +114,7 @@ async def validate_workflow(
     db: AsyncSession = Depends(get_db),
 ):
     """Validate workflow content and return parsed schema + DAG without persisting."""
+    require_agent_scope(request)
     from app.models.workflow import WorkflowEngine as WE
 
     engine_raw = payload.engine
@@ -149,6 +195,7 @@ async def create_workflow(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request)
     if payload.container_registry_id and not can_select_container_registry(user.role):
         raise PermissionDeniedError(
             "Only workspace admins can select a configured registry"
@@ -188,6 +235,7 @@ async def create_local_bundle_workflow(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request)
     if container_registry_id and not can_select_container_registry(user.role):
         raise PermissionDeniedError(
             "Only workspace admins can select a configured registry"
@@ -256,6 +304,7 @@ async def get_workflow(
             status_code=404,
             request=request,
         )
+    await _require_workflow_scope(request, db, normalized_workflow_id)
     service = WorkflowService(db)
     workflow = await service.get_workflow(normalized_workflow_id)
     if not workflow:
@@ -276,6 +325,7 @@ async def update_workflow(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request)
     normalized_workflow_id = _normalize_workflow_id(workflow_id)
     if normalized_workflow_id is None:
         return error_response(
@@ -306,6 +356,7 @@ async def delete_workflow(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request)
     normalized_workflow_id = _normalize_workflow_id(workflow_id)
     if normalized_workflow_id is None:
         return error_response(
@@ -343,6 +394,7 @@ async def get_workflow_dag(
             status_code=404,
             request=request,
         )
+    await _require_workflow_scope(request, db, normalized_workflow_id)
     service = WorkflowService(db)
     workflow = await service.get_workflow(normalized_workflow_id)
 
@@ -381,6 +433,7 @@ async def get_workflow_form_spec(
             status_code=404,
             request=request,
         )
+    await _require_workflow_scope(request, db, normalized_workflow_id)
     service = WorkflowService(db)
     workflow = await service.get_workflow(normalized_workflow_id)
     if not workflow:
@@ -417,6 +470,7 @@ async def get_workflow_source(
             status_code=404,
             request=request,
         )
+    await _require_workflow_scope(request, db, normalized_workflow_id)
     service = WorkflowService(db)
     workflow = await service.get_workflow(normalized_workflow_id)
 

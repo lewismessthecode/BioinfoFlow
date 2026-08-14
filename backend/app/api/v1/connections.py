@@ -16,7 +16,13 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db, require_admin
+from app.api.deps import (
+    declare_agent_token_access,
+    get_current_user,
+    get_db,
+    require_admin,
+    require_agent_scope,
+)
 from app.auth.dependencies import resolve_websocket_user
 from app.auth.session import AuthUser
 from app.config import settings
@@ -65,7 +71,18 @@ def _not_found(request: Request):
     )
 
 
-@router.get("")
+def _require_connection_scope(request: Request, connection_id: str) -> None:
+    context = getattr(request.state, "agent_token", None)
+    if context is None:
+        return
+    require_agent_scope(
+        request,
+        project_id=context.project_id,
+        connection_id=connection_id,
+    )
+
+
+@router.get("", dependencies=[Depends(declare_agent_token_access)])
 async def list_connections(
     request: Request,
     limit: int = 20,
@@ -74,6 +91,17 @@ async def list_connections(
     db: AsyncSession = Depends(get_db),
 ):
     service = RemoteConnectionService(db)
+    agent_scope = getattr(request.state, "agent_token", None)
+    if agent_scope is not None:
+        require_agent_scope(request, project_id=agent_scope.project_id)
+        if agent_scope.connection_id is None:
+            return success_response([], request=request)
+        connection = await service.get_connection(
+            agent_scope.connection_id,
+            workspace_id=user.workspace_id,
+        )
+        data = [_serialize(connection)] if connection is not None else []
+        return success_response(data, request=request)
     connections, pagination = await service.list_connections(
         workspace_id=user.workspace_id,
         limit=limit,
@@ -86,13 +114,14 @@ async def list_connections(
     )
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(declare_agent_token_access)])
 async def create_connection(
     payload: RemoteConnectionCreate,
     request: Request,
     user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request)
     service = RemoteConnectionService(db)
     connection = await service.create_connection(
         payload.model_dump(),
@@ -101,13 +130,14 @@ async def create_connection(
     return success_response(_serialize(connection), request=request, status_code=201)
 
 
-@router.get("/{connection_id}")
+@router.get("/{connection_id}", dependencies=[Depends(declare_agent_token_access)])
 async def get_connection(
     connection_id: UUID,
     request: Request,
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    _require_connection_scope(request, str(connection_id))
     service = RemoteConnectionService(db)
     connection = await service.get_connection(
         str(connection_id),
@@ -118,7 +148,7 @@ async def get_connection(
     return success_response(_serialize(connection), request=request)
 
 
-@router.patch("/{connection_id}")
+@router.patch("/{connection_id}", dependencies=[Depends(declare_agent_token_access)])
 async def update_connection(
     connection_id: UUID,
     payload: RemoteConnectionUpdate,
@@ -126,6 +156,7 @@ async def update_connection(
     user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    _require_connection_scope(request, str(connection_id))
     service = RemoteConnectionService(db)
     connection = await service.get_connection(
         str(connection_id),
@@ -140,13 +171,14 @@ async def update_connection(
     return success_response(_serialize(updated), request=request)
 
 
-@router.delete("/{connection_id}")
+@router.delete("/{connection_id}", dependencies=[Depends(declare_agent_token_access)])
 async def delete_connection(
     connection_id: UUID,
     request: Request,
     user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    _require_connection_scope(request, str(connection_id))
     service = RemoteConnectionService(db)
     connection = await service.get_connection(
         str(connection_id),
@@ -158,7 +190,10 @@ async def delete_connection(
     return success_response(None, request=request, status_code=204)
 
 
-@router.post("/{connection_id}/test")
+@router.post(
+    "/{connection_id}/test",
+    dependencies=[Depends(declare_agent_token_access)],
+)
 async def test_connection(
     connection_id: UUID,
     request: Request,
@@ -166,6 +201,7 @@ async def test_connection(
     db: AsyncSession = Depends(get_db),
     tester=Depends(get_remote_connection_tester),
 ):
+    _require_connection_scope(request, str(connection_id))
     service = RemoteConnectionService(db, tester=tester)
     connection = await service.get_connection(
         str(connection_id),
@@ -186,7 +222,10 @@ async def test_connection(
     return success_response(data, request=request)
 
 
-@router.get("/{connection_id}/directories")
+@router.get(
+    "/{connection_id}/directories",
+    dependencies=[Depends(declare_agent_token_access)],
+)
 async def browse_remote_directory(
     connection_id: UUID,
     request: Request,
@@ -196,6 +235,7 @@ async def browse_remote_directory(
     db: AsyncSession = Depends(get_db),
     executor: SshRemoteExecutor = Depends(get_remote_executor),
 ):
+    _require_connection_scope(request, str(connection_id))
     service = RemoteConnectionService(db)
     connection = await service.get_connection(
         str(connection_id),

@@ -3,7 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import (
+    declare_agent_token_access,
+    get_current_user,
+    get_db,
+    require_agent_scope,
+)
 from app.api.error_handler import handle_api_errors
 from app.auth.session import AuthUser
 from app.schemas.project_workflow import (
@@ -15,7 +20,11 @@ from app.services.project_workflow_service import ProjectWorkflowService
 from app.utils.responses import error_response, success_response
 
 
-router = APIRouter(prefix="/projects", tags=["projects"])
+router = APIRouter(
+    prefix="/projects",
+    tags=["projects"],
+    dependencies=[Depends(declare_agent_token_access)],
+)
 
 
 def _serialize_workflow(workflow) -> dict:
@@ -32,6 +41,7 @@ async def list_project_workflows(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     service = ProjectWorkflowService(db)
     try:
         groups = await service.list_project_workflows(project_id=project_id)
@@ -66,6 +76,7 @@ async def bind_workflow_to_project(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     service = ProjectWorkflowService(db)
     await service.bind_workflow(project_id=project_id, workflow_id=workflow_id)
     return success_response(
@@ -84,6 +95,7 @@ async def unbind_workflow_from_project(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     service = ProjectWorkflowService(db)
     await service.unbind_workflow(project_id=project_id, workflow_id=workflow_id)
     return success_response(None, request=request, status_code=204)
@@ -101,6 +113,7 @@ async def set_project_workflow_pin(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     service = ProjectWorkflowService(db)
     await service.set_pin(
         project_id=project_id, pinned_workflow_id=str(payload.pinned_workflow_id)

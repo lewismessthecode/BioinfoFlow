@@ -38,8 +38,8 @@ services to become healthy, and opens `http://localhost:3000` by default. A fres
 workspace opens in the Agent experience with a managed **Bioinfoflow Demo**
 project, a registered WDL workflow, and small sample-sheet/FASTQ inputs. Connect
 one model in the composer, then choose a short demo starter such as **Check and
-run the demo workflow**. Tool approvals still appear before the Agent submits a
-run.
+run the demo workflow**. The Harness asks through its normal interaction channel
+when a command requires confirmation.
 
 The localhost installation uses a single product home while keeping installer
 control files outside the backend container:
@@ -69,6 +69,15 @@ When updating an older localhost installation that used
 and `sources` directories into the unified home before starting the new
 release. If startup fails, that migration is rolled back before the previous
 release is restarted.
+
+Every update stops the installed stack long enough to make a private temporary
+copy of the complete `state` directory before the new backend can run database
+or attachment migrations. If startup or health checks fail, the installer first
+stops the failed new stack, restores that filesystem snapshot, and then restarts
+the previous release. This rollback does not run an Alembic downgrade; plan for
+temporary free disk space approximately equal to the current `state` directory.
+The snapshot is removed after a healthy update.
+
 Both commands first confirm that the managed Compose stack stopped through the
 same normalized local Unix socket recorded at installation. If Docker, the
 daemon, Compose, or that socket is unavailable—or `compose down` fails—the
@@ -197,6 +206,7 @@ AUTH_BOOTSTRAP_OWNER_PASSWORD=<strong-password>
 BETTER_AUTH_SECRET=<stable-random-secret>
 BIOINFOFLOW_CREDENTIAL_KEY=<stable-hex-key>
 NEXT_PUBLIC_API_BASE_URL=https://bioinfoflow.example/api/v1
+BIOINFOFLOW_PUBLIC_API_BASE_URL=https://bioinfoflow.example/api/v1
 BETTER_AUTH_URL=https://bioinfoflow.example
 CORS_ORIGINS=["https://bioinfoflow.example"]
 TRUSTED_HOSTS=["bioinfoflow.example"]
@@ -240,7 +250,7 @@ TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER_IP_OR_DOMAIN"]
 ### Prerequisites
 
 - Docker Desktop or Docker Engine with Docker Compose 2.24+
-- An AI provider is required only for Agent actions and can be connected from the UI after startup.
+- An AI provider is required only when using the Agent and can be connected from the UI after startup.
 
 ### First run
 
@@ -637,7 +647,7 @@ During workflow registration, the **Image Registry** selector is optional:
 In team mode, ordinary members cannot manage registries or explicitly select a
 registry ID. There is no global default workflow registry.
 
-AgentCore does not expose `images.*` tools. When an agent needs to inspect,
+The Agent Harness does not expose `images.*` model tools. When an agent needs to inspect,
 pull, build, or remove a container image, it uses the `bash` tool and Docker CLI
 commands such as `docker image ls` or `docker pull <full-image-name>`. Direct
 Docker CLI commands use the image names and credentials available to the Docker
@@ -737,34 +747,23 @@ uv run bif --output json project list  # machine-readable envelope on stdout
 
 `bif` follows POSIX conventions: `-h/--help`, `-V/--version`, `-p/--project`, `-q/--quiet`. Settings resolve as CLI flag → env (`BIOFLOW_*`) → `~/.config/bioinfoflow/cli.toml` → default. Destructive commands (`run cancel`, `run cleanup`, `run batch cancel`, `project delete`, `file rm`) confirm interactively unless you pass `--force/-f`. Exit codes: `0` ok, `1` general, `2` usage, `3` backend, `4` connection.
 
-### Agent permissions and approvals
+### Agent Harness permissions and confinement
 
-The Agent composer permission control changes approval policy for the selected
-local or remote target. It does not grant operating-system privileges.
+Choose one permission mode when creating a Session:
 
-- **Request approval** asks before each non-read side effect.
-- **Approve for me** allows reads and low-risk actions, and asks for elevated
-  risk.
-- **Full access** auto-approves all non-hard-blocked actions, including
-  protected-resource writes, indirect shell commands, and sandbox opt-out
-  requests. Catastrophic commands remain blocked, and user questions or plan
-  approval remain interactive.
+- `read_only`: allow `read` and read-only Bash; block mutable tools
+- `ask_dangerous`: ask before destructive and critical Bash commands
+- `full_access`: reduce risk prompts without weakening hard boundaries
 
-Permission changes are live for the next tool authorization, even when a turn is
-already active. If tools are already waiting, the confirmation offers:
+Commands explicitly marked for confirmation still ask in every mode. Ordinary
+questions, command confirmation, and recovery choices use one persisted
+interaction channel.
 
-- **Future operations only**: update the policy and leave existing approvals
-  waiting. This is the default and the behavior for API clients that omit
-  `pending_strategy`.
-- **Approve waiting tools too**: atomically update the policy and approve
-  eligible waiting tools. User questions and plan approval are excluded, and
-  the response reports affected, excluded, and already-resolved counts.
-
-Local and remote targets have different authority boundaries. An enabled local
-OS sandbox can enforce filesystem and network limits independently of the
-permission mode. SSH commands have the configured remote account's privileges;
-the remote root is only a working directory and risk-analysis hint, not
-confinement.
+Local and remote workspaces both require OS confinement. Local Linux/container
+Bash uses Bubblewrap and macOS development uses Seatbelt. Remote tools verify
+and enter Bubblewrap on the SSH host. Missing or untrusted sandbox components
+fail closed. Permission mode cannot add roots, enable arbitrary network access,
+change the saved SSH connection, or bypass server-side authorization.
 
 One important exception is Docker daemon delegation. Agent Bash can use the
 mounted Docker socket and therefore has the Docker daemon's full authority.
@@ -772,17 +771,14 @@ Bubblewrap or macOS Seatbelt filesystem/network restrictions constrain the
 local CLI process, but they do not constrain filesystem mounts, networking, or
 other actions that the Docker daemon performs on its behalf.
 
-For API automation, session updates accept:
+For CLI automation, choose the mode when creating a Session:
 
-```json
-{
-  "permission_mode": "bypass",
-  "pending_strategy": "future_only"
-}
+```bash
+uv run bif agent session create --permission-mode ask_dangerous
 ```
 
-Use `approve_pending_tools` only when the caller intentionally wants to approve
-the currently waiting eligible tool actions as part of the same update.
+The five Session commands are prompt, steer, follow-up, respond, and cancel;
+use `bif agent --help` for their CLI forms.
 
 ## 4. Minimal Local Setup Checklist
 
@@ -850,26 +846,11 @@ cross the backend host trust boundary. Team members can use stored credentials
 with public provider endpoints. Personal and development modes keep local relay,
 Ollama, and vLLM workflows available.
 
-For a backend end-to-end smoke test, export the relay configuration without
-placing the key value on the command line:
-
-```bash
-export BIOINFOFLOW_RELAY_BASE_URL=http://relay.example:8079/v1
-export BIOINFOFLOW_RELAY_MODEL=gpt-5.4-mini
-export BIOINFOFLOW_RELAY_ALLOW_INSECURE_HTTP=1  # omit for HTTPS
-read -rsp "Relay API key: " BIOINFOFLOW_RELAY_API_KEY && echo
-export BIOINFOFLOW_RELAY_API_KEY
-
-cd backend
-BIOINFOFLOW_LIVE_RELAY=1 uv run pytest \
-  tests/integration/test_live_responses_relay.py -m live_relay -q \
-  --show-capture=no
-```
-
-The smoke test uses the same encrypted credential, catalog selection,
-AgentCore, LiteLLM Responses, transcript, and event-ledger path as a normal
-agent turn. Some relays expose Responses while returning no capacity for Chat
-Completions; choose the protocol the relay actually supports.
+After the provider connection test succeeds, create a normal Agent Session and
+send a short prompt to exercise the same encrypted credential, catalog
+selection, provider gateway, and streaming path. Some relays expose Responses
+while returning no capacity for Chat Completions; choose the protocol the relay
+actually supports.
 
 ## 5. Common Friction Points
 
@@ -936,18 +917,17 @@ Check:
 - `MINIWDL_BIN` exists if you are running WDL workflows
 - Docker daemon is available when the workflow path requires it
 
-### Permission changed but approval cards remain
+### Agent is waiting for a response
 
-This is expected when the update used the default `future_only` strategy. The
-new policy applies to tool authorizations that begin after the update; existing
-waiting actions remain explicit audit decisions. Change the mode again and
-choose **Approve waiting tools too**, or approve/reject each card independently.
+Read the authoritative Session snapshot and inspect `pending_interaction`.
+Answer it with `bif agent respond <session-id> <interaction-id>
+--response-json '<json>'`, or cancel the Run. Refreshes and SSE reconnects obtain
+the same waiting interaction from the snapshot; they do not depend on replaying
+old events.
 
-If a newly proposed action still uses an older policy, inspect the session's
-`permission_policy_version` and the action's `evaluated_policy_version` and
-`permission_context_snapshot`. The action should record the version that was
-current when it was evaluated. For SSH actions, also confirm that the selected
-connection and remote identity in the snapshot match the intended host.
+For remote Sessions, also verify that the saved connection still belongs to the
+project, the remote host has trusted Bubblewrap/Python/shell runtimes, and
+`BIOINFOFLOW_PUBLIC_API_BASE_URL` is reachable from that host.
 
 ### Docker deployment works locally but not on a server
 

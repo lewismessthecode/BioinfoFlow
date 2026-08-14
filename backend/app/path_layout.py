@@ -40,6 +40,10 @@ def auth_root() -> Path:
 
 
 def agent_attachments_root() -> Path:
+    return state_root() / "agent_harness" / "attachments"
+
+
+def legacy_agent_attachments_root() -> Path:
     return state_root() / "agent_core" / "attachments"
 
 
@@ -51,6 +55,34 @@ def agent_session_attachments_root(session_id: str) -> Path:
 def agent_attachment_root(session_id: str, attachment_id: str) -> Path:
     safe_attachment_id = safe_path_name(attachment_id, field_name="agent attachment id")
     return agent_session_attachments_root(session_id) / safe_attachment_id
+
+
+def agent_artifacts_root() -> Path:
+    return state_root() / "agent_harness" / "artifacts"
+
+
+def agent_harness_tombstones_root() -> Path:
+    return state_root() / "agent_harness" / "session_delete_tombstones"
+
+
+def agent_session_artifacts_root(session_id: str) -> Path:
+    safe_session_id = safe_path_name(session_id, field_name="agent session id")
+    return agent_artifacts_root() / safe_session_id
+
+
+def agent_artifact_root(session_id: str, artifact_id: str) -> Path:
+    safe_artifact_id = safe_path_name(artifact_id, field_name="agent artifact id")
+    return agent_session_artifacts_root(session_id) / safe_artifact_id
+
+
+def agent_workspaces_root() -> Path:
+    return bioinfoflow_home() / "agent_workspaces"
+
+
+def agent_user_workspace_root(workspace_id: str, user_id: str) -> Path:
+    safe_workspace_id = safe_path_name(workspace_id, field_name="workspace id")
+    safe_user_id = safe_path_name(user_id, field_name="user id")
+    return agent_workspaces_root() / safe_workspace_id / safe_user_id
 
 
 def workflows_root() -> Path:
@@ -281,6 +313,7 @@ def ensure_platform_layout() -> None:
         reference_root(),
         database_root(),
         projects_root(),
+        agent_workspaces_root(),
         settings.nextflow_cache_root.resolve(),
         settings.miniwdl_cache_root.resolve(),
     ):

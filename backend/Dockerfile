@@ -1,9 +1,6 @@
 # syntax=docker/dockerfile:1.7
 FROM python:3.13-slim
 
-ARG TARGETARCH
-ARG AGENT_BROWSER_VERSION=0.33.0
-
 ENV PYTHONDONTWRITEBYTECODE=0 \
     PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
@@ -11,12 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=0 \
 
 WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH" \
-    PYTHONPATH="/app" \
-    AGENT_BROWSER_EXECUTABLE_PATH="/usr/bin/chromium"
+    PYTHONPATH="/app"
 
 # ── System dependencies ──────────────────────────────────────
 # default-jre-headless (~200MB) is required for Nextflow.
-# git is required by uv when installing git+URL deps (e.g. hermes-agent).
+# git remains available to workspace commands executed by the agent harness.
 ARG APT_MIRROR=
 RUN if [ -n "$APT_MIRROR" ]; then \
       sed -i "s|http://deb.debian.org/debian|${APT_MIRROR}/debian|g; s|http://deb.debian.org/debian-security|${APT_MIRROR}/debian-security|g" /etc/apt/sources.list.d/debian.sources; \
@@ -25,24 +21,12 @@ RUN if [ -n "$APT_MIRROR" ]; then \
     apt-get install -y --no-install-recommends \
       btop \
       bubblewrap \
-      chromium \
       curl \
       default-jre-headless \
       ffmpeg \
       git \
       procps && \
     rm -rf /var/lib/apt/lists/*
-
-# ── Install agent-browser ────────────────────────────────────
-RUN case "$TARGETARCH" in \
-      amd64) AGENT_BROWSER_ARCH=x64 ;; \
-      arm64) AGENT_BROWSER_ARCH=arm64 ;; \
-      *) echo "unsupported agent-browser architecture: $TARGETARCH" >&2; exit 1 ;; \
-    esac && \
-    curl -fsSL \
-      "https://github.com/vercel-labs/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}/agent-browser-linux-${AGENT_BROWSER_ARCH}" \
-      -o /usr/local/bin/agent-browser && \
-    chmod +x /usr/local/bin/agent-browser
 
 # ── Install Nextflow ──────────────────────────────────────────
 RUN curl -fsSL https://get.nextflow.io | bash && \
@@ -51,7 +35,7 @@ RUN curl -fsSL https://get.nextflow.io | bash && \
 
 # ── Install uv ────────────────────────────────────────────────
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
+ENV PATH="/root/.local/bin:/app/.venv/bin:$PATH"
 
 # ── Dependency layer (expensive, stable) ─────────────────────
 # Only `pyproject.toml` + `uv.lock` affect this layer. Code changes below

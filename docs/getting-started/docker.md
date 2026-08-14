@@ -60,7 +60,8 @@ localhost mode. On a fresh workspace, Bioinfoflow creates the **Bioinfoflow
 Demo** project, registers its WDL workflow, and places its small sample sheet and
 FASTQ inputs under the managed data root. Connect one provider from the Agent
 composer and choose **Check and run the demo workflow** to start a normal Agent
-turn. Bioinfoflow still asks for approval before `runs.submit` executes.
+Run. The Harness requests confirmation through its normal interaction channel
+when a dangerous command requires it.
 
 The localhost frontend receives its public API URL at container runtime, so a
 custom `BACKEND_PORT` works with the same published image for HTTP, event
@@ -129,6 +130,7 @@ AUTH_BOOTSTRAP_OWNER_PASSWORD=<strong-password>
 BETTER_AUTH_SECRET=<stable-random-secret>
 BIOINFOFLOW_CREDENTIAL_KEY=<stable-hex-key>
 NEXT_PUBLIC_API_BASE_URL=https://bioinfoflow.example/api/v1
+BIOINFOFLOW_PUBLIC_API_BASE_URL=https://bioinfoflow.example/api/v1
 BETTER_AUTH_URL=https://bioinfoflow.example
 CORS_ORIGINS=["https://bioinfoflow.example"]
 TRUSTED_HOSTS=["bioinfoflow.example"]
@@ -513,6 +515,7 @@ Local defaults in `.env.example` are already set for:
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
+BIOINFOFLOW_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 BETTER_AUTH_URL=http://localhost:3000
 CORS_ORIGINS=["http://localhost:3000"]
 AUTH_MODE=dev
@@ -533,6 +536,7 @@ AUTH_BOOTSTRAP_OWNER_PASSWORD=<strong-password>
 BETTER_AUTH_SECRET=<stable-random-secret>
 BIOINFOFLOW_CREDENTIAL_KEY=<stable-hex-key>
 NEXT_PUBLIC_API_BASE_URL=http://YOUR_SERVER:8000/api/v1
+BIOINFOFLOW_PUBLIC_API_BASE_URL=http://YOUR_SERVER:8000/api/v1
 BETTER_AUTH_URL=http://YOUR_SERVER:3000
 CORS_ORIGINS=["http://YOUR_SERVER:3000"]
 TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER"]
@@ -547,6 +551,11 @@ docker compose up -d --build
 `BIOINFOFLOW_BIND_HOST` controls only Docker's host-side port publication.
 Public URLs, CORS, trusted hosts, and authentication still need the matching
 remote values shown above.
+
+`BIOINFOFLOW_PUBLIC_API_BASE_URL` is the backend API address injected into
+authenticated `bif` calls inside Agent workspaces. A remote SSH workspace
+rejects localhost and fails closed unless this URL is reachable from the remote
+host.
 
 Terminate TLS at a reverse proxy for any deployment outside a trusted localhost
 environment, use matching `https://` origins, and avoid exposing ports 3000 and

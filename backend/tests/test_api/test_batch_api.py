@@ -8,6 +8,7 @@ from app.models.project import Project
 from app.models.project_workflow_binding import ProjectWorkflowBinding
 from app.models.workflow import Workflow, WorkflowEngine, WorkflowSource
 from app.services import run_service
+from app.services.run_dispatch import SchedulerDispatcher
 
 
 @pytest.fixture(autouse=True)
@@ -17,6 +18,11 @@ def _phase6_api_guards(monkeypatch):
         "_require_engine_binary",
         lambda self, engine: None,
     )
+    monkeypatch.setattr(
+        SchedulerDispatcher,
+        "dispatch",
+        lambda self, run_id, *, priority="normal": None,
+    )
 
 
 async def _seed_project_and_workflow(
@@ -25,7 +31,10 @@ async def _seed_project_and_workflow(
     workspace,
 ) -> tuple[Project, Workflow]:
     project = Project(
-        name=f"Project {uuid4()}", storage_mode="external", external_root_path=str(workspace), user_id="dev"
+        name=f"Project {uuid4()}",
+        storage_mode="external",
+        external_root_path=str(workspace),
+        user_id="dev",
     )
     workflow = Workflow(
         name=f"wf-{uuid4()}",

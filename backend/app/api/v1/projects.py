@@ -3,7 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import (
+    declare_agent_token_access,
+    get_current_user,
+    get_db,
+    require_agent_scope,
+)
 from app.auth.session import AuthUser
 from app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
 from app.services.project_service import ProjectService
@@ -14,7 +19,11 @@ from app.utils.authorization import (
 from app.utils.responses import error_response, success_response
 
 
-router = APIRouter(prefix="/projects", tags=["projects"])
+router = APIRouter(
+    prefix="/projects",
+    tags=["projects"],
+    dependencies=[Depends(declare_agent_token_access)],
+)
 
 
 def _serialize(project) -> dict:
@@ -33,6 +42,15 @@ async def list_projects(
     db: AsyncSession = Depends(get_db),
 ):
     service = ProjectService(db)
+    agent_scope = getattr(request.state, "agent_token", None)
+    if agent_scope is not None:
+        require_agent_scope(request, project_id=agent_scope.project_id)
+        project = await service.get_project(
+            agent_scope.project_id,
+            workspace_id=user.workspace_id,
+        )
+        data = [_serialize(project)] if project is not None else []
+        return success_response(data, request=request)
     projects, pagination = await service.list_projects(
         workspace_id=user.workspace_id,
         limit=limit,
@@ -50,6 +68,7 @@ async def create_project(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request)
     if (
         payload.external_root_path
         or payload.remote_connection_id
@@ -75,6 +94,7 @@ async def get_default_project(
     db: AsyncSession = Depends(get_db),
 ):
     """Get or create the workspace default (uncategorized) project."""
+    require_agent_scope(request)
     service = ProjectService(db)
     project = await service.get_or_create_default(
         workspace_id=user.workspace_id,
@@ -91,6 +111,7 @@ async def get_project(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     service = ProjectService(db)
     project = await service.get_project(project_id, workspace_id=user.workspace_id)
     if not project:
@@ -111,6 +132,7 @@ async def update_project(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     service = ProjectService(db)
     project = await service.get_project(project_id, workspace_id=user.workspace_id)
     if not project:
@@ -144,6 +166,7 @@ async def delete_project(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     service = ProjectService(db)
     project = await service.get_project(project_id, workspace_id=user.workspace_id)
     if not project:

@@ -6,17 +6,16 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def test_security_docs_describe_agent_browser_dns_rebinding_residual_risk() -> None:
+def test_security_docs_describe_harness_network_boundaries() -> None:
     security = " ".join(
         (_REPO_ROOT / "docs/security.md").read_text(encoding="utf-8").split()
     )
 
-    assert "best-effort public DNS preflight" in security
-    assert "runtime domain containment" in security
-    assert "does not provide IP pinning" in security
-    assert "DNS-rebinding risk" in security
-    assert "trusted public domains" in security
-    assert "disable Bash network access and agent-browser" in security
+    assert "network access is disabled by default" in security
+    assert "narrowly recognized authenticated `bif` path" in security
+    assert "remote Bubblewrap" in security
+    assert "Command classification is defense in depth" in security
+    assert "agent-browser" not in security
 
 
 def test_harness_plan_does_not_claim_complete_ssrf_boundary() -> None:

@@ -5,10 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app.database import get_alembic_head_revision
-
-
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+TARGET_REVISION = "0051_agent_tool_batch_timestamp_defaults"
 
 
 def _run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -22,7 +20,9 @@ def _run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_agent_tool_call_batch_migration_adds_durable_barrier_schema(tmp_path: Path) -> None:
+def test_agent_tool_call_batch_migration_adds_durable_barrier_schema(
+    tmp_path: Path,
+) -> None:
     db_path = tmp_path / "tool-call-batches.db"
     previous = _run_alembic(db_path, "upgrade", "0046_agent_permission_policy")
     assert previous.returncode == 0, previous.stderr
@@ -55,7 +55,7 @@ def test_agent_tool_call_batch_migration_adds_durable_barrier_schema(tmp_path: P
         )
         connection.commit()
 
-    upgraded = _run_alembic(db_path, "upgrade", "head")
+    upgraded = _run_alembic(db_path, "upgrade", TARGET_REVISION)
     assert upgraded.returncode == 0, upgraded.stderr
 
     with sqlite3.connect(db_path) as connection:
@@ -89,7 +89,9 @@ def test_agent_tool_call_batch_migration_adds_durable_barrier_schema(tmp_path: P
             "SELECT created_at, updated_at FROM agent_tool_call_batches "
             "WHERE id = 'batch-with-db-timestamps'"
         ).fetchone()
-        revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
+        revision = connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone()
         legacy_action = connection.execute(
             "SELECT tool_batch_id, tool_call_ordinal FROM agent_actions WHERE id = 'legacy-action'"
         ).fetchone()
@@ -103,4 +105,4 @@ def test_agent_tool_call_batch_migration_adds_durable_barrier_schema(tmp_path: P
     assert batch_timestamps[1] is not None
     assert "sqlite_autoindex_agent_actions_1" in indexes
     assert legacy_action == (None, None)
-    assert revision == (get_alembic_head_revision(),)
+    assert revision == (TARGET_REVISION,)

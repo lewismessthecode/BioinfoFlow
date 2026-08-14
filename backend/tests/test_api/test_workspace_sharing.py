@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from app.api.deps import get_current_user
 from app.api.v1.events import stream_events
 from app.auth.session import AuthUser
-from app.models.agent_core import AgentSession
+from app.models.agent_harness import AgentHarnessSession
 from app.models.image import DockerImage, ImageStatus
 from app.models.project import Project
 from app.models.run import Run, RunStatus
@@ -16,6 +18,14 @@ from app.utils.exceptions import PermissionDeniedError
 DEV_USER_ID = "dev"
 OTHER_USER_ID = "other-user"
 DEFAULT_WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
+
+
+@pytest.fixture(autouse=True)
+def configured_agent_model(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.api.v1.agent.resolve_model_snapshot",
+        AsyncMock(return_value={"target": {"model_name": "test-model"}}),
+    )
 
 
 async def _create_project_for_user(
@@ -48,16 +58,19 @@ async def _create_agent_session_for_user(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     role_profile: str = "bioinformatician",
     lineage: dict | None = None,
-) -> AgentSession:
-    session = AgentSession(
+) -> AgentHarnessSession:
+    del role_profile, lineage
+    session = AgentHarnessSession(
         project_id=project_id,
         workspace_id=workspace_id,
         title=title,
         user_id=user_id,
-        role_profile=role_profile,
-        permission_mode="guarded_auto",
-        automation_mode="assisted",
-        lineage=lineage,
+        permission_mode="ask_dangerous",
+        prompt_snapshot={"content": "Test Agent session."},
+        model_snapshot=None,
+        workspace_snapshot={"runtime": "local", "root": "/tmp"},
+        command_queue=[],
+        command_ids=[],
     )
     db_session.add(session)
     await db_session.commit()
@@ -194,7 +207,7 @@ async def test_create_agent_session_records_owner_and_is_user_scoped(
 ):
     project = await _create_project_for_user(
         db_session,
-        name="AgentCore Session Project",
+        name="Agent Harness Session Project",
         user_id=DEV_USER_ID,
     )
     resp = await async_client.post(
@@ -202,11 +215,11 @@ async def test_create_agent_session_records_owner_and_is_user_scoped(
         json={"project_id": str(project.id), "title": "Shared chat"},
     )
     assert resp.status_code == 201
-    session_id = resp.json()["data"]["id"]
+    session_id = resp.json()["data"]["session"]["id"]
 
-    from app.repositories.agent_core_repo import AgentSessionRepository
+    from app.repositories.agent_harness_repo import AgentHarnessRepository
 
-    session = await AgentSessionRepository(db_session).get(session_id)
+    session = await AgentHarnessRepository(db_session).get_session(session_id)
     assert session is not None
     assert session.user_id == DEV_USER_ID
     assert str(session.workspace_id) == DEFAULT_WORKSPACE_ID
@@ -227,103 +240,7 @@ async def test_create_agent_session_records_owner_and_is_user_scoped(
     assert "Teammate Session" not in titles
 
     get_resp = await async_client.get(f"/api/v1/agent/sessions/{other_session.id}")
-    assert get_resp.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_global_agent_session_list_is_user_scoped(async_client, db_session):
-    shared_project = await _create_project_for_user(
-        db_session,
-        name="Shared Session Project",
-        user_id=OTHER_USER_ID,
-    )
-    other_workspace_project = await _create_project_for_user(
-        db_session,
-        name="Other Workspace Session Project",
-        user_id=OTHER_USER_ID,
-        workspace_id="00000000-0000-0000-0000-000000000002",
-    )
-
-    my_project = await _create_project_for_user(
-        db_session,
-        name="My Session Project",
-        user_id=DEV_USER_ID,
-    )
-    parent_session = await _create_agent_session_for_user(
-        db_session,
-        project_id=str(my_project.id),
-        user_id=DEV_USER_ID,
-        title="My AgentCore Session",
-    )
-    await _create_agent_session_for_user(
-        db_session,
-        project_id=str(my_project.id),
-        user_id=DEV_USER_ID,
-        title="Subagent: inspect workflow files",
-        role_profile="worker",
-        lineage={
-            "parent_session_id": str(parent_session.id),
-            "parent_turn_id": "turn-1",
-        },
-    )
-    await _create_agent_session_for_user(
-        db_session,
-        project_id=str(shared_project.id),
-        user_id=OTHER_USER_ID,
-        title="Shared Workspace Session",
-    )
-    await _create_agent_session_for_user(
-        db_session,
-        project_id=str(other_workspace_project.id),
-        user_id=OTHER_USER_ID,
-        title="Other Workspace Session",
-        workspace_id="00000000-0000-0000-0000-000000000002",
-    )
-
-    resp = await async_client.get("/api/v1/agent/sessions")
-    assert resp.status_code == 200
-    titles = [item["title"] for item in resp.json()["data"]]
-    assert "My AgentCore Session" in titles
-    assert "Subagent: inspect workflow files" not in titles
-    assert "Shared Workspace Session" not in titles
-    assert "Other Workspace Session" not in titles
-
-    child_resp = await async_client.get("/api/v1/agent/sessions?include_children=true")
-    assert child_resp.status_code == 200
-    child_titles = [item["title"] for item in child_resp.json()["data"]]
-    assert "My AgentCore Session" in child_titles
-    assert "Subagent: inspect workflow files" in child_titles
-
-    scoped_child_resp = await async_client.get(
-        f"/api/v1/agent/sessions?parent_session_id={parent_session.id}"
-    )
-    assert scoped_child_resp.status_code == 200
-    assert [item["title"] for item in scoped_child_resp.json()["data"]] == [
-        "Subagent: inspect workflow files"
-    ]
-
-
-@pytest.mark.asyncio
-async def test_agent_session_list_reports_has_more(async_client, db_session):
-    project = await _create_project_for_user(
-        db_session,
-        name="Paginated Session Project",
-        user_id=DEV_USER_ID,
-    )
-    for index in range(51):
-        await _create_agent_session_for_user(
-            db_session,
-            project_id=str(project.id),
-            user_id=DEV_USER_ID,
-            title=f"Session {index:02d}",
-        )
-
-    resp = await async_client.get("/api/v1/agent/sessions")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert len(body["data"]) == 50
-    assert body["meta"]["pagination"]["total_count"] == 51
-    assert body["meta"]["pagination"]["has_more"] is True
+    assert get_resp.status_code == 404
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,7 @@ set -eu
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 INSTALLER="$ROOT/scripts/install.sh"
 COMPOSE_SOURCE="$ROOT/docker-compose.local.yml"
+REAL_RM=$(command -v rm)
 PASS=0
 FAIL=0
 
@@ -44,9 +45,11 @@ setup_case() {
 #!/bin/sh
 printf 'docker %s\n' "$*" >> "$FAKE_CALLS"
 previous=
+selected_version=
 for argument in "$@"; do
   if [ "$previous" = --env-file ] && [ -f "$argument" ]; then
     sed -n 's/^BIOINFOFLOW_VERSION=/docker version=/p' "$argument" >> "$FAKE_CALLS"
+    selected_version=$(sed -n 's/^BIOINFOFLOW_VERSION=//p' "$argument")
   fi
   previous=$argument
 done
@@ -61,7 +64,25 @@ case "$*" in
   *" config --images"*)
     printf '%s\n' 'ghcr.io/lewismessthecode/bioinfoflow-backend:test' 'ghcr.io/lewismessthecode/bioinfoflow-frontend:test'
     ;;
-  *" up -d"*) [ "${FAKE_UP_FAIL:-0}" = 0 ] ;;
+  *" up -d"*)
+    if [ "${FAKE_MUTATE_STATE_ON_UP:-0}" = 1 ] && [ "$selected_version" = v2.0.0 ]; then
+      printf '%s\n' 'migrated database' > "$FAKE_STATE_ROOT/bioinfoflow.db"
+      mkdir -p "$FAKE_STATE_ROOT/agent_harness/attachments/session-old"
+      if [ -d "$FAKE_STATE_ROOT/agent_core/attachments/session-old/attachment-old" ]; then
+        mv \
+          "$FAKE_STATE_ROOT/agent_core/attachments/session-old/attachment-old" \
+          "$FAKE_STATE_ROOT/agent_harness/attachments/session-old/attachment-old"
+      fi
+      printf '%s\n' 'mutated current attachment' > \
+        "$FAKE_STATE_ROOT/agent_harness/attachments/session-current/attachment-current/payload.txt"
+    fi
+    if [ -n "${FAKE_SIGNAL_ON_NEW_UP:-}" ] && [ "$selected_version" = v2.0.0 ] && [ ! -e "$FAKE_SIGNAL_MARKER" ]; then
+      : > "$FAKE_SIGNAL_MARKER"
+      kill -s "$FAKE_SIGNAL_ON_NEW_UP" "$PPID"
+      exit 97
+    fi
+    [ "${FAKE_UP_FAIL:-0}" = 0 ]
+    ;;
   *" stop"*) [ "${FAKE_STOP_FAIL:-0}" = 0 ] ;;
   *" run --rm --no-deps --entrypoint /bin/chown backend -R "*) [ "${FAKE_CHOWN_FAIL:-0}" = 0 ] ;;
   *" down --remove-orphans"*) [ "${FAKE_DOWN_FAIL:-0}" = 0 ] ;;
@@ -101,9 +122,28 @@ case "$url" in
     cp "$FAKE_SKILLS_ARCHIVE_SOURCE" "$output"
     ;;
   */SHA256SUMS)
-    printf '%s  install.sh\n' "${FAKE_CHECKSUM_VALUE:-valid}" > "$output"
-    printf '%s  docker-compose.local.yml\n' "${FAKE_CHECKSUM_VALUE:-valid}" >> "$output"
-    printf '%s  bioinfoflow-skills.tar.gz\n' "${FAKE_CHECKSUM_VALUE:-valid}" >> "$output"
+    case "${FAKE_CHECKSUM_MANIFEST:-valid}" in
+      valid)
+        printf '%s  install.sh\n' "${FAKE_CHECKSUM_VALUE:-valid}" > "$output"
+        printf '%s  docker-compose.local.yml\n' "${FAKE_CHECKSUM_VALUE:-valid}" >> "$output"
+        printf '%s  bioinfoflow-skills.tar.gz\n' "${FAKE_CHECKSUM_VALUE:-valid}" >> "$output"
+        ;;
+      duplicate-installer-missing-skills)
+        printf '%s  install.sh\n' "${FAKE_CHECKSUM_VALUE:-valid}" > "$output"
+        printf '%s  install.sh\n' "${FAKE_CHECKSUM_VALUE:-valid}" >> "$output"
+        printf '%s  docker-compose.local.yml\n' "${FAKE_CHECKSUM_VALUE:-valid}" >> "$output"
+        ;;
+      missing-compose)
+        printf '%s  install.sh\n' "${FAKE_CHECKSUM_VALUE:-valid}" > "$output"
+        printf '%s  bioinfoflow-skills.tar.gz\n' "${FAKE_CHECKSUM_VALUE:-valid}" >> "$output"
+        ;;
+      ambiguous-installer-path)
+        printf '%s  install.sh\n' "${FAKE_CHECKSUM_VALUE:-valid}" > "$output"
+        printf '%s  nested/install.sh\n' "${FAKE_CHECKSUM_VALUE:-valid}" >> "$output"
+        printf '%s  docker-compose.local.yml\n' "${FAKE_CHECKSUM_VALUE:-valid}" >> "$output"
+        printf '%s  bioinfoflow-skills.tar.gz\n' "${FAKE_CHECKSUM_VALUE:-valid}" >> "$output"
+        ;;
+    esac
     ;;
   *) exit 22 ;;
 esac
@@ -154,6 +194,19 @@ EOF
 printf 'xdg-open %s\n' "$*" >> "$FAKE_CALLS"
 EOF
 
+  cat > "$BIN_DIR/rm" <<'EOF'
+#!/bin/sh
+if [ "${FAKE_COMMIT_CLEANUP_FAIL:-0}" = 1 ] && [ ! -e "$FAKE_RM_FAIL_MARKER" ]; then
+  for argument in "$@"; do
+    if [ "$argument" = "$FAKE_STATE_ROLLBACK_ROOT" ]; then
+      : > "$FAKE_RM_FAIL_MARKER"
+      exit 98
+    fi
+  done
+fi
+exec "$FAKE_REAL_RM" "$@"
+EOF
+
   chmod +x "$BIN_DIR"/*
 }
 
@@ -172,6 +225,11 @@ run_installer() {
     FAKE_COMPOSE_SOURCE="$COMPOSE_SOURCE" \
     FAKE_INSTALLER_SOURCE="$INSTALLER" \
     FAKE_SKILLS_ARCHIVE_SOURCE="$SKILLS_ARCHIVE" \
+    FAKE_REAL_RM="$REAL_RM" \
+    FAKE_RM_FAIL_MARKER="$CASE_DIR/rm-failed" \
+    FAKE_STATE_ROOT="$HOME_DIR/.bioinfoflow/state" \
+    FAKE_STATE_ROLLBACK_ROOT="$HOME_DIR/.bioinfoflow/install/.update-state-rollback" \
+    FAKE_SIGNAL_MARKER="$CASE_DIR/signal-sent" \
     BIOINFOFLOW_RELEASE_BASE_URL="https://example.test/releases/download" \
     BIOINFOFLOW_HEALTH_ATTEMPTS=2 \
     BIOINFOFLOW_HEALTH_INTERVAL=0 \
@@ -325,6 +383,49 @@ test_failure_with_hint "rejects a nonnumeric backend port" "BACKEND_PORT must be
 test_failure_with_hint "rejects identical frontend and backend ports" "must be different" "Choose two free ports" FRONTEND_PORT=8100 BACKEND_PORT=8100
 test_failure_with_hint "keeps interrupted downloads out of place with recovery" "download" "release tag" FAKE_DOWNLOAD_INTERRUPT=1
 test_failure_with_hint "rejects checksum failures with recovery" "checksum" "Do not bypass" FAKE_CHECKSUM_FAIL=1
+
+setup_case
+run_installer FAKE_CHECKSUM_MANIFEST=duplicate-installer-missing-skills ARGS=--no-open
+if [ "$STATUS" -ne 0 ] && \
+   assert_contains "$OUTPUT" "checksum manifest" && \
+   ! grep -q '^sha256sum ' "$CALLS"; then
+  pass "rejects duplicate installer checksum entries that displace a required asset"
+else
+  fail "rejects duplicate installer checksum entries that displace a required asset (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"
+fi
+teardown_case
+
+setup_case
+run_installer FAKE_CHECKSUM_MANIFEST=missing-compose ARGS=--no-open
+if [ "$STATUS" -ne 0 ] && \
+   assert_contains "$OUTPUT" "docker-compose.local.yml" && \
+   ! grep -q '^sha256sum ' "$CALLS"; then
+  pass "rejects a checksum manifest missing a required release asset"
+else
+  fail "rejects a checksum manifest missing a required release asset (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"
+fi
+teardown_case
+
+setup_case
+run_installer FAKE_CHECKSUM_MANIFEST=ambiguous-installer-path ARGS=--no-open
+if [ "$STATUS" -ne 0 ] && \
+   assert_contains "$OUTPUT" "unambiguous install.sh" && \
+   ! grep -q '^sha256sum ' "$CALLS"; then
+  pass "rejects additional checksum paths with a required asset basename"
+else
+  fail "rejects additional checksum paths with a required asset basename (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"
+fi
+teardown_case
+
+setup_case
+run_installer FAKE_CHECKSUM_MANIFEST=valid ARGS=--no-open
+if [ "$STATUS" -eq 0 ] && grep -q '^sha256sum -c assets.sha256$' "$CALLS"; then
+  pass "accepts exactly one checksum entry for every required release asset"
+else
+  fail "accepts exactly one checksum entry for every required release asset (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"
+fi
+teardown_case
+
 test_failure "rejects DOCKER_HOST TCP endpoints" "local Unix" DOCKER_HOST=tcp://docker.example.test:2376
 
 setup_case
@@ -389,6 +490,118 @@ run_installer BIOINFOFLOW_VERSION=v1.0.0 ARGS=--no-open
 run_installer BIOINFOFLOW_VERSION=v2.0.0 FAKE_HEALTH_FAIL=1 ARGS="--update --no-open"
 up_count=$(grep -c ' up -d' "$CALLS" || true)
 if [ "$STATUS" -ne 0 ] && [ "$(cat "$HOME_DIR/.bioinfoflow/install/VERSION")" = v1.0.0 ] && [ "$up_count" -ge 2 ] && grep -q 'docker version=v1.0.0' "$CALLS"; then pass "rolls back and restarts the previous release after health failure"; else fail "rolls back and restarts the previous release after health failure"; fi
+teardown_case
+
+setup_case
+run_installer BIOINFOFLOW_VERSION=v1.0.0 ARGS=--no-open
+state_root="$HOME_DIR/.bioinfoflow/state"
+printf '%s\n' 'pre-upgrade database' > "$state_root/bioinfoflow.db"
+mkdir -p \
+  "$state_root/agent_core/attachments/session-old/attachment-old" \
+  "$state_root/agent_harness/attachments/session-current/attachment-current"
+printf '%s\n' 'legacy attachment' > \
+  "$state_root/agent_core/attachments/session-old/attachment-old/payload.txt"
+printf '%s\n' 'current attachment' > \
+  "$state_root/agent_harness/attachments/session-current/attachment-current/payload.txt"
+: > "$CALLS"
+run_installer \
+  BIOINFOFLOW_VERSION=v2.0.0 \
+  FAKE_HEALTH_FAIL=1 \
+  FAKE_MUTATE_STATE_ON_UP=1 \
+  ARGS="--update --no-open"
+if [ "$STATUS" -ne 0 ] && \
+   [ "$(cat "$state_root/bioinfoflow.db")" = 'pre-upgrade database' ] && \
+   [ "$(cat "$state_root/agent_core/attachments/session-old/attachment-old/payload.txt")" = 'legacy attachment' ] && \
+   [ "$(cat "$state_root/agent_harness/attachments/session-current/attachment-current/payload.txt")" = 'current attachment' ] && \
+   [ ! -e "$state_root/agent_harness/attachments/session-old/attachment-old" ] && \
+   [ ! -e "$HOME_DIR/.bioinfoflow/install/.update-state-rollback" ]; then
+  pass "restores the pre-upgrade database and both attachment layouts after health failure"
+else
+  fail "restores the pre-upgrade database and both attachment layouts after health failure (status=$STATUS output=$OUTPUT)"
+fi
+teardown_case
+
+setup_case
+run_installer BIOINFOFLOW_VERSION=v1.0.0 ARGS=--no-open
+state_root="$HOME_DIR/.bioinfoflow/state"
+printf '%s\n' 'pre-upgrade database' > "$state_root/bioinfoflow.db"
+mkdir -p \
+  "$state_root/agent_core/attachments/session-old/attachment-old" \
+  "$state_root/agent_harness/attachments/session-current/attachment-current"
+printf '%s\n' 'legacy attachment' > \
+  "$state_root/agent_core/attachments/session-old/attachment-old/payload.txt"
+printf '%s\n' 'current attachment' > \
+  "$state_root/agent_harness/attachments/session-current/attachment-current/payload.txt"
+: > "$CALLS"
+run_installer \
+  BIOINFOFLOW_VERSION=v2.0.0 \
+  FAKE_UP_FAIL=1 \
+  FAKE_MUTATE_STATE_ON_UP=1 \
+  ARGS="--update --no-open"
+if [ "$STATUS" -ne 0 ] && \
+   [ "$(cat "$state_root/bioinfoflow.db")" = 'pre-upgrade database' ] && \
+   [ "$(cat "$state_root/agent_core/attachments/session-old/attachment-old/payload.txt")" = 'legacy attachment' ] && \
+   [ "$(cat "$state_root/agent_harness/attachments/session-current/attachment-current/payload.txt")" = 'current attachment' ] && \
+   [ ! -e "$state_root/agent_harness/attachments/session-old/attachment-old" ] && \
+   [ ! -e "$HOME_DIR/.bioinfoflow/install/.update-state-rollback" ]; then
+  pass "restores the pre-upgrade database and both attachment layouts after startup failure"
+else
+  fail "restores the pre-upgrade database and both attachment layouts after startup failure (status=$STATUS output=$OUTPUT)"
+fi
+teardown_case
+
+for signal_name in HUP INT TERM; do
+  setup_case
+  run_installer BIOINFOFLOW_VERSION=v1.0.0 ARGS=--no-open
+  state_root="$HOME_DIR/.bioinfoflow/state"
+  printf '%s\n' 'pre-upgrade database' > "$state_root/bioinfoflow.db"
+  mkdir -p \
+    "$state_root/agent_core/attachments/session-old/attachment-old" \
+    "$state_root/agent_harness/attachments/session-current/attachment-current"
+  printf '%s\n' 'legacy attachment' > \
+    "$state_root/agent_core/attachments/session-old/attachment-old/payload.txt"
+  printf '%s\n' 'current attachment' > \
+    "$state_root/agent_harness/attachments/session-current/attachment-current/payload.txt"
+  : > "$CALLS"
+  run_installer \
+    BIOINFOFLOW_VERSION=v2.0.0 \
+    FAKE_MUTATE_STATE_ON_UP=1 \
+    FAKE_SIGNAL_ON_NEW_UP="$signal_name" \
+    ARGS="--update --no-open"
+  if [ "$STATUS" -ne 0 ] && \
+     [ "$(cat "$HOME_DIR/.bioinfoflow/install/VERSION")" = v1.0.0 ] && \
+     [ "$(cat "$state_root/bioinfoflow.db")" = 'pre-upgrade database' ] && \
+     [ "$(cat "$state_root/agent_core/attachments/session-old/attachment-old/payload.txt")" = 'legacy attachment' ] && \
+     [ "$(cat "$state_root/agent_harness/attachments/session-current/attachment-current/payload.txt")" = 'current attachment' ] && \
+     [ ! -e "$state_root/agent_harness/attachments/session-old/attachment-old" ] && \
+     [ ! -e "$HOME_DIR/.bioinfoflow/install/.update-state-rollback" ] && \
+     grep -q 'docker version=v1.0.0' "$CALLS"; then
+    pass "rolls back the complete upgrade transaction after $signal_name"
+  else
+    fail "rolls back the complete upgrade transaction after $signal_name (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"
+  fi
+  teardown_case
+done
+
+setup_case
+run_installer BIOINFOFLOW_VERSION=v1.0.0 ARGS=--no-open
+state_root="$HOME_DIR/.bioinfoflow/state"
+printf '%s\n' 'pre-upgrade database' > "$state_root/bioinfoflow.db"
+: > "$CALLS"
+run_installer \
+  BIOINFOFLOW_VERSION=v2.0.0 \
+  FAKE_COMMIT_CLEANUP_FAIL=1 \
+  FAKE_MUTATE_STATE_ON_UP=1 \
+  ARGS="--update --no-open"
+if [ "$STATUS" -ne 0 ] && \
+   [ "$(cat "$HOME_DIR/.bioinfoflow/install/VERSION")" = v1.0.0 ] && \
+   [ "$(cat "$state_root/bioinfoflow.db")" = 'pre-upgrade database' ] && \
+   [ ! -e "$HOME_DIR/.bioinfoflow/install/.update-state-rollback" ] && \
+   grep -q 'docker version=v1.0.0' "$CALLS"; then
+  pass "rolls back control files, state, and stack after an unexpected transaction exit"
+else
+  fail "rolls back control files, state, and stack after an unexpected transaction exit (status=$STATUS output=$OUTPUT calls=$(cat "$CALLS"))"
+fi
 teardown_case
 
 setup_case

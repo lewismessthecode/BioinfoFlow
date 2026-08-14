@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import fcntl
 import json
 import os
 import shlex
+import signal
+import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -103,6 +106,17 @@ class RemoteExecutor(Protocol):
     ) -> RemoteCommandResult:
         """Run a bounded command on a remote connection."""
 
+    async def run_with_stdin(
+        self,
+        connection: RemoteConnectionConfig,
+        command: str,
+        *,
+        stdin_data: bytes,
+        timeout_seconds: int,
+        output_limit: int,
+    ) -> RemoteCommandResult:
+        """Run a command while keeping sensitive input out of argv."""
+
     def stream(
         self,
         connection: RemoteConnectionConfig,
@@ -124,6 +138,7 @@ class SshRemoteExecutor:
     ) -> None:
         self.ssh_bin = ssh_bin
         self.process_factory = process_factory or asyncio.create_subprocess_exec
+        self._start_new_session = process_factory is None and os.name == "posix"
         self.async_executor = async_executor or AsyncSshRemoteExecutor()
 
     def build_argv(
@@ -222,6 +237,81 @@ class SshRemoteExecutor:
             stdout_truncated=stdout_truncated,
             stderr_truncated=stderr_truncated,
         )
+
+    async def run_with_stdin(
+        self,
+        connection: RemoteConnectionConfig,
+        command: str,
+        *,
+        stdin_data: bytes,
+        timeout_seconds: int,
+        output_limit: int,
+    ) -> RemoteCommandResult:
+        if timeout_seconds < 1:
+            raise BadRequestError("timeout_seconds must be >= 1")
+        if output_limit < 1:
+            raise BadRequestError("output_limit must be >= 1")
+        connection, command = _resolve_jump_route(
+            connection,
+            command,
+            connect_timeout_seconds=timeout_seconds,
+        )
+        if _uses_stored_credential(connection):
+            return await self.async_executor.run_with_stdin(
+                connection,
+                command,
+                stdin_data=stdin_data,
+                timeout_seconds=timeout_seconds,
+                output_limit=output_limit,
+            )
+
+        argv = self.build_argv(
+            connection,
+            command,
+            connect_timeout_seconds=timeout_seconds,
+        )
+        process_kwargs: dict[str, Any] = {
+            "stdin": asyncio.subprocess.PIPE,
+            "stdout": asyncio.subprocess.PIPE,
+            "stderr": asyncio.subprocess.PIPE,
+        }
+        if self._start_new_session:
+            process_kwargs["start_new_session"] = True
+        process = await self.process_factory(*argv, **process_kwargs)
+        stdout_task = asyncio.create_task(_read_limited(process.stdout, output_limit))
+        stderr_task = asyncio.create_task(_read_limited(process.stderr, output_limit))
+
+        timed_out = False
+        try:
+            await _write_process_stdin(process, stdin_data)
+            try:
+                await asyncio.wait_for(process.wait(), timeout=timeout_seconds)
+            except asyncio.TimeoutError:
+                timed_out = True
+                await _terminate_subprocess(
+                    process,
+                    process_group=self._start_new_session,
+                )
+
+            stdout, stdout_truncated = await stdout_task
+            stderr, stderr_truncated = await stderr_task
+            exit_code = process.returncode if process.returncode is not None else -1
+            return RemoteCommandResult(
+                exit_code=int(exit_code),
+                stdout=stdout,
+                stderr=stderr,
+                timed_out=timed_out,
+                truncated=stdout_truncated or stderr_truncated,
+                stdout_truncated=stdout_truncated,
+                stderr_truncated=stderr_truncated,
+            )
+        finally:
+            if process.returncode is None:
+                await _terminate_subprocess(
+                    process,
+                    process_group=self._start_new_session,
+                )
+            await _cancel_and_gather(stdout_task, stderr_task)
 
     async def stream(
         self,
@@ -381,6 +471,58 @@ class AsyncSshRemoteExecutor:
             stderr_truncated=truncated,
         )
 
+    async def run_with_stdin(
+        self,
+        connection: RemoteConnectionConfig,
+        command: str,
+        *,
+        stdin_data: bytes,
+        timeout_seconds: int,
+        output_limit: int,
+    ) -> RemoteCommandResult:
+        if not command.strip():
+            raise BadRequestError("remote command must be a non-empty string")
+        if timeout_seconds < 1:
+            raise BadRequestError("timeout_seconds must be >= 1")
+        if output_limit < 1:
+            raise BadRequestError("output_limit must be >= 1")
+
+        timed_out = False
+        async with self._connect(connection, timeout_seconds) as client:
+            process = await client.create_process(command, encoding=None)
+            stdout_task = asyncio.create_task(
+                _read_limited(process.stdout, output_limit)
+            )
+            stderr_task = asyncio.create_task(
+                _read_limited(process.stderr, output_limit)
+            )
+            process_waited = False
+            try:
+                await _write_process_stdin(process, stdin_data)
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=timeout_seconds)
+                    process_waited = True
+                except asyncio.TimeoutError:
+                    timed_out = True
+                    await _terminate_and_reap_asyncssh_process(process)
+                    process_waited = True
+
+                stdout, stdout_truncated = await stdout_task
+                stderr, stderr_truncated = await stderr_task
+                return RemoteCommandResult(
+                    exit_code=_asyncssh_exit_code(process),
+                    stdout=stdout,
+                    stderr=stderr,
+                    timed_out=timed_out,
+                    truncated=stdout_truncated or stderr_truncated,
+                    stdout_truncated=stdout_truncated,
+                    stderr_truncated=stderr_truncated,
+                )
+            finally:
+                if not process_waited:
+                    await _terminate_and_reap_asyncssh_process(process)
+                await _cancel_and_gather(stdout_task, stderr_task)
+
     async def stream(
         self,
         connection: RemoteConnectionConfig,
@@ -510,13 +652,22 @@ class _TofuHostKeyClient(asyncssh.SSHClient):
         del addr
         record_key = f"{host or self.host}:{port or self.port}"
         public_key = key.export_public_key("openssh").decode("utf-8").strip()
-        records = _load_tofu_known_hosts(self.known_hosts_path)
-        existing = records.get(record_key)
-        if existing is None:
-            records[record_key] = public_key
-            _save_tofu_known_hosts(self.known_hosts_path, records)
-            return True
-        return existing == public_key
+        self.known_hosts_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = self.known_hosts_path.with_name(
+            f".{self.known_hosts_path.name}.lock"
+        )
+        with lock_path.open("a+b") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                records = _load_tofu_known_hosts(self.known_hosts_path)
+                existing = records.get(record_key)
+                if existing is None:
+                    records[record_key] = public_key
+                    _save_tofu_known_hosts(self.known_hosts_path, records)
+                    return True
+                return existing == public_key
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _default_known_hosts_path() -> Path:
@@ -532,29 +683,84 @@ def _load_tofu_known_hosts(path: Path) -> dict[str, str]:
             data = json.load(handle)
     except FileNotFoundError:
         return {}
-    except (OSError, json.JSONDecodeError):
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    return {
-        str(host): str(public_key)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"SSH TOFU known-hosts file contains invalid JSON: {path}"
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(
+            f"SSH TOFU known-hosts file could not be read: {path}"
+        ) from exc
+    if not isinstance(data, dict) or any(
+        not isinstance(host, str) or not isinstance(public_key, str)
         for host, public_key in data.items()
-        if isinstance(host, str) and isinstance(public_key, str)
-    }
+    ):
+        raise RuntimeError(f"SSH TOFU known-hosts file has invalid structure: {path}")
+    return data
 
 
 def _save_tofu_known_hosts(path: Path, records: dict[str, str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_name(f".{path.name}.tmp")
-    with temp_path.open("w", encoding="utf-8") as handle:
-        json.dump(records, handle, sort_keys=True)
-        handle.write("\n")
-    temp_path.replace(path)
+    descriptor, temp_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(records, handle, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+        directory_descriptor = os.open(
+            path.parent,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+        )
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    except Exception:
+        with contextlib.suppress(FileNotFoundError):
+            temp_path.unlink()
+        raise
 
 
 def _terminate_asyncssh_process(process: Any) -> None:
     with contextlib.suppress(Exception):
         process.kill()
+
+
+async def _terminate_and_reap_asyncssh_process(process: Any) -> None:
+    _terminate_asyncssh_process(process)
+    with contextlib.suppress(Exception):
+        await process.wait()
+
+
+async def _terminate_subprocess(process: Any, *, process_group: bool) -> None:
+    if getattr(process, "returncode", None) is None:
+        killed_group = False
+        pid = getattr(process, "pid", None)
+        if process_group and isinstance(pid, int) and pid > 0:
+            try:
+                os.killpg(pid, signal.SIGKILL)
+                killed_group = True
+            except (OSError, ProcessLookupError):
+                pass
+        if not killed_group:
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
+    with contextlib.suppress(Exception):
+        await process.wait()
+
+
+async def _cancel_and_gather(*tasks: asyncio.Task[Any]) -> None:
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _asyncssh_exit_code(process: Any) -> int:
@@ -584,6 +790,23 @@ async def _read_limited(stream: Any, output_limit: int) -> tuple[str, bool]:
         else:
             truncated = True
     return b"".join(chunks).decode("utf-8", errors="replace"), truncated
+
+
+async def _write_process_stdin(process: Any, data: bytes) -> None:
+    stream = getattr(process, "stdin", None)
+    if stream is None:
+        raise RuntimeError("remote executor did not provide a stdin pipe")
+    stream.write(data)
+    drain = getattr(stream, "drain", None)
+    if callable(drain):
+        await drain()
+    write_eof = getattr(stream, "write_eof", None)
+    if callable(write_eof):
+        write_eof()
+    else:
+        close = getattr(stream, "close", None)
+        if callable(close):
+            close()
 
 
 async def _pump_stream(

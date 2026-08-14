@@ -11,6 +11,7 @@ import pytest
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 PREVIOUS_REVISION = "0043_llm_provider_insecure_http_opt_in"
+TARGET_REVISION = "0044_llm_provider_wire_protocol"
 
 
 def _run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -48,7 +49,7 @@ def test_wire_protocol_migration_defaults_existing_rows_constrains_values_and_do
     finally:
         conn.close()
 
-    upgrade = _run_alembic(db_path, "upgrade", "head")
+    upgrade = _run_alembic(db_path, "upgrade", TARGET_REVISION)
     assert upgrade.returncode == 0, upgrade.stderr or upgrade.stdout
 
     conn = sqlite3.connect(db_path)

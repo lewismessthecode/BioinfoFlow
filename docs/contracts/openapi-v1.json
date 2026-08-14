@@ -1,43 +1,15 @@
 {
   "components": {
     "schemas": {
-      "AgentActionDecisionRequest": {
+      "AgentArtifactView": {
+        "additionalProperties": false,
         "properties": {
-          "answer": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Answer"
-          },
-          "decision": {
-            "enum": [
-              "approve",
-              "reject",
-              "modify",
-              "answer"
-            ],
-            "title": "Decision",
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
-          "modified_input": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Modified Input"
-          },
-          "note": {
+          "file_path": {
             "anyOf": [
               {
                 "type": "string"
@@ -46,47 +18,99 @@
                 "type": "null"
               }
             ],
-            "title": "Note"
+            "title": "File Path"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "resource_ref": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Ref"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
-          "decision"
+          "id",
+          "session_id",
+          "type",
+          "title",
+          "created_at",
+          "updated_at"
         ],
-        "title": "AgentActionDecisionRequest",
+        "title": "AgentArtifactView",
         "type": "object"
       },
-      "AgentExecutionScope": {
+      "AgentAttachmentView": {
+        "additionalProperties": false,
         "properties": {
-          "mode": {
-            "default": "auto",
-            "enum": [
-              "auto",
-              "manual"
-            ],
-            "title": "Mode",
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
-          "selected_targets": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/AgentExecutionTarget"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Selected Targets"
-          }
-        },
-        "title": "AgentExecutionScope",
-        "type": "object"
-      },
-      "AgentExecutionTarget": {
-        "properties": {
-          "connection_id": {
+          "error_message": {
             "anyOf": [
               {
                 "type": "string"
@@ -95,87 +119,58 @@
                 "type": "null"
               }
             ],
-            "title": "Connection Id"
+            "title": "Error Message"
           },
-          "type": {
-            "default": "local",
-            "enum": [
-              "local",
-              "remote_ssh"
-            ],
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "title": "AgentExecutionTarget",
-        "type": "object"
-      },
-      "AgentMemoryDecisionRequest": {
-        "properties": {
-          "note": {
+          "file_count": {
             "anyOf": [
               {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          }
-        },
-        "title": "AgentMemoryDecisionRequest",
-        "type": "object"
-      },
-      "AgentMemoryProposalCreate": {
-        "properties": {
-          "confidence": {
-            "anyOf": [
-              {
-                "maximum": 100,
-                "minimum": 0,
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Confidence"
+            "title": "File Count"
           },
-          "content": {
-            "additionalProperties": true,
-            "title": "Content",
-            "type": "object"
-          },
-          "project_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Project Id"
-          },
-          "scope": {
-            "title": "Scope",
+          "filename": {
+            "title": "Filename",
             "type": "string"
           },
-          "session_id": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "image_height": {
             "anyOf": [
               {
-                "format": "uuid",
-                "type": "string"
+                "minimum": 0.0,
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Session Id"
+            "title": "Image Height"
           },
-          "source": {
+          "image_width": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Width"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "metadata": {
             "anyOf": [
               {
                 "additionalProperties": true,
@@ -185,26 +180,88 @@
                 "type": "null"
               }
             ],
-            "title": "Source"
+            "title": "Metadata"
           },
-          "type": {
-            "title": "Type",
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "size_bytes": {
+            "minimum": 0.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
             "type": "string"
           }
         },
         "required": [
-          "scope",
-          "type",
-          "content"
+          "id",
+          "session_id",
+          "workspace_id",
+          "user_id",
+          "kind",
+          "source",
+          "filename",
+          "size_bytes",
+          "status",
+          "created_at",
+          "updated_at"
         ],
-        "title": "AgentMemoryProposalCreate",
+        "title": "AgentAttachmentView",
         "type": "object"
       },
-      "AgentModelSelection": {
+      "AgentSessionCreate": {
+        "additionalProperties": false,
         "properties": {
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
           "model": {
             "anyOf": [
               {
+                "maxLength": 500,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -225,6 +282,16 @@
             ],
             "title": "Model Id"
           },
+          "permission_mode": {
+            "default": "ask_dangerous",
+            "enum": [
+              "read_only",
+              "ask_dangerous",
+              "full_access"
+            ],
+            "title": "Permission Mode",
+            "type": "string"
+          },
           "profile_id": {
             "anyOf": [
               {
@@ -237,34 +304,7 @@
             ],
             "title": "Profile Id"
           },
-          "provider": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Provider"
-          }
-        },
-        "title": "AgentModelSelection",
-        "type": "object"
-      },
-      "AgentSessionCreate": {
-        "properties": {
-          "automation_mode": {
-            "default": "assisted",
-            "enum": [
-              "advise_only",
-              "assisted",
-              "autonomous"
-            ],
-            "title": "Automation Mode",
-            "type": "string"
-          },
-          "default_model_profile_id": {
+          "project_id": {
             "anyOf": [
               {
                 "format": "uuid",
@@ -274,65 +314,60 @@
                 "type": "null"
               }
             ],
-            "title": "Default Model Profile Id"
+            "title": "Project Id"
           },
-          "execution_scope": {
+          "provider": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/AgentExecutionScope"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "execution_target": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgentExecutionTarget"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Metadata"
+            "title": "Provider"
           },
-          "mode": {
-            "default": "execution",
-            "enum": [
-              "plan",
-              "execution"
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Mode",
+            "title": "Title"
+          }
+        },
+        "title": "AgentSessionCreate",
+        "type": "object"
+      },
+      "AgentSessionSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
-          "model_selection": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgentModelSelection"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "history_revision": {
+            "minimum": 0.0,
+            "title": "History Revision",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
           },
           "permission_mode": {
-            "default": "guarded_auto",
             "enum": [
-              "ask_each_action",
-              "guarded_auto",
-              "bypass"
+              "read_only",
+              "ask_dangerous",
+              "full_access"
             ],
             "title": "Permission Mode",
             "type": "string"
@@ -349,9 +384,14 @@
             ],
             "title": "Project Id"
           },
-          "role_profile": {
-            "default": "bioinformatician",
-            "title": "Role Profile",
+          "status": {
+            "enum": [
+              "active",
+              "archived",
+              "closing",
+              "deleted"
+            ],
+            "title": "Status",
             "type": "string"
           },
           "title": {
@@ -364,163 +404,33 @@
               }
             ],
             "title": "Title"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           }
         },
-        "title": "AgentSessionCreate",
+        "required": [
+          "id",
+          "permission_mode",
+          "status",
+          "history_revision",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentSessionSummary",
         "type": "object"
       },
-      "AgentSessionUpdate": {
+      "AgentSettingsRead": {
         "properties": {
-          "automation_mode": {
-            "anyOf": [
-              {
-                "enum": [
-                  "advise_only",
-                  "assisted",
-                  "autonomous"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Automation Mode"
-          },
-          "default_model_profile_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Default Model Profile Id"
-          },
-          "execution_scope": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgentExecutionScope"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "execution_target": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgentExecutionTarget"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Metadata"
-          },
-          "mode": {
-            "anyOf": [
-              {
-                "enum": [
-                  "plan",
-                  "execution"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mode"
-          },
-          "model_selection": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgentModelSelection"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "pending_strategy": {
-            "default": "future_only",
-            "enum": [
-              "future_only",
-              "approve_pending_tools"
-            ],
-            "title": "Pending Strategy",
+          "custom_instructions": {
+            "default": "",
+            "title": "Custom Instructions",
             "type": "string"
-          },
-          "permission_mode": {
-            "anyOf": [
-              {
-                "enum": [
-                  "ask_each_action",
-                  "guarded_auto",
-                  "bypass"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Permission Mode"
-          },
-          "role_profile": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Role Profile"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "enum": [
-                  "active",
-                  "archived",
-                  "deleted"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Status"
-          },
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
           }
         },
-        "title": "AgentSessionUpdate",
+        "title": "AgentSettingsRead",
         "type": "object"
       },
       "AgentSettingsUpdate": {
@@ -535,155 +445,33 @@
         "title": "AgentSettingsUpdate",
         "type": "object"
       },
-      "AgentTurnCreate": {
+      "AssistantDraftView": {
+        "additionalProperties": false,
         "properties": {
-          "active_skill_names": {
+          "end_offset": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "End Offset",
+            "type": "integer"
+          },
+          "reasoning_summary": {
             "anyOf": [
               {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Active Skill Names"
-          },
-          "execution_scope": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgentExecutionScope"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "execution_target": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgentExecutionTarget"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "input_parts": {
-            "anyOf": [
-              {
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Input Parts"
-          },
-          "input_text": {
-            "title": "Input Text",
-            "type": "string"
-          },
-          "metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Metadata"
-          },
-          "model_profile_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Model Profile Id"
+            "title": "Reasoning Summary"
           },
-          "model_selection": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgentModelSelection"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "input_text"
-        ],
-        "title": "AgentTurnCreate",
-        "type": "object"
-      },
-      "AgentTurnSteer": {
-        "properties": {
-          "active_skill_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Active Skill Names"
-          },
-          "input_parts": {
-            "anyOf": [
-              {
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Input Parts"
-          },
-          "input_text": {
-            "minLength": 1,
-            "title": "Input Text",
+          "text": {
+            "default": "",
+            "title": "Text",
             "type": "string"
-          },
-          "metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Metadata"
           }
         },
-        "required": [
-          "input_text"
-        ],
-        "title": "AgentTurnSteer",
+        "title": "AssistantDraftView",
         "type": "object"
       },
       "BatchCreate": {
@@ -1030,6 +818,120 @@
         "title": "Body_upload_storage_api_v1_storage_upload_post",
         "type": "object"
       },
+      "CancelCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "type": {
+            "const": "cancel",
+            "default": "cancel",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id"
+        ],
+        "title": "CancelCommand",
+        "type": "object"
+      },
+      "CompactionEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/CompactionPayload"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "schema_version": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "sequence": {
+            "minimum": 1.0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "compaction",
+            "default": "compaction",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "sequence",
+          "created_at",
+          "payload"
+        ],
+        "title": "CompactionEntry",
+        "type": "object"
+      },
+      "CompactionPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "through_sequence": {
+            "minimum": 0.0,
+            "title": "Through Sequence",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "summary",
+          "through_sequence"
+        ],
+        "title": "CompactionPayload",
+        "type": "object"
+      },
       "ContainerRegistryCreate": {
         "properties": {
           "credential_source": {
@@ -1228,6 +1130,98 @@
         "title": "ContainerRegistryUpdate",
         "type": "object"
       },
+      "ContextSearchItem": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_part": {
+            "additionalProperties": true,
+            "title": "Input Part",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "file",
+              "directory",
+              "workflow",
+              "run"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "input_part"
+        ],
+        "title": "ContextSearchItem",
+        "type": "object"
+      },
+      "ContextSearchResult": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ContextSearchItem"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "title": "ContextSearchResult",
+        "type": "object"
+      },
+      "DeletedResource": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted": {
+            "const": true,
+            "title": "Deleted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "title": "DeletedResource",
+        "type": "object"
+      },
       "FileScanRequest": {
         "properties": {
           "data_root": {
@@ -1292,6 +1286,41 @@
           "content"
         ],
         "title": "FileWriteRequest",
+        "type": "object"
+      },
+      "FollowUpCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "attachment_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Attachment Ids",
+            "type": "array"
+          },
+          "command_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "follow_up",
+            "default": "follow_up",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "text"
+        ],
+        "title": "FollowUpCommand",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1364,6 +1393,168 @@
           "name"
         ],
         "title": "ImagePullRequest",
+        "type": "object"
+      },
+      "InteractionRequestEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/InteractionRequestPayload"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "schema_version": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "sequence": {
+            "minimum": 1.0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "interaction_request",
+            "default": "interaction_request",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "sequence",
+          "created_at",
+          "payload"
+        ],
+        "title": "InteractionRequestEntry",
+        "type": "object"
+      },
+      "InteractionRequestPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "interaction_id": {
+            "title": "Interaction Id",
+            "type": "string"
+          },
+          "request": {
+            "additionalProperties": true,
+            "title": "Request",
+            "type": "object"
+          }
+        },
+        "required": [
+          "interaction_id",
+          "request"
+        ],
+        "title": "InteractionRequestPayload",
+        "type": "object"
+      },
+      "InteractionResponseEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/InteractionResponsePayload"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "schema_version": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "sequence": {
+            "minimum": 1.0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "interaction_response",
+            "default": "interaction_response",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "sequence",
+          "created_at",
+          "payload"
+        ],
+        "title": "InteractionResponseEntry",
+        "type": "object"
+      },
+      "InteractionResponsePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "interaction_id": {
+            "title": "Interaction Id",
+            "type": "string"
+          },
+          "response": {
+            "additionalProperties": true,
+            "title": "Response",
+            "type": "object"
+          }
+        },
+        "required": [
+          "interaction_id",
+          "response"
+        ],
+        "title": "InteractionResponsePayload",
         "type": "object"
       },
       "LlmModelCreate": {
@@ -2316,6 +2507,278 @@
         "title": "LlmProviderUpdate",
         "type": "object"
       },
+      "MessageEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/MessagePayload"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "schema_version": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "sequence": {
+            "minimum": 1.0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "message",
+            "default": "message",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "sequence",
+          "created_at",
+          "payload"
+        ],
+        "title": "MessageEntry",
+        "type": "object"
+      },
+      "MessagePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Artifact Ids",
+            "type": "array"
+          },
+          "attachment_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Attachment Ids",
+            "type": "array"
+          },
+          "call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Id"
+          },
+          "content": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Content",
+            "type": "array"
+          },
+          "is_error": {
+            "default": false,
+            "title": "Is Error",
+            "type": "boolean"
+          },
+          "reasoning_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Summary"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant",
+              "tool"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "tool_calls": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Tool Calls",
+            "type": "array"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "MessagePayload",
+        "type": "object"
+      },
+      "Meta": {
+        "properties": {
+          "pagination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pagination"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "title": "Meta",
+        "type": "object"
+      },
+      "NoticeEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/NoticePayload"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "schema_version": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "sequence": {
+            "minimum": 1.0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "notice",
+            "default": "notice",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "sequence",
+          "created_at",
+          "payload"
+        ],
+        "title": "NoticeEntry",
+        "type": "object"
+      },
+      "NoticePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "NoticePayload",
+        "type": "object"
+      },
       "NotificationChannel": {
         "enum": [
           "webhook"
@@ -2364,6 +2827,66 @@
         ],
         "title": "NotificationTrigger",
         "type": "string"
+      },
+      "Pagination": {
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Count"
+          }
+        },
+        "required": [
+          "limit",
+          "has_more"
+        ],
+        "title": "Pagination",
+        "type": "object"
+      },
+      "PendingInteractionView": {
+        "additionalProperties": false,
+        "properties": {
+          "interaction_id": {
+            "title": "Interaction Id",
+            "type": "string"
+          },
+          "request": {
+            "additionalProperties": true,
+            "title": "Request",
+            "type": "object"
+          }
+        },
+        "required": [
+          "interaction_id",
+          "request"
+        ],
+        "title": "PendingInteractionView",
+        "type": "object"
       },
       "ProjectCreate": {
         "additionalProperties": false,
@@ -2509,6 +3032,41 @@
         "title": "ProjectWorkflowPinRequest",
         "type": "object"
       },
+      "PromptCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "attachment_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Attachment Ids",
+            "type": "array"
+          },
+          "command_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "prompt",
+            "default": "prompt",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "text"
+        ],
+        "title": "PromptCommand",
+        "type": "object"
+      },
       "RemoteConnectionCreate": {
         "additionalProperties": false,
         "properties": {
@@ -2587,8 +3145,8 @@
           },
           "port": {
             "default": 22,
-            "maximum": 65535,
-            "minimum": 1,
+            "maximum": 65535.0,
+            "minimum": 1.0,
             "title": "Port",
             "type": "integer"
           },
@@ -2741,8 +3299,8 @@
           "port": {
             "anyOf": [
               {
-                "maximum": 65535,
-                "minimum": 1,
+                "maximum": 65535.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -2803,6 +3361,41 @@
         "title": "RemoteConnectionUpdate",
         "type": "object"
       },
+      "RespondCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "interaction_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Interaction Id",
+            "type": "string"
+          },
+          "response": {
+            "additionalProperties": true,
+            "title": "Response",
+            "type": "object"
+          },
+          "type": {
+            "const": "respond",
+            "default": "respond",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "interaction_id",
+          "response"
+        ],
+        "title": "RespondCommand",
+        "type": "object"
+      },
       "RunCreate": {
         "additionalProperties": false,
         "description": "Canonical run submission envelope.\n\nFrontend and agent tools post ``{values, options}`` keyed by form field ids\nderived from ``/workflows/{id}/form-spec``. The backend translates those\ninto engine-ready inputs via ``run_envelope_bridge``.",
@@ -2846,8 +3439,8 @@
           "max_retries": {
             "anyOf": [
               {
-                "maximum": 10,
-                "minimum": 0,
+                "maximum": 10.0,
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -2881,7 +3474,7 @@
           "timeout_seconds": {
             "anyOf": [
               {
-                "minimum": 1,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -2944,6 +3537,315 @@
         "title": "RunRetryRequest",
         "type": "object"
       },
+      "RunView": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "enum": [
+                  "model",
+                  "tools",
+                  "interaction"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "waiting_user",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "termination_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Termination Reason"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RunView",
+        "type": "object"
+      },
+      "SessionSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "assistant_draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssistantDraftView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "entries": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "compaction": "#/components/schemas/CompactionEntry",
+                  "interaction_request": "#/components/schemas/InteractionRequestEntry",
+                  "interaction_response": "#/components/schemas/InteractionResponseEntry",
+                  "message": "#/components/schemas/MessageEntry",
+                  "notice": "#/components/schemas/NoticeEntry"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/MessageEntry"
+                },
+                {
+                  "$ref": "#/components/schemas/InteractionRequestEntry"
+                },
+                {
+                  "$ref": "#/components/schemas/InteractionResponseEntry"
+                },
+                {
+                  "$ref": "#/components/schemas/CompactionEntry"
+                },
+                {
+                  "$ref": "#/components/schemas/NoticeEntry"
+                }
+              ]
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "pending_interaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingInteractionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "session": {
+            "$ref": "#/components/schemas/SessionView"
+          },
+          "tool_progress": {
+            "items": {
+              "$ref": "#/components/schemas/ToolProgressView"
+            },
+            "title": "Tool Progress",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session",
+          "current_run",
+          "entries",
+          "revision"
+        ],
+        "title": "SessionSnapshot",
+        "type": "object"
+      },
+      "SessionView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "permission_mode": {
+            "enum": [
+              "read_only",
+              "ask_dangerous",
+              "full_access"
+            ],
+            "title": "Permission Mode",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived",
+              "closing",
+              "deleted"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "workspace_id",
+          "permission_mode",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SessionView",
+        "type": "object"
+      },
+      "SteerCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "steer",
+            "default": "steer",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "text"
+        ],
+        "title": "SteerCommand",
+        "type": "object"
+      },
       "StorageScanRequest": {
         "properties": {
           "file_types": {
@@ -2981,6 +3883,194 @@
         "title": "StorageScanRequest",
         "type": "object"
       },
+      "SuccessEnvelope_AgentArtifactView_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AgentArtifactView"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "success": {
+            "const": true,
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data",
+          "meta"
+        ],
+        "title": "SuccessEnvelope[AgentArtifactView]",
+        "type": "object"
+      },
+      "SuccessEnvelope_AgentSettingsRead_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AgentSettingsRead"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "success": {
+            "const": true,
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data",
+          "meta"
+        ],
+        "title": "SuccessEnvelope[AgentSettingsRead]",
+        "type": "object"
+      },
+      "SuccessEnvelope_ContextSearchResult_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ContextSearchResult"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "success": {
+            "const": true,
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data",
+          "meta"
+        ],
+        "title": "SuccessEnvelope[ContextSearchResult]",
+        "type": "object"
+      },
+      "SuccessEnvelope_DeletedResource_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DeletedResource"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "success": {
+            "const": true,
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data",
+          "meta"
+        ],
+        "title": "SuccessEnvelope[DeletedResource]",
+        "type": "object"
+      },
+      "SuccessEnvelope_SessionSnapshot_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SessionSnapshot"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "success": {
+            "const": true,
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data",
+          "meta"
+        ],
+        "title": "SuccessEnvelope[SessionSnapshot]",
+        "type": "object"
+      },
+      "SuccessEnvelope_list_AgentArtifactView__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/AgentArtifactView"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "success": {
+            "const": true,
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data",
+          "meta"
+        ],
+        "title": "SuccessEnvelope[list[AgentArtifactView]]",
+        "type": "object"
+      },
+      "SuccessEnvelope_list_AgentAttachmentView__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/AgentAttachmentView"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "success": {
+            "const": true,
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data",
+          "meta"
+        ],
+        "title": "SuccessEnvelope[list[AgentAttachmentView]]",
+        "type": "object"
+      },
+      "SuccessEnvelope_list_AgentSessionSummary__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionSummary"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "success": {
+            "const": true,
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data",
+          "meta"
+        ],
+        "title": "SuccessEnvelope[list[AgentSessionSummary]]",
+        "type": "object"
+      },
       "TerminalSessionCreate": {
         "properties": {
           "project_id": {
@@ -2992,6 +4082,39 @@
           "project_id"
         ],
         "title": "TerminalSessionCreate",
+        "type": "object"
+      },
+      "ToolProgressView": {
+        "additionalProperties": false,
+        "properties": {
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed",
+              "blocked",
+              "cancelled",
+              "interaction_required"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "name",
+          "status"
+        ],
+        "title": "ToolProgressView",
         "type": "object"
       },
       "ValidationError": {
@@ -3226,136 +4349,6 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/api/v1/agent/actions/{action_id}": {
-      "get": {
-        "operationId": "get_action_api_v1_agent_actions__action_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "action_id",
-            "required": true,
-            "schema": {
-              "title": "Action Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Action",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/actions/{action_id}/decision": {
-      "post": {
-        "operationId": "decide_action_api_v1_agent_actions__action_id__decision_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "action_id",
-            "required": true,
-            "schema": {
-              "title": "Action Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentActionDecisionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Decide Action",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/actions/{action_id}/resume": {
-      "post": {
-        "operationId": "resume_action_api_v1_agent_actions__action_id__resume_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "action_id",
-            "required": true,
-            "schema": {
-              "title": "Action Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Resume Action",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
     "/api/v1/agent/artifacts/{artifact_id}": {
       "get": {
         "operationId": "get_artifact_api_v1_agent_artifacts__artifact_id__get",
@@ -3374,7 +4367,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope_AgentArtifactView_"
+                }
               }
             },
             "description": "Successful Response"
@@ -3391,6 +4386,49 @@
           }
         },
         "summary": "Get Artifact",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/agent/artifacts/{artifact_id}/download": {
+      "get": {
+        "operationId": "download_artifact_api_v1_agent_artifacts__artifact_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Artifact download bytes"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Artifact",
         "tags": [
           "agent"
         ]
@@ -3414,7 +4452,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope_DeletedResource_"
+                }
               }
             },
             "description": "Successful Response"
@@ -3453,11 +4493,14 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "Attachment preview bytes"
           },
           "422": {
             "content": {
@@ -3554,7 +4597,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope_ContextSearchResult_"
+                }
               }
             },
             "description": "Successful Response"
@@ -3576,508 +4621,17 @@
         ]
       }
     },
-    "/api/v1/agent/fs/download": {
-      "get": {
-        "description": "Stream a file inside the allowed roots for preview or download.",
-        "operationId": "download_fs_file_api_v1_agent_fs_download_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "path",
-            "required": true,
-            "schema": {
-              "title": "Path",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "inline",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Inline",
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Download Fs File",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/fs/file": {
-      "get": {
-        "description": "Return preview metadata and text contents when available.",
-        "operationId": "get_fs_file_api_v1_agent_fs_file_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "path",
-            "required": true,
-            "schema": {
-              "title": "Path",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Fs File",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/fs/tree": {
-      "get": {
-        "description": "List the immediate children of a directory inside the allowed roots.\n\nRead-only and confined by :class:`FilesystemPolicy` to agent data roots.\nLazy (one level): the Files tab requests subdirectories on\nexpand rather than streaming the whole tree.",
-        "operationId": "get_fs_tree_api_v1_agent_fs_tree_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "path",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Path"
-            }
-          },
-          {
-            "in": "query",
-            "name": "project_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Project Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Fs Tree",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/memories": {
-      "get": {
-        "operationId": "list_memories_api_v1_agent_memories_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "project_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Project Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
-          },
-          {
-            "in": "query",
-            "name": "scope",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Scope"
-            }
-          },
-          {
-            "in": "query",
-            "name": "type",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Type"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Memories",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/memories/proposals": {
-      "post": {
-        "operationId": "propose_memory_api_v1_agent_memories_proposals_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentMemoryProposalCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Propose Memory",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/memories/{memory_id}/accept": {
-      "post": {
-        "operationId": "accept_memory_api_v1_agent_memories__memory_id__accept_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "memory_id",
-            "required": true,
-            "schema": {
-              "title": "Memory Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentMemoryDecisionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Accept Memory",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/memories/{memory_id}/disable": {
-      "post": {
-        "operationId": "disable_memory_api_v1_agent_memories__memory_id__disable_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "memory_id",
-            "required": true,
-            "schema": {
-              "title": "Memory Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentMemoryDecisionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Disable Memory",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/memories/{memory_id}/reject": {
-      "post": {
-        "operationId": "reject_memory_api_v1_agent_memories__memory_id__reject_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "memory_id",
-            "required": true,
-            "schema": {
-              "title": "Memory Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentMemoryDecisionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Reject Memory",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/metrics": {
-      "get": {
-        "operationId": "get_agent_metrics_api_v1_agent_metrics_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Agent Metrics",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
     "/api/v1/agent/sessions": {
       "get": {
         "operationId": "list_sessions_api_v1_agent_sessions_get",
         "parameters": [
           {
             "in": "query",
-            "name": "project_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Project Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "parent_session_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Parent Session Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "include_children",
+            "name": "include_archived",
             "required": false,
             "schema": {
               "default": false,
-              "title": "Include Children",
+              "title": "Include Archived",
               "type": "boolean"
             }
           }
@@ -4086,7 +4640,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope_list_AgentSessionSummary__"
+                }
               }
             },
             "description": "Successful Response"
@@ -4120,10 +4676,12 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope_SessionSnapshot_"
+                }
               }
             },
             "description": "Successful Response"
@@ -4160,12 +4718,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+          "204": {
             "description": "Successful Response"
           },
           "422": {
@@ -4201,7 +4754,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope_SessionSnapshot_"
+                }
               }
             },
             "description": "Successful Response"
@@ -4218,54 +4773,6 @@
           }
         },
         "summary": "Get Session",
-        "tags": [
-          "agent"
-        ]
-      },
-      "patch": {
-        "operationId": "update_session_api_v1_agent_sessions__session_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentSessionUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Session",
         "tags": [
           "agent"
         ]
@@ -4289,7 +4796,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope_list_AgentArtifactView__"
+                }
               }
             },
             "description": "Successful Response"
@@ -4336,10 +4845,12 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope_list_AgentAttachmentView__"
+                }
               }
             },
             "description": "Successful Response"
@@ -4361,195 +4872,9 @@
         ]
       }
     },
-    "/api/v1/agent/sessions/{session_id}/state": {
-      "get": {
-        "operationId": "get_session_state_api_v1_agent_sessions__session_id__state_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "event_limit",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maximum": 5000,
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Event Limit"
-            }
-          },
-          {
-            "in": "query",
-            "name": "event_view",
-            "required": false,
-            "schema": {
-              "default": "full",
-              "enum": [
-                "full",
-                "transcript",
-                "public"
-              ],
-              "title": "Event View",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Session State",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/sessions/{session_id}/stream": {
-      "get": {
-        "operationId": "stream_session_events_api_v1_agent_sessions__session_id__stream_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "after_seq",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "After Seq",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "follow",
-            "required": false,
-            "schema": {
-              "default": true,
-              "title": "Follow",
-              "type": "boolean"
-            }
-          },
-          {
-            "in": "query",
-            "name": "event_view",
-            "required": false,
-            "schema": {
-              "default": "full",
-              "enum": [
-                "full",
-                "public"
-              ],
-              "title": "Event View",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Stream Session Events",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/sessions/{session_id}/turns": {
-      "get": {
-        "operationId": "list_turns_api_v1_agent_sessions__session_id__turns_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Turns",
-        "tags": [
-          "agent"
-        ]
-      },
+    "/api/v1/agent/sessions/{session_id}/commands": {
       "post": {
-        "operationId": "create_turn_api_v1_agent_sessions__session_id__turns_post",
+        "operationId": "dispatch_command_api_v1_agent_sessions__session_id__commands_post",
         "parameters": [
           {
             "in": "path",
@@ -4565,17 +4890,46 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AgentTurnCreate"
+                "discriminator": {
+                  "mapping": {
+                    "cancel": "#/components/schemas/CancelCommand",
+                    "follow_up": "#/components/schemas/FollowUpCommand",
+                    "prompt": "#/components/schemas/PromptCommand",
+                    "respond": "#/components/schemas/RespondCommand",
+                    "steer": "#/components/schemas/SteerCommand"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/PromptCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SteerCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FollowUpCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RespondCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CancelCommand"
+                  }
+                ],
+                "title": "Payload"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope_SessionSnapshot_"
+                }
               }
             },
             "description": "Successful Response"
@@ -4591,7 +4945,1209 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Turn",
+        "summary": "Dispatch Command",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/agent/sessions/{session_id}/events": {
+      "get": {
+        "operationId": "stream_events_api_v1_agent_sessions__session_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "description": "UTF-8 Server-Sent Events. Each frame is `event: <AgentEvent.type>`, followed by `data: <JSON AgentEvent>` and a blank line. The decoded JSON data conforms to `x-sse-data-schema`.",
+                  "type": "string",
+                  "x-sse-data-schema": {
+                    "$defs": {
+                      "AssistantDeltaEvent": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "delta": {
+                            "title": "Delta",
+                            "type": "string"
+                          },
+                          "end_offset": {
+                            "minimum": 0,
+                            "title": "End Offset",
+                            "type": "integer"
+                          },
+                          "run_id": {
+                            "format": "uuid",
+                            "title": "Run Id",
+                            "type": "string"
+                          },
+                          "start_offset": {
+                            "minimum": 0,
+                            "title": "Start Offset",
+                            "type": "integer"
+                          },
+                          "type": {
+                            "const": "assistant.delta",
+                            "default": "assistant.delta",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "run_id",
+                          "delta",
+                          "start_offset",
+                          "end_offset"
+                        ],
+                        "title": "AssistantDeltaEvent",
+                        "type": "object"
+                      },
+                      "AssistantDraftView": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "end_offset": {
+                            "default": 0,
+                            "minimum": 0,
+                            "title": "End Offset",
+                            "type": "integer"
+                          },
+                          "reasoning_summary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Reasoning Summary"
+                          },
+                          "text": {
+                            "default": "",
+                            "title": "Text",
+                            "type": "string"
+                          }
+                        },
+                        "title": "AssistantDraftView",
+                        "type": "object"
+                      },
+                      "CompactionEntry": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "created_at": {
+                            "format": "date-time",
+                            "title": "Created At",
+                            "type": "string"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "payload": {
+                            "$ref": "#/$defs/CompactionPayload"
+                          },
+                          "run_id": {
+                            "anyOf": [
+                              {
+                                "format": "uuid",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Run Id"
+                          },
+                          "schema_version": {
+                            "default": 1,
+                            "minimum": 1,
+                            "title": "Schema Version",
+                            "type": "integer"
+                          },
+                          "sequence": {
+                            "minimum": 1,
+                            "title": "Sequence",
+                            "type": "integer"
+                          },
+                          "session_id": {
+                            "format": "uuid",
+                            "title": "Session Id",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "compaction",
+                            "default": "compaction",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "session_id",
+                          "sequence",
+                          "created_at",
+                          "payload"
+                        ],
+                        "title": "CompactionEntry",
+                        "type": "object"
+                      },
+                      "CompactionPayload": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "summary": {
+                            "title": "Summary",
+                            "type": "string"
+                          },
+                          "through_sequence": {
+                            "minimum": 0,
+                            "title": "Through Sequence",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "summary",
+                          "through_sequence"
+                        ],
+                        "title": "CompactionPayload",
+                        "type": "object"
+                      },
+                      "EntryCommittedEvent": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "entry": {
+                            "anyOf": [
+                              {
+                                "discriminator": {
+                                  "mapping": {
+                                    "compaction": "#/$defs/CompactionEntry",
+                                    "interaction_request": "#/$defs/InteractionRequestEntry",
+                                    "interaction_response": "#/$defs/InteractionResponseEntry",
+                                    "message": "#/$defs/MessageEntry",
+                                    "notice": "#/$defs/NoticeEntry"
+                                  },
+                                  "propertyName": "type"
+                                },
+                                "oneOf": [
+                                  {
+                                    "$ref": "#/$defs/MessageEntry"
+                                  },
+                                  {
+                                    "$ref": "#/$defs/InteractionRequestEntry"
+                                  },
+                                  {
+                                    "$ref": "#/$defs/InteractionResponseEntry"
+                                  },
+                                  {
+                                    "$ref": "#/$defs/CompactionEntry"
+                                  },
+                                  {
+                                    "$ref": "#/$defs/NoticeEntry"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Entry"
+                          },
+                          "type": {
+                            "const": "entry.committed",
+                            "default": "entry.committed",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "entry"
+                        ],
+                        "title": "EntryCommittedEvent",
+                        "type": "object"
+                      },
+                      "InteractionRequestEntry": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "created_at": {
+                            "format": "date-time",
+                            "title": "Created At",
+                            "type": "string"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "payload": {
+                            "$ref": "#/$defs/InteractionRequestPayload"
+                          },
+                          "run_id": {
+                            "anyOf": [
+                              {
+                                "format": "uuid",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Run Id"
+                          },
+                          "schema_version": {
+                            "default": 1,
+                            "minimum": 1,
+                            "title": "Schema Version",
+                            "type": "integer"
+                          },
+                          "sequence": {
+                            "minimum": 1,
+                            "title": "Sequence",
+                            "type": "integer"
+                          },
+                          "session_id": {
+                            "format": "uuid",
+                            "title": "Session Id",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "interaction_request",
+                            "default": "interaction_request",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "session_id",
+                          "sequence",
+                          "created_at",
+                          "payload"
+                        ],
+                        "title": "InteractionRequestEntry",
+                        "type": "object"
+                      },
+                      "InteractionRequestPayload": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "interaction_id": {
+                            "title": "Interaction Id",
+                            "type": "string"
+                          },
+                          "request": {
+                            "additionalProperties": true,
+                            "title": "Request",
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "interaction_id",
+                          "request"
+                        ],
+                        "title": "InteractionRequestPayload",
+                        "type": "object"
+                      },
+                      "InteractionRequestedEvent": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "interaction_id": {
+                            "title": "Interaction Id",
+                            "type": "string"
+                          },
+                          "request": {
+                            "additionalProperties": true,
+                            "title": "Request",
+                            "type": "object"
+                          },
+                          "run_id": {
+                            "format": "uuid",
+                            "title": "Run Id",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "interaction.requested",
+                            "default": "interaction.requested",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "run_id",
+                          "interaction_id",
+                          "request"
+                        ],
+                        "title": "InteractionRequestedEvent",
+                        "type": "object"
+                      },
+                      "InteractionResponseEntry": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "created_at": {
+                            "format": "date-time",
+                            "title": "Created At",
+                            "type": "string"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "payload": {
+                            "$ref": "#/$defs/InteractionResponsePayload"
+                          },
+                          "run_id": {
+                            "anyOf": [
+                              {
+                                "format": "uuid",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Run Id"
+                          },
+                          "schema_version": {
+                            "default": 1,
+                            "minimum": 1,
+                            "title": "Schema Version",
+                            "type": "integer"
+                          },
+                          "sequence": {
+                            "minimum": 1,
+                            "title": "Sequence",
+                            "type": "integer"
+                          },
+                          "session_id": {
+                            "format": "uuid",
+                            "title": "Session Id",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "interaction_response",
+                            "default": "interaction_response",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "session_id",
+                          "sequence",
+                          "created_at",
+                          "payload"
+                        ],
+                        "title": "InteractionResponseEntry",
+                        "type": "object"
+                      },
+                      "InteractionResponsePayload": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "interaction_id": {
+                            "title": "Interaction Id",
+                            "type": "string"
+                          },
+                          "response": {
+                            "additionalProperties": true,
+                            "title": "Response",
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "interaction_id",
+                          "response"
+                        ],
+                        "title": "InteractionResponsePayload",
+                        "type": "object"
+                      },
+                      "MessageEntry": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "created_at": {
+                            "format": "date-time",
+                            "title": "Created At",
+                            "type": "string"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "payload": {
+                            "$ref": "#/$defs/MessagePayload"
+                          },
+                          "run_id": {
+                            "anyOf": [
+                              {
+                                "format": "uuid",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Run Id"
+                          },
+                          "schema_version": {
+                            "default": 1,
+                            "minimum": 1,
+                            "title": "Schema Version",
+                            "type": "integer"
+                          },
+                          "sequence": {
+                            "minimum": 1,
+                            "title": "Sequence",
+                            "type": "integer"
+                          },
+                          "session_id": {
+                            "format": "uuid",
+                            "title": "Session Id",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "message",
+                            "default": "message",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "session_id",
+                          "sequence",
+                          "created_at",
+                          "payload"
+                        ],
+                        "title": "MessageEntry",
+                        "type": "object"
+                      },
+                      "MessagePayload": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "artifact_ids": {
+                            "items": {
+                              "format": "uuid",
+                              "type": "string"
+                            },
+                            "title": "Artifact Ids",
+                            "type": "array"
+                          },
+                          "attachment_ids": {
+                            "items": {
+                              "format": "uuid",
+                              "type": "string"
+                            },
+                            "title": "Attachment Ids",
+                            "type": "array"
+                          },
+                          "call_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Call Id"
+                          },
+                          "content": {
+                            "items": {
+                              "additionalProperties": true,
+                              "type": "object"
+                            },
+                            "title": "Content",
+                            "type": "array"
+                          },
+                          "is_error": {
+                            "default": false,
+                            "title": "Is Error",
+                            "type": "boolean"
+                          },
+                          "reasoning_summary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Reasoning Summary"
+                          },
+                          "role": {
+                            "enum": [
+                              "user",
+                              "assistant",
+                              "tool"
+                            ],
+                            "title": "Role",
+                            "type": "string"
+                          },
+                          "tool_calls": {
+                            "items": {
+                              "additionalProperties": true,
+                              "type": "object"
+                            },
+                            "title": "Tool Calls",
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "role",
+                          "content"
+                        ],
+                        "title": "MessagePayload",
+                        "type": "object"
+                      },
+                      "NoticeEntry": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "created_at": {
+                            "format": "date-time",
+                            "title": "Created At",
+                            "type": "string"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "payload": {
+                            "$ref": "#/$defs/NoticePayload"
+                          },
+                          "run_id": {
+                            "anyOf": [
+                              {
+                                "format": "uuid",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Run Id"
+                          },
+                          "schema_version": {
+                            "default": 1,
+                            "minimum": 1,
+                            "title": "Schema Version",
+                            "type": "integer"
+                          },
+                          "sequence": {
+                            "minimum": 1,
+                            "title": "Sequence",
+                            "type": "integer"
+                          },
+                          "session_id": {
+                            "format": "uuid",
+                            "title": "Session Id",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "notice",
+                            "default": "notice",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "session_id",
+                          "sequence",
+                          "created_at",
+                          "payload"
+                        ],
+                        "title": "NoticeEntry",
+                        "type": "object"
+                      },
+                      "NoticePayload": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "code": {
+                            "title": "Code",
+                            "type": "string"
+                          },
+                          "details": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": true,
+                                "type": "object"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Details"
+                          },
+                          "message": {
+                            "title": "Message",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "message"
+                        ],
+                        "title": "NoticePayload",
+                        "type": "object"
+                      },
+                      "PendingInteractionView": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "interaction_id": {
+                            "title": "Interaction Id",
+                            "type": "string"
+                          },
+                          "request": {
+                            "additionalProperties": true,
+                            "title": "Request",
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "interaction_id",
+                          "request"
+                        ],
+                        "title": "PendingInteractionView",
+                        "type": "object"
+                      },
+                      "RunUpdatedEvent": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "phase": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "model",
+                                  "tools",
+                                  "interaction"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Phase"
+                          },
+                          "run_id": {
+                            "format": "uuid",
+                            "title": "Run Id",
+                            "type": "string"
+                          },
+                          "status": {
+                            "enum": [
+                              "queued",
+                              "running",
+                              "waiting_user",
+                              "completed",
+                              "failed",
+                              "cancelled"
+                            ],
+                            "title": "Status",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "run.updated",
+                            "default": "run.updated",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "run_id",
+                          "status"
+                        ],
+                        "title": "RunUpdatedEvent",
+                        "type": "object"
+                      },
+                      "RunView": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "completed_at": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Completed At"
+                          },
+                          "created_at": {
+                            "format": "date-time",
+                            "title": "Created At",
+                            "type": "string"
+                          },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": true,
+                                "type": "object"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Error"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "phase": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "model",
+                                  "tools",
+                                  "interaction"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Phase"
+                          },
+                          "session_id": {
+                            "format": "uuid",
+                            "title": "Session Id",
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Started At"
+                          },
+                          "status": {
+                            "enum": [
+                              "queued",
+                              "running",
+                              "waiting_user",
+                              "completed",
+                              "failed",
+                              "cancelled"
+                            ],
+                            "title": "Status",
+                            "type": "string"
+                          },
+                          "termination_reason": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Termination Reason"
+                          },
+                          "updated_at": {
+                            "format": "date-time",
+                            "title": "Updated At",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "session_id",
+                          "status",
+                          "created_at",
+                          "updated_at"
+                        ],
+                        "title": "RunView",
+                        "type": "object"
+                      },
+                      "SessionSnapshot": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assistant_draft": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/AssistantDraftView"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "current_run": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/RunView"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "entries": {
+                            "items": {
+                              "discriminator": {
+                                "mapping": {
+                                  "compaction": "#/$defs/CompactionEntry",
+                                  "interaction_request": "#/$defs/InteractionRequestEntry",
+                                  "interaction_response": "#/$defs/InteractionResponseEntry",
+                                  "message": "#/$defs/MessageEntry",
+                                  "notice": "#/$defs/NoticeEntry"
+                                },
+                                "propertyName": "type"
+                              },
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/MessageEntry"
+                                },
+                                {
+                                  "$ref": "#/$defs/InteractionRequestEntry"
+                                },
+                                {
+                                  "$ref": "#/$defs/InteractionResponseEntry"
+                                },
+                                {
+                                  "$ref": "#/$defs/CompactionEntry"
+                                },
+                                {
+                                  "$ref": "#/$defs/NoticeEntry"
+                                }
+                              ]
+                            },
+                            "title": "Entries",
+                            "type": "array"
+                          },
+                          "pending_interaction": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/PendingInteractionView"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "revision": {
+                            "minimum": 0,
+                            "title": "Revision",
+                            "type": "integer"
+                          },
+                          "session": {
+                            "$ref": "#/$defs/SessionView"
+                          },
+                          "tool_progress": {
+                            "items": {
+                              "$ref": "#/$defs/ToolProgressView"
+                            },
+                            "title": "Tool Progress",
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "session",
+                          "current_run",
+                          "entries",
+                          "revision"
+                        ],
+                        "title": "SessionSnapshot",
+                        "type": "object"
+                      },
+                      "SessionView": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "created_at": {
+                            "format": "date-time",
+                            "title": "Created At",
+                            "type": "string"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "permission_mode": {
+                            "enum": [
+                              "read_only",
+                              "ask_dangerous",
+                              "full_access"
+                            ],
+                            "title": "Permission Mode",
+                            "type": "string"
+                          },
+                          "project_id": {
+                            "anyOf": [
+                              {
+                                "format": "uuid",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Project Id"
+                          },
+                          "status": {
+                            "enum": [
+                              "active",
+                              "archived",
+                              "closing",
+                              "deleted"
+                            ],
+                            "title": "Status",
+                            "type": "string"
+                          },
+                          "title": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Title"
+                          },
+                          "updated_at": {
+                            "format": "date-time",
+                            "title": "Updated At",
+                            "type": "string"
+                          },
+                          "user_id": {
+                            "title": "User Id",
+                            "type": "string"
+                          },
+                          "workspace_id": {
+                            "format": "uuid",
+                            "title": "Workspace Id",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "user_id",
+                          "workspace_id",
+                          "permission_mode",
+                          "status",
+                          "created_at",
+                          "updated_at"
+                        ],
+                        "title": "SessionView",
+                        "type": "object"
+                      },
+                      "SnapshotEvent": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "snapshot": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/SessionSnapshot"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "const": "snapshot",
+                            "default": "snapshot",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "snapshot"
+                        ],
+                        "title": "SnapshotEvent",
+                        "type": "object"
+                      },
+                      "ToolProgressView": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "call_id": {
+                            "title": "Call Id",
+                            "type": "string"
+                          },
+                          "name": {
+                            "title": "Name",
+                            "type": "string"
+                          },
+                          "status": {
+                            "enum": [
+                              "pending",
+                              "running",
+                              "completed",
+                              "failed",
+                              "blocked",
+                              "cancelled",
+                              "interaction_required"
+                            ],
+                            "title": "Status",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "call_id",
+                          "name",
+                          "status"
+                        ],
+                        "title": "ToolProgressView",
+                        "type": "object"
+                      },
+                      "ToolUpdatedEvent": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "call_id": {
+                            "title": "Call Id",
+                            "type": "string"
+                          },
+                          "run_id": {
+                            "format": "uuid",
+                            "title": "Run Id",
+                            "type": "string"
+                          },
+                          "status": {
+                            "title": "Status",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "tool.updated",
+                            "default": "tool.updated",
+                            "title": "Type",
+                            "type": "string"
+                          },
+                          "update": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": true,
+                                "type": "object"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Update"
+                          }
+                        },
+                        "required": [
+                          "run_id",
+                          "call_id",
+                          "status"
+                        ],
+                        "title": "ToolUpdatedEvent",
+                        "type": "object"
+                      }
+                    },
+                    "$id": "urn:bioinfoflow:schema:agent-event",
+                    "discriminator": {
+                      "mapping": {
+                        "assistant.delta": "#/$defs/AssistantDeltaEvent",
+                        "entry.committed": "#/$defs/EntryCommittedEvent",
+                        "interaction.requested": "#/$defs/InteractionRequestedEvent",
+                        "run.updated": "#/$defs/RunUpdatedEvent",
+                        "snapshot": "#/$defs/SnapshotEvent",
+                        "tool.updated": "#/$defs/ToolUpdatedEvent"
+                      },
+                      "propertyName": "type"
+                    },
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/SnapshotEvent"
+                      },
+                      {
+                        "$ref": "#/$defs/RunUpdatedEvent"
+                      },
+                      {
+                        "$ref": "#/$defs/AssistantDeltaEvent"
+                      },
+                      {
+                        "$ref": "#/$defs/ToolUpdatedEvent"
+                      },
+                      {
+                        "$ref": "#/$defs/InteractionRequestedEvent"
+                      },
+                      {
+                        "$ref": "#/$defs/EntryCommittedEvent"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "description": "Server-sent Agent Harness events"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Events",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/agent/sessions/{session_id}/snapshot": {
+      "get": {
+        "operationId": "get_snapshot_api_v1_agent_sessions__session_id__snapshot_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope_SessionSnapshot_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Snapshot",
         "tags": [
           "agent"
         ]
@@ -4604,7 +6160,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope_AgentSettingsRead_"
+                }
               }
             },
             "description": "Successful Response"
@@ -4631,7 +6189,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope_AgentSettingsRead_"
+                }
               }
             },
             "description": "Successful Response"
@@ -4648,359 +6208,6 @@
           }
         },
         "summary": "Update Settings",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/skills": {
-      "get": {
-        "operationId": "list_skills_api_v1_agent_skills_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Skills",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/skills/{skill_name}": {
-      "get": {
-        "operationId": "get_skill_api_v1_agent_skills__skill_name__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "skill_name",
-            "required": true,
-            "schema": {
-              "title": "Skill Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Skill",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/toolsets": {
-      "get": {
-        "operationId": "list_toolsets_api_v1_agent_toolsets_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Toolsets",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/turns/{turn_id}": {
-      "get": {
-        "operationId": "get_turn_api_v1_agent_turns__turn_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "turn_id",
-            "required": true,
-            "schema": {
-              "title": "Turn Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Turn",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/turns/{turn_id}/artifacts": {
-      "get": {
-        "operationId": "list_turn_artifacts_api_v1_agent_turns__turn_id__artifacts_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "turn_id",
-            "required": true,
-            "schema": {
-              "title": "Turn Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Turn Artifacts",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/turns/{turn_id}/cancel": {
-      "post": {
-        "operationId": "cancel_turn_api_v1_agent_turns__turn_id__cancel_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "turn_id",
-            "required": true,
-            "schema": {
-              "title": "Turn Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Cancel Turn",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/turns/{turn_id}/events": {
-      "get": {
-        "operationId": "list_turn_events_api_v1_agent_turns__turn_id__events_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "turn_id",
-            "required": true,
-            "schema": {
-              "title": "Turn Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "after_seq",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "After Seq",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "event_view",
-            "required": false,
-            "schema": {
-              "default": "full",
-              "enum": [
-                "full",
-                "public"
-              ],
-              "title": "Event View",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Turn Events",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/turns/{turn_id}/interrupt": {
-      "post": {
-        "operationId": "interrupt_turn_api_v1_agent_turns__turn_id__interrupt_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "turn_id",
-            "required": true,
-            "schema": {
-              "title": "Turn Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Interrupt Turn",
-        "tags": [
-          "agent"
-        ]
-      }
-    },
-    "/api/v1/agent/turns/{turn_id}/steer": {
-      "post": {
-        "operationId": "steer_turn_api_v1_agent_turns__turn_id__steer_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "turn_id",
-            "required": true,
-            "schema": {
-              "title": "Turn Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentTurnSteer"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Steer Turn",
         "tags": [
           "agent"
         ]
@@ -5566,38 +6773,6 @@
             "schema": {
               "title": "Project Id",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "session_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Session Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "turn_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Turn Id"
             }
           },
           {

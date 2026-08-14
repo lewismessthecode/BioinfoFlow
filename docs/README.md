@@ -17,7 +17,7 @@ Source-of-truth documentation for the Bioinfoflow platform, written against the 
 ## Reference
 
 - [CLI Reference](reference/cli.md): `bif` commands, backend target selection, JSON output, and scripting behavior.
-- [Architecture Reference](reference/architecture.md): backend, frontend, engine, scheduler, realtime, auth, AgentCore, and remote connection boundaries.
+- [Architecture Reference](reference/architecture.md): backend, frontend, engine, scheduler, realtime, auth, Agent Harness, and remote connection boundaries.
 - [Glossary](reference/glossary.md): Bioinfoflow-specific terms.
 - [Complete Agent Harness Rearchitecture](plans/2026-08-13-complete-agent-harness-rearchitecture.md):
   the accepted single-harness, five-tool clean-break plan for `/agent`.
@@ -56,7 +56,7 @@ Keep docs in sync with implementation changes:
 
 - Update `getting-started/docker.md`, `../RUNBOOK.md`, and `.env.example` together when Docker or environment startup changes.
 - Update `concepts/storage.md` when storage roots, external project roots, or asset URI resolution changes.
-- Update `guides/remote-connections.md` when SSH connection behavior, auth methods, or remote AgentCore tools change.
+- Update `guides/remote-connections.md` when SSH connection behavior, auth methods, or remote Agent Harness workspace behavior changes.
 - Update `reference/cli.md` when `backend/app/cli/` changes command names, backend target selection, output modes, or config resolution.
-- Update `reference/architecture.md` when backend/frontend runtime boundaries, scheduler behavior, engine execution, auth behavior, realtime delivery, AgentCore, or remote execution changes.
+- Update `reference/architecture.md` when backend/frontend runtime boundaries, scheduler behavior, engine execution, auth behavior, realtime delivery, Agent Harness, or remote execution changes.
 - Keep `docs/plans/` for active work only.

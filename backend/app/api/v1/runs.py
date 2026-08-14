@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import (
+    declare_agent_token_access,
+    get_current_user,
+    get_db,
+    require_agent_scope,
+)
 from app.api.error_handler import handle_api_errors
 from app.api.upload_limits import UploadTooLargeError, read_upload_limited
 from app.auth.session import AuthUser
@@ -31,7 +36,11 @@ from app.utils.project_access import can_access_project
 from app.utils.responses import error_response, success_response
 
 
-router = APIRouter(prefix="/runs", tags=["runs"])
+router = APIRouter(
+    prefix="/runs",
+    tags=["runs"],
+    dependencies=[Depends(declare_agent_token_access)],
+)
 
 
 def _serialize(run) -> dict:
@@ -49,6 +58,24 @@ def _workflow_not_enabled_response(request: Request):
     )
 
 
+async def _require_scoped_run(
+    request: Request,
+    service: RunService,
+    run_id: str,
+    *,
+    user: AuthUser,
+) -> None:
+    if getattr(request.state, "agent_token", None) is None:
+        return
+    run = await service.get_run(
+        run_id,
+        user_id=user.id,
+        workspace_id=user.workspace_id,
+    )
+    if run is not None:
+        require_agent_scope(request, project_id=str(run.project_id))
+
+
 @router.get("")
 async def list_runs(
     request: Request,
@@ -61,6 +88,10 @@ async def list_runs(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    agent_scope = getattr(request.state, "agent_token", None)
+    if agent_scope is not None:
+        require_agent_scope(request, project_id=agent_scope.project_id)
+        project_id = agent_scope.project_id
     statuses = [s.strip() for s in status.split(",")] if status else None
     runs, pagination = await service.list_runs(
         limit=limit,
@@ -90,6 +121,7 @@ async def create_run(
     tables, and scalars are native JSON. The server resolves ``asset://``
     URIs to absolute paths during translation.
     """
+    require_agent_scope(request, project_id=str(payload.project_id))
     compiler = RunCompiler(db)
     try:
         run = await compiler.create_run(
@@ -127,6 +159,7 @@ async def upload_run_document(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     try:
         payload = await read_upload_limited(file, settings.max_upload_size_bytes)
     except UploadTooLargeError:
@@ -178,6 +211,7 @@ async def get_run(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    await _require_scoped_run(request, service, run_id, user=user)
     run = await service.get_run(
         run_id,
         user_id=user.id,
@@ -201,6 +235,7 @@ async def get_run_logs(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    await _require_scoped_run(request, service, run_id, user=user)
     data = await service.get_logs(
         run_id,
         tail=tail,
@@ -220,6 +255,7 @@ async def get_run_dag(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    await _require_scoped_run(request, service, run_id, user=user)
     data = await service.get_dag(
         run_id,
         user_id=user.id,
@@ -238,6 +274,7 @@ async def repair_run_dag(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    await _require_scoped_run(request, service, run_id, user=user)
     data = await service.repair_run_dag(
         run_id,
         dry_run=dry_run,
@@ -259,6 +296,12 @@ async def repair_run_dags(
 ):
     service = RunService(db)
     parsed_run_ids = [item.strip() for item in run_ids.split(",")] if run_ids else None
+    agent_scope = getattr(request.state, "agent_token", None)
+    if agent_scope is not None:
+        require_agent_scope(request, project_id=agent_scope.project_id)
+        project_id = agent_scope.project_id
+        for scoped_run_id in parsed_run_ids or ():
+            await _require_scoped_run(request, service, scoped_run_id, user=user)
     data = await service.repair_run_dags(
         run_ids=parsed_run_ids,
         project_id=project_id,
@@ -279,6 +322,7 @@ async def create_mock_dag_variants(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    await _require_scoped_run(request, service, run_id, user=user)
     parsed_variants = (
         [item.strip() for item in variants.split(",")] if variants else None
     )
@@ -300,6 +344,7 @@ async def get_run_outputs(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    await _require_scoped_run(request, service, run_id, user=user)
     data = await service.list_outputs(
         run_id,
         user_id=user.id,
@@ -319,6 +364,7 @@ async def download_run_outputs(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    await _require_scoped_run(request, service, run_id, user=user)
     archive_bytes, media_type = await service.build_output_archive(
         run_id,
         file_path=file,
@@ -338,6 +384,7 @@ async def cancel_run(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    await _require_scoped_run(request, service, run_id, user=user)
     run = await service.cancel_run(
         run_id,
         user_id=user.id,
@@ -356,6 +403,7 @@ async def resume_run(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    await _require_scoped_run(request, service, run_id, user=user)
     try:
         run = await service.resume_run(
             run_id,
@@ -395,6 +443,7 @@ async def retry_run(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    await _require_scoped_run(request, service, run_id, user=user)
     try:
         run = await service.retry_run(
             run_id,
@@ -433,6 +482,7 @@ async def cleanup_run(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    await _require_scoped_run(request, service, run_id, user=user)
     data = await service.cleanup_run(
         run_id,
         user_id=user.id,
@@ -451,6 +501,7 @@ async def get_run_audit(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    await _require_scoped_run(request, service, run_id, user=user)
     data = await service.get_run_audit(
         run_id,
         user_id=user.id,
@@ -469,6 +520,7 @@ async def delete_run(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
+    await _require_scoped_run(request, service, run_id, user=user)
     await service.delete_run(
         run_id,
         delete_outputs=delete_outputs,

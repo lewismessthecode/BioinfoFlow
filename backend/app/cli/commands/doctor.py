@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import re
 import shutil
-import subprocess
 from typing import Any
 
 import typer
@@ -199,43 +197,6 @@ def _add_local_binary_checks(results: dict[str, Any]) -> None:
             path or "not found in PATH",
             hint=None if path is not None else _binary_hint(binary),
         )
-    agent_browser_path = shutil.which("agent-browser")
-    if agent_browser_path is None:
-        results["agent-browser"] = _result(
-            "fail",
-            "not found in PATH",
-            hint=_binary_hint("agent-browser"),
-        )
-        return
-    results["agent-browser"] = _check_agent_browser_version(agent_browser_path)
-
-
-def _check_agent_browser_version(path: str) -> dict[str, Any]:
-    expected_version = "0.33.0"
-    try:
-        completed = subprocess.run(
-            [path, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=3,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return _result(
-            "fail",
-            f"version probe failed: {exc}",
-            hint=_binary_hint("agent-browser"),
-        )
-    output = (completed.stdout or completed.stderr).strip()
-    match = re.search(r"(?:^|\s)(\d+\.\d+\.\d+)(?:\s|$)", output)
-    detected_version = match.group(1) if match else "unknown"
-    if completed.returncode == 0 and detected_version == expected_version:
-        return _result("pass", f"{path} ({detected_version})")
-    return _result(
-        "fail",
-        f"expected {expected_version}, found {detected_version}",
-        hint=_binary_hint("agent-browser"),
-    )
 
 
 def _check_status(info: dict[str, Any]) -> str:
@@ -363,6 +324,4 @@ def _binary_hint(binary: str) -> str:
         return "Run uv sync from backend/ so miniwdl is installed in the project environment."
     if binary == "docker":
         return "Install Docker Desktop or add the docker CLI to PATH."
-    if binary == "agent-browser":
-        return "Install agent-browser 0.33.0 or add it to PATH."
     return f"Install {binary} or add it to PATH."

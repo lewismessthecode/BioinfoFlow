@@ -7,7 +7,13 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db, require_admin
+from app.api.deps import (
+    declare_agent_token_access,
+    get_current_user,
+    get_db,
+    require_admin,
+    require_agent_scope,
+)
 from app.auth.session import AuthUser
 from app.config import settings
 from app.models.llm import LlmProvider, LlmProviderCredential
@@ -108,12 +114,13 @@ async def health_check(request: Request):
     )
 
 
-@router.get("/gpu")
+@router.get("/gpu", dependencies=[Depends(declare_agent_token_access)])
 async def get_gpu_status(
     request: Request,
     user: AuthUser = Depends(get_current_user),
 ):
     """Get detailed GPU status and compatibility info."""
+    require_agent_scope(request, allow_projectless=True)
     del user
     gpu_service = get_gpu_service()
     status = await gpu_service.get_status()

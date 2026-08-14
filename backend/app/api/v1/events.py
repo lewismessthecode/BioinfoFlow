@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import (
+    declare_agent_token_access,
+    get_current_user,
+    get_db,
+    require_agent_scope,
+)
 from app.auth.session import AuthUser
 from app.repositories.project_repo import ProjectRepository
 from app.runtime.events import events
@@ -16,20 +21,23 @@ from app.utils.exceptions import PermissionDeniedError
 from app.utils.project_access import can_access_project
 
 
-router = APIRouter(prefix="/events", tags=["events"])
+router = APIRouter(
+    prefix="/events",
+    tags=["events"],
+    dependencies=[Depends(declare_agent_token_access)],
+)
 
 
 @router.get("/stream")
 async def stream_events(
     request: Request,
     project_id: str,
-    session_id: str | None = None,
-    turn_id: str | None = None,
     run_id: str | None = None,
     image_id: str | None = None,
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    require_agent_scope(request, project_id=project_id)
     project_repo = ProjectRepository(db)
     project = await project_repo.get(project_id)
     if project is None or not can_access_project(
@@ -55,10 +63,6 @@ async def stream_events(
                     )
                 except asyncio.TimeoutError:
                     yield ": ping\n\n"
-                    continue
-                if session_id and event.get("session_id") != session_id:
-                    continue
-                if turn_id and event.get("turn_id") != turn_id:
                     continue
                 if run_id and event.get("run_id") != run_id:
                     continue

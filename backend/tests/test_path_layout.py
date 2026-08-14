@@ -5,8 +5,14 @@ import pytest
 from app.config import settings
 from app.models.project import Project
 from app.path_layout import (
+    agent_artifact_root,
+    agent_artifacts_root,
     agent_attachment_root,
     agent_attachments_root,
+    legacy_agent_attachments_root,
+    agent_user_workspace_root,
+    agent_workspaces_root,
+    agent_session_artifacts_root,
     agent_session_attachments_root,
     project_home,
 )
@@ -17,12 +23,58 @@ def test_agent_attachment_paths_are_session_scoped(tmp_path, monkeypatch) -> Non
     home = tmp_path / "bioinfoflow-home"
     monkeypatch.setattr(settings, "bioinfoflow_home", str(home))
 
-    root = home / "state" / "agent_core" / "attachments"
+    root = home / "state" / "agent_harness" / "attachments"
     assert agent_attachments_root() == root
     assert agent_session_attachments_root("session-1") == root / "session-1"
     assert agent_attachment_root("session-1", "attachment-1") == (
         root / "session-1" / "attachment-1"
     )
+    legacy_root = home / "state" / "agent_core" / "attachments"
+    assert legacy_agent_attachments_root() == legacy_root
+
+
+def test_agent_artifact_paths_are_session_scoped(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "bioinfoflow-home"
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(home))
+
+    root = home / "state" / "agent_harness" / "artifacts"
+    assert agent_artifacts_root() == root
+    assert agent_session_artifacts_root("session-1") == root / "session-1"
+    assert agent_artifact_root("session-1", "artifact-1") == (
+        root / "session-1" / "artifact-1"
+    )
+
+
+def test_projectless_agent_workspace_is_scoped_by_workspace_and_user(
+    tmp_path, monkeypatch
+) -> None:
+    home = tmp_path / "bioinfoflow-home"
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(home))
+
+    root = home / "agent_workspaces"
+    assert agent_workspaces_root() == root
+    assert agent_user_workspace_root("workspace-1", "user-1") == (
+        root / "workspace-1" / "user-1"
+    )
+
+
+@pytest.mark.parametrize(
+    ("workspace_id", "user_id"),
+    [
+        ("../workspace", "user-1"),
+        ("workspace-1", "../user"),
+        ("workspace/1", "user-1"),
+        ("workspace-1", "user/1"),
+        ("", "user-1"),
+        ("workspace-1", ""),
+    ],
+)
+def test_projectless_agent_workspace_rejects_unsafe_scope_ids(
+    workspace_id: str,
+    user_id: str,
+) -> None:
+    with pytest.raises(ValueError):
+        agent_user_workspace_root(workspace_id, user_id)
 
 
 @pytest.mark.parametrize(
@@ -32,6 +84,17 @@ def test_agent_attachment_paths_are_session_scoped(tmp_path, monkeypatch) -> Non
 def test_agent_attachment_paths_reject_unsafe_ids(unsafe_name: str) -> None:
     with pytest.raises(ValueError):
         agent_session_attachments_root(unsafe_name)
+
+
+@pytest.mark.parametrize(
+    "unsafe_name",
+    ["../escape", "/absolute", "nested/path", "", ".", ".."],
+)
+def test_agent_artifact_paths_reject_unsafe_ids(unsafe_name: str) -> None:
+    with pytest.raises(ValueError):
+        agent_session_artifacts_root(unsafe_name)
+    with pytest.raises(ValueError):
+        agent_artifact_root("session-1", unsafe_name)
 
 
 def test_managed_project_home_uses_directory_name(tmp_path, monkeypatch) -> None:

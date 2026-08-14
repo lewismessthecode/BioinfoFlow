@@ -1,13 +1,10 @@
 from app.repositories.base import BaseRepository
-from app.repositories.agent_core_repo import (
-    AgentActionRepository,
-    AgentAttachmentRepository,
-    AgentArtifactRepository,
-    AgentEventRepository,
-    AgentMemoryRepository,
-    AgentSessionRepository,
-    AgentTurnRepository,
+from app.repositories.agent_harness_repo import (
+    AgentHarnessArtifactRepository,
+    AgentHarnessAttachmentRepository,
+    AgentHarnessRepository,
 )
+from app.repositories.agent_token_repo import AgentTokenRepository
 from app.repositories.llm_repo import (
     LlmModelProfileRepository,
     LlmModelRepository,
@@ -24,13 +21,10 @@ from app.repositories.workflow_repo import WorkflowRepository
 
 __all__ = [
     "BaseRepository",
-    "AgentSessionRepository",
-    "AgentTurnRepository",
-    "AgentEventRepository",
-    "AgentActionRepository",
-    "AgentAttachmentRepository",
-    "AgentArtifactRepository",
-    "AgentMemoryRepository",
+    "AgentHarnessRepository",
+    "AgentHarnessAttachmentRepository",
+    "AgentHarnessArtifactRepository",
+    "AgentTokenRepository",
     "LlmProviderRepository",
     "LlmProviderCredentialRepository",
     "LlmModelRepository",

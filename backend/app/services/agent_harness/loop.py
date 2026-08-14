@@ -1,0 +1,1566 @@
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
+
+from app.config import settings
+from app.repositories.agent_harness_repo import AgentHarnessRepository
+from app.services.agent_harness.assets import AgentHarnessAttachmentService
+from app.services.agent_harness.compression import (
+    DeterministicCompactor,
+    is_context_overflow,
+    invoke_with_context_overflow_retry,
+)
+from app.services.agent_harness.context import ContextBuilder
+from app.services.agent_harness.contracts import (
+    AssistantDeltaEvent,
+    EntryCommittedEvent,
+    InteractionRequestedEvent,
+    RunUpdatedEvent,
+    ToolUpdatedEvent,
+)
+from app.services.agent_harness.model_resolver import (
+    resolved_runtime_capabilities,
+    resolved_runtime_strategy,
+)
+from app.services.agent_harness.model_target import (
+    model_target_from_resolved,
+    model_target_from_snapshot,
+)
+from app.services.agent_harness.recovery import (
+    create_checkpoint,
+    responses_continuation_from_checkpoint,
+)
+from app.services.agent_harness.tools import ToolCall, ToolResult
+from app.services.agent_harness.workspace_runtime import WorkspaceRuntime
+from app.services.model_runtime.contracts import (
+    CompletionMetadata,
+    ImagePart,
+    ModelInvocation,
+    ReasoningDelta,
+    ReasoningRequest,
+    ResponsesContinuation,
+    TextDelta,
+    TextPart,
+    ToolCallDelta,
+    ToolCallPart,
+    UsageReport,
+)
+from app.services.model_runtime.errors import ModelError
+from app.services.model_runtime.streams import aclose_async_iterator
+
+
+Publish = Callable[[Any], Awaitable[None]]
+HARNESS_VERSION = "complete-agent-harness-v1"
+
+
+class ModelAttemptTimeoutError(TimeoutError):
+    pass
+
+
+class ModelVisionUnsupportedError(ValueError):
+    pass
+
+
+@dataclass(slots=True)
+class LoopLimits:
+    max_iterations: int = settings.agent_max_iterations
+    max_output_tokens: int = settings.agent_max_tokens
+    retry_attempts: int = settings.agent_retry_max_attempts
+    model_attempt_timeout_seconds: float = settings.agent_model_attempt_timeout_seconds
+    run_timeout_seconds: float = settings.agent_run_timeout_seconds
+    run_token_budget: int = settings.agent_run_token_budget
+    compaction_threshold_chars: int = 120_000
+    preserve_recent_entries: int = 12
+
+
+class AgentLoop:
+    """The single model-tool-model loop used by every BioinfoFlow agent run."""
+
+    def __init__(
+        self,
+        repository: AgentHarnessRepository,
+        *,
+        model_gateway: Any,
+        workspace_factory: Callable[[Any, str], WorkspaceRuntime],
+        publish: Publish,
+        model_runtime_resolver: Callable[[Any], Awaitable[dict[str, Any]]]
+        | None = None,
+        limits: LoopLimits | None = None,
+    ) -> None:
+        self.repository = repository
+        self.model_gateway = model_gateway
+        self.workspace_factory = workspace_factory
+        self.model_runtime_resolver = model_runtime_resolver
+        self.publish = publish
+        self.limits = limits or LoopLimits()
+        self.context = ContextBuilder()
+        self.compactor = DeterministicCompactor(
+            preserve_recent_entries=self.limits.preserve_recent_entries
+        )
+
+    async def run(self, run_id: str, cancellation: asyncio.Event) -> None:
+        run = await self.repository.get_run(run_id)
+        if run is None:
+            raise LookupError(f"agent run not found: {run_id}")
+        session = await self.repository.get_session(str(run.session_id))
+        if session is None:
+            raise LookupError(f"agent session not found: {run.session_id}")
+        workspace = self.workspace_factory(session, run_id)
+        await self._update(run_id, status="running", phase="model")
+        try:
+            for iteration in range(1, self.limits.max_iterations + 1):
+                if cancellation.is_set() or await self._stop_if_cancel_requested(
+                    run_id
+                ):
+                    await self._cancel(run_id)
+                    return
+                if await self._stop_if_budget_exceeded(run_id):
+                    return
+                await self.apply_steers(run_id, str(session.id))
+                entries = await self.repository.list_entries(str(session.id))
+                context = await self._build_context(session, entries)
+
+                async def invoke():
+                    current = await self.repository.get_run(run_id)
+                    previous = dict(current.checkpoint or {}) if current else {}
+                    await self.repository.update_run(
+                        run_id,
+                        checkpoint={
+                            **create_checkpoint(
+                                harness_version=HARNESS_VERSION,
+                                phase="model",
+                                history_revision=context.history_revision,
+                                continuation=(
+                                    previous.get("continuation")
+                                    if isinstance(previous.get("continuation"), dict)
+                                    else None
+                                ),
+                                budget=(
+                                    previous.get("budget")
+                                    if isinstance(previous.get("budget"), dict)
+                                    else None
+                                ),
+                            ),
+                            **{
+                                key: previous[key]
+                                for key in (
+                                    "iteration",
+                                    "last_tool_signature",
+                                    "repeat_count",
+                                )
+                                if key in previous
+                            },
+                        },
+                    )
+                    return await self._invoke(
+                        run_id=run_id,
+                        session=session,
+                        context=context,
+                        workspace=workspace,
+                        cancellation=cancellation,
+                    )
+
+                async def compact():
+                    nonlocal context, entries
+                    plan = self.compactor.plan(
+                        (_history_mapping(entry) for entry in entries),
+                        threshold_chars=self.limits.compaction_threshold_chars,
+                    )
+                    if plan is None:
+                        return False
+                    compaction = await self.repository.append_entry(
+                        str(session.id),
+                        run_id=run_id,
+                        entry_type="compaction",
+                        payload=plan.payload,
+                    )
+                    await self.publish(
+                        EntryCommittedEvent(entry=_entry_contract(compaction))
+                    )
+                    await self.repository.update_run(
+                        run_id,
+                        checkpoint=create_checkpoint(
+                            harness_version=HARNESS_VERSION,
+                            phase="compression",
+                            history_revision=compaction.sequence,
+                            compaction_through=plan.through_sequence,
+                        ),
+                    )
+                    entries = await self.repository.list_entries(str(session.id))
+                    context = await self._build_context(session, entries)
+                    return True
+
+                response = await invoke_with_context_overflow_retry(
+                    invoke=invoke,
+                    compact=compact,
+                )
+                if response.cancelled or await self._stop_if_cancel_requested(run_id):
+                    await self._cancel(run_id)
+                    return
+
+                assistant = await self._append_message(
+                    str(session.id),
+                    run_id,
+                    role="assistant",
+                    content=response.text,
+                    reasoning_summary=response.reasoning,
+                    tool_calls=[_tool_call_dict(call) for call in response.tool_calls],
+                )
+                response.continuation = _advance_response_continuation(response)
+                await self.repository.update_run(run_id, draft=None)
+                await self.publish(EntryCommittedEvent(entry=assistant))
+
+                if await self._stop_if_budget_exceeded(run_id):
+                    return
+
+                if not response.tool_calls:
+                    (
+                        steer_entries,
+                        completed,
+                    ) = await self.repository.commit_steers_or_complete_run(
+                        str(session.id), run_id=run_id
+                    )
+                    for entry in steer_entries:
+                        await self.publish(
+                            EntryCommittedEvent(entry=_entry_contract(entry))
+                        )
+                    if steer_entries:
+                        continue
+                    await self.publish(
+                        RunUpdatedEvent(
+                            run_id=completed.id,
+                            status=completed.status,
+                            phase=completed.phase,
+                        )
+                    )
+                    return
+
+                signature = _call_signature(response.tool_calls)
+                current = await self.repository.get_run(run_id)
+                checkpoint = dict(current.checkpoint or {}) if current else {}
+                if checkpoint.get("last_tool_signature") == signature:
+                    repeats = int(checkpoint.get("repeat_count") or 0) + 1
+                else:
+                    repeats = 0
+                if repeats >= 2:
+                    await self._fail(
+                        run_id,
+                        "no_progress",
+                        "Agent repeated the same tool calls without making progress.",
+                    )
+                    return
+                await self.repository.update_run(
+                    run_id,
+                    tool_progress=[
+                        _tool_progress_dict(call, status="pending")
+                        for call in response.tool_calls
+                    ],
+                    checkpoint={
+                        **create_checkpoint(
+                            harness_version=HARNESS_VERSION,
+                            phase="tools",
+                            history_revision=assistant.sequence,
+                            continuation=response.continuation,
+                            in_flight_tools=tuple(
+                                {
+                                    "call_id": call.call_id,
+                                    "name": call.name,
+                                    "arguments": call.arguments,
+                                    "replay_policy": _replay_policy(
+                                        workspace, call.name
+                                    ),
+                                }
+                                for call in response.tool_calls
+                            ),
+                        ),
+                        "iteration": iteration,
+                        "last_tool_signature": signature,
+                        "repeat_count": repeats,
+                        "pending_calls": [
+                            _tool_call_dict(call) for call in response.tool_calls
+                        ],
+                    },
+                )
+                await self._update(run_id, status="running", phase="tools")
+                await self.repository.update_run(
+                    run_id,
+                    tool_progress=[
+                        _tool_progress_dict(call, status="running")
+                        for call in response.tool_calls
+                    ],
+                )
+                for call in response.tool_calls:
+                    await self.publish(
+                        ToolUpdatedEvent(
+                            run_id=run_id,
+                            call_id=call.call_id,
+                            status="running",
+                        )
+                    )
+                batch = await workspace.execute_batch(
+                    response.tool_calls,
+                    cancellation=cancellation,
+                )
+                for result in batch.results:
+                    if result.status == "interaction_required":
+                        pending = [
+                            _tool_call_dict(call) for call in batch.pending_calls
+                        ]
+                        interaction = result.interaction
+                        assert interaction is not None
+                        current = await self.repository.get_run(run_id)
+                        progress = (
+                            [dict(item) for item in (current.tool_progress or [])]
+                            if current is not None
+                            else []
+                        )
+                        progress = _replace_tool_progress(
+                            progress,
+                            call_id=result.call_id,
+                            name=result.tool_name,
+                            status="interaction_required",
+                        )
+                        for pending_call in batch.pending_calls:
+                            progress = _replace_tool_progress(
+                                progress,
+                                call_id=pending_call.call_id,
+                                name=pending_call.name,
+                                status="pending",
+                            )
+                        _, entry, _ = await self.repository.commit_waiting_interaction(
+                            str(session.id),
+                            run_id=run_id,
+                            request_payload={
+                                "interaction_id": interaction.request_id,
+                                "request": _interaction_dict(result),
+                            },
+                            tool_progress=progress,
+                            checkpoint={
+                                **create_checkpoint(
+                                    harness_version=HARNESS_VERSION,
+                                    phase="interaction",
+                                    history_revision=0,
+                                    continuation=response.continuation,
+                                    in_flight_tools=tuple(
+                                        {
+                                            "call_id": call.call_id,
+                                            "name": call.name,
+                                            "arguments": call.arguments,
+                                            "replay_policy": _replay_policy(
+                                                workspace, call.name
+                                            ),
+                                        }
+                                        for call in response.tool_calls
+                                    ),
+                                    interaction=_interaction_dict(result),
+                                ),
+                                "waiting_call": _tool_call_dict(
+                                    _find_call(response.tool_calls, result.call_id)
+                                ),
+                                "pending_calls": pending,
+                                "interaction": _interaction_dict(result),
+                            },
+                        )
+                        await self.publish(
+                            ToolUpdatedEvent(
+                                run_id=run_id,
+                                call_id=result.call_id,
+                                status=result.status,
+                                update=_tool_result_dict(result),
+                            )
+                        )
+                        await self.publish(
+                            EntryCommittedEvent(entry=_entry_contract(entry))
+                        )
+                        await self.publish(
+                            InteractionRequestedEvent(
+                                run_id=run_id,
+                                interaction_id=interaction.request_id,
+                                request=_interaction_dict(result),
+                            )
+                        )
+                        return
+                    tool_entry = await self._append_message(
+                        str(session.id),
+                        run_id,
+                        role="tool",
+                        content=json.dumps(
+                            result.output
+                            if result.status == "completed"
+                            else {"error": result.error},
+                            ensure_ascii=False,
+                            default=str,
+                        ),
+                        call_id=result.call_id,
+                        is_error=result.status != "completed",
+                    )
+                    await self.publish(EntryCommittedEvent(entry=tool_entry))
+                    current = await self.repository.get_run(run_id)
+                    if current is not None and current.checkpoint is not None:
+                        checkpoint_after_result = dict(current.checkpoint)
+                        checkpoint_after_result["history_revision"] = (
+                            tool_entry.sequence
+                        )
+                        checkpoint_after_result["in_flight_tools"] = [
+                            item
+                            for item in checkpoint_after_result.get("in_flight_tools")
+                            or []
+                            if item.get("call_id") != result.call_id
+                        ]
+                        checkpoint_after_result["pending_calls"] = [
+                            item
+                            for item in checkpoint_after_result.get("pending_calls")
+                            or []
+                            if item.get("call_id") != result.call_id
+                        ]
+                        await self.repository.update_run(
+                            run_id,
+                            checkpoint=checkpoint_after_result,
+                        )
+                    await self._mark_tool_progress(
+                        run_id,
+                        call_id=result.call_id,
+                        name=result.tool_name,
+                        status=result.status,
+                    )
+                    await self.publish(
+                        ToolUpdatedEvent(
+                            run_id=run_id,
+                            call_id=result.call_id,
+                            status=result.status,
+                            update=_tool_result_dict(result),
+                        )
+                    )
+                if await self._stop_if_budget_exceeded(run_id):
+                    return
+                await self._update(
+                    run_id,
+                    status="running",
+                    phase="model",
+                    tool_progress=None,
+                )
+            await self._fail(
+                run_id, "iteration_limit", "Agent iteration limit reached."
+            )
+        except asyncio.CancelledError:
+            cancellation.set()
+            raise
+        except ModelAttemptTimeoutError as exc:
+            await self._fail(run_id, "model_attempt_timeout", str(exc), exc=exc)
+        except ModelVisionUnsupportedError as exc:
+            notice = await self.repository.append_entry(
+                str(session.id),
+                run_id=run_id,
+                entry_type="notice",
+                payload={
+                    "code": "model_vision_unsupported",
+                    "message": str(exc),
+                },
+            )
+            await self.publish(EntryCommittedEvent(entry=_entry_contract(notice)))
+            await self._fail(run_id, "model_vision_unsupported", str(exc))
+        except Exception as exc:  # noqa: BLE001 - terminal run must be durable
+            await self._fail(run_id, "agent_failed", str(exc), exc=exc)
+
+    async def resume_interaction(
+        self,
+        run_id: str,
+        response: dict[str, Any],
+        cancellation: asyncio.Event,
+        *,
+        command_id: str | None = None,
+    ) -> None:
+        run = await self.repository.get_run(run_id)
+        if run is None or run.status != "waiting_user":
+            raise ValueError("run is not waiting for user interaction")
+        session = await self.repository.get_session(str(run.session_id))
+        if session is None:
+            raise LookupError(f"agent session not found: {run.session_id}")
+        checkpoint = run.checkpoint or {}
+        expected_interaction_id = checkpoint_interaction_id(checkpoint)
+        if response.get("request_id") != expected_interaction_id:
+            raise ValueError(
+                "response interaction does not match the pending interaction"
+            )
+        if checkpoint.get("recovery_interaction"):
+            await self._resume_recovery_interaction(
+                run=run,
+                session=session,
+                checkpoint=checkpoint,
+                response=response,
+                cancellation=cancellation,
+                command_id=command_id,
+            )
+            return
+        call_data = checkpoint.get("waiting_call")
+        if not isinstance(call_data, dict):
+            raise ValueError("waiting interaction has no tool call")
+        call = ToolCall(**call_data)
+        workspace = self.workspace_factory(session, run_id)
+        replay_policy = _checkpoint_replay_policy(checkpoint, call.call_id)
+        response_entry = None
+        execution_response = response
+        if response.get("approved") is True and replay_policy == "never":
+            persisted_interaction = checkpoint.get("interaction")
+            if not workspace.approval_assessment_matches(
+                call,
+                persisted_interaction
+                if isinstance(persisted_interaction, dict)
+                else None,
+            ):
+                raise ValueError("Bash approval assessment changed before execution")
+            approved_risk = persisted_interaction.get("risk")
+            assert isinstance(approved_risk, dict)
+            approved_fingerprint = approved_risk.get("assessment_fingerprint")
+            assert isinstance(approved_fingerprint, str)
+            (
+                response_entry,
+                durable_run,
+            ) = await self.repository.begin_approved_tool_execution(
+                str(session.id),
+                run_id=run_id,
+                interaction_id=str(
+                    response.get("request_id") or f"tool:{call.call_id}"
+                ),
+                response=response,
+                call=_tool_call_dict(call),
+                replay_policy=replay_policy,
+                command_id=command_id,
+            )
+            checkpoint = dict(durable_run.checkpoint or {})
+            await self.publish(
+                EntryCommittedEvent(entry=_entry_contract(response_entry))
+            )
+            execution_response = {
+                **response,
+                "assessment_fingerprint": approved_fingerprint,
+            }
+        else:
+            await self._mark_tool_progress(
+                run_id,
+                call_id=call.call_id,
+                name=call.name,
+                status="running",
+            )
+        await self.publish(
+            ToolUpdatedEvent(
+                run_id=run_id,
+                call_id=call.call_id,
+                status="running",
+            )
+        )
+        result = await workspace.execute(
+            call,
+            cancellation=cancellation,
+            interaction_response=execution_response,
+        )
+        if result.status == "interaction_required":
+            raise ValueError("interaction response did not resolve the request")
+        await self._mark_tool_progress(
+            run_id,
+            call_id=result.call_id,
+            name=result.tool_name,
+            status=result.status,
+        )
+        await self.publish(
+            ToolUpdatedEvent(
+                run_id=run_id,
+                call_id=result.call_id,
+                status=result.status,
+                update=_tool_result_dict(result),
+            )
+        )
+        if response_entry is None:
+            response_entry = await self.repository.commit_interaction_response(
+                str(session.id),
+                run_id=run_id,
+                command_id=command_id,
+                interaction_id=str(
+                    response.get("request_id") or f"tool:{call.call_id}"
+                ),
+                response=response,
+            )
+            await self.publish(
+                EntryCommittedEvent(entry=_entry_contract(response_entry))
+            )
+        tool_entry = await self._append_message(
+            str(session.id),
+            run_id,
+            role="tool",
+            content=json.dumps(
+                result.output
+                if result.status == "completed"
+                else {"error": result.error},
+                ensure_ascii=False,
+                default=str,
+            ),
+            call_id=call.call_id,
+        )
+        await self.publish(EntryCommittedEvent(entry=tool_entry))
+        history_revision = tool_entry.sequence
+        pending = checkpoint.get("pending_calls") or []
+        if pending:
+            in_flight_tools = [
+                dict(item)
+                for item in checkpoint.get("in_flight_tools") or []
+                if isinstance(item, dict) and item.get("call_id") != call.call_id
+            ]
+            for item in pending:
+                await self._mark_tool_progress(
+                    run_id,
+                    call_id=str(item["call_id"]),
+                    name=str(item["name"]),
+                    status="running",
+                )
+                await self.publish(
+                    ToolUpdatedEvent(
+                        run_id=run_id,
+                        call_id=str(item["call_id"]),
+                        status="running",
+                    )
+                )
+            remaining = await workspace.execute_batch(
+                tuple(ToolCall(**item) for item in pending),
+                cancellation=cancellation,
+            )
+            for pending_result in remaining.results:
+                if pending_result.status == "interaction_required":
+                    interaction = pending_result.interaction
+                    assert interaction is not None
+                    current = await self.repository.get_run(run_id)
+                    progress = (
+                        [dict(item) for item in (current.tool_progress or [])]
+                        if current is not None
+                        else []
+                    )
+                    progress = _replace_tool_progress(
+                        progress,
+                        call_id=pending_result.call_id,
+                        name=pending_result.tool_name,
+                        status="interaction_required",
+                    )
+                    for pending_call in remaining.pending_calls:
+                        progress = _replace_tool_progress(
+                            progress,
+                            call_id=pending_call.call_id,
+                            name=pending_call.name,
+                            status="pending",
+                        )
+                    waiting_call = _find_call(
+                        tuple(ToolCall(**item) for item in pending),
+                        pending_result.call_id,
+                    )
+                    (
+                        _,
+                        request_entry,
+                        _,
+                    ) = await self.repository.commit_waiting_interaction(
+                        str(session.id),
+                        run_id=run_id,
+                        request_payload={
+                            "interaction_id": interaction.request_id,
+                            "request": _interaction_dict(pending_result),
+                        },
+                        tool_progress=progress,
+                        checkpoint={
+                            **checkpoint,
+                            "phase": "interaction",
+                            "history_revision": history_revision,
+                            "in_flight_tools": in_flight_tools,
+                            "waiting_call": _tool_call_dict(waiting_call),
+                            "pending_calls": [
+                                _tool_call_dict(pending_call)
+                                for pending_call in remaining.pending_calls
+                            ],
+                            "interaction": _interaction_dict(pending_result),
+                        },
+                    )
+                    await self.publish(
+                        ToolUpdatedEvent(
+                            run_id=run_id,
+                            call_id=pending_result.call_id,
+                            status=pending_result.status,
+                            update=_tool_result_dict(pending_result),
+                        )
+                    )
+                    await self.publish(
+                        EntryCommittedEvent(entry=_entry_contract(request_entry))
+                    )
+                    await self.publish(
+                        InteractionRequestedEvent(
+                            run_id=run_id,
+                            interaction_id=interaction.request_id,
+                            request=_interaction_dict(pending_result),
+                        )
+                    )
+                    return
+                await self._mark_tool_progress(
+                    run_id,
+                    call_id=pending_result.call_id,
+                    name=pending_result.tool_name,
+                    status=pending_result.status,
+                )
+                await self.publish(
+                    ToolUpdatedEvent(
+                        run_id=run_id,
+                        call_id=pending_result.call_id,
+                        status=pending_result.status,
+                        update=_tool_result_dict(pending_result),
+                    )
+                )
+                pending_entry = await self._append_message(
+                    str(session.id),
+                    run_id,
+                    role="tool",
+                    content=json.dumps(
+                        pending_result.output, ensure_ascii=False, default=str
+                    ),
+                    call_id=pending_result.call_id,
+                )
+                await self.publish(EntryCommittedEvent(entry=pending_entry))
+                history_revision = pending_entry.sequence
+                in_flight_tools = [
+                    item
+                    for item in in_flight_tools
+                    if item.get("call_id") != pending_result.call_id
+                ]
+        await self.repository.update_run(
+            run_id,
+            checkpoint=create_checkpoint(
+                harness_version=HARNESS_VERSION,
+                phase="model",
+                history_revision=history_revision,
+                continuation=(
+                    checkpoint.get("continuation")
+                    if isinstance(checkpoint.get("continuation"), dict)
+                    else None
+                ),
+            ),
+            tool_progress=None,
+        )
+        await self.run(run_id, cancellation)
+
+    async def _resume_recovery_interaction(
+        self,
+        *,
+        run,
+        session,
+        checkpoint: dict[str, Any],
+        response: dict[str, Any],
+        cancellation: asyncio.Event,
+        command_id: str | None,
+    ) -> None:
+        choice = response.get("choice")
+        if choice not in {"inspect", "retry", "cancel"}:
+            raise ValueError("invalid recovery choice")
+        interaction_id = str(response.get("request_id") or "recovery")
+        call_data = checkpoint.get("waiting_call")
+        if not isinstance(call_data, dict):
+            raise ValueError("recovery interaction has no tool call")
+        call = ToolCall(**call_data)
+        if choice == "retry":
+            workspace = self.workspace_factory(session, str(run.id))
+            replay_policy = _replay_policy(workspace, call.name)
+            retry_fingerprint = (
+                workspace.approval_assessment_fingerprint(call)
+                if call.name == "bash"
+                else None
+            )
+            (
+                response_entry,
+                durable_run,
+            ) = await self.repository.begin_approved_tool_execution(
+                str(session.id),
+                run_id=str(run.id),
+                interaction_id=interaction_id,
+                response=response,
+                call=_tool_call_dict(call),
+                replay_policy=replay_policy,
+                command_id=command_id,
+            )
+            checkpoint = dict(durable_run.checkpoint or {})
+        else:
+            response_entry = await self.repository.commit_interaction_response(
+                str(session.id),
+                run_id=str(run.id),
+                command_id=command_id,
+                interaction_id=interaction_id,
+                response=response,
+            )
+        await self.publish(EntryCommittedEvent(entry=_entry_contract(response_entry)))
+        if choice == "cancel":
+            await self._cancel(str(run.id))
+            return
+        if choice == "retry":
+            result = await workspace.execute(
+                call,
+                cancellation=cancellation,
+                interaction_response=(
+                    {
+                        "request_id": f"tool:{call.call_id}",
+                        "approved": True,
+                        "assessment_fingerprint": retry_fingerprint,
+                    }
+                    if retry_fingerprint is not None
+                    else None
+                ),
+            )
+            if result.status == "interaction_required":
+                raise ValueError("recovery retry did not resolve tool approval")
+            output = (
+                result.output
+                if result.status == "completed"
+                else {"error": result.error}
+            )
+        else:
+            output = {
+                "recovery": f"unknown {call.name} effect was not replayed",
+                "next_step": "inspect the current workspace state before continuing",
+            }
+        tool_entry = await self._append_message(
+            str(session.id),
+            str(run.id),
+            role="tool",
+            content=json.dumps(output, ensure_ascii=False, default=str),
+            call_id=call.call_id,
+            is_error=choice == "retry" and result.status != "completed",
+        )
+        await self.publish(EntryCommittedEvent(entry=tool_entry))
+        waiting, history_revision = await self._resume_remaining_recovery_tools(
+            session=session,
+            run_id=str(run.id),
+            checkpoint=checkpoint,
+            completed_call_id=call.call_id,
+            history_revision=tool_entry.sequence,
+            cancellation=cancellation,
+        )
+        if waiting:
+            return
+        await self.repository.update_run(
+            str(run.id),
+            status="running",
+            phase="model",
+            checkpoint=create_checkpoint(
+                harness_version=HARNESS_VERSION,
+                phase="model",
+                history_revision=history_revision,
+            ),
+        )
+        await self.run(str(run.id), cancellation)
+
+    async def _resume_remaining_recovery_tools(
+        self,
+        *,
+        session,
+        run_id: str,
+        checkpoint: dict[str, Any],
+        completed_call_id: str,
+        history_revision: int,
+        cancellation: asyncio.Event,
+    ) -> tuple[bool, int]:
+        remaining = [
+            dict(item)
+            for item in checkpoint.get("in_flight_tools") or []
+            if isinstance(item, dict) and item.get("call_id") != completed_call_id
+        ]
+        if not remaining:
+            return False, history_revision
+        workspace = self.workspace_factory(session, run_id)
+        for index, item in enumerate(remaining):
+            call = ToolCall(
+                call_id=str(item["call_id"]),
+                name=str(item["name"]),
+                arguments=dict(item.get("arguments") or {}),
+            )
+            policy = str(item.get("replay_policy") or "never")
+            if policy == "never":
+                await self._wait_for_recovery_choice(
+                    session=session,
+                    run_id=run_id,
+                    checkpoint=checkpoint,
+                    remaining=remaining[index:],
+                    call=call,
+                    history_revision=history_revision,
+                    message=(
+                        "The previous process stopped after this tool may have started "
+                        "but before its result was saved. It will not be run again "
+                        "automatically."
+                    ),
+                )
+                return True, history_revision
+            await self._mark_tool_progress(
+                run_id,
+                call_id=call.call_id,
+                name=call.name,
+                status="running",
+            )
+            result = (
+                await workspace.verify_recovery(call)
+                if policy == "verify"
+                else await workspace.execute(call, cancellation=cancellation)
+            )
+            if result.status == "interaction_required":
+                await self._wait_for_recovery_choice(
+                    session=session,
+                    run_id=run_id,
+                    checkpoint=checkpoint,
+                    remaining=remaining[index:],
+                    call=call,
+                    history_revision=history_revision,
+                    message=(
+                        f"BioinfoFlow could not prove whether the interrupted "
+                        f"{call.name} operation changed the target."
+                    ),
+                )
+                return True, history_revision
+            tool_entry = await self._append_message(
+                str(session.id),
+                run_id,
+                role="tool",
+                content=json.dumps(
+                    result.output
+                    if result.status == "completed"
+                    else {"error": result.error},
+                    ensure_ascii=False,
+                    default=str,
+                ),
+                call_id=call.call_id,
+                is_error=result.status != "completed",
+            )
+            history_revision = tool_entry.sequence
+            await self.publish(EntryCommittedEvent(entry=tool_entry))
+        return False, history_revision
+
+    async def _wait_for_recovery_choice(
+        self,
+        *,
+        session,
+        run_id: str,
+        checkpoint: dict[str, Any],
+        remaining: list[dict[str, Any]],
+        call: ToolCall,
+        history_revision: int,
+        message: str,
+    ) -> None:
+        interaction_id = f"recovery:{call.call_id}"
+        request = _recovery_request(call, message=message)
+        waiting_checkpoint = {
+            **checkpoint,
+            "phase": "interaction",
+            "history_revision": history_revision,
+            "in_flight_tools": remaining,
+            "waiting_call": _tool_call_dict(call),
+            "recovery_interaction": request,
+        }
+        notice, request_entry, _ = await self.repository.commit_waiting_interaction(
+            str(session.id),
+            run_id=run_id,
+            notice_payload={
+                "code": "unknown_tool_effect",
+                "message": message,
+                "details": {"interaction_id": interaction_id},
+            },
+            request_payload={
+                "interaction_id": interaction_id,
+                "request": request,
+            },
+            checkpoint=waiting_checkpoint,
+            tool_progress=[
+                {
+                    "call_id": str(item.get("call_id") or ""),
+                    "name": str(item.get("name") or "unknown"),
+                    "status": (
+                        "interaction_required"
+                        if item.get("call_id") == call.call_id
+                        else "pending"
+                    ),
+                }
+                for item in remaining
+            ],
+        )
+        assert notice is not None
+        await self.publish(EntryCommittedEvent(entry=_entry_contract(notice)))
+        await self.publish(EntryCommittedEvent(entry=_entry_contract(request_entry)))
+        await self.publish(
+            InteractionRequestedEvent(
+                run_id=run_id,
+                interaction_id=interaction_id,
+                request=request,
+            )
+        )
+
+    async def _invoke(self, *, run_id, session, context, workspace, cancellation):
+        if self.model_runtime_resolver is None:
+            target = model_target_from_snapshot(session.model_snapshot)
+            resolved = dict(session.model_snapshot or {})
+        else:
+            resolved = await self.model_runtime_resolver(session)
+            target = model_target_from_resolved(resolved)
+        capabilities = resolved_runtime_capabilities(resolved)
+        strategy = resolved_runtime_strategy(resolved)
+        if not capabilities.supports_vision and any(
+            isinstance(item, ImagePart) for item in context.input_items
+        ):
+            raise ModelVisionUnsupportedError(
+                "The selected model does not support image input."
+            )
+        reasoning_enabled = capabilities.supports_reasoning and strategy.allow_thinking
+        current = await self.repository.get_run(run_id)
+        continuation = responses_continuation_from_checkpoint(
+            current.checkpoint if current is not None else None,
+            target=target,
+            input_items=context.input_items,
+        )
+        invocation = ModelInvocation(
+            target=target,
+            instructions=context.instructions,
+            input_items=context.input_items,
+            tools=(
+                workspace.model_tools
+                if capabilities.supports_tools and strategy.allow_tools
+                else ()
+            ),
+            stream=capabilities.supports_streaming and strategy.use_streaming,
+            max_output_tokens=strategy.max_tokens or self.limits.max_output_tokens,
+            reasoning=ReasoningRequest(
+                enabled=reasoning_enabled,
+                effort=(strategy.reasoning_effort or "medium")
+                if reasoning_enabled
+                else None,
+            ),
+            continuation=continuation,
+        )
+        attempts = 0
+        while True:
+            response = _ModelResponse()
+            semantic = False
+            try:
+                async for event in _model_events_with_timeout(
+                    self.model_gateway.invoke(invocation),
+                    timeout_seconds=self.limits.model_attempt_timeout_seconds,
+                ):
+                    if cancellation.is_set():
+                        return _ModelResponse(cancelled=True)
+                    if isinstance(event, TextDelta):
+                        semantic = True
+                        start_offset = len(response.text.encode("utf-8"))
+                        response.text += event.text
+                        end_offset = len(response.text.encode("utf-8"))
+                        await self.repository.update_run(
+                            run_id,
+                            draft={
+                                "text": response.text,
+                                "reasoning": response.reasoning,
+                                "end_offset": end_offset,
+                            },
+                        )
+                        await self.publish(
+                            AssistantDeltaEvent(
+                                run_id=run_id,
+                                delta=event.text,
+                                start_offset=start_offset,
+                                end_offset=end_offset,
+                            )
+                        )
+                    elif isinstance(event, ReasoningDelta):
+                        semantic = True
+                        response.reasoning += event.text
+                        await self.repository.update_run(
+                            run_id,
+                            draft={
+                                "text": response.text,
+                                "reasoning": response.reasoning,
+                                "end_offset": len(response.text.encode("utf-8")),
+                            },
+                        )
+                    elif isinstance(event, ToolCallDelta):
+                        semantic = True
+                        response.tool_deltas.append(event)
+                    elif isinstance(event, UsageReport):
+                        response.usage = {
+                            "input_tokens": event.input_tokens,
+                            "output_tokens": event.output_tokens,
+                            "total_tokens": event.total_tokens,
+                        }
+                    elif isinstance(event, CompletionMetadata):
+                        response.continuation = (
+                            event.continuation.to_private_dict()
+                            if event.continuation is not None
+                            else None
+                        )
+                response.tool_calls = _assemble_tool_calls(response.tool_deltas)
+                current = await self.repository.get_run(run_id)
+                usage = dict(current.token_usage or {}) if current else {}
+                if response.usage:
+                    for key, value in response.usage.items():
+                        usage[key] = int(usage.get(key) or 0) + value
+                await self.repository.update_run(
+                    run_id,
+                    token_usage=usage or None,
+                    draft={"text": response.text, "reasoning": response.reasoning},
+                )
+                return response
+            except TimeoutError as exc:
+                attempts += 1
+                if semantic or attempts >= self.limits.retry_attempts:
+                    raise ModelAttemptTimeoutError(
+                        "Model stream exceeded the per-attempt timeout."
+                    ) from exc
+                delay = min(
+                    settings.agent_retry_base_delay_seconds * (2 ** (attempts - 1)),
+                    settings.agent_retry_max_delay_seconds,
+                )
+                await asyncio.sleep(delay)
+            except ModelError as exc:
+                attempts += 1
+                if (
+                    is_context_overflow(exc)
+                    or semantic
+                    or not exc.retryable
+                    or not exc.replay_safe
+                    or attempts >= self.limits.retry_attempts
+                ):
+                    raise
+                delay = exc.retry_after_seconds or min(
+                    settings.agent_retry_base_delay_seconds * (2 ** (attempts - 1)),
+                    settings.agent_retry_max_delay_seconds,
+                )
+                await asyncio.sleep(delay)
+
+    async def _build_context(self, session, entries) -> Any:
+        mappings = tuple(_history_mapping(entry) for entry in entries)
+        attachment_ids = _attachment_ids(mappings)
+        attachment_parts_by_id = await AgentHarnessAttachmentService(
+            self.repository.db
+        ).model_parts_for_ids(
+            attachment_ids,
+            session_id=str(session.id),
+            workspace_id=str(session.workspace_id),
+            user_id=session.user_id,
+        )
+        return self.context.build(
+            prompt_snapshot=session.prompt_snapshot,
+            entries=mappings,
+            attachment_parts_by_id=attachment_parts_by_id,
+        )
+
+    async def _append_message(
+        self,
+        session_id: str,
+        run_id: str,
+        *,
+        role: str,
+        content: str,
+        call_id: str | None = None,
+        is_error: bool = False,
+        reasoning_summary: str | None = None,
+        tool_calls: list[dict[str, Any]] | None = None,
+    ):
+        entry = await self.repository.append_entry(
+            session_id,
+            run_id=run_id,
+            entry_type="message",
+            payload={
+                "role": role,
+                "content": ([{"type": "text", "text": content}] if content else []),
+                "call_id": call_id,
+                "is_error": is_error,
+                "reasoning_summary": reasoning_summary or None,
+                "tool_calls": tool_calls or [],
+                "artifact_ids": [],
+            },
+        )
+        return _entry_contract(entry)
+
+    async def apply_steers(self, run_id: str, session_id: str) -> int:
+        entries = await self.repository.commit_steers_to_history(
+            session_id, run_id=run_id
+        )
+        for entry in entries:
+            await self.publish(EntryCommittedEvent(entry=_entry_contract(entry)))
+        return len(entries)
+
+    async def _update(self, run_id: str, **changes: Any) -> None:
+        run = await self.repository.update_run(run_id, **changes)
+        await self.publish(
+            RunUpdatedEvent(run_id=run.id, status=run.status, phase=run.phase)
+        )
+
+    async def _mark_tool_progress(
+        self,
+        run_id: str,
+        *,
+        call_id: str,
+        name: str,
+        status: str,
+    ) -> None:
+        run = await self.repository.get_run(run_id)
+        if run is None:
+            raise LookupError(f"agent run not found: {run_id}")
+        progress = [dict(item) for item in (run.tool_progress or [])]
+        progress = _replace_tool_progress(
+            progress,
+            call_id=call_id,
+            name=name,
+            status=status,
+        )
+        await self.repository.update_run(run_id, tool_progress=progress)
+
+    async def _cancel(self, run_id: str) -> None:
+        run = await self.repository.get_run(run_id)
+        reason = (
+            str(run.cancel_reason or "cancelled") if run is not None else "cancelled"
+        )
+        try:
+            await self._update(
+                run_id,
+                status="cancelled",
+                phase=None,
+                termination_reason=reason,
+            )
+        except ValueError:
+            run = await self.repository.get_run(run_id)
+            if run is None or run.status not in {"completed", "failed", "cancelled"}:
+                raise
+
+    async def _stop_if_budget_exceeded(self, run_id: str) -> bool:
+        run = await self.repository.get_run(run_id)
+        if run is None:
+            raise LookupError(f"agent run not found: {run_id}")
+        code: str | None = None
+        message: str | None = None
+        if run.started_at is not None:
+            started_at = run.started_at
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            elapsed = (datetime.now(timezone.utc) - started_at).total_seconds()
+            if elapsed >= self.limits.run_timeout_seconds:
+                code = "run_timeout_exceeded"
+                message = (
+                    f"Agent Run exceeded its {self.limits.run_timeout_seconds:g}-second "
+                    "wall-clock budget."
+                )
+        usage = dict(run.token_usage or {})
+        total_tokens = int(usage.get("total_tokens") or 0)
+        if code is None and total_tokens >= self.limits.run_token_budget:
+            code = "token_budget_exceeded"
+            message = (
+                f"Agent Run used {total_tokens} tokens, reaching its "
+                f"{self.limits.run_token_budget}-token budget."
+            )
+        if code is None or message is None:
+            return False
+        session_id = str(run.session_id)
+        notice = await self.repository.append_entry(
+            session_id,
+            run_id=run_id,
+            entry_type="notice",
+            payload={"code": code, "message": message},
+        )
+        await self.publish(EntryCommittedEvent(entry=_entry_contract(notice)))
+        await self._fail(run_id, code, message)
+        return True
+
+    async def _stop_if_cancel_requested(self, run_id: str) -> bool:
+        return await self.repository.get_run_cancellation(run_id) is not None
+
+    async def _fail(
+        self, run_id: str, code: str, message: str, *, exc: Exception | None = None
+    ) -> None:
+        try:
+            await self._update(
+                run_id,
+                status="failed",
+                phase=None,
+                termination_reason=code,
+                error={
+                    "code": code,
+                    "message": message,
+                    "type": type(exc).__name__ if exc else None,
+                },
+            )
+        except ValueError:
+            run = await self.repository.get_run(run_id)
+            if run is None or run.status not in {"completed", "failed", "cancelled"}:
+                raise
+
+
+async def _model_events_with_timeout(
+    events: AsyncIterator[Any],
+    *,
+    timeout_seconds: float,
+) -> AsyncIterator[Any]:
+    """Limit provider wait time without cancelling durable event persistence."""
+
+    iterator = events.__aiter__()
+    remaining = timeout_seconds
+    try:
+        while True:
+            if remaining <= 0:
+                raise TimeoutError
+            started_wait = asyncio.get_running_loop().time()
+            try:
+                async with asyncio.timeout(remaining):
+                    event = await anext(iterator)
+            except StopAsyncIteration:
+                return
+            finally:
+                remaining -= asyncio.get_running_loop().time() - started_wait
+            yield event
+    finally:
+        await aclose_async_iterator(iterator)
+
+
+@dataclass
+class _ModelResponse:
+    text: str = ""
+    reasoning: str = ""
+    tool_deltas: list[ToolCallDelta] = None  # type: ignore[assignment]
+    tool_calls: tuple[ToolCall, ...] = ()
+    usage: dict[str, int] | None = None
+    continuation: dict[str, Any] | None = None
+    cancelled: bool = False
+
+    def __post_init__(self) -> None:
+        if self.tool_deltas is None:
+            self.tool_deltas = []
+
+
+def _advance_response_continuation(
+    response: _ModelResponse,
+) -> dict[str, Any] | None:
+    continuation = ResponsesContinuation.from_private_dict(response.continuation)
+    if continuation is None:
+        return response.continuation
+    committed_parts = (
+        *((TextPart(response.text, phase="final_answer"),) if response.text else ()),
+        *(
+            ToolCallPart(
+                call_id=call.call_id,
+                name=call.name,
+                arguments=call.arguments,
+            )
+            for call in response.tool_calls
+        ),
+    )
+    return continuation.advance_canonical_input(committed_parts).to_private_dict()
+
+
+def _assemble_tool_calls(events: list[ToolCallDelta]) -> tuple[ToolCall, ...]:
+    by_index: dict[int, dict[str, Any]] = {}
+    for event in events:
+        current = by_index.setdefault(
+            event.index, {"call_id": None, "name": None, "arguments": ""}
+        )
+        current["call_id"] = event.call_id or current["call_id"]
+        current["name"] = event.name or current["name"]
+        current["arguments"] += event.arguments_delta
+    calls: list[ToolCall] = []
+    for index, data in sorted(by_index.items()):
+        name = data["name"]
+        if not isinstance(name, str) or not name:
+            name = "unknown"
+        raw = data["arguments"] or "{}"
+        try:
+            arguments = json.loads(raw)
+            if not isinstance(arguments, dict):
+                raise ValueError("tool arguments must be an object")
+        except (json.JSONDecodeError, ValueError):
+            arguments = {"_malformed_arguments": raw}
+        calls.append(
+            ToolCall(
+                call_id=str(data["call_id"] or f"tool-{index}"),
+                name=name,
+                arguments=arguments,
+            )
+        )
+    return tuple(calls)
+
+
+def _call_signature(calls: tuple[ToolCall, ...]) -> str:
+    return json.dumps(
+        [(call.name, call.arguments) for call in calls],
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+
+
+def _history_mapping(entry) -> dict[str, Any]:
+    return {
+        "sequence": entry.sequence,
+        "entry_type": entry.type,
+        "payload": entry.payload,
+    }
+
+
+def _attachment_ids(entries: tuple[dict[str, Any], ...]) -> list[str]:
+    ordered_entries = sorted(entries, key=lambda entry: int(entry.get("sequence") or 0))
+    covered_through = _latest_compaction_through(ordered_entries)
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for entry in ordered_entries:
+        if int(entry.get("sequence") or 0) <= covered_through:
+            continue
+        payload = entry.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        raw_ids = payload.get("attachment_ids")
+        if not isinstance(raw_ids, list):
+            continue
+        for raw_id in raw_ids:
+            attachment_id = str(raw_id)
+            if attachment_id and attachment_id not in seen:
+                seen.add(attachment_id)
+                ordered.append(attachment_id)
+    return ordered
+
+
+def _latest_compaction_through(entries: list[dict[str, Any]]) -> int:
+    for entry in reversed(entries):
+        if entry.get("entry_type", entry.get("type")) != "compaction":
+            continue
+        payload = entry.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        summary = payload.get("summary")
+        through_sequence = payload.get("through_sequence")
+        sequence = int(entry.get("sequence") or 0)
+        if (
+            isinstance(summary, str)
+            and summary.strip()
+            and isinstance(through_sequence, int)
+            and not isinstance(through_sequence, bool)
+            and 0 <= through_sequence < sequence
+        ):
+            return through_sequence
+    return 0
+
+
+def _entry_contract(entry):
+    return AgentHarnessRepository._entry_contract(entry)
+
+
+def _tool_result_dict(result: ToolResult) -> dict[str, Any]:
+    return {
+        "tool_name": result.tool_name,
+        "output": result.output,
+        "error": result.error,
+        "replay_policy": result.replay_policy,
+    }
+
+
+def _interaction_dict(result: ToolResult) -> dict[str, Any]:
+    interaction = result.interaction
+    if interaction is None:
+        return {}
+    return {
+        "request_id": interaction.request_id,
+        "call_id": interaction.call_id,
+        "kind": interaction.kind,
+        "questions": list(interaction.questions),
+        "risk": interaction.risk,
+    }
+
+
+def checkpoint_interaction_id(checkpoint: dict[str, Any]) -> str:
+    interaction = checkpoint.get("interaction")
+    if isinstance(interaction, dict):
+        request_id = interaction.get("request_id")
+        if isinstance(request_id, str) and request_id:
+            return request_id
+    waiting_call = checkpoint.get("waiting_call")
+    if isinstance(waiting_call, dict):
+        call_id = waiting_call.get("call_id")
+        if isinstance(call_id, str) and call_id:
+            prefix = "recovery" if checkpoint.get("recovery_interaction") else "tool"
+            return f"{prefix}:{call_id}"
+    raise ValueError("waiting interaction has no interaction id")
+
+
+def _recovery_request(call: ToolCall, *, message: str) -> dict[str, Any]:
+    return {
+        "kind": "recovery",
+        "call_id": call.call_id,
+        "tool_name": call.name,
+        "message": message,
+        "options": [
+            {
+                "id": "inspect",
+                "label": "Inspect state",
+                "description": "Continue without replaying the operation.",
+            },
+            {
+                "id": "retry",
+                "label": "Retry operation",
+                "description": "Explicitly allow the operation to run again.",
+            },
+            {
+                "id": "cancel",
+                "label": "Cancel run",
+                "description": "Stop without replaying the operation.",
+            },
+        ],
+    }
+
+
+def _find_call(calls: tuple[ToolCall, ...], call_id: str) -> ToolCall:
+    for call in calls:
+        if call.call_id == call_id:
+            return call
+    raise LookupError(f"tool call not found: {call_id}")
+
+
+def _tool_call_dict(call: ToolCall) -> dict[str, Any]:
+    return {
+        "call_id": call.call_id,
+        "name": call.name,
+        "arguments": call.arguments,
+    }
+
+
+def _tool_progress_dict(call: ToolCall, *, status: str) -> dict[str, str]:
+    return {
+        "call_id": call.call_id,
+        "name": call.name,
+        "status": status,
+    }
+
+
+def _replace_tool_progress(
+    progress: list[dict[str, Any]],
+    *,
+    call_id: str,
+    name: str,
+    status: str,
+) -> list[dict[str, Any]]:
+    replacement = {"call_id": call_id, "name": name, "status": status}
+    for index, item in enumerate(progress):
+        if item.get("call_id") == call_id:
+            progress[index] = replacement
+            break
+    else:
+        progress.append(replacement)
+    return progress
+
+
+def _checkpoint_replay_policy(checkpoint: dict[str, Any], call_id: str) -> str:
+    for item in checkpoint.get("in_flight_tools") or []:
+        if isinstance(item, dict) and item.get("call_id") == call_id:
+            return str(item.get("replay_policy") or "never")
+    return "never"
+
+
+def _replay_policy(workspace: WorkspaceRuntime, tool_name: str) -> str:
+    for spec in workspace.tools:
+        if spec.name == tool_name:
+            return spec.replay_policy
+    return "never"
+
+
+__all__ = ["AgentLoop", "HARNESS_VERSION", "LoopLimits"]

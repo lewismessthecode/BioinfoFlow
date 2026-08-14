@@ -160,22 +160,25 @@ Security expectations:
   authority to change its SSH config, keys, agent, or host-key records, can
   control or impersonate the inner target route within that account's authority
 - remember that saved jump routes support one direct hop only and are reused by
-  tests, probes, remote browsing, Agent tools, and remote project terminals
-- treat `remote.exec` as a remote shell with the selected SSH account's actual
-  authority; Bioinfoflow assesses each command dynamically, but does not add an
-  OS sandbox to an arbitrary SSH host
-- use `remote.read_file` and `remote.list_dir` for read-only inspection
-- treat the configured remote root as a navigation default and policy signal,
-  not confinement; absolute, variable, home-relative, outside-root, or
-  symlink-sensitive paths may require approval when safety cannot be established
+  tests, probes, remote project terminals, and remote Harness workspaces
+- remote Agent `read`, `edit`, `write`, and `bash` require a verified
+  Bubblewrap runtime on the SSH host; missing, writable, or untrusted sandbox
+  components fail closed
+- keep the configured remote root narrow: the remote sandbox binds declared
+  read/write roots, while the SSH account, ACLs, sudo rules, and scheduler policy
+  remain independent authority layers
 - treat command-risk path checks as lexical defense in depth: they recognize
   explicit destinations and symlinks created in the same command, but cannot
   prove the target of pre-existing symlinks or inspect archive contents before
   extraction; opaque archive extraction and unsupported indirect shell syntax
-  therefore require explicit approval, while the local OS sandbox or remote
-  Unix account and server policy remains the enforcement boundary
+  therefore require explicit confirmation; the local or remote OS sandbox,
+  SSH account, and server policy remain the enforcement boundaries
 - connection authorization is scoped to the connection selected in the Agent
-  session; a command cannot substitute another connection id
+  Session; a command cannot substitute another connection ID
+- remote authenticated `bif` requires a non-loopback
+  `BIOINFOFLOW_PUBLIC_API_BASE_URL` reachable from the SSH host; the short-lived
+  Agent token is passed through stdin only for a verified plain `bif` command
+  and is never embedded in SSH or shell argv
 - remember that remote project terminals are backend-mediated SSH PTY sessions;
   the browser still does not connect to SSH hosts directly
 
@@ -190,6 +193,7 @@ Before exposing Bioinfoflow beyond localhost, set values that exactly match the 
 ```env
 BIOINFOFLOW_BIND_HOST=0.0.0.0
 NEXT_PUBLIC_API_BASE_URL=http://YOUR_SERVER:8000/api/v1
+BIOINFOFLOW_PUBLIC_API_BASE_URL=http://YOUR_SERVER:8000/api/v1
 BETTER_AUTH_URL=http://YOUR_SERVER:3000
 CORS_ORIGINS=["http://YOUR_SERVER:3000"]
 TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER"]
@@ -205,100 +209,56 @@ For access outside a trusted localhost environment, terminate TLS at a reverse
 proxy and use matching `https://` origins. Do not expose the frontend and backend
 ports directly to untrusted networks.
 
-## Agent Shell Isolation
+## Agent Harness Isolation And Authorization
 
-The OS-level bash sandbox for AgentCore is required and fail-closed, with network
-access disabled by default and no per-command unsandboxed opt-out. Docker
-deployments may require host user-namespace and bubblewrap support.
+The model sees only `read`, `bash`, `edit`, `write`, and `ask_user`. Product
+operations go through the normal `bif` CLI and HTTP APIs instead of privileged
+in-process model tools.
 
-Sandbox availability diagnostics use four stable categories:
-`binary_missing` when the adapter executable is absent, `probe_exit` when the
-bounded probe returns non-zero, `probe_timeout` when it exceeds its deadline,
-and `probe_os_error` when the operating system cannot start or read the probe.
+Local Bash requires an operating-system sandbox and fails closed. Linux and
+container deployments use Bubblewrap; macOS development uses Seatbelt. Declared
+workspace roots are capability boundaries, network access is disabled by
+default, and protected Bioinfoflow source and internal state remain denied.
 
-Structured local file tools and all local writes are capability-based. The
-active project is read-write; reference/database roots are read-only; and
-administrators may declare extra read-write roots with
-`AGENT_FILESYSTEM_ROOTS`. Container deployments must mount those paths at the
-same absolute paths. Bubblewrap also limits shell reads to mounted capabilities.
-Native macOS Seatbelt retains host-user reads for runtime compatibility while
-permanently denying BioinfoFlow product source and internal state databases.
-A configured, existing Unix Docker socket is a Bash-only exception: a
-Bubblewrap bind or Seatbelt exact network-outbound rule makes that socket
-available to Bash, but not to structured file tools. Socket access carries full
-Docker daemon authority. The permanently protected product source and internal
-database resources are never approvable.
+Remote Harness tools use the same logical root policy but establish confinement
+inside the selected SSH account. Before executing a helper or Bash command, the
+adapter verifies remote Bubblewrap, shell, Python, and runtime roots outside
+writable project directories. Failure to find or trust them aborts the command.
+Network access remains off except for the narrowly recognized authenticated
+`bif` path when a reachable API URL is configured.
 
-The sandbox and approval policy are separate controls:
+Permission mode is a separate interaction policy:
 
-- the sandbox limits what a local process can reach when an adapter is active
-- permission modes decide when Bioinfoflow asks before an action
-- SSH commands are constrained by the remote Unix account, sudo/ACL policy,
-  scheduler policy, and server configuration, not by the local sandbox
+- `read_only` permits reads and read-only Bash only
+- `ask_dangerous` asks before destructive and critical Bash
+- `full_access` reduces risk prompts but does not bypass commands explicitly
+  marked for confirmation
 
-"Full access" (`bypass`) skips risk prompts for ordinary, external, elevated,
-and scoped destructive actions on the selected target while preserving their
-risk audit data. It cannot disable the local sandbox, authorize protected local
-resources, or bypass remote account authority. High-confidence catastrophic
-operations, including recognized root filesystem destruction, unsafe
-block-device writes or formats, direct host shutdown/reboot, and fork-bomb
-forms, still require explicit approval in an interactive session. Independent
-authorization, target, and protected-resource violations remain denied in every
-permission mode.
+Hard path, target, sandbox, and server-authorization violations remain blocked
+in every mode. Questions, command confirmation, and recovery choices use the
+same persisted Harness interaction channel.
 
-Command classification is a policy and review aid, not complete shell
-confinement: obfuscated programs and runtime-generated arguments cannot all be
-understood statically. The enforceable boundary is an active local OS sandbox;
-for SSH execution it is the remote Unix account plus sudo, ACL, scheduler, and
-server policy. Keep those controls enabled even when approval prompts are
-relaxed.
+Command classification is defense in depth, not complete parsing of arbitrary
+shell programs. The enforceable boundaries are the local or remote OS sandbox,
+the SSH account and server controls, and Bioinfoflow API authorization.
 
-### Agent browser network boundary
+### Short-lived Agent token
 
-Agent browser navigation uses a best-effort public DNS preflight before a URL is
-opened, then requires `agent-browser --allowed-domains` for runtime domain
-containment. These controls reject known local, private, link-local, metadata,
-and otherwise non-public destinations and prevent navigation to unrelated host
-names.
+Each active Run may receive a short-lived bearer token bound to its user,
+workspace, Session, Run, project, and selected remote connection. The database
+stores only a hash. The token expires quickly and is revoked when the Run is
+cancelled or ends, or when the Session is deleted.
 
-The third-party `agent-browser` CLI does not provide IP pinning between the DNS
-preflight and its later browser connection. An attacker-controlled hostname can
-therefore retain residual DNS-rebinding risk, especially in Full access where
-ordinary network actions do not prompt. Treat this browser capability as
-suitable only for trusted public domains. For strictly untrusted URLs, disable
-Bash network access and agent-browser instead of relying on the preflight as a
-complete SSRF boundary.
+The token is exposed only to a command proven to be one plain `bif` invocation;
+shell composition, redirection, expansion, wrappers, and `--base-url` overrides
+do not receive it. Local execution injects it only into that child process.
+Remote execution sends it through stdin and reconstructs the environment inside
+the trusted sandbox, so it is absent from SSH argv and shell argv. Redaction
+prevents it entering model context, history, logs, tool output, or artifacts.
 
-BioinfoFlow applies URL, action, configuration, and environment hardening to
-recognized direct `agent-browser` commands. Because `bash` is intentionally a
-general-purpose shell, a user-approved script, renamed executable, interpreter,
-or other indirect execution path cannot be proven to be the same program by
-static command parsing. Those paths remain governed by the Bash permission mode
-and operating-system sandbox, not by the direct-command allowlist. In Full
-access, neither the allowlist nor the DNS preflight should be treated as an
-authorization boundary.
-
-## Agent Permission And Approval Integrity
-
-AgentCore treats permission state as versioned authorization data. Each change
-to permission mode, automation mode, role/toolset, or execution target advances
-`permission_policy_version`. Before exposing or authorizing a tool, the runtime
-forces a fresh database read and stores a bounded permission and target snapshot
-on the resulting action. A committed change therefore applies to the next
-authorization evaluation in an active turn; already running or terminal actions
-are not rewritten.
-
-Permission updates default to `future_only`. The optional
-`approve_pending_tools` strategy approves eligible waiting tool actions in the
-same transaction as the policy update, but excludes `ask_user` and plan approval.
-The response reports affected, excluded, and already-resolved counts.
-
-Assistant tool calls are persisted in batches. The model cannot continue until
-every call in the batch has a completed, failed, rejected, or cancelled result.
-Approval decisions, execution claims, and batch continuation use conditional
-database transitions so duplicate requests, queue deliveries, workers, and
-restarts do not intentionally execute or continue twice. A process lost during
-a running side effect is failed for manual reconciliation rather than replayed.
+Agent-token API requests still reload the current user and role and require the
+route to opt into Agent-token access. Project and connection IDs must match the
+token scope; a token cannot turn `full_access` into administrator authority.
 
 ## Environment Files
 

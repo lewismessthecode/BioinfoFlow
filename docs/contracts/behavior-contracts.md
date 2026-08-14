@@ -14,8 +14,8 @@ compatibility path will exist forever; removals require a separate migration.
 - Successful responses use the existing `data` and optional `meta` envelope.
 - Error responses retain the existing error code, message, details, request ID,
   and status behavior.
-- AgentCore SSE, general event SSE, scheduler resource streams, and WebSocket
-  paths retain their existing event names and frame shapes.
+- Agent Harness SSE, general event SSE, scheduler resource streams, and
+  WebSocket paths retain their documented event names and frame shapes.
 
 OpenAPI does not currently describe every response payload because routes do
 not consistently declare `response_model`. Characterization tests remain the
@@ -27,7 +27,8 @@ Authoritative characterization coverage includes:
 - `backend/tests/test_api/test_errors.py`
 - `backend/tests/test_api/test_scheduler_api.py`
 - `backend/tests/test_api/test_events.py`
-- `backend/tests/test_api/test_agent_core_api.py`
+- `backend/tests/test_agent_harness/test_api.py`
+- `backend/tests/test_agent_harness/test_api_behavior.py`
 
 ## CLI
 
@@ -56,8 +57,9 @@ tree snapshot complements these tests; it does not replace output/error tests.
 - `createDemoRuntime()` and `getDemoRuntimeSingleton()` remain stable exports.
 - General live events retain credential use, named event bindings, reconnect
   behavior, and cleanup semantics.
-- AgentCore event streaming retains its `after_seq` cursor behavior and its
-  existing reconnect policy.
+- Agent event consumers treat the initial snapshot as authoritative and apply
+  only live events from the current connection. Reconnects fetch a new
+  authoritative snapshot before applying new live events.
 - Resource streaming retains its current credential and CLOSED-state behavior.
 - Existing local-storage keys and build-time `NEXT_PUBLIC_*` behavior remain
   stable.
@@ -95,63 +97,37 @@ engine, scheduler, migration, and model-invariant tests under `backend/tests/`.
 - Compare-and-swap lease predicates and execution-attempt checks must not be
   weakened by extraction.
 
-## AgentCore
+## Agent Harness
 
-- Session, turn, action, artifact, memory, skill, toolset, and stream routes
-  retain their paths and wire shapes.
-- `AgentLoopController.run_turn`, resume behavior, tool approvals, interaction
-  waits, event ordering, token usage, prompt/model snapshots, and lease renewal
-  remain stable.
-- Existing tool names, input/output schemas, and artifact policies remain
-  supported. Command risk retains the public risk vocabulary while adding
-  target-aware reasons, effects, confidence, and boundary audit data.
-- Frontend `AgentWorkbench` remains the canonical production interface.
-- Shared AgentCore types and session APIs used outside the obsolete chat shell
-  remain supported.
+- The Harness exposes durable Sessions, Runs, append-only entries,
+  attachments, artifacts, snapshots, and SSE.
+- Commands are exactly `prompt`, `steer`, `follow_up`, `respond`, and `cancel`.
+  A client-supplied command ID makes duplicate delivery idempotent.
+- One Session has at most one active Run. A prompt starts a Run; a follow-up is
+  queued until the active Run finishes.
+- The only model-visible tools are `read`, `bash`, `edit`, `write`, and
+  `ask_user`. Product operations use `bif --output json` through Bash.
+- Tool results are committed in model call order. Independent reads may run in
+  parallel; Bash, interactions, and conflicting writes are serialized.
+- Questions, dangerous-command confirmations, and recovery choices share one
+  interaction request/response contract.
+- Permission modes are `read_only`, `ask_dangerous`, and `full_access`.
+  Permission mode cannot bypass path boundaries, OS sandboxing, SSH account
+  authority, or server-side authorization.
+- `agent_entries` is the canonical rendering and context source. Compaction
+  appends a summary without deleting original entries.
+- Checkpoints are private unfinished-Run state. `read` may be retried, writes
+  require verification, and Bash with an unknown outcome requires user input.
+- SSE starts with an authoritative snapshot. Live event types are `run.updated`,
+  `assistant.delta`, `tool.updated`, `interaction.requested`, and
+  `entry.committed`; reconnects fetch a new authoritative snapshot.
+- Short-lived Agent tokens are scoped to the current user, workspace, Session,
+  Run, project, and remote connection. Only hashes persist; plaintext tokens do
+  not enter history, argv, logs, tool output, or artifacts.
 
-The permission and approval wire contract is:
-
-- authorization-relevant session changes advance
-  `permission_policy_version`; a new session, including one migrated from the
-  pre-version schema, starts at version `1`
-- each newly evaluated action may expose `evaluated_policy_version`,
-  `permission_context_snapshot`, `tool_batch_id`, and `tool_call_ordinal`; old
-  actions without those fields remain readable with nullable values
-- clients may omit `pending_strategy` from a session PATCH; omission means
-  `future_only`
-- `approve_pending_tools` approves eligible waiting tool actions in the same
-  transaction as the policy update, excludes user-input and plan-approval
-  interactions, and reports affected, excluded, and already-resolved counts
-- a general permission update never silently rewrites running or terminal
-  actions
-
-The durable execution contract is:
-
-- a committed policy update is visible to every later authorization evaluation,
-  including evaluations in an already active turn
-- every assistant tool-call batch produces one terminal result per provider
-  tool-call id before the model may continue
-- decisions, execution claims, and batch continuation are conditional database
-  transitions; duplicate requests or workers do not intentionally enqueue,
-  execute, or continue twice
-- recovery keeps waiting batches waiting, re-enqueues requested work, resumes an
-  all-terminal batch through one continuation claim, and fails rather than
-  replays an action found running after process loss
-- legacy waiting actions without a batch id remain supported by the compatibility
-  decision and recovery path
-
-Permission mode is an approval policy, not a capability grant. `bypass` (shown
-as **Full access**) auto-approves ordinary, external, elevated, and scoped
-destructive actions. High-confidence critical actions still require explicit
-approval; protected-resource, authorization, and target violations remain
-denied. Command classification is not complete confinement. The enforceable
-boundary is an active local OS sandbox or the SSH account and remote server
-controls. Explicit user/plan interactions and workspace policy remain
-independent, and a remote working root is not confinement.
-
-Authoritative coverage includes `backend/tests/test_agent_core/`,
-`backend/tests/test_api/test_agent_core_api.py`, and the frontend AgentWorkbench,
-runtime reducer, transcript, and stream suites.
+Authoritative coverage is under `backend/tests/test_agent_harness/`,
+`backend/tests/test_auth/test_agent_tokens.py`, and
+`backend/tests/test_cli/test_cli_agent_harness.py`.
 
 ## Compatibility Imports
 
@@ -163,8 +139,8 @@ import migration and reachability proof. Examples include:
 - Workflow validator re-exports/delegates.
 - Run service and runtime compatibility imports that still have real consumers.
 - CLI client type re-exports.
-- Request/schema aliases such as AgentCore `kind`, run `error_json`, workflow
-  `schema_json`, and LLM `provider_metadata`.
+- Request/schema aliases such as run `error_json`, workflow `schema_json`, and
+  LLM `provider_metadata`.
 
 Test-only aliases that do not influence production execution may be removed only
 after tests patch the real collaborator and the full suite remains green.

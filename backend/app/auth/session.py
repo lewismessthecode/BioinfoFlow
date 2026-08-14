@@ -50,22 +50,27 @@ def _warn_schema_not_ready_once(db_path: Path, missing_tables: list[str]) -> Non
     )
 
 
-def _build_session_query(user_columns: set[str]) -> str:
+def _user_select_columns(user_columns: set[str]) -> list[str]:
     columns = [
-        'u.id as id',
-        'u.name as name',
-        'u.email as email',
-        'u.image as image',
+        "u.id as id",
+        "u.name as name",
+        "u.email as email",
+        "u.image as image",
     ]
     optional_columns = {
-        "role": 'u.role as auth_role',
+        "role": "u.role as auth_role",
         "teamRole": 'u."teamRole" as team_role',
-        "banned": 'u.banned as banned',
+        "banned": "u.banned as banned",
         "banExpires": 'u."banExpires" as ban_expires',
     }
     for name, fragment in optional_columns.items():
         if name in user_columns:
             columns.append(fragment)
+    return columns
+
+
+def _build_session_query(user_columns: set[str]) -> str:
+    columns = _user_select_columns(user_columns)
     return f"""
 SELECT {", ".join(columns)}
 FROM session s
@@ -74,10 +79,44 @@ WHERE s.token = ? AND s."expiresAt" > ?
 """
 
 
+def _build_user_query(user_columns: set[str]) -> str:
+    columns = _user_select_columns(user_columns)
+    return f"SELECT {', '.join(columns)} FROM user u WHERE u.id = ?"
+
+
 def normalize_session_token(cookie_value: str) -> str:
     """Extract the raw Better Auth session token from a signed cookie value."""
     token, _, _signature = cookie_value.partition(".")
     return token
+
+
+def _auth_user_from_row(row: sqlite3.Row) -> AuthUser | None:
+    disabled = bool(row["banned"]) if "banned" in row.keys() else False
+    if disabled and "ban_expires" in row.keys() and row["ban_expires"]:
+        try:
+            expires_at = datetime.fromisoformat(
+                str(row["ban_expires"]).replace("Z", "+00:00")
+            )
+        except ValueError:
+            expires_at = None
+        if expires_at is not None and expires_at <= datetime.now(timezone.utc):
+            disabled = False
+    if disabled:
+        return None
+
+    role = "member"
+    if "team_role" in row.keys() and row["team_role"]:
+        role = str(row["team_role"])
+    elif "auth_role" in row.keys() and str(row["auth_role"]) == "admin":
+        role = "admin"
+    return AuthUser(
+        id=row["id"],
+        name=row["name"],
+        email=row["email"],
+        image=row["image"],
+        role=role,
+        disabled=disabled,
+    )
 
 
 def validate_session(token: str) -> AuthUser | None:
@@ -112,36 +151,36 @@ def validate_session(token: str) -> AuthUser | None:
                 .replace("+00:00", "Z")
             )
             row = conn.execute(session_query, (raw_token, now_iso)).fetchone()
-            if row is None:
-                return None
-            disabled = bool(row["banned"]) if "banned" in row.keys() else False
-            if disabled and "ban_expires" in row.keys() and row["ban_expires"]:
-                try:
-                    expires_at = datetime.fromisoformat(
-                        str(row["ban_expires"]).replace("Z", "+00:00")
-                    )
-                except ValueError:
-                    expires_at = None
-                if expires_at is not None and expires_at <= datetime.now(timezone.utc):
-                    disabled = False
-            if disabled:
-                return None
-
-            role = "member"
-            if "team_role" in row.keys() and row["team_role"]:
-                role = str(row["team_role"])
-            elif "auth_role" in row.keys() and str(row["auth_role"]) == "admin":
-                role = "admin"
-            return AuthUser(
-                id=row["id"],
-                name=row["name"],
-                email=row["email"],
-                image=row["image"],
-                role=role,
-                disabled=disabled,
-            )
+            return _auth_user_from_row(row) if row is not None else None
         finally:
             conn.close()
     except Exception:
         logger.exception("auth.session_validation_error")
+        return None
+
+
+def validate_user(user_id: str) -> AuthUser | None:
+    """Read the user's current identity, role and disabled state by ID."""
+    db_path = Path(settings.better_auth_db_path)
+    if not db_path.is_absolute():
+        db_path = Path(settings.repo_root) / db_path
+    if not db_path.exists():
+        logger.warning("auth.db_not_found", path=str(db_path))
+        return None
+
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        try:
+            if "user" not in _table_names(conn):
+                _warn_schema_not_ready_once(db_path, ["user"])
+                return None
+            row = conn.execute(
+                _build_user_query(_column_names(conn, "user")), (user_id,)
+            ).fetchone()
+            return _auth_user_from_row(row) if row is not None else None
+        finally:
+            conn.close()
+    except Exception:
+        logger.exception("auth.user_validation_error")
         return None

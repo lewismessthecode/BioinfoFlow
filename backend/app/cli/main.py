@@ -112,7 +112,10 @@ def main(
     from app.cli.client import ApiClient
     from app.cli.transport import RemoteTransport
 
-    transport = RemoteTransport(resolved_url)
+    transport = RemoteTransport(
+        resolved_url,
+        bearer_token=os.environ.get("BIOFLOW_AGENT_TOKEN"),
+    )
 
     effective_no_color = no_color or os.environ.get("NO_COLOR") is not None
     console = Console(no_color=effective_no_color, stderr=resolved_output == "json")

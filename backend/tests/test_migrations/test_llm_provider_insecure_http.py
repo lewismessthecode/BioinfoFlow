@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+TARGET_REVISION = "0043_llm_provider_insecure_http_opt_in"
 
 
 def _run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -54,7 +55,7 @@ def test_insecure_http_opt_in_migration_defaults_existing_rows_and_downgrades(
     finally:
         conn.close()
 
-    upgrade = _run_alembic(db_path, "upgrade", "head")
+    upgrade = _run_alembic(db_path, "upgrade", TARGET_REVISION)
     assert upgrade.returncode == 0, upgrade.stderr or upgrade.stdout
 
     conn = sqlite3.connect(db_path)

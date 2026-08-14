@@ -5,7 +5,7 @@ from os import cpu_count
 from pathlib import Path
 from typing import Any
 
-from app.services.agent_core.sandbox import SandboxRunner
+from app.services.agent_harness.sandbox import SandboxRunner
 from app.utils.logging import get_logger
 
 _PROVIDER_KEY_FIELDS = (
@@ -93,15 +93,13 @@ def build_startup_summary(settings: Any) -> dict[str, Any]:
             "safety_memory_gb": float(settings.scheduler_safety_memory_gb),
             "safety_disk_gb": float(settings.scheduler_safety_disk_gb),
         },
-        "agent_core": {
-            "runtime": "agent_core",
+        "agent_harness": {
+            "runtime": "agent_harness",
             "model_source": "llm_catalog",
             "max_tokens": int(settings.agent_max_tokens),
             "max_iterations": int(settings.agent_max_iterations),
-            "compact_threshold": int(settings.agent_compact_threshold),
             "sandbox_enabled": bool(settings.agent_sandbox_enabled),
             "sandbox": sandbox_summary,
-            "observability": bool(settings.agent_observability),
             "langsmith_tracing": bool(
                 settings.langsmith_tracing or settings.langsmith_tracing_v2
             ),
@@ -133,10 +131,8 @@ def _presence(value: str | None) -> str:
 
 def _sandbox_summary(settings: Any) -> dict[str, Any]:
     enabled = bool(settings.agent_sandbox_enabled)
-    fail_closed = bool(getattr(settings, "agent_sandbox_fail_closed", True))
     summary = {
         "enabled": enabled,
-        "fail_closed": fail_closed,
         "adapter": None,
         "executable": None,
         "available": None,
