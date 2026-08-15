@@ -33,6 +33,10 @@ class ReadTool:
             "additionalProperties": False,
         },
         replay_policy="safe",
+        display_name="Read",
+        category="read",
+        summary="Read file",
+        input_summary_fields=("path",),
         path_argument="path",
     )
 

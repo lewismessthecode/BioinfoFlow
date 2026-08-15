@@ -38,7 +38,12 @@ from app.services.agent_harness.recovery import (
     create_checkpoint,
     responses_continuation_from_checkpoint,
 )
+from app.services.agent_harness.tool_projection import (
+    project_tool_view,
+    public_output_summary as _public_output_summary,
+)
 from app.services.agent_harness.tools import ToolCall, ToolResult
+from app.services.agent_harness.tools.specs import ToolSpec
 from app.services.agent_harness.workspace_runtime import WorkspaceRuntime
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
@@ -242,11 +247,8 @@ class AgentLoop:
                         )
 
                 execution_mode = workspace.batch_execution_mode(response.tool_calls)
-                group_id = (
-                    f"tool-group:{response.tool_calls[0].call_id}"
-                    if response.tool_calls
-                    else "tool-group:none"
-                )
+                assistant_entry_id = str(uuid4())
+                group_id = assistant_entry_id
                 assistant = None
                 if response.text or response.reasoning or response.tool_calls:
                     assistant = await self._append_message(
@@ -255,9 +257,11 @@ class AgentLoop:
                         role="assistant",
                         content=response.text,
                         reasoning_summary=response.reasoning,
+                        entry_id=assistant_entry_id,
                         tool_calls=[
                             _public_tool_call_dict(
                                 call,
+                                spec=workspace.tool_spec(call.name),
                                 group_id=group_id,
                                 execution_mode=execution_mode,
                             )
@@ -331,6 +335,7 @@ class AgentLoop:
                     tool_progress=[
                         _tool_progress_dict(
                             call,
+                            spec=workspace.tool_spec(call.name),
                             status="pending",
                             group_id=group_id,
                             execution_mode=execution_mode,
@@ -990,6 +995,7 @@ class AgentLoop:
                     run_id=run_id,
                     checkpoint=checkpoint,
                     remaining=remaining[index:],
+                    workspace=workspace,
                     call=call,
                     history_revision=history_revision,
                     message=(
@@ -1016,6 +1022,7 @@ class AgentLoop:
                     run_id=run_id,
                     checkpoint=checkpoint,
                     remaining=remaining[index:],
+                    workspace=workspace,
                     call=call,
                     history_revision=history_revision,
                     message=(
@@ -1058,6 +1065,7 @@ class AgentLoop:
         run_id: str,
         checkpoint: dict[str, Any],
         remaining: list[dict[str, Any]],
+        workspace: WorkspaceRuntime,
         call: ToolCall,
         history_revision: int,
         message: str,
@@ -1090,9 +1098,9 @@ class AgentLoop:
                     call_id=str(item.get("call_id") or ""),
                     name=str(item.get("name") or "unknown"),
                     arguments=dict(item.get("arguments") or {}),
+                    spec=workspace.tool_spec(str(item.get("name") or "unknown")),
                     group_id=str(
-                        item.get("group_id")
-                        or f"tool-group:{item.get('call_id') or ''}"
+                        item.get("group_id") or _missing_group_id(item)
                     ),
                     execution_mode=str(item.get("execution_mode") or "serial"),
                     status=(
@@ -1307,9 +1315,10 @@ class AgentLoop:
         is_error: bool = False,
         tool_status: str | None = None,
         reasoning_summary: str | None = None,
+        entry_id: str | None = None,
         tool_calls: list[dict[str, Any]] | None = None,
     ):
-        message_id = str(uuid4())
+        message_id = entry_id or str(uuid4())
         parts: list[dict[str, Any]] = []
         if role == "tool":
             if call_id is None:
@@ -1349,6 +1358,7 @@ class AgentLoop:
             session_id,
             run_id=run_id,
             entry_type="message",
+            entry_id=message_id,
             payload={
                 "role": role,
                 "parts": parts,
@@ -1724,16 +1734,6 @@ def _tool_result_dict(result: ToolResult) -> dict[str, Any]:
     }
 
 
-def _public_output_summary(output: Any) -> str | None:
-    if output is None:
-        return None
-    if isinstance(output, str):
-        text = output
-    else:
-        text = json.dumps(output, ensure_ascii=False, default=str)
-    return text if len(text) <= 300 else f"{text[:297]}..."
-
-
 def _interaction_dict(result: ToolResult) -> dict[str, Any]:
     interaction = result.interaction
     if interaction is None:
@@ -1842,22 +1842,18 @@ def _assistant_draft_payload(
 def _public_tool_call_dict(
     call: ToolCall,
     *,
+    spec: ToolSpec | None,
     group_id: str,
     execution_mode: ToolExecutionMode,
 ) -> dict[str, Any]:
-    return ToolProgressView.model_validate(
-        {
-            "call_id": call.call_id,
-            "group_id": group_id,
-            "execution_mode": execution_mode,
-            "name": call.name,
-            "display_name": call.name,
-            "category": _tool_category(call.name),
-            "summary": _tool_summary(call.name, call.arguments),
-            "arguments": call.arguments,
-            "status": "pending",
-            "revision": 1,
-        }
+    return project_tool_view(
+        spec=spec,
+        call_id=call.call_id,
+        name=call.name,
+        arguments=call.arguments,
+        status="pending",
+        group_id=group_id,
+        execution_mode=execution_mode,
     ).model_dump(
         mode="json",
         include={
@@ -1876,23 +1872,19 @@ def _public_tool_call_dict(
 def _tool_progress_dict(
     call: ToolCall,
     *,
+    spec: ToolSpec | None,
     status: str,
     group_id: str,
     execution_mode: ToolExecutionMode,
 ) -> dict[str, Any]:
-    return ToolProgressView.model_validate(
-        {
-            "call_id": call.call_id,
-            "group_id": group_id,
-            "execution_mode": execution_mode,
-            "name": call.name,
-            "display_name": call.name,
-            "category": _tool_category(call.name),
-            "summary": _tool_summary(call.name, call.arguments),
-            "arguments": call.arguments,
-            "status": status,
-            "revision": 1,
-        }
+    return project_tool_view(
+        spec=spec,
+        call_id=call.call_id,
+        name=call.name,
+        arguments=call.arguments,
+        status=status,
+        group_id=group_id,
+        execution_mode=execution_mode,
     ).model_dump(mode="json")
 
 
@@ -1915,38 +1907,8 @@ def _replace_tool_progress(
             progress[index] = replacement
             break
     else:
-        replacement = ToolProgressView.model_validate(
-            {
-                "call_id": call_id,
-                "group_id": f"tool-group:{call_id}",
-                "execution_mode": "serial",
-                "name": name,
-                "display_name": name,
-                "category": _tool_category(name),
-                "summary": name,
-                "arguments": {},
-                "status": status,
-                "revision": 1,
-            }
-        ).model_dump(mode="json")
-        progress.append(replacement)
+        raise LookupError(f"tool progress not found: {call_id}")
     return progress
-
-
-def _tool_category(name: str) -> str:
-    return {
-        "read": "read",
-        "bash": "command",
-        "edit": "edit",
-        "write": "write",
-        "ask_user": "interaction",
-        "update_plan": "plan",
-    }.get(name, "other")
-
-
-def _tool_summary(name: str, arguments: dict[str, Any]) -> str:
-    subject = arguments.get("path") or arguments.get("command")
-    return f"{name}: {subject}" if isinstance(subject, str) and subject else name
 
 
 def _recovery_tool_progress(
@@ -1954,23 +1916,19 @@ def _recovery_tool_progress(
     call_id: str,
     name: str,
     arguments: dict[str, Any],
+    spec: ToolSpec | None,
     group_id: str,
     execution_mode: ToolExecutionMode,
     status: str,
 ) -> dict[str, Any]:
-    return ToolProgressView.model_validate(
-        {
-            "call_id": call_id,
-            "group_id": group_id,
-            "execution_mode": execution_mode,
-            "name": name,
-            "display_name": name,
-            "category": _tool_category(name),
-            "summary": _tool_summary(name, arguments),
-            "arguments": arguments,
-            "status": status,
-            "revision": 1,
-        }
+    return project_tool_view(
+        spec=spec,
+        call_id=call_id,
+        name=name,
+        arguments=arguments,
+        status=status,
+        group_id=group_id,
+        execution_mode=execution_mode,
     ).model_dump(mode="json")
 
 
@@ -1986,6 +1944,12 @@ def _checkpoint_replay_policy(checkpoint: dict[str, Any], call_id: str) -> str:
         if isinstance(item, dict) and item.get("call_id") == call_id:
             return str(item.get("replay_policy") or "never")
     return "never"
+
+
+def _missing_group_id(item: dict[str, Any]) -> str:
+    raise ValueError(
+        f"tool call {item.get('call_id') or 'unknown'} has no owning assistant entry"
+    )
 
 
 def _replay_policy(workspace: WorkspaceRuntime, tool_name: str) -> str:

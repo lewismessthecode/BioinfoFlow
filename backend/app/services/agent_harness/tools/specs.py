@@ -6,6 +6,7 @@ from typing import Any, Literal, Protocol, TypeAlias
 from app.services.agent_harness.contracts import (
     PermissionMode as ContractPermissionMode,
 )
+from app.services.agent_harness.contracts import ToolCategory
 from app.services.agent_harness.contracts import (
     WorkspaceAccess as ContractWorkspaceAccess,
 )
@@ -27,6 +28,10 @@ class ToolSpec:
     description: str
     input_schema: dict[str, Any]
     replay_policy: ReplayPolicy
+    display_name: str
+    category: ToolCategory
+    summary: str
+    input_summary_fields: tuple[str, ...] = ()
     mutates_workspace: bool = False
     path_argument: str | None = None
     serial: bool = False

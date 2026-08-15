@@ -90,6 +90,35 @@ async def test_tool_progress_revisions_are_local_to_each_call(
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
     run = await repository.create_run(str(session.id))
+    await repository.update_run(
+        str(run.id),
+        tool_progress=[
+            {
+                "call_id": "read-1",
+                "group_id": "group-1",
+                "execution_mode": "parallel",
+                "name": "read",
+                "display_name": "Read",
+                "category": "read",
+                "summary": "Read file: README.md",
+                "arguments": {"path": "README.md"},
+                "status": "pending",
+                "revision": 0,
+            },
+            {
+                "call_id": "read-2",
+                "group_id": "group-1",
+                "execution_mode": "parallel",
+                "name": "read",
+                "display_name": "Read",
+                "category": "read",
+                "summary": "Read file: RUNBOOK.md",
+                "arguments": {"path": "RUNBOOK.md"},
+                "status": "pending",
+                "revision": 0,
+            },
+        ],
+    )
     running = await repository.update_tool_progress(
         str(run.id),
         call_id="read-1",
@@ -958,6 +987,11 @@ async def test_approved_bash_ack_rolls_back_with_the_execution_fence(
         "name": "bash",
         "arguments": {"command": "printf safe"},
     }
+    durable_call = {
+        **call,
+        "group_id": "assistant-entry-1",
+        "execution_mode": "serial",
+    }
     await repository.update_run(
         run_id,
         status="waiting_user",
@@ -965,9 +999,23 @@ async def test_approved_bash_ack_rolls_back_with_the_execution_fence(
         checkpoint={
             "phase": "interaction",
             "history_revision": 0,
-            "in_flight_tools": [{**call, "replay_policy": "never"}],
-            "waiting_call": call,
+            "in_flight_tools": [{**durable_call, "replay_policy": "never"}],
+            "waiting_call": durable_call,
         },
+        tool_progress=[
+            {
+                "call_id": "bash-1",
+                "group_id": "assistant-entry-1",
+                "execution_mode": "serial",
+                "name": "bash",
+                "display_name": "Bash",
+                "category": "command",
+                "summary": "Run command",
+                "arguments": {"command": "printf safe"},
+                "status": "interaction_required",
+                "revision": 1,
+            }
+        ],
     )
     await repository.enqueue_command(
         session_id,
@@ -1007,7 +1055,7 @@ async def test_approved_bash_ack_rolls_back_with_the_execution_fence(
         assert stored.status == "waiting_user"
         assert [item["command_id"] for item in stored.command_queue] == ["approve-1"]
         assert stored.checkpoint["in_flight_tools"] == [
-            {**call, "replay_policy": "never"}
+            {**durable_call, "replay_policy": "never"}
         ]
         assert [
             entry

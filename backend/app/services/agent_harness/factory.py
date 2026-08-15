@@ -39,7 +39,7 @@ from app.services.remote_execution import (
     SshRemoteExecutor,
 )
 from app.utils.authorization import can_access_project
-from app.utils.exceptions import NotFoundError
+from app.utils.exceptions import AgentModelRequiredError, NotFoundError
 
 
 _MAX_REMOTE_SKILLS = 200
@@ -143,7 +143,7 @@ async def resolve_model_snapshot(
         )
     )
     if resolved is None:
-        raise ValueError("No usable model is configured for this Agent session")
+        raise AgentModelRequiredError()
     return private_model_snapshot(resolved)
 
 

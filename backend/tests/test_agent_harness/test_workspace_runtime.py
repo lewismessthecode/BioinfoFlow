@@ -391,6 +391,9 @@ class _ProbeTool:
             description=name,
             input_schema={"type": "object"},
             replay_policy="safe",
+            display_name=name,
+            category="other",
+            summary=name,
             mutates_workspace=path_argument is not None,
             path_argument=path_argument,
             serial=serial,
@@ -414,6 +417,9 @@ class _ReadOnlyBashProbeTool(_ProbeTool):
             description="bash",
             input_schema={"type": "object"},
             replay_policy="never",
+            display_name="Bash",
+            category="command",
+            summary="Run command",
             mutates_workspace=True,
         )
 
@@ -428,6 +434,9 @@ class _EnvironmentProbeTool:
         description="inspect tool environment",
         input_schema={"type": "object"},
         replay_policy="safe",
+        display_name="Environment probe",
+        category="other",
+        summary="Inspect environment",
     )
 
     async def run(self, arguments, context):

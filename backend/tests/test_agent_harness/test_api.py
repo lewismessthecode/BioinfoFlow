@@ -9,6 +9,16 @@ import pytest
 
 
 @pytest.mark.asyncio
+async def test_session_create_reports_a_stable_code_when_no_model_is_available(
+    async_client,
+) -> None:
+    response = await async_client.post("/api/v1/agent/sessions", json={})
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "AGENT_MODEL_REQUIRED"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "payload",
     [

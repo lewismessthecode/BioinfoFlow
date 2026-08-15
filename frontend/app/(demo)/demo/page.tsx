@@ -7,6 +7,7 @@ import { DagPanel } from "@/components/bioinfoflow/dag/dag-panel"
 import { Logo } from "@/components/bioinfoflow/logo"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
+import { StatusBadge } from "@/components/ui/status-badge"
 import { useDemoReplay } from "@/lib/demo/demo-context"
 import { ExternalLink, Play, RotateCcw, Square } from "@/lib/icons"
 
@@ -41,9 +42,12 @@ export default function DemoPage() {
           <span className="truncate text-sm font-semibold tracking-tight">
             Bioinfoflow
           </span>
-          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-600 dark:text-amber-400">
+          <StatusBadge
+            variant="warning"
+            className="px-2.5 py-0.5 text-[10px] uppercase tracking-wider"
+          >
             {t("badge")}
-          </span>
+          </StatusBadge>
         </div>
 
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
@@ -133,17 +137,18 @@ export default function DemoPage() {
               {t("dag.title")}
             </span>
             {runStatus ? (
-              <span
-                className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
+              <StatusBadge
+                variant={
                   runStatus === "completed"
-                    ? "bg-success-muted text-success-foreground"
+                    ? "success"
                     : runStatus === "running"
-                      ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                      : "bg-muted text-muted-foreground"
-                }`}
+                      ? "running"
+                      : "neutral"
+                }
+                className="px-2 py-0.5 text-[10px] uppercase tracking-wider"
               >
                 {t(`runStatus.${runStatus}`)}
-              </span>
+              </StatusBadge>
             ) : null}
           </div>
 

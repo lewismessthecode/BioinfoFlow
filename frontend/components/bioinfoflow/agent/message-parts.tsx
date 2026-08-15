@@ -63,10 +63,7 @@ export function AgentMessageParts({
               {tools.length === 1 ? (
                 <AgentToolCard tool={tools[0]} />
               ) : (
-                <AgentActivityGroup
-                  tools={tools}
-                  executionMode={block.calls[0].execution_mode}
-                />
+                <AgentActivityGroup tools={tools} />
               )}
               <ToolOutputContentParts results={results} />
             </div>

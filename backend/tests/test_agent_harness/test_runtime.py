@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -19,6 +20,7 @@ from app.services.agent_harness.harness import AgentHarness
 from app.services.agent_harness.loop import HARNESS_VERSION
 from app.services.agent_harness.recovery import create_checkpoint
 from app.services.agent_harness.runtime import AgentRuntime
+from app.services.agent_harness.tools.read import ReadTool
 from app.services.agent_harness.workspace_runtime import (
     LocalWorkspaceBackend,
     WorkspaceRuntime,
@@ -148,6 +150,9 @@ class BlockingRecoveryWorkspace:
 
     def with_bash_environment_provider(self, _provider) -> None:
         return None
+
+    def tool_spec(self, name: str):
+        return ReadTool.spec if name == ReadTool.spec.name else None
 
     async def execute(self, _call):
         self.started.set()
@@ -894,6 +899,30 @@ async def test_runtime_recovery_schedules_tool_resume_without_blocking_startup(
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_open_request())
     run = await repository.create_run(str(session.id))
+    assistant_entry_id = str(uuid4())
+    assistant = await repository.append_entry(
+        str(session.id),
+        run_id=str(run.id),
+        entry_type="message",
+        entry_id=assistant_entry_id,
+        payload={
+            "role": "assistant",
+            "parts": [
+                {
+                    "id": "tool-call:read-1",
+                    "type": "tool_call",
+                    "call_id": "read-1",
+                    "group_id": assistant_entry_id,
+                    "execution_mode": "serial",
+                    "name": ReadTool.spec.name,
+                    "display_name": ReadTool.spec.display_name,
+                    "category": ReadTool.spec.category,
+                    "summary": "Read file: input.txt",
+                    "arguments": {"path": "input.txt"},
+                }
+            ],
+        },
+    )
     await repository.update_run(
         str(run.id),
         status="running",
@@ -901,10 +930,12 @@ async def test_runtime_recovery_schedules_tool_resume_without_blocking_startup(
         checkpoint=create_checkpoint(
             harness_version=HARNESS_VERSION,
             phase="tools",
-            history_revision=0,
+            history_revision=assistant.sequence,
             in_flight_tools=(
                 {
                     "call_id": "read-1",
+                    "group_id": assistant_entry_id,
+                    "execution_mode": "serial",
                     "name": "read",
                     "arguments": {"path": "input.txt"},
                     "replay_policy": "safe",

@@ -193,6 +193,58 @@ describe("AgentHistoryEntries", () => {
     expect(screen.getByText("Read 18 lines")).toBeInTheDocument()
   })
 
+  it("labels historical activity as mixed when grouped tools use different execution modes", () => {
+    const entries: HistoryEntry[] = [
+      {
+        ...baseEntry,
+        id: "assistant-mixed-tools",
+        sequence: 1,
+        type: "message",
+        payload: {
+          role: "assistant",
+          parts: [
+            {
+              id: "serial-call",
+              type: "tool_call",
+              call_id: "call-serial",
+              group_id: "mixed-group",
+              execution_mode: "serial",
+              name: "read",
+              display_name: "Read",
+              category: "read",
+              summary: "Read the workflow",
+              arguments: { path: "workflow.nf" },
+            },
+            {
+              id: "parallel-call",
+              type: "tool_call",
+              call_id: "call-parallel",
+              group_id: "mixed-group",
+              execution_mode: "parallel",
+              name: "search",
+              display_name: "Search",
+              category: "search",
+              summary: "Search related inputs",
+              arguments: { query: "samples" },
+            },
+          ],
+        },
+      },
+    ]
+
+    renderWithProviders(<AgentHistoryEntries entries={entries} />)
+
+    expect(
+      screen.getByRole("button", { name: "2 tool activities" }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: /running in sequence/i }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: /running in parallel/i }),
+    ).not.toBeInTheDocument()
+  })
+
   it("shows only the latest revision of each durable plan", () => {
     const entries: HistoryEntry[] = [
       {

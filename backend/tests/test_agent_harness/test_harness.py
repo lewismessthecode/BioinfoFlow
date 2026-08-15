@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from fastapi import UploadFile
@@ -129,8 +130,8 @@ def _history_text(role: str, text: str) -> dict:
     }
 
 
-def _history_calls(calls: list[dict]) -> dict:
-    group_id = f"tool-group:{calls[0]['call_id']}"
+def _history_calls(calls: list[dict], *, group_id: str | None = None) -> dict:
+    group_id = group_id or f"tool-group:{calls[0]['call_id']}"
     parts = []
     for call in calls:
         name = call["name"]
@@ -156,6 +157,17 @@ def _history_calls(calls: list[dict]) -> dict:
             }
         )
     return {"role": "assistant", "parts": parts}
+
+
+async def _append_tool_call_entry(harness, session_id: str, run_id: str, calls):
+    entry_id = str(uuid4())
+    return await harness.repository.append_entry(
+        session_id,
+        run_id=run_id,
+        entry_type="message",
+        entry_id=entry_id,
+        payload=_history_calls(calls, group_id=entry_id),
+    )
 
 
 @pytest.mark.asyncio
@@ -323,6 +335,9 @@ class _CancelSerialBatchTool:
         description="Cancel the current serial tool batch.",
         input_schema={"type": "object", "additionalProperties": False},
         replay_policy="safe",
+        display_name="Cancel batch",
+        category="other",
+        summary="Cancel batch",
         serial=True,
     )
 
@@ -343,6 +358,10 @@ class _ControlledBatchTool:
                 "additionalProperties": False,
             },
             replay_policy="safe",
+            display_name="Controlled batch",
+            category="other",
+            summary="Process item",
+            input_summary_fields=("label",),
             serial=serial,
         )
         self.started = {"first": asyncio.Event(), "second": asyncio.Event()}
@@ -353,6 +372,36 @@ class _ControlledBatchTool:
         self.started[label].set()
         await self.released[label].wait()
         return {"label": label}
+
+
+class _ProjectedTool:
+    def __init__(self) -> None:
+        self.spec = ToolSpec(
+            name="read_command",
+            description="Exercise declared public presentation metadata.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string"},
+                    "path": {"type": "string"},
+                    "command": {"type": "string"},
+                },
+                "required": ["label", "path", "command"],
+                "additionalProperties": False,
+            },
+            replay_policy="safe",
+            display_name="Inspect dataset",
+            category="workflow",
+            summary="Inspect dataset",
+            input_summary_fields=("label",),
+        )
+        self.started = asyncio.Event()
+        self.released = asyncio.Event()
+
+    async def run(self, arguments, _context):
+        self.started.set()
+        await self.released.wait()
+        return {"label": arguments["label"]}
 
 
 class ContinuationToolModel:
@@ -1093,10 +1142,16 @@ async def test_tool_checkpoint_contains_version_revision_and_in_flight_policy(
     assert latest.status == "waiting_user"
     assert latest.checkpoint["harness_version"] == HARNESS_VERSION
     assert latest.checkpoint["history_revision"] >= 2
+    assistant = next(
+        entry
+        for entry in snapshot.entries
+        if entry.type == "message" and entry.payload.role == "assistant"
+    )
+    group_id = str(assistant.id)
     assert latest.checkpoint["in_flight_tools"] == [
         {
             "call_id": "ask-1",
-            "group_id": "tool-group:ask-1",
+            "group_id": group_id,
             "execution_mode": "serial",
             "name": "ask_user",
             "arguments": {
@@ -1118,6 +1173,7 @@ async def test_tool_checkpoint_contains_version_revision_and_in_flight_policy(
     assert _active(snapshot).assistant_draft is None
     assert len(_active(snapshot).tool_progress) == 1
     assert _active(snapshot).tool_progress[0].call_id == "ask-1"
+    assert _active(snapshot).tool_progress[0].group_id == group_id
     assert _active(snapshot).tool_progress[0].status == "interaction_required"
     assert _active(snapshot).tool_progress[0].revision == 3
     assert _active(snapshot).pending_interaction is not None
@@ -1176,8 +1232,13 @@ async def test_serial_tool_batch_exposes_only_the_current_call_as_running(
 
     first_snapshot = await harness.snapshot(session_id)
     first_progress = _active(first_snapshot).tool_progress
+    assistant = next(
+        entry
+        for entry in first_snapshot.entries
+        if entry.type == "message" and entry.payload.role == "assistant"
+    )
     assert [item.status for item in first_progress] == ["running", "pending"]
-    assert {item.group_id for item in first_progress} == {"tool-group:controlled-1"}
+    assert {item.group_id for item in first_progress} == {str(assistant.id)}
     assert {item.execution_mode for item in first_progress} == {"serial"}
     assert tool.started["second"].is_set() is False
 
@@ -1246,12 +1307,86 @@ async def test_parallel_tool_batch_exposes_each_started_call_as_running(
 
     snapshot = await harness.snapshot(session_id)
     progress = _active(snapshot).tool_progress
+    assistant = next(
+        entry
+        for entry in snapshot.entries
+        if entry.type == "message" and entry.payload.role == "assistant"
+    )
     assert [item.status for item in progress] == ["running", "running"]
-    assert {item.group_id for item in progress} == {"tool-group:controlled-1"}
+    assert {item.group_id for item in progress} == {str(assistant.id)}
+    assert {
+        part.group_id
+        for part in assistant.payload.parts
+        if part.type == "tool_call"
+    } == {str(assistant.id)}
     assert {item.execution_mode for item in progress} == {"parallel"}
 
     tool.released["first"].set()
     tool.released["second"].set()
+    await asyncio.wait_for(dispatch, timeout=2)
+
+
+@pytest.mark.asyncio
+async def test_tool_views_use_declared_public_projection_metadata(
+    harness_db, tmp_path
+) -> None:
+    tool = _ProjectedTool()
+    model = ScriptedModel(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="projected-1",
+                name="read_command",
+                arguments_delta=(
+                    '{"label":"Sample 42","path":"private/input.txt",'
+                    '"command":"cat private/input.txt"}'
+                ),
+            ),
+            CompletionMetadata(response_id="response-1", finish_reason="tool_calls"),
+        ),
+        (
+            TextDelta(text="Done.", phase="final_answer"),
+            CompletionMetadata(response_id="response-2", finish_reason="stop"),
+        ),
+    )
+    harness = AgentHarness.for_database(
+        harness_db,
+        model_gateway=model,
+        workspace_factory=lambda _session: WorkspaceRuntime(
+            LocalWorkspaceBackend(
+                working_directory=tmp_path,
+                read_roots=(tmp_path,),
+                write_roots=(tmp_path,),
+                sandbox_runner=None,
+            ),
+            extra_tools=(tool,),
+        ),
+    )
+    opened = await harness.open_session(_open_request())
+    session_id = str(opened.session.id)
+
+    dispatch = asyncio.create_task(
+        harness.dispatch(session_id, _message("declared-projection", "Inspect it."))
+    )
+    await asyncio.wait_for(tool.started.wait(), timeout=1)
+
+    snapshot = await harness.snapshot(session_id)
+    progress = _active(snapshot).tool_progress[0]
+    assistant = next(
+        entry
+        for entry in snapshot.entries
+        if entry.type == "message" and entry.payload.role == "assistant"
+    )
+    call = next(part for part in assistant.payload.parts if part.type == "tool_call")
+
+    assert progress.display_name == "Inspect dataset"
+    assert progress.category == "workflow"
+    assert progress.summary == "Inspect dataset: Sample 42"
+    assert call.display_name == progress.display_name
+    assert call.category == progress.category
+    assert call.summary == progress.summary
+
+    tool.released.set()
     await asyncio.wait_for(dispatch, timeout=2)
 
 
@@ -1832,6 +1967,18 @@ async def test_recover_unknown_bash_effect_waits_for_user_without_replay(
     )
     opened = await harness.open_session(_open_request())
     run = await harness.repository.create_run(str(opened.session.id))
+    assistant = await _append_tool_call_entry(
+        harness,
+        str(opened.session.id),
+        str(run.id),
+        [
+            {
+                "call_id": "bash-1",
+                "name": "bash",
+                "arguments": {"command": "touch marker.txt"},
+            }
+        ],
+    )
     await harness.repository.update_run(
         str(run.id),
         status="running",
@@ -1839,11 +1986,11 @@ async def test_recover_unknown_bash_effect_waits_for_user_without_replay(
         checkpoint=create_checkpoint(
             harness_version=HARNESS_VERSION,
             phase="tools",
-            history_revision=0,
+            history_revision=assistant.sequence,
             in_flight_tools=(
                 {
                     "call_id": "bash-1",
-                    "group_id": "tool-group:original-batch",
+                    "group_id": str(assistant.id),
                     "execution_mode": "parallel",
                     "name": "bash",
                     "arguments": {"command": "touch marker.txt"},
@@ -1859,13 +2006,14 @@ async def test_recover_unknown_bash_effect_waits_for_user_without_replay(
     assert recovered == 1
     assert _active(snapshot).run.status == "waiting_user"
     assert [entry.type for entry in snapshot.entries] == [
+        "message",
         "notice",
         "interaction_request",
     ]
-    assert snapshot.entries[1].payload.interaction_id == "recovery:bash-1"
+    assert snapshot.entries[2].payload.interaction_id == "recovery:bash-1"
     assert len(_active(snapshot).tool_progress) == 1
     assert _active(snapshot).tool_progress[0].call_id == "bash-1"
-    assert _active(snapshot).tool_progress[0].group_id == "tool-group:original-batch"
+    assert _active(snapshot).tool_progress[0].group_id == str(assistant.id)
     assert _active(snapshot).tool_progress[0].execution_mode == "parallel"
     assert _active(snapshot).tool_progress[0].status == "interaction_required"
     assert _active(snapshot).tool_progress[0].revision == 1
@@ -2019,19 +2167,17 @@ async def test_corrupt_checkpoint_restores_pending_bash_approval_fence(
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
     run = await harness.repository.create_run(session_id)
-    await harness.repository.append_entry(
+    await _append_tool_call_entry(
+        harness,
         session_id,
-        run_id=str(run.id),
-        entry_type="message",
-        payload=_history_calls(
-            [
-                {
-                    "call_id": call.call_id,
-                    "name": call.name,
-                    "arguments": call.arguments,
-                }
-            ]
-        ),
+        str(run.id),
+        [
+            {
+                "call_id": call.call_id,
+                "name": call.name,
+                "arguments": call.arguments,
+            }
+        ],
     )
     request = await harness.repository.append_entry(
         session_id,
@@ -2187,6 +2333,22 @@ async def test_recovery_retry_fences_and_executes_dangerous_bash_once(
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
     run = await harness.repository.create_run(session_id)
+    assistant = await _append_tool_call_entry(
+        harness,
+        session_id,
+        str(run.id),
+        [
+            {
+                "call_id": "bash-1",
+                "name": "bash",
+                "arguments": {
+                    "command": (
+                        "rm -f harmless && printf executed >> recovery-retry.txt"
+                    )
+                },
+            }
+        ],
+    )
     await harness.repository.update_run(
         str(run.id),
         status="running",
@@ -2198,6 +2360,8 @@ async def test_recovery_retry_fences_and_executes_dangerous_bash_once(
             in_flight_tools=(
                 {
                     "call_id": "bash-1",
+                    "group_id": str(assistant.id),
+                    "execution_mode": "serial",
                     "name": "bash",
                     "arguments": {
                         "command": (
@@ -2300,19 +2464,17 @@ async def test_crash_during_approved_bash_recovers_as_unknown_effect_without_rep
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
     run = await harness.repository.create_run(session_id)
-    await harness.repository.append_entry(
+    assistant = await _append_tool_call_entry(
+        harness,
         session_id,
-        run_id=str(run.id),
-        entry_type="message",
-        payload=_history_calls(
-            [
-                {
-                    "call_id": call.call_id,
-                    "name": call.name,
-                    "arguments": call.arguments,
-                }
-            ]
-        ),
+        str(run.id),
+        [
+            {
+                "call_id": call.call_id,
+                "name": call.name,
+                "arguments": call.arguments,
+            }
+        ],
     )
     interaction = {
         "type": "approval",
@@ -2345,6 +2507,8 @@ async def test_crash_during_approved_bash_recovers_as_unknown_effect_without_rep
                 in_flight_tools=(
                     {
                         "call_id": call.call_id,
+                        "group_id": str(assistant.id),
+                        "execution_mode": "serial",
                         "name": call.name,
                         "arguments": call.arguments,
                         "replay_policy": "never",
@@ -2354,6 +2518,8 @@ async def test_crash_during_approved_bash_recovers_as_unknown_effect_without_rep
             ),
             "waiting_call": {
                 "call_id": call.call_id,
+                "group_id": str(assistant.id),
+                "execution_mode": "serial",
                 "name": call.name,
                 "arguments": call.arguments,
             },
@@ -2362,8 +2528,15 @@ async def test_crash_during_approved_bash_recovers_as_unknown_effect_without_rep
         tool_progress=[
             {
                 "call_id": call.call_id,
+                "group_id": str(assistant.id),
+                "execution_mode": "serial",
                 "name": call.name,
+                "display_name": "Bash",
+                "category": "command",
+                "summary": "Run command",
+                "arguments": call.arguments,
                 "status": "interaction_required",
+                "revision": 1,
             }
         ],
     )
@@ -2386,6 +2559,8 @@ async def test_crash_during_approved_bash_recovers_as_unknown_effect_without_rep
     assert crashed_run.checkpoint["in_flight_tools"] == [
         {
             "call_id": call.call_id,
+            "group_id": str(assistant.id),
+            "execution_mode": "serial",
             "name": call.name,
             "arguments": call.arguments,
             "replay_policy": "never",
@@ -2450,24 +2625,22 @@ async def test_recovery_interaction_preserves_other_in_flight_tools(
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
     run = await harness.repository.create_run(session_id)
-    assistant = await harness.repository.append_entry(
+    assistant = await _append_tool_call_entry(
+        harness,
         session_id,
-        run_id=str(run.id),
-        entry_type="message",
-        payload=_history_calls(
-            [
-                {
-                    "call_id": "read-1",
-                    "name": "read",
-                    "arguments": {"path": "sample.txt"},
-                },
-                {
-                    "call_id": "bash-1",
-                    "name": "bash",
-                    "arguments": {"command": "touch marker.txt"},
-                },
-            ]
-        ),
+        str(run.id),
+        [
+            {
+                "call_id": "read-1",
+                "name": "read",
+                "arguments": {"path": "sample.txt"},
+            },
+            {
+                "call_id": "bash-1",
+                "name": "bash",
+                "arguments": {"command": "touch marker.txt"},
+            },
+        ],
     )
     await harness.repository.update_run(
         str(run.id),
@@ -2480,12 +2653,16 @@ async def test_recovery_interaction_preserves_other_in_flight_tools(
             in_flight_tools=(
                 {
                     "call_id": "read-1",
+                    "group_id": str(assistant.id),
+                    "execution_mode": "serial",
                     "name": "read",
                     "arguments": {"path": "sample.txt"},
                     "replay_policy": "safe",
                 },
                 {
                     "call_id": "bash-1",
+                    "group_id": str(assistant.id),
+                    "execution_mode": "serial",
                     "name": "bash",
                     "arguments": {"command": "touch marker.txt"},
                     "replay_policy": "never",
@@ -2536,19 +2713,17 @@ async def test_user_cancel_commits_interrupted_results_for_unfinished_tools(
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
     run = await harness.repository.create_run(session_id)
-    assistant = await harness.repository.append_entry(
+    assistant = await _append_tool_call_entry(
+        harness,
         session_id,
-        run_id=str(run.id),
-        entry_type="message",
-        payload=_history_calls(
-            [
-                {
-                    "call_id": "bash-1",
-                    "name": "bash",
-                    "arguments": {"command": "sleep 30"},
-                }
-            ]
-        ),
+        str(run.id),
+        [
+            {
+                "call_id": "bash-1",
+                "name": "bash",
+                "arguments": {"command": "sleep 30"},
+            }
+        ],
     )
     await harness.repository.update_run(
         str(run.id),
@@ -2561,6 +2736,8 @@ async def test_user_cancel_commits_interrupted_results_for_unfinished_tools(
             in_flight_tools=(
                 {
                     "call_id": "bash-1",
+                    "group_id": str(assistant.id),
+                    "execution_mode": "serial",
                     "name": "bash",
                     "arguments": {"command": "sleep 30"},
                     "replay_policy": "never",
@@ -2709,12 +2886,14 @@ async def test_verify_recovery_retry_executes_without_bash_approval_fingerprint(
         "name": tool_name,
         "arguments": arguments,
     }
-    assistant = await harness.repository.append_entry(
-        session_id,
-        run_id=str(run.id),
-        entry_type="message",
-        payload=_history_calls([call]),
+    assistant = await _append_tool_call_entry(
+        harness, session_id, str(run.id), [call]
     )
+    durable_call = {
+        **call,
+        "group_id": str(assistant.id),
+        "execution_mode": "serial",
+    }
     request = {
         "type": "recovery",
         "call_id": call["call_id"],
@@ -2744,17 +2923,24 @@ async def test_verify_recovery_retry_executes_without_bash_approval_fingerprint(
                 harness_version=HARNESS_VERSION,
                 phase="interaction",
                 history_revision=request_entry.sequence,
-                in_flight_tools=({**call, "replay_policy": "verify"},),
+                in_flight_tools=({**durable_call, "replay_policy": "verify"},),
                 interaction=request,
             ),
-            "waiting_call": call,
+            "waiting_call": durable_call,
             "recovery_interaction": request,
         },
         tool_progress=[
             {
                 "call_id": call["call_id"],
+                "group_id": str(assistant.id),
+                "execution_mode": "serial",
                 "name": tool_name,
+                "display_name": tool_name.title(),
+                "category": tool_name,
+                "summary": f"{tool_name.title()} file: target.txt",
+                "arguments": arguments,
                 "status": "interaction_required",
+                "revision": 1,
             }
         ],
     )
@@ -3427,19 +3613,17 @@ async def test_recover_same_version_read_commits_result_then_continues_model(
     )
     opened = await harness.open_session(_open_request())
     run = await harness.repository.create_run(str(opened.session.id))
-    assistant = await harness.repository.append_entry(
+    assistant = await _append_tool_call_entry(
+        harness,
         str(opened.session.id),
-        run_id=str(run.id),
-        entry_type="message",
-        payload=_history_calls(
-            [
-                {
-                    "call_id": "read-1",
-                    "name": "read",
-                    "arguments": {"path": "sample.txt"},
-                }
-            ]
-        ),
+        str(run.id),
+        [
+            {
+                "call_id": "read-1",
+                "name": "read",
+                "arguments": {"path": "sample.txt"},
+            }
+        ],
     )
     await harness.repository.update_run(
         str(run.id),
@@ -3452,6 +3636,8 @@ async def test_recover_same_version_read_commits_result_then_continues_model(
             in_flight_tools=(
                 {
                     "call_id": "read-1",
+                    "group_id": str(assistant.id),
+                    "execution_mode": "serial",
                     "name": "read",
                     "arguments": {"path": "sample.txt"},
                     "replay_policy": "safe",
@@ -3513,19 +3699,17 @@ async def test_process_recovery_reuses_responses_continuation(
         ),
         target=target.continuation_target(),
     )
-    assistant = await harness.repository.append_entry(
+    assistant = await _append_tool_call_entry(
+        harness,
         session_id,
-        run_id=str(run.id),
-        entry_type="message",
-        payload=_history_calls(
-            [
-                {
-                    "call_id": "read-1",
-                    "name": "read",
-                    "arguments": {"path": "sample.txt"},
-                }
-            ]
-        ),
+        str(run.id),
+        [
+            {
+                "call_id": "read-1",
+                "name": "read",
+                "arguments": {"path": "sample.txt"},
+            }
+        ],
     )
     assert assistant.sequence == user.sequence + 1
     await harness.repository.update_run(
@@ -3540,6 +3724,8 @@ async def test_process_recovery_reuses_responses_continuation(
             in_flight_tools=(
                 {
                     "call_id": "read-1",
+                    "group_id": str(assistant.id),
+                    "execution_mode": "serial",
                     "name": "read",
                     "arguments": {"path": "sample.txt"},
                     "replay_policy": "safe",
@@ -3762,6 +3948,18 @@ async def test_recovery_inspect_choice_does_not_replay_unknown_bash(
     )
     opened = await harness.open_session(_open_request())
     run = await harness.repository.create_run(str(opened.session.id))
+    assistant = await _append_tool_call_entry(
+        harness,
+        str(opened.session.id),
+        str(run.id),
+        [
+            {
+                "call_id": "bash-1",
+                "name": "bash",
+                "arguments": {"command": "touch marker.txt"},
+            }
+        ],
+    )
     await harness.repository.update_run(
         str(run.id),
         status="running",
@@ -3773,6 +3971,8 @@ async def test_recovery_inspect_choice_does_not_replay_unknown_bash(
             in_flight_tools=(
                 {
                     "call_id": "bash-1",
+                    "group_id": str(assistant.id),
+                    "execution_mode": "serial",
                     "name": "bash",
                     "arguments": {"command": "touch marker.txt"},
                     "replay_policy": "never",
@@ -3816,19 +4016,17 @@ def _model_target() -> dict[str, object]:
 
 async def _create_recoverable_tool_run(harness, session_id: str, call: ToolCall):
     run = await harness.repository.create_run(session_id)
-    assistant = await harness.repository.append_entry(
+    assistant = await _append_tool_call_entry(
+        harness,
         session_id,
-        run_id=str(run.id),
-        entry_type="message",
-        payload=_history_calls(
-            [
-                {
-                    "call_id": call.call_id,
-                    "name": call.name,
-                    "arguments": call.arguments,
-                }
-            ]
-        ),
+        str(run.id),
+        [
+            {
+                "call_id": call.call_id,
+                "name": call.name,
+                "arguments": call.arguments,
+            }
+        ],
     )
     await harness.repository.update_run(
         str(run.id),
@@ -3841,6 +4039,8 @@ async def _create_recoverable_tool_run(harness, session_id: str, call: ToolCall)
             in_flight_tools=(
                 {
                     "call_id": call.call_id,
+                    "group_id": str(assistant.id),
+                    "execution_mode": "serial",
                     "name": call.name,
                     "arguments": call.arguments,
                     "replay_policy": "verify",

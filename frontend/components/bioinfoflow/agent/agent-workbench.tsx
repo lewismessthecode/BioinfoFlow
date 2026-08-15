@@ -10,12 +10,14 @@ import {
 } from "react"
 import type { RefObject } from "react"
 import type { ReactNode } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 
 import { AgentComposer } from "@/components/bioinfoflow/agent/agent-composer"
 import { AgentContextPicker } from "@/components/bioinfoflow/agent/agent-context-picker"
 import { AgentTranscript } from "@/components/bioinfoflow/agent/agent-transcript"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAgentSession } from "@/hooks/use-agent-session"
@@ -38,7 +40,16 @@ import {
   publishAgentSessionSummary,
   sessionSummaryFromView,
 } from "@/lib/agent/session-preferences"
-import { Bot, CircleAlert, Loader2, RefreshCw, Wifi, WifiOff } from "@/lib/icons"
+import { ApiError } from "@/lib/api"
+import {
+  Bot,
+  CircleAlert,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+} from "@/lib/icons"
 import { cn } from "@/lib/utils"
 
 export type AgentWorkbenchHandle = {
@@ -247,7 +258,10 @@ function DraftWorkbench({
   headerActions?: ReactNode
 }) {
   const t = useTranslations("agentWorkbench")
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<{
+    message: string
+    modelConnectionRequired: boolean
+  } | null>(null)
 
   const send = async (parts: InputPart[]) => {
     setError(null)
@@ -260,8 +274,14 @@ function DraftWorkbench({
       })
       shared.setContextInputs([])
       shared.routeToSession(sessionId)
-    } catch {
-      setError(t("createError"))
+    } catch (caught) {
+      const modelConnectionRequired = isModelConfigurationError(caught)
+      setError({
+        message: t(
+          modelConnectionRequired ? "modelConnection.title" : "createError",
+        ),
+        modelConnectionRequired,
+      })
       throw new Error("Unable to create agent session")
     }
   }
@@ -274,7 +294,12 @@ function DraftWorkbench({
         actions={headerActions}
       />
       <AgentEmptyState />
-      {error ? <WorkbenchError message={error} /> : null}
+      {error ? (
+        <WorkbenchError
+          message={error.message}
+          modelConnectionRequired={error.modelConnectionRequired}
+        />
+      ) : null}
       <AgentComposer
         permissionMode={permissionMode}
         workspaceAccess={workspaceAccess}
@@ -486,11 +511,44 @@ function AgentEmptyState() {
   )
 }
 
-function WorkbenchError({ message }: { message: string }) {
+function WorkbenchError({
+  message,
+  modelConnectionRequired,
+}: {
+  message: string
+  modelConnectionRequired: boolean
+}) {
+  const t = useTranslations("agentWorkbench")
   return (
-    <p role="alert" className="border-t px-4 py-2 text-sm text-destructive">
-      {message}
-    </p>
+    <div className="border-t px-4 py-3">
+      <Alert variant="destructive" className="mx-auto max-w-[46rem]">
+        <CircleAlert aria-hidden="true" />
+        <AlertTitle>{message}</AlertTitle>
+        {modelConnectionRequired ? (
+          <AlertDescription className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-pretty">{t("modelConnection.description")}</p>
+            <Button asChild variant="outline" size="sm">
+              <Link
+                href="/settings?section=providers"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t("modelConnection.action")}
+                <ExternalLink data-icon="inline-end" aria-hidden="true" />
+              </Link>
+            </Button>
+          </AlertDescription>
+        ) : null}
+      </Alert>
+    </div>
+  )
+}
+
+function isModelConfigurationError(error: unknown) {
+  return (
+    error instanceof ApiError &&
+    error.code === "AGENT_MODEL_REQUIRED" &&
+    error.status === 422
   )
 }
 

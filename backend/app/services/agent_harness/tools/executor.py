@@ -72,6 +72,10 @@ class ToolExecutor:
     def model_tools(self):
         return tuple(spec.model_definition() for spec in self.tools)
 
+    def tool_spec(self, name: str):
+        tool = self._tools.get(name)
+        return tool.spec if tool is not None else None
+
     async def execute(
         self,
         call: ToolCall,

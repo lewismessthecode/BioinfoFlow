@@ -2521,6 +2521,11 @@
     "emptyTitle": "What would you like to work on?",
     "emptyDescription": "Ask a question, attach data, or reference a workflow. Bioinfoflow will show its plan, progress, tool activity, and any approval it needs.",
     "createError": "The conversation could not be started. Your message is still here; try again.",
+    "modelConnection": {
+      "title": "Connect a model to continue",
+      "description": "No usable model is available. Open AI Provider settings in a new tab, connect one, then send your message again.",
+      "action": "Connect a model"
+    },
     "loadErrorTitle": "Conversation unavailable",
     "loadErrorDescription": "The conversation could not be loaded.",
     "retry": "Try again",

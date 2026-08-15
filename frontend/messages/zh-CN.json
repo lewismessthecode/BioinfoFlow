@@ -2521,6 +2521,11 @@
     "emptyTitle": "你想先做什么？",
     "emptyDescription": "可以直接提问、添加数据，或引用工作流。Bioinfoflow 会展示计划、进度、工具执行，以及需要你确认的操作。",
     "createError": "无法开始对话。你的消息仍然保留，请重试。",
+    "modelConnection": {
+      "title": "连接模型后继续",
+      "description": "当前没有可用模型。请在新标签页打开模型服务设置并完成连接，然后回来重新发送这条消息。",
+      "action": "连接模型"
+    },
     "loadErrorTitle": "无法打开对话",
     "loadErrorDescription": "当前对话暂时无法加载。",
     "retry": "重试",

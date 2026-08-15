@@ -1147,6 +1147,9 @@ class WorkspaceRuntime:
     def model_tools(self):
         return self._executor.model_tools
 
+    def tool_spec(self, name: str):
+        return self._executor.tool_spec(name)
+
     async def execute(
         self,
         call: ToolCall,

@@ -54,6 +54,9 @@ class AskUserTool:
             "additionalProperties": False,
         },
         replay_policy="safe",
+        display_name="Ask user",
+        category="interaction",
+        summary="Ask user",
         serial=True,
     )
 

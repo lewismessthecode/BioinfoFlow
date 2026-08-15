@@ -38,6 +38,9 @@ class UpdatePlanTool:
             "additionalProperties": False,
         },
         replay_policy="safe",
+        display_name="Update plan",
+        category="plan",
+        summary="Update plan",
         serial=True,
     )
 

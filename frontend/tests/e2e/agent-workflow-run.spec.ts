@@ -90,7 +90,9 @@ test.describe("Agent interaction journey", () => {
     await agent.expectComposerReady()
     await agent.sendMessage("Start the long keyless task so I can stop it.")
 
-    await expect(agent.activeRun.getByText("bash: sleep 30")).toBeVisible({
+    await expect(
+      agent.activeRun.getByText("Run command", { exact: true }),
+    ).toBeVisible({
       timeout: 20_000,
     })
     await expect(agent.stopButton).toBeVisible()
@@ -149,7 +151,9 @@ test.describe("Agent interaction journey", () => {
     await agent.gotoSession(opened.session.id)
     await agent.expectComposerReady()
     await agent.sendMessage("Start the restart recovery scenario.")
-    await expect(agent.activeRun.getByText("bash: sleep 30")).toBeVisible({
+    await expect(
+      agent.activeRun.getByText("Run command", { exact: true }),
+    ).toBeVisible({
       timeout: 20_000,
     })
 

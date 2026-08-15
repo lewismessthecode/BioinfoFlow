@@ -30,6 +30,7 @@ from app.services.model_runtime.contracts import (
     TextDelta,
 )
 from app.services.model_runtime.errors import ModelError
+from app.utils.exceptions import AppError
 
 
 WORKSPACE_ID = "30000000-0000-0000-0000-000000000001"
@@ -65,6 +66,22 @@ class FailingRecordingModel:
             replay_safe=True,
         )
         yield  # pragma: no cover - keep this an async generator
+
+
+@pytest.mark.asyncio
+async def test_model_snapshot_uses_a_stable_error_when_no_model_is_available(
+    harness_db,
+) -> None:
+    with pytest.raises(AppError) as exc_info:
+        await resolve_model_snapshot(
+            harness_db,
+            workspace_id=WORKSPACE_ID,
+            user_id="user-1",
+            selection=None,
+        )
+
+    assert exc_info.value.code == "AGENT_MODEL_REQUIRED"
+    assert exc_info.value.status_code == 422
 
 
 def test_private_model_snapshot_discards_legacy_fallback_strategy() -> None:

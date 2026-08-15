@@ -424,22 +424,6 @@ def _tool_result_call_id(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _tool_category(name: str) -> str:
-    return {
-        "read": "read",
-        "bash": "command",
-        "edit": "edit",
-        "write": "write",
-        "ask_user": "interaction",
-        "update_plan": "plan",
-    }.get(name, "other")
-
-
-def _tool_summary(name: str, arguments: dict[str, Any]) -> str:
-    subject = arguments.get("path") or arguments.get("command")
-    return f"{name}: {subject}" if isinstance(subject, str) and subject else name
-
-
 class AgentHarnessArtifactRepository(BaseRepository[AgentHarnessArtifact]):
     model = AgentHarnessArtifact
 
@@ -1065,30 +1049,22 @@ class AgentHarnessRepository:
             (item for item in progress if item.get("call_id") == call_id),
             None,
         )
+        if existing is None:
+            raise LookupError(f"tool progress not found: {call_id}")
         now = datetime.now(timezone.utc)
         raw: dict[str, Any] = {
-            **(existing or {}),
+            **existing,
             "call_id": call_id,
-            "group_id": (existing or {}).get("group_id")
-            or group_id
-            or f"tool-group:{call_id}",
-            "execution_mode": (existing or {}).get("execution_mode")
-            or execution_mode
-            or "serial",
+            "group_id": existing["group_id"],
+            "execution_mode": existing["execution_mode"],
             "name": name,
-            "display_name": (existing or {}).get("display_name") or name,
-            "category": (existing or {}).get("category") or _tool_category(name),
-            "arguments": (existing or {}).get("arguments") or arguments or {},
+            "display_name": existing["display_name"],
+            "category": existing["category"],
+            "summary": existing["summary"],
+            "arguments": existing.get("arguments") or {},
             "status": status,
-            "revision": int((existing or {}).get("revision") or 0) + 1,
+            "revision": int(existing.get("revision") or 0) + 1,
         }
-        raw["summary"] = (existing or {}).get("summary") or _tool_summary(
-            name, raw["arguments"]
-        )
-        if group_id is not None and existing is None:
-            raw["group_id"] = group_id
-        if execution_mode is not None and existing is None:
-            raw["execution_mode"] = execution_mode
         if arguments is not None:
             raw["arguments"] = arguments
         if output_summary is not None:
@@ -1766,6 +1742,7 @@ class AgentHarnessRepository:
         entry_type: str,
         payload: dict,
         schema_version: int = 2,
+        entry_id: str | None = None,
     ) -> AgentHarnessEntry:
         payload_type = ENTRY_PAYLOAD_TYPES.get(entry_type)
         if payload_type is None:
@@ -1794,14 +1771,17 @@ class AgentHarnessRepository:
         # serializes the write transaction containing this read and increment.
         await self.db.refresh(session, with_for_update=True)
         sequence = int(session.history_revision) + 1
-        entry = AgentHarnessEntry(
-            session_id=session_id,
-            run_id=run_id,
-            sequence=sequence,
-            type=entry_type,
-            schema_version=schema_version,
-            payload=validated_payload,
-        )
+        entry_data = {
+            "session_id": session_id,
+            "run_id": run_id,
+            "sequence": sequence,
+            "type": entry_type,
+            "schema_version": schema_version,
+            "payload": validated_payload,
+        }
+        if entry_id is not None:
+            entry_data["id"] = entry_id
+        entry = AgentHarnessEntry(**entry_data)
         session.history_revision = sequence
         self.db.add(entry)
         await self.db.commit()
@@ -2135,12 +2115,8 @@ class AgentHarnessRepository:
                     found_call = True
                 in_flight_tools.append(durable_item)
             if not found_call:
-                in_flight_tools.append(
-                    {
-                        **call,
-                        "replay_policy": replay_policy,
-                        "execution_started": True,
-                    }
+                raise LookupError(
+                    f"checkpoint tool call not found: {call.get('call_id') or 'unknown'}"
                 )
             checkpoint.update(
                 phase="tools",
@@ -2162,29 +2138,26 @@ class AgentHarnessRepository:
                 ),
                 None,
             )
+            if existing is None:
+                raise LookupError(
+                    f"tool progress not found: {call.get('call_id') or 'unknown'}"
+                )
             call_id = str(call.get("call_id") or "")
             name = str(call.get("name") or "unknown")
-            arguments = call.get("arguments")
-            safe_arguments = arguments if isinstance(arguments, dict) else {}
             replacement = ToolProgressView.model_validate(
                 {
-                    **(existing or {}),
+                    **existing,
                     "call_id": call_id,
-                    "group_id": (existing or {}).get("group_id")
-                    or f"tool-group:{call_id}",
-                    "execution_mode": (existing or {}).get("execution_mode")
-                    or "serial",
+                    "group_id": existing["group_id"],
+                    "execution_mode": existing["execution_mode"],
                     "name": name,
-                    "display_name": (existing or {}).get("display_name") or name,
-                    "category": (existing or {}).get("category")
-                    or _tool_category(name),
-                    "summary": (existing or {}).get("summary")
-                    or _tool_summary(name, safe_arguments),
-                    "arguments": (existing or {}).get("arguments")
-                    or safe_arguments,
+                    "display_name": existing["display_name"],
+                    "category": existing["category"],
+                    "summary": existing["summary"],
+                    "arguments": existing.get("arguments") or {},
                     "status": "running",
-                    "revision": int((existing or {}).get("revision") or 0) + 1,
-                    "started_at": (existing or {}).get("started_at")
+                    "revision": int(existing.get("revision") or 0) + 1,
+                    "started_at": existing.get("started_at")
                     or datetime.now(timezone.utc),
                 }
             ).model_dump(mode="json")

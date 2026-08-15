@@ -25,6 +25,10 @@ class EditTool:
             "additionalProperties": False,
         },
         replay_policy="verify",
+        display_name="Edit",
+        category="edit",
+        summary="Edit file",
+        input_summary_fields=("path",),
         mutates_workspace=True,
         path_argument="path",
     )

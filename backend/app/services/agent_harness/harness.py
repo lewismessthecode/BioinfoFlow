@@ -36,7 +36,12 @@ from app.services.agent_harness.loop import (
     checkpoint_interaction_id,
 )
 from app.services.agent_harness.recovery import RecoveryPlanner, create_checkpoint
+from app.services.agent_harness.tool_projection import (
+    project_tool_view,
+    public_output_summary as _public_output_summary,
+)
 from app.services.agent_harness.tools import ToolCall
+from app.services.agent_harness.tools.specs import ToolSpec
 from app.services.model_runtime.gateway import ModelGateway
 
 
@@ -522,7 +527,12 @@ class AgentHarness:
                 and _typed_tool_result_call_id(candidate.payload)
             }
             unresolved = [
-                item for item in calls if str(item.get("call_id")) not in resolved
+                {
+                    **item,
+                    "group_id": str(item.get("group_id") or entry.id),
+                }
+                for item in calls
+                if str(item.get("call_id")) not in resolved
             ]
             if unresolved:
                 break
@@ -555,10 +565,10 @@ class AgentHarness:
                     call_id=str(call.get("call_id") or ""),
                     name=str(call.get("name") or "unknown"),
                     arguments=dict(call.get("arguments") or {}),
+                    spec=workspace.tool_spec(str(call.get("name") or "unknown")),
                     status="pending",
                     group_id=str(
-                        call.get("group_id")
-                        or f"tool-group:{call.get('call_id') or ''}"
+                        call.get("group_id") or _missing_group_id(call)
                     ),
                     execution_mode=str(call.get("execution_mode") or "serial"),
                 )
@@ -610,6 +620,7 @@ class AgentHarness:
         if not call_id:
             return False
         calls: list[dict[str, Any]] | None = None
+        owning_entry_id: str | None = None
         for entry in reversed(entries):
             if (
                 str(entry.run_id) != run_id
@@ -620,9 +631,14 @@ class AgentHarness:
             candidate = _typed_tool_calls(entry.payload)
             if any(item.get("call_id") == call_id for item in candidate):
                 calls = candidate
+                owning_entry_id = str(entry.id)
                 break
-        if calls is None:
+        if calls is None or owning_entry_id is None:
             return False
+        calls = [
+            {**item, "group_id": str(item.get("group_id") or owning_entry_id)}
+            for item in calls
+        ]
         waiting_index = next(
             index for index, item in enumerate(calls) if item.get("call_id") == call_id
         )
@@ -672,14 +688,14 @@ class AgentHarness:
                     call_id=str(item.get("call_id") or ""),
                     name=str(item.get("name") or "unknown"),
                     arguments=dict(item.get("arguments") or {}),
+                    spec=workspace.tool_spec(str(item.get("name") or "unknown")),
                     status=(
                         "interaction_required"
                         if item.get("call_id") == call_id
                         else "pending"
                     ),
                     group_id=str(
-                        item.get("group_id")
-                        or f"tool-group:{item.get('call_id') or ''}"
+                        item.get("group_id") or _missing_group_id(item)
                     ),
                     execution_mode=str(item.get("execution_mode") or "serial"),
                 )
@@ -718,6 +734,7 @@ class AgentHarness:
                     call_id=item.call_id,
                     name=item.name,
                     arguments={},
+                    spec=workspace.tool_spec(item.name),
                     status="pending",
                     **_checkpoint_tool_presentation(
                         run.checkpoint, call_id=item.call_id
@@ -823,10 +840,11 @@ class AgentHarness:
                             call_id=item.call_id,
                             name=item.name,
                             arguments=dict(call_data.get("arguments") or {}),
+                            spec=workspace.tool_spec(item.name),
                             status="interaction_required",
                             group_id=str(
                                 call_data.get("group_id")
-                                or f"tool-group:{item.call_id}"
+                                or _missing_group_id(call_data)
                             ),
                             execution_mode=str(
                                 call_data.get("execution_mode") or "serial"
@@ -920,6 +938,7 @@ class AgentHarness:
             }
         )
         waiting_call = checkpoint["waiting_call"]
+        workspace = self.loop.workspace_factory(session, str(run.id))
         notice, request, waiting_run = await self.repository.commit_waiting_interaction(
             str(session.id),
             run_id=str(run.id),
@@ -931,10 +950,13 @@ class AgentHarness:
                     call_id=str(waiting_call.get("call_id") or ""),
                     name=str(waiting_call.get("name") or "unknown"),
                     arguments=dict(waiting_call.get("arguments") or {}),
+                    spec=workspace.tool_spec(
+                        str(waiting_call.get("name") or "unknown")
+                    ),
                     status="interaction_required",
                     group_id=str(
                         waiting_call.get("group_id")
-                        or f"tool-group:{waiting_call.get('call_id') or ''}"
+                        or _missing_group_id(waiting_call)
                     ),
                     execution_mode=str(
                         waiting_call.get("execution_mode") or "serial"
@@ -1172,10 +1194,7 @@ def _typed_tool_calls(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         {
             "call_id": str(item.get("call_id") or ""),
-            "group_id": str(
-                item.get("group_id")
-                or f"tool-group:{item.get('call_id') or ''}"
-            ),
+            "group_id": str(item.get("group_id") or ""),
             "execution_mode": str(item.get("execution_mode") or "serial"),
             "name": str(item.get("name") or "unknown"),
             "arguments": dict(item.get("arguments") or {}),
@@ -1209,16 +1228,6 @@ def _recovered_tool_output(result) -> str:
     )
 
 
-def _public_output_summary(output: Any) -> str | None:
-    if output is None:
-        return None
-    if isinstance(output, str):
-        text = output
-    else:
-        text = json.dumps(output, ensure_ascii=False, default=str)
-    return text if len(text) <= 300 else f"{text[:297]}..."
-
-
 def _tool_progress_view(run: Any, call_id: str) -> ToolProgressView:
     for item in run.tool_progress or []:
         if isinstance(item, dict) and item.get("call_id") == call_id:
@@ -1231,35 +1240,19 @@ def _tool_progress_item(
     call_id: str,
     name: str,
     arguments: dict[str, Any],
+    spec: ToolSpec | None,
     status: str,
-    group_id: str | None = None,
+    group_id: str,
     execution_mode: str | None = None,
 ) -> dict[str, Any]:
-    category = {
-        "read": "read",
-        "bash": "command",
-        "edit": "edit",
-        "write": "write",
-        "ask_user": "interaction",
-        "update_plan": "plan",
-    }.get(name, "other")
-    subject = arguments.get("path") or arguments.get("command")
-    summary = (
-        f"{name}: {subject}" if isinstance(subject, str) and subject else name
-    )
-    return ToolProgressView.model_validate(
-        {
-            "call_id": call_id,
-            "group_id": group_id or f"tool-group:{call_id}",
-            "execution_mode": execution_mode or "serial",
-            "name": name,
-            "display_name": name,
-            "category": category,
-            "summary": summary,
-            "arguments": arguments,
-            "status": status,
-            "revision": 1,
-        }
+    return project_tool_view(
+        spec=spec,
+        call_id=call_id,
+        name=name,
+        arguments=arguments,
+        status=status,
+        group_id=group_id,
+        execution_mode=execution_mode or "serial",
     ).model_dump(mode="json")
 
 
@@ -1269,13 +1262,16 @@ def _checkpoint_tool_presentation(
     for item in (checkpoint or {}).get("in_flight_tools") or []:
         if isinstance(item, dict) and item.get("call_id") == call_id:
             return {
-                "group_id": str(item.get("group_id") or f"tool-group:{call_id}"),
+                "group_id": str(item.get("group_id") or _missing_group_id(item)),
                 "execution_mode": str(item.get("execution_mode") or "serial"),
             }
-    return {
-        "group_id": f"tool-group:{call_id}",
-        "execution_mode": "serial",
-    }
+    raise ValueError(f"checkpoint has no tool call {call_id}")
+
+
+def _missing_group_id(item: dict[str, Any]) -> str:
+    raise ValueError(
+        f"tool call {item.get('call_id') or 'unknown'} has no owning assistant entry"
+    )
 
 
 def _tool_interaction_dict(result) -> dict[str, Any]:

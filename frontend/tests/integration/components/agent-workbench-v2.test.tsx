@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentWorkbench } from "@/components/bioinfoflow/agent/agent-workbench"
 import type { SessionSnapshot } from "@/lib/agent/contracts"
+import { ApiError } from "@/lib/api"
 import { renderWithProviders } from "@/tests/test-utils"
 
 const mocks = vi.hoisted(() => ({
@@ -78,7 +79,11 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
       </button>
       <button
         type="button"
-        onClick={() => onSendMessage([{ type: "text", text: "Hello" }])}
+        onClick={() =>
+          void onSendMessage([{ type: "text", text: "Hello" }]).catch(
+            () => {},
+          )
+        }
       >
         Send message
       </button>
@@ -184,6 +189,53 @@ describe("AgentWorkbench v2", () => {
     )
     expect(mocks.publishSummary).toHaveBeenCalled()
     expect(mocks.replace).toHaveBeenCalledWith("/agent/session-1")
+  })
+
+  it("offers a model connection path when no usable session model is configured", async () => {
+    const user = userEvent.setup()
+    mocks.createSession.mockRejectedValue(
+      new ApiError("Configuration required", {
+        code: "AGENT_MODEL_REQUIRED",
+        status: 422,
+      }),
+    )
+
+    renderWithProviders(
+      <AgentWorkbench sessionId={null} projectId="project-1" />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Send message" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "modelConnection.description",
+    )
+    expect(
+      screen.getByRole("link", { name: "modelConnection.action" }),
+    ).toMatchObject({
+      href: expect.stringContaining("/settings?section=providers"),
+      target: "_blank",
+    })
+  })
+
+  it("does not infer model setup from a generic validation message", async () => {
+    const user = userEvent.setup()
+    mocks.createSession.mockRejectedValue(
+      new ApiError("The model selector is invalid", {
+        code: "VALIDATION_ERROR",
+        status: 422,
+      }),
+    )
+
+    renderWithProviders(
+      <AgentWorkbench sessionId={null} projectId="project-1" />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Send message" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("createError")
+    expect(
+      screen.queryByRole("link", { name: "modelConnection.action" }),
+    ).not.toBeInTheDocument()
   })
 
   it("persists permission changes after context upload creates a draft session", async () => {
