@@ -68,15 +68,18 @@ describe("semantic highlight colors", () => {
   })
 
   it("routes shared status surfaces through semantic roles without colored glows", () => {
-    const composer = readFrontendSource(
-      "components/bioinfoflow/composer-selector-chip.ts",
+    const interactionCard = readFrontendSource(
+      "components/bioinfoflow/agent/interaction-card.tsx",
+    )
+    const planEntry = readFrontendSource(
+      "components/bioinfoflow/agent/plan-entry.tsx",
     )
     const dagNode = readFrontendSource("components/bioinfoflow/dag/dag-node.tsx")
     const statusBadge = readFrontendSource("components/ui/status-badge.tsx")
     const sonner = readFrontendSource("components/ui/sonner.tsx")
 
-    expect(composer).toContain("bg-success-muted")
-    expect(composer).toContain("text-success-foreground")
+    expect(interactionCard).toContain("bg-success-muted")
+    expect(planEntry).toContain("text-success-foreground")
     expect(dagNode).not.toContain("shadow-[0_0_12px_var(--success-border)]")
     expect(dagNode).not.toContain("shadow-[0_0_12px_var(--error-border)]")
     expect(readFrontendSource("app/globals.css")).not.toContain(

@@ -64,43 +64,62 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
           if (visibleParts.length === 0) return null
 
           return (
-            <AgentHistoryEntry
+            <div
               key={entry.id}
-              entry={{
-                ...entry,
-                payload: { ...entry.payload, parts: visibleParts },
-              }}
-              toolResultsByCallId={prepared.toolResultsByCallId}
-              run={entry.run_id ? runsById.get(entry.run_id) : undefined}
-              showRunCompletion={
-                entry.payload.role === "assistant" &&
-                Boolean(entry.run_id) &&
-                prepared.latestAssistantEntryIdsByRun.get(entry.run_id ?? "") ===
-                  entry.id
-              }
-            />
+              className="min-w-0"
+              data-agent-read-anchor={`entry:${entry.id}`}
+            >
+              <AgentHistoryEntry
+                entry={{
+                  ...entry,
+                  payload: { ...entry.payload, parts: visibleParts },
+                }}
+                toolResultsByCallId={prepared.toolResultsByCallId}
+                run={entry.run_id ? runsById.get(entry.run_id) : undefined}
+                showRunCompletion={
+                  entry.payload.role === "assistant" &&
+                  Boolean(entry.run_id) &&
+                  prepared.latestAssistantEntryIdsByRun.get(
+                    entry.run_id ?? "",
+                  ) === entry.id
+                }
+              />
+            </div>
           )
         }
 
         if (entry.type === "interaction_request") {
           return (
-            <AgentHistoryEntry
+            <div
               key={entry.id}
-              entry={entry}
-              interactionResponse={prepared.interactionResponses.get(
-                entry.payload.interaction_id,
-              )}
-            />
+              className="min-w-0"
+              data-agent-read-anchor={`entry:${entry.id}`}
+            >
+              <AgentHistoryEntry
+                entry={entry}
+                interactionResponse={prepared.interactionResponses.get(
+                  entry.payload.interaction_id,
+                )}
+              />
+            </div>
           )
         }
 
-        return <AgentHistoryEntry key={entry.id} entry={entry} />
+        return (
+          <div
+            key={entry.id}
+            className="min-w-0"
+            data-agent-read-anchor={`entry:${entry.id}`}
+          >
+            <AgentHistoryEntry entry={entry} />
+          </div>
+        )
       })}
     </div>
   )
 })
 
-export function AgentHistoryEntry({
+function AgentHistoryEntry({
   entry,
   toolResultsByCallId,
   interactionResponse,
@@ -140,24 +159,14 @@ export function AgentHistoryEntry({
     )
   }
 
-  if (entry.type === "notice") {
-    return (
-      <Alert
-        role="note"
-        className="border-border/60 bg-muted/20 [content-visibility:auto] [contain-intrinsic-size:auto_96px]"
-      >
-        <AlertTitle>{t("notice.title")}</AlertTitle>
-        <AlertDescription>{entry.payload.message}</AlertDescription>
-      </Alert>
-    )
-  }
-
   return (
-    <div className="flex items-center gap-3 text-xs text-muted-foreground [content-visibility:auto] [contain-intrinsic-size:auto_48px]">
-      <span className="h-px flex-1 bg-border/60" aria-hidden="true" />
-      <span>{t("compaction")}</span>
-      <span className="h-px flex-1 bg-border/60" aria-hidden="true" />
-    </div>
+    <Alert
+      role="note"
+      className="border-border/60 bg-muted/20 [content-visibility:auto] [contain-intrinsic-size:auto_96px]"
+    >
+      <AlertTitle>{t("notice.title")}</AlertTitle>
+      <AlertDescription>{entry.payload.message}</AlertDescription>
+    </Alert>
   )
 }
 

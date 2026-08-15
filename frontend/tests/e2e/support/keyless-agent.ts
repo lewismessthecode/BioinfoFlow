@@ -2,9 +2,13 @@ import type { APIRequestContext, TestInfo } from "@playwright/test"
 
 export type KeylessAgentScenario =
   | "streaming"
+  | "plan"
   | "parallel-tools"
+  | "serial-tools"
   | "approval"
   | "ask-user"
+  | "stop"
+  | "recovery"
 
 type SuccessEnvelope<T> = {
   success: true
@@ -22,7 +26,6 @@ type AgentSessionSnapshot = {
     run: { id: string; status: string }
   } | null
   entries: Array<Record<string, unknown>>
-  history_revision: number
 }
 
 const backendPort = Number(process.env.PLAYWRIGHT_BACKEND_PORT || 8100)
@@ -31,9 +34,13 @@ const apiBaseUrl = `http://127.0.0.1:${backendPort}/api/v1`
 
 const scenarioModelPrefix: Record<KeylessAgentScenario, string> = {
   streaming: "e2e-reasoning-stream",
+  plan: "e2e-plan",
   "parallel-tools": "e2e-parallel-tools",
+  "serial-tools": "e2e-serial-tools",
   approval: "e2e-approval",
   "ask-user": "e2e-ask-user",
+  stop: "e2e-stop",
+  recovery: "e2e-recovery",
 }
 
 export async function setupKeylessAgentModel(
@@ -110,6 +117,29 @@ export async function getKeylessAgentSnapshot(
     `${apiBaseUrl}/agent/sessions/${sessionId}/snapshot`,
   )
   return requireSuccess<AgentSessionSnapshot>(response, "get Agent snapshot")
+}
+
+export async function restartKeylessBackend(
+  request: APIRequestContext,
+  options: { offlineMilliseconds?: number } = {},
+): Promise<void> {
+  const controlPort = Number(
+    process.env.PLAYWRIGHT_BACKEND_CONTROL_PORT || backendPort + 1,
+  )
+  const response = await request.post(
+    `http://127.0.0.1:${controlPort}/restart`,
+    {
+      data: {
+        offline_milliseconds: options.offlineMilliseconds ?? 0,
+      },
+      timeout: 30_000,
+    },
+  )
+  if (!response.ok()) {
+    throw new Error(
+      `restart Agent backend failed with ${response.status()}: ${await response.text()}`,
+    )
+  }
 }
 
 async function requireSuccess<T>(

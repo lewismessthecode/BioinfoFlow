@@ -1,4 +1,5 @@
 import { act, screen, waitFor } from "@testing-library/react"
+import type { ReactNode } from "react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -9,6 +10,7 @@ import { renderWithProviders } from "@/tests/test-utils"
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   dispatchCommand: vi.fn(),
+  updateSession: vi.fn(),
   publishSummary: vi.fn(),
   replace: vi.fn(),
   push: vi.fn(),
@@ -22,6 +24,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/agent/client", () => ({
   createAgentSession: mocks.createSession,
   dispatchAgentCommand: mocks.dispatchCommand,
+  updateAgentSession: mocks.updateSession,
 }))
 
 vi.mock("@/lib/agent/session-preferences", () => ({
@@ -34,7 +37,11 @@ vi.mock("@/hooks/use-agent-session", () => ({
 }))
 
 vi.mock("@/components/bioinfoflow/agent/agent-context-picker", () => ({
-  AgentContextPicker: () => <button type="button">Add context</button>,
+  AgentContextPicker: ({ ensureSession }: { ensureSession: () => Promise<string> }) => (
+    <button type="button" onClick={() => void ensureSession()}>
+      Add context
+    </button>
+  ),
 }))
 
 vi.mock("@/components/bioinfoflow/agent/agent-transcript", () => ({
@@ -47,11 +54,28 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
   AgentComposer: ({
     onSendMessage,
     onCancel,
+    permissionMode,
+    onPermissionModeChange,
+    contextControls,
+    disabled,
   }: {
     onSendMessage: (parts: [{ type: "text"; text: string }]) => Promise<void>
     onCancel: () => Promise<void>
+    permissionMode: string
+    onPermissionModeChange: (mode: "full_access") => Promise<void>
+    contextControls: ReactNode
+    disabled?: boolean
   }) => (
     <div>
+      {contextControls}
+      <span>Permission: {permissionMode}</span>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => void onPermissionModeChange("full_access")}
+      >
+        Change permission
+      </button>
       <button
         type="button"
         onClick={() => onSendMessage([{ type: "text", text: "Hello" }])}
@@ -96,7 +120,6 @@ function snapshot(): SessionSnapshot {
     runs: [],
     entries: [],
     active_run: null,
-    history_revision: 0,
   }
 }
 
@@ -106,7 +129,6 @@ function sessionState(overrides: Record<string, unknown> = {}) {
     runs: [],
     entries: [],
     activeRun: null,
-    historyRevision: 0,
     connectionStatus: "connected",
     error: null,
     isLoading: false,
@@ -124,6 +146,7 @@ describe("AgentWorkbench v2", () => {
   beforeEach(() => {
     mocks.createSession.mockReset()
     mocks.dispatchCommand.mockReset()
+    mocks.updateSession.mockReset()
     mocks.publishSummary.mockReset()
     mocks.replace.mockReset()
     mocks.push.mockReset()
@@ -163,6 +186,33 @@ describe("AgentWorkbench v2", () => {
     expect(mocks.replace).toHaveBeenCalledWith("/agent/session-1")
   })
 
+  it("persists permission changes after context upload creates a draft session", async () => {
+    const user = userEvent.setup()
+    const created = snapshot()
+    const updated = snapshot()
+    updated.session.permission_mode = "full_access"
+    mocks.createSession.mockResolvedValue(created)
+    mocks.updateSession.mockResolvedValue(updated)
+
+    renderWithProviders(
+      <AgentWorkbench sessionId={null} projectId="project-1" />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Add context" }))
+    await waitFor(() => expect(mocks.createSession).toHaveBeenCalledTimes(1))
+
+    await user.click(
+      screen.getByRole("button", { name: "Change permission" }),
+    )
+
+    await waitFor(() =>
+      expect(mocks.updateSession).toHaveBeenCalledWith("session-1", {
+        permissionMode: "full_access",
+      }),
+    )
+    expect(screen.getByText("Permission: full_access")).toBeInTheDocument()
+  })
+
   it("renders the authoritative session and keeps stream interruptions visible but non-destructive", () => {
     mocks.useSession.mockReturnValue(
       sessionState({
@@ -180,6 +230,36 @@ describe("AgentWorkbench v2", () => {
     expect(screen.getByText("emptyTitle")).toBeInTheDocument()
     expect(screen.getAllByText("connection.reconnecting")).toHaveLength(2)
   })
+
+  it("keeps connection status accessible when its visible label is hidden", () => {
+    renderWithProviders(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    expect(screen.getByLabelText("connection.connected")).toBeInTheDocument()
+  })
+
+  it.each(["archived", "closing", "deleted"] as const)(
+    "explains why a %s conversation is read-only and disables permission changes",
+    (status) => {
+      mocks.useSession.mockReturnValue(
+        sessionState({
+          session: { ...snapshot().session, status },
+        }),
+      )
+
+      renderWithProviders(
+        <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+      )
+
+      expect(screen.getByRole("status")).toHaveTextContent(
+        `readOnly.${status}`,
+      )
+      expect(
+        screen.getByRole("button", { name: "Change permission" }),
+      ).toBeDisabled()
+    },
+  )
 
   it("exposes stop through the workbench imperative handle", async () => {
     const state = sessionState()

@@ -39,10 +39,6 @@ export function FirstRunProvider({
   )
 }
 
-export function useFirstRunContext() {
-  return useContext(FirstRunContext)
-}
-
 export function useFirstRunLoadingContext() {
   return useContext(FirstRunLoadingContext)
 }

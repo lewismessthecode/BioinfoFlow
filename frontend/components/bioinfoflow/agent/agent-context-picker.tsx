@@ -70,6 +70,7 @@ export function AgentContextPicker({
     if (!open || !query.trim()) {
       setResults([])
       setSearching(false)
+      setError((current) => (current === "searchError" ? null : current))
       return
     }
 
@@ -100,6 +101,16 @@ export function AgentContextPicker({
       controller.abort()
     }
   }, [open, projectId, query, sessionId])
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen)
+    if (!nextOpen) {
+      setQuery("")
+      setResults([])
+      setSearching(false)
+      setError(null)
+    }
+  }
 
   const selectResult = (item: AgentContextSearchItem) => {
     onAdd({ ...item })
@@ -153,7 +164,7 @@ export function AgentContextPicker({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -247,6 +258,7 @@ export function AgentContextPicker({
         <input
           ref={fileInputRef}
           type="file"
+          aria-label={t("uploadFiles")}
           multiple
           className="sr-only"
           tabIndex={-1}
@@ -254,6 +266,7 @@ export function AgentContextPicker({
         />
         <input
           type="file"
+          aria-label={t("uploadFolder")}
           multiple
           data-folder
           className="sr-only"

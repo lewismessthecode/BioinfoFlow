@@ -150,11 +150,16 @@ function DraftParts({
   return (
     <div className="grid min-w-0 gap-2">
       {parts.map((part) => (
-        <MarkdownRenderer
+        <div
           key={part.id}
-          content={part.text}
-          className={tone === "muted" ? "text-foreground/70" : undefined}
-        />
+          className="min-w-0"
+          data-agent-read-anchor={`part:${part.id}`}
+        >
+          <MarkdownRenderer
+            content={part.text}
+            className={tone === "muted" ? "text-foreground/70" : undefined}
+          />
+        </div>
       ))}
     </div>
   )

@@ -154,6 +154,7 @@ export function AgentComposer({
             permissionMode={permissionMode}
             workspaceAccess={workspaceAccess}
             activeRun={activeRun !== null}
+            disabled={disabled}
             onPermissionModeChange={onPermissionModeChange}
           />
 

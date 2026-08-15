@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle } from "react"
+import { forwardRef, useImperativeHandle, type ReactNode } from "react"
 import { fireEvent, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -19,6 +19,16 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/agent",
 }))
 
+vi.mock("next-intl", () => ({
+  useTranslations: () => (key: string) =>
+    ({
+      "workspacePanel.open": "Open workspace panel",
+      "workspacePanel.close": "Close workspace panel",
+      "workspacePanel.title": "Workspace panel",
+      "workspacePanel.description": "Workspace details",
+    })[key] ?? key,
+}))
+
 vi.mock("@/hooks/use-events", () => ({
   useEvents: (...args: unknown[]) => mocks.useEvents(...args),
 }))
@@ -33,6 +43,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-workbench", () => ({
       sessionId: string | null
       projectId: string | null
       onSessionResolved?: (session: unknown) => void
+      headerActions?: ReactNode
     },
     ref,
   ) {
@@ -45,6 +56,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-workbench", () => ({
     return (
       <div data-testid="agent-workbench">
         session:{props.sessionId ?? "draft"}|project:{props.projectId ?? "none"}
+        {props.headerActions}
       </div>
     )
   }),
@@ -109,5 +121,32 @@ describe("Agent pages", () => {
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
     fireEvent.keyDown(window, { key: "b", ctrlKey: true, shiftKey: true })
     expect(screen.getByTestId("live-deck")).toBeInTheDocument()
+  })
+
+  it("restores an open desktop LiveDeck after reload", () => {
+    localStorage.setItem("right-sidebar-collapsed", "false")
+
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    expect(screen.getByTestId("live-deck")).toBeInTheDocument()
+  })
+
+  it("offers the LiveDeck in a safe mobile sheet", () => {
+    mocks.isMobile.mockReturnValue(true)
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open workspace panel" }),
+    )
+    expect(screen.getByTestId("live-deck")).toBeInTheDocument()
+    expect(screen.getByRole("dialog")).toHaveClass("overscroll-contain")
+    expect(screen.getByRole("dialog")).toHaveClass(
+      "pb-[env(safe-area-inset-bottom)]",
+    )
   })
 })

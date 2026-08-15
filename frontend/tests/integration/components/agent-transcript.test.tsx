@@ -35,7 +35,6 @@ vi.mock("next-intl", () => ({
         "agentRun.response": "Response",
         "agentHistory.reasoning.title": "Thinking summary",
         "agentHistory.notice.title": "Agent notice",
-        "agentHistory.compaction": "Context compressed",
         "agentInteraction.status.pending": "Waiting for response",
         "agentInteraction.approval.title": "Approval requested",
         "agentInteraction.approval.approve": "Approve",
@@ -292,6 +291,63 @@ describe("AgentTranscript", () => {
     ).not.toBeInTheDocument()
   })
 
+  it("keeps the visible history anchor in place when authoritative content is replaced", () => {
+    const view = renderWithProviders(
+      <AgentTranscript
+        entries={entries.slice(0, 2)}
+        runs={[completedRun]}
+        activeRun={null}
+      />,
+    )
+    const transcript = screen.getByTestId("agent-transcript")
+    let assistantTop = 80
+    Object.defineProperties(transcript, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 1000 },
+      scrollTop: { configurable: true, writable: true, value: 100 },
+    })
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function () {
+        if (this === transcript) return domRect(0, 400)
+        const anchor = this.getAttribute("data-agent-read-anchor")
+        if (anchor === "entry:message-user") return domRect(-180, -80)
+        if (anchor === "entry:message-assistant") {
+          return domRect(assistantTop, assistantTop + 120)
+        }
+        return domRect(0, 0)
+      })
+
+    fireEvent.scroll(transcript)
+    assistantTop = 180
+    view.rerender(
+      <AgentTranscript
+        entries={[
+          {
+            id: "notice-before",
+            session_id: "session-1",
+            run_id: null,
+            sequence: 0,
+            schema_version: 2,
+            created_at: "2026-08-15T07:59:59.000Z",
+            type: "notice",
+            payload: {
+              code: "recovered-history",
+              message: "Recovered earlier history.",
+              details: null,
+            },
+          },
+          ...entries.slice(0, 2),
+        ]}
+        runs={[completedRun]}
+        activeRun={null}
+      />,
+    )
+
+    expect(transcript.scrollTop).toBe(200)
+    rectSpy.mockRestore()
+  })
+
   it("announces a recoverable copy failure without showing a success toast", async () => {
     const user = userEvent.setup()
     vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
@@ -361,3 +417,17 @@ describe("AgentTranscript", () => {
     vi.unstubAllGlobals()
   })
 })
+
+function domRect(top: number, bottom: number): DOMRect {
+  return {
+    x: 0,
+    y: top,
+    width: 600,
+    height: bottom - top,
+    top,
+    right: 600,
+    bottom,
+    left: 0,
+    toJSON: () => ({}),
+  }
+}

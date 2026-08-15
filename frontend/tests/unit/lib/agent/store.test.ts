@@ -73,7 +73,6 @@ const snapshot = (overrides: Partial<SessionSnapshot> = {}): SessionSnapshot => 
   runs: [run()],
   entries: [],
   active_run: activeRun(),
-  history_revision: 1,
   ...overrides,
 })
 
@@ -96,7 +95,6 @@ describe("applyAgentEvent", () => {
         title: "Replacement",
       },
       entries: [userEntry("entry-1", 1)],
-      history_revision: 4,
     })
 
     const result = applyAgentEvent(
@@ -113,8 +111,8 @@ describe("applyAgentEvent", () => {
       runs: replacement.runs,
       entries: replacement.entries,
       activeRun: replacement.active_run,
-      historyRevision: replacement.history_revision,
     })
+    expect("historyRevision" in result.state).toBe(false)
   })
 
   it("applies run updates by run-local revision without a global revision gate", () => {
@@ -320,7 +318,6 @@ describe("applyAgentEvent", () => {
     const state = snapshotState(
       snapshot({
         entries: [userEntry("entry-2", 2)],
-        history_revision: 2,
       }),
     )
     const entry = userEntry("entry-1", 1)
@@ -332,7 +329,6 @@ describe("applyAgentEvent", () => {
       "entry-1",
       "entry-2",
     ])
-    expect(appended.state.historyRevision).toBe(2)
     expect(duplicate.outcome).toBe("ignored")
     expect(duplicate.state).toBe(appended.state)
   })

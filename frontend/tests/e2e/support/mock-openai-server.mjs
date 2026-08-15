@@ -7,9 +7,13 @@ const host = process.env.PLAYWRIGHT_MODEL_HOST || "127.0.0.1"
 const advertisedModels = [
   "e2e-runs-submit",
   "e2e-reasoning-stream",
+  "e2e-plan",
   "e2e-parallel-tools",
+  "e2e-serial-tools",
   "e2e-approval",
   "e2e-ask-user",
+  "e2e-stop",
+  "e2e-recovery",
 ]
 
 export function createMockOpenAIServer() {
@@ -27,7 +31,9 @@ export function createMockOpenAIServer() {
       try {
         body = JSON.parse(await readBody(request))
       } catch {
-        writeJson(response, 400, { error: { message: "invalid JSON request" } })
+        writeJson(response, 400, {
+          error: { message: "invalid JSON request" },
+        })
         return
       }
 
@@ -63,6 +69,30 @@ async function streamCompletion(response, body) {
     await streamText(response, model, {
       reasoning: "Checking the keyless request.",
       chunks: ["Keyless model ", "stream completed."],
+      delayMilliseconds: 1_000,
+    })
+    return
+  }
+
+  if (scenarioModel.startsWith("e2e-plan")) {
+    if (!hasToolResult) {
+      streamToolCalls(response, model, [
+        {
+          id: "call-e2e-plan",
+          name: "update_plan",
+          arguments: {
+            explanation: "Keyless execution plan",
+            plan: [
+              { step: "Inspect the request", status: "completed" },
+              { step: "Summarize the result", status: "in_progress" },
+            ],
+          },
+        },
+      ])
+      return
+    }
+    await streamText(response, model, {
+      chunks: ["The keyless plan ", "is ready."],
     })
     return
   }
@@ -72,19 +102,41 @@ async function streamCompletion(response, body) {
       streamToolCalls(response, model, [
         {
           id: "call-e2e-parallel-alpha",
-          name: "bash",
-          arguments: { command: "sleep 0.2; printf alpha" },
+          name: "write",
+          arguments: { path: "e2e-alpha.txt", content: "alpha" },
         },
         {
           id: "call-e2e-parallel-beta",
-          name: "bash",
-          arguments: { command: "sleep 0.2; printf beta" },
+          name: "write",
+          arguments: { path: "e2e-beta.txt", content: "beta" },
         },
       ])
       return
     }
     await streamText(response, model, {
       chunks: ["Both keyless tools ", "completed."],
+    })
+    return
+  }
+
+  if (scenarioModel.startsWith("e2e-serial-tools")) {
+    if (!hasToolResult) {
+      streamToolCalls(response, model, [
+        {
+          id: "call-e2e-serial-alpha",
+          name: "bash",
+          arguments: { command: "pwd" },
+        },
+        {
+          id: "call-e2e-serial-beta",
+          name: "bash",
+          arguments: { command: "ls -la" },
+        },
+      ])
+      return
+    }
+    await streamText(response, model, {
+      chunks: ["Both serial tools ", "completed."],
     })
     return
   }
@@ -134,6 +186,40 @@ async function streamCompletion(response, body) {
     return
   }
 
+  if (scenarioModel.startsWith("e2e-stop")) {
+    if (!hasToolResult) {
+      streamToolCalls(response, model, [
+        {
+          id: "call-e2e-stop",
+          name: "bash",
+          arguments: { command: "sleep 30" },
+        },
+      ])
+      return
+    }
+    await streamText(response, model, {
+      chunks: ["Stop scenario ", "completed."],
+    })
+    return
+  }
+
+  if (scenarioModel.startsWith("e2e-recovery")) {
+    if (!hasToolResult) {
+      streamToolCalls(response, model, [
+        {
+          id: "call-e2e-recovery",
+          name: "bash",
+          arguments: { command: "sleep 30" },
+        },
+      ])
+      return
+    }
+    await streamText(response, model, {
+      chunks: ["Recovered after ", "inspection."],
+    })
+    return
+  }
+
   if (scenarioModel === "e2e-runs-submit") {
     streamToolCalls(response, model, [
       {
@@ -154,14 +240,21 @@ async function streamCompletion(response, body) {
   })
 }
 
-async function streamText(response, model, { reasoning, chunks }) {
+async function streamText(
+  response,
+  model,
+  { reasoning, chunks, delayMilliseconds = 100 },
+) {
   if (reasoning) {
-    writeChunk(response, model, { role: "assistant", reasoning_content: reasoning })
-    await delay(100)
+    writeChunk(response, model, {
+      role: "assistant",
+      reasoning_content: reasoning,
+    })
+    await delay(delayMilliseconds)
   }
   for (const content of chunks) {
     writeChunk(response, model, { role: "assistant", content })
-    await delay(100)
+    await delay(delayMilliseconds)
   }
   writeChunk(response, model, {}, "stop")
   finishStream(response)

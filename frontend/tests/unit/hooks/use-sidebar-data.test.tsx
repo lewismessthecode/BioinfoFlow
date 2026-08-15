@@ -8,16 +8,18 @@ import { publishAgentSessionSummary } from "@/lib/agent/session-preferences"
 import type { Project } from "@/lib/types"
 import { createAppWrapper } from "@/tests/app-test-utils"
 
-const { pushMock, toastErrorMock, toastSuccessMock, celebrateMilestoneMock } = vi.hoisted(() => ({
+const { pushMock, replaceMock, pathnameMock, toastErrorMock, toastSuccessMock, celebrateMilestoneMock } = vi.hoisted(() => ({
   pushMock: vi.fn(),
+  replaceMock: vi.fn(),
+  pathnameMock: vi.fn(),
   toastErrorMock: vi.fn(),
   toastSuccessMock: vi.fn(),
   celebrateMilestoneMock: vi.fn(),
 }))
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: pushMock }),
-  usePathname: () => "/agent",
+  useRouter: () => ({ push: pushMock, replace: replaceMock }),
+  usePathname: () => pathnameMock(),
 }))
 
 vi.mock("sonner", () => ({
@@ -59,6 +61,9 @@ describe("useSidebarData", () => {
   beforeEach(() => {
     apiRequestMock.mockReset()
     pushMock.mockReset()
+    replaceMock.mockReset()
+    pathnameMock.mockReset()
+    pathnameMock.mockReturnValue("/agent")
     toastErrorMock.mockReset()
     toastSuccessMock.mockReset()
     celebrateMilestoneMock.mockReset()
@@ -569,6 +574,7 @@ describe("useSidebarData", () => {
       project_id: project.id,
       title: null,
     })
+    pathnameMock.mockReturnValue("/agent/session-empty")
 
     apiRequestMock.mockImplementation(async (path, options) => {
       if (path === "/projects") {
@@ -611,6 +617,7 @@ describe("useSidebarData", () => {
       { method: "DELETE" },
     )
     expect(result.current.sidebar.projectConversations.get(project.id) ?? []).toEqual([])
+    expect(replaceMock).toHaveBeenCalledWith("/agent")
   })
 
   it("selects a conversation and navigates to the session route", async () => {

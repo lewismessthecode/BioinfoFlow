@@ -2,7 +2,7 @@ import { screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
-import { AgentHistoryEntries } from "@/components/bioinfoflow/agent/history-entry"
+import { AgentHistoryEntries } from "@/components/bioinfoflow/agent/conversation-entries"
 import type { HistoryEntry } from "@/lib/agent/contracts"
 import { renderWithProviders } from "@/tests/test-utils"
 
@@ -40,7 +40,6 @@ vi.mock("next-intl", () => ({
         "agentHistory.plan.status.in_progress": "In progress",
         "agentHistory.plan.status.completed": "Completed",
         "agentHistory.notice.title": "Agent notice",
-        "agentHistory.compaction": "Context compressed",
         "agentInteraction.ask_user.title": "The agent asked for input",
         "agentInteraction.ask_user.submit": "Submit answers",
         "agentInteraction.ask_user.recommended": "Recommended",

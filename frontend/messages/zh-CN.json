@@ -274,6 +274,7 @@
       "deleteConfirmDescription": "此操作无法撤销"
     },
     "liveDeck": {
+      "label": "工作区实时信息",
       "files": "文件",
       "pipeline": "工作流",
       "monitor": "监控"
@@ -2458,604 +2459,6 @@
     "notFoundDescription": "您要查找的页面不存在或已被移动。",
     "goToDashboard": "前往仪表板"
   },
-  "agentCore": {
-    "noFinalText": "此 turn 没有记录最终回复。",
-    "auditToggle": "查看事件",
-    "eventLedger": "事件账本",
-    "reactionLike": "赞同回复",
-    "reactionDislike": "不赞同回复",
-    "reactionRegenerate": "重新生成回复",
-    "reactionCopy": "复制回复",
-    "reactionMore": "更多回复操作",
-    "clarificationRequested": "请求澄清",
-    "clarificationResolved": "已解析",
-    "actionTimeline": "动作时间线",
-    "actionApproval": "需要审批",
-    "approveAction": "批准动作",
-    "rejectAction": "拒绝动作",
-    "artifactPanel": "产物",
-    "memoryProposals": "记忆提案",
-    "acceptMemory": "接受记忆",
-    "rejectMemory": "拒绝记忆"
-  },
-  "agentRuntime": {
-    "welcomeTitle": "今天想让 Bioinfoflow 帮你做什么？",
-    "composerPlaceholder": "计划、构建，输入 / 选技能，输入 @ 加上下文",
-    "connectModel": {
-      "action": "连接模型",
-      "title": "连接模型",
-      "description": "添加提供商密钥，即可在此使用模型。",
-      "apiKey": "API 密钥",
-      "apiKeyPlaceholder": "粘贴 API 密钥",
-      "submit": "连接",
-      "connecting": "正在连接...",
-      "moreProviders": "更多提供商",
-      "loading": "正在加载提供商...",
-      "catalogError": "无法加载提供商。",
-      "retry": "重试",
-      "errors": {
-        "setup": "无法保存提供商。",
-        "discovery": "提供商已保存，但无法加载模型。",
-        "model": "提供商已保存，但没有找到可用模型。",
-        "probe": "提供商已保存，但无法验证模型。"
-      }
-    },
-    "composerPlaceholders": {
-      "checkWorkflow": "运行前检查一个工作流",
-      "chooseInputs": "为分析选择输入数据",
-      "reviewFailure": "查看一次失败的运行",
-      "prepareRun": "准备一次工作流运行"
-    },
-    "attach": "添加附件或上下文",
-    "send": "发送消息",
-    "stop": "停止回复",
-    "voice": {
-      "start": "开始语音输入",
-      "stop": "停止录音",
-      "recording": "正在听 {time}",
-      "transcribing": "正在转写…",
-      "unavailable": "语音输入暂不可用",
-      "failed": "无法转写这段录音。",
-      "cancelled": "已取消语音录制。"
-    },
-    "pendingResponse": "正在处理...",
-    "steer": {
-      "pending": "将在当前步骤结束后参考",
-      "cancelled": "回复已停止，未处理此消息"
-    },
-    "scrollToBottom": "回到最新内容",
-    "recentActivityWindow": "显示最近活动",
-    "thinking": "思考过程",
-    "toolCalls": "工具调用",
-    "statusLine": {
-      "thinking": "正在思考...",
-      "running": "处理中..."
-    },
-    "responseActions": {
-      "copy": "复制回复",
-      "copied": "已复制",
-      "copyFailed": "复制失败",
-      "retry": "重新生成",
-      "retrying": "正在重新生成..."
-    },
-    "tokenUsage": {
-      "label": "Token",
-      "display": "已用 {value}",
-      "compactDisplay": "{value}",
-      "aria": "当前上下文已用 {percent}。本会话累计 {total} token。输入 {input}，输出 {output}。",
-      "ariaUnknown": "当前上下文用量未知。本会话累计 {total} token。输入 {input}，输出 {output}。",
-      "title": "上下文窗口",
-      "unknown": "上下文用量未知",
-      "currentContext": "当前上下文",
-      "sessionTotal": "会话累计",
-      "total": "总计",
-      "source": "来源",
-      "sourceValues": {
-        "reported": "提供商上报",
-        "estimated": "估算",
-        "unknown": "未知"
-      },
-      "provider": "提供商",
-      "model": "模型",
-      "used": "已用",
-      "remaining": "剩余",
-      "input": "输入",
-      "output": "输出",
-      "cached": "缓存",
-      "reasoning": "推理",
-      "window": "窗口",
-      "maxOutput": "最大输出"
-    },
-    "skills": {
-      "menuTitle": "技能",
-      "loading": "正在加载技能...",
-      "empty": "暂无技能。",
-      "noMatches": "没有匹配的技能。",
-      "loadFailed": "无法加载技能。",
-      "remove": "移除 {name}",
-      "activeForNextTurn": "技能"
-    },
-    "workflows": {
-      "menuTitle": "工作流",
-      "loading": "正在加载工作流...",
-      "empty": "暂无工作流。",
-      "noMatches": "没有匹配的工作流。",
-      "loadFailed": "无法加载工作流。",
-      "remove": "移除 {name}",
-      "activeForNextTurn": "工作流上下文",
-      "pinned": "已固定"
-    },
-    "starterSuggestions": {
-      "checkWorkflow": {
-        "prompt": "运行前帮我检查这个工作流"
-      },
-      "chooseInputs": {
-        "prompt": "帮我选择这次分析的输入"
-      },
-      "reviewFailure": {
-        "prompt": "查看最近失败的运行"
-      },
-      "prepareRun": {
-        "prompt": "基于 @workflow 准备一次运行"
-      }
-    },
-    "demoStarterSuggestions": {
-      "checkAndRun": {
-        "prompt": "检查并运行演示工作流"
-      },
-      "explainInputs": {
-        "prompt": "解释演示输入"
-      },
-      "reviewRun": {
-        "prompt": "查看最近的演示运行"
-      }
-    },
-    "commandHints": {
-      "workflow": {
-        "prefix": "输入",
-        "suffix": "把工作流加入下一次请求"
-      },
-      "skills": {
-        "prefix": "输入",
-        "suffix": "选择一个或多个 skills"
-      },
-      "mode": {
-        "prefix": "按",
-        "suffix": "在计划和执行模式之间切换"
-      }
-    },
-    "workflowContext": {
-      "label": "工作流上下文"
-    },
-    "activity": {
-      "groups": {
-        "search": "已搜索网页",
-        "workspace": "准备工作区",
-        "read": "读取数据",
-        "command": "运行命令",
-        "write": "创建或编辑文件",
-        "register": "管理工作流",
-        "run": "提交运行",
-        "verify": "验证结果",
-        "other": "使用工具"
-      },
-      "summary": {
-        "search": "找到 {count} 个来源",
-        "searching": "正在搜索来源...",
-        "workspace": "准备了 {count} 项",
-        "read": "读取了 {count} 项",
-        "command": "运行了 {count} 条命令",
-        "write": "编辑了 {count} 个文件",
-        "register": "处理了 {count} 个工作流",
-        "run": "提交了 {count} 次运行",
-        "verify": "验证了 {count} 项检查",
-        "other": "运行了 {count} 个工具"
-      },
-      "status": {
-        "building": "构建中",
-        "requested": "已请求",
-        "waiting": "等待中",
-        "running": "运行中",
-        "completed": "已完成",
-        "failed": "失败",
-        "cancelled": "已取消",
-        "rejected": "已拒绝"
-      },
-      "details": {
-        "show": "展开详情",
-        "hide": "收起详情",
-        "input": "输入",
-        "arguments": "参数",
-        "output": "输出",
-        "exitCode": "退出码",
-        "error": "错误",
-        "files": "文件"
-      }
-    },
-    "sources": {
-      "title": "来源",
-      "description": "查看支撑本次回答的链接和搜索查询。",
-      "open": "打开来源",
-      "openWithCount": "打开 {count} 个来源",
-      "close": "关闭来源",
-      "citationLabel": "来源 {index}：{title}",
-      "count": "{count} 个来源",
-      "searchedWeb": "已搜索网页",
-      "resultCount": "{count} 个结果",
-      "preview": "来源预览",
-      "query": "查询",
-      "noSnippet": "暂无摘要。",
-      "opensInNewTab": "将在新标签页打开。",
-      "types": {
-        "web": "网页",
-        "pubmed": "PubMed",
-        "ncbi": "NCBI",
-        "biorxiv": "bioRxiv",
-        "github": "GitHub",
-        "docs": "文档",
-        "workflow": "工作流",
-        "artifact": "产物"
-      }
-    },
-    "approve": "批准",
-    "reject": "拒绝",
-    "approval": {
-      "jumpToDecision": "需要确认 · 跳转",
-      "remoteTarget": "远程目标：{target}",
-      "state": {
-        "approved": "已批准，继续执行",
-        "answered": "已提交回答，继续执行",
-        "completed": "已完成",
-        "rejected": "已拒绝",
-        "failed": "失败",
-        "cancelled": "已取消"
-      }
-    },
-    "decision": {
-      "submitting": "正在提交决定…",
-      "failed": "无法提交决定：{error}",
-      "retry": "重试决定",
-      "focusedNext": "决定已提交，焦点已移至下一项请求。",
-      "focusedComposer": "决定已提交，焦点已返回消息输入框。"
-    },
-    "attachMenu": {
-      "addFileFolder": "添加文件/文件夹",
-      "addFiles": "添加文件",
-      "addFolder": "添加文件夹",
-      "attachFiles": "添加文件",
-      "browseProjectFiles": "浏览项目文件",
-      "referenceRun": "引用一次运行",
-      "runPreflight": "运行预检查",
-      "diagnoseRun": "诊断运行",
-      "comingSoon": "即将支持"
-    },
-    "attachments": {
-      "label": "附件",
-      "uploading": "正在上传…",
-      "removing": "正在移除…",
-      "uploadFailed": "上传失败",
-      "removeFailed": "无法移除附件",
-      "preview": "预览 {name}",
-      "remove": "移除 {name}",
-      "retry": "重试 {name}",
-      "delete": "删除 {name}",
-      "deleteAction": "删除",
-      "imagePreview": "图片附件预览",
-      "imageLabel": "图片附件",
-      "previewImage": "预览图片附件"
-    },
-    "contextSearch": {
-      "menuTitle": "文件、工作流和运行",
-      "loading": "正在搜索上下文…",
-      "empty": "输入内容以搜索上下文",
-      "noMatches": "没有匹配的上下文",
-      "remove": "移除 {name}"
-    },
-    "runtimeLocation": {
-      "placeholder": "执行位置",
-      "selectedLocalAria": "当前执行位置：本地",
-      "selectedRemoteAria": "当前执行位置：{name}（{host}），{status}",
-      "selectedAutoAria": "执行位置：Auto",
-      "selectedAutoTargetAria": "执行位置：Auto，当前目标 {target}",
-      "selectedManualAria": "执行位置：手动，{target}",
-      "menuTitle": "运行位置",
-      "auto": "Auto",
-      "manual": "手动",
-      "allTargets": "全部",
-      "targetCount": "{count} 个位置",
-      "localBadge": "本地",
-      "manage": "管理 SSH 主机",
-      "local": {
-        "label": "本地",
-        "description": "在当前 Bioinfoflow 工作区运行"
-      },
-      "remote": {
-        "label": "远程"
-      },
-      "emptyRemoteHosts": "还没有配置远程主机。",
-      "loadFailed": "无法加载远程主机。",
-      "status": {
-        "online": "在线",
-        "offline": "离线",
-        "error": "连接异常",
-        "unknown": "未测试"
-      }
-    },
-    "turnStatus": {
-      "queued": "排队中",
-      "running": "处理中",
-      "waiting_user": "等待你回复",
-      "waiting_approval": "需要确认",
-      "completed": "已完成",
-      "failed": "已停止",
-      "cancelled": "已取消"
-    },
-    "sidecar": {
-      "title": "工作区",
-      "close": "关闭工作区面板",
-      "collapse": "收起工作区面板",
-      "expand": "打开工作区面板",
-      "files": "文件",
-      "runs": "运行",
-      "tools": "工具",
-      "artifacts": "产物",
-      "active": "进行中",
-      "progress": "进度",
-      "currentThinking": "当前思考",
-      "currentToolCalls": "当前工具调用",
-      "needsDecision": "需要你确认",
-      "noActivity": "还没有活动"
-    },
-    "artifacts": {
-      "title": "产物",
-      "back": "返回产物列表",
-      "empty": "暂无产物。",
-      "emptyNoSession": "开始对话后会收集产物。",
-      "emptyNoSessionDescription": "生成的报告、表格、PDF、HTML 和图片会在这里打开。",
-      "emptyRunningDescription": "Agent 创建的文件会出现在这个面板中。",
-      "count": "{count} 个产物",
-      "loading": "正在加载产物",
-      "loadFailed": "无法加载产物。",
-      "loadFailedDescription": "请刷新面板后重试。",
-      "retry": "重试",
-      "copy": "复制",
-      "copied": "已复制",
-      "open": "打开",
-      "download": "下载",
-      "exitCode": "退出码",
-      "previewUnavailable": "暂时无法预览这个产物。",
-      "toolLogs": "工具日志（{count}）",
-      "types": {
-        "file": "文件",
-        "command": "命令输出",
-        "html": "HTML",
-        "markdown": "Markdown",
-        "pdf": "PDF",
-        "sheet": "表格",
-        "spreadsheet": "电子表格",
-        "todo_list": "任务",
-        "run": "运行",
-        "workflow": "工作流",
-        "image": "镜像",
-        "unknown": "产物"
-      }
-    },
-    "renderer": {
-      "previewUnavailable": "暂时无法预览这个文件。",
-      "previewUnsupported": "这个文件类型暂不支持原生预览。",
-      "openDefaultDescription": "可以打开或下载文件，并继续在默认应用中处理。",
-      "noRenderableSource": "文件需要可读取的预览链接或内联内容。",
-      "defaultSheetName": "工作表",
-      "previewLimit": "已显示 {rows} 行 · {columns} 列",
-      "workbookLoading": "正在加载工作簿",
-      "workbookLoadingDescription": "正在读取工作表并准备表格预览。",
-      "workbookFetchFailed": "无法下载这个工作簿。",
-      "workbookFailed": "无法预览工作簿。",
-      "workbookEmpty": "工作簿没有可见行。",
-      "workbookEmptyDescription": "可以在电子表格应用中检查隐藏或空工作表。",
-      "workbookTooLarge": "这个工作簿过大，无法安全预览。",
-      "textLoading": "正在加载预览",
-      "textLoadingDescription": "正在读取文件内容并准备预览。",
-      "textFetchFailed": "无法加载文件预览。",
-      "textTooLarge": "这个文件过大，无法安全预览。",
-      "textPreviewLimited": "预览已截断为 {lines} 行。",
-      "kinds": {
-        "markdown": "Markdown",
-        "html": "HTML",
-        "pdf": "PDF",
-        "image": "图片",
-        "spreadsheet": "电子表格",
-        "json": "JSON",
-        "text": "文本",
-        "unsupported": "文件"
-      }
-    },
-    "tabs": {
-      "environment": "环境",
-      "tools": "工具",
-      "preview": "预览",
-      "artifacts": "产物",
-      "progress": "进度",
-      "files": "打开文件",
-      "agents": "子智能体",
-      "browser": "浏览器"
-    },
-    "toolsPanel": {
-      "title": "工作区工具",
-      "description": "在当前对话中打开项目文件、审查产物，或进入运行工具。",
-      "review": "审查",
-      "artifactCount": "{count} 个产物",
-      "noArtifacts": "暂无产物",
-      "terminal": "终端",
-      "terminalDescription": "打开项目终端",
-      "browser": "浏览器",
-      "browserDescription": "打开空白浏览工作区",
-      "files": "文件",
-      "filesDescription": "浏览并预览项目文件",
-      "workflows": "工作流",
-      "workflowsDescription": "注册、检查并运行工作流",
-      "runs": "运行记录",
-      "runsDescription": "查看日志、输出和 DAG"
-    },
-    "environment": {
-      "title": "环境信息",
-      "open": "打开环境信息",
-      "close": "关闭环境信息",
-      "changes": "变更",
-      "filesChanged": "已变更 {count} 个文件",
-      "worktree": "工作树",
-      "executionTarget": "执行位置",
-      "remoteProject": "远程项目",
-      "session": "会话",
-      "pendingSession": "会话待创建",
-      "model": "模型",
-      "progress": "进度",
-      "progressCount": "已完成 {completed}/{total}",
-      "activity": "子智能体与工具",
-      "sources": "来源",
-      "none": "无"
-    },
-    "agentTree": {
-      "title": "子智能体",
-      "empty": "暂无子智能体",
-      "status": {
-        "pending_init": "启动中",
-        "running": "运行中",
-        "completed": "已完成",
-        "errored": "出错",
-        "interrupted": "已中断"
-      },
-      "modelFallback": "{requested} 不可用；已回退到 {effective}",
-      "modelFallbackGeneric": "已回退到 {effective}",
-      "noFinalText": "任务已完成，但没有最终摘要。",
-      "unknownError": "子智能体未能完成任务。",
-      "interrupted": "子智能体已被中断。"
-    },
-    "agentWorkspace": {
-      "title": "子智能体",
-      "empty": "暂无子智能体",
-      "open": "打开子智能体工作区",
-      "summary": "{total} 个子智能体 · {active} 个运行中",
-      "back": "返回子智能体列表",
-      "listLabel": "子智能体任务",
-      "detailLabel": "子智能体详情",
-      "sessionId": "会话",
-      "turnId": "轮次",
-      "model": "模型",
-      "requestedModel": "请求模型",
-      "fallback": "模型回退",
-      "terminationReason": "结束原因",
-      "tokenUsage": "Token",
-      "noSummary": "没有最终摘要",
-      "runningPreview": "正在执行分配的任务",
-      "pendingPreview": "正在准备子智能体",
-      "interruptedPreview": "子智能体已被中断"
-    },
-    "progress": {
-      "tasks": "任务",
-      "empty": "暂无任务。智能助手的任务清单会在执行时显示在这里。"
-    },
-    "todoDock": {
-      "collapse": "收起任务面板",
-      "expand": "展开任务面板",
-      "summary": "剩余 {count} 项任务"
-    },
-    "files": {
-      "title": "文件",
-      "up": "上一级",
-      "back": "返回文件列表",
-      "refresh": "刷新",
-      "empty": "此文件夹为空。",
-      "error": "无法加载文件。",
-      "search": "搜索已加载文件",
-      "clearSearch": "清空搜索",
-      "collapseAll": "全部收起",
-      "closePreview": "关闭预览",
-      "resizeTree": "调整文件树宽度",
-      "selectPreview": "选择文件进行预览",
-      "loadedOnly": "正在搜索 {count} 个已加载项目",
-      "loading": "加载中...",
-      "addToContext": "添加到上下文",
-      "copyPath": "复制路径",
-      "download": "下载",
-      "openDefault": "打开",
-      "previewUnavailable": "暂时无法预览这个文件。",
-      "previewUnsupported": "这个文件类型暂不支持原生预览。",
-      "openDefaultDescription": "可以打开或下载文件，并继续在默认应用中处理。",
-      "removeAttachment": "移除 {label}",
-      "truncated": "文件较大，已被截断。"
-    },
-    "browser": {
-      "title": "内嵌浏览器",
-      "urlPlaceholder": "输入 URL",
-      "empty": "输入地址以预览页面。",
-      "go": "打开地址",
-      "reload": "重新加载"
-    },
-    "mode": {
-      "label": "智能助手模式",
-      "act": "执行",
-      "plan": "规划"
-    },
-    "permission": {
-      "label": "权限模式",
-      "options": {
-        "ask_each_action": {
-          "label": "请求批准",
-          "description": "执行有副作用的操作前先询问。"
-        },
-        "guarded_auto": {
-          "label": "替我审批",
-          "description": "自动执行低风险操作，高风险操作再询问。"
-        },
-        "bypass": {
-          "label": "完全访问权限",
-          "description": "无需风险审批，自动执行所有未被硬性阻止的操作。"
-        }
-      },
-      "boundary": {
-        "local": "本地操作仍受本会话当前配置的沙箱或主机边界约束；权限模式不会扩大该边界。",
-        "remote": "SSH 操作使用远程账户权限和服务器策略；远程工作目录并不是沙箱。"
-      },
-      "safetyFloor": "被硬性阻止的关键操作，以及必须由用户完成的交互，在所有模式下仍会被阻止或要求确认。",
-      "status": {
-        "updating": "正在更新权限模式…",
-        "updated": "权限模式已更新，将用于后续操作。",
-        "reconciled": "已批准 {affected} 个等待操作；排除 {excluded} 个；另有 {resolved} 个已处理。",
-        "failed": "无法更新权限模式：{error}"
-      },
-      "retry": "重试权限更新",
-      "confirm": {
-        "title": "更新权限模式？",
-        "description": "可批准 {eligible} 个等待中的工具操作；{excluded} 个交互仍保持等待。",
-        "futureOnly": "仅更新后续操作",
-        "futureOnlyDescription": "当前等待中的操作仍需要你逐项决定。",
-        "approvePending": "更新并批准 {count} 个等待工具",
-        "approvePendingDescription": "问题和计划审阅绝不会被自动批准。",
-        "cancel": "取消"
-      }
-    },
-    "plan": {
-      "reviewTitle": "审阅计划",
-      "approveAndAct": "批准并执行",
-      "keepPlanning": "继续规划",
-      "status": {
-        "pending": "待确认",
-        "approved": "已批准",
-        "rejected": "需修改",
-        "answered": "已回复"
-      }
-    },
-    "ask": {
-      "title": "智能助手需要你的输入",
-      "submit": "提交回答",
-      "customLabel": "自定义回答",
-      "customPlaceholder": "告诉 Bioinfoflow 应该使用什么",
-      "recommended": "推荐",
-      "answerLabel": "回答",
-      "rejectQuestion": "拒绝问题"
-    }
-  },
   "agent": {
     "disclaimer": "Bioinfoflow 智能助手可能犯错，请核实重要结果。",
     "selectProjectHint": "从侧边栏选择项目以开始对话",
@@ -3121,6 +2524,17 @@
     "loadErrorTitle": "无法打开对话",
     "loadErrorDescription": "当前对话暂时无法加载。",
     "retry": "重试",
+    "readOnly": {
+      "archived": "该对话已归档，目前只能查看。",
+      "closing": "该对话正在关闭，不能再进行修改。",
+      "deleted": "该对话已删除，目前只能查看。"
+    },
+    "workspacePanel": {
+      "title": "工作区面板",
+      "description": "查看工作区文件、工作流进度和资源监控。",
+      "open": "打开工作区面板",
+      "close": "关闭工作区面板"
+    },
     "connection": {
       "connecting": "正在连接",
       "connected": "已连接",
@@ -3191,6 +2605,17 @@
       "serial": "依次执行 {count} 个工具",
       "mixed": "{count} 项工具活动",
       "generic": "{count} 项工具活动"
+    },
+    "category": {
+      "read": "读取",
+      "search": "搜索",
+      "command": "命令",
+      "edit": "编辑",
+      "write": "写入",
+      "workflow": "工作流",
+      "plan": "计划",
+      "interaction": "用户输入",
+      "other": "其他"
     },
     "details": {
       "show": "展开详情",
@@ -3269,8 +2694,7 @@
     },
     "notice": {
       "title": "Agent 提示"
-    },
-    "compaction": "上下文已压缩"
+    }
   },
   "agentInteraction": {
     "status": {
@@ -3282,6 +2706,7 @@
     },
     "approval": {
       "title": "请求审批",
+      "announcement": "收到新的审批请求，正在等待你的回复。",
       "approve": "批准",
       "reject": "拒绝",
       "input": "命令预览",
@@ -3291,11 +2716,13 @@
     },
     "ask_user": {
       "title": "Agent 请求补充信息",
+      "announcement": "Agent 请求补充信息，正在等待你的回复。",
       "submit": "提交答案",
       "recommended": "推荐"
     },
     "recovery": {
       "title": "请求恢复处理",
+      "announcement": "收到新的恢复处理请求，正在等待你的回复。",
       "inspect": "检查当前状态",
       "retry": "重试",
       "cancel": "取消",
@@ -3303,6 +2730,41 @@
     },
     "submitting": "提交中…",
     "submit_failed": "提交失败，请重试。"
+  },
+  "demoAgent": {
+    "badge": "演示",
+    "start": "开始演示",
+    "pause": "暂停演示",
+    "restart": "重新开始",
+    "replay": "重新播放",
+    "install": "安装",
+    "progress": "演示进度",
+    "empty": "观看 AI Agent 运行生物信息学流程",
+    "status": {
+      "ready": "准备就绪",
+      "running": "正在运行：{task}",
+      "playing": "正在播放…",
+      "complete": "演示完成",
+      "paused": "已暂停"
+    },
+    "dag": {
+      "title": "流程 DAG",
+      "pipeline": "大肠杆菌质控流程",
+      "waiting": "流程开始后将在这里显示 DAG"
+    },
+    "runStatus": {
+      "pending": "等待中",
+      "preparing": "准备中",
+      "queued": "排队中",
+      "running": "运行中",
+      "completed": "已完成",
+      "failed": "失败",
+      "cancelled": "已取消"
+    },
+    "try": {
+      "prefix": "准备亲自体验？运行",
+      "suffix": "即可开始。"
+    }
   },
   "executionMode": {
     "askShort": "询问",

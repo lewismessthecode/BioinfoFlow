@@ -408,6 +408,9 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
           setConversationProjectId("")
         }
       }
+      if (pathname === `/agent/${conversationId}`) {
+        router.replace("/agent")
+      }
     } catch (error) {
       const message = getApiErrorMessage(error, tSidebar("errors.deleteConversationFailed"))
       toast.error(message)

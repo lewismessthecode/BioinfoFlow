@@ -12,7 +12,6 @@ export type AgentStoreState = {
   runs: RunView[]
   entries: HistoryEntry[]
   activeRun: ActiveRunView | null
-  historyRevision: number
 }
 
 export type AgentEventApplication = {
@@ -25,7 +24,6 @@ export const initialAgentStoreState: AgentStoreState = {
   runs: [],
   entries: [],
   activeRun: null,
-  historyRevision: 0,
 }
 
 export function applyAgentEvent(
@@ -54,7 +52,6 @@ function stateFromSnapshot(snapshot: SessionSnapshot): AgentStoreState {
     runs: snapshot.runs,
     entries: snapshot.entries,
     activeRun: snapshot.active_run,
-    historyRevision: snapshot.history_revision,
   }
 }
 
@@ -241,7 +238,6 @@ function applyCommittedEntry(
     ...state,
     entries,
     activeRun,
-    historyRevision: Math.max(state.historyRevision, entry.sequence),
   })
 }
 

@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
+import Link from "next/link"
 import { useLocale } from "next-intl"
 import { cn } from "@/lib/utils"
 import { MessageSquare, MoreVertical, Trash2 } from "@/lib/icons"
@@ -81,20 +82,23 @@ export function ConversationItem({
           <input
             ref={editInputRef}
             value={editValue}
+            aria-label={tCommon("edit")}
+            name="conversation-title"
+            autoComplete="off"
             onChange={(e) => setEditValue(e.target.value)}
             onBlur={commitRename}
             onKeyDown={(e) => {
               if (e.key === "Enter") commitRename()
               if (e.key === "Escape") setIsEditing(false)
             }}
-            className="min-w-0 flex-1 border-b border-primary bg-transparent py-0 outline-none"
+            className="min-w-0 flex-1 border-b border-primary bg-transparent py-0 outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring/45 focus-visible:ring-offset-1"
             autoFocus
           />
         </div>
       ) : (
-        <button
+        <Link
+          href={`/agent/${conversation.id}`}
           onClick={() => onSelect(conversation, projectId)}
-          onDoubleClick={startRename}
           className="flex min-w-0 flex-1 items-center gap-1.5 rounded-[6px] text-left text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring/45"
         >
           {isActive ? (
@@ -114,14 +118,14 @@ export function ConversationItem({
               {dateLabel}
             </time>
           ) : null}
-        </button>
+        </Link>
       )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6 rounded-[6px] opacity-0 transition-opacity hover:bg-sidebar-foreground/[0.055] group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
+            className="size-11 rounded-[6px] opacity-0 transition-opacity hover:bg-sidebar-foreground/[0.055] group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 lg:size-6"
             aria-label={tCommon("actions")}
           >
             <MoreVertical data-icon="inline-start" aria-hidden="true" className="h-3 w-3" />

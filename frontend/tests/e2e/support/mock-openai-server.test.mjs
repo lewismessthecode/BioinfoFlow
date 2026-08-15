@@ -28,9 +28,13 @@ test("advertises the deterministic keyless scenarios", async () => {
     [
       "e2e-runs-submit",
       "e2e-reasoning-stream",
+      "e2e-plan",
       "e2e-parallel-tools",
+      "e2e-serial-tools",
       "e2e-approval",
       "e2e-ask-user",
+      "e2e-stop",
+      "e2e-recovery",
     ],
   )
 })
@@ -38,7 +42,9 @@ test("advertises the deterministic keyless scenarios", async () => {
 test("streams reasoning and final text without an external provider", async () => {
   const events = await completion("openai/e2e-reasoning-stream-selfcheck")
   assert.equal(
-    events.map((event) => event.choices[0].delta.reasoning_content || "").join(""),
+    events
+      .map((event) => event.choices[0].delta.reasoning_content || "")
+      .join(""),
     "Checking the keyless request.",
   )
   assert.equal(
@@ -53,7 +59,7 @@ test("derives tool phases from request history instead of global state", async (
   const toolCalls = first[0].choices[0].delta.tool_calls
   assert.deepEqual(
     toolCalls.map((call) => call.function.name),
-    ["bash", "bash"],
+    ["write", "write"],
   )
 
   const second = await completion("e2e-parallel-tools-selfcheck", [
@@ -69,10 +75,7 @@ test("derives tool phases from request history instead of global state", async (
 
 test("emits valid approval and ask-user tool calls", async () => {
   const approval = await completion("e2e-approval-selfcheck")
-  assert.equal(
-    approval[0].choices[0].delta.tool_calls[0].function.name,
-    "bash",
-  )
+  assert.equal(approval[0].choices[0].delta.tool_calls[0].function.name, "bash")
   assert.deepEqual(
     JSON.parse(approval[0].choices[0].delta.tool_calls[0].function.arguments),
     { command: "touch e2e-approved.txt" },
@@ -90,7 +93,33 @@ test("emits valid approval and ask-user tool calls", async () => {
   assert.equal(argumentsPayload.questions[0].options.length, 2)
 })
 
-async function completion(model, messages = [{ role: "user", content: "test" }]) {
+test("emits plan, serial, stop, and recovery scenarios", async () => {
+  const plan = await completion("e2e-plan-selfcheck")
+  assert.equal(
+    plan[0].choices[0].delta.tool_calls[0].function.name,
+    "update_plan",
+  )
+
+  const serial = await completion("e2e-serial-tools-selfcheck")
+  assert.deepEqual(
+    serial[0].choices[0].delta.tool_calls.map((call) => call.function.name),
+    ["bash", "bash"],
+  )
+
+  for (const scenario of ["stop", "recovery"]) {
+    const events = await completion(`e2e-${scenario}-selfcheck`)
+    const call = events[0].choices[0].delta.tool_calls[0]
+    assert.equal(call.function.name, "bash")
+    assert.deepEqual(JSON.parse(call.function.arguments), {
+      command: "sleep 30",
+    })
+  }
+})
+
+async function completion(
+  model,
+  messages = [{ role: "user", content: "test" }],
+) {
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json" },

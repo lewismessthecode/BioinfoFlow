@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ConversationItem } from "@/components/bioinfoflow/sidebar/conversation-item"
 
@@ -12,7 +12,13 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DropdownMenuItem: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({
+    children,
+    onClick,
+  }: {
+    children: React.ReactNode
+    onClick?: () => void
+  }) => <button onClick={onClick}>{children}</button>,
   DropdownMenuSeparator: () => <div />,
 }))
 
@@ -55,7 +61,7 @@ describe("ConversationItem", () => {
       />
     )
 
-    const row = screen.getByRole("button", { name: "Conversation 2" }).closest(".group")
+    const row = screen.getByRole("link", { name: "Conversation 2" }).closest(".group")
     expect(row?.className).not.toContain("hover:bg-accent")
     expect(row?.className).not.toContain("hover:bg-sidebar-accent")
     expect(row?.className).not.toContain("text-accent-foreground")
@@ -77,7 +83,7 @@ describe("ConversationItem", () => {
       />
     )
 
-    const row = screen.getByRole("button", { name: "Conversation 2" }).closest(".group")
+    const row = screen.getByRole("link", { name: "Conversation 2" }).closest(".group")
     expect(row?.className).toContain("bg-sidebar-foreground/[0.08]")
     expect(row?.className).not.toContain("bg-sidebar-accent")
     expect(row?.className).toContain("text-sidebar-foreground")
@@ -99,7 +105,7 @@ describe("ConversationItem", () => {
       />,
     )
 
-    const row = screen.getByRole("button", { name: "Conversation 2" }).closest(".group")
+    const row = screen.getByRole("link", { name: "Conversation 2" }).closest(".group")
     expect(row?.className).toContain("text-[12px]")
     expect(row?.className).toContain("px-2")
     expect(row?.className).not.toContain("text-sm")
@@ -122,6 +128,50 @@ describe("ConversationItem", () => {
     )
 
     expect(container.querySelector("[draggable='true']")).toBeNull()
+  })
+
+  it("uses a real session link and keeps project selection in sync", async () => {
+    const onSelect = vi.fn()
+    render(
+      <ConversationItem
+        conversation={baseConversation}
+        projectId="project-1"
+        index={1}
+        isActive={false}
+        onSelect={onSelect}
+        onRename={noop}
+        onDelete={noop}
+        tSidebar={(key) => key}
+        tCommon={(key) => key}
+      />,
+    )
+
+    const link = screen.getByRole("link", { name: "Conversation 2" })
+    expect(link).toHaveAttribute("href", "/agent/conv-1")
+    fireEvent.click(link)
+    expect(onSelect).toHaveBeenCalledWith(baseConversation, "project-1")
+  })
+
+  it("labels the rename field for assistive technology and password managers", async () => {
+    render(
+      <ConversationItem
+        conversation={baseConversation}
+        projectId="project-1"
+        index={1}
+        isActive={false}
+        onSelect={noop}
+        onRename={noop}
+        onDelete={noop}
+        tSidebar={(key) => key}
+        tCommon={(key) => key}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "edit" }))
+    const input = screen.getByRole("textbox", { name: "edit" })
+    expect(input).toHaveAttribute("name", "conversation-title")
+    expect(input).toHaveAttribute("autocomplete", "off")
+    expect(input).toHaveClass("focus-visible:ring-2")
   })
 
   it("shows zh relative dates for conversation updates", () => {

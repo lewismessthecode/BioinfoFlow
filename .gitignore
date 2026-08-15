@@ -40,6 +40,7 @@ dist/
 .cache/
 .parcel-cache/
 .nyc_output/
+coverage/
 .eslintcache/
 *.tsbuildinfo
 next-env.d.ts
@@ -89,7 +90,6 @@ worktrees/
 results/
 history*
 !backend/app/services/agent_harness/history.py
-!frontend/components/bioinfoflow/agent/history-entry.tsx
 
 # Database files (CRITICAL - prevents tracking runtime data)
 *.db

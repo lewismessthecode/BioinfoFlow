@@ -10,7 +10,7 @@ import type {
   LlmProviderTestResult,
 } from "@/lib/llm"
 
-export type ProviderConnectionFailureStage =
+type ProviderConnectionFailureStage =
   | "setup"
   | "model"
   | "probe"

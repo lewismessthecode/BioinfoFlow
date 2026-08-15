@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 
 import { ActiveRun } from "@/components/bioinfoflow/agent/active-run"
-import { AgentHistoryEntries } from "@/components/bioinfoflow/agent/history-entry"
+import { AgentHistoryEntries } from "@/components/bioinfoflow/agent/conversation-entries"
 import { AgentInteractionCard } from "@/components/bioinfoflow/agent/interaction-card"
 import { Button } from "@/components/ui/button"
 import { ArrowDown } from "@/lib/icons"
@@ -28,6 +28,12 @@ type AgentTranscriptProps = {
 }
 
 const BOTTOM_THRESHOLD_PX = 96
+const READ_ANCHOR_ATTRIBUTE = "data-agent-read-anchor"
+
+type TranscriptReadAnchor = {
+  id: string
+  offset: number
+}
 
 export function AgentTranscript({
   entries,
@@ -41,6 +47,7 @@ export function AgentTranscript({
   const scrollRef = useRef<HTMLElement>(null)
   const initializedRef = useRef(false)
   const contentRevisionRef = useRef(contentRevision)
+  const readAnchorRef = useRef<TranscriptReadAnchor | null>(null)
   const [followingBottom, setFollowingBottom] = useState(true)
   const [hasNewContent, setHasNewContent] = useState(false)
   const pendingInteraction = activeRun?.pending_interaction ?? null
@@ -56,6 +63,25 @@ export function AgentTranscript({
         : entries,
     [entries, pendingInteractionId],
   )
+  useLayoutEffect(() => {
+    const scrollElement = scrollRef.current
+    if (!scrollElement || followingBottom) return
+    const anchor = readAnchorRef.current
+    if (!anchor) {
+      readAnchorRef.current = captureReadAnchor(scrollElement)
+      return
+    }
+    const anchorElement = findReadAnchor(scrollElement, anchor.id)
+    if (!anchorElement) {
+      readAnchorRef.current = captureReadAnchor(scrollElement)
+      return
+    }
+    const currentOffset =
+      anchorElement.getBoundingClientRect().top -
+      scrollElement.getBoundingClientRect().top
+    scrollElement.scrollTop += currentOffset - anchor.offset
+  }, [activeRun, entries, followingBottom, runs])
+
   useEffect(() => {
     const scrollElement = scrollRef.current
     if (!scrollElement) return
@@ -76,13 +102,19 @@ export function AgentTranscript({
     if (!scrollElement) return
     const nearBottom = isNearBottom(scrollElement)
     setFollowingBottom(nearBottom)
-    if (nearBottom) setHasNewContent(false)
+    if (nearBottom) {
+      readAnchorRef.current = null
+      setHasNewContent(false)
+      return
+    }
+    readAnchorRef.current = captureReadAnchor(scrollElement)
   }
 
   function jumpToLatest() {
     const scrollElement = scrollRef.current
     if (!scrollElement) return
     setFollowingBottom(true)
+    readAnchorRef.current = null
     setHasNewContent(false)
     scrollToBottom(scrollElement, "jump")
   }
@@ -158,6 +190,27 @@ function isNearBottom(element: HTMLElement) {
     element.scrollHeight - element.scrollTop - element.clientHeight <=
     BOTTOM_THRESHOLD_PX
   )
+}
+
+function captureReadAnchor(element: HTMLElement): TranscriptReadAnchor | null {
+  const containerRect = element.getBoundingClientRect()
+  for (const candidate of element.querySelectorAll<HTMLElement>(
+    `[${READ_ANCHOR_ATTRIBUTE}]`,
+  )) {
+    const rect = candidate.getBoundingClientRect()
+    if (rect.bottom <= containerRect.top || rect.top >= containerRect.bottom) {
+      continue
+    }
+    const id = candidate.getAttribute(READ_ANCHOR_ATTRIBUTE)
+    if (id) return { id, offset: rect.top - containerRect.top }
+  }
+  return null
+}
+
+function findReadAnchor(element: HTMLElement, id: string) {
+  return Array.from(
+    element.querySelectorAll<HTMLElement>(`[${READ_ANCHOR_ATTRIBUTE}]`),
+  ).find((candidate) => candidate.getAttribute(READ_ANCHOR_ATTRIBUTE) === id)
 }
 
 function scrollToBottom(element: HTMLElement, mode: "follow" | "jump") {

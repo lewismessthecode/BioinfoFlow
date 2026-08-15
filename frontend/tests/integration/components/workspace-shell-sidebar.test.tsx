@@ -391,8 +391,8 @@ describe("WorkspaceShell sidebar integration", () => {
 
     fireEvent.click(within(alphaHeader as HTMLElement).getByRole("button", { name: "Alpha" }))
 
-    const conversationButton = await screen.findByRole("button", { name: "Alpha thread" })
-    fireEvent.click(conversationButton)
+    const conversationLink = await screen.findByRole("link", { name: "Alpha thread" })
+    fireEvent.click(conversationLink)
 
     await waitFor(() => expect(screen.getByTestId("selected-project-id")).toHaveTextContent("project-alpha"))
     expect(screen.getByTestId("conversation-project-id")).toHaveTextContent("project-alpha")

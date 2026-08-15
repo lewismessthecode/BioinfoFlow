@@ -20,6 +20,7 @@ vi.mock("next-intl", () => ({
         "agentInteraction.status.answered": "Answered",
         "agentInteraction.status.resolved": "Resolved",
         "agentInteraction.approval.title": "Approval requested",
+        "agentInteraction.approval.announcement": "Approval requested. Waiting for response.",
         "agentInteraction.approval.approve": "Approve",
         "agentInteraction.approval.reject": "Reject",
         "agentInteraction.approval.input": "Command preview",
@@ -27,9 +28,11 @@ vi.mock("next-intl", () => ({
         "agentInteraction.approval.reasons": "Reasons",
         "agentInteraction.approval.resources": "Affected resources",
         "agentInteraction.ask_user.title": "The agent asked for input",
+        "agentInteraction.ask_user.announcement": "The agent asked for input. Waiting for response.",
         "agentInteraction.ask_user.submit": "Submit answers",
         "agentInteraction.ask_user.recommended": "Recommended",
         "agentInteraction.recovery.title": "Recovery requested",
+        "agentInteraction.recovery.announcement": "Recovery requested. Waiting for response.",
         "agentInteraction.recovery.inspect": "Inspect",
         "agentInteraction.recovery.retry": "Retry",
         "agentInteraction.recovery.cancel": "Cancel",
@@ -130,6 +133,22 @@ const recoveryRequest: RecoveryRequest = {
 }
 
 describe("AgentInteractionCard", () => {
+  it("announces a newly arrived pending interaction without interrupting the user", () => {
+    renderWithProviders(
+      <AgentInteractionCard
+        interactionId="interaction-announcement"
+        request={approvalRequest}
+        onRespond={vi.fn()}
+      />,
+    )
+
+    const announcement = screen.getByRole("status")
+    expect(announcement).toHaveAttribute("aria-live", "polite")
+    expect(announcement).toHaveTextContent(
+      "Approval requested. Waiting for response.",
+    )
+  })
+
   it("submits approval once and disables both actions while pending", async () => {
     const user = userEvent.setup()
     let resolveSubmission: (() => void) | undefined

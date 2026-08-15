@@ -9,6 +9,7 @@ import {
   useState,
 } from "react"
 import type { RefObject } from "react"
+import type { ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 
@@ -21,6 +22,7 @@ import { useAgentSession } from "@/hooks/use-agent-session"
 import {
   createAgentSession,
   dispatchAgentCommand,
+  updateAgentSession,
 } from "@/lib/agent/client"
 import {
   deleteAgentAttachment,
@@ -50,6 +52,7 @@ type AgentWorkbenchProps = {
   projectId: string | null
   onActiveSessionIdChange?: (sessionId: string) => void
   onSessionResolved?: (session: SessionView) => void
+  headerActions?: ReactNode
   className?: string
 }
 
@@ -62,6 +65,7 @@ export const AgentWorkbench = forwardRef<
     projectId,
     onActiveSessionIdChange,
     onSessionResolved,
+    headerActions,
     className,
   },
   ref,
@@ -143,6 +147,22 @@ export const AgentWorkbench = forwardRef<
     })
   }, [])
 
+  const updateDraftPermissionMode = useCallback(
+    async (mode: AgentPermissionMode) => {
+      if (!draftSessionId) {
+        setDraftPermissionMode(mode)
+        return
+      }
+
+      const snapshot = await updateAgentSession(draftSessionId, {
+        permissionMode: mode,
+      })
+      publishAgentSessionSummary(sessionSummaryFromView(snapshot.session))
+      setDraftPermissionMode(snapshot.session.permission_mode)
+    },
+    [draftSessionId],
+  )
+
   useImperativeHandle(
     ref,
     () => ({
@@ -183,6 +203,7 @@ export const AgentWorkbench = forwardRef<
           key={effectiveSessionId}
           sessionId={effectiveSessionId}
           onSessionResolved={onSessionResolved}
+          headerActions={headerActions}
           {...common}
         />
       ) : (
@@ -190,7 +211,8 @@ export const AgentWorkbench = forwardRef<
           permissionMode={draftPermissionMode}
           workspaceAccess={draftWorkspaceAccess}
           draftSessionId={draftSessionId}
-          onPermissionModeChange={async (mode) => setDraftPermissionMode(mode)}
+          onPermissionModeChange={updateDraftPermissionMode}
+          headerActions={headerActions}
           {...common}
         />
       )}
@@ -215,12 +237,14 @@ function DraftWorkbench({
   workspaceAccess,
   draftSessionId,
   onPermissionModeChange,
+  headerActions,
   ...shared
 }: SharedWorkbenchProps & {
   permissionMode: AgentPermissionMode
   workspaceAccess: AgentWorkspaceAccess
   draftSessionId: string | null
   onPermissionModeChange: (mode: AgentPermissionMode) => Promise<void>
+  headerActions?: ReactNode
 }) {
   const t = useTranslations("agentWorkbench")
   const [error, setError] = useState<string | null>(null)
@@ -244,7 +268,11 @@ function DraftWorkbench({
 
   return (
     <>
-      <ConversationHeader title={t("newConversation")} modelLabel={t("defaultModel")} />
+      <ConversationHeader
+        title={t("newConversation")}
+        modelLabel={t("defaultModel")}
+        actions={headerActions}
+      />
       <AgentEmptyState />
       {error ? <WorkbenchError message={error} /> : null}
       <AgentComposer
@@ -275,10 +303,12 @@ function DraftWorkbench({
 function SessionWorkbench({
   sessionId,
   onSessionResolved,
+  headerActions,
   ...shared
 }: SharedWorkbenchProps & {
   sessionId: string
   onSessionResolved?: (session: SessionView) => void
+  headerActions?: ReactNode
 }) {
   const t = useTranslations("agentWorkbench")
   const state = useAgentSession(sessionId)
@@ -311,7 +341,7 @@ function SessionWorkbench({
   if (!state.session) {
     return (
       <div className="grid min-h-0 flex-1 place-items-center px-6 text-center">
-        <div className="max-w-sm space-y-3">
+        <div className="flex max-w-sm flex-col items-center gap-3">
           <CircleAlert aria-hidden="true" className="mx-auto text-destructive" />
           <h1 className="text-base font-medium">{t("loadErrorTitle")}</h1>
           <p className="text-sm text-muted-foreground">
@@ -333,6 +363,7 @@ function SessionWorkbench({
         title={state.session.title || t("untitled")}
         modelLabel={state.session.model.display_name}
         connectionStatus={state.connectionStatus}
+        actions={headerActions}
       />
       {state.error &&
       ["reconnecting", "disconnected"].includes(state.connectionStatus) ? (
@@ -355,6 +386,14 @@ function SessionWorkbench({
           onRespond={state.respond}
         />
       )}
+      {state.session.status !== "active" ? (
+        <p
+          role="status"
+          className="border-t border-border/70 bg-muted/25 px-4 py-2 text-center text-xs leading-5 text-muted-foreground"
+        >
+          {t(`readOnly.${state.session.status}`)}
+        </p>
+      ) : null}
       <AgentComposer
         permissionMode={state.session.permission_mode}
         workspaceAccess={state.session.workspace_access}
@@ -386,6 +425,7 @@ function ConversationHeader({
   title,
   modelLabel,
   connectionStatus,
+  actions,
 }: {
   title: string
   modelLabel: string
@@ -394,6 +434,7 @@ function ConversationHeader({
     | "connected"
     | "reconnecting"
     | "disconnected"
+  actions?: ReactNode
 }) {
   const t = useTranslations("agentWorkbench")
   const ConnectionIcon =
@@ -413,6 +454,7 @@ function ConversationHeader({
         <span
           className="flex items-center gap-1.5 text-xs text-muted-foreground"
           title={t(`connection.${connectionStatus}`)}
+          aria-label={t(`connection.${connectionStatus}`)}
         >
           <ConnectionIcon
             aria-hidden="true"
@@ -424,6 +466,7 @@ function ConversationHeader({
           <span className="hidden sm:inline">{t(`connection.${connectionStatus}`)}</span>
         </span>
       ) : null}
+      {actions}
     </header>
   )
 }
@@ -456,12 +499,12 @@ function WorkbenchSkeleton() {
     <div className="flex min-h-0 flex-1 flex-col" aria-busy="true">
       <div className="flex items-center gap-3 border-b px-4 py-3">
         <Skeleton className="size-5 rounded-full" />
-        <div className="space-y-1.5">
+        <div className="flex flex-col gap-1.5">
           <Skeleton className="h-3.5 w-36" />
           <Skeleton className="h-3 w-20" />
         </div>
       </div>
-      <div className="mx-auto w-full max-w-[46rem] flex-1 space-y-5 px-4 py-8">
+      <div className="mx-auto flex w-full max-w-[46rem] flex-1 flex-col gap-5 px-4 py-8">
         <Skeleton className="h-14 w-2/3" />
         <Skeleton className="ml-auto h-20 w-3/4" />
       </div>

@@ -1,74 +1,172 @@
-import path from "node:path"
 import { expect, test } from "@playwright/test"
 
 import { AgentPage } from "./pages/agent-page"
-import { RunsPage } from "./pages/runs-page"
-import { Sidebar } from "./pages/sidebar"
-import { WorkflowsPage } from "./pages/workflows-page"
+import {
+  createKeylessAgentSession,
+  restartKeylessBackend,
+  setupKeylessAgentModel,
+} from "./support/keyless-agent"
 
-const workflowFixturePath = path.resolve(process.cwd(), "tests/e2e/fixtures/e2e-workflow.nf")
-
-test.describe("Agent workflow-run journey", () => {
-  test("registers a project workflow, approves the agent run, and sees the queued run in Runs", async ({
+test.describe("Agent interaction journey", () => {
+  test("approves a guarded tool call and resumes the same run", async ({
     page,
+    request,
   }, testInfo) => {
     const agent = new AgentPage(page)
-    const runs = new RunsPage(page)
-    const sidebar = new Sidebar(page)
-    const workflows = new WorkflowsPage(page)
-    const projectName = `Agent Workflow Project ${testInfo.retry}`
-    const workflowName = `agent-e2e-workflow-${testInfo.retry}`
-    const prompt = `Please run the ${workflowName} workflow for this project.`
-
-    await agent.goto()
-    await sidebar.expectLoaded()
-    await sidebar.createProject(projectName, "Agent workflow-run coverage")
-
-    await page.getByRole("link", { name: "Workflows", exact: true }).click()
-    await workflows.expectLoaded()
-
-    await page.getByRole("tab", { name: "Hub", exact: true }).click()
-    await page.getByRole("button", { name: "Register Workflow", exact: true }).last().click()
-
-    const registerDialog = page.getByRole("dialog")
-    await registerDialog.getByRole("button", { name: "Local", exact: true }).click()
-    await registerDialog.getByRole("button", { name: "Single file", exact: true }).click()
-    await registerDialog.getByLabel("Workflow File (.nf or .wdl)").setInputFiles(workflowFixturePath)
-    await registerDialog.getByLabel("Workflow Name (optional)").fill(workflowName)
-    await registerDialog.getByRole("button", { name: "Register Workflow", exact: true }).click()
-
-    await expect(page.getByText(`Workflow "${workflowName}" registered`)).toBeVisible()
-
-    await workflows.searchInput.fill(workflowName)
-    await page.getByRole("button", { name: "List view", exact: true }).click()
-
-    const workflowRow = page.locator("tbody tr").filter({ hasText: workflowName })
-    await workflowRow.getByRole("button", { name: "Add", exact: true }).click()
-    await expect(page.getByText(`Added "${workflowName}" to project`)).toBeVisible()
-
-    await page.getByRole("link", { name: "Agent", exact: true }).click()
-    await agent.expectComposerReady()
-    await agent.sendMessage(prompt)
-
-    await expect(page.getByText(prompt)).toBeVisible()
-
-    const approvalCard = page.getByRole("alert").filter({ hasText: "Approval required" })
-    await expect(approvalCard).toContainText("platform_run_submit", { timeout: 30_000 })
-    await approvalCard.getByRole("button", { name: "Approve", exact: true }).click()
-
-    const finalMessage = page.getByText(new RegExp(`Queued run .* for workflow ${workflowName}\\.`, "i"))
-    await expect(finalMessage).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByText("Approved")).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByRole("button", { name: /Used \d+ tools/ })).toBeVisible({
-      timeout: 30_000,
+    const modelId = await setupKeylessAgentModel(request, "approval", testInfo)
+    const opened = await createKeylessAgentSession(request, {
+      modelId,
+      permissionMode: "ask_changes",
     })
 
-    const finalText = await finalMessage.textContent()
-    const runId = finalText?.match(/Queued run (\S+) for workflow/i)?.[1]
-    expect(runId).toBeTruthy()
+    await agent.gotoSession(opened.session.id)
+    await agent.expectComposerReady()
+    await agent.sendMessage("Create the keyless approval marker.")
 
-    await page.getByRole("link", { name: "Runs", exact: true }).click()
-    await runs.expectLoaded()
-    await runs.expectRunVisible(String(runId))
+    await expect(agent.approvalCard).toBeVisible({ timeout: 20_000 })
+    await expect(agent.approvalCard).toContainText("Allow this tool to run?")
+    await expect(agent.approvalCard).toContainText("e2e-approved.txt")
+    await expect(
+      agent.approvalCard.getByRole("button", { name: "Approve", exact: true }),
+    ).toBeVisible()
+
+    await agent.approvalCard
+      .getByRole("button", { name: "Approve", exact: true })
+      .click()
+
+    await expect(
+      agent.transcript.getByText("Approval scenario completed.", {
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(
+      agent.transcript.getByText("Approved", { exact: true }),
+    ).toBeVisible()
+  })
+
+  test("answers an agent question and resumes the same run", async ({
+    page,
+    request,
+  }, testInfo) => {
+    const agent = new AgentPage(page)
+    const modelId = await setupKeylessAgentModel(request, "ask-user", testInfo)
+    const opened = await createKeylessAgentSession(request, { modelId })
+
+    await agent.gotoSession(opened.session.id)
+    await agent.expectComposerReady()
+    await agent.sendMessage("Ask me whether the keyless run should continue.")
+
+    await expect(agent.askUserCard).toBeVisible({ timeout: 20_000 })
+    await expect(agent.askUserCard).toContainText(
+      "Should the keyless run continue?",
+    )
+    await agent.askUserCard.getByRole("radio", { name: /Continue/ }).check()
+    await agent.askUserCard
+      .getByRole("button", { name: "Submit answers", exact: true })
+      .click()
+
+    await expect(
+      agent.transcript.getByText("The keyless answer was received.", {
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(
+      agent.transcript.getByText("Answered", { exact: true }),
+    ).toBeVisible()
+  })
+
+  test("stops a running tool and returns the composer to idle", async ({
+    page,
+    request,
+  }, testInfo) => {
+    const agent = new AgentPage(page)
+    const modelId = await setupKeylessAgentModel(request, "stop", testInfo)
+    const opened = await createKeylessAgentSession(request, {
+      modelId,
+      permissionMode: "full_access",
+    })
+
+    await agent.gotoSession(opened.session.id)
+    await agent.expectComposerReady()
+    await agent.sendMessage("Start the long keyless task so I can stop it.")
+
+    await expect(agent.activeRun.getByText("bash: sleep 30")).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(agent.stopButton).toBeVisible()
+    await agent.stopButton.click()
+
+    await expect(agent.activeRun).toHaveCount(0, { timeout: 20_000 })
+    await expect(
+      agent.transcript.getByText("Cancelled", { exact: true }),
+    ).toBeVisible()
+    await expect(agent.sendButton).toBeVisible()
+    await expect(
+      agent.transcript.getByText("Stop scenario completed.", { exact: true }),
+    ).toHaveCount(0)
+  })
+
+  test("reconnects the Session stream after a network interruption", async ({
+    context,
+    page,
+    request,
+  }, testInfo) => {
+    const agent = new AgentPage(page)
+    const modelId = await setupKeylessAgentModel(request, "streaming", testInfo)
+    const opened = await createKeylessAgentSession(request, { modelId })
+
+    await agent.gotoSession(opened.session.id)
+    await agent.expectComposerReady()
+    await expect(
+      page.getByLabel("Connected", { exact: true }),
+    ).toBeVisible({ timeout: 20_000 })
+
+    await context.setOffline(true)
+    await expect(
+      page.getByText(
+        "You are offline. The conversation will resume when the connection returns.",
+        { exact: true },
+      ).first(),
+    ).toBeVisible({ timeout: 10_000 })
+
+    await context.setOffline(false)
+    await expect(
+      page.getByLabel("Connected", { exact: true }),
+    ).toBeVisible({ timeout: 20_000 })
+  })
+
+  test("recovers an interrupted tool after a backend restart", async ({
+    page,
+    request,
+  }, testInfo) => {
+    const agent = new AgentPage(page)
+    const modelId = await setupKeylessAgentModel(request, "recovery", testInfo)
+    const opened = await createKeylessAgentSession(request, {
+      modelId,
+      permissionMode: "full_access",
+    })
+
+    await agent.gotoSession(opened.session.id)
+    await agent.expectComposerReady()
+    await agent.sendMessage("Start the restart recovery scenario.")
+    await expect(agent.activeRun.getByText("bash: sleep 30")).toBeVisible({
+      timeout: 20_000,
+    })
+
+    await restartKeylessBackend(request)
+
+    await page.reload()
+    await expect(agent.recoveryCard).toBeVisible({ timeout: 20_000 })
+    await agent.recoveryCard
+      .getByRole("button", { name: "Inspect state", exact: true })
+      .click()
+    await expect(
+      agent.transcript.getByText("Recovered after inspection.", { exact: true }),
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(
+      agent.recoveryCard.getByText("Inspect state", { exact: true }),
+    ).toBeVisible()
+    await expect(agent.activeRun).toHaveCount(0)
+    await agent.expectComposerReady()
   })
 })

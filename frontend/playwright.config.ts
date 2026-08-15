@@ -5,6 +5,7 @@ const backendPort = Number(process.env.PLAYWRIGHT_BACKEND_PORT || 8100)
 const modelPort = Number(process.env.PLAYWRIGHT_MODEL_PORT || 9100)
 const baseURL = process.env.BASE_URL || `http://127.0.0.1:${frontendPort}`
 const apiBaseUrl = `http://127.0.0.1:${backendPort}/api/v1`
+const browserApiBaseUrl = `http://localhost:${backendPort}/api/v1`
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -42,10 +43,10 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: `NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=${apiBaseUrl} bun run dev -- --hostname 127.0.0.1 --port ${frontendPort} --webpack`,
+      command: `AUTH_MODE=dev NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=${browserApiBaseUrl} bun run build && cp -R .next/static .next/standalone/.next/static && AUTH_MODE=dev NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=${browserApiBaseUrl} HOSTNAME=127.0.0.1 PORT=${frontendPort} node .next/standalone/server.js`,
       url: `${baseURL}/runs`,
       reuseExistingServer: false,
-      timeout: 120_000,
+      timeout: 240_000,
     },
   ],
 })

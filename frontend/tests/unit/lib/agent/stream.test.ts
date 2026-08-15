@@ -134,4 +134,29 @@ describe("subscribeAgentEvents", () => {
     expect(onConnectionChange).toHaveBeenLastCalledWith("reconnecting")
     unsubscribe()
   })
+
+  it("reconnects immediately when the browser returns online without leaving a stale retry", () => {
+    const onConnectionChange = vi.fn()
+    const unsubscribe = subscribeAgentEvents({
+      sessionId: "session-1",
+      onEvent: vi.fn(),
+      onConnectionChange,
+    })
+    const failedSource = MockEventSource.instances[0]
+
+    failedSource.error()
+    window.dispatchEvent(new Event("offline"))
+    vi.advanceTimersByTime(500)
+    window.dispatchEvent(new Event("online"))
+
+    expect(MockEventSource.instances).toHaveLength(2)
+    expect(failedSource.closed).toBe(true)
+    expect(onConnectionChange).toHaveBeenLastCalledWith("reconnecting")
+
+    window.dispatchEvent(new Event("online"))
+    vi.advanceTimersByTime(15_000)
+    expect(MockEventSource.instances).toHaveLength(2)
+
+    unsubscribe()
+  })
 })

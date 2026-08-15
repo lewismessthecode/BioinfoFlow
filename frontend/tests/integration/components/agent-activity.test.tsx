@@ -31,6 +31,8 @@ vi.mock("next-intl", () => ({
         "group.serial": `${values?.count ?? 0} tools running in sequence`,
         "group.mixed": `${values?.count ?? 0} tool activities`,
         "group.generic": `${values?.count ?? 0} tool activities`,
+        "category.read": "Reading",
+        "category.command": "Commands",
       }
       return copy[key] ?? key
     },
@@ -66,6 +68,9 @@ describe("AgentToolCard", () => {
 
     await user.click(screen.getByRole("button", { name: "Show details" }))
 
+    expect(
+      screen.getAllByRole("heading", { name: "Arguments" }),
+    ).toHaveLength(1)
     expect(screen.getByText("Arguments").parentElement).toHaveTextContent(
       '"path": "workflow.nf"',
     )
@@ -84,6 +89,23 @@ describe("AgentToolCard", () => {
     )
 
     expect(screen.getByText("2m 0s")).toBeInTheDocument()
+  })
+
+  it("keeps long Harness display names inside the card", () => {
+    renderWithProviders(
+      <AgentToolCard
+        tool={{
+          ...runningTool,
+          display_name: "read_a_very_long_provider_specific_tool_display_name",
+        }}
+      />,
+    )
+
+    const label = screen.getByTitle(
+      "read_a_very_long_provider_specific_tool_display_name",
+    )
+    expect(label).toHaveClass("truncate")
+    expect(label).toHaveClass("min-w-0")
   })
 })
 
@@ -111,5 +133,30 @@ describe("AgentActivityGroup", () => {
     )
     expect(screen.getByText("Read workflow.nf")).toBeInTheDocument()
     expect(screen.getByText("Read params.json")).toBeInTheDocument()
+  })
+
+  it("localizes public tool categories instead of rendering protocol values", () => {
+    renderWithProviders(
+      <AgentActivityGroup
+        tools={[
+          runningTool,
+          {
+            ...runningTool,
+            call_id: "call-command-1",
+            name: "bash",
+            display_name: "bash",
+            category: "command",
+            summary: "Run workflow",
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText("Reading")).toBeInTheDocument()
+    expect(screen.getByText("Commands")).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "read" })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("heading", { name: "command" }),
+    ).not.toBeInTheDocument()
   })
 })

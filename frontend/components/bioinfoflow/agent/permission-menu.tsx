@@ -29,6 +29,7 @@ type PermissionMenuProps = {
   permissionMode: AgentPermissionMode
   workspaceAccess: AgentWorkspaceAccess
   activeRun: boolean
+  disabled?: boolean
   onPermissionModeChange: (mode: AgentPermissionMode) => Promise<void>
 }
 
@@ -49,6 +50,7 @@ export function PermissionMenu({
   permissionMode,
   workspaceAccess,
   activeRun,
+  disabled = false,
   onPermissionModeChange,
 }: PermissionMenuProps) {
   const t = useTranslations("agentComposer")
@@ -62,6 +64,7 @@ export function PermissionMenu({
   const requestChange = async (mode: AgentPermissionMode) => {
     if (
       activeRun ||
+      disabled ||
       visibleUpdate?.state === "pending" ||
       mode === permissionMode
     ) {
@@ -85,7 +88,7 @@ export function PermissionMenu({
             type="button"
             variant="ghost"
             size="sm"
-            disabled={activeRun || isUpdating}
+            disabled={disabled || activeRun || isUpdating}
             aria-label={`${t("permission.label")}: ${t(`permission.${permissionMode}.name`)}`}
             aria-describedby={descriptionId}
           >

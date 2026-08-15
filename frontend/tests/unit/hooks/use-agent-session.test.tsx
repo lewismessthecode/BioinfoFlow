@@ -54,7 +54,6 @@ function snapshot(title = "Analysis"): SessionSnapshot {
     runs: [],
     entries: [],
     active_run: null,
-    history_revision: 0,
   }
 }
 
@@ -177,8 +176,10 @@ describe("useAgentSession", () => {
         delta: "!",
       })
     })
-    expect(result.current.activeRun?.assistant_draft?.parts[0].text).toBe(
-      "Hello!",
+    await waitFor(() =>
+      expect(result.current.activeRun?.assistant_draft?.parts[0].text).toBe(
+        "Hello!",
+      ),
     )
 
     act(() => {
@@ -197,6 +198,106 @@ describe("useAgentSession", () => {
     await waitFor(() => expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(2))
     expect(mocks.getAgentSnapshot).toHaveBeenLastCalledWith("session-1")
     await waitFor(() => expect(result.current.session?.title).toBe("Recovered"))
+  })
+
+  it("publishes a burst of assistant deltas once on the next animation frame", () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((callback: FrameRequestCallback) => {
+        frames.push(callback)
+        return frames.length
+      }),
+    )
+    vi.stubGlobal("cancelAnimationFrame", vi.fn())
+
+    const { result } = renderHook(() => useAgentSession("session-1"))
+    const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
+    act(() => {
+      subscription.onEvent({ type: "snapshot", snapshot: streamingSnapshot() })
+      subscription.onEvent({
+        type: "assistant.delta",
+        run_id: "run-1",
+        draft_id: "draft-1",
+        part_id: "part-1",
+        part_type: "text",
+        start_offset: 5,
+        end_offset: 6,
+        delta: "!",
+      })
+      subscription.onEvent({
+        type: "assistant.delta",
+        run_id: "run-1",
+        draft_id: "draft-1",
+        part_id: "part-1",
+        part_type: "text",
+        start_offset: 6,
+        end_offset: 7,
+        delta: "!",
+      })
+      subscription.onEvent({
+        type: "assistant.delta",
+        run_id: "run-1",
+        draft_id: "draft-1",
+        part_id: "part-1",
+        part_type: "text",
+        start_offset: 7,
+        end_offset: 8,
+        delta: "!",
+      })
+    })
+
+    expect(frames).toHaveLength(1)
+    expect(result.current.activeRun?.assistant_draft?.parts[0].text).toBe(
+      "Hello",
+    )
+
+    act(() => frames[0](16))
+
+    expect(result.current.activeRun?.assistant_draft?.parts[0].text).toBe(
+      "Hello!!!",
+    )
+    vi.unstubAllGlobals()
+  })
+
+  it("coalesces snapshot recovery requests while a snapshot is already loading", async () => {
+    let resolveInitial!: (value: SessionSnapshot) => void
+    mocks.getAgentSnapshot
+      .mockReturnValueOnce(
+        new Promise<SessionSnapshot>((resolve) => {
+          resolveInitial = resolve
+        }),
+      )
+      .mockResolvedValue(snapshot("Recovered"))
+
+    renderHook(() => useAgentSession("session-1"))
+    const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
+    act(() => {
+      subscription.onEvent({ type: "snapshot", snapshot: streamingSnapshot() })
+      for (const startOffset of [9, 10, 11]) {
+        subscription.onEvent({
+          type: "assistant.delta",
+          run_id: "run-1",
+          draft_id: "draft-1",
+          part_id: "part-1",
+          part_type: "text",
+          start_offset: startOffset,
+          end_offset: startOffset + 1,
+          delta: "?",
+        })
+      }
+    })
+
+    expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(1)
+
+    act(() => resolveInitial(snapshot("Initial request")))
+
+    await waitFor(() => expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(2))
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(2)
   })
 
   it("exposes stable actions for the four public commands", async () => {

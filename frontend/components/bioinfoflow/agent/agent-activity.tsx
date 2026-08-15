@@ -66,7 +66,11 @@ export function AgentToolCard({ tool, defaultExpanded }: AgentToolCardProps) {
     >
       <div className="flex min-h-10 min-w-0 items-center gap-2 px-3 py-2 text-xs">
         <ToolStatusIcon status={tool.status} />
-        <span className="shrink-0 rounded-[5px] bg-muted/70 px-1.5 py-0.5 font-mono text-[11px] text-foreground/72">
+        <span
+          className="min-w-0 max-w-[40%] truncate rounded-[5px] bg-muted/70 px-1.5 py-0.5 font-mono text-[11px] text-foreground/72"
+          title={tool.display_name}
+          translate="no"
+        >
           {tool.display_name}
         </span>
         <span className="min-w-0 flex-1 truncate text-foreground/78">
@@ -196,7 +200,7 @@ export function AgentActivityGroup({
             <div key={category} className="grid gap-2">
               {groupedTools.length > 1 ? (
                 <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                  {category}
+                  {t(`category.${category}`)}
                 </h3>
               ) : null}
               {categoryTools.map((tool) => (

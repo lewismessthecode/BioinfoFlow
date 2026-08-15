@@ -82,22 +82,55 @@ export function useAgentSession(sessionId: string): AgentSessionState {
   useEffect(() => {
     let active = true
     let snapshotRequest: Promise<boolean> | null = null
+    let snapshotRefreshQueued = false
+    let viewFrame: number | null = null
     const generation = generationRef.current + 1
 
     generationRef.current = generation
     storeRef.current = initialAgentStoreState
+
+    const cancelViewFrame = () => {
+      if (viewFrame === null) return
+      window.cancelAnimationFrame(viewFrame)
+      viewFrame = null
+    }
+
+    const publishStore = (eventType?: AgentEvent["type"]) => {
+      if (!active || generationRef.current !== generation) return
+      const store = storeRef.current
+      setView((current) => {
+        const base =
+          current.sessionId === sessionId ? current : initialView(sessionId)
+        return {
+          ...base,
+          store,
+          error: eventType === "snapshot" ? null : base.error,
+          isLoading: eventType === "snapshot" ? false : base.isLoading,
+        }
+      })
+    }
+
+    const scheduleStorePublish = () => {
+      if (viewFrame !== null) return
+      viewFrame = window.requestAnimationFrame(() => {
+        viewFrame = null
+        publishStore()
+      })
+    }
 
     const refreshSnapshot = (options?: {
       skipIfHydrated?: boolean
     }): Promise<boolean> => {
       if (snapshotRequest) {
         if (options?.skipIfHydrated) return snapshotRequest
-        return snapshotRequest.then(() => refreshSnapshot())
+        snapshotRefreshQueued = true
+        return snapshotRequest
       }
       snapshotRequest = getAgentSnapshot(sessionId)
         .then((snapshot) => {
           if (!active) return false
           if (options?.skipIfHydrated && storeRef.current.session) return true
+          cancelViewFrame()
           return replaceSnapshot(generation, sessionId, snapshot)
         })
         .catch((caught) => {
@@ -113,6 +146,9 @@ export function useAgentSession(sessionId: string): AgentSessionState {
         })
         .finally(() => {
           snapshotRequest = null
+          if (!active || !snapshotRefreshQueued) return
+          snapshotRefreshQueued = false
+          void refreshSnapshot()
         })
       return snapshotRequest
     }
@@ -126,16 +162,12 @@ export function useAgentSession(sessionId: string): AgentSessionState {
       }
       if (application.outcome === "ignored") return
       storeRef.current = application.state
-      setView((current) => {
-        const base =
-          current.sessionId === sessionId ? current : initialView(sessionId)
-        return {
-          ...base,
-          store: application.state,
-          error: event.type === "snapshot" ? null : base.error,
-          isLoading: event.type === "snapshot" ? false : base.isLoading,
-        }
-      })
+      if (event.type === "assistant.delta") {
+        scheduleStorePublish()
+        return
+      }
+      cancelViewFrame()
+      publishStore(event.type)
     }
 
     const unsubscribe = subscribeAgentEvents({
@@ -164,6 +196,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
 
     return () => {
       active = false
+      cancelViewFrame()
       if (generationRef.current === generation) generationRef.current += 1
       unsubscribe()
     }

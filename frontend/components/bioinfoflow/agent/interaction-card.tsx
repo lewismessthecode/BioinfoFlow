@@ -75,6 +75,16 @@ function AgentInteractionCardState({
       data-interaction-id={interactionId}
       data-testid="agent-interaction-card"
     >
+      {!completed ? (
+        <p
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="sr-only"
+        >
+          {t(`${request.type}.announcement`)}
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-foreground">
           {t(`${request.type}.title`)}

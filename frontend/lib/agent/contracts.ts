@@ -209,17 +209,17 @@ export type ToolCallPart = MessagePartBase & {
   arguments: JsonObject
 }
 
-export type ToolTextOutput = {
+type ToolTextOutput = {
   type: "text"
   text: string
 }
 
-export type ToolJsonOutput = {
+type ToolJsonOutput = {
   type: "json"
   value: JsonValue
 }
 
-export type ToolContentPartsOutput = {
+type ToolContentPartsOutput = {
   type: "content_parts"
   parts: ToolOutputContentPart[]
 }
@@ -362,7 +362,7 @@ export type UnknownPart = MessagePartBase & {
   display_text: string
 }
 
-export type ToolOutputContentPart =
+type ToolOutputContentPart =
   | TextPart
   | ReasoningSummaryPart
   | AttachmentRefPart
@@ -386,24 +386,24 @@ export type MessagePart =
   | ArtifactRefPart
   | UnknownPart
 
-export type MessagePayload = {
+type MessagePayload = {
   role: "user" | "assistant" | "tool"
   parts: MessagePart[]
 }
 
-export type InteractionRequestPayload = {
+type InteractionRequestPayload = {
   interaction_id: string
   request: InteractionRequest
 }
 
-export type InteractionResponsePayload = {
+type InteractionResponsePayload = {
   interaction_id: string
   response: InteractionResponse
 }
 
 export type PlanItemStatus = "pending" | "in_progress" | "completed"
 
-export type PlanItem = {
+type PlanItem = {
   id: string
   text: string
   status: PlanItemStatus
@@ -417,12 +417,7 @@ export type PlanPayload = {
   updated_at: string
 }
 
-export type CompactionPayload = {
-  summary: string
-  through_sequence: number
-}
-
-export type NoticePayload = {
+type NoticePayload = {
   code: string
   message: string
   details: JsonValue
@@ -457,11 +452,6 @@ export type PlanEntry = HistoryEntryBase & {
   payload: PlanPayload
 }
 
-export type CompactionEntry = HistoryEntryBase & {
-  type: "compaction"
-  payload: CompactionPayload
-}
-
 export type NoticeEntry = HistoryEntryBase & {
   type: "notice"
   payload: NoticePayload
@@ -472,7 +462,6 @@ export type HistoryEntry =
   | PlanEntry
   | InteractionRequestEntry
   | InteractionResponseEntry
-  | CompactionEntry
   | NoticeEntry
 
 export type ActiveRunView = {
@@ -487,7 +476,6 @@ export type SessionSnapshot = {
   runs: RunView[]
   entries: HistoryEntry[]
   active_run: ActiveRunView | null
-  history_revision: number
 }
 
 export type SnapshotEvent = {

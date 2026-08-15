@@ -80,6 +80,7 @@ function renderComposer({
   contextInputs = [],
   onRemoveContextInput = vi.fn(),
   onContextSubmitted = vi.fn(),
+  disabled = false,
 }: {
   permissionMode?: AgentPermissionMode
   workspaceAccess?: AgentWorkspaceAccess
@@ -91,6 +92,7 @@ function renderComposer({
   contextInputs?: AgentContextInput[]
   onRemoveContextInput?: (inputId: string) => void
   onContextSubmitted?: () => void
+  disabled?: boolean
 } = {}) {
   return {
     ...renderWithProviders(
@@ -105,6 +107,7 @@ function renderComposer({
         contextInputs={contextInputs}
         onRemoveContextInput={onRemoveContextInput}
         onContextSubmitted={onContextSubmitted}
+        disabled={disabled}
       />,
     ),
     onSendMessage,
@@ -303,6 +306,19 @@ describe("AgentComposer", () => {
       screen.getByText("Approval mode cannot change while a run is active."),
     ).toBeInTheDocument()
     expect(onPermissionModeChange).not.toHaveBeenCalled()
+  })
+
+  it("disables both message entry and permission changes in a read-only conversation", () => {
+    renderComposer({ disabled: true })
+
+    expect(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+    ).toBeDisabled()
+    expect(
+      screen.getByRole("button", {
+        name: "Approval mode: Approve safe actions",
+      }),
+    ).toBeDisabled()
   })
 
   it("offers a retry when an approval mode update fails", async () => {

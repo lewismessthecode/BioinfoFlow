@@ -144,4 +144,34 @@ describe("AgentContextPicker", () => {
       },
     })
   })
+
+  it("clears a stale search error when the query is cleared or the picker closes", async () => {
+    const user = userEvent.setup()
+    mocks.search.mockRejectedValue(new Error("offline"))
+
+    renderWithProviders(
+      <AgentContextPicker
+        projectId="project-1"
+        sessionId="session-1"
+        ensureSession={vi.fn().mockResolvedValue("session-1")}
+        onAdd={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Add context" }))
+    const search = screen.getByPlaceholderText(
+      "Search files, workflows, and runs",
+    )
+    await user.type(search, "rna")
+    expect(await screen.findByText("Search failed")).toBeInTheDocument()
+
+    await user.clear(search)
+    expect(screen.queryByText("Search failed")).not.toBeInTheDocument()
+
+    await user.type(search, "rna")
+    expect(await screen.findByText("Search failed")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Add context" }))
+    await user.click(screen.getByRole("button", { name: "Add context" }))
+    expect(screen.queryByText("Search failed")).not.toBeInTheDocument()
+  })
 })
