@@ -3125,6 +3125,31 @@
     },
     "tokens": "{count}k tokens"
   },
+  "agentActivity": {
+    "status": {
+      "pending": "等待中",
+      "running": "运行中",
+      "completed": "已完成",
+      "failed": "失败",
+      "blocked": "已阻止",
+      "cancelled": "已取消",
+      "interaction_required": "需要批准"
+    },
+    "group": {
+      "parallel": "并行执行 {count} 个工具",
+      "serial": "依次执行 {count} 个工具",
+      "mixed": "{count} 项工具活动",
+      "generic": "{count} 项工具活动"
+    },
+    "details": {
+      "show": "展开详情",
+      "hide": "收起详情",
+      "arguments": "参数",
+      "input": "输入",
+      "output": "输出",
+      "error": "错误"
+    }
+  },
   "executionMode": {
     "askShort": "询问",
     "approveAllShort": "全部确认",

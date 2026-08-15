@@ -3125,6 +3125,31 @@
     },
     "tokens": "{count}k tokens"
   },
+  "agentActivity": {
+    "status": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "blocked": "Blocked",
+      "cancelled": "Cancelled",
+      "interaction_required": "Needs approval"
+    },
+    "group": {
+      "parallel": "{count, plural, one {# tool running in parallel} other {# tools running in parallel}}",
+      "serial": "{count, plural, one {# tool running in sequence} other {# tools running in sequence}}",
+      "mixed": "{count, plural, one {# tool activity} other {# tool activities}}",
+      "generic": "{count, plural, one {# tool activity} other {# tool activities}}"
+    },
+    "details": {
+      "show": "Show details",
+      "hide": "Hide details",
+      "arguments": "Arguments",
+      "input": "Input",
+      "output": "Output",
+      "error": "Error"
+    }
+  },
   "executionMode": {
     "askShort": "Ask",
     "approveAllShort": "Approve all",
