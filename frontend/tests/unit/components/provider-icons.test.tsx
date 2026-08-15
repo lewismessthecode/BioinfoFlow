@@ -1,45 +1,5 @@
 import { render, screen } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
-
-vi.mock("@lobehub/icons", () => {
-  const icon = (title: string) => {
-    const Mono = ({ size, className }: { size?: number; className?: string }) => (
-      <svg className={className} fill="currentColor" height={size} width={size}>
-        <title>{title}</title>
-      </svg>
-    )
-    const Color = ({ size, className }: { size?: number; className?: string }) => (
-      <svg className={className} data-variant="color" height={size} width={size}>
-        <title>{title}</title>
-      </svg>
-    )
-    Mono.Color = Color
-    return Mono
-  }
-
-  return {
-    Anthropic: icon("Anthropic"),
-    Azure: icon("Azure"),
-    Cohere: icon("Cohere"),
-    DeepSeek: icon("DeepSeek"),
-    Fireworks: icon("Fireworks"),
-    Gemini: icon("Gemini"),
-    Grok: icon("Grok"),
-    Groq: icon("Groq"),
-    HuggingFace: icon("HuggingFace"),
-    Kimi: icon("Kimi"),
-    Minimax: icon("Minimax"),
-    Mistral: icon("Mistral"),
-    Ollama: icon("Ollama"),
-    OpenAI: icon("OpenAI"),
-    OpenRouter: icon("OpenRouter"),
-    Perplexity: icon("Perplexity"),
-    Qwen: icon("Qwen"),
-    Together: icon("Together"),
-    XAI: icon("XAI"),
-    ZAI: icon("ZAI"),
-  }
-})
+import { describe, expect, it } from "vitest"
 
 import { resolveProviderIconKey } from "@/components/bioinfoflow/chat/provider-icon-resolver"
 import { ProviderIcon } from "@/components/bioinfoflow/chat/provider-icons"
