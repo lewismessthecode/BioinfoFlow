@@ -12,9 +12,10 @@ import { useTranslations } from "next-intl"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import type {
-  AgentContextInput,
-  AgentContextKind,
+import {
+  agentAttachmentPreviewUrl,
+  type AgentContextInput,
+  type AgentContextKind,
 } from "@/lib/agent/context"
 import type { AppIcon } from "@/lib/icons"
 
@@ -53,9 +54,23 @@ export function AgentContextInputs({
               title={input.detail ?? undefined}
             >
               <Icon aria-hidden="true" />
-              <span className="min-w-0 truncate" translate="no">
-                {input.label}
-              </span>
+              {input.input_part.type === "attachment_ref" ? (
+                <a
+                  href={agentAttachmentPreviewUrl(
+                    input.input_part.attachment_id,
+                  )}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="min-w-0 truncate underline-offset-2 hover:underline"
+                  translate="no"
+                >
+                  {input.label}
+                </a>
+              ) : (
+                <span className="min-w-0 truncate" translate="no">
+                  {input.label}
+                </span>
+              )}
               <Button
                 type="button"
                 variant="ghost"

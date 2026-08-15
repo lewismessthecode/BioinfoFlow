@@ -334,13 +334,14 @@ function SessionWorkbench({
         modelLabel={state.session.model.display_name}
         connectionStatus={state.connectionStatus}
       />
-      {state.error && state.connectionStatus === "reconnecting" ? (
+      {state.error &&
+      ["reconnecting", "disconnected"].includes(state.connectionStatus) ? (
         <div
           role="status"
           className="flex items-center justify-center gap-2 border-b bg-muted/25 px-3 py-1.5 text-xs text-muted-foreground"
         >
           <WifiOff aria-hidden="true" />
-          {t("connection.reconnecting")}
+          {t(`connection.${state.connectionStatus}`)}
         </div>
       ) : null}
       {isEmpty ? (
@@ -388,13 +389,17 @@ function ConversationHeader({
 }: {
   title: string
   modelLabel: string
-  connectionStatus?: "connecting" | "connected" | "reconnecting"
+  connectionStatus?:
+    | "connecting"
+    | "connected"
+    | "reconnecting"
+    | "disconnected"
 }) {
   const t = useTranslations("agentWorkbench")
   const ConnectionIcon =
     connectionStatus === "connected"
       ? Wifi
-      : connectionStatus === "reconnecting"
+      : connectionStatus === "reconnecting" || connectionStatus === "disconnected"
         ? WifiOff
         : Loader2
   return (

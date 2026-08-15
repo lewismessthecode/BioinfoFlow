@@ -19,6 +19,7 @@ export type AgentConnectionStatus =
   | "connecting"
   | "connected"
   | "reconnecting"
+  | "disconnected"
 
 export function subscribeAgentEvents(options: {
   sessionId: string
@@ -26,8 +27,16 @@ export function subscribeAgentEvents(options: {
   onConnectionChange?: (status: AgentConnectionStatus) => void
   onError?: (error: Event) => void
 }) {
-  options.onConnectionChange?.("connecting")
-  return connectEventSource({
+  options.onConnectionChange?.(
+    typeof navigator !== "undefined" && !navigator.onLine
+      ? "disconnected"
+      : "connecting",
+  )
+  const handleOffline = () => options.onConnectionChange?.("disconnected")
+  const handleOnline = () => options.onConnectionChange?.("reconnecting")
+  window.addEventListener("offline", handleOffline)
+  window.addEventListener("online", handleOnline)
+  const disconnect = connectEventSource({
     url: () => buildApiUrl(`/agent/sessions/${options.sessionId}/events`),
     eventSourceInit: { withCredentials: true },
     initialBackoffMs: INITIAL_BACKOFF_MS,
@@ -51,6 +60,11 @@ export function subscribeAgentEvents(options: {
       }
     },
   })
+  return () => {
+    window.removeEventListener("offline", handleOffline)
+    window.removeEventListener("online", handleOnline)
+    disconnect()
+  }
 }
 
 function parseAgentEvent(message: MessageEvent): AgentEvent | null {

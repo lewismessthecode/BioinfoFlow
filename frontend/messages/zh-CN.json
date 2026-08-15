@@ -3124,7 +3124,8 @@
     "connection": {
       "connecting": "正在连接",
       "connected": "已连接",
-      "reconnecting": "连接已中断，正在重连…"
+      "reconnecting": "连接已中断，正在重连…",
+      "disconnected": "当前网络已断开，恢复连接后会继续对话。"
     }
   },
   "agentContextPicker": {

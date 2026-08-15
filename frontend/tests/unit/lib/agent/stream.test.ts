@@ -118,4 +118,20 @@ describe("subscribeAgentEvents", () => {
 
     unsubscribe()
   })
+
+  it("reports browser offline and online transitions without changing the protocol", () => {
+    const onConnectionChange = vi.fn()
+    const unsubscribe = subscribeAgentEvents({
+      sessionId: "session-1",
+      onEvent: vi.fn(),
+      onConnectionChange,
+    })
+
+    window.dispatchEvent(new Event("offline"))
+    window.dispatchEvent(new Event("online"))
+
+    expect(onConnectionChange).toHaveBeenCalledWith("disconnected")
+    expect(onConnectionChange).toHaveBeenLastCalledWith("reconnecting")
+    unsubscribe()
+  })
 })

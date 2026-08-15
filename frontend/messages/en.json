@@ -3124,7 +3124,8 @@
     "connection": {
       "connecting": "Connecting",
       "connected": "Connected",
-      "reconnecting": "Connection interrupted. Reconnecting…"
+      "reconnecting": "Connection interrupted. Reconnecting…",
+      "disconnected": "You are offline. The conversation will resume when the connection returns."
     }
   },
   "agentContextPicker": {

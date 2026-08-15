@@ -120,6 +120,7 @@ export function AgentComposer({
 
   return (
     <form
+      data-testid="agent-composer"
       className="mx-auto flex w-full max-w-[46rem] flex-col gap-2 border-t border-border/70 bg-background px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4"
       onSubmit={handleSubmit}
     >
