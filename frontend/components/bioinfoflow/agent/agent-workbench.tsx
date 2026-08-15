@@ -585,8 +585,8 @@ function AgentEmptyState({ compact = false }: { compact?: boolean }) {
     <div className={cn("grid place-items-center px-6 text-center", compact ? "pb-5" : "min-h-0 flex-1 py-10")}>
       <div className="max-w-lg">
         <Bot aria-hidden="true" className="mx-auto mb-4 size-7 text-muted-foreground" />
-        <h2 className={cn("font-medium tracking-tight", compact ? "text-xl sm:text-2xl" : "text-base")}>{t("emptyTitle")}</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        <h2 className={cn("text-balance font-medium tracking-tight", compact ? "text-xl sm:text-2xl" : "text-base")}>{t("emptyTitle")}</h2>
+        <p className="mt-2 text-pretty text-sm leading-6 text-muted-foreground">
           {t("emptyDescription")}
         </p>
       </div>
