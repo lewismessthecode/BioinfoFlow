@@ -29,6 +29,9 @@ _URL_CREDENTIALS = re.compile(r"(https?://)([^/@\s:]+):([^/@\s]+)@", re.I)
 _SENSITIVE_QUERY = re.compile(
     r"(?i)([?&](?:api[_-]?key|access[_-]?token|token|secret|password)=)([^&#\s]+)"
 )
+_UNIX_ABSOLUTE_PATH = re.compile(
+    r"(?<![A-Za-z0-9_:/\\])/(?:[^\s'\";&|<>`$()]+)"
+)
 
 
 def project_tool_view(
@@ -266,6 +269,9 @@ def _public_text(text: str, limit: int) -> tuple[str, bool, bool]:
     redacted = _AUTHORIZATION.sub(r"\1[REDACTED]", redacted)
     redacted = _URL_CREDENTIALS.sub(r"\1[REDACTED]@", redacted)
     redacted = _SENSITIVE_QUERY.sub(r"\1[REDACTED]", redacted)
+    redacted = _UNIX_ABSOLUTE_PATH.sub(
+        lambda match: _public_path(match.group(0))[0], redacted
+    )
     was_redacted = redacted != cleaned
     truncated = len(redacted) > limit
     return _bounded_text(redacted, limit), truncated, was_redacted
