@@ -3125,6 +3125,40 @@
     },
     "tokens": "{count}k tokens"
   },
+  "agentComposer": {
+    "label": "Message the agent",
+    "placeholder": "Ask Bioinfoflow to do something…",
+    "send": "Send message",
+    "queue": "Queue message",
+    "steer": "Steer active run",
+    "stop": "Stop run",
+    "stopping": "Stopping…",
+    "sending": "Sending…",
+    "steering": "Steering…",
+    "submitError": "The message could not be submitted. Try again.",
+    "stopError": "The run could not be stopped. Try again.",
+    "permission": {
+      "label": "Approval mode",
+      "title": "How should agent actions be approved?",
+      "ask_changes": {
+        "name": "Ask before changes",
+        "description": "Ask before files, network, or other side effects change."
+      },
+      "ask_dangerous": {
+        "name": "Approve safe actions",
+        "description": "Only ask for dangerous or critical actions."
+      },
+      "full_access": {
+        "name": "Full access",
+        "description": "Run automatically inside hard workspace and safety limits."
+      },
+      "activeRun": "Approval mode cannot change while a run is active.",
+      "readOnlyWorkspace": "This workspace is read-only. Approval mode cannot grant write access.",
+      "updating": "Updating approval mode…",
+      "updateError": "Approval mode could not be updated.",
+      "retry": "Retry approval update"
+    }
+  },
   "agentActivity": {
     "status": {
       "pending": "Pending",
@@ -3149,6 +3183,28 @@
       "output": "Output",
       "error": "Error"
     }
+  },
+  "agentRun": {
+    "title": "Agent run in progress",
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "waiting_user": "Waiting for input",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "phase": {
+      "model": "Working with the model",
+      "tools": "Using tools",
+      "interaction": "Waiting for input"
+    },
+    "progress": {
+      "actions": "{completed} of {total} actions finished",
+      "label": "Tool progress"
+    },
+    "reasoning": "Thinking summary",
+    "response": "Response"
   },
   "agentHistory": {
     "reasoning": {
@@ -3176,17 +3232,39 @@
     "notice": {
       "title": "Agent notice"
     },
-    "compaction": "Context compressed",
-    "interaction": {
-      "ask_user": "The agent asked for input",
-      "approval": "Approval requested",
-      "recovery": "Recovery requested",
+    "compaction": "Context compressed"
+  },
+  "agentInteraction": {
+    "status": {
       "pending": "Waiting for response",
       "approved": "Approved",
       "rejected": "Rejected",
       "answered": "Answered",
       "resolved": "Resolved"
-    }
+    },
+    "approval": {
+      "title": "Approval requested",
+      "approve": "Approve",
+      "reject": "Reject",
+      "input": "Command preview",
+      "effects": "Effects",
+      "reasons": "Reasons",
+      "resources": "Affected resources"
+    },
+    "ask_user": {
+      "title": "The agent asked for input",
+      "submit": "Submit answers",
+      "recommended": "Recommended"
+    },
+    "recovery": {
+      "title": "Recovery requested",
+      "inspect": "Inspect",
+      "retry": "Retry",
+      "cancel": "Cancel",
+      "selected": "Selected action"
+    },
+    "submitting": "Submitting…",
+    "submit_failed": "Could not submit. Try again."
   },
   "executionMode": {
     "askShort": "Ask",

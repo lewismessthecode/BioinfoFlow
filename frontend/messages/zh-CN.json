@@ -3125,6 +3125,40 @@
     },
     "tokens": "{count}k tokens"
   },
+  "agentComposer": {
+    "label": "给智能助手发送消息",
+    "placeholder": "让 Bioinfoflow 帮你完成一项工作…",
+    "send": "发送消息",
+    "queue": "排队发送",
+    "steer": "调整当前任务",
+    "stop": "停止运行",
+    "stopping": "正在停止…",
+    "sending": "正在发送…",
+    "steering": "正在调整…",
+    "submitError": "消息未能提交，请重试。",
+    "stopError": "未能停止当前运行，请重试。",
+    "permission": {
+      "label": "审批方式",
+      "title": "智能助手的操作应如何审批？",
+      "ask_changes": {
+        "name": "更改前询问",
+        "description": "修改文件、访问网络或产生其他副作用前先询问。"
+      },
+      "ask_dangerous": {
+        "name": "安全操作自动完成",
+        "description": "只在检测到危险或关键操作时询问。"
+      },
+      "full_access": {
+        "name": "完全访问",
+        "description": "在工作区和安全硬限制内自动执行。"
+      },
+      "activeRun": "当前有任务运行时不能修改审批方式。",
+      "readOnlyWorkspace": "当前工作区为只读；审批方式不能授予写入权限。",
+      "updating": "正在更新审批方式…",
+      "updateError": "审批方式更新失败。",
+      "retry": "重试更新审批方式"
+    }
+  },
   "agentActivity": {
     "status": {
       "pending": "等待中",
@@ -3149,6 +3183,28 @@
       "output": "输出",
       "error": "错误"
     }
+  },
+  "agentRun": {
+    "title": "Agent 正在执行",
+    "status": {
+      "queued": "排队中",
+      "running": "运行中",
+      "waiting_user": "等待输入",
+      "completed": "已完成",
+      "failed": "失败",
+      "cancelled": "已取消"
+    },
+    "phase": {
+      "model": "正在使用模型",
+      "tools": "正在使用工具",
+      "interaction": "等待输入"
+    },
+    "progress": {
+      "actions": "{total} 项操作中已有 {completed} 项结束",
+      "label": "工具进度"
+    },
+    "reasoning": "思考摘要",
+    "response": "回复"
   },
   "agentHistory": {
     "reasoning": {
@@ -3176,17 +3232,39 @@
     "notice": {
       "title": "Agent 提示"
     },
-    "compaction": "上下文已压缩",
-    "interaction": {
-      "ask_user": "Agent 请求补充信息",
-      "approval": "请求审批",
-      "recovery": "请求恢复处理",
+    "compaction": "上下文已压缩"
+  },
+  "agentInteraction": {
+    "status": {
       "pending": "等待回复",
       "approved": "已批准",
       "rejected": "已拒绝",
       "answered": "已回答",
       "resolved": "已处理"
-    }
+    },
+    "approval": {
+      "title": "请求审批",
+      "approve": "批准",
+      "reject": "拒绝",
+      "input": "命令预览",
+      "effects": "可能产生的影响",
+      "reasons": "原因",
+      "resources": "受影响资源"
+    },
+    "ask_user": {
+      "title": "Agent 请求补充信息",
+      "submit": "提交答案",
+      "recommended": "推荐"
+    },
+    "recovery": {
+      "title": "请求恢复处理",
+      "inspect": "检查当前状态",
+      "retry": "重试",
+      "cancel": "取消",
+      "selected": "已选操作"
+    },
+    "submitting": "提交中…",
+    "submit_failed": "提交失败，请重试。"
   },
   "executionMode": {
     "askShort": "询问",

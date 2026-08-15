@@ -3,14 +3,12 @@
 import { useMemo } from "react"
 import { useTranslations } from "next-intl"
 
+import { AgentInteractionCard } from "@/components/bioinfoflow/agent/interaction-card"
 import { AgentMessageParts } from "@/components/bioinfoflow/agent/message-parts"
 import { AgentPlanEntry } from "@/components/bioinfoflow/agent/plan-entry"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { StatusBadge } from "@/components/ui/status-badge"
 import type {
   HistoryEntry,
-  InteractionRequest,
-  InteractionRequestEntry,
   InteractionResponse,
   InteractionResponseEntry,
   MessageEntry,
@@ -105,8 +103,9 @@ export function AgentHistoryEntry({
 
   if (entry.type === "interaction_request") {
     return (
-      <HistoricalInteraction
-        entry={entry}
+      <AgentInteractionCard
+        interactionId={entry.payload.interaction_id}
+        request={entry.payload.request}
         response={interactionResponse}
       />
     )
@@ -166,53 +165,6 @@ function MessageHistoryEntry({
   )
 }
 
-function HistoricalInteraction({
-  entry,
-  response,
-}: {
-  entry: InteractionRequestEntry
-  response?: InteractionResponse
-}) {
-  const t = useTranslations("agentHistory")
-  const view = interactionView(entry.payload.request)
-  const status = interactionStatus(entry.payload.request, response)
-  const tone = interactionTone(status)
-
-  return (
-    <section
-      className={cn(
-        "grid gap-3 rounded-[10px] border px-3.5 py-3 [content-visibility:auto] [contain-intrinsic-size:auto_128px]",
-        tone === "warning" && "border-warning-border bg-warning-muted/25",
-        tone === "success" && "border-success-border bg-success-muted/25",
-        tone === "destructive" && "border-error-border bg-error-muted/25",
-      )}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-foreground">
-          {t(`interaction.${view.kind}`)}
-        </h2>
-        <StatusBadge variant={tone}>{t(`interaction.${status}`)}</StatusBadge>
-      </div>
-      <p className="text-sm leading-6 text-foreground/80">{view.summary}</p>
-      {view.preview ? (
-        <pre
-          className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-[8px] bg-background/70 px-3 py-2 font-mono text-xs leading-5 text-foreground/70"
-          translate="no"
-        >
-          {view.preview}
-        </pre>
-      ) : null}
-      {view.details.length > 0 ? (
-        <ul className="grid gap-1 text-xs leading-5 text-muted-foreground">
-          {view.details.map((detail, index) => (
-            <li key={`${index}:${detail}`}>{detail}</li>
-          ))}
-        </ul>
-      ) : null}
-    </section>
-  )
-}
-
 function prepareHistory(entries: HistoryEntry[]) {
   const toolResultsByCallId = new Map<string, ToolResultPart>()
   const consumedToolCallIds = new Set<string>()
@@ -265,49 +217,4 @@ function prepareHistory(entries: HistoryEntry[]) {
       [...latestPlans].map(([planId, entry]) => [planId, entry.id]),
     ),
   }
-}
-
-function interactionView(request: InteractionRequest) {
-  if (request.type === "approval") {
-    return {
-      kind: "approval" as const,
-      summary: request.summary,
-      preview: request.input_preview,
-      details: request.risk.effects,
-    }
-  }
-  if (request.type === "ask_user") {
-    return {
-      kind: "ask_user" as const,
-      summary: request.questions.map((question) => question.question).join(" "),
-      preview: null,
-      details: request.questions.flatMap((question) =>
-        question.options.map((option) => option.label),
-      ),
-    }
-  }
-  return {
-    kind: "recovery" as const,
-    summary: request.message,
-    preview: null,
-    details: request.options.map((option) => option.label),
-  }
-}
-
-function interactionStatus(
-  request: InteractionRequest,
-  response?: InteractionResponse,
-) {
-  if (!response || response.type !== request.type) return "pending" as const
-  if (response.type === "approval") {
-    return response.approved ? ("approved" as const) : ("rejected" as const)
-  }
-  if (response.type === "ask_user") return "answered" as const
-  return "resolved" as const
-}
-
-function interactionTone(status: ReturnType<typeof interactionStatus>) {
-  if (status === "pending") return "warning" as const
-  if (status === "rejected") return "destructive" as const
-  return "success" as const
 }
