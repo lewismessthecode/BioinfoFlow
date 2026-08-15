@@ -211,7 +211,7 @@ rtk bun run test:coverage
   drive minor releases. Breaking changes below `1.0.0` also drive a minor bump.
 - Do not edit `CHANGELOG.md` in ordinary feature or fix PRs. Release Please owns
   the next release entry; curate it in the Release PR when needed.
-- Never add `automerge` to a Release PR. Merging that PR is the intentional
+- Never enable auto-merge for a Release PR. Merging that PR is the intentional
   production release gate.
 - Follow `docs/development/releases.md` for the complete release, bootstrap,
   verification, and recovery SOP.

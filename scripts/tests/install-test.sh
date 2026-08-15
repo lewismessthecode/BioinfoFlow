@@ -798,7 +798,36 @@ teardown_case
 
 if [ -x "$INSTALLER" ] && [ -x "$ROOT/scripts/tests/install-test.sh" ]; then pass "installer scripts are executable"; else fail "installer scripts are executable"; fi
 
+CI_WORKFLOW="$ROOT/.github/workflows/ci.yml"
+IMAGE_WORKFLOW="$ROOT/.github/workflows/container-release.yml"
+RELEASE_PLEASE_WORKFLOW="$ROOT/.github/workflows/release-please.yml"
 RELEASE_WORKFLOW="$ROOT/.github/workflows/release.yml"
+REPO_CONFIG="$ROOT/scripts/github/configure-repo.sh"
+
+if grep -q '^  merge_group:' "$CI_WORKFLOW" && \
+   grep -q '^  required:' "$CI_WORKFLOW" && \
+   grep -q '^    name: CI$' "$CI_WORKFLOW" && \
+   grep -q 'require_result.*BACKEND_RESULT' "$CI_WORKFLOW" && \
+   grep -q 'require_result.*FRONTEND_BUILD_RESULT' "$CI_WORKFLOW" && \
+   grep -q 'require_result.*WORKFLOWS_RESULT' "$CI_WORKFLOW" && \
+   grep -q '"CI"' "$REPO_CONFIG" && \
+   ! grep -q '"backend"\|"frontend"\|"docker"' "$REPO_CONFIG" && \
+   [ ! -e "$ROOT/.github/workflows/auto-merge.yml" ]; then
+  pass "CI exposes one fail-closed required gate and uses native auto-merge"
+else
+  fail "CI exposes one fail-closed required gate and uses native auto-merge"
+fi
+
+if grep -q 'secrets.RELEASE_PLEASE_TOKEN' "$RELEASE_PLEASE_WORKFLOW" && \
+   ! grep -q 'secrets.GITHUB_TOKEN' "$RELEASE_PLEASE_WORKFLOW" && \
+   ! grep -q 'gh workflow run' "$RELEASE_PLEASE_WORKFLOW" && \
+   grep -q 'uses: ./.github/workflows/release.yml' "$RELEASE_PLEASE_WORKFLOW" && \
+   grep -q 'release_created.*true' "$RELEASE_PLEASE_WORKFLOW"; then
+  pass "Release Please uses a dedicated credential and directly calls publication"
+else
+  fail "Release Please uses a dedicated credential and directly calls publication"
+fi
+
 if grep -q 'sh -n scripts/install.sh scripts/tests/install-test.sh' "$RELEASE_WORKFLOW" && \
    grep -q 'shellcheck -e SC2317 scripts/install.sh scripts/tests/install-test.sh' "$RELEASE_WORKFLOW" && \
    grep -q 'sh scripts/tests/install-test.sh' "$RELEASE_WORKFLOW" && \
@@ -810,10 +839,10 @@ else
   fail "release workflow verifies installer, Compose, checksums, and multiarch manifests"
 fi
 
-# The workflow expression is intentionally matched as a literal string.
-# shellcheck disable=SC2016
-if grep -Fq '[ "$GITHUB_REF_NAME" != "$version" ]' "$RELEASE_WORKFLOW" && \
-   ! grep -q 'main recovery workflow' "$RELEASE_WORKFLOW" && \
+if grep -q '^  workflow_call:' "$RELEASE_WORKFLOW" && \
+   grep -q 'ref:.*inputs.release_version' "$RELEASE_WORKFLOW" && \
+   grep -q 'refs/tags/.*version.*commit' "$RELEASE_WORKFLOW" && \
+   ! grep -q 'GITHUB_REF_NAME' "$RELEASE_WORKFLOW" && \
    grep -q 'checkout_ref:.*needs.resolve.outputs.version' "$RELEASE_WORKFLOW" && \
    [ "$(grep -c '^[[:space:]]*ref:.*needs.resolve.outputs.version' "$RELEASE_WORKFLOW" || true)" -ge 2 ] && \
    grep -q 'gh release upload.*RELEASE_TAG.*--clobber' "$RELEASE_WORKFLOW"; then
@@ -849,21 +878,24 @@ else
   fail "release workflow smoke-tests the installer on amd64 and arm64"
 fi
 
-if grep -q 'docker/metadata-action@' "$ROOT/.github/workflows/container-release.yml" && \
-   grep -q 'type=raw,value=main,enable=.*refs/heads/main' "$ROOT/.github/workflows/container-release.yml" && \
-   grep -q 'type=sha,prefix=sha-,enable=.*refs/heads/main' "$ROOT/.github/workflows/container-release.yml" && \
-   grep -q 'type=raw,value=.*inputs.release_version' "$ROOT/.github/workflows/container-release.yml" && \
-   grep -q 'type=raw,value=latest,enable=.*inputs.release_version' "$ROOT/.github/workflows/container-release.yml" && \
-   ! grep -q 'type=raw,value=latest,enable=.*refs/heads/main' "$ROOT/.github/workflows/container-release.yml" && \
-   grep -q 'gh workflow run release.yml --ref' "$ROOT/.github/workflows/release-please.yml" && \
+if grep -q 'docker/metadata-action@' "$IMAGE_WORKFLOW" && \
+   grep -q '^  workflow_call:' "$IMAGE_WORKFLOW" && \
+   ! grep -q '^  push:' "$IMAGE_WORKFLOW" && \
+   ! grep -q 'type=raw,value=main' "$IMAGE_WORKFLOW" && \
+   ! grep -q 'type=sha' "$IMAGE_WORKFLOW" && \
+   grep -q 'type=raw,value=.*inputs.release_version' "$IMAGE_WORKFLOW" && \
+   grep -q 'type=raw,value=.*inputs.release_major_minor' "$IMAGE_WORKFLOW" && \
+   grep -q 'type=raw,value=.*inputs.release_major' "$IMAGE_WORKFLOW" && \
+   grep -q 'type=raw,value=latest' "$IMAGE_WORKFLOW" && \
+   grep -q 'uses: ./.github/workflows/release.yml' "$RELEASE_PLEASE_WORKFLOW" && \
    grep -q 'release_version:' "$RELEASE_WORKFLOW" && \
    ! grep -q 'secrets: inherit' "$RELEASE_WORKFLOW"; then
-  pass "numeric releases isolate stable aliases from development tags"
+  pass "formal image workflow publishes only release aliases"
 else
-  fail "numeric releases isolate stable aliases from development tags"
+  fail "formal image workflow publishes only release aliases"
 fi
 
-latest_flavor_count=$(grep -c 'latest=false' "$ROOT/.github/workflows/container-release.yml" || true)
+latest_flavor_count=$(grep -c 'latest=false' "$IMAGE_WORKFLOW" || true)
 if [ "$latest_flavor_count" -eq 3 ]; then
   pass "tag metadata cannot implicitly publish latest"
 else

@@ -1,6 +1,12 @@
-name: Installer Release
+name: Publish Release
 
 on:
+  workflow_call:
+    inputs:
+      release_version:
+        description: "Existing bare numeric GitHub Release to publish."
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       release_version:
@@ -11,6 +17,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: formal-release
+  cancel-in-progress: false
+
 jobs:
   resolve:
     name: resolve numeric release
@@ -20,6 +30,12 @@ jobs:
       major_minor: ${{ steps.version.outputs.major_minor }}
       major: ${{ steps.version.outputs.major }}
     steps:
+      - name: Checkout immutable release tag
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.release_version }}
+
       - name: Validate release version and source
         id: version
         env:
@@ -32,10 +48,14 @@ jobs:
             echo "Release version must be a bare numeric semantic version: $version"
             exit 2
           fi
-          if [ "$GITHUB_REF_NAME" != "$version" ]; then
-            echo "Workflow ref must exactly match the immutable release version: ref=$GITHUB_REF_NAME version=$version"
+
+          tag_commit="$(git rev-parse "refs/tags/${version}^{commit}")"
+          head_commit="$(git rev-parse HEAD)"
+          if [ "$head_commit" != "$tag_commit" ]; then
+            echo "Checked out commit does not match the immutable release tag: head=$head_commit tag=$tag_commit"
             exit 2
           fi
+
           gh release view "$version" --repo "$GITHUB_REPOSITORY" >/dev/null
           major="${version%%.*}"
           remainder="${version#*.}"
@@ -124,7 +144,6 @@ jobs:
       packages: write
     uses: ./.github/workflows/container-release.yml
     with:
-      publish_images: force
       checkout_ref: ${{ needs.resolve.outputs.version }}
       release_version: ${{ needs.resolve.outputs.version }}
       release_major_minor: ${{ needs.resolve.outputs.major_minor }}

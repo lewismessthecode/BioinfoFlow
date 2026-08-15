@@ -59,9 +59,7 @@ gh api \
   "required_status_checks": {
     "strict": true,
     "contexts": [
-      "backend",
-      "frontend",
-      "docker"
+      "CI"
     ]
   },
   "enforce_admins": true,
@@ -80,8 +78,8 @@ JSON
 
 echo "Done."
 echo
-echo "Required checks: backend, frontend, docker"
-echo "The CI workflow keeps these contexts stable and skips heavy work inside the workflow when a PR does not touch the matching area."
+echo "Required check: CI"
+echo "The CI gate fails closed while heavy child jobs are selected by changed area."
 echo "PR branches must be current with main before merge so CI validates the merged state."
 echo "Required approvals: ${REQUIRED_APPROVALS}"
 echo
