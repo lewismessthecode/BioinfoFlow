@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
 import { ActiveRun } from "@/components/bioinfoflow/agent/active-run"
@@ -166,7 +167,8 @@ describe("ActiveRun", () => {
     )
   })
 
-  it("separates streamed thinking and response while showing authoritative phase and tool progress", () => {
+  it("separates streamed thinking and response while showing authoritative phase and tool progress", async () => {
+    const user = userEvent.setup()
     renderWithProviders(<ActiveRun activeRun={activeRun()} />)
 
     expect(
@@ -191,13 +193,20 @@ describe("ActiveRun", () => {
       "I found the workflow",
     )
 
-    expect(
-      screen.getByRole("button", { name: "2 tools running in parallel" }),
-    ).toHaveAttribute("aria-expanded", "true")
-    expect(screen.getByText("Validate workflow inputs")).toBeInTheDocument()
+    const toolGroup = screen.getByRole("button", {
+      name: "2 tools running in parallel",
+    })
+    expect(toolGroup).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getAllByTestId("agent-tool-card")).toHaveLength(1)
+
+    await user.click(toolGroup)
+
+    expect(toolGroup).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getAllByTestId("agent-tool-card")).toHaveLength(3)
   })
 
-  it("keeps failed live tool details visible by default", () => {
+  it("keeps failed live tool details private until the user expands them", async () => {
+    const user = userEvent.setup()
     const failedRun = activeRun()
     failedRun.assistant_draft = null
     failedRun.tool_progress = [
@@ -222,6 +231,13 @@ describe("ActiveRun", () => {
     ]
 
     renderWithProviders(<ActiveRun activeRun={failedRun} />)
+
+    expect(screen.queryByText("Error")).not.toBeInTheDocument()
+    expect(screen.queryByText("Command exited with status 1")).not.toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole("button", { name: /Read workflow\.nf\. Show details/ }),
+    )
 
     expect(screen.getByText("Error")).toBeInTheDocument()
     expect(screen.getByText("Command exited with status 1")).toBeInTheDocument()
