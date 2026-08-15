@@ -70,7 +70,9 @@ function applyRunUpdate(
     : [...state.runs, run]
   const activeRun =
     state.activeRun?.run.id === run.id
-      ? { ...state.activeRun, run }
+      ? isTerminalRun(run)
+        ? null
+        : { ...state.activeRun, run }
       : state.activeRun
 
   return applied({ ...state, runs, activeRun })
@@ -183,11 +185,58 @@ function applyCommittedEntry(
   const entries = [...state.entries, entry].sort(
     (left, right) => left.sequence - right.sequence,
   )
+  const activeRun = reconcileCommittedEntry(state.activeRun, entry)
   return applied({
     ...state,
     entries,
+    activeRun,
     historyRevision: Math.max(state.historyRevision, entry.sequence),
   })
+}
+
+function reconcileCommittedEntry(
+  activeRun: ActiveRunView | null,
+  entry: HistoryEntry,
+) {
+  if (!activeRun || entry.run_id !== activeRun.run.id) return activeRun
+
+  if (entry.type === "interaction_response") {
+    const pending = activeRun.pending_interaction
+    if (pending?.interaction_id !== entry.payload.interaction_id) return activeRun
+    return { ...activeRun, pending_interaction: null }
+  }
+
+  if (entry.type !== "message") return activeRun
+
+  const completedCallIds = new Set(
+    entry.payload.parts.flatMap((part) =>
+      part.type === "tool_result" ? [part.call_id] : [],
+    ),
+  )
+  const assistantDraft =
+    entry.payload.role === "assistant" ? null : activeRun.assistant_draft
+  const toolProgress = completedCallIds.size
+    ? activeRun.tool_progress.filter(
+        (tool) => !completedCallIds.has(tool.call_id),
+      )
+    : activeRun.tool_progress
+
+  if (
+    assistantDraft === activeRun.assistant_draft &&
+    toolProgress === activeRun.tool_progress
+  ) {
+    return activeRun
+  }
+
+  return {
+    ...activeRun,
+    assistant_draft: assistantDraft,
+    tool_progress: toolProgress,
+  }
+}
+
+function isTerminalRun(run: RunView) {
+  return ["completed", "failed", "cancelled"].includes(run.status)
 }
 
 function applied(state: AgentStoreState): AgentEventApplication {

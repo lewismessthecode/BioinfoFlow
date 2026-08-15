@@ -271,6 +271,122 @@ describe("applyAgentEvent", () => {
     expect(duplicate.outcome).toBe("ignored")
     expect(duplicate.state).toBe(appended.state)
   })
+
+  it("removes the matching assistant draft when its durable message is committed", () => {
+    const entry: HistoryEntry = {
+      id: "assistant-entry",
+      session_id: "session-1",
+      run_id: "run-1",
+      sequence: 2,
+      schema_version: 2,
+      created_at: timestamp,
+      type: "message",
+      payload: {
+        role: "assistant",
+        parts: [{ id: "assistant-text", type: "text", text: "Hello" }],
+      },
+    }
+
+    const result = apply(snapshotState(), { type: "entry.committed", entry })
+
+    expect(result.state.activeRun?.assistant_draft).toBeNull()
+  })
+
+  it("removes only tool progress represented by a committed tool result", () => {
+    const first = tool({ call_id: "call-1" })
+    const second = tool({ call_id: "call-2" })
+    const state = snapshotState(
+      snapshot({ active_run: activeRun({ tool_progress: [first, second] }) }),
+    )
+    const entry: HistoryEntry = {
+      id: "tool-entry",
+      session_id: "session-1",
+      run_id: "run-1",
+      sequence: 2,
+      schema_version: 2,
+      created_at: timestamp,
+      type: "message",
+      payload: {
+        role: "tool",
+        parts: [
+          {
+            id: "tool-result",
+            type: "tool_result",
+            call_id: "call-1",
+            status: "completed",
+            summary: "Read configuration",
+            output: null,
+            started_at: timestamp,
+            completed_at: timestamp,
+            error: null,
+          },
+        ],
+      },
+    }
+
+    const result = apply(state, { type: "entry.committed", entry })
+
+    expect(result.state.activeRun?.tool_progress).toEqual([second])
+  })
+
+  it("clears a pending interaction when its durable response is committed", () => {
+    const state = snapshotState(
+      snapshot({
+        active_run: activeRun({
+          pending_interaction: {
+            interaction_id: "interaction-1",
+            run_id: "run-1",
+            revision: 1,
+            request: {
+              type: "approval",
+              call_id: "call-1",
+              tool_name: "bash",
+              summary: "Run command",
+              input_preview: "bif run",
+              risk: {
+                level: "high",
+                effects: ["Runs a workflow"],
+                reasons: ["Creates external work"],
+                affected_resources: ["workspace"],
+              },
+            },
+          },
+        }),
+      }),
+    )
+    const entry: HistoryEntry = {
+      id: "interaction-response",
+      session_id: "session-1",
+      run_id: "run-1",
+      sequence: 2,
+      schema_version: 2,
+      created_at: timestamp,
+      type: "interaction_response",
+      payload: {
+        interaction_id: "interaction-1",
+        response: { type: "approval", approved: true },
+      },
+    }
+
+    const result = apply(state, { type: "entry.committed", entry })
+
+    expect(result.state.activeRun?.pending_interaction).toBeNull()
+  })
+
+  it("removes the active run after an authoritative terminal run update", () => {
+    const result = apply(snapshotState(), {
+      type: "run.updated",
+      run: run({
+        status: "completed",
+        phase: null,
+        revision: 2,
+        completed_at: timestamp,
+      }),
+    })
+
+    expect(result.state.runs[0]?.status).toBe("completed")
+    expect(result.state.activeRun).toBeNull()
+  })
 })
 
 function userEntry(id: string, sequence: number): HistoryEntry {
