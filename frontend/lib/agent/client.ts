@@ -62,6 +62,8 @@ export async function createAgentSession(input: {
   permissionMode?: AgentPermissionMode
   workspaceAccess?: AgentWorkspaceAccess
   modelId?: string
+  provider?: string
+  model?: string
 }) {
   const response = await apiRequest<SessionSnapshot>("/agent/sessions", {
     method: "POST",
@@ -71,6 +73,8 @@ export async function createAgentSession(input: {
       permission_mode: input.permissionMode,
       workspace_access: input.workspaceAccess,
       model_id: input.modelId,
+      provider: input.provider,
+      model: input.model,
     }),
   })
   return response.data

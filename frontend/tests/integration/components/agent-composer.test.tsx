@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { AgentComposer } from "@/components/bioinfoflow/agent/agent-composer"
@@ -81,6 +81,8 @@ function renderComposer({
   onRemoveContextInput = vi.fn(),
   onContextSubmitted = vi.fn(),
   disabled = false,
+  placement = "dock",
+  modelControls,
 }: {
   permissionMode?: AgentPermissionMode
   workspaceAccess?: AgentWorkspaceAccess
@@ -93,6 +95,8 @@ function renderComposer({
   onRemoveContextInput?: (inputId: string) => void
   onContextSubmitted?: () => void
   disabled?: boolean
+  placement?: "draft" | "dock"
+  modelControls?: ReactNode
 } = {}) {
   return {
     ...renderWithProviders(
@@ -108,6 +112,8 @@ function renderComposer({
         onRemoveContextInput={onRemoveContextInput}
         onContextSubmitted={onContextSubmitted}
         disabled={disabled}
+        placement={placement}
+        modelControls={modelControls}
       />,
     ),
     onSendMessage,
@@ -120,6 +126,45 @@ function renderComposer({
 }
 
 describe("AgentComposer", () => {
+  it("uses a centered draft surface and a compact docked surface without changing behavior", () => {
+    const view = renderComposer({
+      placement: "draft",
+      modelControls: <button type="button">GPT-5.6</button>,
+    })
+
+    expect(screen.getByTestId("agent-composer")).toHaveAttribute(
+      "data-placement",
+      "draft",
+    )
+    expect(screen.getByRole("textbox", { name: "Message the agent" })).toHaveAttribute(
+      "rows",
+      "3",
+    )
+    expect(screen.getByRole("button", { name: "GPT-5.6" })).toBeInTheDocument()
+
+    view.rerender(
+      <AgentComposer
+        permissionMode="ask_dangerous"
+        workspaceAccess="read_write"
+        activeRun={null}
+        onSendMessage={view.onSendMessage}
+        onSteer={view.onSteer}
+        onCancel={view.onCancel}
+        onPermissionModeChange={view.onPermissionModeChange}
+        placement="dock"
+      />,
+    )
+
+    expect(screen.getByTestId("agent-composer")).toHaveAttribute(
+      "data-placement",
+      "dock",
+    )
+    expect(screen.getByRole("textbox", { name: "Message the agent" })).toHaveAttribute(
+      "rows",
+      "2",
+    )
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })

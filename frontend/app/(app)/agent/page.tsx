@@ -178,15 +178,25 @@ export function AgentPageContent({
         onSessionResolved={handleSessionResolved}
         className="min-w-0 flex-1"
         headerActions={
-          isMobile && selectedProjectId ? (
+          selectedProjectId ? (
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
-              aria-label={t("workspacePanel.open")}
-              onClick={() => setMobileLiveDeckOpen(true)}
+              aria-label={t(
+                !isMobile && !rightSidebarCollapsed
+                  ? "workspacePanel.close"
+                  : "workspacePanel.open",
+              )}
+              onClick={() => {
+                if (isMobile) setMobileLiveDeckOpen(true)
+                else toggleRightSidebar()
+              }}
             >
-              <PanelRightClose aria-hidden="true" className="rotate-180" />
+              <PanelRightClose
+                aria-hidden="true"
+                className={rightSidebarCollapsed || isMobile ? "rotate-180" : undefined}
+              />
             </Button>
           ) : null
         }

@@ -113,13 +113,15 @@ describe("Agent pages", () => {
     )
   })
 
-  it("keeps the LiveDeck hidden until the dedicated shifted shortcut is used", () => {
+  it("keeps a discoverable desktop control for opening the LiveDeck", () => {
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
     })
 
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
-    fireEvent.keyDown(window, { key: "b", ctrlKey: true, shiftKey: true })
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open workspace panel" }),
+    )
     expect(screen.getByTestId("live-deck")).toBeInTheDocument()
   })
 
