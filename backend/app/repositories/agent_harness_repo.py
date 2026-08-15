@@ -35,6 +35,11 @@ from app.services.agent_harness.projection import (
     public_model_summary,
     run_view,
 )
+from app.services.agent_harness.tool_projection import (
+    public_error_message,
+    public_result_details,
+    public_tool_details,
+)
 
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "waiting_user")
@@ -940,6 +945,24 @@ class AgentHarnessRepository:
         if existing is None:
             raise LookupError(f"tool progress not found: {call_id}")
         now = datetime.now(timezone.utc)
+        source_arguments = (
+            arguments
+            if arguments is not None
+            else existing.get("arguments")
+            if isinstance(existing.get("arguments"), dict)
+            else {}
+        )
+        public_output = public_error_message(output_summary)
+        public_error = public_error_message(error)
+        existing_details = [
+            detail
+            for detail in existing.get("public_details") or []
+            if isinstance(detail, dict) and detail.get("kind") not in {"output", "error"}
+        ]
+        input_details = existing_details or [
+            detail.model_dump(mode="json")
+            for detail in public_tool_details(name, source_arguments)
+        ]
         raw: dict[str, Any] = {
             **existing,
             "call_id": call_id,
@@ -949,16 +972,24 @@ class AgentHarnessRepository:
             "display_name": existing["display_name"],
             "category": existing["category"],
             "summary": existing["summary"],
-            "arguments": existing.get("arguments") or {},
+            "arguments": {},
             "status": status,
             "revision": int(existing.get("revision") or 0) + 1,
+            "public_details": [
+                *input_details,
+                *[
+                    detail.model_dump(mode="json")
+                    for detail in public_result_details(
+                        output_summary=public_output,
+                        error=public_error,
+                    )
+                ],
+            ],
         }
-        if arguments is not None:
-            raw["arguments"] = arguments
-        if output_summary is not None:
-            raw["output_summary"] = output_summary
-        if error is not None:
-            raw["error"] = error
+        if public_output is not None:
+            raw["output_summary"] = public_output
+        if public_error is not None:
+            raw["error"] = public_error
         if status == "running" and raw.get("started_at") is None:
             raw["started_at"] = now
         if status in {"completed", "failed", "blocked", "cancelled"}:
@@ -2198,7 +2229,38 @@ class AgentHarnessRepository:
     def _tool_progress(run: AgentHarnessRun | None) -> list[ToolProgressView]:
         if run is None or not run.tool_progress:
             return []
-        return [ToolProgressView.model_validate(item) for item in run.tool_progress]
+        return [AgentHarnessRepository._public_tool_progress(item) for item in run.tool_progress]
+
+    @staticmethod
+    def _public_tool_progress(item: Any) -> ToolProgressView:
+        raw = dict(item) if isinstance(item, dict) else {}
+        name = str(raw.get("name") or "unknown")
+        arguments = raw.get("arguments")
+        arguments = arguments if isinstance(arguments, dict) else {}
+        output_summary = public_error_message(
+            str(raw.get("output_summary")) if raw.get("output_summary") else None
+        )
+        error = public_error_message(
+            str(raw.get("error")) if raw.get("error") else None
+        )
+        return ToolProgressView.model_validate(
+            {
+                **raw,
+                "arguments": {},
+                "output_summary": output_summary,
+                "error": error,
+                "public_details": [
+                    detail.model_dump(mode="json")
+                    for detail in [
+                        *public_tool_details(name, arguments),
+                        *public_result_details(
+                            output_summary=output_summary,
+                            error=error,
+                        ),
+                    ]
+                ],
+            }
+        )
 
     @staticmethod
     def _pending_interaction(

@@ -13,6 +13,13 @@ from app.services.agent_harness.projection import (
     public_run_error,
     run_view,
 )
+from app.services.agent_harness.tool_projection import (
+    project_tool_view,
+    public_output_summary,
+    public_tool_details,
+)
+from app.services.agent_harness.tools.bash import BashTool
+from app.services.agent_harness.tools.write import WriteTool
 
 
 SESSION_ID = UUID("10000000-0000-0000-0000-000000000001")
@@ -75,6 +82,184 @@ def test_entry_projection_returns_typed_public_history() -> None:
     assert projected.type == "message"
     assert projected.payload.parts[0].type == "text"
     assert projected.payload.parts[0].text == "Finished"
+
+
+def test_tool_progress_projection_redacts_arguments_and_builds_safe_details() -> None:
+    projected = project_tool_view(
+        spec=BashTool.spec,
+        call_id="bash-1",
+        name="bash",
+        arguments={
+            "command": (
+                "OPENAI_API_KEY=sk-private-value curl "
+                "-H 'Authorization: Bearer private-bearer' https://example.test"
+            ),
+            "cwd": "/Users/private/workspace/project",
+            "description": "Check provider status",
+        },
+        status="running",
+        group_id="group-1",
+        execution_mode="serial",
+    )
+
+    dumped = projected.model_dump(mode="json")
+
+    assert dumped["arguments"] == {}
+    assert dumped["summary"] == "Run command: Check provider status"
+    assert [detail["kind"] for detail in dumped["public_details"]] == [
+        "command",
+        "working_directory",
+    ]
+    assert "OPENAI_API_KEY=[REDACTED]" in dumped["public_details"][0]["value"]
+    assert "Authorization: Bearer [REDACTED]" in dumped["public_details"][0]["value"]
+    assert "sk-private-value" not in str(dumped)
+    assert "private-bearer" not in str(dumped)
+    assert "/Users/private" not in str(dumped)
+
+
+def test_write_projection_never_exposes_written_content() -> None:
+    projected = project_tool_view(
+        spec=WriteTool.spec,
+        call_id="write-1",
+        name="write",
+        arguments={
+            "path": "reports/result.md",
+            "content": "private-written-content",
+        },
+        status="running",
+        group_id="group-1",
+        execution_mode="serial",
+    ).model_dump(mode="json")
+
+    assert projected["arguments"] == {}
+    assert "private-written-content" not in str(projected)
+    assert projected["public_details"] == [
+        {
+            "id": "path",
+            "kind": "path",
+            "label": None,
+            "value": "reports/result.md",
+            "format": "path",
+            "copyable": True,
+            "truncated": False,
+            "redacted": False,
+        },
+        {
+            "id": "changes",
+            "kind": "changes",
+            "label": None,
+            "value": "23 bytes",
+            "format": "text",
+            "copyable": False,
+            "truncated": False,
+            "redacted": False,
+        },
+    ]
+
+
+def test_unknown_tools_publish_no_details_by_default() -> None:
+    assert public_tool_details("future_tool", {"secret": "must-not-render"}) == []
+
+
+def test_public_output_summary_removes_secret_values_and_private_file_content() -> None:
+    command_summary = public_output_summary(
+        {
+            "stdout": "token=private-output\ncompleted",
+            "stderr": "",
+            "exit_code": 0,
+        },
+        tool_name="bash",
+    )
+    read_summary = public_output_summary(
+        {
+            "path": "/Users/private/workspace/data.txt",
+            "kind": "text",
+            "text": "private-file-content",
+            "start_line": 1,
+            "end_line": 12,
+            "truncated": False,
+        },
+        tool_name="read",
+    )
+
+    assert command_summary is not None
+    assert "token=[REDACTED]" in command_summary
+    assert "private-output" not in command_summary
+    assert read_summary is not None
+    assert "private-file-content" not in read_summary
+    assert "/Users/private" not in read_summary
+
+
+def test_entry_projection_removes_private_tool_call_and_result_payloads() -> None:
+    call_entry = AgentHarnessEntry(
+        id=UUID("30000000-0000-0000-0000-000000000010"),
+        session_id=SESSION_ID,
+        run_id=RUN_ID,
+        sequence=10,
+        type="message",
+        schema_version=2,
+        payload={
+            "role": "assistant",
+            "parts": [
+                {
+                    "id": "call-part-1",
+                    "type": "tool_call",
+                    "call_id": "bash-1",
+                    "group_id": "group-1",
+                    "execution_mode": "serial",
+                    "name": "bash",
+                    "display_name": "Bash",
+                    "category": "command",
+                    "summary": "Run command: token=private-call-summary",
+                    "arguments": {
+                        "command": "API_TOKEN=private-call-value make test"
+                    },
+                }
+            ],
+        },
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    result_entry = AgentHarnessEntry(
+        id=UUID("30000000-0000-0000-0000-000000000011"),
+        session_id=SESSION_ID,
+        run_id=RUN_ID,
+        sequence=11,
+        type="message",
+        schema_version=2,
+        payload={
+            "role": "tool",
+            "parts": [
+                {
+                    "id": "result-part-1",
+                    "type": "tool_result",
+                    "call_id": "bash-1",
+                    "status": "failed",
+                    "summary": "token=private-result-summary",
+                    "output": {
+                        "type": "text",
+                        "text": "token=private-result-output",
+                    },
+                    "error": "API_TOKEN=private-result-error failed",
+                }
+            ],
+        },
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    projected = [
+        entry_contract(call_entry).model_dump(mode="json"),
+        entry_contract(result_entry).model_dump(mode="json"),
+    ]
+
+    assert "private-call-summary" not in str(projected)
+    assert "private-call-value" not in str(projected)
+    assert "private-result-summary" not in str(projected)
+    assert "private-result-output" not in str(projected)
+    assert "private-result-error" not in str(projected)
+    assert projected[0]["payload"]["parts"][0]["arguments"] == {}
+    assert projected[1]["payload"]["parts"][0]["output"] is None
 
 
 def test_pending_interaction_projection_uses_entry_revision() -> None:

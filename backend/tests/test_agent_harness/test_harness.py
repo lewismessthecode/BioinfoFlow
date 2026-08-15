@@ -117,11 +117,20 @@ def _tool_result(payload):
     return next(part for part in payload.parts if part.type == "tool_result")
 
 
-def _tool_output_text(payload) -> str:
-    result = _tool_result(payload)
-    assert result.output is not None
-    assert result.output.type == "text"
-    return result.output.text
+async def _durable_tool_output_text(harness, session_id: str, call_id: str) -> str:
+    entries = await harness.repository.list_entries(session_id)
+    for entry in entries:
+        if entry.type != "message" or not isinstance(entry.payload, dict):
+            continue
+        for part in entry.payload.get("parts") or []:
+            if not isinstance(part, dict) or part.get("type") != "tool_result":
+                continue
+            if part.get("call_id") != call_id:
+                continue
+            output = part.get("output")
+            assert isinstance(output, dict) and output.get("type") == "text"
+            return str(output.get("text") or "")
+    raise AssertionError(f"durable tool result not found: {call_id}")
 
 
 def _history_text(role: str, text: str) -> dict:
@@ -861,7 +870,9 @@ async def test_tool_call_result_is_committed_before_model_continues(
         "assistant",
     ], _latest_run(snapshot).error
     assert _tool_result(snapshot.entries[2].payload).call_id == "read-1"
-    assert "alpha" in _tool_output_text(snapshot.entries[2].payload)
+    assert "alpha" in await _durable_tool_output_text(
+        harness, str(opened.session.id), "read-1"
+    )
     assert len(model.invocations) == 2
 
 
@@ -2304,6 +2315,7 @@ async def test_corrupt_checkpoint_restores_pending_bash_approval_fence(
         for entry in snapshot.entries
         if entry.type == "message" and entry.payload.role == "tool"
     )
+    assert _tool_result(tool_entry.payload).call_id == "bash-1"
     assert _tool_result(tool_entry.payload).status == "completed"
 
 
@@ -2783,7 +2795,7 @@ async def test_recovery_interaction_preserves_other_in_flight_tools(
         "read-1",
         "bash-1",
     ]
-    assert "alpha" in _tool_output_text(tool_entries[0].payload)
+    assert "alpha" in await _durable_tool_output_text(harness, session_id, "read-1")
     assert len(model.invocations) == 1
     call_ids = [
         getattr(item, "call_id", None) for item in model.invocations[0].input_items
@@ -2937,9 +2949,10 @@ async def test_serial_batch_cancellation_commits_every_unfinished_tool_result(
         "cancelled",
         "cancelled",
     ]
-    assert all(
-        "cancelled" in _tool_output_text(entry.payload) for entry in tool_entries[1:]
-    )
+    for call_id in ["read-1", "read-2"]:
+        assert "cancelled" in await _durable_tool_output_text(
+            harness, session_id, call_id
+        )
 
 
 @pytest.mark.asyncio
@@ -3627,7 +3640,7 @@ async def test_recovery_executes_tools_from_an_already_committed_assistant_messa
     ]
     assert len(tool_entries) == 1
     assert _tool_result(tool_entries[0].payload).call_id == "read-1"
-    assert "alpha" in _tool_output_text(tool_entries[0].payload)
+    assert "alpha" in await _durable_tool_output_text(harness, session_id, "read-1")
     assert len(model.invocations) == 1
     assert any(
         getattr(item, "call_id", None) == "read-1"
@@ -3750,7 +3763,9 @@ async def test_recover_same_version_read_commits_result_then_continues_model(
         "tool",
         "assistant",
     ]
-    assert "alpha" in _tool_output_text(snapshot.entries[1].payload)
+    assert "alpha" in await _durable_tool_output_text(
+        harness, str(opened.session.id), "read-1"
+    )
     assert len(model.invocations) == 1
 
 
@@ -3908,7 +3923,10 @@ async def test_recoverable_write_tools_verify_before_replay(
         for entry in snapshot.entries
         if entry.type == "message" and entry.payload.role == "tool"
     )
-    assert recovery_state in _tool_output_text(tool_entry.payload)
+    assert _tool_result(tool_entry.payload).call_id == "mutation-1"
+    assert recovery_state in await _durable_tool_output_text(
+        harness, str(opened.session.id), "mutation-1"
+    )
 
 
 @pytest.mark.asyncio
@@ -4091,7 +4109,12 @@ async def test_recovery_inspect_choice_does_not_replay_unknown_bash(
         for entry in snapshot.entries
         if entry.type == "message" and entry.payload.role == "tool"
     ]
-    assert "not replayed" in _tool_output_text(tool_entries[0].payload)
+    assert [_tool_result(entry.payload).call_id for entry in tool_entries] == [
+        "bash-1"
+    ]
+    assert "not replayed" in await _durable_tool_output_text(
+        harness, str(opened.session.id), "bash-1"
+    )
 
 
 def _model_target() -> dict[str, object]:

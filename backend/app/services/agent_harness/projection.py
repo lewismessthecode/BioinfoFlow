@@ -10,6 +10,11 @@ from app.services.agent_harness.contracts import (
     PendingInteractionView,
     RunView,
 )
+from app.services.agent_harness.tool_projection import (
+    public_error_message,
+    public_result_details,
+    public_tool_details,
+)
 
 
 _PUBLIC_RUN_ERROR_MESSAGES = {
@@ -190,10 +195,82 @@ def entry_contract(entry: AgentHarnessEntry) -> HistoryEntry:
             "sequence": entry.sequence,
             "type": entry.type,
             "schema_version": entry.schema_version,
-            "payload": entry.payload,
+            "payload": _public_entry_payload(entry.type, entry.payload),
             "created_at": entry.created_at,
         }
     )
+
+
+def _public_entry_payload(entry_type: str, payload: Any) -> Any:
+    if entry_type != "message" or not isinstance(payload, dict):
+        return payload
+    return {
+        **payload,
+        "parts": [
+            _public_message_part(part)
+            for part in payload.get("parts") or []
+            if isinstance(part, dict)
+        ],
+    }
+
+
+def _public_message_part(part: dict[str, Any]) -> dict[str, Any]:
+    part_type = part.get("type")
+    if part_type == "tool_call":
+        name = str(part.get("name") or "unknown")
+        arguments = part.get("arguments")
+        arguments = arguments if isinstance(arguments, dict) else {}
+        summary = public_error_message(str(part.get("summary") or "Tool activity"))
+        if name == "bash":
+            description = arguments.get("description")
+            summary = "Run command"
+            if isinstance(description, str) and description.strip():
+                public_description = public_error_message(description.strip())
+                if public_description:
+                    summary = f"{summary}: {public_description}"
+        return {
+            **part,
+            "summary": summary or "Tool activity",
+            "arguments": {},
+            "public_details": [
+                detail.model_dump(mode="json")
+                for detail in public_tool_details(name, arguments)
+            ],
+        }
+    if part_type == "tool_result":
+        error = public_error_message(
+            str(part.get("error")) if part.get("error") else None
+        )
+        return {
+            **part,
+            "summary": None,
+            "output": _public_tool_output(part.get("output")),
+            "error": error,
+            "public_details": [
+                detail.model_dump(mode="json")
+                for detail in public_result_details(error=error)
+            ],
+        }
+    return part
+
+
+def _public_tool_output(output: Any) -> dict[str, Any] | None:
+    if not isinstance(output, dict) or output.get("type") != "content_parts":
+        return None
+    safe_types = {
+        "attachment_ref",
+        "file_ref",
+        "directory_ref",
+        "workflow_ref",
+        "run_ref",
+        "artifact_ref",
+    }
+    parts = [
+        part
+        for part in output.get("parts") or []
+        if isinstance(part, dict) and part.get("type") in safe_types
+    ]
+    return {"type": "content_parts", "parts": parts} if parts else None
 
 
 def pending_interaction_entry_view(
