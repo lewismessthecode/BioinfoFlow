@@ -8,6 +8,7 @@ import { AgentHistoryEntries } from "@/components/bioinfoflow/agent/conversation
 import { AgentInteractionCard } from "@/components/bioinfoflow/agent/interaction-card"
 import { Button } from "@/components/ui/button"
 import { ArrowDown } from "@/lib/icons"
+import { collectDurableToolCallIds } from "@/lib/agent/activity"
 import type {
   ActiveRunView,
   HistoryEntry,
@@ -62,6 +63,17 @@ export function AgentTranscript({
           )
         : entries,
     [entries, pendingInteractionId],
+  )
+  const durableToolCallIds = useMemo(
+    () => collectDurableToolCallIds(durableEntries),
+    [durableEntries],
+  )
+  const liveToolsByCallId = useMemo(
+    () =>
+      new Map(
+        (activeRun?.tool_progress ?? []).map((tool) => [tool.call_id, tool]),
+      ),
+    [activeRun?.tool_progress],
   )
   useLayoutEffect(() => {
     const scrollElement = scrollRef.current
@@ -128,8 +140,17 @@ export function AgentTranscript({
         data-testid="agent-transcript"
         onScroll={handleScroll}
       >
-        <AgentHistoryEntries entries={durableEntries} runs={runs} />
-        {activeRun ? <ActiveRun activeRun={activeRun} /> : null}
+        <AgentHistoryEntries
+          entries={durableEntries}
+          runs={runs}
+          liveToolsByCallId={liveToolsByCallId}
+        />
+        {activeRun ? (
+          <ActiveRun
+            activeRun={activeRun}
+            durableToolCallIds={durableToolCallIds}
+          />
+        ) : null}
         {pendingInteraction ? (
           <AgentInteractionCard
             interactionId={pendingInteraction.interaction_id}

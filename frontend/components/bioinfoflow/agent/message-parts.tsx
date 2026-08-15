@@ -21,6 +21,7 @@ import type {
 type AgentMessagePartsProps = {
   parts: MessagePart[]
   toolResultsByCallId?: ReadonlyMap<string, ToolResultPart>
+  liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
 }
 
 type ReferencePart =
@@ -35,10 +36,12 @@ type MessageRenderBlock =
   | { kind: "tool_calls"; key: string; calls: ToolCallPart[] }
 
 const EMPTY_TOOL_RESULTS = new Map<string, ToolResultPart>()
+const EMPTY_LIVE_TOOLS = new Map<string, ToolProgressView>()
 
 export function AgentMessageParts({
   parts,
   toolResultsByCallId = EMPTY_TOOL_RESULTS,
+  liveToolsByCallId = EMPTY_LIVE_TOOLS,
 }: AgentMessagePartsProps) {
   const t = useTranslations("agentHistory")
   const blocks = groupContiguousToolCalls(parts)
@@ -51,7 +54,11 @@ export function AgentMessageParts({
       {blocks.map((block) => {
         if (block.kind === "tool_calls") {
           const tools = block.calls.map((call) =>
-            toolProgressFromParts(call, toolResultsByCallId.get(call.call_id)),
+            toolProgressFromParts(
+              call,
+              toolResultsByCallId.get(call.call_id),
+              liveToolsByCallId.get(call.call_id),
+            ),
           )
           const results = block.calls.flatMap((call) => {
             const result = toolResultsByCallId.get(call.call_id)
@@ -192,8 +199,9 @@ function ToolOutputContentParts({ results }: { results: ToolResultPart[] }) {
 function toolProgressFromParts(
   call: ToolCallPart,
   result?: ToolResultPart,
+  live?: ToolProgressView,
 ): ToolProgressView {
-  return {
+  const durable: ToolProgressView = {
     call_id: call.call_id,
     group_id: call.group_id,
     execution_mode: call.execution_mode,
@@ -210,6 +218,19 @@ function toolProgressFromParts(
     output_summary:
       result?.summary ?? (result ? toolTextOutput(result) : null),
     error: result?.error ?? null,
+  }
+
+  if (!live) return durable
+
+  return {
+    ...durable,
+    status: live.status,
+    revision: live.revision,
+    started_at: live.started_at ?? durable.started_at,
+    completed_at: live.completed_at ?? durable.completed_at,
+    input_summary: live.input_summary,
+    output_summary: live.output_summary ?? durable.output_summary,
+    error: live.error ?? durable.error,
   }
 }
 
