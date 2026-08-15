@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react"
+import { fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState, type ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -141,6 +141,12 @@ describe("AgentComposer", () => {
       "3",
     )
     expect(screen.getByRole("button", { name: "GPT-5.6" })).toBeInTheDocument()
+    expect(screen.getByTestId("agent-composer")).not.toHaveClass(
+      "bg-gradient-to-t",
+    )
+    expect(screen.getByTestId("agent-composer-surface")).not.toHaveClass(
+      "shadow-md",
+    )
 
     view.rerender(
       <AgentComposer
@@ -163,6 +169,22 @@ describe("AgentComposer", () => {
       "rows",
       "2",
     )
+    expect(screen.getByTestId("agent-composer")).not.toHaveClass(
+      "bg-gradient-to-t",
+    )
+  })
+
+  it("grows the textarea with its content up to the bounded composer height", () => {
+    renderComposer({ placement: "draft" })
+    const input = screen.getByRole("textbox", { name: "Message the agent" })
+    Object.defineProperty(input, "scrollHeight", {
+      configurable: true,
+      value: 240,
+    })
+
+    fireEvent.input(input, { target: { value: "A long\nmultiline\nrequest" } })
+
+    expect(input).toHaveStyle({ height: "160px" })
   })
 
   afterEach(() => {
