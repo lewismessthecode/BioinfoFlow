@@ -16,6 +16,7 @@ from app.services.agent_harness.projection import (
 from app.services.agent_harness.tool_projection import (
     project_tool_view,
     public_output_summary,
+    public_tool_progress_view,
     public_tool_details,
 )
 from app.services.agent_harness.tools.bash import BashTool
@@ -105,7 +106,7 @@ def test_tool_progress_projection_redacts_arguments_and_builds_safe_details() ->
     dumped = projected.model_dump(mode="json")
 
     assert dumped["arguments"] == {}
-    assert dumped["summary"] == "Run command: Check provider status"
+    assert dumped["summary"] == "Bash: Check provider status"
     assert [detail["kind"] for detail in dumped["public_details"]] == [
         "command",
         "working_directory",
@@ -134,6 +135,76 @@ def test_bash_projection_hides_absolute_paths_inside_commands() -> None:
     )
     assert details[0].redacted is True
     assert "/Users/private" not in details[0].value
+
+
+def test_bash_projection_redacts_quoted_headers_file_urls_and_known_secrets() -> None:
+    details = public_tool_details(
+        "bash",
+        {
+            "command": (
+                "AWS_ACCESS_KEY_ID='AKIAIOSFODNN7EXAMPLE' "
+                'curl -H "X-API-Key: sk-private-value" '
+                "file:///Users/private/workspace/input.txt "
+                "https://example.test?token=ghp_privatevalue1234567890"
+            )
+        },
+    )
+
+    assert len(details) == 1
+    value = details[0].value
+    assert "AWS_ACCESS_KEY_ID=[REDACTED]" in value
+    assert "X-API-Key: [REDACTED]" in value
+    assert "file://…/workspace/input.txt" in value
+    assert "token=[REDACTED]" in value
+    assert "AKIAIOSFODNN7EXAMPLE" not in value
+    assert "sk-private-value" not in value
+    assert "ghp_privatevalue" not in value
+    assert "/Users/private" not in value
+    assert details[0].copyable is False
+    assert details[0].redacted is True
+
+
+def test_public_tool_progress_rebuilds_legacy_payload_through_safe_projection() -> None:
+    projected = public_tool_progress_view(
+        {
+            "call_id": "bash-legacy",
+            "group_id": "group-1",
+            "execution_mode": "serial",
+            "name": "bash",
+            "display_name": "Bash",
+            "category": "command",
+            "summary": "Run command: AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE",
+            "arguments": {
+                "command": "X-API-Key: sk-private-value curl file:///Users/private/a.txt"
+            },
+            "status": "completed",
+            "revision": 8,
+            "output_summary": "token='ghp_privatevalue1234567890'\npassed",
+            "error": None,
+            "public_details": [
+                {
+                    "id": "command",
+                    "kind": "command",
+                    "value": "old persisted secret sk-private-value",
+                    "format": "code",
+                    "copyable": True,
+                }
+            ],
+            "private_future_field": "must-not-publish",
+        }
+    ).model_dump(mode="json")
+
+    assert projected["arguments"] == {}
+    assert projected["summary"] == "Run command: AWS_ACCESS_KEY_ID=[REDACTED]"
+    assert projected["output_summary"] == "token=[REDACTED]\npassed"
+    assert "private_future_field" not in projected
+    assert "sk-private-value" not in str(projected)
+    assert "ghp_privatevalue" not in str(projected)
+    assert "/Users/private" not in str(projected)
+    assert [detail["kind"] for detail in projected["public_details"]] == [
+        "command",
+        "output",
+    ]
 
 
 def test_write_projection_never_exposes_written_content() -> None:
@@ -167,7 +238,7 @@ def test_write_projection_never_exposes_written_content() -> None:
             "id": "changes",
             "kind": "changes",
             "label": None,
-            "value": "23 bytes",
+            "value": "bytes=23",
             "format": "text",
             "copyable": False,
             "truncated": False,
@@ -183,7 +254,9 @@ def test_unknown_tools_publish_no_details_by_default() -> None:
 def test_public_output_summary_removes_secret_values_and_private_file_content() -> None:
     command_summary = public_output_summary(
         {
-            "stdout": "token=private-output\ncompleted",
+            "stdout": (
+                'token=private-output\n{"api_key":"private-json-output"}\ncompleted'
+            ),
             "stderr": "",
             "exit_code": 0,
         },
@@ -204,6 +277,7 @@ def test_public_output_summary_removes_secret_values_and_private_file_content() 
     assert command_summary is not None
     assert "token=[REDACTED]" in command_summary
     assert "private-output" not in command_summary
+    assert "private-json-output" not in command_summary
     assert read_summary is not None
     assert "private-file-content" not in read_summary
     assert "/Users/private" not in read_summary
@@ -230,9 +304,7 @@ def test_entry_projection_removes_private_tool_call_and_result_payloads() -> Non
                     "display_name": "Bash",
                     "category": "command",
                     "summary": "Run command: token=private-call-summary",
-                    "arguments": {
-                        "command": "API_TOKEN=private-call-value make test"
-                    },
+                    "arguments": {"command": "API_TOKEN=private-call-value make test"},
                 }
             ],
         },
@@ -279,6 +351,126 @@ def test_entry_projection_removes_private_tool_call_and_result_payloads() -> Non
     assert "private-result-error" not in str(projected)
     assert projected[0]["payload"]["parts"][0]["arguments"] == {}
     assert projected[1]["payload"]["parts"][0]["output"] is None
+
+
+def test_entry_projection_preserves_sanitized_success_result_summary_and_details() -> (
+    None
+):
+    entry = AgentHarnessEntry(
+        id=UUID("30000000-0000-0000-0000-000000000012"),
+        session_id=SESSION_ID,
+        run_id=RUN_ID,
+        sequence=12,
+        type="message",
+        schema_version=2,
+        payload={
+            "role": "tool",
+            "parts": [
+                {
+                    "id": "result-part-1",
+                    "type": "tool_result",
+                    "call_id": "bash-1",
+                    "status": "completed",
+                    "summary": "token=private-result-summary\npassed",
+                    "output": {"type": "text", "text": "private raw output"},
+                    "public_details": [
+                        {
+                            "id": "output",
+                            "kind": "output",
+                            "value": "X-API-Key: private-result-detail\npassed",
+                            "format": "code",
+                            "copyable": True,
+                        }
+                    ],
+                }
+            ],
+        },
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    projected = entry_contract(entry).model_dump(mode="json")["payload"]["parts"][0]
+
+    assert projected["summary"] == "token=[REDACTED]\npassed"
+    assert projected["output"] is None
+    assert projected["public_details"][0]["value"] == ("X-API-Key: [REDACTED]\npassed")
+    assert projected["public_details"][0]["copyable"] is False
+    assert "private-result" not in str(projected)
+
+
+def test_content_parts_projection_rebuilds_each_reference_and_sanitizes_paths() -> None:
+    entry = AgentHarnessEntry(
+        id=UUID("30000000-0000-0000-0000-000000000013"),
+        session_id=SESSION_ID,
+        run_id=RUN_ID,
+        sequence=13,
+        type="message",
+        schema_version=2,
+        payload={
+            "role": "tool",
+            "parts": [
+                {
+                    "id": "result-part-1",
+                    "type": "tool_result",
+                    "call_id": "read-1",
+                    "status": "completed",
+                    "output": {
+                        "type": "content_parts",
+                        "private_output": "must-not-publish",
+                        "parts": [
+                            {
+                                "id": "file-1",
+                                "type": "file_ref",
+                                "label": "/Users/private/workspace/report.txt",
+                                "path": "/Users/private/workspace/report.txt",
+                                "project_id": str(SESSION_ID),
+                                "private_field": "must-not-publish",
+                            },
+                            {
+                                "id": "run-1",
+                                "type": "run_ref",
+                                "run_id": "run-123",
+                                "label": "Run 123",
+                                "private_field": "must-not-publish",
+                            },
+                            {
+                                "id": "text-1",
+                                "type": "text",
+                                "text": "private raw output",
+                            },
+                        ],
+                    },
+                }
+            ],
+        },
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    output = entry_contract(entry).model_dump(mode="json")["payload"]["parts"][0][
+        "output"
+    ]
+
+    assert output == {
+        "type": "content_parts",
+        "parts": [
+            {
+                "id": "file-1",
+                "type": "file_ref",
+                "label": "…/workspace/report.txt",
+                "project_id": str(SESSION_ID),
+                "attachment_id": None,
+                "path": "…/workspace/report.txt",
+            },
+            {
+                "id": "run-1",
+                "type": "run_ref",
+                "run_id": "run-123",
+                "label": "Run 123",
+            },
+        ],
+    }
+    assert "private" not in str(output)
 
 
 def test_pending_interaction_projection_uses_entry_revision() -> None:

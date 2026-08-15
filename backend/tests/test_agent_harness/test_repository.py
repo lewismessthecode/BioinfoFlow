@@ -228,6 +228,68 @@ async def test_tool_progress_revisions_are_local_to_each_call(
 
 
 @pytest.mark.asyncio
+async def test_legacy_tool_progress_is_reprojected_for_snapshot_and_updates(
+    harness_db: AsyncSession,
+) -> None:
+    repository = AgentHarnessRepository(harness_db)
+    session = await repository.open_session(_request())
+    run = await repository.create_run(str(session.id))
+    await repository.update_run(
+        str(run.id),
+        status="running",
+        phase="tools",
+        tool_progress=[
+            {
+                "call_id": "bash-legacy",
+                "group_id": "group-1",
+                "execution_mode": "serial",
+                "name": "bash",
+                "display_name": "Bash",
+                "category": "command",
+                "summary": "Run AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE",
+                "arguments": {
+                    "command": "X-API-Key: sk-private-value curl file:///Users/private/a.txt"
+                },
+                "status": "running",
+                "revision": 2,
+                "public_details": [
+                    {
+                        "id": "command",
+                        "kind": "command",
+                        "value": "persisted sk-private-value",
+                        "format": "code",
+                        "copyable": True,
+                    }
+                ],
+            }
+        ],
+    )
+
+    snapshot = await repository.snapshot(str(session.id))
+    assert snapshot.active_run is not None
+    snapshot_progress = snapshot.active_run.tool_progress[0].model_dump(mode="json")
+    assert "sk-private-value" not in str(snapshot_progress)
+    assert "AKIAIOSFODNN7EXAMPLE" not in str(snapshot_progress)
+    assert "/Users/private" not in str(snapshot_progress)
+
+    updated = await repository.update_tool_progress(
+        str(run.id),
+        call_id="bash-legacy",
+        name="bash",
+        status="completed",
+        output_summary="token=ghp_privatevalue1234567890\npassed",
+    )
+    public_update = updated.model_dump(mode="json")
+    assert public_update["arguments"] == {}
+    assert "private" not in str(public_update)
+    assert "ghp_privatevalue" not in str(public_update)
+    assert [detail["kind"] for detail in public_update["public_details"]] == [
+        "command",
+        "output",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_snapshot_is_authoritative_for_active_run_ui_state(
     harness_db: AsyncSession,
 ) -> None:
@@ -545,9 +607,7 @@ async def test_repository_claims_run_atomically_and_transfers_session_commands(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    await repository.enqueue_command(
-        str(session.id), _message("message-1", "hello")
-    )
+    await repository.enqueue_command(str(session.id), _message("message-1", "hello"))
     run = await repository.create_run(str(session.id))
     moved = await repository.move_session_commands_to_run(
         str(session.id), str(run.id), kinds={"message"}
@@ -667,12 +727,10 @@ async def test_new_lease_generation_fences_stale_worker_writes(
                 str(session.id),
                 run_id=str(run.id),
                 entry_type="message",
-                    payload={
-                        "role": "assistant",
-                        "parts": [
-                            {"id": "text:0", "type": "text", "text": "stale"}
-                        ],
-                    },
+                payload={
+                    "role": "assistant",
+                    "parts": [{"id": "text:0", "type": "text", "text": "stale"}],
+                },
             )
 
         updated = await second.update_run(str(run.id), status="running", phase="model")
@@ -853,12 +911,10 @@ async def test_terminal_fence_rejects_stale_history_append(
                 str(session.id),
                 run_id=str(run.id),
                 entry_type="message",
-                    payload={
-                        "role": "assistant",
-                        "parts": [
-                            {"id": "text:0", "type": "text", "text": "stale"}
-                        ],
-                    },
+                payload={
+                    "role": "assistant",
+                    "parts": [{"id": "text:0", "type": "text", "text": "stale"}],
+                },
             )
 
         assert await command.list_entries(str(session.id)) == []
@@ -1292,9 +1348,7 @@ async def test_concurrent_different_commands_are_both_preserved(
         await asyncio.gather(
             first.enqueue_command(
                 session_id,
-                SteerCommand(
-                    command_id="steer-1", parts=[InputTextPart(text="first")]
-                ),
+                SteerCommand(command_id="steer-1", parts=[InputTextPart(text="first")]),
             ),
             second.enqueue_command(
                 session_id,
@@ -1335,15 +1389,11 @@ async def test_concurrent_same_command_id_is_inserted_once(
         results = await asyncio.gather(
             first.enqueue_command(
                 session_id,
-                SteerCommand(
-                    command_id="same", parts=[InputTextPart(text="first")]
-                ),
+                SteerCommand(command_id="same", parts=[InputTextPart(text="first")]),
             ),
             second.enqueue_command(
                 session_id,
-                SteerCommand(
-                    command_id="same", parts=[InputTextPart(text="second")]
-                ),
+                SteerCommand(command_id="same", parts=[InputTextPart(text="second")]),
             ),
         )
 
@@ -1358,9 +1408,7 @@ async def test_concurrent_same_command_id_is_inserted_once(
 @pytest.mark.parametrize(
     "command",
     [
-        SteerCommand(
-            command_id="new", parts=[InputTextPart(text="steer")]
-        ),
+        SteerCommand(command_id="new", parts=[InputTextPart(text="steer")]),
         RespondCommand(
             command_id="new",
             interaction_id="tool:ask-1",
@@ -1386,9 +1434,7 @@ async def test_worker_dequeue_and_external_command_cannot_overwrite_each_other(
     run_id = str(run.id)
     await setup.enqueue_command(
         session_id,
-        SteerCommand(
-            command_id="old", parts=[InputTextPart(text="already queued")]
-        ),
+        SteerCommand(command_id="old", parts=[InputTextPart(text="already queued")]),
     )
     generation = await setup.claim_run(
         run_id,
@@ -1429,12 +1475,8 @@ async def test_concurrent_message_start_consumes_only_one_command(
     setup = AgentHarnessRepository(harness_db)
     session = await setup.open_session(_request())
     session_id = str(session.id)
-    await setup.enqueue_command(
-        session_id, _message("message-1", "first")
-    )
-    await setup.enqueue_command(
-        session_id, _message("message-2", "second")
-    )
+    await setup.enqueue_command(session_id, _message("message-1", "first"))
+    await setup.enqueue_command(session_id, _message("message-2", "second"))
 
     async with factory() as first_db, factory() as second_db:
         first = AgentHarnessRepository(first_db)
@@ -1449,7 +1491,9 @@ async def test_concurrent_message_start_consumes_only_one_command(
     stored_session = await setup.get_session(session_id)
     assert stored_session is not None
     await harness_db.refresh(stored_session)
-    assert [item["command_id"] for item in stored_session.command_queue] == ["message-2"]
+    assert [item["command_id"] for item in stored_session.command_queue] == [
+        "message-2"
+    ]
     assert await setup.get_current_run(session_id) is not None
     await harness_db.refresh(stored_session)
     assert stored_session.history_revision == 1
