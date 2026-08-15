@@ -69,6 +69,7 @@ type AgentWorkbenchProps = {
   interactive?: boolean
   onActiveSessionIdChange?: (sessionId: string) => void
   onSessionResolved?: (session: SessionView) => void
+  onOpenRun?: (runId: string) => void
   headerActions?: ReactNode
   className?: string
 }
@@ -90,6 +91,7 @@ export const AgentWorkbench = forwardRef<
     interactive = true,
     onActiveSessionIdChange,
     onSessionResolved,
+    onOpenRun,
     headerActions,
     className,
   },
@@ -216,6 +218,7 @@ export const AgentWorkbench = forwardRef<
     textareaRef,
     setCancelHandler,
     setModelConnectionOpen,
+    onOpenRun,
   }
 
   return (
@@ -276,6 +279,7 @@ type SharedWorkbenchProps = {
   textareaRef: RefObject<HTMLTextAreaElement | null>
   setCancelHandler: (handler: (() => Promise<void>) | null) => void
   setModelConnectionOpen: (open: boolean) => void
+  onOpenRun?: (runId: string) => void
 }
 
 function DraftWorkbench({
@@ -490,6 +494,7 @@ function SessionWorkbench({
           runs={state.runs}
           activeRun={state.activeRun}
           onRespond={interactive ? state.respond : undefined}
+          onOpenRun={shared.onOpenRun}
         />
       )}
       {state.session.status !== "active" ? (

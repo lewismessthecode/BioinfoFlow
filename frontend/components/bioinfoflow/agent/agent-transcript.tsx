@@ -25,6 +25,7 @@ type AgentTranscriptProps = {
     interactionId: string,
     response: InteractionResponse,
   ) => void | Promise<void>
+  onOpenRun?: (runId: string) => void
   className?: string
 }
 
@@ -41,6 +42,7 @@ export function AgentTranscript({
   runs,
   activeRun,
   onRespond,
+  onOpenRun,
   className,
 }: AgentTranscriptProps) {
   const t = useTranslations("agentTranscript")
@@ -144,6 +146,7 @@ export function AgentTranscript({
           entries={durableEntries}
           runs={runs}
           liveToolsByCallId={liveToolsByCallId}
+          onOpenRun={onOpenRun}
         />
         {activeRun ? (
           <ActiveRun
@@ -170,12 +173,13 @@ export function AgentTranscript({
           <Button
             type="button"
             variant="outline"
-            size="icon-sm"
-            className="pointer-events-auto border-border/70 bg-background text-muted-foreground hover:text-foreground motion-reduce:transition-none"
+            size="sm"
+            className="pointer-events-auto border-border/70 bg-background text-muted-foreground shadow-sm hover:text-foreground motion-reduce:transition-none"
             aria-label={t("scroll_to_bottom")}
             onClick={jumpToLatest}
           >
             <ArrowDown data-icon="inline-start" aria-hidden="true" />
+            {t("scroll_to_bottom")}
           </Button>
         </div>
       ) : null}

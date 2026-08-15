@@ -33,6 +33,7 @@ vi.mock("next-intl", () => ({
         "agentHistory.reference.directory": "Directory",
         "agentHistory.reference.workflow": "Workflow",
         "agentHistory.reference.run": "Run",
+        "agentHistory.reference.openRun": `View run progress for ${values?.name ?? ""}`,
         "agentHistory.reference.artifact": "Artifact",
         "agentHistory.unknown.title": "Unsupported content",
         "agentHistory.plan.title": "Plan",
@@ -610,5 +611,40 @@ describe("AgentHistoryEntries", () => {
     expect(screen.getByTestId("agent-history-entries")).not.toHaveTextContent(
       /internal_checkpoint|must not render/,
     )
+  })
+
+  it("opens a referenced run in the workspace progress view", async () => {
+    const user = userEvent.setup()
+    const onOpenRun = vi.fn()
+    const entries: HistoryEntry[] = [
+      {
+        ...baseEntry,
+        id: "assistant-run-reference",
+        sequence: 1,
+        type: "message",
+        payload: {
+          role: "assistant",
+          parts: [
+            {
+              id: "run-reference",
+              type: "run_ref",
+              run_id: "run-42",
+              label: "RNA-seq QC",
+            },
+          ],
+        },
+      },
+    ]
+
+    renderWithProviders(
+      <AgentHistoryEntries entries={entries} onOpenRun={onOpenRun} />,
+    )
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "View run progress for RNA-seq QC",
+      }),
+    )
+    expect(onOpenRun).toHaveBeenCalledWith("run-42")
   })
 })

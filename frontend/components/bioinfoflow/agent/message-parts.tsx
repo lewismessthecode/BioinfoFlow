@@ -18,11 +18,13 @@ import type {
   ToolResultPart,
   WorkflowRefPart,
 } from "@/lib/agent/contracts"
+import { ChevronRight } from "@/lib/icons"
 
 type AgentMessagePartsProps = {
   parts: MessagePart[]
   toolResultsByCallId?: ReadonlyMap<string, ToolResultPart>
   liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
+  onOpenRun?: (runId: string) => void
 }
 
 type ReferencePart =
@@ -43,6 +45,7 @@ export function AgentMessageParts({
   parts,
   toolResultsByCallId = EMPTY_TOOL_RESULTS,
   liveToolsByCallId = EMPTY_LIVE_TOOLS,
+  onOpenRun,
 }: AgentMessagePartsProps) {
   const t = useTranslations("agentHistory")
   const blocks = groupContiguousToolCalls(parts)
@@ -73,7 +76,7 @@ export function AgentMessageParts({
               ) : (
                 <AgentActivityGroup tools={tools} />
               )}
-              <ToolOutputContentParts results={results} />
+              <ToolOutputContentParts results={results} onOpenRun={onOpenRun} />
             </div>
           )
         }
@@ -95,7 +98,7 @@ export function AgentMessageParts({
 
         if (part.type === "tool_result") {
           if (messageToolCallIds.has(part.call_id)) return null
-          return <UnpairedToolResult key={part.id} result={part} />
+          return <UnpairedToolResult key={part.id} result={part} onOpenRun={onOpenRun} />
         }
 
         if (part.type === "artifact_ref") {
@@ -103,7 +106,7 @@ export function AgentMessageParts({
         }
 
         if (isReferencePart(part)) {
-          return <ReferenceRow key={part.id} part={part} />
+          return <ReferenceRow key={part.id} part={part} onOpenRun={onOpenRun} />
         }
 
         return (
@@ -133,12 +136,19 @@ export function AgentMessageParts({
   )
 }
 
-function ReferenceRow({ part }: { part: ReferencePart }) {
+function ReferenceRow({
+  part,
+  onOpenRun,
+}: {
+  part: ReferencePart
+  onOpenRun?: (runId: string) => void
+}) {
   const t = useTranslations("agentHistory")
   const reference = referenceView(part)
-
-  return (
-    <div className="flex min-w-0 items-center gap-2 rounded-[8px] border border-border/60 bg-background px-2.5 py-2 text-xs">
+  const className =
+    "flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[8px] px-2.5 py-2 text-left text-xs"
+  const content = (
+    <>
       <Badge variant="outline">{t(`reference.${reference.kind}`)}</Badge>
       <span className="min-w-0 flex-1 truncate font-medium text-foreground/80">
         {reference.label}
@@ -151,11 +161,38 @@ function ReferenceRow({ part }: { part: ReferencePart }) {
           {reference.detail}
         </span>
       ) : null}
-    </div>
+      {part.type === "run_ref" && onOpenRun ? (
+        <ChevronRight
+          aria-hidden="true"
+          className="size-4 shrink-0 text-muted-foreground"
+        />
+      ) : null}
+    </>
   )
+
+  if (part.type === "run_ref" && onOpenRun) {
+    return (
+      <button
+        type="button"
+        className={`${className} transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none`}
+        aria-label={t("reference.openRun", { name: reference.label })}
+        onClick={() => onOpenRun(part.run_id)}
+      >
+        {content}
+      </button>
+    )
+  }
+
+  return <div className={className}>{content}</div>
 }
 
-function UnpairedToolResult({ result }: { result: ToolResultPart }) {
+function UnpairedToolResult({
+  result,
+  onOpenRun,
+}: {
+  result: ToolResultPart
+  onOpenRun?: (runId: string) => void
+}) {
   const t = useTranslations("agentActivity")
   const publicContent =
     result.summary ?? result.error
@@ -170,12 +207,18 @@ function UnpairedToolResult({ result }: { result: ToolResultPart }) {
           </p>
         ) : null}
       </div>
-      <ToolOutputContentParts results={[result]} />
+      <ToolOutputContentParts results={[result]} onOpenRun={onOpenRun} />
     </div>
   )
 }
 
-function ToolOutputContentParts({ results }: { results: ToolResultPart[] }) {
+function ToolOutputContentParts({
+  results,
+  onOpenRun,
+}: {
+  results: ToolResultPart[]
+  onOpenRun?: (runId: string) => void
+}) {
   const outputParts = results.flatMap((result) =>
     result.output?.type === "content_parts" ? result.output.parts : [],
   )
@@ -183,7 +226,7 @@ function ToolOutputContentParts({ results }: { results: ToolResultPart[] }) {
 
   return (
     <div className="ml-3 border-l border-border/60 pl-3">
-      <AgentMessageParts parts={outputParts} />
+      <AgentMessageParts parts={outputParts} onOpenRun={onOpenRun} />
     </div>
   )
 }

@@ -44,6 +44,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-workbench", () => ({
       projectId: string | null
       onSessionResolved?: (session: unknown) => void
       headerActions?: ReactNode
+      onOpenRun?: (runId: string) => void
     },
     ref,
   ) {
@@ -57,14 +58,26 @@ vi.mock("@/components/bioinfoflow/agent/agent-workbench", () => ({
       <div data-testid="agent-workbench">
         session:{props.sessionId ?? "draft"}|project:{props.projectId ?? "none"}
         {props.headerActions}
+        <button type="button" onClick={() => props.onOpenRun?.("run-42")}>
+          Open referenced run
+        </button>
       </div>
     )
   }),
 }))
 
 vi.mock("@/components/bioinfoflow/live-deck", () => ({
-  LiveDeck: ({ onCollapse }: { onCollapse: () => void }) => (
+  LiveDeck: ({
+    onCollapse,
+    activeTab,
+    runId,
+  }: {
+    onCollapse: () => void
+    activeTab: string
+    runId?: string | null
+  }) => (
     <div data-testid="live-deck">
+      tab:{activeTab}|run:{runId ?? "none"}
       <button type="button" onClick={onCollapse}>close</button>
     </div>
   ),
@@ -149,6 +162,18 @@ describe("Agent pages", () => {
     expect(screen.getByRole("dialog")).toHaveClass("overscroll-contain")
     expect(screen.getByRole("dialog")).toHaveClass(
       "pb-[env(safe-area-inset-bottom)]",
+    )
+  })
+
+  it("opens a referenced run directly in the DAG workspace", () => {
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Open referenced run" }))
+
+    expect(screen.getByTestId("live-deck")).toHaveTextContent(
+      "tab:dag|run:run-42",
     )
   })
 })

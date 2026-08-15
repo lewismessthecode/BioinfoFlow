@@ -30,6 +30,7 @@ type AgentHistoryEntriesProps = {
   entries: HistoryEntry[]
   runs?: RunView[]
   liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
+  onOpenRun?: (runId: string) => void
 }
 
 const EMPTY_LIVE_TOOLS = new Map<string, ToolProgressView>()
@@ -38,6 +39,7 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
   entries,
   runs = [],
   liveToolsByCallId = EMPTY_LIVE_TOOLS,
+  onOpenRun,
 }: AgentHistoryEntriesProps) {
   const prepared = useMemo(() => prepareHistory(entries), [entries])
   const runsById = useMemo(
@@ -101,6 +103,7 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
                 }}
                 toolResultsByCallId={prepared.toolResultsByCallId}
                 liveToolsByCallId={liveToolsByCallId}
+                onOpenRun={onOpenRun}
               />
             </div>
           )
@@ -143,11 +146,13 @@ function AgentHistoryEntry({
   toolResultsByCallId,
   liveToolsByCallId,
   interactionResponse,
+  onOpenRun,
 }: {
   entry: Exclude<HistoryEntry, InteractionResponseEntry>
   toolResultsByCallId?: ReadonlyMap<string, ToolResultPart>
   liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
   interactionResponse?: InteractionResponse
+  onOpenRun?: (runId: string) => void
 }) {
   const t = useTranslations("agentHistory")
 
@@ -157,6 +162,7 @@ function AgentHistoryEntry({
         entry={entry}
         toolResultsByCallId={toolResultsByCallId}
         liveToolsByCallId={liveToolsByCallId}
+        onOpenRun={onOpenRun}
       />
     )
   }
@@ -190,10 +196,12 @@ function MessageHistoryEntry({
   entry,
   toolResultsByCallId,
   liveToolsByCallId,
+  onOpenRun,
 }: {
   entry: MessageEntry
   toolResultsByCallId?: ReadonlyMap<string, ToolResultPart>
   liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
+  onOpenRun?: (runId: string) => void
 }) {
   const isUser = entry.payload.role === "user"
   const t = useTranslations("agentTranscript")
@@ -234,6 +242,7 @@ function MessageHistoryEntry({
           parts={entry.payload.parts}
           toolResultsByCallId={toolResultsByCallId}
           liveToolsByCallId={liveToolsByCallId}
+          onOpenRun={onOpenRun}
         />
       </div>
       {canCopy ? (
