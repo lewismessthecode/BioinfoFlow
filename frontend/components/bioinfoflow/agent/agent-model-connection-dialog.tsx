@@ -54,7 +54,7 @@ export function AgentModelConnectionDialog({
             {t("modelConnection.description")}
           </DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-6">
+        <div className="min-h-0 overscroll-contain overflow-y-auto px-4 py-4 sm:px-6">
           <LlmCatalogPanel />
         </div>
         <DialogFooter className="border-t px-4 py-3 sm:px-6">

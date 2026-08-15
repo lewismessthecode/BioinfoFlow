@@ -217,15 +217,16 @@ export function AgentComposer({
                 >
                   {voice.state === "transcribing" ? (
                     <Loader2
+                      data-icon="inline-start"
                       aria-hidden="true"
                       className="animate-spin motion-reduce:animate-none"
                     />
                   ) : voice.state === "recording" ? (
-                    <Square aria-hidden="true" />
+                    <Square data-icon="inline-start" aria-hidden="true" />
                   ) : voice.state === "error" ? (
-                    <RotateCcw aria-hidden="true" />
+                    <RotateCcw data-icon="inline-start" aria-hidden="true" />
                   ) : (
-                    <Mic aria-hidden="true" />
+                    <Mic data-icon="inline-start" aria-hidden="true" />
                   )}
                 </Button>
               </>
@@ -240,7 +241,11 @@ export function AgentComposer({
                   onClick={() => void submit("steer")}
                 >
                   {submitting === "steer" ? (
-                    <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
+                    <Loader2
+                      data-icon="inline-start"
+                      aria-hidden="true"
+                      className="animate-spin motion-reduce:animate-none"
+                    />
                   ) : null}
                   {t(submitting === "steer" ? "steering" : "steer")}
                 </Button>
@@ -253,9 +258,13 @@ export function AgentComposer({
                   aria-label={t(cancelling ? "stopping" : "stop")}
                 >
                   {cancelling ? (
-                    <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
+                    <Loader2
+                      data-icon="inline-start"
+                      aria-hidden="true"
+                      className="animate-spin motion-reduce:animate-none"
+                    />
                   ) : (
-                    <Square aria-hidden="true" />
+                    <Square data-icon="inline-start" aria-hidden="true" />
                   )}
                 </Button>
               </>
@@ -273,9 +282,13 @@ export function AgentComposer({
               )}
             >
               {submitting === "message" ? (
-                <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
+                <Loader2
+                  data-icon="inline-start"
+                  aria-hidden="true"
+                  className="animate-spin motion-reduce:animate-none"
+                />
               ) : (
-                <Send aria-hidden="true" />
+                <Send data-icon="inline-start" aria-hidden="true" />
               )}
             </Button>
           </div>
