@@ -281,12 +281,10 @@ async def test_legacy_tool_progress_is_reprojected_for_snapshot_and_updates(
     )
     public_update = updated.model_dump(mode="json")
     assert public_update["arguments"] == {}
+    assert public_update["output_summary"] is None
     assert "private" not in str(public_update)
     assert "ghp_privatevalue" not in str(public_update)
-    assert [detail["kind"] for detail in public_update["public_details"]] == [
-        "command",
-        "output",
-    ]
+    assert [detail["kind"] for detail in public_update["public_details"]] == ["command"]
 
 
 @pytest.mark.asyncio

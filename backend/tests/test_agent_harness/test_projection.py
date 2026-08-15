@@ -179,7 +179,7 @@ def test_public_tool_progress_rebuilds_legacy_payload_through_safe_projection() 
             },
             "status": "completed",
             "revision": 8,
-            "output_summary": "token='ghp_privatevalue1234567890'\npassed",
+            "output_summary": "SENTINEL_LEGACY_SUMMARY",
             "error": None,
             "public_details": [
                 {
@@ -188,7 +188,14 @@ def test_public_tool_progress_rebuilds_legacy_payload_through_safe_projection() 
                     "value": "old persisted secret sk-private-value",
                     "format": "code",
                     "copyable": True,
-                }
+                },
+                {
+                    "id": "output",
+                    "kind": "output",
+                    "value": "SENTINEL_LEGACY_DETAIL",
+                    "format": "code",
+                    "copyable": True,
+                },
             ],
             "private_future_field": "must-not-publish",
         }
@@ -196,15 +203,13 @@ def test_public_tool_progress_rebuilds_legacy_payload_through_safe_projection() 
 
     assert projected["arguments"] == {}
     assert projected["summary"] == "Run command: AWS_ACCESS_KEY_ID=[REDACTED]"
-    assert projected["output_summary"] == "token=[REDACTED]\npassed"
+    assert projected["output_summary"] is None
     assert "private_future_field" not in projected
     assert "sk-private-value" not in str(projected)
-    assert "ghp_privatevalue" not in str(projected)
+    assert "SENTINEL_LEGACY_SUMMARY" not in str(projected)
+    assert "SENTINEL_LEGACY_DETAIL" not in str(projected)
     assert "/Users/private" not in str(projected)
-    assert [detail["kind"] for detail in projected["public_details"]] == [
-        "command",
-        "output",
-    ]
+    assert [detail["kind"] for detail in projected["public_details"]] == ["command"]
 
 
 def test_write_projection_never_exposes_written_content() -> None:
