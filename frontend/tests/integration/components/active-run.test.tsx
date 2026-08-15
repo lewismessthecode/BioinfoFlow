@@ -172,6 +172,10 @@ describe("ActiveRun", () => {
     expect(
       screen.getByRole("region", { name: "Agent run in progress" }),
     ).toBeInTheDocument()
+    expect(screen.getByTestId("agent-active-run")).toHaveClass("border-l")
+    expect(screen.getByTestId("agent-active-run")).not.toHaveClass(
+      "rounded-[12px]",
+    )
     expect(screen.getByRole("status")).toHaveTextContent("Running")
     expect(screen.getByText("Using tools")).toBeInTheDocument()
     expect(screen.getByText("1 of 3 actions finished")).toBeInTheDocument()

@@ -50,24 +50,24 @@ export function AgentToolCard({
     <>
       <ToolStatusIcon status={tool.status} />
       <span
-        className="min-w-0 max-w-[40%] truncate rounded-[5px] bg-muted/70 px-1.5 py-0.5 font-mono text-[11px] text-foreground/72"
+        className="min-w-0 max-w-[34%] truncate rounded-[5px] bg-muted/70 px-1.5 py-0.5 font-mono text-[11px] text-foreground/72 sm:max-w-[40%]"
         title={tool.display_name}
         translate="no"
       >
         {tool.display_name}
       </span>
-      <span className="min-w-0 flex-1 truncate text-foreground/78">
+      <span className="line-clamp-2 min-w-0 flex-1 text-foreground/78 sm:truncate">
         {tool.summary}
       </span>
       {duration ? (
         <span
-          className="shrink-0 tabular-nums text-[11px] text-muted-foreground"
+          className="hidden shrink-0 tabular-nums text-[11px] text-muted-foreground sm:inline"
           translate="no"
         >
           {duration}
         </span>
       ) : null}
-      <span className="shrink-0 text-[11px] text-muted-foreground">
+      <span className="sr-only shrink-0 text-[11px] text-muted-foreground sm:not-sr-only">
         {t(`status.${tool.status}`)}
       </span>
       {hasDetails ? (
@@ -184,7 +184,7 @@ export function AgentActivityGroup({
         <span className="min-w-0 flex-1 truncate text-foreground/78">
           {t(summaryKey, { count: tools.length })}
         </span>
-        <span className="shrink-0 text-xs text-muted-foreground">
+        <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
           {groupStatusLabel(t, tools)}
         </span>
         {expanded ? (

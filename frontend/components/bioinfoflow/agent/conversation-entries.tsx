@@ -227,7 +227,7 @@ function MessageHistoryEntry({
     <article
       className={cn(
         "min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_96px]",
-        isUser && "ml-auto w-fit max-w-[min(85%,46rem)]",
+        isUser && "ml-auto w-fit max-w-[min(92%,46rem)] sm:max-w-[min(85%,46rem)]",
       )}
       data-role={entry.payload.role}
     >
