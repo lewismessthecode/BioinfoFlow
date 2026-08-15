@@ -59,6 +59,7 @@ def test_common_provider_templates_are_key_first_and_provider_neutral() -> None:
     templates = {template.id: template for template in list_provider_templates()}
     assert set(templates) == {
         "openai",
+        "openai-compatible",
         "anthropic",
         "openrouter",
         "fireworks",
@@ -72,10 +73,19 @@ def test_common_provider_templates_are_key_first_and_provider_neutral() -> None:
         "gemini",
     }
 
-    for template_id in templates:
+    for template_id in templates.keys() - {"openai-compatible"}:
         fields = templates[template_id].as_dict()["fields"]
         assert fields[-1]["name"] == "api_key", template_id
         assert fields[-1]["placeholder"] == "Paste API key"
+
+    compatible_fields = templates["openai-compatible"].as_dict()["fields"]
+    assert [field["name"] for field in compatible_fields] == [
+        "base_url",
+        "api_key",
+        "model_id",
+    ]
+    assert compatible_fields[0]["required"] is True
+    assert compatible_fields[1]["required"] is False
 
     assert templates["kimi-code"].env_api_key_vars == (
         "KIMI_API_KEY",

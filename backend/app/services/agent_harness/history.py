@@ -43,6 +43,10 @@ def build_history_view(
     covered_through = compaction[0] if compaction is not None else 0
     input_items: list[InputPart] = []
     tool_names_by_call_id: dict[str, str] = {}
+    latest_plan_sequence = max(
+        (_sequence(entry) for entry in ordered if _entry_type(entry) == "plan"),
+        default=None,
+    )
     if compaction is not None:
         input_items.append(
             TextPart(
@@ -52,6 +56,11 @@ def build_history_view(
         )
     for entry in ordered:
         if _sequence(entry) <= covered_through:
+            continue
+        if (
+            _entry_type(entry) == "plan"
+            and _sequence(entry) != latest_plan_sequence
+        ):
             continue
         if _entry_type(entry) != "message":
             input_items.extend(_non_message_parts(_entry_type(entry), _payload(entry)))
@@ -106,6 +115,23 @@ def _non_message_parts(entry_type: str, payload: Mapping[str, Any]) -> list[Inpu
         message = payload.get("message")
         if isinstance(message, str) and message:
             return [TextPart(f"Agent run notice: {message}")]
+    if entry_type == "plan":
+        items = payload.get("items")
+        if isinstance(items, list):
+            return [
+                TextPart(
+                    "Current execution plan: "
+                    + json.dumps(
+                        {
+                            "title": payload.get("title"),
+                            "items": items,
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        default=str,
+                    )
+                )
+            ]
     return []
 
 
@@ -117,15 +143,28 @@ def _message_parts(
 ) -> list[InputPart]:
     role = payload.get("role")
     result: list[InputPart] = []
+    typed_parts = payload.get("parts")
+    if not isinstance(typed_parts, list):
+        return result
     content = _content_text(payload)
+    typed_result = next(
+        (
+            part
+            for part in typed_parts
+            if isinstance(part, Mapping) and part.get("type") == "tool_result"
+        ),
+        None,
+    )
+    if role == "tool" and typed_result is not None:
+        content = _tool_output_text(typed_result.get("output")) or content
     if content:
         if role == "tool":
-            call_id = payload.get("call_id") or payload.get("tool_call_id")
+            call_id = typed_result.get("call_id") if typed_result is not None else None
             if isinstance(call_id, str) and call_id:
                 image_parts = _read_image_result_parts(
                     call_id=call_id,
                     content=content,
-                    is_error=bool(payload.get("is_error", False)),
+                    is_error=bool(typed_result and typed_result.get("error")),
                     tool_name=tool_names_by_call_id.get(call_id),
                 )
                 if image_parts is not None:
@@ -136,7 +175,7 @@ def _message_parts(
                     ToolResultPart(
                         call_id=call_id,
                         output=content,
-                        is_error=bool(payload.get("is_error", False)),
+                        is_error=bool(typed_result and typed_result.get("error")),
                     )
                 )
         elif role == "assistant":
@@ -144,39 +183,65 @@ def _message_parts(
         elif role == "user":
             result.append(TextPart(content))
     if role == "assistant":
-        calls = payload.get("tool_calls")
-        if isinstance(calls, list):
-            for call in calls:
-                if not isinstance(call, Mapping):
-                    continue
-                call_id = call.get("call_id") or call.get("id")
-                name = call.get("name")
-                arguments = call.get("arguments")
-                if (
-                    isinstance(call_id, str)
-                    and call_id
-                    and isinstance(name, str)
-                    and name
-                    and isinstance(arguments, Mapping)
-                ):
-                    tool_names_by_call_id[call_id] = name
-                    result.append(
-                        ToolCallPart(
-                            call_id=call_id,
-                            name=name,
-                            arguments=dict(arguments),
-                        )
+        for call in typed_parts:
+            if not isinstance(call, Mapping) or call.get("type") != "tool_call":
+                continue
+            call_id = call.get("call_id")
+            name = call.get("name")
+            arguments = call.get("arguments")
+            if (
+                isinstance(call_id, str)
+                and call_id
+                and isinstance(name, str)
+                and name
+                and isinstance(arguments, Mapping)
+            ):
+                tool_names_by_call_id[call_id] = name
+                result.append(
+                    ToolCallPart(
+                        call_id=call_id,
+                        name=name,
+                        arguments=dict(arguments),
                     )
+                )
     if role == "user":
-        content_parts = payload.get("content")
-        if isinstance(content_parts, list):
-            for part in content_parts:
-                if not isinstance(part, Mapping) or part.get("type") != "attachment":
-                    continue
-                attachment_id = part.get("attachment_id")
-                if isinstance(attachment_id, str):
-                    result.extend(attachment_parts_by_id.get(attachment_id, ()))
+        for part in typed_parts:
+            if not isinstance(part, Mapping):
+                continue
+            part_type = part.get("type")
+            attachment_id = part.get("attachment_id")
+            if (
+                part_type in {"attachment_ref", "file_ref", "directory_ref"}
+                and isinstance(attachment_id, str)
+            ):
+                result.extend(attachment_parts_by_id.get(attachment_id, ()))
+                continue
+            reference = _reference_text(part)
+            if reference:
+                result.append(TextPart(reference))
     return result
+
+
+def _tool_output_text(output: Any) -> str:
+    if not isinstance(output, Mapping):
+        return ""
+    output_type = output.get("type")
+    if output_type == "text":
+        return str(output.get("text") or "")
+    if output_type == "json":
+        return json.dumps(output.get("value"), ensure_ascii=False, default=str)
+    if output_type == "content_parts":
+        parts = output.get("parts")
+        if not isinstance(parts, list):
+            return ""
+        return "\n".join(
+            str(part.get("text"))
+            for part in parts
+            if isinstance(part, Mapping)
+            and part.get("type") in {"text", "reasoning_summary"}
+            and isinstance(part.get("text"), str)
+        )
+    return ""
 
 
 def _read_image_result_parts(
@@ -227,10 +292,7 @@ def _read_image_result_parts(
 
 
 def _content_text(payload: Mapping[str, Any]) -> str:
-    content = payload.get("content")
-    if isinstance(content, str):
-        return content
-    parts = content if isinstance(content, list) else payload.get("parts")
+    parts = payload.get("parts")
     if not isinstance(parts, list):
         return ""
     return "\n".join(
@@ -240,6 +302,22 @@ def _content_text(payload: Mapping[str, Any]) -> str:
         and part.get("type") == "text"
         and isinstance(part.get("text"), str)
     )
+
+
+def _reference_text(part: Mapping[str, Any]) -> str:
+    part_type = part.get("type")
+    label = str(part.get("label") or "").strip()
+    if part_type == "file_ref" and part.get("path"):
+        return f"Referenced project file: {part['path']}"
+    if part_type == "directory_ref" and part.get("path"):
+        return f"Referenced project directory: {part['path']}"
+    if part_type == "workflow_ref":
+        return f"Referenced workflow: {label or part.get('workflow_id')}"
+    if part_type == "run_ref":
+        return f"Referenced workflow run: {label or part.get('run_id')}"
+    if part_type == "artifact_ref":
+        return f"Referenced artifact: {label or part.get('artifact_id')}"
+    return ""
 
 
 def _sequence(entry: HistoryEntry | Mapping[str, Any]) -> int:

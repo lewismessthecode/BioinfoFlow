@@ -36,7 +36,11 @@ from app.services.agent_harness.assets import (
     stage_agent_session_files_for_delete,
 )
 from app.services.agent_harness.contracts import OpenSessionRequest
-from app.services.agent_harness.contracts import PromptCommand
+from app.services.agent_harness.contracts import (
+    InputAttachmentRefPart,
+    InputTextPart,
+    MessageCommand,
+)
 from app.utils.exceptions import ConflictError, NotFoundError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -350,7 +354,7 @@ async def test_orphan_cleanup_removes_unreferenced_attachment_from_existing_hist
     repository = AgentHarnessRepository(db_session)
     await repository.submit_user_command(
         str(session.id),
-        PromptCommand(command_id="prompt-1", text="existing history"),
+        _message("message-1", "existing history"),
     )
     service = AgentHarnessAttachmentService(db_session)
     attachment = (
@@ -387,9 +391,9 @@ async def test_orphan_cleanup_preserves_attachment_referenced_by_history(
     await db_session.commit()
     await AgentHarnessRepository(db_session).submit_user_command(
         str(session.id),
-        PromptCommand(
-            command_id="prompt-1",
-            text="use attachment",
+        _message(
+            "message-1",
+            "use attachment",
             attachment_ids=[attachment.id],
         ),
     )
@@ -418,9 +422,9 @@ async def test_explicit_delete_rejects_attachment_referenced_by_history(
     )[0]
     await AgentHarnessRepository(db_session).submit_user_command(
         str(session.id),
-        PromptCommand(
-            command_id="prompt-1",
-            text="keep this attachment in permanent history",
+        _message(
+            "message-1",
+            "keep this attachment in permanent history",
             attachment_ids=[attachment.id],
         ),
     )
@@ -504,9 +508,9 @@ async def test_cross_worker_prompt_and_delete_serialize_attachment_reference(
         prompt_task = asyncio.create_task(
             prompt_repository.submit_user_command(
                 session_id,
-                PromptCommand(
-                    command_id="prompt-race",
-                    text="Use the attachment if it still exists.",
+                _message(
+                    "message-race",
+                    "Use the attachment if it still exists.",
                     attachment_ids=[attachment_id],
                 ),
             )
@@ -593,9 +597,9 @@ async def test_cross_worker_delete_waits_for_prompt_history_commit(
         prompt_task = asyncio.create_task(
             prompt_repository.submit_user_command(
                 session_id,
-                PromptCommand(
-                    command_id="prompt-first",
-                    text="Commit this attachment permanently.",
+                _message(
+                    "message-first",
+                    "Commit this attachment permanently.",
                     attachment_ids=[attachment_id],
                 ),
             )
@@ -626,7 +630,14 @@ async def test_cross_worker_delete_waits_for_prompt_history_commit(
         )
     assert stored_attachment is not None
     assert stored_attachment.status == "ready"
-    assert [entry.payload["attachment_ids"] for entry in entries] == [[attachment_id]]
+    assert [
+        [
+            part["attachment_id"]
+            for part in entry.payload["parts"]
+            if part["type"] == "attachment_ref"
+        ]
+        for entry in entries
+    ] == [[attachment_id]]
     assert root.is_dir()
 
 
@@ -737,9 +748,9 @@ async def test_attachment_ids_must_be_ready_and_owned_by_prompt_session(
     with pytest.raises(LookupError, match="do not belong"):
         await AgentHarnessRepository(db_session).enqueue_command(
             str(second.id),
-            PromptCommand(
-                command_id="wrong-attachment",
-                text="read it",
+            _message(
+                "wrong-attachment",
+                "read it",
                 attachment_ids=[attachment.id],
             ),
         )
@@ -889,3 +900,11 @@ async def test_artifact_download_rejects_legacy_paths_outside_managed_home(
             workspace_id=DEFAULT_WORKSPACE_ID,
             user_id="dev",
         )
+def _message(command_id: str, text: str, *, attachment_ids=()) -> MessageCommand:
+    return MessageCommand(
+        command_id=command_id,
+        parts=[
+            InputTextPart(text=text),
+            *(InputAttachmentRefPart(attachment_id=item) for item in attachment_ids),
+        ],
+    )

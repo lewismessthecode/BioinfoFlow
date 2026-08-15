@@ -18,7 +18,9 @@ from app.services.agent_harness.tools.specs import (
     ToolCall,
     ToolExecutionContext,
     ToolResult,
+    WorkspaceAccess,
 )
+from app.services.agent_harness.tools.update_plan import UpdatePlanTool
 from app.services.agent_harness.tools.write import WriteTool
 from app.services.agent_harness.token_policy import is_scoped_bif_command
 
@@ -32,25 +34,30 @@ class ToolExecutor:
         backend: Any,
         *,
         permission_mode: PermissionMode = "ask_dangerous",
+        workspace_access: WorkspaceAccess = "read_write",
         environment: dict[str, str] | None = None,
         bash_environment: dict[str, str] | None = None,
         bash_environment_provider: Callable[[], Awaitable[dict[str, str]]]
         | None = None,
         extra_tools: Iterable[HarnessTool] = (),
     ) -> None:
-        if permission_mode not in {"read_only", "ask_dangerous", "full_access"}:
+        if permission_mode not in {"ask_changes", "ask_dangerous", "full_access"}:
             raise ValueError(f"unknown permission mode: {permission_mode}")
+        if workspace_access not in {"read_only", "read_write"}:
+            raise ValueError(f"unknown workspace access: {workspace_access}")
         defaults: tuple[HarnessTool, ...] = (
             ReadTool(),
             BashTool(),
             EditTool(),
             WriteTool(),
             AskUserTool(),
+            UpdatePlanTool(),
         )
         self._tools = {tool.spec.name: tool for tool in (*defaults, *extra_tools)}
         self._default_names = tuple(tool.spec.name for tool in defaults)
         self.backend = backend
         self.permission_mode = permission_mode
+        self.workspace_access = workspace_access
         self.environment = dict(environment or {})
         self.bash_environment = dict(bash_environment or {})
         self.bash_environment_provider = bash_environment_provider
@@ -64,6 +71,10 @@ class ToolExecutor:
     @property
     def model_tools(self):
         return tuple(spec.model_definition() for spec in self.tools)
+
+    def tool_spec(self, name: str):
+        tool = self._tools.get(name)
+        return tool.spec if tool is not None else None
 
     async def execute(
         self,
@@ -148,19 +159,23 @@ class ToolExecutor:
                     output={"risk": risk.audit_snapshot()},
                 )
 
-        if self.permission_mode == "read_only" and not _is_read_only(tool, risk):
+        is_read_only = _is_read_only(tool, risk)
+        if self.workspace_access == "read_only" and not is_read_only:
             return ToolResult(
                 call_id=call.call_id,
                 tool_name=call.name,
                 status="blocked",
                 replay_policy=tool.spec.replay_policy,
-                error="tool is not permitted in read_only mode",
+                error="tool is not permitted in a read_only workspace",
             )
-        requires_confirmation = risk is not None and (
-            risk.requires_explicit_approval
-            or (
-                self.permission_mode == "ask_dangerous"
-                and risk.level in {"destructive", "critical"}
+        requires_confirmation = (
+            self.permission_mode == "ask_changes" and not is_read_only
+        ) or (
+            self.permission_mode == "ask_dangerous"
+            and risk is not None
+            and (
+                risk.requires_explicit_approval
+                or risk.level in {"destructive", "critical"}
             )
         )
         approved_cwd_binding = None
@@ -182,13 +197,17 @@ class ToolExecutor:
                         replay_policy=tool.spec.replay_policy,
                         error="user denied the command",
                     )
-            try:
-                approval_snapshot, approved_cwd_binding = await self._approval_snapshot(
-                    call, risk
-                )
-            except Exception as exc:
-                return _failed(call, tool, exc)
-            if interaction_response is not None:
+            if risk is None:
+                approval_snapshot = _workspace_change_approval(call, tool)
+            else:
+                try:
+                    (
+                        approval_snapshot,
+                        approved_cwd_binding,
+                    ) = await self._approval_snapshot(call, risk)
+                except Exception as exc:
+                    return _failed(call, tool, exc)
+            if interaction_response is not None and risk is not None:
                 expected_fingerprint = interaction_response.get(
                     "assessment_fingerprint"
                 )
@@ -227,7 +246,7 @@ class ToolExecutor:
                         replay_policy=tool.spec.replay_policy,
                         error=("Bash approval assessment changed before execution"),
                     )
-            else:
+            if interaction_response is None:
                 return ToolResult.interaction_required(
                     call_id=call.call_id,
                     tool_name=call.name,
@@ -304,7 +323,12 @@ class ToolExecutor:
         )
 
     async def execute_batch(
-        self, calls: Iterable[ToolCall], *, cancellation: Any | None = None
+        self,
+        calls: Iterable[ToolCall],
+        *,
+        cancellation: Any | None = None,
+        on_start: Callable[[ToolCall], Awaitable[None]] | None = None,
+        on_result: Callable[[ToolResult], Awaitable[None]] | None = None,
     ) -> ToolBatchResult:
         ordered = tuple(calls)
         if not ordered:
@@ -315,26 +339,55 @@ class ToolExecutor:
         )
         active = ordered if pause_index is None else ordered[: pause_index + 1]
         pending = () if pause_index is None else ordered[pause_index + 1 :]
+        callback_lock = asyncio.Lock()
+
+        async def notify_start(call: ToolCall) -> None:
+            if on_start is not None:
+                async with callback_lock:
+                    await on_start(call)
+
+        async def notify_result(result: ToolResult) -> None:
+            if on_result is not None:
+                async with callback_lock:
+                    await on_result(result)
+
+        async def execute_one(call: ToolCall) -> ToolResult:
+            await notify_start(call)
+            result = await self.execute(call, cancellation=cancellation)
+            if on_result is not None and result.status != "interaction_required":
+                await notify_result(result)
+            return result
 
         if self._batch_requires_serial(active):
             results: list[ToolResult] = []
             for index, call in enumerate(active):
-                result = await self.execute(call, cancellation=cancellation)
+                result = await execute_one(call)
                 results.append(result)
                 if result.status == "interaction_required":
                     pending = (*active[index + 1 :], *pending)
                     break
                 if result.status == "cancelled":
                     unfinished = (*active[index + 1 :], *pending)
-                    results.extend(self._cancelled_result(call) for call in unfinished)
+                    for unfinished_call in unfinished:
+                        cancelled = self._cancelled_result(unfinished_call)
+                        await notify_result(cancelled)
+                        results.append(cancelled)
                     pending = ()
                     break
             return ToolBatchResult(tuple(results), tuple(pending))
 
         results = await asyncio.gather(
-            *(self.execute(call, cancellation=cancellation) for call in active)
+            *(execute_one(call) for call in active)
         )
         return ToolBatchResult(tuple(results), tuple(pending))
+
+    def batch_execution_mode(
+        self, calls: Iterable[ToolCall]
+    ) -> Literal["parallel", "serial", "mixed"]:
+        ordered = tuple(calls)
+        if len(ordered) < 2 or self._batch_requires_serial(ordered):
+            return "serial"
+        return "parallel"
 
     def _cancelled_result(self, call: ToolCall) -> ToolResult:
         tool = self._tools.get(call.name)
@@ -508,6 +561,21 @@ def _approval_fingerprint(
 
 class ToolCancelledError(Exception):
     pass
+
+
+def _workspace_change_approval(
+    call: ToolCall,
+    tool: HarnessTool,
+) -> dict[str, Any]:
+    path_argument = tool.spec.path_argument
+    resource = call.arguments.get(path_argument) if path_argument else None
+    resources = [resource] if isinstance(resource, str) and resource else []
+    return {
+        "level": "changes",
+        "effects": ["write"],
+        "reasons": ["session requires approval for workspace changes"],
+        "affected_resources": resources,
+    }
 
 
 def _is_read_only(tool: HarnessTool, risk: Any | None) -> bool:

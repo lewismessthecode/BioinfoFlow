@@ -12,7 +12,7 @@ import type {
   SchedulerStatus,
   Workflow,
 } from "@/lib/types"
-import type { AgentCoreSession } from "@/lib/agent-core"
+import type { SessionSnapshot } from "@/lib/agent/contracts"
 import type {
   DashboardStats,
   GpuInfo,
@@ -46,7 +46,7 @@ export type DemoScenario = {
   workflowDag: Record<string, DagData>
   workflowSource: Record<string, string>
   formSpecs: Record<string, FormSpec>
-  agentSessions: Record<string, AgentCoreSession[]>
+  agentSessions: SessionSnapshot[]
   runs: Run[]
   runLogs: Record<string, RunLogs>
   runOutputs: Record<string, RunOutputs>

@@ -1,0 +1,42 @@
+{
+  "scanned_at": "2026-08-15",
+  "scope": "frontend agent workbench rearchitecture",
+  "design_system": null,
+  "font_stack": {
+    "sans": "Avenir Next with Chinese system fallbacks",
+    "mono": "Geist Mono with system fallbacks",
+    "source": "frontend/app/globals.css"
+  },
+  "palette": {
+    "style": "Notion-neutral semantic CSS variables",
+    "source": "frontend/app/globals.css"
+  },
+  "motion": {
+    "stance": "motion-on but restrained",
+    "libraries": ["framer-motion", "gsap"],
+    "agent_rule": "Only state-bearing motion; respect prefers-reduced-motion"
+  },
+  "spacing": {
+    "scale": "Tailwind v4 with existing product spacing",
+    "rule": "Preserve current rhythm and use gap-based composition"
+  },
+  "framework": {
+    "name": "Next.js App Router",
+    "version": "16.0.10",
+    "react": "19.2.0",
+    "tailwind": "v4",
+    "shadcn_base": "radix",
+    "icon_library": "lucide"
+  },
+  "preserve": [
+    "existing semantic tokens",
+    "application shell and LiveDeck",
+    "Markdown and Shiki rendering",
+    "installed shadcn primitives"
+  ],
+  "remove_from_agent_ui": [
+    "gradient halo styling",
+    "decorative perpetual motion",
+    "legacy protocol-derived panels"
+  ]
+}

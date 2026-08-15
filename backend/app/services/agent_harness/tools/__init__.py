@@ -12,6 +12,7 @@ from app.services.agent_harness.tools.specs import (
     ToolInteraction,
     ToolResult,
     ToolSpec,
+    WorkspaceAccess,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "ToolInteraction",
     "ToolResult",
     "ToolSpec",
+    "WorkspaceAccess",
 ]

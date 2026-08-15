@@ -3,21 +3,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useSidebarData } from "@/hooks/use-sidebar-data"
 import { apiRequest } from "@/lib/api"
-import { emitAgentSessionUpdated } from "@/lib/agent-core/session-storage"
-import type { AgentCoreSession } from "@/lib/agent-core"
+import type { AgentSessionSummary } from "@/lib/agent/client"
+import { publishAgentSessionSummary } from "@/lib/agent/session-preferences"
 import type { Project } from "@/lib/types"
 import { createAppWrapper } from "@/tests/app-test-utils"
 
-const { pushMock, toastErrorMock, toastSuccessMock, celebrateMilestoneMock } = vi.hoisted(() => ({
+const { pushMock, replaceMock, pathnameMock, toastErrorMock, toastSuccessMock, celebrateMilestoneMock } = vi.hoisted(() => ({
   pushMock: vi.fn(),
+  replaceMock: vi.fn(),
+  pathnameMock: vi.fn(),
   toastErrorMock: vi.fn(),
   toastSuccessMock: vi.fn(),
   celebrateMilestoneMock: vi.fn(),
 }))
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: pushMock }),
-  usePathname: () => "/agent",
+  useRouter: () => ({ push: pushMock, replace: replaceMock }),
+  usePathname: () => pathnameMock(),
 }))
 
 vi.mock("sonner", () => ({
@@ -45,17 +47,12 @@ describe("useSidebarData", () => {
     values?.name ? `${key}:${values.name}` : key
 
   const session = (
-    overrides: Partial<AgentCoreSession> & Pick<AgentCoreSession, "id" | "project_id">,
-  ): AgentCoreSession => ({
-    workspace_id: "workspace-1",
-    user_id: "dev",
+    overrides: Partial<AgentSessionSummary> & Pick<AgentSessionSummary, "id" | "project_id">,
+  ): AgentSessionSummary => ({
     title: null,
-    role_profile: "bioinformatician",
-    permission_mode: "guarded_auto",
-    automation_mode: "assisted",
-    default_model_profile_id: null,
+    permission_mode: "ask_changes",
+    workspace_access: "read_write",
     status: "active",
-    metadata: null,
     created_at: "2026-06-04T00:00:00Z",
     updated_at: "2026-06-04T00:00:00Z",
     ...overrides,
@@ -64,6 +61,9 @@ describe("useSidebarData", () => {
   beforeEach(() => {
     apiRequestMock.mockReset()
     pushMock.mockReset()
+    replaceMock.mockReset()
+    pathnameMock.mockReset()
+    pathnameMock.mockReturnValue("/agent")
     toastErrorMock.mockReset()
     toastSuccessMock.mockReset()
     celebrateMilestoneMock.mockReset()
@@ -116,40 +116,43 @@ describe("useSidebarData", () => {
     })
   })
 
-  it("restores the stored conversation for the active project when available", async () => {
+  it("loads the public session list once and groups sessions by project", async () => {
     const projects: Project[] = [
-      { id: "project-1", name: "Alpha", project_root: "asset://project", storage_mode: "managed" },
+      { id: "project-default", name: "Recent", project_root: "asset://project", storage_mode: "managed", is_default: true },
+      { id: "project-a", name: "Alpha", project_root: "asset://project", storage_mode: "managed" },
+      { id: "project-b", name: "Bravo", project_root: "asset://project", storage_mode: "managed" },
     ]
-    const conversations: AgentCoreSession[] = [
-      session({ id: "session-1", project_id: "project-1", title: "First" }),
-      session({ id: "session-2", project_id: "project-1", title: "Second" }),
+    const conversations: AgentSessionSummary[] = [
+      session({ id: "session-b", project_id: "project-b", title: "Bravo run" }),
+      session({ id: "session-a", project_id: "project-a", title: "Alpha run" }),
+      session({ id: "session-recent", project_id: "project-default", title: "Recent run" }),
     ]
-
-    window.localStorage.setItem("bioinfoflow:agent-core-session:project-1", "session-2")
 
     apiRequestMock.mockImplementation(async (path) => {
-      if (path === "/projects") {
-        return { data: projects, meta: undefined }
-      }
-      if (path === "/agent/sessions") {
-        return { data: conversations, meta: undefined }
-      }
+      if (path === "/projects") return { data: projects, meta: undefined }
+      if (path === "/projects/default") return { data: projects[0], meta: undefined }
+      if (path === "/agent/sessions") return { data: conversations, meta: undefined }
       throw new Error(`Unexpected path: ${path}`)
     })
 
-    const Wrapper = createAppWrapper({
-      activeProjectId: "project-1",
+    const Wrapper = createAppWrapper({ selectedProjectId: "project-a" })
+    const { result } = renderHook(() => useSidebarData(tSidebar), { wrapper: Wrapper })
+
+    await waitFor(() => {
+      expect(result.current.projectConversations.get("project-a")?.map((item) => item.id)).toEqual([
+        "session-a",
+      ])
+      expect(result.current.projectConversations.get("project-b")?.map((item) => item.id)).toEqual([
+        "session-b",
+      ])
+      expect(result.current.inboxConversations.map((item) => item.id)).toEqual([
+        "session-recent",
+      ])
     })
 
-    const { result } = renderHook(
-      () => ({ sidebar: useSidebarData(tSidebar), project: useProjectContext() }),
-      { wrapper: Wrapper }
-    )
-
-    await waitFor(() =>
-      expect(result.current.project.activeConversationId).toBe("session-2")
-    )
-    expect(result.current.project.activeConversationTitle).toBe("Second")
+    expect(
+      apiRequestMock.mock.calls.filter(([path]) => path === "/agent/sessions"),
+    ).toHaveLength(1)
   })
 
   it("keeps the active project on a draft when no conversation is explicitly selected", async () => {
@@ -193,59 +196,6 @@ describe("useSidebarData", () => {
     )
 
     expect(result.current.project.activeConversationId).toBe("")
-    expect(window.localStorage.getItem("bioinfoflow:agent-core-session:project-1")).toBeNull()
-  })
-
-  it("filters child subagent sessions from sidebar conversation lists", async () => {
-    const project: Project = {
-      id: "project-1",
-      name: "Alpha",
-      project_root: "asset://project",
-      storage_mode: "managed",
-    }
-    const conversations: AgentCoreSession[] = [
-      session({ id: "session-parent", project_id: "project-1", title: "Parent run" }),
-      session({
-        id: "session-child",
-        project_id: "project-1",
-        title: "Subagent: inspect files",
-        role_profile: "worker",
-        lineage: { parent_session_id: "session-parent", parent_turn_id: "turn-1" },
-        metadata: { parent_session_id: "session-parent" },
-      }),
-    ]
-
-    window.localStorage.setItem("bioinfoflow:agent-core-session:project-1", "session-child")
-
-    apiRequestMock.mockImplementation(async (path) => {
-      if (path === "/projects") {
-        return { data: [project], meta: undefined }
-      }
-      if (path === "/projects/default") {
-        throw new Error("no default")
-      }
-      if (path === "/agent/sessions") {
-        return { data: conversations, meta: undefined }
-      }
-      throw new Error(`Unexpected path: ${path}`)
-    })
-
-    const Wrapper = createAppWrapper({
-      selectedProjectId: "project-1",
-      conversationProjectId: "project-1",
-    })
-    const { result } = renderHook(
-      () => ({ sidebar: useSidebarData(tSidebar), project: useProjectContext() }),
-      { wrapper: Wrapper },
-    )
-
-    await waitFor(() =>
-      expect(result.current.sidebar.projectConversations.get(project.id)?.map((item) => item.id)).toEqual([
-        "session-parent",
-      ]),
-    )
-    expect(result.current.project.activeConversationId).toBe("")
-    expect(window.localStorage.getItem("bioinfoflow:agent-core-session:project-1")).toBeNull()
   })
 
   it("creates a project without requiring workspace (auto-generated by dialog)", async () => {
@@ -445,7 +395,6 @@ describe("useSidebarData", () => {
     expect(result.current.project.selectedProjectId).toBe("")
     expect(result.current.project.conversationProjectId).toBe("project-default")
     expect(result.current.project.activeConversationId).toBe("")
-    expect(window.localStorage.getItem("bioinfoflow:agent-core-session:project-default")).toBeNull()
     expect(pushMock).toHaveBeenCalledWith("/agent")
   })
 
@@ -494,20 +443,19 @@ describe("useSidebarData", () => {
         ([path, options]) => path === "/agent/sessions" && options?.method === "POST",
       ),
     ).toBe(false)
-    expect(result.current.sidebar.projectConversations.get(project.id)).toEqual([])
+    expect(result.current.sidebar.projectConversations.get(project.id) ?? []).toEqual([])
     expect(result.current.project.conversationProjectId).toBe("project-1")
     expect(result.current.project.activeConversationId).toBe("")
-    expect(window.localStorage.getItem("bioinfoflow:agent-core-session:project-1")).toBeNull()
   })
 
-  it("updates session titles from AgentCore session update events", async () => {
+  it("updates session titles from public summary events", async () => {
     const project: Project = {
       id: "project-1",
       name: "Alpha",
       project_root: "asset://project",
       storage_mode: "managed",
     }
-    const conversations: AgentCoreSession[] = [
+    const conversations: AgentSessionSummary[] = [
       session({ id: "session-1", project_id: project.id, title: null }),
     ]
 
@@ -535,13 +483,14 @@ describe("useSidebarData", () => {
 
     await waitFor(() => expect(result.current.sidebar.projects).toHaveLength(1))
     act(() => {
-      emitAgentSessionUpdated({
-        id: "session-1",
-        project_id: project.id,
-        title: "Started analysis",
-        created_at: "2026-06-04T00:00:00Z",
-        updated_at: "2026-06-04T00:00:03Z",
-      })
+      publishAgentSessionSummary(
+        session({
+          id: "session-1",
+          project_id: project.id,
+          title: "Started analysis",
+          updated_at: "2026-06-04T00:00:03Z",
+        }),
+      )
     })
 
     expect(
@@ -594,13 +543,14 @@ describe("useSidebarData", () => {
     )
 
     act(() => {
-      emitAgentSessionUpdated({
-        id: "session-new",
-        project_id: defaultProject.id,
-        title: "Workspace analysis",
-        created_at: "2026-06-04T00:00:00Z",
-        updated_at: "2026-06-04T00:00:05Z",
-      })
+      publishAgentSessionSummary(
+        session({
+          id: "session-new",
+          project_id: defaultProject.id,
+          title: "Workspace analysis",
+          updated_at: "2026-06-04T00:00:05Z",
+        }),
+      )
     })
 
     expect(result.current.sidebar.inboxConversations).toEqual([
@@ -612,7 +562,7 @@ describe("useSidebarData", () => {
     ])
   })
 
-  it("deletes an existing AgentCore session", async () => {
+  it("deletes an existing Agent session", async () => {
     const project: Project = {
       id: "project-1",
       name: "Alpha",
@@ -624,6 +574,7 @@ describe("useSidebarData", () => {
       project_id: project.id,
       title: null,
     })
+    pathnameMock.mockReturnValue("/agent/session-empty")
 
     apiRequestMock.mockImplementation(async (path, options) => {
       if (path === "/projects") {
@@ -665,10 +616,11 @@ describe("useSidebarData", () => {
       "/agent/sessions/session-empty",
       { method: "DELETE" },
     )
-    expect(result.current.sidebar.projectConversations.get(project.id)).toEqual([])
+    expect(result.current.sidebar.projectConversations.get(project.id) ?? []).toEqual([])
+    expect(replaceMock).toHaveBeenCalledWith("/agent")
   })
 
-  it("selects a conversation, persists it, and navigates to the agent page", async () => {
+  it("selects a conversation and navigates to the session route", async () => {
     const apiProjects: Project[] = [{ id: "project-1", name: "Alpha", project_root: "asset://project" }]
 
     apiRequestMock.mockImplementation(async (path) => {
@@ -700,13 +652,12 @@ describe("useSidebarData", () => {
 
     expect(result.current.project.activeProjectId).toBe("project-1")
     expect(result.current.project.activeConversationId).toBe("session-9")
-    expect(window.localStorage.getItem("bioinfoflow:agent-core-session:project-1")).toBe("session-9")
     expect(pushMock).toHaveBeenCalledWith("/agent/session-9")
   })
 
   it("updates sidebar conversation titles when the active chat emits a title refresh", async () => {
     const apiProjects: Project[] = [{ id: "project-1", name: "Alpha", project_root: "asset://project" }]
-    const conversations: AgentCoreSession[] = [
+    const conversations: AgentSessionSummary[] = [
       session({ id: "session-1", project_id: "project-1", title: null }),
     ]
 
@@ -739,13 +690,14 @@ describe("useSidebarData", () => {
     )
 
     act(() => {
-      emitAgentSessionUpdated({
-        id: "session-1",
-        project_id: "project-1",
-        title: "RNA-seq QC Plan",
-        created_at: "2026-06-04T00:00:00Z",
-        updated_at: "2026-06-04T00:00:03Z",
-      })
+      publishAgentSessionSummary(
+        session({
+          id: "session-1",
+          project_id: "project-1",
+          title: "RNA-seq QC Plan",
+          updated_at: "2026-06-04T00:00:03Z",
+        }),
+      )
     })
 
     await waitFor(() =>

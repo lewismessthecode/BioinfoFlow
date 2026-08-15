@@ -72,7 +72,6 @@ class TestHelp:
         for sub in [
             "send",
             "steer",
-            "follow-up",
             "respond",
             "cancel",
             "snapshot",

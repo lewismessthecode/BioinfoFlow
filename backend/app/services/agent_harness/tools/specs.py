@@ -3,11 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, TypeAlias
 
+from app.services.agent_harness.contracts import (
+    PermissionMode as ContractPermissionMode,
+)
+from app.services.agent_harness.contracts import ToolCategory
+from app.services.agent_harness.contracts import (
+    WorkspaceAccess as ContractWorkspaceAccess,
+)
 from app.services.model_runtime import ToolDefinition
 
 
 ReplayPolicy: TypeAlias = Literal["safe", "verify", "never"]
-PermissionMode: TypeAlias = Literal["read_only", "ask_dangerous", "full_access"]
+PermissionMode: TypeAlias = ContractPermissionMode
+WorkspaceAccess: TypeAlias = ContractWorkspaceAccess
 ToolStatus: TypeAlias = Literal[
     "completed", "failed", "blocked", "cancelled", "interaction_required"
 ]
@@ -20,6 +28,10 @@ class ToolSpec:
     description: str
     input_schema: dict[str, Any]
     replay_policy: ReplayPolicy
+    display_name: str
+    category: ToolCategory
+    summary: str
+    input_summary_fields: tuple[str, ...] = ()
     mutates_workspace: bool = False
     path_argument: str | None = None
     serial: bool = False
@@ -46,6 +58,7 @@ class ToolInteraction:
     kind: InteractionKind
     questions: tuple[dict[str, Any], ...] = ()
     risk: dict[str, Any] | None = None
+    allowed_responses: tuple[Literal["approve", "reject"], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +82,7 @@ class ToolResult:
         kind: InteractionKind,
         questions: tuple[dict[str, Any], ...] = (),
         risk: dict[str, Any] | None = None,
+        allowed_responses: tuple[Literal["approve", "reject"], ...] = (),
     ) -> ToolResult:
         return cls(
             call_id=call_id,
@@ -81,6 +95,7 @@ class ToolResult:
                 kind=kind,
                 questions=questions,
                 risk=risk,
+                allowed_responses=allowed_responses,
             ),
         )
 

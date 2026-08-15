@@ -12,7 +12,7 @@ import type {
   SchedulerStatus,
   Workflow,
 } from "@/lib/types"
-import type { AgentCoreSession } from "@/lib/agent-core"
+import type { SessionSnapshot } from "@/lib/agent/contracts"
 import type {
   DashboardStats,
   GpuInfo,
@@ -214,22 +214,30 @@ const formSpec: FormSpec = {
   ],
 }
 
-const agentSession: AgentCoreSession = {
-  id: DEMO_AGENT_SESSION_ID,
-  project_id: DEMO_PROJECT_ID,
-  workspace_id: "workspace-demo",
-  user_id: "demo-user",
-  title: "RNA-seq dry run",
-  role_profile: "bioinformatics_engineer",
-  permission_mode: "guarded_auto",
-  automation_mode: "assisted",
-  default_model_profile_id: null,
-  status: "active",
-  metadata: {
-    demo_source: "seeded",
+const agentSession: SessionSnapshot = {
+  session: {
+    id: DEMO_AGENT_SESSION_ID,
+    project_id: DEMO_PROJECT_ID,
+    workspace_id: "workspace-demo",
+    user_id: "demo-user",
+    title: "RNA-seq dry run",
+    model: {
+      provider: "demo",
+      model: "bioinfoflow-demo",
+      display_name: "BioinfoFlow Demo",
+      supports_vision: true,
+      supports_reasoning: true,
+      supports_tools: true,
+    },
+    permission_mode: "ask_dangerous",
+    workspace_access: "read_write",
+    status: "active",
+    created_at: "2026-04-24T09:01:00Z",
+    updated_at: "2026-04-24T09:01:00Z",
   },
-  created_at: "2026-04-24T09:01:00Z",
-  updated_at: "2026-04-24T09:01:00Z",
+  runs: [],
+  entries: [],
+  active_run: null,
 }
 
 const seededRuns: Run[] = [
@@ -616,9 +624,7 @@ export const DEMO_RUNTIME_SCENARIO: DemoScenario = {
   formSpecs: {
     "wf-rnaseq-quant-mini": formSpec,
   },
-  agentSessions: {
-    [DEMO_PROJECT_ID]: [agentSession],
-  },
+  agentSessions: [agentSession],
   runs: seededRuns,
   runLogs: seededRunLogs,
   runOutputs: seededRunOutputs,

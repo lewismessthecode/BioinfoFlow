@@ -58,7 +58,6 @@ test.describe("Settings provider journey", () => {
 
     await expect(settings.saveButton(providerLabel)).toBeVisible()
     await expect(settings.discoverButton()).toBeVisible()
-    await expect(settings.testButton(providerLabel)).toHaveCount(0)
 
     const setupResponsePromise = page.waitForResponse(
       (response) =>

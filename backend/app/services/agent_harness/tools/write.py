@@ -23,6 +23,10 @@ class WriteTool:
             "additionalProperties": False,
         },
         replay_policy="verify",
+        display_name="Write",
+        category="write",
+        summary="Write file",
+        input_summary_fields=("path",),
         mutates_workspace=True,
         path_argument="path",
     )

@@ -27,6 +27,10 @@ class BashTool:
             "additionalProperties": False,
         },
         replay_policy="never",
+        display_name="Bash",
+        category="command",
+        summary="Run command",
+        input_summary_fields=("description",),
         mutates_workspace=True,
     )
 

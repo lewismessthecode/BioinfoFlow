@@ -14,8 +14,9 @@ from app.auth.agent_tokens import AgentTokenService
 from app.auth.session import AuthUser
 from app.repositories.agent_harness_repo import AgentHarnessRepository
 from app.services.agent_harness.contracts import (
+    InputTextPart,
+    MessageCommand,
     OpenSessionRequest,
-    PromptCommand,
     RespondCommand,
 )
 from app.services.agent_harness.harness import AgentHarness
@@ -187,7 +188,11 @@ async def test_new_session_freezes_current_custom_instructions_for_model_calls(
 
     dispatched = await async_client.post(
         f"/api/v1/agent/sessions/{session_id}/commands",
-        json={"type": "prompt", "command_id": "prompt-1", "text": "Inspect it"},
+        json={
+            "type": "message",
+            "command_id": "message-1",
+            "parts": [{"type": "text", "text": "Inspect it"}],
+        },
     )
 
     assert dispatched.status_code == 202
@@ -199,8 +204,8 @@ async def test_new_session_freezes_current_custom_instructions_for_model_calls(
             f"/api/v1/agent/sessions/{session_id}/snapshot"
         )
         assert snapshot.status_code == 200
-        current_run = snapshot.json()["data"]["current_run"]
-        if current_run is not None and current_run["status"] == "completed":
+        runs = snapshot.json()["data"]["runs"]
+        if runs and runs[-1]["status"] == "completed":
             break
         await asyncio.sleep(0.01)
     else:
@@ -219,14 +224,21 @@ async def test_prompt_returns_202_while_background_model_uses_another_db_session
     response = await asyncio.wait_for(
         async_client.post(
             f"/api/v1/agent/sessions/{session_id}/commands",
-            json={"type": "prompt", "command_id": "prompt-1", "text": "wait"},
+            json={
+                "type": "message",
+                "command_id": "message-1",
+                "parts": [{"type": "text", "text": "wait"}],
+            },
         ),
         timeout=1,
     )
 
     assert response.status_code == 202
     await asyncio.wait_for(model.started.wait(), timeout=1)
-    assert response.json()["data"]["current_run"]["status"] in {"queued", "running"}
+    assert response.json()["data"]["active_run"]["run"]["status"] in {
+        "queued",
+        "running",
+    }
     assert len(set(db_ids)) >= 3
 
     cancelled = await async_client.post(
@@ -256,7 +268,11 @@ async def test_sse_starts_with_snapshot_then_streams_dispatch_events(
 
         dispatched = await async_client.post(
             f"/api/v1/agent/sessions/{session_id}/commands",
-            json={"type": "prompt", "command_id": "prompt-1", "text": "stream"},
+            json={
+                "type": "message",
+                "command_id": "message-1",
+                "parts": [{"type": "text", "text": "stream"}],
+            },
         )
         assert dispatched.status_code == 202
 
@@ -288,14 +304,44 @@ async def test_sse_reconnect_snapshot_recovers_all_active_run_ui_state(
             str(run.id),
             status="waiting_user",
             phase="interaction",
-            draft={"text": "durable partial"},
+            draft={
+                "id": f"draft:{run.id}",
+                "run_id": str(run.id),
+                "parts": [
+                    {
+                        "id": f"draft:{run.id}:reasoning",
+                        "type": "reasoning_summary",
+                        "text": "",
+                        "end_offset": 0,
+                    },
+                    {
+                        "id": f"draft:{run.id}:text",
+                        "type": "text",
+                        "text": "durable partial",
+                        "end_offset": 15,
+                    },
+                ],
+            },
             tool_progress=[
-                {
-                    "call_id": "ask-1",
-                    "name": "ask_user",
-                    "status": "interaction_required",
-                }
+                    {
+                        "call_id": "ask-1",
+                        "group_id": "tool-group:ask-1",
+                        "execution_mode": "serial",
+                        "name": "ask_user",
+                        "display_name": "ask_user",
+                        "category": "interaction",
+                        "summary": "Ask how to continue",
+                        "arguments": {},
+                        "status": "interaction_required",
+                        "revision": 1,
+                    }
             ],
+        )
+        await repository.append_entry(
+            session_id,
+            run_id=str(run.id),
+            entry_type="compaction",
+            payload={"summary": "Private continuity state", "through_sequence": 0},
         )
         await repository.append_entry(
             session_id,
@@ -303,7 +349,21 @@ async def test_sse_reconnect_snapshot_recovers_all_active_run_ui_state(
             entry_type="interaction_request",
             payload={
                 "interaction_id": "question-1",
-                "request": {"kind": "question", "question": "Continue?"},
+                "request": {
+                    "type": "ask_user",
+                    "call_id": "ask-1",
+                    "questions": [
+                        {
+                            "id": "continue",
+                            "header": "Continue",
+                            "question": "Continue?",
+                            "options": [
+                                {"id": "yes", "label": "Yes"},
+                                {"id": "no", "label": "No"},
+                            ],
+                        }
+                    ],
+                },
             },
         )
 
@@ -315,18 +375,25 @@ async def test_sse_reconnect_snapshot_recovers_all_active_run_ui_state(
 
             assert first["event"] == "snapshot"
             snapshot = first["data"]["snapshot"]
-            assert snapshot["assistant_draft"]["text"] == "durable partial"
-            assert snapshot["tool_progress"] == [
-                {
-                    "call_id": "ask-1",
-                    "name": "ask_user",
-                    "status": "interaction_required",
-                }
+            assert "history_revision" not in snapshot
+            assert [entry["type"] for entry in snapshot["entries"]] == [
+                "interaction_request"
             ]
-            assert snapshot["pending_interaction"] == {
-                "interaction_id": "question-1",
-                "request": {"kind": "question", "question": "Continue?"},
+            active_run = snapshot["active_run"]
+            draft_parts = active_run["assistant_draft"]["parts"]
+            assert {part["type"] for part in draft_parts} == {
+                "reasoning_summary",
+                "text",
             }
+            text_part = next(part for part in draft_parts if part["type"] == "text")
+            assert text_part["text"] == "durable partial"
+            assert active_run["tool_progress"][0]["call_id"] == "ask-1"
+            assert active_run["tool_progress"][0]["status"] == ("interaction_required")
+            assert active_run["pending_interaction"]["interaction_id"] == ("question-1")
+            assert (
+                active_run["pending_interaction"]["request"]["questions"][0]["question"]
+                == "Continue?"
+            )
             await frames.aclose()
 
 
@@ -347,11 +414,11 @@ async def test_waiting_user_revokes_old_token_and_respond_issues_fresh_bash_toke
 
     await harness.dispatch(
         session_id,
-        PromptCommand(command_id="prompt-1", text="ask first"),
+        _message("message-1", "ask first"),
     )
     waiting = await harness.snapshot(session_id)
-    assert waiting.current_run is not None
-    assert waiting.current_run.status == "waiting_user"
+    assert waiting.active_run is not None
+    assert waiting.active_run.run.status == "waiting_user"
     assert len(backend.tokens) == 1
     token_before_wait = backend.tokens[0]
     assert backend.authenticated_during_execution[0] is not None
@@ -362,16 +429,13 @@ async def test_waiting_user_revokes_old_token_and_respond_issues_fresh_bash_toke
         RespondCommand(
             command_id="respond-1",
             interaction_id="tool:ask-1",
-            response={"answers": {"Continue?": "Yes"}},
+                response={"type": "ask_user", "answers": {"Continue?": "Yes"}},
         ),
     )
 
     completed = await harness.snapshot(session_id)
-    assert completed.current_run is not None
-    assert completed.current_run.status == "completed"
-    assert completed.assistant_draft is None
-    assert completed.tool_progress == []
-    assert completed.pending_interaction is None
+    assert completed.active_run is None
+    assert completed.runs[-1].status == "completed"
     assert len(backend.tokens) == 2
     token_after_response = backend.tokens[1]
     assert token_after_response != token_before_wait
@@ -390,10 +454,14 @@ async def test_delete_active_session_prevents_stale_worker_from_writing_back(
 
     dispatched = await async_client.post(
         f"/api/v1/agent/sessions/{session_id}/commands",
-        json={"type": "prompt", "command_id": "prompt-1", "text": "wait"},
+        json={
+            "type": "message",
+            "command_id": "message-1",
+            "parts": [{"type": "text", "text": "wait"}],
+        },
     )
     assert dispatched.status_code == 202
-    run_id = dispatched.json()["data"]["current_run"]["id"]
+    run_id = dispatched.json()["data"]["active_run"]["run"]["id"]
     await asyncio.wait_for(model.started.wait(), timeout=1)
     stale_worker = agent_runtime._tasks[run_id]
     monkeypatch.setattr(agent_runtime, "_quiesce_timeout_seconds", 0.05)
@@ -485,3 +553,5 @@ def _workspace(root: Path) -> WorkspaceRuntime:
             sandbox_runner=None,
         )
     )
+def _message(command_id: str, text: str) -> MessageCommand:
+    return MessageCommand(command_id=command_id, parts=[InputTextPart(text=text)])

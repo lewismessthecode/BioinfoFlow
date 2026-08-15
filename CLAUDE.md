@@ -153,10 +153,10 @@ rtk bun run test:coverage
   `run_service.py` as a delegating facade.
 - New CLI commands live under `backend/app/cli/commands/` and are registered from
   `backend/app/cli/main.py`.
-- New agent tools implement the `AgentTool` Protocol from
-  `backend/app/services/agent_core/tools/specs.py`, live under the matching
-  `tools/` subpackage, and are imported/registered in
-  `backend/app/services/agent_core/tools/__init__.py`.
+- New agent tools implement the `HarnessTool` Protocol from
+  `backend/app/services/agent_harness/tools/specs.py`, live under
+  `backend/app/services/agent_harness/tools/`, and are registered with the
+  Harness tool executor and context descriptions.
 - New scheduler hooks go in `backend/app/scheduler/hooks.py` with tests under
   `backend/tests/test_scheduler/`.
 - `handle_errors` must continue re-raising Click exceptions so usage errors exit

@@ -211,7 +211,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
                 onClick={onCommandOpen}
                 aria-label={tSidebar("search")}
               >
-                <Search className="h-3.5 w-3.5" />
+                <Search data-icon="inline-start" aria-hidden="true" />
               </Button>
               <Button
                 variant="ghost"
@@ -220,7 +220,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
                 onClick={workspaceShell.openCreateProjectDialog}
                 aria-label={tSidebar("newProject")}
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Plus data-icon="inline-start" aria-hidden="true" />
               </Button>
             </div>
           </div>
@@ -250,7 +250,6 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
             onToggleExpand={workspaceShell.toggleProjectExpanded}
             onSelectProject={workspaceShell.handleSelectProject}
             onSelectConversation={workspaceShell.handleSelectConversation}
-            onMoveConversation={workspaceShell.handleMoveConversation}
             onCreateConversation={workspaceShell.handleCreateConversation}
             onRenameConversation={workspaceShell.handleRenameConversation}
             onDeleteConversation={handleDeleteConversation}

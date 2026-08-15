@@ -11,7 +11,6 @@ from uuid import uuid4
 from app.auth.agent_tokens import AgentTokenService
 from app.config import settings
 from app.repositories.agent_harness_repo import (
-    AgentHarnessAttachmentRepository,
     AgentHarnessRepository,
 )
 from app.services.agent_harness.contracts import (
@@ -19,14 +18,14 @@ from app.services.agent_harness.contracts import (
     AgentEvent,
     CancelCommand,
     EntryCommittedEvent,
-    FollowUpCommand,
     InteractionRequestedEvent,
+    MessageCommand,
     OpenSessionRequest,
-    PromptCommand,
     RespondCommand,
     RunUpdatedEvent,
     SessionSnapshot,
     SteerCommand,
+    ToolProgressView,
     ToolUpdatedEvent,
 )
 from app.services.agent_harness.events import AgentEventHub
@@ -36,8 +35,18 @@ from app.services.agent_harness.loop import (
     LoopLimits,
     checkpoint_interaction_id,
 )
+from app.services.agent_harness.projection import (
+    entry_contract,
+    pending_interaction_entry_view,
+    run_view,
+)
 from app.services.agent_harness.recovery import RecoveryPlanner, create_checkpoint
+from app.services.agent_harness.tool_projection import (
+    project_tool_view,
+    public_output_summary as _public_output_summary,
+)
 from app.services.agent_harness.tools import ToolCall
+from app.services.agent_harness.tools.specs import ToolSpec
 from app.services.model_runtime.gateway import ModelGateway
 
 
@@ -150,22 +159,7 @@ class AgentHarness:
         if session.status != "active":
             raise ValueError("agent session is closing")
         current = await self.repository.get_current_run(session_id)
-        if isinstance(command, PromptCommand):
-            run, entry, inserted = await self.repository.submit_user_command(
-                session_id,
-                command,
-                model_snapshot=session.model_snapshot,
-            )
-            if not inserted:
-                return
-            assert run is not None and entry is not None
-            await self.event_hub.publish(
-                session_id,
-                EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
-            )
-            await self._start_run(session_id, str(run.id), wait=True)
-            return
-        if isinstance(command, FollowUpCommand):
+        if isinstance(command, MessageCommand):
             run, entry, inserted = await self.repository.submit_user_command(
                 session_id,
                 command,
@@ -177,7 +171,7 @@ class AgentHarness:
                 assert entry is not None
                 await self.event_hub.publish(
                     session_id,
-                    EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+                    EntryCommittedEvent(entry=entry_contract(entry)),
                 )
                 await self._start_run(session_id, str(run.id), wait=True)
             return
@@ -187,8 +181,6 @@ class AgentHarness:
             target_run, inserted = await self.repository.enqueue_command(
                 session_id, command
             )
-            if inserted and target_run is None:
-                await self._start_next_follow_up(session_id, wait=True)
             return
         if isinstance(command, RespondCommand):
             if current is None or current.status != "waiting_user":
@@ -234,13 +226,9 @@ class AgentHarness:
                 str(entry.run_id) == run_id
                 and entry.type == "message"
                 and entry.payload.get("role") == "assistant"
-                and entry.payload.get("tool_calls")
+                and _typed_tool_calls(entry.payload)
             ):
-                return [
-                    dict(item)
-                    for item in entry.payload.get("tool_calls") or []
-                    if isinstance(item, dict)
-                ]
+                return _typed_tool_calls(entry.payload)
         return [
             dict(item)
             for item in (run.checkpoint or {}).get("in_flight_tools") or []
@@ -284,10 +272,10 @@ class AgentHarness:
         else:
             recovered = sum([await self.recover_run(str(run.id)) for run in runs])
         sessions = await self.repository.list_sessions_with_queued_command(
-            kind="follow_up"
+            kind="message"
         )
         for session in sessions:
-            if await self._start_next_follow_up(str(session.id), wait=True):
+            if await self._start_next_message(str(session.id), wait=True):
                 recovered += 1
         return recovered
 
@@ -440,15 +428,11 @@ class AgentHarness:
             for entry in committed:
                 await self.event_hub.publish(
                     session_id,
-                    EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+                    EntryCommittedEvent(entry=entry_contract(entry)),
                 )
             await self.event_hub.publish(
                 session_id,
-                RunUpdatedEvent(
-                    run_id=cancelled.id,
-                    status=cancelled.status,
-                    phase=cancelled.phase,
-                ),
+                RunUpdatedEvent(run=run_view(cancelled)),
             )
             await self._after_run(session_id, run_id, wait=True)
             return True
@@ -480,7 +464,10 @@ class AgentHarness:
         await self.drive_response(
             session_id,
             run_id,
-            {**command.response, "request_id": command.interaction_id},
+            {
+                **command.response.model_dump(mode="json", exclude={"type"}),
+                "request_id": command.interaction_id,
+            },
             claimed=True,
             command_id=command.command_id,
         )
@@ -501,7 +488,7 @@ class AgentHarness:
         if (
             latest_message is None
             or latest_message.payload.get("role") != "assistant"
-            or latest_message.payload.get("tool_calls")
+            or _typed_tool_calls(latest_message.payload)
         ):
             return False
         steer_entries, completed = await self.repository.commit_steers_or_complete_run(
@@ -510,7 +497,7 @@ class AgentHarness:
         for entry in steer_entries:
             await self.event_hub.publish(
                 session_id,
-                EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+                EntryCommittedEvent(entry=entry_contract(entry)),
             )
         if steer_entries:
             return False
@@ -532,24 +519,25 @@ class AgentHarness:
                 or entry.payload.get("role") != "assistant"
             ):
                 continue
-            calls = [
-                dict(item)
-                for item in entry.payload.get("tool_calls") or []
-                if isinstance(item, dict)
-            ]
+            calls = _typed_tool_calls(entry.payload)
             if not calls:
                 continue
             resolved = {
-                str(candidate.payload.get("call_id"))
+                str(_typed_tool_result_call_id(candidate.payload))
                 for candidate in entries
                 if candidate.sequence > entry.sequence
                 and str(candidate.run_id) == run_id
                 and candidate.type == "message"
                 and candidate.payload.get("role") == "tool"
-                and candidate.payload.get("call_id")
+                and _typed_tool_result_call_id(candidate.payload)
             }
             unresolved = [
-                item for item in calls if str(item.get("call_id")) not in resolved
+                {
+                    **item,
+                    "group_id": str(item.get("group_id") or entry.id),
+                }
+                for item in calls
+                if str(item.get("call_id")) not in resolved
             ]
             if unresolved:
                 break
@@ -578,11 +566,17 @@ class AgentHarness:
             phase="tools",
             checkpoint=checkpoint,
             tool_progress=[
-                {
-                    "call_id": str(call.get("call_id") or ""),
-                    "name": str(call.get("name") or "unknown"),
-                    "status": "pending",
-                }
+                _tool_progress_item(
+                    call_id=str(call.get("call_id") or ""),
+                    name=str(call.get("name") or "unknown"),
+                    arguments=dict(call.get("arguments") or {}),
+                    spec=workspace.tool_spec(str(call.get("name") or "unknown")),
+                    status="pending",
+                    group_id=str(
+                        call.get("group_id") or _missing_group_id(call)
+                    ),
+                    execution_mode=str(call.get("execution_mode") or "serial"),
+                )
                 for call in unresolved
             ],
         )
@@ -616,7 +610,7 @@ class AgentHarness:
             elif entry.type == "interaction_response" and interaction_id:
                 pending.pop(interaction_id, None)
             elif entry.type == "message" and entry.payload.get("role") == "tool":
-                call_id = entry.payload.get("call_id")
+                call_id = _typed_tool_result_call_id(entry.payload)
                 if isinstance(call_id, str) and call_id:
                     resolved_call_ids.add(call_id)
         if not pending:
@@ -631,6 +625,7 @@ class AgentHarness:
         if not call_id:
             return False
         calls: list[dict[str, Any]] | None = None
+        owning_entry_id: str | None = None
         for entry in reversed(entries):
             if (
                 str(entry.run_id) != run_id
@@ -638,16 +633,17 @@ class AgentHarness:
                 or entry.payload.get("role") != "assistant"
             ):
                 continue
-            candidate = [
-                dict(item)
-                for item in entry.payload.get("tool_calls") or []
-                if isinstance(item, dict)
-            ]
+            candidate = _typed_tool_calls(entry.payload)
             if any(item.get("call_id") == call_id for item in candidate):
                 calls = candidate
+                owning_entry_id = str(entry.id)
                 break
-        if calls is None:
+        if calls is None or owning_entry_id is None:
             return False
+        calls = [
+            {**item, "group_id": str(item.get("group_id") or owning_entry_id)}
+            for item in calls
+        ]
         waiting_index = next(
             index for index, item in enumerate(calls) if item.get("call_id") == call_id
         )
@@ -662,6 +658,10 @@ class AgentHarness:
             return False
         workspace = self.loop.workspace_factory(session, run_id)
         replay_policies = {spec.name: spec.replay_policy for spec in workspace.tools}
+        private_interaction = request
+        refreshed = await workspace.execute(_runtime_tool_call(waiting_call))
+        if refreshed.status == "interaction_required":
+            private_interaction = _tool_interaction_dict(refreshed)
         checkpoint = {
             **create_checkpoint(
                 harness_version=HARNESS_VERSION,
@@ -676,11 +676,11 @@ class AgentHarness:
                     }
                     for item in [waiting_call, *pending_calls]
                 ),
-                interaction=request,
+                interaction=private_interaction,
             ),
             "waiting_call": waiting_call,
             "pending_calls": pending_calls,
-            "interaction": request,
+            "interaction": private_interaction,
         }
         await self.repository.update_run(
             run_id,
@@ -688,6 +688,24 @@ class AgentHarness:
             phase="interaction",
             checkpoint=checkpoint,
             draft=None,
+            tool_progress=[
+                _tool_progress_item(
+                    call_id=str(item.get("call_id") or ""),
+                    name=str(item.get("name") or "unknown"),
+                    arguments=dict(item.get("arguments") or {}),
+                    spec=workspace.tool_spec(str(item.get("name") or "unknown")),
+                    status=(
+                        "interaction_required"
+                        if item.get("call_id") == call_id
+                        else "pending"
+                    ),
+                    group_id=str(
+                        item.get("group_id") or _missing_group_id(item)
+                    ),
+                    execution_mode=str(item.get("execution_mode") or "serial"),
+                )
+                for item in [waiting_call, *pending_calls]
+            ],
         )
         return True
 
@@ -707,7 +725,7 @@ class AgentHarness:
         )
         await self.event_hub.publish(
             session_id,
-            EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+            EntryCommittedEvent(entry=entry_contract(entry)),
         )
         return entry
 
@@ -717,11 +735,16 @@ class AgentHarness:
         await self.repository.update_run(
             str(run.id),
             tool_progress=[
-                {
-                    "call_id": item.call_id,
-                    "name": item.name,
-                    "status": "pending",
-                }
+                _tool_progress_item(
+                    call_id=item.call_id,
+                    name=item.name,
+                    arguments={},
+                    spec=workspace.tool_spec(item.name),
+                    status="pending",
+                    **_checkpoint_tool_presentation(
+                        run.checkpoint, call_id=item.call_id
+                    ),
+                )
                 for item in plan.tools
             ],
         )
@@ -775,14 +798,6 @@ class AgentHarness:
                 name=item.name,
                 status="running",
             )
-            await self.event_hub.publish(
-                str(session.id),
-                ToolUpdatedEvent(
-                    run_id=run.id,
-                    call_id=item.call_id,
-                    status="running",
-                ),
-            )
             call = ToolCall(
                 call_id=item.call_id,
                 name=item.name,
@@ -826,23 +841,33 @@ class AgentHarness:
                     },
                     checkpoint=checkpoint,
                     tool_progress=[
-                        {
-                            "call_id": item.call_id,
-                            "name": item.name,
-                            "status": "interaction_required",
-                        }
+                        _tool_progress_item(
+                            call_id=item.call_id,
+                            name=item.name,
+                            arguments=dict(call_data.get("arguments") or {}),
+                            spec=workspace.tool_spec(item.name),
+                            status="interaction_required",
+                            group_id=str(
+                                call_data.get("group_id")
+                                or _missing_group_id(call_data)
+                            ),
+                            execution_mode=str(
+                                call_data.get("execution_mode") or "serial"
+                            ),
+                        )
                     ],
                 )
                 await self.event_hub.publish(
                     str(session.id),
-                    EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+                    EntryCommittedEvent(entry=entry_contract(entry)),
                 )
                 await self.event_hub.publish(
                     str(session.id),
                     InteractionRequestedEvent(
                         run_id=run.id,
-                        interaction_id=interaction.request_id,
-                        request=recovery_request,
+                        interaction=(
+                            pending_interaction_entry_view(entry)
+                        ),
                     ),
                 )
                 return True
@@ -851,20 +876,8 @@ class AgentHarness:
                 call_id=item.call_id,
                 name=item.name,
                 status=result.status,
-            )
-            await self.event_hub.publish(
-                str(session.id),
-                ToolUpdatedEvent(
-                    run_id=run.id,
-                    call_id=item.call_id,
-                    status=result.status,
-                    update={
-                        "tool_name": result.tool_name,
-                        "output": result.output,
-                        "error": result.error,
-                        "replay_policy": result.replay_policy,
-                    },
-                ),
+                output_summary=_public_output_summary(result.output),
+                error=result.error,
             )
             entry = await self.repository.append_entry(
                 str(session.id),
@@ -872,22 +885,25 @@ class AgentHarness:
                 entry_type="message",
                 payload={
                     "role": "tool",
-                    "content": [
+                    "parts": [
                         {
-                            "type": "text",
-                            "text": _recovered_tool_output(result),
+                            "id": f"tool-result:{item.call_id}",
+                            "type": "tool_result",
+                            "call_id": item.call_id,
+                            "status": result.status,
+                            "output": {
+                                "type": "text",
+                                "text": _recovered_tool_output(result),
+                            },
+                            "error": result.error,
                         }
                     ],
-                    "call_id": item.call_id,
-                    "tool_calls": [],
-                    "artifact_ids": [],
-                    "is_error": result.status != "completed",
                 },
             )
             committed_call_ids.add(item.call_id)
             await self.event_hub.publish(
                 str(session.id),
-                EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+                EntryCommittedEvent(entry=entry_contract(entry)),
             )
         checkpoint = dict(run.checkpoint or {})
         checkpoint["history_revision"] = int(session.history_revision)
@@ -927,43 +943,59 @@ class AgentHarness:
             }
         )
         waiting_call = checkpoint["waiting_call"]
-        notice, request, _ = await self.repository.commit_waiting_interaction(
+        workspace = self.loop.workspace_factory(session, str(run.id))
+        notice, request, waiting_run = await self.repository.commit_waiting_interaction(
             str(session.id),
             run_id=str(run.id),
             notice_payload=notice_payload,
             request_payload=request_payload,
             checkpoint=checkpoint,
             tool_progress=[
-                {
-                    "call_id": str(waiting_call.get("call_id") or ""),
-                    "name": str(waiting_call.get("name") or "unknown"),
-                    "status": "interaction_required",
-                }
+                _tool_progress_item(
+                    call_id=str(waiting_call.get("call_id") or ""),
+                    name=str(waiting_call.get("name") or "unknown"),
+                    arguments=dict(waiting_call.get("arguments") or {}),
+                    spec=workspace.tool_spec(
+                        str(waiting_call.get("name") or "unknown")
+                    ),
+                    status="interaction_required",
+                    group_id=str(
+                        waiting_call.get("group_id")
+                        or _missing_group_id(waiting_call)
+                    ),
+                    execution_mode=str(
+                        waiting_call.get("execution_mode") or "serial"
+                    ),
+                )
             ],
         )
         assert notice is not None
         await self.event_hub.publish(
             str(session.id),
-            EntryCommittedEvent(entry=self.repository._entry_contract(notice)),
+            RunUpdatedEvent(run=run_view(waiting_run)),
         )
         await self.event_hub.publish(
             str(session.id),
-            EntryCommittedEvent(entry=self.repository._entry_contract(request)),
+            EntryCommittedEvent(entry=entry_contract(notice)),
+        )
+        await self.event_hub.publish(
+            str(session.id),
+            EntryCommittedEvent(entry=entry_contract(request)),
         )
         await self.event_hub.publish(
             str(session.id),
             ToolUpdatedEvent(
                 run_id=run.id,
-                call_id=str(waiting_call.get("call_id") or ""),
-                status="interaction_required",
+                tool=_tool_progress_view(
+                    waiting_run, str(waiting_call.get("call_id") or "")
+                ),
             ),
         )
         await self.event_hub.publish(
             str(session.id),
             InteractionRequestedEvent(
                 run_id=run.id,
-                interaction_id=interaction.interaction_id,
-                request=interaction.request,
+                interaction=pending_interaction_entry_view(request),
             ),
         )
 
@@ -1046,15 +1078,15 @@ class AgentHarness:
         run = await self.repository.get_run(run_id)
         if run is not None and run.status in {"completed", "failed", "cancelled"}:
             self._cancellations.pop(run_id, None)
-            await self._start_next_follow_up(session_id, wait=wait)
+            await self._start_next_message(session_id, wait=wait)
 
-    async def _start_next_follow_up(self, session_id: str, *, wait: bool) -> bool:
+    async def _start_next_message(self, session_id: str, *, wait: bool) -> bool:
         session = await self.repository.get_session(session_id)
         if session is None or session.status != "active":
             return False
         next_run = await self.repository.create_run_from_next_session_command(
             session_id,
-            kind="follow_up",
+            kind="message",
             model_snapshot=session.model_snapshot,
         )
         if next_run is None:
@@ -1062,58 +1094,10 @@ class AgentHarness:
         run, entry = next_run
         await self.event_hub.publish(
             session_id,
-            EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+            EntryCommittedEvent(entry=entry_contract(entry)),
         )
         await self._start_run(session_id, str(run.id), wait=wait)
         return True
-
-    async def _append_user_message(
-        self,
-        session_id: str,
-        run_id: str,
-        text: str,
-        *,
-        attachment_ids: list[str] | None = None,
-    ) -> None:
-        session = await self.repository.get_session(session_id)
-        if session is None:
-            raise LookupError(f"agent session not found: {session_id}")
-        attachments = await AgentHarnessAttachmentRepository(
-            self.repository.db
-        ).require_ids_for_session(
-            attachment_ids or [],
-            session_id=session_id,
-            workspace_id=str(session.workspace_id),
-            user_id=session.user_id,
-        )
-        content: list[dict[str, Any]] = [{"type": "text", "text": text}]
-        content.extend(
-            {
-                "type": "attachment",
-                "attachment_id": str(attachment.id),
-                "filename": attachment.filename,
-                "kind": attachment.kind,
-                "mime_type": attachment.mime_type,
-                "size_bytes": attachment.size_bytes,
-            }
-            for attachment in attachments
-        )
-        entry = await self.repository.append_entry(
-            session_id,
-            run_id=run_id,
-            entry_type="message",
-            payload={
-                "role": "user",
-                "content": content,
-                "tool_calls": [],
-                "artifact_ids": [],
-                "attachment_ids": [str(attachment.id) for attachment in attachments],
-            },
-        )
-        await self.event_hub.publish(
-            session_id,
-            EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
-        )
 
     async def _publish_for_current_session(self, event: AgentEvent) -> None:
         session_id = self._publishing_session_id
@@ -1154,19 +1138,25 @@ class AgentHarness:
         call_id: str,
         name: str,
         status: str,
-    ) -> None:
+        output_summary: str | None = None,
+        error: str | None = None,
+    ):
         run = await self.repository.get_run(run_id)
         if run is None:
             raise LookupError(f"agent run not found: {run_id}")
-        progress = [dict(item) for item in (run.tool_progress or [])]
-        replacement = {"call_id": call_id, "name": name, "status": status}
-        for index, item in enumerate(progress):
-            if item.get("call_id") == call_id:
-                progress[index] = replacement
-                break
-        else:
-            progress.append(replacement)
-        await self.repository.update_run(run_id, tool_progress=progress)
+        view = await self.repository.update_tool_progress(
+            run_id,
+            call_id=call_id,
+            name=name,
+            status=status,
+            output_summary=output_summary,
+            error=error,
+        )
+        await self.event_hub.publish(
+            str(run.session_id),
+            ToolUpdatedEvent(run_id=run.id, tool=view),
+        )
+        return view
 
     def _lease_owner(self) -> str:
         return self._lease_owner_id
@@ -1192,10 +1182,47 @@ def _recovering_call(
         if isinstance(item, dict) and item.get("call_id") == call_id:
             return {
                 "call_id": item.get("call_id"),
+                "group_id": item.get("group_id"),
+                "execution_mode": item.get("execution_mode"),
                 "name": item.get("name"),
                 "arguments": item.get("arguments") or {},
             }
     return {"call_id": call_id, "name": request.get("tool_name"), "arguments": {}}
+
+
+def _typed_tool_calls(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    calls = [
+        part
+        for part in payload.get("parts") or []
+        if isinstance(part, dict) and part.get("type") == "tool_call"
+    ]
+    return [
+        {
+            "call_id": str(item.get("call_id") or ""),
+            "group_id": str(item.get("group_id") or ""),
+            "execution_mode": str(item.get("execution_mode") or "serial"),
+            "name": str(item.get("name") or "unknown"),
+            "arguments": dict(item.get("arguments") or {}),
+        }
+        for item in calls
+        if isinstance(item, dict) and item.get("call_id")
+    ]
+
+
+def _runtime_tool_call(item: dict[str, Any]) -> ToolCall:
+    return ToolCall(
+        call_id=str(item.get("call_id") or ""),
+        name=str(item.get("name") or "unknown"),
+        arguments=dict(item.get("arguments") or {}),
+    )
+
+
+def _typed_tool_result_call_id(payload: dict[str, Any]) -> str | None:
+    for part in payload.get("parts") or []:
+        if isinstance(part, dict) and part.get("type") == "tool_result":
+            call_id = part.get("call_id")
+            return str(call_id) if call_id else None
+    return None
 
 
 def _recovered_tool_output(result) -> str:
@@ -1203,6 +1230,52 @@ def _recovered_tool_output(result) -> str:
         result.output if result.status == "completed" else {"error": result.error},
         ensure_ascii=False,
         default=str,
+    )
+
+
+def _tool_progress_view(run: Any, call_id: str) -> ToolProgressView:
+    for item in run.tool_progress or []:
+        if isinstance(item, dict) and item.get("call_id") == call_id:
+            return ToolProgressView.model_validate(item)
+    raise LookupError(f"tool progress not found: {call_id}")
+
+
+def _tool_progress_item(
+    *,
+    call_id: str,
+    name: str,
+    arguments: dict[str, Any],
+    spec: ToolSpec | None,
+    status: str,
+    group_id: str,
+    execution_mode: str | None = None,
+) -> dict[str, Any]:
+    return project_tool_view(
+        spec=spec,
+        call_id=call_id,
+        name=name,
+        arguments=arguments,
+        status=status,
+        group_id=group_id,
+        execution_mode=execution_mode or "serial",
+    ).model_dump(mode="json")
+
+
+def _checkpoint_tool_presentation(
+    checkpoint: dict[str, Any] | None, *, call_id: str
+) -> dict[str, str]:
+    for item in (checkpoint or {}).get("in_flight_tools") or []:
+        if isinstance(item, dict) and item.get("call_id") == call_id:
+            return {
+                "group_id": str(item.get("group_id") or _missing_group_id(item)),
+                "execution_mode": str(item.get("execution_mode") or "serial"),
+            }
+    raise ValueError(f"checkpoint has no tool call {call_id}")
+
+
+def _missing_group_id(item: dict[str, Any]) -> str:
+    raise ValueError(
+        f"tool call {item.get('call_id') or 'unknown'} has no owning assistant entry"
     )
 
 

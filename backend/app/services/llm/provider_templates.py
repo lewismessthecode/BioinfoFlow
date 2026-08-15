@@ -515,6 +515,7 @@ _LEGACY_COMPAT_TEMPLATES = tuple(
     for template in _LEGACY_PROVIDER_TEMPLATES
     if template.kind not in _PRIMARY_KINDS
 )
+_PUBLIC_COMPAT_TEMPLATE_IDS = frozenset({"openai-compatible"})
 _HEADLESS_PROVIDER_ADAPTERS: tuple[ProviderAdapter, ...] = (
     ProviderAdapter(kind="azure", litellm_model_prefix="azure/"),
 )
@@ -525,7 +526,14 @@ PROVIDER_REGISTRY = ProviderRegistry(
 
 
 def list_provider_templates() -> list[ProviderTemplate]:
-    return list(PROVIDER_TEMPLATES)
+    return [
+        *PROVIDER_TEMPLATES,
+        *(
+            template
+            for template in _LEGACY_COMPAT_TEMPLATES
+            if template.id in _PUBLIC_COMPAT_TEMPLATE_IDS
+        ),
+    ]
 
 
 def list_bootstrap_provider_templates() -> list[ProviderTemplate]:

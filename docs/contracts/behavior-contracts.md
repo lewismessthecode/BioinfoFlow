@@ -70,7 +70,7 @@ Authoritative frontend route/runtime coverage includes:
 - `frontend/tests/unit/protected-layout.test.tsx`
 - `frontend/tests/unit/lib/nav-routes.test.ts`
 - `frontend/tests/unit/hooks/use-events.test.ts`
-- `frontend/tests/unit/lib/agent-runtime/event-stream.test.ts`
+- `frontend/tests/unit/lib/agent/stream.test.ts`
 - EventSource characterization tests added by Phase 8.
 
 ## Runs and Workflow Execution
@@ -101,26 +101,32 @@ engine, scheduler, migration, and model-invariant tests under `backend/tests/`.
 
 - The Harness exposes durable Sessions, Runs, append-only entries,
   attachments, artifacts, snapshots, and SSE.
-- Commands are exactly `prompt`, `steer`, `follow_up`, `respond`, and `cancel`.
-  A client-supplied command ID makes duplicate delivery idempotent.
-- One Session has at most one active Run. A prompt starts a Run; a follow-up is
-  queued until the active Run finishes.
-- The only model-visible tools are `read`, `bash`, `edit`, `write`, and
-  `ask_user`. Product operations use `bif --output json` through Bash.
-- Tool results are committed in model call order. Independent reads may run in
-  parallel; Bash, interactions, and conflicting writes are serialized.
+- Commands are exactly `message`, `steer`, `respond`, and `cancel`. A
+  client-supplied command ID makes duplicate delivery idempotent.
+- One Session has at most one active Run. A message starts a Run when idle and
+  is durably queued when a Run is already active; steer targets the active Run.
+- The default model-visible tools are `read`, `bash`, `edit`, `write`,
+  `ask_user`, and the private control tool `update_plan`. Product operations
+  use `bif --output json` through Bash. `update_plan` persists a public Plan
+  entry but is not rendered as a public tool card.
+- Tool calls preserve model order and explicit serial/parallel batch semantics.
+  Public tool category and summary fields come from registered tool metadata,
+  not UI guesses based on provider names or command text.
 - Questions, dangerous-command confirmations, and recovery choices share one
   interaction request/response contract.
-- Permission modes are `read_only`, `ask_dangerous`, and `full_access`.
-  Permission mode cannot bypass path boundaries, OS sandboxing, SSH account
-  authority, or server-side authorization.
-- `agent_entries` is the canonical rendering and context source. Compaction
-  appends a summary without deleting original entries.
+- Permission modes are `ask_changes`, `ask_dangerous`, and `full_access`.
+  Workspace access is independently `read_only` or `read_write`. Neither can
+  bypass path boundaries, OS sandboxing, SSH account authority, or server-side
+  authorization.
+- `agent_entries` is the canonical rendering and context source. Compression
+  and checkpoints remain private Harness recovery state and never become
+  public timeline entries.
 - Checkpoints are private unfinished-Run state. `read` may be retried, writes
   require verification, and Bash with an unknown outcome requires user input.
-- SSE starts with an authoritative snapshot. Live event types are `run.updated`,
-  `assistant.delta`, `tool.updated`, `interaction.requested`, and
-  `entry.committed`; reconnects fetch a new authoritative snapshot.
+- SSE starts with a `snapshot` event carrying the authoritative snapshot. The
+  only incremental event types are `run.updated`, `assistant.delta`,
+  `tool.updated`, `interaction.requested`, and `entry.committed`; reconnects
+  fetch a new authoritative snapshot instead of replaying a cursor.
 - Short-lived Agent tokens are scoped to the current user, workspace, Session,
   Run, project, and remote connection. Only hashes persist; plaintext tokens do
   not enter history, argv, logs, tool output, or artifacts.

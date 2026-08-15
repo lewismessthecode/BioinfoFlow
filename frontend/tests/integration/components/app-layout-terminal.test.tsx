@@ -200,7 +200,7 @@ describe("AppLayout terminal integration", () => {
   })
 
   it("does not mount the command palette until the shortcut is used", async () => {
-    pathnameState.value = "/agent"
+    pathnameState.value = "/dashboard"
 
     renderAppPage(
       <AppLayout>

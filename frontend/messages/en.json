@@ -274,6 +274,7 @@
       "deleteConfirmDescription": "This action cannot be undone"
     },
     "liveDeck": {
+      "label": "Live workspace information",
       "files": "Files",
       "pipeline": "Workflow",
       "monitor": "Monitor"
@@ -2169,21 +2170,7 @@
     },
     "agent": {
       "title": "Agent defaults",
-      "description": "Choose how Bioinfoflow handles a new message while the agent is still working.",
-      "turnPolicy": {
-        "label": "During active responses",
-        "description": "Apply this behavior when you send a message before the current turn finishes.",
-        "options": {
-          "steer": {
-            "label": "Guide current response",
-            "description": "Add this message to the active response at the next safe step."
-          },
-          "queue": {
-            "label": "Queue for next turn",
-            "description": "Keep the active response running and send your draft after it finishes."
-          }
-        }
-      },
+      "description": "Set lasting context for new agent conversations.",
       "customInstructions": {
         "label": "Custom instructions",
         "description": "Add lasting context for new conversations.",
@@ -2472,604 +2459,6 @@
     "notFoundDescription": "The page you're looking for doesn't exist or has been moved.",
     "goToDashboard": "Go to dashboard"
   },
-  "agentCore": {
-    "noFinalText": "No final response was recorded for this turn.",
-    "auditToggle": "View events",
-    "eventLedger": "Event ledger",
-    "reactionLike": "Like response",
-    "reactionDislike": "Dislike response",
-    "reactionRegenerate": "Regenerate response",
-    "reactionCopy": "Copy response",
-    "reactionMore": "More response actions",
-    "clarificationRequested": "Clarification requested",
-    "clarificationResolved": "Resolved",
-    "actionTimeline": "Action timeline",
-    "actionApproval": "Approval required",
-    "approveAction": "Approve action",
-    "rejectAction": "Reject action",
-    "artifactPanel": "Artifacts",
-    "memoryProposals": "Memory proposals",
-    "acceptMemory": "Accept memory",
-    "rejectMemory": "Reject memory"
-  },
-  "agentRuntime": {
-    "welcomeTitle": "What should Bioinfoflow help you do today?",
-    "composerPlaceholder": "Plan, Build, / for skills, @ for context",
-    "connectModel": {
-      "action": "Connect a model",
-      "title": "Connect a model",
-      "description": "Add a provider key to use a model here.",
-      "apiKey": "API key",
-      "apiKeyPlaceholder": "Paste API key",
-      "submit": "Connect",
-      "connecting": "Connecting...",
-      "moreProviders": "More providers",
-      "loading": "Loading providers...",
-      "catalogError": "Providers could not be loaded.",
-      "retry": "Retry",
-      "errors": {
-        "setup": "The provider could not be saved.",
-        "discovery": "The provider was saved, but models could not be loaded.",
-        "model": "The provider was saved, but no usable model was found.",
-        "probe": "The provider was saved, but the model could not be verified."
-      }
-    },
-    "composerPlaceholders": {
-      "checkWorkflow": "Check a workflow before running it",
-      "chooseInputs": "Choose inputs for an analysis",
-      "reviewFailure": "Review a failed run",
-      "prepareRun": "Prepare a workflow run"
-    },
-    "attach": "Attach or add context",
-    "send": "Send message",
-    "stop": "Stop response",
-    "voice": {
-      "start": "Start voice input",
-      "stop": "Stop recording",
-      "recording": "Listening {time}",
-      "transcribing": "Transcribing...",
-      "unavailable": "Voice input is unavailable",
-      "failed": "Could not transcribe the recording.",
-      "cancelled": "Voice recording cancelled."
-    },
-    "pendingResponse": "Working on it...",
-    "steer": {
-      "pending": "Will be considered after the current step",
-      "cancelled": "Not processed because the response stopped"
-    },
-    "scrollToBottom": "Jump to latest",
-    "recentActivityWindow": "Showing recent activity",
-    "thinking": "Thinking",
-    "toolCalls": "Tool calls",
-    "statusLine": {
-      "thinking": "Thinking...",
-      "running": "Working..."
-    },
-    "responseActions": {
-      "copy": "Copy response",
-      "copied": "Copied",
-      "copyFailed": "Copy failed",
-      "retry": "Retry response",
-      "retrying": "Regenerating..."
-    },
-    "tokenUsage": {
-      "label": "Tokens",
-      "display": "{value} tokens",
-      "compactDisplay": "{value}",
-      "aria": "{percent} context used. {total} tokens used in this session. {input} input, {output} output.",
-      "ariaUnknown": "Context usage is unavailable. {total} tokens used in this session. {input} input, {output} output.",
-      "title": "Context window",
-      "unknown": "Context usage unavailable",
-      "currentContext": "Current context",
-      "sessionTotal": "Session total",
-      "total": "Total",
-      "source": "Source",
-      "sourceValues": {
-        "reported": "Reported",
-        "estimated": "Estimated",
-        "unknown": "Unknown"
-      },
-      "provider": "Provider",
-      "model": "Model",
-      "used": "Used",
-      "remaining": "remaining",
-      "input": "Input",
-      "output": "Output",
-      "cached": "Cached",
-      "reasoning": "Reasoning",
-      "window": "Window",
-      "maxOutput": "Max output"
-    },
-    "skills": {
-      "menuTitle": "Skills",
-      "loading": "Loading skills...",
-      "empty": "No skills found.",
-      "noMatches": "No matching skills.",
-      "loadFailed": "Could not load skills.",
-      "remove": "Remove {name}",
-      "activeForNextTurn": "Skills"
-    },
-    "workflows": {
-      "menuTitle": "Workflows",
-      "loading": "Loading workflows...",
-      "empty": "No workflows found.",
-      "noMatches": "No matching workflows.",
-      "loadFailed": "Could not load workflows.",
-      "remove": "Remove {name}",
-      "activeForNextTurn": "Workflow context",
-      "pinned": "Pinned"
-    },
-    "starterSuggestions": {
-      "checkWorkflow": {
-        "prompt": "Check this workflow before I run it"
-      },
-      "chooseInputs": {
-        "prompt": "Help me choose analysis inputs"
-      },
-      "reviewFailure": {
-        "prompt": "Review the latest failed run"
-      },
-      "prepareRun": {
-        "prompt": "Prepare a run from @workflow"
-      }
-    },
-    "demoStarterSuggestions": {
-      "checkAndRun": {
-        "prompt": "Check and run the demo workflow"
-      },
-      "explainInputs": {
-        "prompt": "Explain the demo inputs"
-      },
-      "reviewRun": {
-        "prompt": "Review the latest demo run"
-      }
-    },
-    "commandHints": {
-      "workflow": {
-        "prefix": "Use",
-        "suffix": "to attach workflow context"
-      },
-      "skills": {
-        "prefix": "Type",
-        "suffix": "to choose one or more skills"
-      },
-      "mode": {
-        "prefix": "Press",
-        "suffix": "to switch plan and act mode"
-      }
-    },
-    "workflowContext": {
-      "label": "Workflow context"
-    },
-    "activity": {
-      "groups": {
-        "search": "Searched web",
-        "workspace": "Prepare workspace",
-        "read": "Read data",
-        "command": "Run commands",
-        "write": "Create or edit files",
-        "register": "Manage workflows",
-        "run": "Submit run",
-        "verify": "Verify results",
-        "other": "Use tools"
-      },
-      "summary": {
-        "search": "Found {count, plural, one {# source} other {# sources}}",
-        "searching": "Searching sources...",
-        "workspace": "Prepared {count, plural, one {# item} other {# items}}",
-        "read": "Read {count, plural, one {# source} other {# sources}}",
-        "command": "Ran {count, plural, one {# command} other {# commands}}",
-        "write": "Edited {count, plural, one {# file} other {# files}}",
-        "register": "Managed {count, plural, one {# workflow} other {# workflows}}",
-        "run": "Submitted {count, plural, one {# run} other {# runs}}",
-        "verify": "Verified {count, plural, one {# check} other {# checks}}",
-        "other": "Ran {count, plural, one {# tool} other {# tools}}"
-      },
-      "status": {
-        "building": "Building",
-        "requested": "Requested",
-        "waiting": "Waiting",
-        "running": "Running",
-        "completed": "Completed",
-        "failed": "Failed",
-        "cancelled": "Cancelled",
-        "rejected": "Rejected"
-      },
-      "details": {
-        "show": "Show details",
-        "hide": "Hide details",
-        "input": "Input",
-        "arguments": "Arguments",
-        "output": "Output",
-        "exitCode": "Exit code",
-        "error": "Error",
-        "files": "Files"
-      }
-    },
-    "sources": {
-      "title": "Sources",
-      "description": "Review the links and search queries that support this answer.",
-      "open": "Open sources",
-      "openWithCount": "Open {count, plural, one {# source} other {# sources}}",
-      "close": "Close sources",
-      "citationLabel": "Source {index}: {title}",
-      "count": "{count, plural, one {# source} other {# sources}}",
-      "searchedWeb": "Searched web",
-      "resultCount": "{count, plural, one {# result} other {# results}}",
-      "preview": "Source preview",
-      "query": "Query",
-      "noSnippet": "No snippet available.",
-      "opensInNewTab": "Opens in a new tab.",
-      "types": {
-        "web": "Web",
-        "pubmed": "PubMed",
-        "ncbi": "NCBI",
-        "biorxiv": "bioRxiv",
-        "github": "GitHub",
-        "docs": "Docs",
-        "workflow": "Workflow",
-        "artifact": "Artifact"
-      }
-    },
-    "approve": "Approve",
-    "reject": "Reject",
-    "approval": {
-      "jumpToDecision": "Needs confirmation · Jump",
-      "remoteTarget": "Remote target: {target}",
-      "state": {
-        "approved": "Approved, resuming",
-        "answered": "Answer submitted, resuming",
-        "completed": "Completed",
-        "rejected": "Rejected",
-        "failed": "Failed",
-        "cancelled": "Cancelled"
-      }
-    },
-    "decision": {
-      "submitting": "Submitting decision…",
-      "failed": "Could not submit decision: {error}",
-      "retry": "Retry decision",
-      "focusedNext": "Decision submitted. Moved to the next request.",
-      "focusedComposer": "Decision submitted. Focus returned to the composer."
-    },
-    "attachMenu": {
-      "addFileFolder": "Add file/folder",
-      "addFiles": "Add files",
-      "addFolder": "Add folder",
-      "attachFiles": "Attach files",
-      "browseProjectFiles": "Browse project files",
-      "referenceRun": "Reference a run",
-      "runPreflight": "Run preflight",
-      "diagnoseRun": "Diagnose run",
-      "comingSoon": "Coming soon"
-    },
-    "attachments": {
-      "label": "Attachments",
-      "uploading": "Uploading…",
-      "removing": "Removing…",
-      "uploadFailed": "Upload failed",
-      "removeFailed": "Could not remove attachment",
-      "preview": "Preview {name}",
-      "remove": "Remove {name}",
-      "retry": "Retry {name}",
-      "delete": "Delete {name}",
-      "deleteAction": "Delete",
-      "imagePreview": "Image attachment preview",
-      "imageLabel": "Image attachment",
-      "previewImage": "Preview image attachment"
-    },
-    "contextSearch": {
-      "menuTitle": "Files, workflows, and runs",
-      "loading": "Searching context…",
-      "empty": "Type to search context",
-      "noMatches": "No matching context",
-      "remove": "Remove {name}"
-    },
-    "runtimeLocation": {
-      "placeholder": "Execution targets",
-      "selectedLocalAria": "Current execution target: local",
-      "selectedRemoteAria": "Current execution target: {name} at {host}, {status}",
-      "selectedAutoAria": "Execution targets: Auto",
-      "selectedAutoTargetAria": "Execution targets: Auto, current target {target}",
-      "selectedManualAria": "Execution targets: Manual, {target}",
-      "menuTitle": "Run on",
-      "auto": "Auto",
-      "manual": "Manual",
-      "allTargets": "All",
-      "targetCount": "{count, plural, one {# target} other {# targets}}",
-      "localBadge": "Local",
-      "manage": "Manage SSH hosts",
-      "local": {
-        "label": "Local",
-        "description": "Run in this Bioinfoflow workspace"
-      },
-      "remote": {
-        "label": "Remote"
-      },
-      "emptyRemoteHosts": "No remote hosts configured.",
-      "loadFailed": "Could not load remote hosts.",
-      "status": {
-        "online": "Online",
-        "offline": "Offline",
-        "error": "Connection error",
-        "unknown": "Not tested"
-      }
-    },
-    "turnStatus": {
-      "queued": "Queued",
-      "running": "Working",
-      "waiting_user": "Waiting for you",
-      "waiting_approval": "Needs a decision",
-      "completed": "Done",
-      "failed": "Stopped",
-      "cancelled": "Cancelled"
-    },
-    "sidecar": {
-      "title": "Workspace",
-      "close": "Close workspace panel",
-      "collapse": "Collapse workspace panel",
-      "expand": "Open workspace panel",
-      "files": "Files",
-      "runs": "Runs",
-      "tools": "Tools",
-      "artifacts": "Artifacts",
-      "active": "Active",
-      "progress": "Progress",
-      "currentThinking": "Current thinking",
-      "currentToolCalls": "Current tool calls",
-      "needsDecision": "Needs your decision",
-      "noActivity": "No activity yet"
-    },
-    "artifacts": {
-      "title": "Artifacts",
-      "back": "Back to artifacts",
-      "empty": "No artifacts yet.",
-      "emptyNoSession": "Start a conversation to collect artifacts.",
-      "emptyNoSessionDescription": "Generated reports, tables, PDFs, HTML, and images will open here.",
-      "emptyRunningDescription": "Files created by the agent will appear in this panel.",
-      "count": "{count, plural, one {# artifact} other {# artifacts}}",
-      "loading": "Loading artifacts",
-      "loadFailed": "Could not load artifacts.",
-      "loadFailedDescription": "Refresh the panel and try again.",
-      "retry": "Retry",
-      "copy": "Copy",
-      "copied": "Copied",
-      "open": "Open",
-      "download": "Download",
-      "exitCode": "Exit code",
-      "previewUnavailable": "Preview is not available for this artifact yet.",
-      "toolLogs": "{count, plural, one {Tool log} other {Tool logs}}",
-      "types": {
-        "file": "File",
-        "command": "Command output",
-        "html": "HTML",
-        "markdown": "Markdown",
-        "pdf": "PDF",
-        "sheet": "Sheet",
-        "spreadsheet": "Spreadsheet",
-        "todo_list": "Tasks",
-        "run": "Run",
-        "workflow": "Workflow",
-        "image": "Image",
-        "unknown": "Artifact"
-      }
-    },
-    "renderer": {
-      "previewUnavailable": "Preview is not available for this file.",
-      "previewUnsupported": "Native preview is not available for this file type.",
-      "openDefaultDescription": "Open or download the file to continue in your default application.",
-      "noRenderableSource": "The file needs a readable preview URL or inline content.",
-      "defaultSheetName": "Sheet",
-      "previewLimit": "{rows} rows · {columns} columns shown",
-      "workbookLoading": "Loading workbook",
-      "workbookLoadingDescription": "Reading sheets and preparing a table preview.",
-      "workbookFetchFailed": "Could not download the workbook.",
-      "workbookFailed": "Could not preview workbook.",
-      "workbookEmpty": "Workbook has no visible rows.",
-      "workbookEmptyDescription": "Open the file in a spreadsheet app to inspect hidden or empty sheets.",
-      "workbookTooLarge": "This workbook is too large to preview safely.",
-      "textLoading": "Loading preview",
-      "textLoadingDescription": "Reading file content and preparing a preview.",
-      "textFetchFailed": "Could not load file preview.",
-      "textTooLarge": "This file is too large to preview safely.",
-      "textPreviewLimited": "Preview truncated to {lines} lines.",
-      "kinds": {
-        "markdown": "Markdown",
-        "html": "HTML",
-        "pdf": "PDF",
-        "image": "Image",
-        "spreadsheet": "Spreadsheet",
-        "json": "JSON",
-        "text": "Text",
-        "unsupported": "File"
-      }
-    },
-    "tabs": {
-      "environment": "Environment",
-      "tools": "Tools",
-      "preview": "Preview",
-      "artifacts": "Artifacts",
-      "progress": "Progress",
-      "files": "Files",
-      "agents": "Agents",
-      "browser": "Browser"
-    },
-    "toolsPanel": {
-      "title": "Workspace tools",
-      "description": "Open project files, review artifacts, or jump into runtime tools without leaving this conversation.",
-      "review": "Review",
-      "artifactCount": "{count, plural, one {# artifact} other {# artifacts}}",
-      "noArtifacts": "No artifacts yet",
-      "terminal": "Terminal",
-      "terminalDescription": "Open the project terminal",
-      "browser": "Browser",
-      "browserDescription": "Open a blank browser workspace",
-      "files": "Files",
-      "filesDescription": "Browse and preview project files",
-      "workflows": "Workflows",
-      "workflowsDescription": "Register, inspect, and run workflows",
-      "runs": "Run history",
-      "runsDescription": "Inspect logs, outputs, and DAGs"
-    },
-    "environment": {
-      "title": "Environment",
-      "open": "Open environment",
-      "close": "Close environment",
-      "changes": "Changes",
-      "filesChanged": "{count, plural, one {# file changed} other {# files changed}}",
-      "worktree": "Worktree",
-      "executionTarget": "Execution target",
-      "remoteProject": "Remote project",
-      "session": "Session",
-      "pendingSession": "Session pending",
-      "model": "Model",
-      "progress": "Progress",
-      "progressCount": "{completed}/{total} complete",
-      "activity": "Subagents and tools",
-      "sources": "Sources",
-      "none": "None"
-    },
-    "agentTree": {
-      "title": "Child agents",
-      "empty": "No child agents",
-      "status": {
-        "pending_init": "Starting",
-        "running": "Running",
-        "completed": "Completed",
-        "errored": "Errored",
-        "interrupted": "Interrupted"
-      },
-      "modelFallback": "{requested} unavailable; fell back to {effective}",
-      "modelFallbackGeneric": "Fell back to {effective}",
-      "noFinalText": "Completed without a final summary.",
-      "unknownError": "Agent failed before completing the task.",
-      "interrupted": "Agent was interrupted."
-    },
-    "agentWorkspace": {
-      "title": "Agents",
-      "empty": "No agents yet",
-      "open": "Open agents workspace",
-      "summary": "{total, plural, one {# agent} other {# agents}} · {active} active",
-      "back": "Back to agents",
-      "listLabel": "Agent tasks",
-      "detailLabel": "Agent details",
-      "sessionId": "Session",
-      "turnId": "Turn",
-      "model": "Model",
-      "requestedModel": "Requested model",
-      "fallback": "Fallback",
-      "terminationReason": "Termination",
-      "tokenUsage": "Tokens",
-      "noSummary": "No final summary",
-      "runningPreview": "Working on the assigned task",
-      "pendingPreview": "Preparing the child agent",
-      "interruptedPreview": "Agent was interrupted"
-    },
-    "progress": {
-      "tasks": "Tasks",
-      "empty": "No tasks yet. The agent's checklist will appear here as it works."
-    },
-    "todoDock": {
-      "collapse": "Collapse task dock",
-      "expand": "Expand task dock",
-      "summary": "{count, plural, one {# task left} other {# tasks left}}"
-    },
-    "files": {
-      "title": "Files",
-      "up": "Up",
-      "back": "Back to files",
-      "refresh": "Refresh",
-      "empty": "This folder is empty.",
-      "error": "Could not load files.",
-      "search": "Search loaded files",
-      "clearSearch": "Clear search",
-      "collapseAll": "Collapse all",
-      "closePreview": "Close preview",
-      "resizeTree": "Resize file tree",
-      "selectPreview": "Select a file to preview",
-      "loadedOnly": "Searching {count, plural, one {# loaded item} other {# loaded items}}",
-      "loading": "Loading...",
-      "addToContext": "Add to context",
-      "copyPath": "Copy path",
-      "download": "Download",
-      "openDefault": "Open",
-      "previewUnavailable": "Preview is not available for this file.",
-      "previewUnsupported": "Native preview is not available for this file type.",
-      "openDefaultDescription": "Open or download the file to continue in your default application.",
-      "removeAttachment": "Remove {label}",
-      "truncated": "File is large and was truncated."
-    },
-    "browser": {
-      "title": "Embedded browser",
-      "urlPlaceholder": "Enter URL",
-      "empty": "Enter a URL to preview a page.",
-      "go": "Open URL",
-      "reload": "Reload"
-    },
-    "mode": {
-      "label": "Agent mode",
-      "act": "Act",
-      "plan": "Plan"
-    },
-    "permission": {
-      "label": "Permission mode",
-      "options": {
-        "ask_each_action": {
-          "label": "Request approval",
-          "description": "Ask before side-effecting actions."
-        },
-        "guarded_auto": {
-          "label": "Approve for me",
-          "description": "Run low-risk actions automatically and ask for higher risk."
-        },
-        "bypass": {
-          "label": "Full access",
-          "description": "Run every non-blocked action automatically without risk approval prompts."
-        }
-      },
-      "boundary": {
-        "local": "Local actions keep the sandbox or host boundary currently configured for this session; permission mode does not expand it.",
-        "remote": "SSH actions use the remote account and server policy; the working folder is not a sandbox."
-      },
-      "safetyFloor": "Hard-blocked critical actions and required user interactions remain blocked or gated in every mode.",
-      "status": {
-        "updating": "Updating permission mode...",
-        "updated": "Permission mode updated for future operations.",
-        "reconciled": "{affected} waiting operations approved; {excluded} excluded; {resolved} already resolved.",
-        "failed": "Could not update permission mode: {error}"
-      },
-      "retry": "Retry permission update",
-      "confirm": {
-        "title": "Update permission mode?",
-        "description": "{eligible} waiting tool operations can be approved; {excluded} interactions stay pending.",
-        "futureOnly": "Only update future operations",
-        "futureOnlyDescription": "Current waiting operations still need your decision.",
-        "approvePending": "Update and approve {count} waiting tools",
-        "approvePendingDescription": "Questions and plan reviews are never auto-approved.",
-        "cancel": "Cancel"
-      }
-    },
-    "plan": {
-      "reviewTitle": "Review the plan",
-      "approveAndAct": "Approve & act",
-      "keepPlanning": "Keep planning",
-      "status": {
-        "pending": "Pending",
-        "approved": "Approved",
-        "rejected": "Needs changes",
-        "answered": "Answered"
-      }
-    },
-    "ask": {
-      "title": "The agent needs your input",
-      "submit": "Submit answer",
-      "customLabel": "Custom answer",
-      "customPlaceholder": "Tell Bioinfoflow what to use",
-      "recommended": "Recommended",
-      "answerLabel": "Answer",
-      "rejectQuestion": "Reject question"
-    }
-  },
   "agent": {
     "disclaimer": "Bioinfoflow Agents can make mistakes. Verify important results.",
     "selectProjectHint": "Choose a project from the sidebar to start chatting",
@@ -3124,6 +2513,271 @@
       "toggleHint": "Press ? to toggle"
     },
     "tokens": "{count}k tokens"
+  },
+  "agentWorkbench": {
+    "newConversation": "New conversation",
+    "untitled": "Untitled conversation",
+    "defaultModel": "Default model",
+    "emptyTitle": "What would you like to work on?",
+    "emptyDescription": "Ask a question, attach data, or reference a workflow. Bioinfoflow will show its plan, progress, tool activity, and any approval it needs.",
+    "createError": "The conversation could not be started. Your message is still here; try again.",
+    "modelConnection": {
+      "title": "Connect a model to continue",
+      "description": "Connect an AI provider here, then resend your message. Your draft will stay in the composer.",
+      "fullSettings": "Open full provider settings"
+    },
+    "loadErrorTitle": "Conversation unavailable",
+    "loadErrorDescription": "The conversation could not be loaded.",
+    "retry": "Try again",
+    "readOnly": {
+      "archived": "This conversation is archived and can only be reviewed.",
+      "closing": "This conversation is closing and can no longer be changed.",
+      "deleted": "This conversation was deleted and can only be reviewed."
+    },
+    "workspacePanel": {
+      "title": "Workspace panel",
+      "description": "Inspect workspace files, workflow progress, and resource monitoring.",
+      "open": "Open workspace panel",
+      "close": "Close workspace panel"
+    },
+    "connection": {
+      "connecting": "Connecting",
+      "connected": "Connected",
+      "reconnecting": "Connection interrupted. Reconnecting…",
+      "disconnected": "You are offline. The conversation will resume when the connection returns."
+    }
+  },
+  "agentContextPicker": {
+    "add": "Add context",
+    "searchPlaceholder": "Search files, workflows, and runs",
+    "empty": "No matching context",
+    "uploadFiles": "Upload files",
+    "uploadFolder": "Upload folder",
+    "searching": "Searching…",
+    "uploadError": "The attachment could not be uploaded.",
+    "searchError": "Context search is unavailable."
+  },
+  "agentContext": {
+    "label": "Attached context",
+    "remove": "Remove {label}"
+  },
+  "agentComposer": {
+    "label": "Message the agent",
+    "placeholder": "Ask Bioinfoflow to do something…",
+    "send": "Send message",
+    "queue": "Queue message",
+    "steer": "Steer active run",
+    "stop": "Stop run",
+    "stopping": "Stopping…",
+    "sending": "Sending…",
+    "steering": "Steering…",
+    "submitError": "The message could not be submitted. Try again.",
+    "stopError": "The run could not be stopped. Try again.",
+    "voice": {
+      "start": "Start voice dictation",
+      "stop": "Stop recording",
+      "recording": "Recording {seconds}s",
+      "transcribing": "Transcribing voice…",
+      "error": "Voice dictation failed. Try again.",
+      "retry": "Retry voice dictation"
+    },
+    "permission": {
+      "label": "Approval mode",
+      "title": "How should agent actions be approved?",
+      "ask_changes": {
+        "name": "Ask before changes",
+        "description": "Ask before files, network, or other side effects change."
+      },
+      "ask_dangerous": {
+        "name": "Approve safe actions",
+        "description": "Only ask for dangerous or critical actions."
+      },
+      "full_access": {
+        "name": "Full access",
+        "description": "Run automatically inside hard workspace and safety limits."
+      },
+      "activeRun": "Approval mode cannot change while a run is active.",
+      "readOnlyWorkspace": "This workspace is read-only. Approval mode cannot grant write access.",
+      "updating": "Updating approval mode…",
+      "updateError": "Approval mode could not be updated.",
+      "retry": "Retry approval update"
+    }
+  },
+  "agentActivity": {
+    "status": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "blocked": "Blocked",
+      "cancelled": "Cancelled",
+      "interaction_required": "Needs approval"
+    },
+    "group": {
+      "parallel": "{count, plural, one {# tool running in parallel} other {# tools running in parallel}}",
+      "serial": "{count, plural, one {# tool running in sequence} other {# tools running in sequence}}",
+      "mixed": "{count, plural, one {# tool activity} other {# tool activities}}",
+      "generic": "{count, plural, one {# tool activity} other {# tool activities}}"
+    },
+    "category": {
+      "read": "Reading",
+      "search": "Search",
+      "command": "Commands",
+      "edit": "Editing",
+      "write": "Writing",
+      "workflow": "Workflows",
+      "plan": "Planning",
+      "interaction": "User input",
+      "other": "Other"
+    },
+    "details": {
+      "show": "Show details",
+      "hide": "Hide details",
+      "arguments": "Arguments",
+      "input": "Input",
+      "output": "Output",
+      "error": "Error"
+    }
+  },
+  "agentRun": {
+    "title": "Agent run in progress",
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "waiting_user": "Waiting for input",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "phase": {
+      "model": "Working with the model",
+      "tools": "Using tools",
+      "interaction": "Waiting for input"
+    },
+    "progress": {
+      "actions": "{completed} of {total} actions finished",
+      "label": "Tool progress"
+    },
+    "reasoning": "Thinking summary",
+    "response": "Response"
+  },
+  "agentTranscript": {
+    "title": "Conversation",
+    "copy": "Copy message",
+    "copied": "Copied",
+    "copy_failed": "Could not copy. Select the message and copy it manually.",
+    "scroll_to_bottom": "Jump to latest",
+    "run_ended": "Ended {time}",
+    "run_duration": "{duration}"
+  },
+  "agentHistory": {
+    "reasoning": {
+      "title": "Thinking summary"
+    },
+    "reference": {
+      "attachment": "Attachment",
+      "file": "File",
+      "directory": "Directory",
+      "workflow": "Workflow",
+      "run": "Run",
+      "artifact": "Artifact"
+    },
+    "artifact": {
+      "open": "Open {name}",
+      "description": "Preview or download this artifact.",
+      "loading": "Loading artifact",
+      "loadFailed": "Could not load this artifact.",
+      "retry": "Retry",
+      "download": "Download",
+      "downloading": "Downloading…",
+      "downloadFailed": "Could not download this artifact.",
+      "previewUnavailable": "Preview is not available for this file type.",
+      "previewTooLarge": "This artifact is too large to preview. Download it to inspect the full file."
+    },
+    "unknown": {
+      "title": "Unsupported content"
+    },
+    "plan": {
+      "title": "Plan",
+      "status": {
+        "pending": "Pending",
+        "in_progress": "In progress",
+        "completed": "Completed"
+      }
+    },
+    "notice": {
+      "title": "Agent notice"
+    }
+  },
+  "agentInteraction": {
+    "status": {
+      "pending": "Waiting for response",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "answered": "Answered",
+      "resolved": "Resolved"
+    },
+    "approval": {
+      "title": "Approval requested",
+      "announcement": "Approval requested. Waiting for your response.",
+      "approve": "Approve",
+      "reject": "Reject",
+      "input": "Command preview",
+      "effects": "Effects",
+      "reasons": "Reasons",
+      "resources": "Affected resources"
+    },
+    "ask_user": {
+      "title": "The agent asked for input",
+      "announcement": "The agent asked for input. Waiting for your response.",
+      "submit": "Submit answers",
+      "recommended": "Recommended"
+    },
+    "recovery": {
+      "title": "Recovery requested",
+      "announcement": "Recovery requested. Waiting for your response.",
+      "inspect": "Inspect",
+      "retry": "Retry",
+      "cancel": "Cancel",
+      "selected": "Selected action"
+    },
+    "submitting": "Submitting…",
+    "submit_failed": "Could not submit. Try again."
+  },
+  "demoAgent": {
+    "badge": "Demo",
+    "start": "Start Demo",
+    "pause": "Pause Demo",
+    "restart": "Restart Demo",
+    "replay": "Replay",
+    "install": "Install",
+    "progress": "Demo progress",
+    "empty": "Watch an AI agent run a bioinformatics pipeline",
+    "status": {
+      "ready": "Ready",
+      "running": "Running: {task}",
+      "playing": "Playing…",
+      "complete": "Demo complete",
+      "paused": "Paused"
+    },
+    "dag": {
+      "title": "Pipeline DAG",
+      "pipeline": "E. coli QC Pipeline",
+      "waiting": "DAG will appear when the pipeline starts"
+    },
+    "runStatus": {
+      "pending": "Pending",
+      "preparing": "Preparing",
+      "queued": "Queued",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "try": {
+      "prefix": "Ready to try it yourself?",
+      "suffix": "to get started."
+    }
   },
   "executionMode": {
     "askShort": "Ask",

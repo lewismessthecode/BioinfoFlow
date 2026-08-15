@@ -239,7 +239,9 @@ async def test_create_agent_session_records_owner_and_is_user_scoped(
     assert "Shared chat" in titles
     assert "Teammate Session" not in titles
 
-    get_resp = await async_client.get(f"/api/v1/agent/sessions/{other_session.id}")
+    get_resp = await async_client.get(
+        f"/api/v1/agent/sessions/{other_session.id}/snapshot"
+    )
     assert get_resp.status_code == 404
 
 

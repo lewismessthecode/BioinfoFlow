@@ -52,10 +52,11 @@ def test_session_create_uses_snapshot_contract(runner: CliRunner) -> None:
         "project_id": "project-1",
         "title": "QC triage",
         "permission_mode": "ask_dangerous",
+        "workspace_access": "read_write",
     }
 
 
-def test_send_dispatches_prompt_command(runner: CliRunner) -> None:
+def test_send_dispatches_message_command(runner: CliRunner) -> None:
     response = make_envelope({"session": {"id": "session-1"}})
 
     with patch(
@@ -67,11 +68,11 @@ def test_send_dispatches_prompt_command(runner: CliRunner) -> None:
         )
 
     assert result.exit_code == 0
-    assert "prompt accepted" in result.stdout
+    assert "message accepted" in result.stdout
     assert post.await_args.args[1] == "/agent/sessions/session-1/commands"
     payload = post.await_args.args[2]
-    assert payload["type"] == "prompt"
-    assert payload["text"] == "Inspect the workflow"
+    assert payload["type"] == "message"
+    assert payload["parts"] == [{"type": "text", "text": "Inspect the workflow"}]
     assert isinstance(payload["command_id"], str) and payload["command_id"]
 
 

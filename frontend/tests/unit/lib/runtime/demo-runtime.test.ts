@@ -8,14 +8,10 @@ import type {
   Workflow,
 } from "@/lib/types"
 import type {
-  AgentCoreAction,
-  AgentCoreArtifact,
-  AgentCoreEvent,
-  AgentCoreMemory,
-  AgentCoreSession,
-  AgentCoreSkill,
-  AgentCoreTurn,
-} from "@/lib/agent-core"
+  AgentEvent,
+  SessionSnapshot,
+} from "@/lib/agent/contracts"
+import type { AgentContextSearchResult } from "@/lib/agent/context"
 import type {
   LlmConfiguration,
   LlmModel,
@@ -98,133 +94,145 @@ describe("createDemoRuntime", () => {
     unsubscribe()
   })
 
-  it("updates AgentCore session permission mode", async () => {
+  it("creates and updates a v2 agent session through authoritative snapshots", async () => {
     const runtime = createDemoRuntime()
-    const created = await runtime.request<AgentCoreSession>("/agent/sessions", {
+    const created = await runtime.request<SessionSnapshot>("/agent/sessions", {
       method: "POST",
       body: JSON.stringify({
         project_id: "project-demo",
-        permission_mode: "guarded_auto",
-        automation_mode: "assisted",
+        permission_mode: "ask_dangerous",
+        workspace_access: "read_write",
       }),
     })
 
-    const updated = await runtime.request<AgentCoreSession>(
-      `/agent/sessions/${created.data.id}`,
+    const updated = await runtime.request<SessionSnapshot>(
+      `/agent/sessions/${created.data.session.id}`,
       {
         method: "PATCH",
-        body: JSON.stringify({ permission_mode: "bypass" }),
+        body: JSON.stringify({ permission_mode: "full_access" }),
       },
     )
 
-    expect(updated.data.permission_mode).toBe("bypass")
+    expect(created.data).toMatchObject({
+      session: {
+        permission_mode: "ask_dangerous",
+        workspace_access: "read_write",
+      },
+      runs: [],
+      entries: [],
+      active_run: null,
+    })
+    expect(updated.data.session.permission_mode).toBe("full_access")
   })
 
-  it("creates an AgentCore turn and exposes the event ledger", async () => {
+  it("executes the v2 message command and rejects every legacy agent endpoint", async () => {
     const runtime = createDemoRuntime()
 
-    const sessionResponse = await runtime.request<AgentCoreSession>(
+    const sessionResponse = await runtime.request<SessionSnapshot>(
       "/agent/sessions",
       {
         method: "POST",
         body: JSON.stringify({
           project_id: "project-demo",
-          title: "AgentCore demo",
-          permission_mode: "guarded_auto",
-          automation_mode: "assisted",
+          title: "Harness demo",
         }),
       },
     )
-    const skillsResponse = await runtime.request<{ skills: AgentCoreSkill[] }>(
-      "/agent/skills",
-    )
-    const turnResponse = await runtime.request<AgentCoreTurn>(
-      `/agent/sessions/${sessionResponse.data.id}/turns`,
+    const sessionId = sessionResponse.data.session.id
+    const commandResponse = await runtime.request<SessionSnapshot>(
+      `/agent/sessions/${sessionId}/commands`,
       {
         method: "POST",
         body: JSON.stringify({
-          input_text: "Run the seeded RNA-seq demo.",
-          active_skill_names: ["nextflow-debugging"],
+          type: "message",
+          command_id: "command-1",
+          parts: [{ type: "text", text: "Run the seeded RNA-seq demo." }],
         }),
       },
     )
-    const eventsResponse = await runtime.request<AgentCoreEvent[]>(
-      `/agent/turns/${turnResponse.data.id}/events`,
+    const snapshotResponse = await runtime.request<SessionSnapshot>(
+      `/agent/sessions/${sessionId}/snapshot`,
     )
-    const artifactsResponse = await runtime.request<AgentCoreArtifact[]>(
-      `/agent/turns/${turnResponse.data.id}/artifacts`,
+    const eventsResponse = await runtime.request<AgentEvent[]>(
+      `/agent/sessions/${sessionId}/events`,
     )
-    const memoriesResponse = await runtime.request<AgentCoreMemory[]>(
-      "/agent/memories",
-      {
-        params: {
-          project_id: "project-demo",
-          status: "proposed",
-        },
-      },
-    )
-    const actionId = String(
-      eventsResponse.data.find((event) => event.type === "action.waiting_decision")
-        ?.payload.action_id,
-    )
-    const actionDecisionResponse = await runtime.request<AgentCoreAction>(
-      `/agent/actions/${actionId}/decision`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          decision: "approve",
-        }),
-      },
-    )
-    const memoryDecisionResponse = await runtime.request<AgentCoreMemory>(
-      `/agent/memories/${memoriesResponse.data[0]?.id}/accept`,
-      {
-        method: "POST",
-      },
-    )
-    const rejectedLegacyMessage = runtime.request("/agent/message", {
-      method: "POST",
-      body: JSON.stringify({
-        project_id: "project-demo",
-        content: "Run the seeded RNA-seq demo.",
-      }),
-    })
 
-    await expect(rejectedLegacyMessage).rejects.toMatchObject({ status: 404 })
-    expect(sessionResponse.data.id).toMatch(/^agent-session-demo-/)
-    expect(skillsResponse.data.skills.map((skill) => skill.name)).toEqual([
-      "nextflow-debugging",
-      "run-failure-triage",
+    expect(commandResponse.data.entries.map((entry) => entry.type)).toEqual([
+      "message",
+      "message",
+      "message",
     ])
-    expect(turnResponse.data.status).toBe("completed")
-    expect(turnResponse.data.active_skill_names).toEqual(["nextflow-debugging"])
-    expect(turnResponse.data.final_text).toContain("seeded RNA-seq demo workflow")
-    expect(eventsResponse.data.map((event) => event.type)).toEqual([
-      "turn.created",
-      "turn.started",
-      "assistant.thinking.summary",
-      "user_input.requested",
-      "user_input.resolved",
-      "action.requested",
-      "action.waiting_decision",
-      "action.completed",
-      "artifact.created",
-      "memory.proposed",
-      "assistant.text.completed",
-      "turn.completed",
+    expect(commandResponse.data.runs[0]?.status).toBe("completed")
+    expect(snapshotResponse.data).toEqual(commandResponse.data)
+    expect(eventsResponse.data).toEqual([
+      { type: "snapshot", snapshot: commandResponse.data },
     ])
-    expect(artifactsResponse.data[0]?.title).toContain("demo run")
-    expect(
-      eventsResponse.data.find((event) => event.type === "user_input.requested")
-        ?.payload.question,
-    ).toContain("reference")
-    expect(memoriesResponse.data[0]?.type).toBe("run_lesson")
-    expect(actionDecisionResponse.data.permission_decision).toMatchObject({
-      decision: "approve",
-    })
-    expect(memoryDecisionResponse.data.status).toBe("accepted")
+
+    for (const legacyPath of [
+      "/agent/skills",
+      `/agent/sessions/${sessionId}`,
+      `/agent/sessions/${sessionId}/state`,
+      `/agent/sessions/${sessionId}/turns`,
+      "/agent/memories",
+      "/agent/message",
+    ]) {
+      await expect(runtime.request(legacyPath)).rejects.toMatchObject({
+        status: 404,
+      })
+    }
 
     await vi.runAllTimersAsync()
+  })
+
+  it("supports typed context search and attachment lifecycle without legacy state", async () => {
+    const runtime = createDemoRuntime()
+    const created = await runtime.request<SessionSnapshot>("/agent/sessions", {
+      method: "POST",
+      body: JSON.stringify({ project_id: "project-demo" }),
+    })
+    const context = await runtime.request<AgentContextSearchResult>(
+      "/agent/context/search",
+      { params: { q: "rna", project_id: "project-demo" } },
+    )
+    const body = new FormData()
+    body.append("kind", "file")
+    body.append("files", new File(["reads"], "sample.fastq"))
+    const attachments = await runtime.request<Array<{ id: string }>>(
+      `/agent/sessions/${created.data.session.id}/attachments`,
+      { method: "POST", body },
+    )
+
+    expect(context.data.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "workflow",
+          input_part: expect.objectContaining({ type: "workflow_ref" }),
+        }),
+      ]),
+    )
+    expect(attachments.data[0]?.id).toMatch(/^agent-attachment-demo-/)
+
+    await expect(
+      runtime.request(`/agent/attachments/${attachments.data[0]?.id}`, {
+        method: "DELETE",
+      }),
+    ).resolves.toEqual({ data: null })
+  })
+
+  it("removes v2 agent sessions when their demo project is deleted", async () => {
+    const runtime = createDemoRuntime()
+    const created = await runtime.request<SessionSnapshot>("/agent/sessions", {
+      method: "POST",
+      body: JSON.stringify({ project_id: "project-demo" }),
+    })
+
+    await runtime.request("/projects/project-demo", { method: "DELETE" })
+
+    await expect(
+      runtime.request(
+        `/agent/sessions/${created.data.session.id}/snapshot`,
+      ),
+    ).rejects.toMatchObject({ status: 404 })
   })
 
   it("serves platform LLM catalog endpoints in demo mode", async () => {
@@ -272,7 +280,7 @@ describe("createDemoRuntime", () => {
     expect(configurationResponse.data.providers[0]?.credential.available).toBe(true)
     expect(templatesResponse.data.some((template) => template.id === "vllm")).toBe(true)
     expect(modelsResponse.data[0]?.display_name).toBe("Demo Bio Coder")
-    expect(profilesResponse.data[0]?.task_type).toBe("agent_core")
+    expect(profilesResponse.data[0]?.task_type).toBe("agent")
     expect(testResponse.data.success).toBe(true)
     expect(createdResponse.data.name).toBe("OpenRouter Shared")
     expect(setupResponse.data.provider.name).toBe("vLLM")

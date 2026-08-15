@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { apiRequest, getApiErrorMessage } from "@/lib/api"
@@ -8,17 +8,15 @@ import {
   deleteAgentSession,
   listAgentSessions,
   updateAgentSession,
-  type AgentCoreSession,
-} from "@/lib/agent-core"
+  type AgentSessionSummary,
+} from "@/lib/agent/client"
 import type { Project } from "@/lib/types"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import {
-  clearStoredAgentSessionId,
-  getStoredAgentSessionId,
-  listenForAgentSessionUpdates,
-  setStoredAgentSessionId,
-  sortAgentSessions,
-} from "@/lib/agent-core/session-storage"
+  sessionSummaryFromView,
+  sortAgentSessionSummaries,
+  subscribeAgentSessionSummaries,
+} from "@/lib/agent/session-preferences"
 import { celebrateMilestone } from "@/lib/celebrations"
 import { useFirstRunLoadingContext } from "@/hooks/use-first-run"
 
@@ -55,17 +53,16 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
-  const [projectConversations, setProjectConversations] = useState<Map<string, AgentCoreSession[]>>(new Map())
-  const [loadingProjects, setLoadingProjects] = useState<Set<string>>(new Set())
+  const [sessions, setSessions] = useState<AgentSessionSummary[]>([])
   const [defaultProject, setDefaultProject] = useState<Project | null>(null)
-  const [inboxConversations, setInboxConversations] = useState<AgentCoreSession[]>([])
 
-  const fetchProjects = useCallback(async () => {
+  const fetchSidebarData = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [projectsResult, defaultResult] = await Promise.all([
+      const [projectsResult, defaultResult, sessionSummaries] = await Promise.all([
         apiRequest<Project[]>("/projects", { params: { limit: 100 } }),
         apiRequest<Project>("/projects/default").catch(() => null),
+        listAgentSessions(),
       ])
       const allProjects = projectsResult.data
       const defProj = defaultResult?.data ?? null
@@ -73,6 +70,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       const sorted = [...regular].sort((a, b) => a.name.localeCompare(b.name))
       setProjects(sorted)
       setDefaultProject(defProj)
+      setSessions(sortAgentSessionSummaries(sessionSummaries))
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to load projects"))
     } finally {
@@ -80,48 +78,37 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     }
   }, [])
 
-  const fetchConversationsForProject = useCallback(async (projectId: string) => {
-    setLoadingProjects((prev) => new Set(prev).add(projectId))
+  const fetchProjects = useCallback(async () => {
     try {
-      const data = await listAgentSessions(projectId)
-      const visibleConversations = data.filter(isSidebarConversation)
-      const sorted = sortAgentSessions(visibleConversations)
-      setProjectConversations((prev) => new Map(prev).set(projectId, sorted))
-
-      if (projectId === selectedProjectId || projectId === conversationProjectId) {
-        const storedId = getStoredAgentSessionId(projectId)
-        const preferredId = activeConversationId || storedId
-        if (preferredId) {
-          const match = visibleConversations.find((item) => item.id === preferredId)
-          if (match) {
-            setActiveConversationId(match.id)
-            if (match.id !== storedId) {
-              setStoredAgentSessionId(projectId, match.id)
-            }
-          } else {
-            setActiveConversationId("")
-            clearStoredAgentSessionId(projectId)
-          }
-        } else {
-          setActiveConversationId("")
-          clearStoredAgentSessionId(projectId)
-        }
-      }
+      const [projectsResult, defaultResult] = await Promise.all([
+        apiRequest<Project[]>("/projects", { params: { limit: 100 } }),
+        apiRequest<Project>("/projects/default").catch(() => null),
+      ])
+      setProjects(
+        projectsResult.data
+          .filter((project) => !project.is_default)
+          .sort((left, right) => left.name.localeCompare(right.name)),
+      )
+      setDefaultProject(defaultResult?.data ?? null)
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load conversations"))
-    } finally {
-      setLoadingProjects((prev) => {
-        const next = new Set(prev)
-        next.delete(projectId)
-        return next
-      })
+      toast.error(getApiErrorMessage(error, "Failed to load projects"))
     }
-  }, [selectedProjectId, conversationProjectId, activeConversationId, setActiveConversationId])
+  }, [])
+
+  const projectConversations = useMemo(
+    () => groupSessionsByProject(sessions, defaultProject?.id),
+    [defaultProject?.id, sessions],
+  )
+  const loadingProjects = useMemo(() => new Set<string>(), [])
+  const inboxConversations = useMemo(
+    () => (defaultProject ? projectConversations.get(defaultProject.id) ?? [] : []),
+    [defaultProject, projectConversations],
+  )
 
   useEffect(() => {
     if (firstRunLoading) return
-    fetchProjects()
-  }, [fetchProjects, firstRunLoading])
+    fetchSidebarData()
+  }, [fetchSidebarData, firstRunLoading])
 
   useEffect(() => {
     if (!selectedProjectId) return
@@ -170,25 +157,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       if (prev.has(selectedProjectId)) return prev
       return new Set(prev).add(selectedProjectId)
     })
-
-    if (!projectConversations.has(selectedProjectId)) {
-      fetchConversationsForProject(selectedProjectId)
-    }
-  }, [selectedProjectId, projectConversations, fetchConversationsForProject])
-
-  useEffect(() => {
-    if (!selectedProjectId || !activeConversationId) return
-    const conversations = projectConversations.get(selectedProjectId) || []
-    if (conversations.some((item) => item.id === activeConversationId)) return
-    fetchConversationsForProject(selectedProjectId)
-  }, [activeConversationId, selectedProjectId, projectConversations, fetchConversationsForProject])
-
-  useEffect(() => {
-    if (!defaultProject) return
-    if (!projectConversations.has(defaultProject.id)) {
-      fetchConversationsForProject(defaultProject.id)
-    }
-  }, [defaultProject, projectConversations, fetchConversationsForProject])
+  }, [selectedProjectId])
 
   useEffect(() => {
     const onAgentRoute = pathname === "/agent" || pathname.startsWith("/agent/")
@@ -199,7 +168,6 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     const timer = window.setTimeout(() => {
       setConversationProjectId(defaultProject.id)
       setActiveConversationId("")
-      clearStoredAgentSessionId(defaultProject.id)
     }, 0)
     return () => window.clearTimeout(timer)
   }, [
@@ -229,24 +197,13 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   }, [selectedProjectId, conversationProjectId, activeConversationId, projectConversations, setActiveConversationTitle])
 
   useEffect(() => {
-    if (!defaultProject) return
-    setInboxConversations(projectConversations.get(defaultProject.id) || [])
-  }, [defaultProject, projectConversations])
-
-  useEffect(() => {
-    return listenForAgentSessionUpdates((conversation) => {
-      if (!isSidebarConversation(conversation)) return
-      setProjectConversations((prev) => {
-        const existing = prev.get(conversation.project_id) || []
-        const index = existing.findIndex((item) => item.id === conversation.id)
-        const next =
-          index >= 0
-            ? existing.map((item) =>
-                item.id === conversation.id ? { ...item, ...conversation } : item
-              )
-            : [sidebarConversationFromUpdate(conversation), ...existing]
-
-        return new Map(prev).set(conversation.project_id, sortAgentSessions(next))
+    return subscribeAgentSessionSummaries((summary) => {
+      setSessions((current) => {
+        const exists = current.some((item) => item.id === summary.id)
+        const next = exists
+          ? current.map((item) => (item.id === summary.id ? summary : item))
+          : [summary, ...current]
+        return sortAgentSessionSummaries(next)
       })
     })
   }, [])
@@ -258,9 +215,6 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
         next.delete(projectId)
       } else {
         next.add(projectId)
-        if (!projectConversations.has(projectId)) {
-          fetchConversationsForProject(projectId)
-        }
       }
       return next
     })
@@ -369,7 +323,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     }
   }
 
-  const handleSelectConversation = (conversation: AgentCoreSession, projectId: string) => {
+  const handleSelectConversation = (conversation: AgentSessionSummary, projectId: string) => {
     if (defaultProject?.id === projectId) {
       setSelectedProjectId("")
     } else {
@@ -378,7 +332,6 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     }
     setConversationProjectId(projectId)
     setActiveConversationId(conversation.id)
-    setStoredAgentSessionId(projectId, conversation.id)
     router.push(`/agent/${conversation.id}`)
   }
 
@@ -398,23 +351,26 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       }
       setConversationProjectId(targetId)
       setActiveConversationId("")
-      clearStoredAgentSessionId(targetId)
       router.push("/agent")
     } catch (error) {
       toast.error(getApiErrorMessage(error, tSidebar("errors.createConversationFailed")))
     }
   }
 
-  const handleRenameConversation = async (conversation: AgentCoreSession, projectId: string, newTitle: string) => {
+  const handleRenameConversation = async (conversation: AgentSessionSummary, projectId: string, newTitle: string) => {
     const trimmed = newTitle.trim()
     if (!trimmed || trimmed === conversation.title) return
+    void projectId
 
     try {
-      const data = await updateAgentSession(conversation.id, { title: trimmed })
-      setProjectConversations((prev) => {
-        const existing = prev.get(projectId) || []
-        return new Map(prev).set(projectId, existing.map((item) => (item.id === conversation.id ? data : item)))
-      })
+      const snapshot = await updateAgentSession(conversation.id, { title: trimmed })
+      setSessions((current) =>
+        sortAgentSessionSummaries(
+          current.map((item) =>
+            item.id === conversation.id ? sessionSummaryFromView(snapshot.session) : item,
+          ),
+        ),
+      )
       toast.success(tSidebar("toasts.conversationRenamed"))
     } catch (error) {
       toast.error(getApiErrorMessage(error, tSidebar("errors.renameConversationFailed")))
@@ -445,29 +401,21 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   const handleDeleteConversation = async (conversationId: string, projectId: string) => {
     try {
       await deleteAgentSession(conversationId)
-      setProjectConversations((prev) => {
-        const existing = prev.get(projectId) || []
-        return new Map(prev).set(projectId, existing.filter((item) => item.id !== conversationId))
-      })
+      setSessions((current) => current.filter((item) => item.id !== conversationId))
       if (activeConversationId === conversationId) {
         setActiveConversationId("")
         if (conversationProjectId === projectId) {
           setConversationProjectId("")
         }
-        clearStoredAgentSessionId(projectId)
+      }
+      if (pathname === `/agent/${conversationId}`) {
+        router.replace("/agent")
       }
     } catch (error) {
       const message = getApiErrorMessage(error, tSidebar("errors.deleteConversationFailed"))
       toast.error(message)
       throw error
     }
-  }
-
-  const handleMoveConversation = async (conversationId: string, fromProjectId: string, targetProjectId: string) => {
-    void conversationId
-    void fromProjectId
-    void targetProjectId
-    toast.error(tSidebar("errors.updateConversationFailed"))
   }
 
   return {
@@ -489,39 +437,18 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     handleCreateConversation,
     handleRenameConversation,
     handleDeleteConversation,
-    handleMoveConversation,
   }
 }
 
-function isSidebarConversation(conversation: AgentCoreSession) {
-  const lineageParentId = conversation.lineage?.parent_session_id
-  const metadataParentId = conversation.metadata?.parent_session_id
-  return (
-    conversation.role_profile !== "worker" &&
-    !(typeof lineageParentId === "string" && lineageParentId) &&
-    !(typeof metadataParentId === "string" && metadataParentId)
-  )
-}
-
-function sidebarConversationFromUpdate(
-  conversation: Pick<
-    AgentCoreSession,
-    "id" | "project_id" | "title" | "created_at" | "updated_at"
-  >,
-): AgentCoreSession {
-  return {
-    id: conversation.id,
-    project_id: conversation.project_id,
-    workspace_id: "",
-    user_id: "",
-    title: conversation.title,
-    role_profile: "bioinformatician",
-    permission_mode: "guarded_auto",
-    automation_mode: "assisted",
-    default_model_profile_id: null,
-    status: "active",
-    metadata: null,
-    created_at: conversation.created_at,
-    updated_at: conversation.updated_at,
+function groupSessionsByProject(
+  sessions: AgentSessionSummary[],
+  defaultProjectId?: string,
+) {
+  const grouped = new Map<string, AgentSessionSummary[]>()
+  for (const session of sessions) {
+    const projectId = session.project_id ?? defaultProjectId
+    if (!projectId) continue
+    grouped.set(projectId, [...(grouped.get(projectId) ?? []), session])
   }
+  return grouped
 }

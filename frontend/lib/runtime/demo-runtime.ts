@@ -10,6 +10,7 @@ import type {
   Run,
   RunDagEvent,
   RunLogEntry,
+  RunLogEvent,
   RunLogs,
   RunOutputs,
   RunStatusEvent,
@@ -27,17 +28,21 @@ import { ApiError } from "./request-core"
 import { DEMO_RUNTIME_SCENARIO } from "@/lib/demo/scenario-data"
 import type { DemoScenario, DemoFileNode } from "@/lib/demo/scenario"
 import type {
-  AgentCoreAction,
-  AgentCoreArtifact,
-  AgentAutomationMode,
-  AgentCoreEvent,
-  AgentCoreMemory,
-  AgentCoreSession,
-  AgentCoreSkill,
-  AgentCoreTurn,
+  AgentCommand,
+  AgentEvent,
   AgentPermissionMode,
   AgentSessionStatus,
-} from "@/lib/agent-core"
+  AgentWorkspaceAccess,
+  HistoryEntry,
+  InputPart,
+  MessagePart,
+  RunView,
+  SessionSnapshot,
+} from "@/lib/agent/contracts"
+import type {
+  AgentContextSearchItem,
+  AgentContextSearchResult,
+} from "@/lib/agent/context"
 import type {
   LlmConfiguration,
   LlmConfiguredProvider,
@@ -53,24 +58,6 @@ import type {
   LlmWireProtocol,
 } from "@/lib/llm"
 
-const DEMO_AGENT_SKILLS: AgentCoreSkill[] = [
-  {
-    name: "nextflow-debugging",
-    version: "0.1.0",
-    description: "Diagnose failed Nextflow runs using logs, DAGs, and audit events.",
-    category: "workflow",
-    tags: ["nextflow", "debugging"],
-  },
-  {
-    name: "run-failure-triage",
-    version: "0.1.0",
-    description: "Collect Bioinfoflow run evidence before explaining a failure.",
-    category: "runs",
-    tags: ["runs", "logs"],
-  },
-]
-
-
 type DemoRuntimeState = {
   scenario: DemoScenario
   runs: Map<string, Run>
@@ -78,12 +65,8 @@ type DemoRuntimeState = {
   runOutputs: Map<string, RunOutputs>
   runDag: Map<string, DagData>
   runAudit: Map<string, AuditLogEntry[]>
-  agentSessionsByProject: Map<string, AgentCoreSession[]>
-  agentTurnsBySession: Map<string, AgentCoreTurn[]>
-  agentEventsByTurn: Map<string, AgentCoreEvent[]>
-  agentActions: Map<string, AgentCoreAction>
-  agentArtifactsByTurn: Map<string, AgentCoreArtifact[]>
-  agentMemories: AgentCoreMemory[]
+  agentSnapshots: Map<string, SessionSnapshot>
+  agentAttachments: Map<string, DemoAgentAttachment>
   workflowGroupsByProject: Map<string, ProjectWorkflowGroup[]>
   workspaceFiles: Map<string, DemoFileNode[]>
   images: DockerImage[]
@@ -96,15 +79,22 @@ type DemoRuntimeState = {
   projectSequence: number
   workflowSequence: number
   agentSessionSequence: number
-  agentTurnSequence: number
-  agentEventSequence: number
-  agentActionSequence: number
-  agentArtifactSequence: number
-  agentMemorySequence: number
+  agentRunSequence: number
+  agentAttachmentSequence: number
   imageSequence: number
   llmProviderSequence: number
   subscribers: Map<number, RuntimeEventSubscription>
   subscriptionSequence: number
+}
+
+type DemoAgentAttachment = {
+  id: string
+  session_id: string
+  filename: string
+  kind: string
+  mime_type: string | null
+  size_bytes: number
+  content: string
 }
 
 function clone<T>(value: T): T {
@@ -112,15 +102,6 @@ function clone<T>(value: T): T {
 }
 
 function createInitialState(): DemoRuntimeState {
-  const seededAgentSessionsByProject = new Map<string, AgentCoreSession[]>(
-    Object.entries(DEMO_RUNTIME_SCENARIO.agentSessions).map(
-      ([projectId, sessions]) => [
-        projectId,
-        clone(sessions),
-      ],
-    ),
-  )
-
   return {
     scenario: clone(DEMO_RUNTIME_SCENARIO),
     runs: new Map(
@@ -150,16 +131,13 @@ function createInitialState(): DemoRuntimeState {
         clone(audit),
       ]),
     ),
-    agentSessionsByProject: seededAgentSessionsByProject,
-    agentTurnsBySession: new Map(
-      [...seededAgentSessionsByProject.values()]
-        .flat()
-        .map((session) => [session.id, []]),
+    agentSnapshots: new Map(
+      DEMO_RUNTIME_SCENARIO.agentSessions.map((snapshot) => [
+        snapshot.session.id,
+        clone(snapshot),
+      ]),
     ),
-    agentEventsByTurn: new Map(),
-    agentActions: new Map(),
-    agentArtifactsByTurn: new Map(),
-    agentMemories: [],
+    agentAttachments: new Map(),
     workflowGroupsByProject: new Map(
       Object.entries(DEMO_RUNTIME_SCENARIO.projectWorkflowGroups).map(
         ([projectId, groups]) => [projectId, clone(groups)],
@@ -233,8 +211,8 @@ function createInitialState(): DemoRuntimeState {
     llmModelProfiles: [
       {
         id: "llm-profile-demo-001",
-        name: "Demo AgentCore default",
-        task_type: "agent_core",
+        name: "Demo Agent default",
+        task_type: "agent",
         primary_model_id: "llm-model-demo-001",
         fallback_model_ids: [],
         reasoning_budget: 4096,
@@ -254,13 +232,9 @@ function createInitialState(): DemoRuntimeState {
     runSequence: 1,
     projectSequence: DEMO_RUNTIME_SCENARIO.projects.length + 1,
     workflowSequence: DEMO_RUNTIME_SCENARIO.workflows.length + 1,
-    agentSessionSequence:
-      Object.values(DEMO_RUNTIME_SCENARIO.agentSessions).flat().length + 1,
-    agentTurnSequence: 1,
-    agentEventSequence: 1,
-    agentActionSequence: 1,
-    agentArtifactSequence: 1,
-    agentMemorySequence: 1,
+    agentSessionSequence: DEMO_RUNTIME_SCENARIO.agentSessions.length + 1,
+    agentRunSequence: 1,
+    agentAttachmentSequence: 1,
     imageSequence: DEMO_RUNTIME_SCENARIO.images.length + 1,
     subscribers: new Map(),
     subscriptionSequence: 0,
@@ -716,200 +690,223 @@ function discoveryFallbackModelId(template: LlmProviderTemplate) {
   return `${template.id}-demo-model`
 }
 
-function listAgentCoreSessions(
+function listAgentSessionSummaries(
   state: DemoRuntimeState,
-  projectId?: string,
+  options?: { includeArchived?: boolean; projectId?: string },
 ) {
-  const sessions = projectId
-    ? state.agentSessionsByProject.get(projectId) ?? []
-    : [...state.agentSessionsByProject.values()].flat()
-
-  return [...sessions]
-    .filter((session) => session.status !== "deleted")
-    .sort(
-      (a, b) =>
-        new Date(b.updated_at || b.created_at).getTime() -
-        new Date(a.updated_at || a.created_at).getTime(),
+  return [...state.agentSnapshots.values()]
+    .map((snapshot) => snapshot.session)
+    .filter(
+      (session) =>
+        session.status !== "deleted" &&
+        (options?.includeArchived || session.status !== "archived") &&
+        (!options?.projectId || session.project_id === options.projectId),
     )
+    .sort(
+      (left, right) =>
+        new Date(right.updated_at).getTime() -
+        new Date(left.updated_at).getTime(),
+    )
+    .map((session) => ({
+      id: session.id,
+      title: session.title,
+      project_id: session.project_id,
+      permission_mode: session.permission_mode,
+      workspace_access: session.workspace_access,
+      status: session.status,
+      created_at: session.created_at,
+      updated_at: session.updated_at,
+    }))
 }
 
-function findAgentCoreSession(
-  state: DemoRuntimeState,
-  sessionId: string,
-) {
-  for (const sessions of state.agentSessionsByProject.values()) {
-    const match = sessions.find((session) => session.id === sessionId)
-    if (match) return match
-  }
-  return null
+function requireAgentSnapshot(state: DemoRuntimeState, sessionId: string) {
+  const snapshot = state.agentSnapshots.get(sessionId)
+  if (!snapshot) throw new ApiError("Agent session not found", { status: 404 })
+  return snapshot
 }
 
-function replaceAgentCoreSession(
+function createAgentSnapshot(
   state: DemoRuntimeState,
-  session: AgentCoreSession,
-) {
-  const current = state.agentSessionsByProject.get(session.project_id) ?? []
-  const index = current.findIndex((item) => item.id === session.id)
-  const next =
-    index === -1
-      ? [session, ...current]
-      : current.map((item) => (item.id === session.id ? session : item))
-  state.agentSessionsByProject.set(session.project_id, next)
-}
-
-function createAgentCoreSession(
-  state: DemoRuntimeState,
-  projectId: string,
-  options?: {
-    id?: string
+  input: {
+    projectId: string | null
     title?: string | null
-    roleProfile?: string | null
-    permissionMode?: AgentPermissionMode | null
-    automationMode?: AgentAutomationMode | null
-    defaultModelProfileId?: string | null
-    metadata?: Record<string, unknown> | null
+    permissionMode?: AgentPermissionMode
+    workspaceAccess?: AgentWorkspaceAccess
   },
 ) {
   const sessionId =
-    options?.id ??
     `agent-session-demo-${String(state.agentSessionSequence).padStart(3, "0")}`
-  if (!options?.id) state.agentSessionSequence += 1
-
-  const session: AgentCoreSession = {
-    id: sessionId,
-    project_id: projectId,
-    workspace_id: "workspace-demo",
-    user_id: "demo-user",
-    title: options?.title || "New demo analysis",
-    role_profile: options?.roleProfile || "bioinformatics_engineer",
-    permission_mode: options?.permissionMode || "guarded_auto",
-    automation_mode: options?.automationMode || "assisted",
-    default_model_profile_id: options?.defaultModelProfileId ?? null,
-    status: "active",
-    metadata: options?.metadata ?? { demo: true },
-    created_at: nowStamp(),
-    updated_at: nowStamp(),
+  state.agentSessionSequence += 1
+  const timestamp = nowStamp()
+  const snapshot: SessionSnapshot = {
+    session: {
+      id: sessionId,
+      project_id: input.projectId,
+      workspace_id: "workspace-demo",
+      user_id: "demo-user",
+      title: input.title?.trim() || null,
+      model: {
+        provider: "demo",
+        model: "bioinfoflow-demo",
+        display_name: "BioinfoFlow Demo",
+        supports_vision: true,
+        supports_reasoning: true,
+        supports_tools: true,
+      },
+      permission_mode: input.permissionMode ?? "ask_dangerous",
+      workspace_access: input.workspaceAccess ?? "read_write",
+      status: "active",
+      created_at: timestamp,
+      updated_at: timestamp,
+    },
+    runs: [],
+    entries: [],
+    active_run: null,
   }
-
-  replaceAgentCoreSession(state, session)
-  state.agentTurnsBySession.set(session.id, [])
-  return session
+  state.agentSnapshots.set(sessionId, snapshot)
+  return snapshot
 }
 
-function updateAgentCoreSession(
+function updateAgentSnapshot(
   state: DemoRuntimeState,
   sessionId: string,
-  updates: {
+  input: {
     title?: string | null
-    status?: AgentSessionStatus | null
-    permissionMode?: AgentPermissionMode | null
-    metadata?: Record<string, unknown> | null
+    status?: AgentSessionStatus
+    permissionMode?: AgentPermissionMode
+    workspaceAccess?: AgentWorkspaceAccess
   },
 ) {
-  const existing = findAgentCoreSession(state, sessionId)
-  if (!existing) throw new ApiError("Agent session not found", { status: 404 })
-  const updated: AgentCoreSession = {
-    ...existing,
-    title:
-      typeof updates.title === "string"
-        ? updates.title.trim() || existing.title
-        : existing.title,
-    status: updates.status ?? existing.status,
-    permission_mode: updates.permissionMode ?? existing.permission_mode,
-    metadata:
-      updates.metadata === undefined ? existing.metadata : updates.metadata,
-    updated_at: nowStamp(),
+  const snapshot = requireAgentSnapshot(state, sessionId)
+  const updated: SessionSnapshot = {
+    ...snapshot,
+    session: {
+      ...snapshot.session,
+      title:
+        input.title === null
+          ? null
+          : typeof input.title === "string"
+            ? input.title.trim() || null
+            : snapshot.session.title,
+      status: input.status ?? snapshot.session.status,
+      permission_mode:
+        input.permissionMode ?? snapshot.session.permission_mode,
+      workspace_access:
+        input.workspaceAccess ?? snapshot.session.workspace_access,
+      updated_at: nowStamp(),
+    },
   }
-  replaceAgentCoreSession(state, updated)
+  state.agentSnapshots.set(sessionId, updated)
   return updated
 }
 
-function deleteAgentCoreSession(
+function deleteAgentSnapshot(state: DemoRuntimeState, sessionId: string) {
+  requireAgentSnapshot(state, sessionId)
+  state.agentSnapshots.delete(sessionId)
+  for (const [attachmentId, attachment] of state.agentAttachments) {
+    if (attachment.session_id === sessionId) {
+      state.agentAttachments.delete(attachmentId)
+    }
+  }
+}
+
+function dispatchDemoAgentCommand(
   state: DemoRuntimeState,
   sessionId: string,
+  command: AgentCommand,
 ) {
-  const existing = findAgentCoreSession(state, sessionId)
-  if (!existing) return
-  state.agentSessionsByProject.set(
-    existing.project_id,
-    (state.agentSessionsByProject.get(existing.project_id) ?? []).filter(
-      (session) => session.id !== sessionId,
+  const snapshot = requireAgentSnapshot(state, sessionId)
+  if (command.type === "message" || command.type === "steer") {
+    return completeDemoAgentMessage(state, snapshot, command.parts)
+  }
+
+  if (command.type === "cancel") {
+    if (!snapshot.active_run) {
+      throw new ApiError("No active agent run", { status: 409 })
+    }
+    const timestamp = nowStamp()
+    const cancelled: RunView = {
+      ...snapshot.active_run.run,
+      status: "cancelled",
+      phase: null,
+      revision: snapshot.active_run.run.revision + 1,
+      completed_at: timestamp,
+      termination_reason: command.reason ?? "cancelled_by_user",
+      updated_at: timestamp,
+    }
+    const updated = {
+      ...snapshot,
+      runs: snapshot.runs.map((run) =>
+        run.id === cancelled.id ? cancelled : run,
+      ),
+      active_run: null,
+    }
+    state.agentSnapshots.set(sessionId, updated)
+    return updated
+  }
+
+  if (!snapshot.active_run?.pending_interaction) {
+    throw new ApiError("No pending agent interaction", { status: 409 })
+  }
+  if (
+    snapshot.active_run.pending_interaction.interaction_id !==
+    command.interaction_id
+  ) {
+    throw new ApiError("Agent interaction not found", { status: 404 })
+  }
+  const timestamp = nowStamp()
+  const sequence = nextHistorySequence(snapshot.entries)
+  const responseEntry: HistoryEntry = {
+    id: `agent-entry-demo-${sessionId}-${sequence}`,
+    session_id: sessionId,
+    run_id: snapshot.active_run.run.id,
+    sequence,
+    schema_version: 2,
+    type: "interaction_response",
+    payload: {
+      interaction_id: command.interaction_id,
+      response: command.response,
+    },
+    created_at: timestamp,
+  }
+  const completedRun: RunView = {
+    ...snapshot.active_run.run,
+    status: "completed",
+    phase: null,
+    revision: snapshot.active_run.run.revision + 1,
+    completed_at: timestamp,
+    updated_at: timestamp,
+  }
+  const updated = {
+    ...snapshot,
+    runs: snapshot.runs.map((run) =>
+      run.id === completedRun.id ? completedRun : run,
     ),
-  )
-  const turns = state.agentTurnsBySession.get(sessionId) ?? []
-  turns.forEach((turn) => {
-    state.agentEventsByTurn.delete(turn.id)
-    state.agentArtifactsByTurn.delete(turn.id)
-  })
-  for (const [actionId, action] of state.agentActions) {
-    if (action.session_id === sessionId) state.agentActions.delete(actionId)
+    entries: [...snapshot.entries, responseEntry],
+    active_run: null,
   }
-  state.agentMemories = state.agentMemories.filter(
-    (memory) => memory.session_id !== sessionId,
-  )
-  state.agentTurnsBySession.delete(sessionId)
+  state.agentSnapshots.set(sessionId, updated)
+  return updated
 }
 
-function findAgentCoreTurn(state: DemoRuntimeState, turnId: string) {
-  for (const turns of state.agentTurnsBySession.values()) {
-    const turn = turns.find((item) => item.id === turnId)
-    if (turn) return turn
-  }
-  return null
-}
-
-function replaceAgentCoreTurn(state: DemoRuntimeState, turn: AgentCoreTurn) {
-  const turns = state.agentTurnsBySession.get(turn.session_id) ?? []
-  state.agentTurnsBySession.set(
-    turn.session_id,
-    turns.map((item) => (item.id === turn.id ? turn : item)),
-  )
-}
-
-function appendAgentCoreEvent(
+function completeDemoAgentMessage(
   state: DemoRuntimeState,
-  turn: AgentCoreTurn,
-  type: string,
-  payload: Record<string, unknown>,
-  visibility: AgentCoreEvent["visibility"] = "user",
+  snapshot: SessionSnapshot,
+  parts: InputPart[],
 ) {
-  const current = state.agentEventsByTurn.get(turn.id) ?? []
-  const event: AgentCoreEvent = {
-    id: `agent-event-demo-${String(state.agentEventSequence).padStart(4, "0")}`,
-    session_id: turn.session_id,
-    turn_id: turn.id,
-    seq: current.length + 1,
-    type,
-    payload,
-    visibility,
-    schema_version: 1,
-    created_at: nowStamp(),
-    updated_at: nowStamp(),
-  }
-  state.agentEventSequence += 1
-  state.agentEventsByTurn.set(turn.id, [...current, event])
-  return event
-}
-
-function createAgentCoreTurn(
-  state: DemoRuntimeState,
-  sessionId: string,
-  inputText: string,
-  activeSkillNames: string[] = [],
-) {
-  const session = findAgentCoreSession(state, sessionId)
-  if (!session) throw new ApiError("Agent session not found", { status: 404 })
-
-  const now = nowStamp()
-  const turnId = `agent-turn-demo-${String(state.agentTurnSequence).padStart(3, "0")}`
-  state.agentTurnSequence += 1
-
-  const runId = `run_demo_${String(state.runSequence).padStart(3, "0")}`
+  const timestamp = nowStamp()
+  const agentRunId =
+    `agent-run-demo-${String(state.agentRunSequence).padStart(3, "0")}`
+  state.agentRunSequence += 1
+  const workflowRunId =
+    `run_demo_${String(state.runSequence).padStart(3, "0")}`
   state.runSequence += 1
-  const run = createRunRecord(
+  const projectId =
+    snapshot.session.project_id ?? state.scenario.contextDefaults.selectedProjectId
+  const workflowRun = createRunRecord(
     state,
     {
-      project_id: session.project_id,
+      project_id: projectId,
       workflow_id: "wf-rnaseq-quant-mini",
       values: {
         reads_r1: "deliveries/ecoli_R1.fastq.gz",
@@ -917,206 +914,422 @@ function createAgentCoreTurn(
         reference: "reference/ecoli_k12.fa",
       },
     },
-    runId,
+    workflowRunId,
   )
-  const artifacts = createRunArtifacts(runId)
-  state.runs.set(runId, run)
-  state.runLogs.set(runId, artifacts.logs)
-  state.runOutputs.set(runId, artifacts.outputs)
-  state.runDag.set(runId, artifacts.dag)
-  state.runAudit.set(runId, artifacts.audit)
+  const workflowArtifacts = createRunArtifacts(workflowRunId)
+  state.runs.set(workflowRunId, workflowRun)
+  state.runLogs.set(workflowRunId, workflowArtifacts.logs)
+  state.runOutputs.set(workflowRunId, workflowArtifacts.outputs)
+  state.runDag.set(workflowRunId, workflowArtifacts.dag)
+  state.runAudit.set(workflowRunId, workflowArtifacts.audit)
 
-  const finalText =
-    "I launched the seeded RNA-seq demo workflow. The live deck and runs view will update as the replay advances."
-
-  const turn: AgentCoreTurn = {
-    id: turnId,
-    session_id: session.id,
-    project_id: session.project_id,
-    workspace_id: session.workspace_id,
-    user_id: session.user_id,
-    input_text: inputText,
-    input_parts: [{ type: "text", text: inputText }],
-    active_skill_names: activeSkillNames,
+  const completedAt = nowStamp()
+  const run: RunView = {
+    id: agentRunId,
+    session_id: snapshot.session.id,
     status: "completed",
-    model_profile_snapshot: {
-      provider: "demo",
-      model: "agent-core-demo",
-    },
-    final_text: finalText,
-    token_usage: {
-      input_tokens: 512,
-      output_tokens: 178,
-      context_tokens: 1024,
-    },
-    error_code: null,
-    error_message: null,
-    created_at: now,
-    updated_at: now,
-    started_at: now,
-    completed_at: nowStamp(),
-  }
-
-  const actionId = `agent-action-demo-${String(state.agentActionSequence).padStart(3, "0")}`
-  state.agentActionSequence += 1
-  const action: AgentCoreAction = {
-    id: actionId,
-    session_id: session.id,
-    turn_id: turn.id,
-    parent_action_id: null,
-    kind: "run",
-    name: "runs.submit",
-    input: {
-      run_id: runId,
-      workflow_id: run.workflow_id,
-    },
-    input_preview: `Submit ${run.workflow_id ?? "workflow"} with paired FASTQ inputs.`,
-    redacted_input: null,
-    risk_level: "act_low",
-    risk_reasons: [],
-    read_scope: [{ kind: "project", id: session.project_id }],
-    write_scope: [{ kind: "run", id: runId }],
-    affected_resources: [{ kind: "run", id: runId }],
-    permission_decision: null,
-    status: "waiting_decision",
-    result: null,
+    phase: null,
+    revision: 1,
+    started_at: timestamp,
+    completed_at: completedAt,
+    termination_reason: "completed",
     error: null,
-    audit_summary: "Demo run submission is waiting for an AgentCore action decision.",
-    rollback_hint: "Cancel the demo run if this action should not continue.",
-    artifact_policy: { register_run_ref: true },
-    created_at: now,
-    updated_at: now,
-    started_at: null,
-    completed_at: null,
+    created_at: timestamp,
+    updated_at: completedAt,
   }
-  state.agentActions.set(action.id, action)
-
-  const agentArtifact: AgentCoreArtifact = {
-    id: `agent-artifact-demo-${String(state.agentArtifactSequence).padStart(3, "0")}`,
-    session_id: session.id,
-    turn_id: turn.id,
-    action_id: action.id,
-    type: "run_ref",
-    title: "Seeded RNA-seq demo run",
-    summary: `Registered demo run ${runId} for the RNA-seq workflow.`,
-    payload: {
-      run_id: runId,
-      workflow_id: run.workflow_id,
-      status: run.status,
+  const firstSequence = nextHistorySequence(snapshot.entries)
+  const callId = `agent-tool-demo-${agentRunId}`
+  const groupId = `agent-activity-demo-${agentRunId}`
+  const entries: HistoryEntry[] = [
+    {
+      id: `agent-entry-demo-${snapshot.session.id}-${firstSequence}`,
+      session_id: snapshot.session.id,
+      run_id: agentRunId,
+      sequence: firstSequence,
+      schema_version: 2,
+      type: "message",
+      payload: {
+        role: "user",
+        parts: durableInputParts(state, snapshot.session.id, parts, firstSequence),
+      },
+      created_at: timestamp,
     },
-    file_path: null,
-    resource_ref: {
-      kind: "run",
-      id: runId,
+    {
+      id: `agent-entry-demo-${snapshot.session.id}-${firstSequence + 1}`,
+      session_id: snapshot.session.id,
+      run_id: agentRunId,
+      sequence: firstSequence + 1,
+      schema_version: 2,
+      type: "message",
+      payload: {
+        role: "assistant",
+        parts: [
+          {
+            id: `agent-part-demo-${agentRunId}-reasoning`,
+            type: "reasoning_summary",
+            text: "Selected the seeded RNA-seq workflow and prepared its paired FASTQ inputs.",
+          },
+          {
+            id: `agent-part-demo-${agentRunId}-tool-call`,
+            type: "tool_call",
+            call_id: callId,
+            group_id: groupId,
+            execution_mode: "serial",
+            name: "runs.submit",
+            display_name: "Run workflow",
+            category: "workflow",
+            summary: "Start the seeded RNA-seq workflow",
+            arguments: {
+              project_id: projectId,
+              workflow_id: "wf-rnaseq-quant-mini",
+            },
+          },
+          {
+            id: `agent-part-demo-${agentRunId}-text`,
+            type: "text",
+            text: "I launched the seeded RNA-seq demo workflow. The runs view will update as the replay advances.",
+          },
+        ],
+      },
+      created_at: completedAt,
     },
-    created_at: nowStamp(),
-    updated_at: nowStamp(),
+    {
+      id: `agent-entry-demo-${snapshot.session.id}-${firstSequence + 2}`,
+      session_id: snapshot.session.id,
+      run_id: agentRunId,
+      sequence: firstSequence + 2,
+      schema_version: 2,
+      type: "message",
+      payload: {
+        role: "tool",
+        parts: [
+          {
+            id: `agent-part-demo-${agentRunId}-tool-result`,
+            type: "tool_result",
+            call_id: callId,
+            status: "completed",
+            summary: `Started workflow run ${workflowRunId}.`,
+            output: {
+              type: "content_parts",
+              parts: [
+                {
+                  id: `agent-part-demo-${agentRunId}-run-ref`,
+                  type: "run_ref",
+                  run_id: workflowRunId,
+                  label: "Seeded RNA-seq demo run",
+                },
+              ],
+            },
+            started_at: timestamp,
+            completed_at: completedAt,
+            error: null,
+          },
+        ],
+      },
+      created_at: completedAt,
+    },
+  ]
+  const updated: SessionSnapshot = {
+    ...snapshot,
+    session: {
+      ...snapshot.session,
+      title: snapshot.session.title || firstTextPart(parts) || "RNA-seq demo run",
+      updated_at: completedAt,
+    },
+    runs: [...snapshot.runs, run],
+    entries: [...snapshot.entries, ...entries],
+    active_run: null,
   }
-  state.agentArtifactSequence += 1
-  state.agentArtifactsByTurn.set(turn.id, [agentArtifact])
+  state.agentSnapshots.set(snapshot.session.id, updated)
+  scheduleRunReplay(state, projectId, workflowRunId, buildRunReplay(workflowRunId))
+  return updated
+}
 
-  const memory: AgentCoreMemory = {
-    id: `agent-memory-demo-${String(state.agentMemorySequence).padStart(3, "0")}`,
-    workspace_id: session.workspace_id,
-    project_id: session.project_id,
-    session_id: session.id,
-    scope: "run",
-    type: "run_lesson",
-    content: {
-      workflow_id: run.workflow_id,
-      reference_genome: "ecoli_k12",
-      lesson: "Seeded demo run uses paired FASTQ inputs and a local reference FASTA.",
-    },
-    source: {
-      turn_id: turn.id,
-      run_id: runId,
-    },
-    confidence: 88,
-    status: "proposed",
-    created_at: nowStamp(),
-    updated_at: nowStamp(),
+function nextHistorySequence(entries: HistoryEntry[]) {
+  return entries.reduce((largest, entry) => Math.max(largest, entry.sequence), 0) + 1
+}
+
+function firstTextPart(parts: InputPart[]) {
+  return parts.find((part) => part.type === "text")?.text.trim() || null
+}
+
+function durableInputParts(
+  state: DemoRuntimeState,
+  sessionId: string,
+  parts: InputPart[],
+  sequence: number,
+): MessagePart[] {
+  return parts.map((part, index) => {
+    const id = `agent-part-demo-${sessionId}-${sequence}-${index + 1}`
+    if (part.type === "text") return { id, type: "text", text: part.text }
+    if (part.type === "attachment_ref") {
+      const attachment = state.agentAttachments.get(part.attachment_id)
+      return {
+        id,
+        type: "attachment_ref",
+        attachment_id: part.attachment_id,
+        filename: attachment?.filename ?? "Attachment",
+        kind: attachment?.kind ?? "file",
+        mime_type: attachment?.mime_type ?? null,
+        size_bytes: attachment?.size_bytes ?? 0,
+      }
+    }
+    if (part.type === "file_ref" || part.type === "directory_ref") {
+      if ("attachment_id" in part) {
+        const attachment = state.agentAttachments.get(part.attachment_id)
+        return {
+          id,
+          type: part.type,
+          label: attachment?.filename ?? "Attachment",
+          attachment_id: part.attachment_id,
+        }
+      }
+      return {
+        id,
+        type: part.type,
+        label: part.path,
+        project_id: part.project_id,
+        path: part.path,
+      }
+    }
+    if (part.type === "workflow_ref") {
+      const workflow = state.scenario.workflows.find(
+        (candidate) => candidate.id === part.workflow_id,
+      )
+      return {
+        id,
+        type: "workflow_ref",
+        workflow_id: part.workflow_id,
+        label: workflow?.name ?? part.workflow_id,
+        ...(part.scope === "project" ? { project_id: part.project_id } : {}),
+      }
+    }
+    return {
+      id,
+      type: "run_ref",
+      run_id: part.run_id,
+      label: part.run_id,
+    }
+  })
+}
+
+function searchDemoAgentContext(
+  state: DemoRuntimeState,
+  params: RequestParams,
+): AgentContextSearchResult {
+  const query = String(params.q ?? "").trim().toLocaleLowerCase()
+  const scope = String(params.scope ?? "mixed")
+  const projectId =
+    typeof params.project_id === "string" ? params.project_id : null
+  const sessionId =
+    typeof params.session_id === "string" ? params.session_id : null
+  const matches = (value: string) =>
+    !query || value.toLocaleLowerCase().includes(query)
+  const files: AgentContextSearchItem[] = []
+  if (scope === "mixed" || scope === "file") {
+    if (sessionId) {
+      for (const attachment of state.agentAttachments.values()) {
+        if (attachment.session_id !== sessionId || !matches(attachment.filename)) {
+          continue
+        }
+        const directory = attachment.kind === "folder"
+        files.push({
+          id: `attachment:${attachment.id}`,
+          kind: directory ? "directory" : "file",
+          label: attachment.filename,
+          detail: "Uploaded attachment",
+          input_part: directory
+            ? { type: "directory_ref", attachment_id: attachment.id }
+            : { type: "file_ref", attachment_id: attachment.id },
+        })
+      }
+    }
+    if (projectId) {
+      for (const node of flattenDemoFiles(state.workspaceFiles.get(projectId) ?? [])) {
+        if (!matches(node.path)) continue
+        files.push({
+          id: `project:${projectId}:${node.path}`,
+          kind: node.type,
+          label: node.name,
+          detail: node.path,
+          input_part:
+            node.type === "directory"
+              ? {
+                  type: "directory_ref",
+                  project_id: projectId,
+                  path: node.path,
+                }
+              : {
+                  type: "file_ref",
+                  project_id: projectId,
+                  path: node.path,
+                },
+        })
+      }
+    }
   }
-  state.agentMemorySequence += 1
-  state.agentMemories = [memory, ...state.agentMemories]
-
-  const existingTurns = state.agentTurnsBySession.get(session.id) ?? []
-  state.agentTurnsBySession.set(session.id, [...existingTurns, turn])
-  replaceAgentCoreSession(state, {
-    ...session,
-    title: session.title || "RNA-seq demo run",
-    updated_at: nowStamp(),
-  })
-
-  appendAgentCoreEvent(state, turn, "turn.created", {
-    input_text: inputText,
-  })
-  appendAgentCoreEvent(state, turn, "turn.started", {})
-  appendAgentCoreEvent(state, turn, "assistant.thinking.summary", {
-    text: "Demo runtime selected the seeded RNA-seq workflow and prepared a run submission.",
-  })
-  appendAgentCoreEvent(state, turn, "user_input.requested", {
-    request_id: `agent-question-demo-${turn.id}`,
-    question: "Which reference should be used for this demo run?",
-    reason: "Reference choice controls alignment, annotation, and downstream QC interpretation.",
-    options: ["ecoli_k12", "hg38"],
-  })
-  appendAgentCoreEvent(state, turn, "user_input.resolved", {
-    request_id: `agent-question-demo-${turn.id}`,
-    answer: "ecoli_k12",
-  })
-  appendAgentCoreEvent(state, turn, "action.requested", {
-    action_id: action.id,
-    kind: "run",
-    name: "runs.submit",
-    run_id: runId,
-    risk_level: "act_low",
-    input_preview: action.input_preview,
-  })
-  appendAgentCoreEvent(state, turn, "action.waiting_decision", {
-    action_id: action.id,
-    kind: "run",
-    name: "runs.submit",
-    run_id: runId,
-    risk_level: "act_low",
-    input_preview: action.input_preview,
-  })
-  appendAgentCoreEvent(state, turn, "action.completed", {
-    action_id: action.id,
-    kind: "run",
-    name: "runs.submit",
-    run_id: runId,
-    status: "submitted",
-  })
-  appendAgentCoreEvent(state, turn, "artifact.created", {
-    artifact_id: agentArtifact.id,
-    type: "run_ref",
-    title: "Seeded RNA-seq demo run",
-    resource_ref: {
-      kind: "run",
-      id: runId,
+  const workflows: AgentContextSearchItem[] = []
+  if (scope === "mixed" || scope === "workflow") {
+    for (const workflow of state.scenario.workflows) {
+      if (!matches(`${workflow.name} ${workflow.description ?? ""}`)) continue
+      workflows.push({
+        id: `workflow:${workflow.id}`,
+        kind: "workflow",
+        label: workflow.name,
+        detail: [workflow.version, workflow.engine].filter(Boolean).join(" · "),
+        input_part: projectId
+          ? {
+              type: "workflow_ref",
+              workflow_id: workflow.id,
+              scope: "project",
+              project_id: projectId,
+            }
+          : {
+              type: "workflow_ref",
+              workflow_id: workflow.id,
+              scope: "global",
+            },
+      })
+    }
+  }
+  const runs: AgentContextSearchItem[] = []
+  if (scope === "mixed" || scope === "run") {
+    for (const run of state.runs.values()) {
+      if (projectId && run.project_id !== projectId) continue
+      if (!matches(`${run.run_id} ${run.workflow_id ?? ""} ${run.status}`)) {
+        continue
+      }
+      runs.push({
+        id: `run:${run.run_id}`,
+        kind: "run",
+        label: run.run_id,
+        detail: [run.status, run.workflow_id].filter(Boolean).join(" · "),
+        input_part: { type: "run_ref", run_id: run.run_id },
+      })
+    }
+  }
+  const results =
+    scope === "file"
+      ? files
+      : scope === "workflow"
+        ? workflows
+        : scope === "run"
+          ? runs
+          : [...files.slice(0, 4), ...workflows.slice(0, 2), ...runs.slice(0, 2)]
+  return {
+    results,
+    counts: {
+      file: files.length,
+      workflow: workflows.length,
+      run: runs.length,
     },
-  })
-  appendAgentCoreEvent(state, turn, "memory.proposed", {
-    memory_id: memory.id,
-    scope: memory.scope,
-    type: memory.type,
-  })
-  appendAgentCoreEvent(state, turn, "assistant.text.completed", {
-    text: finalText,
-  })
-  appendAgentCoreEvent(state, turn, "turn.completed", {
-    final_text: finalText,
-  })
+    next_cursor: null,
+  }
+}
 
-  scheduleRunReplay(
-    state,
-    session.project_id,
-    runId,
-    buildRunReplay(runId),
-    0,
+function flattenDemoFiles(nodes: DemoFileNode[]): DemoFileNode[] {
+  return nodes.flatMap((node) =>
+    node.type === "directory"
+      ? [node, ...flattenDemoFiles(node.children)]
+      : [node],
   )
+}
 
-  return turn
+async function uploadDemoAgentAttachments(
+  state: DemoRuntimeState,
+  sessionId: string,
+  body: FormData | null,
+) {
+  requireAgentSnapshot(state, sessionId)
+  if (!body) throw new ApiError("Attachment form data is required", { status: 400 })
+  const kind = String(body.get("kind") ?? "")
+  if (!new Set(["file", "folder", "image"]).has(kind)) {
+    throw new ApiError("Unsupported attachment kind", { status: 400 })
+  }
+  const files = body.getAll("files").filter(isUploadedDemoFile)
+  if (files.length === 0) {
+    throw new ApiError("At least one attachment is required", { status: 400 })
+  }
+  const attachments: DemoAgentAttachment[] = []
+  if (kind === "folder") {
+    const relativePaths = body.getAll("relative_paths").map(String)
+    const filename = relativePaths[0]?.split("/")[0] || "Uploaded folder"
+    attachments.push(
+      await createDemoAgentAttachment(state, sessionId, {
+        filename,
+        kind,
+        mimeType: "application/x-directory",
+        files,
+        relativePaths,
+      }),
+    )
+  } else {
+    for (const file of files) {
+      attachments.push(
+        await createDemoAgentAttachment(state, sessionId, {
+          filename: file.name || "Attachment",
+          kind,
+          mimeType: file.type || null,
+          files: [file],
+          relativePaths: [],
+        }),
+      )
+    }
+  }
+  return attachments.map((attachment) => ({
+    id: attachment.id,
+    session_id: attachment.session_id,
+    filename: attachment.filename,
+    kind: attachment.kind,
+    mime_type: attachment.mime_type,
+    size_bytes: attachment.size_bytes,
+    status: "ready",
+    created_at: nowStamp(),
+  }))
+}
+
+type UploadedDemoFile = File & { text(): Promise<string> }
+
+function isUploadedDemoFile(value: FormDataEntryValue): value is UploadedDemoFile {
+  return (
+    typeof value !== "string" &&
+    typeof value.name === "string" &&
+    typeof value.text === "function"
+  )
+}
+
+async function createDemoAgentAttachment(
+  state: DemoRuntimeState,
+  sessionId: string,
+  input: {
+    filename: string
+    kind: string
+    mimeType: string | null
+    files: UploadedDemoFile[]
+    relativePaths: string[]
+  },
+) {
+  const id =
+    `agent-attachment-demo-${String(state.agentAttachmentSequence).padStart(3, "0")}`
+  state.agentAttachmentSequence += 1
+  const contents = await Promise.all(input.files.map((file) => file.text()))
+  const content = contents
+    .map((value, index) => {
+      const label = input.relativePaths[index] || input.files[index]?.name || "file"
+      return `${label}\n${value}`
+    })
+    .join("\n\n")
+  const attachment: DemoAgentAttachment = {
+    id,
+    session_id: sessionId,
+    filename: input.filename,
+    kind: input.kind,
+    mime_type: input.mimeType,
+    size_bytes: input.files.reduce((total, file) => total + file.size, 0),
+    content,
+  }
+  state.agentAttachments.set(id, attachment)
+  return attachment
 }
 
 function emitEnvelope<T>(
@@ -1147,7 +1360,7 @@ function emitEnvelope<T>(
     if (eventName === "run.status") {
       subscriber.onRunStatus?.(envelope as EventEnvelope<RunStatusEvent>)
     } else if (eventName === "run.log") {
-      subscriber.onRunLog?.(envelope as EventEnvelope<{ run_id: string; entry: RunLogEntry }>)
+      subscriber.onRunLog?.(envelope as EventEnvelope<RunLogEvent>)
     } else if (eventName === "run.dag") {
       subscriber.onRunDag?.(envelope as EventEnvelope<RunDagEvent>)
     } else if (eventName === "image.progress") {
@@ -1752,7 +1965,6 @@ function createDemoRuntimeInternal(): AppRuntime {
       state.scenario.projects = [project, ...state.scenario.projects]
       state.workflowGroupsByProject.set(projectId, [])
       state.workspaceFiles.set(projectId, [])
-      state.agentSessionsByProject.set(projectId, [])
       return { data: clone(project) as T }
     }
 
@@ -1782,13 +1994,11 @@ function createDemoRuntimeInternal(): AppRuntime {
       )
       state.workflowGroupsByProject.delete(projectId)
       state.workspaceFiles.delete(projectId)
-      const sessions = state.agentSessionsByProject.get(projectId) ?? []
-      sessions.forEach((session) => {
-        const turns = state.agentTurnsBySession.get(session.id) ?? []
-        turns.forEach((turn) => state.agentEventsByTurn.delete(turn.id))
-        state.agentTurnsBySession.delete(session.id)
-      })
-      state.agentSessionsByProject.delete(projectId)
+      for (const [sessionId, snapshot] of state.agentSnapshots) {
+        if (snapshot.session.project_id === projectId) {
+          deleteAgentSnapshot(state, sessionId)
+        }
+      }
       return { data: null as T }
     }
 
@@ -2061,38 +2271,16 @@ function createDemoRuntimeInternal(): AppRuntime {
       return { data: clone(state.scenario.dashboard.scheduler) as T }
     }
 
-    if (path === "/agent/skills" && method === "GET") {
-      return { data: { skills: clone(DEMO_AGENT_SKILLS) } as T }
-    }
-
     if (path === "/agent/sessions" && method === "GET") {
       const projectId =
         typeof params.project_id === "string" ? params.project_id : undefined
       return {
-        data: clone(listAgentCoreSessions(state, projectId)) as T,
-      }
-    }
-
-    if (path === "/agent/toolsets" && method === "GET") {
-      return {
-        data: {
-          toolsets: [
-            {
-              name: "default",
-              tools: ["projects.list", "workflows.list", "runs.list", "runs.logs"],
-            },
-            {
-              name: "execution",
-              tools: [
-                "projects.list",
-                "workflows.list",
-                "runs.list",
-                "runs.logs",
-                "execution.shell",
-              ],
-            },
-          ],
-        } as T,
+        data: clone(
+          listAgentSessionSummaries(state, {
+            projectId,
+            includeArchived: params.include_archived === true,
+          }),
+        ) as T,
       }
     }
 
@@ -2100,46 +2288,33 @@ function createDemoRuntimeInternal(): AppRuntime {
       const projectId =
         typeof bodyJson?.project_id === "string" && bodyJson.project_id
           ? bodyJson.project_id
-          : state.scenario.contextDefaults.selectedProjectId
-      const session = createAgentCoreSession(state, projectId, {
+          : bodyJson?.project_id === null
+            ? null
+            : state.scenario.contextDefaults.selectedProjectId
+      const snapshot = createAgentSnapshot(state, {
+        projectId,
         title:
           typeof bodyJson?.title === "string" ? bodyJson.title : undefined,
-        roleProfile:
-          typeof bodyJson?.role_profile === "string"
-            ? bodyJson.role_profile
-            : undefined,
         permissionMode:
           typeof bodyJson?.permission_mode === "string"
             ? (bodyJson.permission_mode as AgentPermissionMode)
             : undefined,
-        automationMode:
-          typeof bodyJson?.automation_mode === "string"
-            ? (bodyJson.automation_mode as AgentAutomationMode)
-            : undefined,
-        defaultModelProfileId:
-          typeof bodyJson?.default_model_profile_id === "string"
-            ? bodyJson.default_model_profile_id
-            : null,
-        metadata:
-          bodyJson?.metadata && typeof bodyJson.metadata === "object"
-            ? (bodyJson.metadata as Record<string, unknown>)
+        workspaceAccess:
+          typeof bodyJson?.workspace_access === "string"
+            ? (bodyJson.workspace_access as AgentWorkspaceAccess)
             : undefined,
       })
-      return { data: clone(session) as T }
+      return { data: clone(snapshot) as T }
     }
 
     const agentSessionMatch = matchPath(/^\/agent\/sessions\/([^/]+)$/, path)
-    if (agentSessionMatch && method === "GET") {
-      const [sessionId] = agentSessionMatch
-      const session = findAgentCoreSession(state, sessionId)
-      if (!session) throw new ApiError("Agent session not found", { status: 404 })
-      return { data: clone(session) as T }
-    }
-
     if (agentSessionMatch && method === "PATCH") {
       const [sessionId] = agentSessionMatch
-      const session = updateAgentCoreSession(state, sessionId, {
-        title: typeof bodyJson?.title === "string" ? bodyJson.title : undefined,
+      const snapshot = updateAgentSnapshot(state, sessionId, {
+        title:
+          bodyJson?.title === null || typeof bodyJson?.title === "string"
+            ? bodyJson.title
+            : undefined,
         status:
           typeof bodyJson?.status === "string"
             ? (bodyJson.status as AgentSessionStatus)
@@ -2148,197 +2323,84 @@ function createDemoRuntimeInternal(): AppRuntime {
           typeof bodyJson?.permission_mode === "string"
             ? (bodyJson.permission_mode as AgentPermissionMode)
             : undefined,
-        metadata:
-          bodyJson && Object.hasOwn(bodyJson, "metadata")
-            ? (bodyJson.metadata as Record<string, unknown> | null)
+        workspaceAccess:
+          typeof bodyJson?.workspace_access === "string"
+            ? (bodyJson.workspace_access as AgentWorkspaceAccess)
             : undefined,
       })
-      return { data: clone(session) as T }
+      return { data: clone(snapshot) as T }
     }
 
     if (agentSessionMatch && method === "DELETE") {
       const [sessionId] = agentSessionMatch
-      deleteAgentCoreSession(state, sessionId)
+      deleteAgentSnapshot(state, sessionId)
       return { data: null as T }
     }
 
-    const agentSessionStateMatch = matchPath(
-      /^\/agent\/sessions\/([^/]+)\/state$/,
+    const agentSnapshotMatch = matchPath(
+      /^\/agent\/sessions\/([^/]+)\/snapshot$/,
       path,
     )
-    if (agentSessionStateMatch && method === "GET") {
-      const [sessionId] = agentSessionStateMatch
-      const session = findAgentCoreSession(state, sessionId)
-      if (!session) throw new ApiError("Agent session not found", { status: 404 })
-      const turns = state.agentTurnsBySession.get(sessionId) ?? []
-      const events = turns.flatMap((turn) => state.agentEventsByTurn.get(turn.id) ?? [])
+    if (agentSnapshotMatch && method === "GET") {
+      const [sessionId] = agentSnapshotMatch
+      return { data: clone(requireAgentSnapshot(state, sessionId)) as T }
+    }
+
+    const agentCommandsMatch = matchPath(
+      /^\/agent\/sessions\/([^/]+)\/commands$/,
+      path,
+    )
+    if (agentCommandsMatch && method === "POST") {
+      const [sessionId] = agentCommandsMatch
       return {
-        data: {
-          session: clone(session),
-          turns: clone(turns),
-          events: clone(events).sort((a, b) => a.seq - b.seq),
-        } as T,
+        data: clone(
+          dispatchDemoAgentCommand(state, sessionId, bodyJson as AgentCommand),
+        ) as T,
       }
     }
 
-    const agentSessionTurnsMatch = matchPath(
-      /^\/agent\/sessions\/([^/]+)\/turns$/,
+    const agentEventsMatch = matchPath(
+      /^\/agent\/sessions\/([^/]+)\/events$/,
       path,
     )
-    if (agentSessionTurnsMatch && method === "GET") {
-      const [sessionId] = agentSessionTurnsMatch
+    if (agentEventsMatch && method === "GET") {
+      const [sessionId] = agentEventsMatch
+      const event: AgentEvent = {
+        type: "snapshot",
+        snapshot: clone(requireAgentSnapshot(state, sessionId)),
+      }
       return {
-        data: clone(state.agentTurnsBySession.get(sessionId) ?? []) as T,
+        data: [event] as T,
       }
     }
 
-    if (agentSessionTurnsMatch && method === "POST") {
-      const [sessionId] = agentSessionTurnsMatch
-      const inputText =
-        typeof bodyJson?.input_text === "string" ? bodyJson.input_text : ""
-      const activeSkillNames = Array.isArray(bodyJson?.active_skill_names)
-        ? bodyJson.active_skill_names.filter((name): name is string => typeof name === "string")
-        : []
-      const turn = createAgentCoreTurn(state, sessionId, inputText, activeSkillNames)
-      return { data: clone(turn) as T }
+    if (path === "/agent/context/search" && method === "GET") {
+      return { data: searchDemoAgentContext(state, params) as T }
     }
 
-    const agentTurnEventsMatch = matchPath(
-      /^\/agent\/turns\/([^/]+)\/events$/,
+    const agentAttachmentsMatch = matchPath(
+      /^\/agent\/sessions\/([^/]+)\/attachments$/,
       path,
     )
-    if (agentTurnEventsMatch && method === "GET") {
-      const [turnId] = agentTurnEventsMatch
-      const afterSeq =
-        typeof params.after_seq === "number"
-          ? params.after_seq
-          : typeof params.after_seq === "string"
-            ? Number(params.after_seq)
-            : 0
-      const events = (state.agentEventsByTurn.get(turnId) ?? []).filter(
-        (event) => event.seq > afterSeq,
-      )
-      return { data: clone(events) as T }
-    }
-
-    const agentTurnInterruptMatch = matchPath(
-      /^\/agent\/turns\/([^/]+)\/interrupt$/,
-      path,
-    )
-    if (agentTurnInterruptMatch && method === "POST") {
-      const [turnId] = agentTurnInterruptMatch
-      const turn = findAgentCoreTurn(state, turnId)
-      if (!turn) throw new ApiError("Agent turn not found", { status: 404 })
-      const interrupted: AgentCoreTurn = {
-        ...turn,
-        status: "cancelled",
-        error_code: null,
-        error_message: null,
-        updated_at: nowStamp(),
-        completed_at: nowStamp(),
-      }
-      replaceAgentCoreTurn(state, interrupted)
-      appendAgentCoreEvent(state, interrupted, "turn.interrupted", {
-        termination_reason: "interrupted",
-      })
-      return { data: clone(interrupted) as T }
-    }
-
-    const agentTurnArtifactsMatch = matchPath(
-      /^\/agent\/turns\/([^/]+)\/artifacts$/,
-      path,
-    )
-    if (agentTurnArtifactsMatch && method === "GET") {
-      const [turnId] = agentTurnArtifactsMatch
+    if (agentAttachmentsMatch && method === "POST") {
+      const [sessionId] = agentAttachmentsMatch
       return {
-        data: clone(state.agentArtifactsByTurn.get(turnId) ?? []) as T,
+        data: clone(
+          await uploadDemoAgentAttachments(state, sessionId, bodyFormData),
+        ) as T,
       }
     }
 
-    const agentActionDecisionMatch = matchPath(
-      /^\/agent\/actions\/([^/]+)\/decision$/,
+    const agentAttachmentMatch = matchPath(
+      /^\/agent\/attachments\/([^/]+)$/,
       path,
     )
-    if (agentActionDecisionMatch && method === "POST") {
-      const [actionId] = agentActionDecisionMatch
-      const action = state.agentActions.get(actionId)
-      if (!action) throw new ApiError("Agent action not found", { status: 404 })
-      const decision =
-        bodyJson?.decision === "reject" || bodyJson?.decision === "modify"
-          ? bodyJson.decision
-          : "approve"
-      const updated: AgentCoreAction = {
-        ...action,
-        permission_decision: {
-          decision,
-          note: typeof bodyJson?.note === "string" ? bodyJson.note : null,
-          modified_input:
-            bodyJson?.modified_input && typeof bodyJson.modified_input === "object"
-              ? bodyJson.modified_input
-              : null,
-        },
-        status: decision === "reject" ? "rejected" : "completed",
-        audit_summary: `Demo action decision recorded: ${decision}.`,
-        updated_at: nowStamp(),
-        completed_at: nowStamp(),
+    if (agentAttachmentMatch && method === "DELETE") {
+      const [attachmentId] = agentAttachmentMatch
+      if (!state.agentAttachments.delete(attachmentId)) {
+        throw new ApiError("Agent attachment not found", { status: 404 })
       }
-      state.agentActions.set(actionId, updated)
-      return { data: clone(updated) as T }
-    }
-
-    if (path === "/agent/memories" && method === "GET") {
-      const projectId =
-        typeof params.project_id === "string" ? params.project_id : null
-      const status = typeof params.status === "string" ? params.status : null
-      const scope = typeof params.scope === "string" ? params.scope : null
-      const type = typeof params.type === "string" ? params.type : null
-      const memories = state.agentMemories.filter(
-        (memory) =>
-          (!projectId || memory.project_id === projectId) &&
-          (!status || memory.status === status) &&
-          (!scope || memory.scope === scope) &&
-          (!type || memory.type === type),
-      )
-      return { data: clone(memories) as T }
-    }
-
-    const agentMemoryDecisionMatch = matchPath(
-      /^\/agent\/memories\/([^/]+)\/(accept|reject|disable)$/,
-      path,
-    )
-    if (agentMemoryDecisionMatch && method === "POST") {
-      const [memoryId, decision] = agentMemoryDecisionMatch
-      const index = state.agentMemories.findIndex((memory) => memory.id === memoryId)
-      if (index === -1) throw new ApiError("Agent memory not found", { status: 404 })
-      const nextStatus =
-        decision === "accept"
-          ? "accepted"
-          : decision === "disable"
-            ? "disabled"
-            : "rejected"
-      const updated: AgentCoreMemory = {
-        ...state.agentMemories[index],
-        status: nextStatus,
-        source: {
-          ...(state.agentMemories[index]?.source ?? {}),
-          decision_note: typeof bodyJson?.note === "string" ? bodyJson.note : null,
-        },
-        updated_at: nowStamp(),
-      }
-      state.agentMemories = state.agentMemories.map((memory) =>
-        memory.id === memoryId ? updated : memory,
-      )
-      return { data: clone(updated) as T }
-    }
-
-    if (
-      path === "/agent/message" ||
-      path === "/agent/conversations" ||
-      path.startsWith("/agent/conversations/")
-    ) {
-      throw new ApiError("Legacy agent API has been replaced by AgentCore", {
-        status: 404,
-      })
+      return { data: null as T }
     }
 
     if (path === "/images" && method === "GET") {
@@ -2417,15 +2479,6 @@ function createDemoRuntimeInternal(): AppRuntime {
       state.images = state.images.filter((candidate) => candidate.id !== imageId)
       syncImageStats(state)
       return { data: null as T }
-    }
-
-    const approvalMatch = matchPath(/^\/agent\/approvals\/([^/]+)\/resolve$/, path)
-    if (approvalMatch && method === "POST") {
-      return {
-        data: {
-          success: true,
-        } as T,
-      }
     }
 
     if (path === "/llm/providers" && method === "GET") {

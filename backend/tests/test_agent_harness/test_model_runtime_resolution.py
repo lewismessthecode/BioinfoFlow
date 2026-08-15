@@ -11,7 +11,11 @@ from app.models.llm import (
     LlmProvider,
     LlmProviderCredential,
 )
-from app.services.agent_harness.contracts import OpenSessionRequest, PromptCommand
+from app.services.agent_harness.contracts import (
+    InputTextPart,
+    MessageCommand,
+    OpenSessionRequest,
+)
 from app.services.agent_harness.factory import (
     harness_for_database,
     resolve_model_snapshot,
@@ -26,9 +30,17 @@ from app.services.model_runtime.contracts import (
     TextDelta,
 )
 from app.services.model_runtime.errors import ModelError
+from app.utils.exceptions import AppError
 
 
 WORKSPACE_ID = "30000000-0000-0000-0000-000000000001"
+
+
+def _message(command_id: str, text: str) -> MessageCommand:
+    return MessageCommand(
+        command_id=command_id,
+        parts=[InputTextPart(text=text)],
+    )
 
 
 class RecordingModel:
@@ -54,6 +66,22 @@ class FailingRecordingModel:
             replay_safe=True,
         )
         yield  # pragma: no cover - keep this an async generator
+
+
+@pytest.mark.asyncio
+async def test_model_snapshot_uses_a_stable_error_when_no_model_is_available(
+    harness_db,
+) -> None:
+    with pytest.raises(AppError) as exc_info:
+        await resolve_model_snapshot(
+            harness_db,
+            workspace_id=WORKSPACE_ID,
+            user_id="user-1",
+            selection=None,
+        )
+
+    assert exc_info.value.code == "AGENT_MODEL_REQUIRED"
+    assert exc_info.value.status_code == 422
 
 
 def test_private_model_snapshot_discards_legacy_fallback_strategy() -> None:
@@ -264,12 +292,12 @@ async def test_harness_resolves_current_credential_for_every_model_invocation(
 
     await harness.dispatch(
         str(opened.session.id),
-        PromptCommand(command_id="prompt-1", text="Use the first credential."),
+        _message("message-1", "Use the first credential."),
     )
     monkeypatch.setenv("TEST_AGENT_MODEL_KEY", "rotated-secret")
     await harness.dispatch(
         str(opened.session.id),
-        PromptCommand(command_id="prompt-2", text="Use the rotated credential."),
+        _message("message-2", "Use the rotated credential."),
     )
 
     assert len(recording.invocations) == 2
@@ -302,17 +330,16 @@ async def test_harness_rejects_legacy_resolved_model_id_snapshot(
 
     await harness.dispatch(
         str(opened.session.id),
-        PromptCommand(command_id="legacy-model", text="Do not invoke the provider."),
+        _message("legacy-model", "Do not invoke the provider."),
     )
 
     snapshot = await harness.snapshot(str(opened.session.id))
     assert recording.invocations == []
-    assert snapshot.current_run is not None
-    assert snapshot.current_run.status == "failed"
-    assert snapshot.current_run.error == {
+    assert snapshot.runs[-1].status == "failed"
+    assert snapshot.runs[-1].error is not None
+    assert snapshot.runs[-1].error.model_dump() == {
         "code": "agent_failed",
-        "message": "The Agent session model is no longer available",
-        "type": "ValueError",
+        "message": "The Agent run failed.",
     }
 
 
@@ -347,7 +374,7 @@ async def test_harness_applies_resolved_model_capabilities_and_profile_strategy(
 
     await harness.dispatch(
         str(opened.session.id),
-        PromptCommand(command_id="prompt-1", text="Respect the model profile."),
+        _message("message-1", "Respect the model profile."),
     )
 
     invocation = recording.invocations[0]
@@ -407,18 +434,17 @@ async def test_harness_profile_uses_only_primary_model_without_fallback_snapshot
     )
     await harness.dispatch(
         str(opened.session.id),
-        PromptCommand(command_id="prompt-1", text="Complete this request."),
+        _message("message-1", "Complete this request."),
     )
 
     assert len(recording.invocations) == 1
     assert recording.invocations[0].target.model_name == primary_model.model_id
     failed = await harness.snapshot(str(opened.session.id))
-    assert failed.current_run is not None
-    assert failed.current_run.status == "failed"
-    assert failed.current_run.error == {
+    assert failed.runs[-1].status == "failed"
+    assert failed.runs[-1].error is not None
+    assert failed.runs[-1].error.model_dump() == {
         "code": "agent_failed",
-        "message": "primary model failed",
-        "type": "ModelError",
+        "message": "The Agent run failed.",
     }
 
 

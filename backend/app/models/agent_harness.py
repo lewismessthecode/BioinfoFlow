@@ -40,6 +40,9 @@ class AgentHarnessSession(Base, UUIDMixin, TimestampMixin):
     permission_mode: Mapped[str] = mapped_column(
         String(30), nullable=False, default="ask_dangerous"
     )
+    workspace_access: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="read_write"
+    )
     prompt_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
     history_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     command_queue: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
@@ -78,6 +81,7 @@ class AgentHarnessRun(Base, UUIDMixin, TimestampMixin):
         String(30), nullable=False, default="queued", index=True
     )
     phase: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     model_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     lease_owner: Mapped[str | None] = mapped_column(String(100), nullable=True)
     lease_generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -127,7 +131,7 @@ class AgentHarnessEntry(Base, UUIDMixin, TimestampMixin):
     )
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
-    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
 
 

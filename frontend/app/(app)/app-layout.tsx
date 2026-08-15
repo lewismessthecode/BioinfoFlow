@@ -201,19 +201,27 @@ export default function AppLayout({
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if (
+        !onAgentRoute &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "k"
+      ) {
         event.preventDefault()
         toggleCommandPalette()
       }
       // Toggle left sidebar with Cmd+B
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
+      if (
+        !event.shiftKey &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "b"
+      ) {
         event.preventDefault()
         toggleLeftSidebar()
       }
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
-  }, [toggleCommandPalette, toggleLeftSidebar])
+  }, [onAgentRoute, toggleCommandPalette, toggleLeftSidebar])
 
   useEffect(() => {
     if (!isSettingsRoute) {

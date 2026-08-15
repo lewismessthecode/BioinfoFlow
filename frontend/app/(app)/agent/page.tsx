@@ -1,10 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useTranslations } from "next-intl"
 import {
   AgentWorkbench,
   type AgentWorkbenchHandle,
-} from "@/components/bioinfoflow/agent-runtime/agent-workbench"
+} from "@/components/bioinfoflow/agent/agent-workbench"
 import { LiveDeck } from "@/components/bioinfoflow/live-deck"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useEvents } from "@/hooks/use-events"
@@ -12,48 +13,58 @@ import type { DagData, Run } from "@/lib/types"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useIsMobile } from "@/hooks/use-media-query"
 import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard-shortcuts-overlay"
+import type { SessionView } from "@/lib/agent/contracts"
+import { Button } from "@/components/ui/button"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import { PanelRightClose } from "@/lib/icons"
 
 const RIGHT_SIDEBAR_MIN = 300
 const RIGHT_SIDEBAR_MAX = 600
 const RIGHT_SIDEBAR_DEFAULT = 400
 
 export default function AgentPage() {
-  const { selectedProjectId, conversationProjectId, activeConversationId } = useProjectContext()
-
-  // A draft gets an active conversation id during submit; remounting here would
-  // discard its optimistic turn and live stream subscription.
-  return (
-    <AgentPageContent
-      key={`${selectedProjectId || "no-selected"}:${conversationProjectId || "no-conversation-project"}`}
-      selectedProjectId={selectedProjectId}
-      conversationProjectId={conversationProjectId}
-      activeConversationId={activeConversationId}
-    />
-  )
+  return <AgentPageContent routeSessionId={null} />
 }
 
 export function AgentPageContent({
-  selectedProjectId,
-  conversationProjectId,
-  activeConversationId,
+  routeSessionId,
 }: {
-  selectedProjectId: string
-  conversationProjectId: string
-  activeConversationId: string
+  routeSessionId: string | null
 }) {
+  const t = useTranslations("agentWorkbench")
   const isMobile = useIsMobile()
   const chatRef = useRef<AgentWorkbenchHandle>(null)
-  const { setActiveConversationId } = useProjectContext()
+  const {
+    selectedProjectId,
+    conversationProjectId,
+    setSelectedProjectId,
+    setConversationProjectId,
+    setActiveConversationId,
+    setActiveConversationTitle,
+  } = useProjectContext()
   const [liveDeckTab, setLiveDeckTab] = useState<"workspace" | "dag" | "monitor">("workspace")
   const [rightSidebarWidth, setRightSidebarWidth] = useState(RIGHT_SIDEBAR_DEFAULT)
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(true)
+  const [mobileLiveDeckOpen, setMobileLiveDeckOpen] = useState(false)
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
   const [dag, setDag] = useState<DagData | null>(null)
 
   useEffect(() => {
+    setActiveConversationId(routeSessionId ?? "")
+  }, [routeSessionId, setActiveConversationId])
+
+  useEffect(() => {
     const savedWidth = localStorage.getItem("right-sidebar-width")
+    const savedCollapsed = localStorage.getItem("right-sidebar-collapsed")
     /* eslint-disable react-hooks/set-state-in-effect */
     if (savedWidth) setRightSidebarWidth(Number(savedWidth))
+    if (savedCollapsed) setRightSidebarCollapsed(savedCollapsed === "true")
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [])
 
@@ -93,6 +104,22 @@ export function AgentPageContent({
   }, [])
 
   const [showShortcuts, setShowShortcuts] = useState(false)
+
+  const handleSessionResolved = useCallback(
+    (session: SessionView) => {
+      const projectId = session.project_id ?? ""
+      setActiveConversationId(session.id)
+      setActiveConversationTitle(session.title ?? "")
+      setConversationProjectId(projectId)
+      setSelectedProjectId(projectId)
+    },
+    [
+      setActiveConversationId,
+      setActiveConversationTitle,
+      setConversationProjectId,
+      setSelectedProjectId,
+    ],
+  )
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -143,12 +170,26 @@ export function AgentPageContent({
       data-testid="agent-page-shell"
     >
       <AgentWorkbench
+        key={routeSessionId ?? "draft"}
         ref={chatRef}
-        projectId={conversationProjectId || null}
-        activeSessionId={activeConversationId}
+        projectId={conversationProjectId || selectedProjectId || null}
+        sessionId={routeSessionId}
         onActiveSessionIdChange={setActiveConversationId}
-        workspaceEnabled
+        onSessionResolved={handleSessionResolved}
         className="min-w-0 flex-1"
+        headerActions={
+          isMobile && selectedProjectId ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t("workspacePanel.open")}
+              onClick={() => setMobileLiveDeckOpen(true)}
+            >
+              <PanelRightClose aria-hidden="true" className="rotate-180" />
+            </Button>
+          ) : null
+        }
       />
       {showShortcuts && (
         <KeyboardShortcutsOverlay
@@ -157,23 +198,48 @@ export function AgentPageContent({
         />
       )}
 
-      {/* Right Sidebar - temporarily hidden when collapsed; LiveDeck remains available for future iteration. */}
-      {!isMobile && selectedProjectId && !rightSidebarCollapsed ? (
-          <div
-            className="relative flex-shrink-0 animate-in slide-in-from-right-2 fade-in duration-200"
-            style={{ width: rightSidebarWidth }}
+      {isMobile && selectedProjectId ? (
+        <Sheet open={mobileLiveDeckOpen} onOpenChange={setMobileLiveDeckOpen}>
+          <SheetContent
+            side="right"
+            closeLabel={t("workspacePanel.close")}
+            className="w-full max-w-none gap-0 overflow-hidden overscroll-contain p-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:max-w-[32rem]"
           >
-            <ResizeHandle side="right" onResize={handleRightResize} />
+            <SheetHeader className="sr-only">
+              <SheetTitle>{t("workspacePanel.title")}</SheetTitle>
+              <SheetDescription>
+                {t("workspacePanel.description")}
+              </SheetDescription>
+            </SheetHeader>
             <LiveDeck
               activeTab={liveDeckTab}
               onTabChange={setLiveDeckTab}
-              onCollapse={toggleRightSidebar}
+              onCollapse={() => setMobileLiveDeckOpen(false)}
               projectId={selectedProjectId}
               runId={selectedRun?.run_id}
               dag={dag}
               onRunSelect={handleRunSelect}
             />
-          </div>
+          </SheetContent>
+        </Sheet>
+      ) : null}
+
+      {!isMobile && selectedProjectId && !rightSidebarCollapsed ? (
+        <div
+          className="relative flex-shrink-0 animate-in slide-in-from-right-2 fade-in duration-200 motion-reduce:animate-none"
+          style={{ width: rightSidebarWidth }}
+        >
+          <ResizeHandle side="right" onResize={handleRightResize} />
+          <LiveDeck
+            activeTab={liveDeckTab}
+            onTabChange={setLiveDeckTab}
+            onCollapse={toggleRightSidebar}
+            projectId={selectedProjectId}
+            runId={selectedRun?.run_id}
+            dag={dag}
+            onRunSelect={handleRunSelect}
+          />
+        </div>
       ) : null}
     </div>
   )

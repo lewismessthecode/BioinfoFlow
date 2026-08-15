@@ -1,172 +1,197 @@
 import { expect, test } from "@playwright/test"
 
 import { AgentPage } from "./pages/agent-page"
-import { Sidebar } from "./pages/sidebar"
+import {
+  createKeylessAgentSession,
+  disableKeylessAgentProviders,
+  setupKeylessAgentModel,
+} from "./support/keyless-agent"
 
-test.describe("Agent first analysis journey", () => {
-  test("activates the demo and submits the seeded workflow through the guarded Agent path", async ({
+test.describe("Agent workbench live run journey", () => {
+  test("opens inline model setup and preserves the draft when no model is available", async ({
     page,
+    request,
   }) => {
     const agent = new AgentPage(page)
-    const sidebar = new Sidebar(page)
-    const prompt = "Check and run the demo workflow"
-    const backendPort = Number(process.env.PLAYWRIGHT_BACKEND_PORT || 8100)
-    const modelPort = Number(process.env.PLAYWRIGHT_MODEL_PORT || 9100)
-    const apiBaseUrl = `http://127.0.0.1:${backendPort}/api/v1`
-    const runRequests: string[] = []
-    page.on("request", (request) => {
-      if (request.method() === "POST" && request.url().includes("/api/v1/runs")) {
-        runRequests.push(request.url())
-      }
-    })
+    const prompt = "Keep this message while I connect a model."
+    await disableKeylessAgentProviders(request)
 
-    const providerSetup = await page.request.post(`${apiBaseUrl}/llm/provider-setups`, {
-      data: {
-        template_id: "openai-compatible",
-        name: "E2E run approval model",
-        base_url: `http://127.0.0.1:${modelPort}/v1`,
-        wire_protocol: "chat_completions",
-        api_key: "e2e-test-key",
-        model_ids: ["e2e-runs-submit"],
-        discover: false,
-        enabled: true,
-        allow_insecure_http: true,
-      },
-    })
-    expect(providerSetup.ok()).toBe(true)
-
-    const bootstrapResponsePromise = page.waitForResponse(
+    await agent.goto()
+    await agent.expectComposerReady()
+    const responsePromise = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
-        /\/api\/v1\/first-run\/bootstrap$/.test(response.url()),
+        response.url().endsWith("/api/v1/agent/sessions"),
     )
-    await agent.goto()
-    const bootstrapResponse = await bootstrapResponsePromise
-    expect(bootstrapResponse.ok()).toBe(true)
-    await expect(bootstrapResponse.json()).resolves.toMatchObject({
-      success: true,
-      data: {
-        ready: true,
-        created: true,
-        demo_project_id: expect.any(String),
-        workflow_id: expect.any(String),
-      },
+    await agent.sendMessage(prompt)
+
+    const response = await responsePromise
+    expect(response.status()).toBe(422)
+    await expect
+      .poll(async () => (await response.json()).error?.code)
+      .toBe("AGENT_MODEL_REQUIRED")
+
+    const dialog = page.getByRole("dialog", {
+      name: "Connect a model to continue",
     })
-    await sidebar.expectLoaded()
+    await expect(dialog).toBeVisible({ timeout: 20_000 })
     await expect(
-      sidebar.root.getByRole("button", { name: "Bioinfoflow Demo", exact: true }),
-    ).toBeVisible()
+      dialog.getByRole("group", { name: "OpenAI", exact: true }),
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(
+      dialog.getByRole("link", { name: "Open full provider settings" }),
+    ).toHaveAttribute("href", "/settings?section=providers")
+    await expect(agent.messageInput).toHaveValue(prompt)
+
+    await page.keyboard.press("Escape")
+
+    await expect(dialog).toHaveCount(0)
+    await expect(agent.messageInput).toHaveValue(prompt)
+  })
+
+  test("creates a Session on the first browser message", async ({
+    page,
+    request,
+  }, testInfo) => {
+    const agent = new AgentPage(page)
+    await setupKeylessAgentModel(request, "streaming", testInfo)
+    const prompt = "Explain the keyless browser test path."
+
+    await agent.goto()
     await agent.expectComposerReady()
-    const breadcrumbs = page.getByRole("navigation", { name: "Breadcrumbs" })
-    const actionRow = page.getByTestId("navbar-action-row")
+    await agent.sendMessage(prompt)
+    await agent.expectSessionRoute()
 
-    await page.setViewportSize({ width: 768, height: 720 })
-    await expect(breadcrumbs).toBeVisible()
-    await expect(breadcrumbs).toContainText("Bioinfoflow Demo")
-    await expect(actionRow).toBeVisible()
-    const breadcrumbBounds = await breadcrumbs.boundingBox()
-    const actionRowBounds = await actionRow.boundingBox()
-    expect(breadcrumbBounds).not.toBeNull()
-    expect(actionRowBounds).not.toBeNull()
-    expect(breadcrumbBounds!.x + breadcrumbBounds!.width).toBeLessThanOrEqual(
-      actionRowBounds!.x,
-    )
-    const navbarActionCount = await actionRow.locator("button").count()
-    expect(navbarActionCount).toBeGreaterThan(0)
+    await expect(
+      agent.transcript.getByText(prompt, { exact: true }),
+    ).toBeVisible()
+    await expect(
+      agent.transcript.getByText("Keyless model stream completed.", {
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(
+      agent.transcript.getByText("Thinking summary", { exact: true }),
+    ).toBeVisible()
+  })
 
-    for (const width of [320, 390]) {
-      await page.setViewportSize({ width, height: 720 })
-      await expect(breadcrumbs).toBeHidden()
-      await expect(actionRow.locator("button")).toHaveCount(navbarActionCount)
-      for (let index = 0; index < navbarActionCount; index += 1) {
-        await expect(actionRow.locator("button").nth(index)).toBeVisible()
-      }
+  test("streams thinking and the final answer through the real Agent Harness", async ({
+    page,
+    request,
+  }, testInfo) => {
+    const agent = new AgentPage(page)
+    const modelId = await setupKeylessAgentModel(request, "streaming", testInfo)
+    const opened = await createKeylessAgentSession(request, { modelId })
+    const prompt = "Show the live keyless stream."
 
-      const layout = await page.evaluate(() => {
-        const navbar = document.querySelector("header")
-        const actionRow = document.querySelector<HTMLElement>(
-          '[data-testid="navbar-action-row"]',
-        )
-        const actionBounds = actionRow
-          ? Array.from(actionRow.querySelectorAll<HTMLElement>("button")).map(
-              (button) => {
-                const rect = button.getBoundingClientRect()
-                return { left: rect.left, right: rect.right }
-              },
-            )
-          : []
-        return {
-          overflow: {
-            document:
-              document.documentElement.scrollWidth -
-              document.documentElement.clientWidth,
-            body: document.body.scrollWidth - document.body.clientWidth,
-            navbar: navbar ? navbar.scrollWidth - navbar.clientWidth : null,
-          },
-          actionBounds,
-        }
-      })
+    await agent.gotoSession(opened.session.id)
+    await agent.expectComposerReady()
+    await agent.sendMessage(prompt)
 
-      expect(layout.overflow, `${width}px viewport overflow`).toEqual({
-        document: 0,
-        body: 0,
-        navbar: 0,
-      })
-      expect(layout.actionBounds.length).toBeGreaterThan(0)
-      for (const bounds of layout.actionBounds) {
-        expect(bounds.left, `${width}px action left edge`).toBeGreaterThanOrEqual(0)
-        expect(bounds.right, `${width}px action right edge`).toBeLessThanOrEqual(width)
-      }
-      await expect(agent.messageInput).toBeVisible()
-      await expect(agent.sendButton).toBeVisible()
-    }
-    await page.setViewportSize({ width: 1280, height: 720 })
-
-    const primaryStarter = page.getByRole("button", { name: prompt, exact: true })
-    await expect(primaryStarter).toBeVisible()
-    const sessionRequestPromise = page.waitForRequest(
-      (request) =>
-        request.method() === "POST" &&
-        /\/api\/v1\/agent\/sessions$/.test(request.url()),
-    )
-    const turnRequestPromise = page.waitForRequest(
-      (request) =>
-        request.method() === "POST" &&
-        /\/api\/v1\/agent\/sessions\/[^/]+\/turns$/.test(request.url()),
-    )
-
-    await primaryStarter.click()
-
-    const sessionRequest = await sessionRequestPromise
-    const sessionPayload = sessionRequest.postDataJSON()
-    expect(sessionPayload.permission_mode).toBe("guarded_auto")
-    expect(sessionPayload.automation_mode).toBe("assisted")
-
-    const turnRequest = await turnRequestPromise
-    const turnPayload = turnRequest.postDataJSON()
-    expect(turnPayload.input_text).toBe(prompt)
-    expect(turnPayload.input_parts).toEqual([
-      { type: "text", text: prompt },
-      {
-        kind: "workflow_ref",
-        workflow_id: expect.any(String),
-        project_id: expect.any(String),
-        scope: "project",
-      },
-    ])
-
-    await expect(page.getByText(prompt)).toBeVisible()
-    const approvalCard = page.getByTestId("inline-approval-card")
-    await expect(approvalCard).toBeVisible({ timeout: 30_000 })
-    await expect(approvalCard.getByText("runs.submit")).toBeVisible()
-    await expect(approvalCard.getByRole("button", { name: "Approve" })).toBeVisible()
-    await expect(approvalCard.getByRole("button", { name: "Reject" })).toBeVisible()
-    expect(runRequests).toEqual([])
-
-    const runsResponse = await page.request.get(`${apiBaseUrl}/runs`, {
-      params: { limit: 20 },
+    await expect(
+      agent.transcript.getByText(prompt, { exact: true }),
+    ).toBeVisible()
+    await expect(agent.activeRun.getByText("Thinking summary")).toBeVisible({
+      timeout: 20_000,
     })
-    expect(runsResponse.ok()).toBe(true)
-    await expect(runsResponse.json()).resolves.toMatchObject({ data: [] })
+    await expect(
+      agent.activeRun.getByText("Checking the keyless request.", {
+        exact: true,
+      }),
+    ).toBeVisible()
+    await expect(
+      agent.activeRun.getByText("Keyless model", { exact: true }),
+    ).toBeVisible()
+    await expect(
+      agent.transcript.getByText("Keyless model stream completed.", {
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(agent.activeRun).toHaveCount(0)
+    const outcome = agent.transcript
+      .getByTestId("agent-run-outcome")
+      .filter({ hasText: "Completed" })
+    await expect(outcome).toBeVisible()
+    await expect(outcome.getByText(/^Ended /)).toBeVisible()
+  })
+
+  test("renders a structured plan without a duplicate tool card", async ({
+    page,
+    request,
+  }, testInfo) => {
+    const agent = new AgentPage(page)
+    const modelId = await setupKeylessAgentModel(request, "plan", testInfo)
+    const opened = await createKeylessAgentSession(request, { modelId })
+
+    await agent.gotoSession(opened.session.id)
+    await agent.expectComposerReady()
+    await agent.sendMessage("Show a plan before continuing.")
+
+    await expect(
+      agent.transcript.getByRole("heading", { name: "Keyless execution plan" }),
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(agent.transcript.getByText("Inspect the request")).toBeVisible()
+    await expect(agent.transcript.getByText("Summarize the result")).toBeVisible()
+    await expect(
+      agent.transcript.getByText("The keyless plan is ready.", { exact: true }),
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(agent.transcript.getByText("update_plan")).toHaveCount(0)
+  })
+
+  test("groups concurrent tool calls into one parallel activity", async ({
+    page,
+    request,
+  }, testInfo) => {
+    const agent = new AgentPage(page)
+    const modelId = await setupKeylessAgentModel(
+      request,
+      "parallel-tools",
+      testInfo,
+    )
+    const opened = await createKeylessAgentSession(request, {
+      modelId,
+      permissionMode: "full_access",
+    })
+
+    await agent.gotoSession(opened.session.id)
+    await agent.expectComposerReady()
+    await agent.sendMessage("Read both keyless values in parallel.")
+
+    await expect(
+      agent.transcript.getByText("Both keyless tools completed.", {
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(agent.activityGroups).toHaveCount(1)
+    await expect(
+      agent.activityGroups.getByRole("button", {
+        name: "2 tools running in parallel",
+      }),
+    ).toBeVisible()
+  })
+
+  test("labels an ordered tool batch as sequential activity", async ({
+    page,
+    request,
+  }, testInfo) => {
+    const agent = new AgentPage(page)
+    const modelId = await setupKeylessAgentModel(request, "serial-tools", testInfo)
+    const opened = await createKeylessAgentSession(request, {
+      modelId,
+      permissionMode: "full_access",
+    })
+
+    await agent.gotoSession(opened.session.id)
+    await agent.expectComposerReady()
+    await agent.sendMessage("Run both keyless shell inspections in sequence.")
+
+    await expect(
+      agent.transcript.getByText("Both serial tools completed.", { exact: true }),
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(
+      agent.activityGroups.getByRole("button", {
+        name: "2 tools running in sequence",
+      }),
+    ).toBeVisible()
   })
 })

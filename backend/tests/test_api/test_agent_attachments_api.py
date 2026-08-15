@@ -74,10 +74,12 @@ async def test_attachment_delete_rejects_permanent_history_reference(
     prompted = await async_client.post(
         f"/api/v1/agent/sessions/{session_id}/commands",
         json={
-            "type": "prompt",
+            "type": "message",
             "command_id": "keep-attachment",
-            "text": "Use this image",
-            "attachment_ids": [attachment_id],
+            "parts": [
+                {"type": "text", "text": "Use this image"},
+                {"type": "attachment_ref", "attachment_id": attachment_id},
+            ],
         },
     )
     assert prompted.status_code == 202

@@ -43,6 +43,15 @@ class ValidationError(AppError):
         super().__init__("VALIDATION_ERROR", message, 422, details)
 
 
+class AgentModelRequiredError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            "AGENT_MODEL_REQUIRED",
+            "No usable model is configured for this Agent session",
+            422,
+        )
+
+
 class ConfigurationError(AppError):
     def __init__(self, message: str, details: Any | None = None) -> None:
         super().__init__("CONFIGURATION_ERROR", message, 503, details)
