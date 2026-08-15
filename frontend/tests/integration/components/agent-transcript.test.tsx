@@ -341,6 +341,7 @@ describe("AgentTranscript", () => {
     const jumpButton = await screen.findByRole("button", {
       name: "Jump to latest",
     })
+    expect(jumpButton).toHaveTextContent("Jump to latest")
     expect(scrollTo).not.toHaveBeenCalled()
 
     await user.click(jumpButton)

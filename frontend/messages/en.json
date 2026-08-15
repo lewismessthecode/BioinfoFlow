@@ -2693,7 +2693,8 @@
       "directory": "Directory",
       "workflow": "Workflow",
       "run": "Run",
-      "artifact": "Artifact"
+      "artifact": "Artifact",
+      "openRun": "View run progress for {name}"
     },
     "artifact": {
       "open": "Open {name}",

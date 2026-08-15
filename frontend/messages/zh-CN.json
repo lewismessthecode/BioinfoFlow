@@ -2693,7 +2693,8 @@
       "directory": "目录",
       "workflow": "工作流",
       "run": "运行",
-      "artifact": "产物"
+      "artifact": "产物",
+      "openRun": "查看 {name} 的运行进度"
     },
     "artifact": {
       "open": "打开 {name}",

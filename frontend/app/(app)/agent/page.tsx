@@ -53,6 +53,7 @@ export function AgentPageContent({
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(true)
   const [mobileLiveDeckOpen, setMobileLiveDeckOpen] = useState(false)
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
+  const [focusedRunId, setFocusedRunId] = useState<string | null>(null)
   const [dag, setDag] = useState<DagData | null>(null)
 
   useEffect(() => {
@@ -100,8 +101,21 @@ export function AgentPageContent({
 
   const handleRunSelect = useCallback((run: Run | null) => {
     setSelectedRun(run)
+    setFocusedRunId(run?.run_id ?? null)
     setDag(null)
   }, [])
+
+  const openReferencedRun = useCallback(
+    (runId: string) => {
+      setSelectedRun(null)
+      setFocusedRunId(runId)
+      setDag(null)
+      setLiveDeckTab("dag")
+      if (isMobile) setMobileLiveDeckOpen(true)
+      else setRightSidebarCollapsed(false)
+    },
+    [isMobile],
+  )
 
   const [showShortcuts, setShowShortcuts] = useState(false)
 
@@ -176,6 +190,7 @@ export function AgentPageContent({
         sessionId={routeSessionId}
         onActiveSessionIdChange={setActiveConversationId}
         onSessionResolved={handleSessionResolved}
+        onOpenRun={openReferencedRun}
         className="min-w-0 flex-1"
         headerActions={
           selectedProjectId ? (
@@ -226,7 +241,7 @@ export function AgentPageContent({
               onTabChange={setLiveDeckTab}
               onCollapse={() => setMobileLiveDeckOpen(false)}
               projectId={selectedProjectId}
-              runId={selectedRun?.run_id}
+              runId={selectedRun?.run_id ?? focusedRunId}
               dag={dag}
               onRunSelect={handleRunSelect}
             />
@@ -245,7 +260,7 @@ export function AgentPageContent({
             onTabChange={setLiveDeckTab}
             onCollapse={toggleRightSidebar}
             projectId={selectedProjectId}
-            runId={selectedRun?.run_id}
+            runId={selectedRun?.run_id ?? focusedRunId}
             dag={dag}
             onRunSelect={handleRunSelect}
           />
