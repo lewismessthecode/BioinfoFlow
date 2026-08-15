@@ -1,116 +1,59 @@
-name: Release
+name: Release Please
 
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      publish_version:
-        description: "Publish images for an existing numeric GitHub Release (bootstrap or recovery only)."
-        required: false
-        default: ""
-        type: string
 
 permissions:
-  actions: write
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-please-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: prepare release
+  release-please:
+    name: maintain release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     outputs:
-      should_publish: ${{ steps.resolve.outputs.should_publish }}
-      tag_name: ${{ steps.resolve.outputs.tag_name }}
-      version: ${{ steps.resolve.outputs.version }}
-      major_minor: ${{ steps.resolve.outputs.major_minor }}
-      major: ${{ steps.resolve.outputs.major }}
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
+      - name: Require dedicated Release Please credential
+        env:
+          RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_PLEASE_TOKEN" ]; then
+            echo "RELEASE_PLEASE_TOKEN must be a GitHub App token or PAT so release PRs trigger normal CI." >&2
+            exit 1
+          fi
+
       - name: Maintain release pull request
         id: release
-        if: github.event_name != 'workflow_dispatch' || inputs.publish_version == ''
         uses: googleapis/release-please-action@v5
         with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      - name: Dispatch CI for release pull request
-        if: steps.release.outputs.prs != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_PRS: ${{ steps.release.outputs.prs }}
-        run: |
-          set -euo pipefail
-          head_branch="$(printf '%s' "$RELEASE_PRS" | jq -r '.[0].headBranchName // empty')"
-          if [ -z "$head_branch" ]; then
-            echo "Release Please did not return a release pull request branch."
-            exit 1
-          fi
-          gh workflow run ci.yml --ref "$head_branch"
-          echo "Dispatched CI for release pull request branch $head_branch."
-
-      - name: Resolve formal release
-        id: resolve
-        if: steps.release.outputs.release_created == 'true' || inputs.publish_version != ''
-        env:
-          ACTION_TAG: ${{ steps.release.outputs.tag_name }}
-          ACTION_VERSION: ${{ steps.release.outputs.version }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REQUESTED_VERSION: ${{ inputs.publish_version }}
-        run: |
-          set -euo pipefail
-
-          version="${REQUESTED_VERSION:-$ACTION_VERSION}"
-          tag_name="${REQUESTED_VERSION:-$ACTION_TAG}"
-
-          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "Release version must be a bare numeric semantic version: $version"
-            exit 2
-          fi
-
-          if [ "$tag_name" != "$version" ]; then
-            echo "Release tag must exactly match the numeric version: tag=$tag_name version=$version"
-            exit 2
-          fi
-
-          git fetch origin "refs/tags/${tag_name}:refs/tags/${tag_name}"
-          git rev-parse --verify "refs/tags/${tag_name}^{commit}"
-          gh release view "$tag_name" --repo "$GITHUB_REPOSITORY" >/dev/null
-
-          major="${version%%.*}"
-          remainder="${version#*.}"
-          minor="${remainder%%.*}"
-
-          {
-            echo "should_publish=true"
-            echo "tag_name=$tag_name"
-            echo "version=$version"
-            echo "major_minor=${major}.${minor}"
-            echo "major=$major"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Dispatch installer and image release
-        if: steps.resolve.outputs.should_publish == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ steps.resolve.outputs.tag_name }}
-          RELEASE_VERSION: ${{ steps.resolve.outputs.version }}
-        run: |
-          set -euo pipefail
-          tag_name="$RELEASE_TAG"
-          version="$RELEASE_VERSION"
-          gh workflow run release.yml --ref "$tag_name" -f release_version="$version"
-          echo "Dispatched installer and image release for $version."
+  publish:
+    name: publish formal release
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/release.yml
+    with:
+      release_version: ${{ needs.release-please.outputs.tag_name }}

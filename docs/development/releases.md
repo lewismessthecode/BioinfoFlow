@@ -16,11 +16,9 @@ a `v` prefix.
 | Minor alias | `0.2` | Latest formal release in the `0.2.x` line |
 | Major alias | `0` | Latest formal pre-1.0 release |
 | Stable | `latest` | Latest formal release |
-| Development | `main` | Latest eligible build from `main` |
-| Development SHA | `sha-abc123def456` | Build associated with one exact commit |
 
-The `main` and SHA channels are for development and diagnosis. Use an exact
-numeric version in deployments that must be reproducible.
+Ordinary `main` pushes do not publish images. Use the source Compose stack for
+development and an exact numeric version for reproducible deployments.
 
 ## Daily Pull Request Rules
 
@@ -49,16 +47,18 @@ the next release entry.
 3. Review `CHANGELOG.md` from a user's perspective. Remove internal detail and
    improve unclear wording. Make manual changelog edits only after the release
    contents are stable because later merges to `main` may update the Release PR.
-4. Confirm that backend, frontend, and Docker required checks pass. Release
-   Please uses `RELEASE_PLEASE_TOKEN` when configured and otherwise falls back
-   to `GITHUB_TOKEN`; normal pull request CI supplies the required checks.
-5. Do not add the `automerge` label. Merge the Release PR intentionally when the
-   release is ready.
-6. The `Release` workflow creates the numeric Git tag and GitHub Release, then
-   dispatches `Installer Release` for the backend, authenticated frontend, and
-   localhost frontend multi-architecture images. That workflow smoke-tests the
-   localhost installer and attaches `install.sh`, `docker-compose.local.yml`,
-   and `SHA256SUMS` to the same GitHub Release.
+4. Confirm that the required `CI` check passes. Release Please must use the
+   dedicated `RELEASE_PLEASE_TOKEN` secret so its pull request triggers normal
+   `pull_request` CI; there is no `GITHUB_TOKEN` fallback or manually dispatched
+   substitute CI run.
+5. Do not enable auto-merge. Merge the Release PR intentionally when the release
+   is ready.
+6. `Release Please` creates the numeric Git tag and GitHub Release, then directly
+   calls the reusable `Publish Release` workflow. It publishes the backend,
+   authenticated frontend, and localhost frontend multi-architecture images,
+   smoke-tests the localhost installer, and attaches `install.sh`,
+   `docker-compose.local.yml`, `bioinfoflow-skills.tar.gz`, and `SHA256SUMS` to
+   the same GitHub Release.
 7. Verify the release:
 
    ```bash
@@ -92,12 +92,13 @@ rtk gh release create 0.1.0 \
   --target "$(rtk git rev-parse origin/main)" \
   --title "0.1.0" \
   --notes-file CHANGELOG.md
-rtk gh workflow run release-please.yml -f publish_version=0.1.0
+rtk gh workflow run release.yml --ref main -f release_version=0.1.0
 ```
 
-The manual workflow input validates that `0.1.0` is a numeric version and that
-the matching GitHub Release and Git tag already exist. It then dispatches the
-same installer, asset, and formal image workflow used by future automatic releases.
+The manual workflow input validates that `0.1.0` is a numeric version, checks out
+the matching immutable tag, and confirms that the GitHub Release exists. It then
+runs the same installer, asset, and formal image publication used by future
+automatic releases.
 
 Verify the bootstrap with:
 
@@ -125,9 +126,10 @@ Do not bypass the Release PR by manually moving an existing tag.
 
 - If the Release workflow fails before creating the GitHub Release, fix the
   workflow or permissions and rerun the failed job.
-- If the GitHub Release exists but an image job fails, rerun the same workflow
-  from the same immutable Git tag. Rebuilding the same tag is recovery; never
-  point the version at a different commit.
+- If the GitHub Release exists but an image or installer job fails, rerun
+  `release.yml` with the same immutable numeric tag. The launcher ref does not
+  select the source; the input tag does. Rebuilding the same tag is recovery;
+  never point the version at a different commit.
 - Do not delete and recreate a released version merely to change release notes.
   Edit the GitHub Release text and correct `CHANGELOG.md` in a follow-up pull
   request when needed.

@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - main
+  merge_group:
+    types:
+      - checks_requested
   push:
     branches:
       - main
@@ -26,8 +29,6 @@ jobs:
       docker_changed: ${{ steps.detect.outputs.docker_changed }}
       installer_changed: ${{ steps.detect.outputs.installer_changed }}
       workflows_changed: ${{ steps.detect.outputs.workflows_changed }}
-      docs_only: ${{ steps.detect.outputs.docs_only }}
-      run_full: ${{ steps.detect.outputs.run_full }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -39,6 +40,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
@@ -51,6 +53,8 @@ jobs:
           changed_files="$(mktemp)"
           if [ "$EVENT_NAME" = "pull_request" ]; then
             git diff --name-only "$PR_BASE_SHA" "$GITHUB_SHA" > "$changed_files"
+          elif [ "$EVENT_NAME" = "merge_group" ]; then
+            git diff --name-only "$MERGE_BASE_SHA" "$GITHUB_SHA" > "$changed_files"
           elif [ -n "${BEFORE_SHA:-}" ] && ! printf '%s' "$BEFORE_SHA" | grep -Eq '^0+$'; then
             git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" > "$changed_files"
           else
@@ -63,7 +67,6 @@ jobs:
           docker_changed="$run_full"
           installer_changed="$run_full"
           workflows_changed="$run_full"
-          docs_only="false"
 
           if [ "$run_full" != "true" ]; then
             backend_changed="false"
@@ -100,9 +103,6 @@ jobs:
               workflows_changed="true"
             fi
 
-            if [ -s "$changed_files" ] && ! grep -Ev '^(docs/|codemaps/|\.github/ISSUES/|\.github/ISSUE_TEMPLATE/|README\.md$|RUNBOOK\.md$|AGENTS\.md$|.*\.md$)' "$changed_files" >/dev/null; then
-              docs_only="true"
-            fi
           fi
 
           {
@@ -111,8 +111,6 @@ jobs:
             echo "docker_changed=$docker_changed"
             echo "installer_changed=$installer_changed"
             echo "workflows_changed=$workflows_changed"
-            echo "docs_only=$docs_only"
-            echo "run_full=$run_full"
           } >> "$GITHUB_OUTPUT"
 
           echo "backend_changed=$backend_changed"
@@ -120,8 +118,6 @@ jobs:
           echo "docker_changed=$docker_changed"
           echo "installer_changed=$installer_changed"
           echo "workflows_changed=$workflows_changed"
-          echo "docs_only=$docs_only"
-          echo "run_full=$run_full"
 
   backend-checks:
     name: backend checks
@@ -155,38 +151,6 @@ jobs:
 
       - name: Test
         run: uv run pytest
-
-  backend:
-    name: backend
-    needs:
-      - changes
-      - backend-checks
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Report backend status
-        env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          BACKEND_CHANGED: ${{ needs.changes.outputs.backend_changed }}
-          BACKEND_RESULT: ${{ needs.backend-checks.result }}
-        run: |
-          set -euo pipefail
-
-          if [ "$CHANGES_RESULT" != "success" ]; then
-            echo "Change detection did not pass: $CHANGES_RESULT"
-            exit 1
-          fi
-
-          if [ "$BACKEND_CHANGED" = "true" ] && [ "$BACKEND_RESULT" != "success" ]; then
-            echo "Backend checks did not pass: $BACKEND_RESULT"
-            exit 1
-          fi
-
-          if [ "$BACKEND_CHANGED" = "true" ]; then
-            echo "Backend checks passed."
-          else
-            echo "No backend-impacting changes detected; backend checks skipped."
-          fi
 
   frontend-lint:
     name: frontend lint
@@ -278,44 +242,6 @@ jobs:
           NEXT_PUBLIC_AUTH_MODE: dev
           NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED: "false"
 
-  frontend:
-    name: frontend
-    needs:
-      - changes
-      - frontend-lint
-      - frontend-test
-      - frontend-build
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Report frontend status
-        env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          FRONTEND_CHANGED: ${{ needs.changes.outputs.frontend_changed }}
-          LINT_RESULT: ${{ needs.frontend-lint.result }}
-          TEST_RESULT: ${{ needs.frontend-test.result }}
-          BUILD_RESULT: ${{ needs.frontend-build.result }}
-        run: |
-          set -euo pipefail
-
-          if [ "$CHANGES_RESULT" != "success" ]; then
-            echo "Change detection did not pass: $CHANGES_RESULT"
-            exit 1
-          fi
-
-          for result in "$LINT_RESULT" "$TEST_RESULT" "$BUILD_RESULT"; do
-            if [ "$FRONTEND_CHANGED" = "true" ] && [ "$result" != "success" ]; then
-              echo "Frontend checks did not pass: lint=$LINT_RESULT test=$TEST_RESULT build=$BUILD_RESULT"
-              exit 1
-            fi
-          done
-
-          if [ "$FRONTEND_CHANGED" = "true" ]; then
-            echo "Frontend checks passed."
-          else
-            echo "No frontend-impacting changes detected; frontend checks skipped."
-          fi
-
   docker-build:
     name: docker build
     needs: changes
@@ -382,22 +308,32 @@ jobs:
 
       - name: Validate GitHub Actions workflows
         run: |
-          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           "$(go env GOPATH)/bin/actionlint" .github/workflows/*.yml
 
-  docker:
-    name: docker
+  required:
+    name: CI
     needs:
       - changes
+      - backend-checks
+      - frontend-lint
+      - frontend-test
+      - frontend-build
       - docker-build
       - installer-checks
       - workflow-checks
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Report docker status
+      - name: Require every selected check
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
+          BACKEND_CHANGED: ${{ needs.changes.outputs.backend_changed }}
+          BACKEND_RESULT: ${{ needs.backend-checks.result }}
+          FRONTEND_CHANGED: ${{ needs.changes.outputs.frontend_changed }}
+          FRONTEND_LINT_RESULT: ${{ needs.frontend-lint.result }}
+          FRONTEND_TEST_RESULT: ${{ needs.frontend-test.result }}
+          FRONTEND_BUILD_RESULT: ${{ needs.frontend-build.result }}
           DOCKER_CHANGED: ${{ needs.changes.outputs.docker_changed }}
           DOCKER_RESULT: ${{ needs.docker-build.result }}
           INSTALLER_CHANGED: ${{ needs.changes.outputs.installer_changed }}
@@ -412,33 +348,29 @@ jobs:
             exit 1
           fi
 
-          if [ "$DOCKER_CHANGED" = "true" ] && [ "$DOCKER_RESULT" != "success" ]; then
-            echo "Docker build did not pass: $DOCKER_RESULT"
-            exit 1
-          fi
+          require_result() {
+            changed="$1"
+            result="$2"
+            label="$3"
 
-          if [ "$INSTALLER_CHANGED" = "true" ] && [ "$INSTALLER_RESULT" != "success" ]; then
-            echo "Installer checks did not pass: $INSTALLER_RESULT"
-            exit 1
-          fi
+            case "${changed}:${result}" in
+              true:success)
+                echo "$label passed."
+                ;;
+              false:skipped)
+                echo "$label was not selected."
+                ;;
+              *)
+                echo "$label has an invalid terminal state: changed=$changed result=$result"
+                exit 1
+                ;;
+            esac
+          }
 
-          if [ "$WORKFLOWS_CHANGED" = "true" ] && [ "$WORKFLOWS_RESULT" != "success" ]; then
-            echo "Workflow checks did not pass: $WORKFLOWS_RESULT"
-            exit 1
-          fi
-
-          if [ "$DOCKER_CHANGED" = "true" ]; then
-            echo "Docker build passed."
-          else
-            echo "No Docker-impacting changes detected; Docker build skipped."
-          fi
-          if [ "$INSTALLER_CHANGED" = "true" ]; then
-            echo "Installer checks passed."
-          else
-            echo "No installer-impacting changes detected; installer checks skipped."
-          fi
-          if [ "$WORKFLOWS_CHANGED" = "true" ]; then
-            echo "Workflow checks passed."
-          else
-            echo "No workflow changes detected; workflow checks skipped."
-          fi
+          require_result "$BACKEND_CHANGED" "$BACKEND_RESULT" "Backend checks"
+          require_result "$FRONTEND_CHANGED" "$FRONTEND_LINT_RESULT" "Frontend lint"
+          require_result "$FRONTEND_CHANGED" "$FRONTEND_TEST_RESULT" "Frontend tests"
+          require_result "$FRONTEND_CHANGED" "$FRONTEND_BUILD_RESULT" "Frontend build"
+          require_result "$DOCKER_CHANGED" "$DOCKER_RESULT" "Docker build"
+          require_result "$INSTALLER_CHANGED" "$INSTALLER_RESULT" "Installer checks"
+          require_result "$WORKFLOWS_CHANGED" "$WORKFLOWS_RESULT" "Workflow checks"

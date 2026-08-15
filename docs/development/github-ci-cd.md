@@ -1,154 +1,144 @@
 # GitHub CI/CD
 
-This repository uses GitHub Actions to make worktree branches flow through PRs, checks, review, and squash merge.
+Bioinfoflow uses GitHub Actions to move isolated worktree branches through pull
+requests, one required CI gate, intentional release approval, and immutable-tag
+publication.
 
-## What Runs
+## Workflow Map
 
-- `CI` runs on PRs to `main`, pushes to `main`, and manual dispatch.
-- `CodeQL` runs on PRs to `main`, pushes to `main`, weekly schedule, and manual dispatch.
-- `Container Release` publishes development Docker images after eligible code reaches `main`.
-- `Release` maintains the Release Please PR and dispatches the installer/image release after that PR is intentionally merged.
-- `Installer Release` publishes three formal multi-architecture images, smoke-tests the localhost installer, and attaches its assets to the GitHub Release.
-- `Auto Merge` queues a squash merge when a reviewed PR has the `automerge` label.
+- `CI` validates pull requests, merge-queue groups, pushes to `main`, and manual
+  runs.
+- `CodeQL` performs Python and JavaScript/TypeScript security analysis.
+- `Publish Images` is a reusable formal-release workflow that builds all three
+  GHCR images from one numeric tag.
+- `Release Please` maintains the version/changelog pull request and creates the
+  numeric tag and GitHub Release after that PR is intentionally merged.
+- `Publish Release` consumes the numeric tag, publishes three formal images,
+  verifies multi-architecture manifests, smoke-tests the localhost installer,
+  and uploads installer assets.
 
-Pull requests are created explicitly by the developer, Codex client, or another
-authenticated publishing client. A GitHub Actions workflow must not create an
-ordinary development PR with `GITHUB_TOKEN`, because GitHub suppresses recursive
-workflow events and required checks may never be produced. Release Please is the
-only bot-created PR path; the Release workflow explicitly dispatches CI for its
-release branch. Release PRs must not receive the `automerge` label.
+There is no custom auto-merge workflow. Use GitHub's native auto-merge so the
+developer chooses squash or rebase explicitly.
 
-## CI Change Detection
+## Pull-request CI
 
-The `CI` workflow always produces the protected `backend`, `frontend`, and `docker` status checks. Do not add workflow-level `paths-ignore` or skip the whole workflow for PRs; GitHub branch protection waits forever if a required check never appears.
+Branch protection requires one check named `CI`. The final gate always runs and
+fails closed. Internal work is selected by changed area:
 
-Heavy work is skipped inside the workflow instead:
+- `backend checks`: backend lint and tests;
+- `frontend lint`, `frontend test`, and `frontend build`;
+- `docker build`: backend and frontend image builds;
+- `installer checks`: installer shell tests and localhost Compose rendering;
+- `workflow checks`: Actionlint over every workflow.
 
-- `backend checks` runs only when PR changes touch `backend/` or shared env defaults.
-- `frontend lint`, `frontend test`, and `frontend build` run in parallel only when PR changes touch `frontend/` or shared env defaults.
-- `docker build` runs only when Dockerfiles, compose files, dependency locks/manifests, or the CI/release workflows change.
-- `installer checks` runs for installer scripts, installer tests, localhost
-  Compose, and bundled skills.
-- `workflow checks` runs Actionlint for every GitHub Actions workflow change.
-- Pushes to `main` and manual dispatches run the full CI path.
-- Docs-only PRs still get successful `backend`, `frontend`, and `docker` checks, but the expensive jobs are skipped.
+Do not add workflow-level path filters to `CI`. A completely skipped required
+workflow can remain Pending forever. Docs-only changes instead skip the leaf
+jobs and receive a successful final gate.
 
-## Required Checks
+Pushes to `main` and manual CI runs execute the complete path. The workflow also
+listens to `merge_group`, so it is ready if the repository later moves from
+strict branch protection to GitHub's merge queue.
 
-The protected `main` branch expects these status checks:
+## Release Please credential
 
-- `backend`
-- `frontend`
-- `docker`
+`Release Please` requires the `RELEASE_PLEASE_TOKEN` repository secret. Use a
+GitHub App installation token or fine-grained PAT with the minimum repository
+permissions needed to write contents, pull requests, and issues.
 
-The `scripts/github/configure-repo.sh` script configures these checks through the GitHub API.
+Do not fall back to `GITHUB_TOKEN`. Pull requests created or updated by the
+workflow's own `GITHUB_TOKEN` do not naturally produce usable required PR
+checks. Do not compensate by manually dispatching another CI run; that run is
+not the pull request's normal `pull_request` check.
 
-Keep these three check names stable. If the internal CI job graph changes, make the required checks summary jobs rather than changing branch protection for every implementation detail.
+Release PRs remain an intentional production gate and must not be auto-merged.
 
-Required checks use strict mode. If `main` advances, the PR branch must be
-updated and CI must validate the exact state that will be merged.
+## Worktrees and parallel agents
 
-## Worktree Flow
+Use this ownership rule for Codex, Claude Code, and human contributors:
 
-Create or enter a feature worktree:
-
-```bash
-git worktree add ../bioinfoflow-feature-auth -b feature/auth main
-cd ../bioinfoflow-feature-auth
+```text
+one feature = one writing owner = one worktree = one branch = one pull request
 ```
 
-Develop normally, then commit and push:
+Start from the latest remote default branch:
 
 ```bash
-git add .
-git commit -m "feat: add auth flow"
-git push -u origin feature/auth
+git fetch origin --prune
+git worktree add ../bioinfoflow-feature -b feature/example origin/main
+cd ../bioinfoflow-feature
 ```
 
-Create the PR explicitly with a Conventional Commits title. The PR title is the
-future squash-merge commit message:
+Before editing, confirm the branch and worktree topology:
 
 ```bash
-gh pr create \
-  --base main \
-  --head feature/auth \
-  --title "feat: add auth flow" \
-  --body-file /path/to/pr-body.md
+git branch --show-current
+git worktree list
 ```
 
-Later pushes to the same branch update the PR and rerun CI.
+Parallel read-only exploration is safe. Parallel writers must have disjoint file
+ownership. Assign one integration owner for conflict-prone files such as GitHub
+workflows, changelogs, dependency locks, database migrations, and locale files.
 
-When a PR conflicts with `main`, or depends on newly merged code, rebase inside
-the worktree:
+Before opening or updating a PR:
 
 ```bash
-git fetch origin main
+git fetch origin --prune
 git rebase origin/main
 git push --force-with-lease
 ```
 
-After review, add the `automerge` label to let GitHub queue a squash merge once required checks pass.
-
-## Review Automation Boundaries
-
-CI, CodeQL, dependency update PRs, and branch protection are automated review aids. They catch formatting, test, build, Docker, dependency, and security issues.
-
-They are not a replacement for human code review. Repository workflows do not
-submit approving reviews. On this single-collaborator repository,
-`scripts/github/configure-repo.sh` defaults to
-`REQUIRED_APPROVALS=0` to avoid making every PR impossible to merge. After adding
-collaborators, run:
+Create the PR explicitly with a Conventional Commits title. For native rebase
+auto-merge:
 
 ```bash
-REQUIRED_APPROVALS=1 scripts/github/configure-repo.sh lewismessthecode/BioinfoFlow
+gh pr merge --rebase --auto --delete-branch <PR-URL>
 ```
 
-## Squash Merge Policy
+The normal repository policy remains squash merge because the PR title is the
+release unit. Use rebase merge when preserving the branch's individual commits
+is intentional.
 
-The repository is configured to:
+## Branch protection
 
-- allow squash merge
-- disable merge commits
-- allow rebase merge
-- enable auto-merge
-- delete merged branches
+`scripts/github/configure-repo.sh` configures:
 
-The recommended daily path is still squash merge. Rebase merge remains available for rare cases where preserving each commit is useful.
+- required check `CI` in strict mode;
+- linear history;
+- resolved review conversations;
+- no force pushes or branch deletion;
+- read-only default workflow permissions;
+- GitHub native auto-merge and branch deletion after merge.
 
-## Published Images
+Strict mode means a PR must be validated against current `main`. If parallel PR
+volume makes repeated rebases expensive, migrate the repository to a merge-queue
+ruleset in one atomic change. Keep `merge_group` enabled in required workflows
+before enabling that queue.
 
-Development and formal release images are pushed to:
+## Development builds
 
-```text
-ghcr.io/lewismessthecode/bioinfoflow-backend
-ghcr.io/lewismessthecode/bioinfoflow-frontend
-ghcr.io/lewismessthecode/bioinfoflow-frontend-localhost
-```
+Ordinary `main` pushes do not publish GHCR images. Source development uses the
+repository Compose stack, while published packages remain intentional release
+artifacts. This avoids mutable `main` image ordering races and unnecessary
+multi-architecture builds when no deployment consumes that channel.
 
-Eligible merges to `main` publish development tags only:
+## Formal releases
 
-```text
-main
-sha-<12-char-sha>
-```
+Merging the Release Please PR creates a bare numeric tag such as `0.3.0` and a
+GitHub Release. The same workflow then directly calls `Publish Release` through
+`workflow_call`; it does not dispatch a detached follow-up run.
 
-The development workflow publishes backend and frontend images independently.
-Backend-only changes publish only the backend image. Frontend changes publish
-both authenticated and localhost frontend variants. Manual `workflow_dispatch`
-with `publish_images=force` publishes all three development images;
-`publish_images=skip` publishes none.
-
-Merging a Release Please PR dispatches `Installer Release`, which publishes all
-three images with the same formal version:
+`Publish Release` validates and checks out the numeric tag before producing:
 
 ```text
-0.2.1
-0.2
+0.3.0
+0.3
 0
 latest
 ```
 
-Exact numeric versions identify immutable release source. Minor, major, and
-`latest` aliases advance to the newest formal release. Ordinary merges to
-`main` never update `latest`. See the [Release Maintainer SOP](releases.md) for
-the release procedure and recovery rules.
+All three images, installer assets, checksums, manifest verification, and
+amd64/arm64 smoke tests consume that tag. Manual recovery supplies the same
+numeric tag and may be started from any workflow ref because the input tag, not
+the launcher ref, is the source of truth.
+
+See [Release Maintainer SOP](releases.md) for release and recovery procedures.

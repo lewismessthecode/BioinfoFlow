@@ -17,7 +17,7 @@ curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/downl
 ```
 
 The `latest/download` URL resolves to the latest tested numeric GitHub Release;
-it never selects the `main` or `sha-*` development image tags.
+ordinary `main` pushes do not publish installer assets or GHCR images.
 
 If either default port is occupied, the installer prints a bounded `lsof`
 listener record and exits without signaling the process. Select two distinct
@@ -540,18 +540,16 @@ docker compose -f docker-compose.prod.yml up -d
 ```
 
 After a Release Please PR is intentionally merged,
-`.github/workflows/release-please.yml` dispatches `.github/workflows/release.yml`
-to publish formal images and installer assets. Development images are published
-by `.github/workflows/container-release.yml` after eligible changes reach `main`.
-The stack uses:
+`.github/workflows/release-please.yml` directly calls the reusable
+`.github/workflows/release.yml` workflow to publish formal images and installer
+assets from the same immutable numeric tag. The stack uses:
 
 - `ghcr.io/lewismessthecode/bioinfoflow-backend:<tag>`
 - `ghcr.io/lewismessthecode/bioinfoflow-frontend:<tag>`
 
 Formal tags are exact numeric versions such as `0.1.0`, minor aliases such as
-`0.1`, major aliases such as `0`, and `latest`. Development tags are `main` and
-`sha-<12-char-commit>`. Pin both services to the same exact numeric version for
-reproducible deployments.
+`0.1`, major aliases such as `0`, and `latest`. Pin both services to the same
+exact numeric version for reproducible deployments.
 
 The published frontend image is fixed at build time to the localhost API URL,
 personal auth mode, local email/password auth, and disabled self-signup. For a

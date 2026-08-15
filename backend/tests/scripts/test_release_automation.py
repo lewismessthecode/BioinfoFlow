@@ -86,16 +86,18 @@ def test_changelog_starts_with_curated_initial_release() -> None:
     assert re.search(r"\[#\d+\]", initial_release) is None
 
 
-def test_main_container_workflow_only_publishes_development_tags() -> None:
+def test_container_workflow_only_publishes_formal_release_tags() -> None:
     workflow = read_repo_file(".github/workflows/container-release.yml")
 
-    assert "type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}" in workflow
-    assert "type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/main' }}" in workflow
-    assert (
-        "type=raw,value=latest,enable=${{ inputs.release_version != '' }}"
-        in workflow
-    )
-    assert "type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}" not in workflow
+    assert "workflow_call:" in workflow
+    assert "on:\n  push:" not in workflow
+    assert "on:\n  workflow_dispatch:" not in workflow
+    assert "type=raw,value=main" not in workflow
+    assert "type=sha" not in workflow
+    assert "type=raw,value=${{ inputs.release_version }}" in workflow
+    assert "type=raw,value=${{ inputs.release_major_minor }}" in workflow
+    assert "type=raw,value=${{ inputs.release_major }}" in workflow
+    assert "type=raw,value=latest" in workflow
 
 
 def test_formal_release_workflow_publishes_numeric_aliases() -> None:
@@ -104,18 +106,19 @@ def test_formal_release_workflow_publishes_numeric_aliases() -> None:
     container_workflow = read_repo_file(".github/workflows/container-release.yml")
 
     assert "googleapis/release-please-action@v5" in workflow
-    assert "actions: write" in workflow
-    assert "secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN" in workflow
-    assert 'gh workflow run ci.yml --ref "$head_branch"' in workflow
-    assert "publish_version:" in workflow
+    assert "actions: write" not in workflow
+    assert "secrets.RELEASE_PLEASE_TOKEN" in workflow
+    assert "secrets.GITHUB_TOKEN" not in workflow
+    assert "gh workflow run" not in workflow
+    assert "publish_version:" not in workflow
     assert "include-v-in-tag" not in workflow
-    assert (
-        'gh workflow run release.yml --ref "$tag_name" '
-        '-f release_version="$version"'
-        in workflow
-    )
+    assert "uses: ./.github/workflows/release.yml" in workflow
+    assert "needs.release-please.outputs.release_created == 'true'" in workflow
+    assert "release_version: ${{ needs.release-please.outputs.tag_name }}" in workflow
     assert "publish-images:" not in workflow
 
+    assert "workflow_call:" in installer_workflow
+    assert "workflow_dispatch:" in installer_workflow
     assert "release_version:" in installer_workflow
     assert "^[0-9]+\\.[0-9]+\\.[0-9]+$" in installer_workflow
     assert "release_version: ${{ needs.resolve.outputs.version }}" in installer_workflow
@@ -125,7 +128,7 @@ def test_formal_release_workflow_publishes_numeric_aliases() -> None:
     assert "type=raw,value=${{ inputs.release_version }}" in container_workflow
     assert "type=raw,value=${{ inputs.release_major_minor }}" in container_workflow
     assert "type=raw,value=${{ inputs.release_major }}" in container_workflow
-    assert "type=raw,value=latest,enable=${{ inputs.release_version != '' }}" in container_workflow
+    assert "type=raw,value=latest" in container_workflow
 
 
 def test_pull_request_delivery_is_explicit_and_strict() -> None:
@@ -137,7 +140,9 @@ def test_pull_request_delivery_is_explicit_and_strict() -> None:
     assert '"can_approve_pull_request_reviews": false' in configuration
     assert not (REPO_ROOT / ".github/workflows/pr-automation.yml").exists()
     assert not (REPO_ROOT / ".github/workflows/approve-trusted-workflows.yml").exists()
-    assert 'gh workflow run ci.yml --ref "$head_branch"' in release_workflow
+    assert not (REPO_ROOT / ".github/workflows/auto-merge.yml").exists()
+    assert "secrets.RELEASE_PLEASE_TOKEN" in release_workflow
+    assert "gh workflow run ci.yml" not in release_workflow
 
 
 def test_ci_delivery_gate_fails_closed_and_covers_release_inputs() -> None:
@@ -150,19 +155,25 @@ def test_ci_delivery_gate_fails_closed_and_covers_release_inputs() -> None:
     assert "bundled-skills/" in workflow
     assert "docker-compose.local.yml" in workflow
     assert "^\\.github/workflows/" in workflow
-    assert "go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7" in workflow
-    assert 'if [ "$BACKEND_CHANGED" = "true" ] && [ "$BACKEND_RESULT" != "success" ]; then' in workflow
-    assert 'if [ "$FRONTEND_CHANGED" = "true" ] && [ "$result" != "success" ]; then' in workflow
-    assert 'if [ "$DOCKER_CHANGED" = "true" ] && [ "$DOCKER_RESULT" != "success" ]; then' in workflow
-    assert 'if [ "$INSTALLER_CHANGED" = "true" ] && [ "$INSTALLER_RESULT" != "success" ]; then' in workflow
-    assert 'if [ "$WORKFLOWS_CHANGED" = "true" ] && [ "$WORKFLOWS_RESULT" != "success" ]; then' in workflow
+    assert "go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12" in workflow
+    assert "merge_group:" in workflow
+    assert "required:\n    name: CI" in workflow
+    assert 'case "${changed}:${result}"' in workflow
+    assert 'require_result "$BACKEND_CHANGED" "$BACKEND_RESULT"' in workflow
+    assert 'require_result "$FRONTEND_CHANGED" "$FRONTEND_LINT_RESULT"' in workflow
+    assert 'require_result "$FRONTEND_CHANGED" "$FRONTEND_BUILD_RESULT"' in workflow
+    assert 'require_result "$DOCKER_CHANGED" "$DOCKER_RESULT"' in workflow
+    assert 'require_result "$INSTALLER_CHANGED" "$INSTALLER_RESULT"' in workflow
+    assert 'require_result "$WORKFLOWS_CHANGED" "$WORKFLOWS_RESULT"' in workflow
 
 
 def test_installer_release_uses_only_the_immutable_numeric_tag() -> None:
     workflow = read_repo_file(".github/workflows/release.yml")
 
-    assert '[ "$GITHUB_REF_NAME" != "$version" ]' in workflow
-    assert "main recovery workflow" not in workflow
+    assert "workflow_call:" in workflow
+    assert "ref: ${{ inputs.release_version }}" in workflow
+    assert 'git rev-parse "refs/tags/${version}^{commit}"' in workflow
+    assert "GITHUB_REF_NAME" not in workflow
     assert workflow.count("ref: ${{ needs.resolve.outputs.version }}") >= 2
     assert "permissions:\n  contents: read\n" in workflow
     assert "assets:\n    name: attach installer assets" in workflow
@@ -170,9 +181,10 @@ def test_installer_release_uses_only_the_immutable_numeric_tag() -> None:
 
 
 def test_release_pull_requests_cannot_be_auto_merged() -> None:
-    workflow = read_repo_file(".github/workflows/auto-merge.yml")
-
-    assert "!startsWith(github.event.pull_request.head.ref, 'release-please--')" in workflow
+    assert not (REPO_ROOT / ".github/workflows/auto-merge.yml").exists()
+    assert "must not be auto-merged" in read_repo_file(
+        "docs/development/github-ci-cd.md"
+    )
 
 
 def test_formal_release_packages_and_smoke_tests_native_skills() -> None:
