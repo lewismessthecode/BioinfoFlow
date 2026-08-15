@@ -311,8 +311,7 @@ async def test_real_update_plan_tool_persists_plan_without_public_tool_messages(
     private_exchange = [
         item
         for item in model.invocations[1].input_items
-        if isinstance(item, (ToolCallPart, ToolResultPart))
-        and item.call_id == "plan-1"
+        if isinstance(item, (ToolCallPart, ToolResultPart)) and item.call_id == "plan-1"
     ]
     assert private_exchange == [
         ToolCallPart(
@@ -565,7 +564,9 @@ class RecoveryInspectingModel(TextModel):
 
 
 @pytest.mark.asyncio
-async def test_message_commits_user_and_assistant_messages(harness_db, tmp_path) -> None:
+async def test_message_commits_user_and_assistant_messages(
+    harness_db, tmp_path
+) -> None:
     model = TextModel("I found the answer.")
     harness = AgentHarness.for_database(
         harness_db,
@@ -628,9 +629,7 @@ async def test_streaming_draft_is_durable_until_assistant_message_commits(
         if part.type == "text"
     )
     assert text_part.text == "durable partial"
-    assert text_part.end_offset == len(
-        "durable partial".encode("utf-8")
-    )
+    assert text_part.end_offset == len("durable partial".encode("utf-8"))
 
     model.release.set()
     await asyncio.wait_for(dispatch, timeout=1)
@@ -856,9 +855,7 @@ async def test_tool_call_result_is_committed_before_model_continues(
     )
     opened = await harness.open_session(_open_request())
 
-    await harness.dispatch(
-        str(opened.session.id), _message("command-1", "Read it.")
-    )
+    await harness.dispatch(str(opened.session.id), _message("command-1", "Read it."))
     snapshot = await harness.snapshot(str(opened.session.id))
 
     assert [
@@ -869,7 +866,11 @@ async def test_tool_call_result_is_committed_before_model_continues(
         "tool",
         "assistant",
     ], _latest_run(snapshot).error
-    assert _tool_result(snapshot.entries[2].payload).call_id == "read-1"
+    public_result = _tool_result(snapshot.entries[2].payload)
+    assert public_result.call_id == "read-1"
+    assert public_result.summary is not None
+    assert [detail.kind for detail in public_result.public_details] == ["output"]
+    assert "alpha" not in str(public_result.model_dump(mode="json"))
     assert "alpha" in await _durable_tool_output_text(
         harness, str(opened.session.id), "read-1"
     )
@@ -942,10 +943,11 @@ async def test_context_overflow_commits_compaction_before_single_retry(
     while True:
         event = await asyncio.wait_for(anext(events), timeout=0.5)
         published.append(event)
-        if (
-            event.type == "run.updated"
-            and event.run.status in {"completed", "failed", "cancelled"}
-        ):
+        if event.type == "run.updated" and event.run.status in {
+            "completed",
+            "failed",
+            "cancelled",
+        }:
             break
     await events.aclose()
     snapshot = await harness.snapshot(session_id)
@@ -1013,9 +1015,7 @@ async def test_model_attempt_timeout_retries_before_semantic_output(
     )
     opened = await harness.open_session(_open_request())
 
-    await harness.dispatch(
-        str(opened.session.id), _message("timeout", "Answer.")
-    )
+    await harness.dispatch(str(opened.session.id), _message("timeout", "Answer."))
     snapshot = await harness.snapshot(str(opened.session.id))
 
     assert _latest_run(snapshot).status == "completed"
@@ -1035,9 +1035,7 @@ async def test_model_attempt_timeout_does_not_retry_after_semantic_output(
     )
     opened = await harness.open_session(_open_request())
 
-    await harness.dispatch(
-        str(opened.session.id), _message("timeout", "Answer.")
-    )
+    await harness.dispatch(str(opened.session.id), _message("timeout", "Answer."))
     snapshot = await harness.snapshot(str(opened.session.id))
 
     assert _latest_run(snapshot).status == "failed"
@@ -1105,9 +1103,7 @@ async def test_token_budget_accumulates_across_model_iterations_before_tools(
     )
     opened = await harness.open_session(_open_request())
 
-    await harness.dispatch(
-        str(opened.session.id), _message("budget", "Work.")
-    )
+    await harness.dispatch(str(opened.session.id), _message("budget", "Work."))
     snapshot = await harness.snapshot(str(opened.session.id))
 
     assert _latest_run(snapshot).termination_reason == "token_budget_exceeded"
@@ -1144,9 +1140,7 @@ async def test_tool_checkpoint_contains_version_revision_and_in_flight_policy(
     )
     opened = await harness.open_session(_open_request())
 
-    await harness.dispatch(
-        str(opened.session.id), _message("checkpoint", "Ask me.")
-    )
+    await harness.dispatch(str(opened.session.id), _message("checkpoint", "Ask me."))
     latest = await harness.repository.get_latest_run(str(opened.session.id))
     snapshot = await harness.snapshot(str(opened.session.id))
 
@@ -1327,9 +1321,7 @@ async def test_parallel_tool_batch_exposes_each_started_call_as_running(
     assert [item.status for item in progress] == ["running", "running"]
     assert {item.group_id for item in progress} == {str(assistant.id)}
     assert {
-        part.group_id
-        for part in assistant.payload.parts
-        if part.type == "tool_call"
+        part.group_id for part in assistant.payload.parts if part.type == "tool_call"
     } == {str(assistant.id)}
     assert {item.execution_mode for item in progress} == {"parallel"}
 
@@ -1432,9 +1424,7 @@ async def test_respond_rejects_a_different_pending_interaction(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    await harness.dispatch(
-        session_id, _message("message-1", "Ask me.")
-    )
+    await harness.dispatch(session_id, _message("message-1", "Ask me."))
 
     with pytest.raises(ValueError, match="interaction.*does not match"):
         await harness.dispatch(
@@ -1486,9 +1476,7 @@ async def test_respond_command_interaction_id_cannot_be_overridden_by_response(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    await harness.dispatch(
-        session_id, _message("message-1", "Ask me.")
-    )
+    await harness.dispatch(session_id, _message("message-1", "Ask me."))
 
     await harness.dispatch(
         session_id,
@@ -1539,9 +1527,7 @@ async def test_steer_while_waiting_user_is_committed_once_at_next_safe_point(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    await harness.dispatch(
-        session_id, _message("message-1", "Ask me.")
-    )
+    await harness.dispatch(session_id, _message("message-1", "Ask me."))
     await harness.dispatch(
         session_id,
         _steer("steer-1", "Also inspect the metadata."),
@@ -2618,7 +2604,7 @@ async def test_crash_during_approved_bash_recovers_as_unknown_effect_without_rep
                         "replay_policy": "never",
                     },
                 ),
-                    interaction=checkpoint_interaction,
+                interaction=checkpoint_interaction,
             ),
             "waiting_call": {
                 "call_id": call.call_id,
@@ -2991,9 +2977,7 @@ async def test_verify_recovery_retry_executes_without_bash_approval_fingerprint(
         "name": tool_name,
         "arguments": arguments,
     }
-    assistant = await _append_tool_call_entry(
-        harness, session_id, str(run.id), [call]
-    )
+    assistant = await _append_tool_call_entry(harness, session_id, str(run.id), [call])
     durable_call = {
         **call,
         "group_id": str(assistant.id),
@@ -4109,9 +4093,7 @@ async def test_recovery_inspect_choice_does_not_replay_unknown_bash(
         for entry in snapshot.entries
         if entry.type == "message" and entry.payload.role == "tool"
     ]
-    assert [_tool_result(entry.payload).call_id for entry in tool_entries] == [
-        "bash-1"
-    ]
+    assert [_tool_result(entry.payload).call_id for entry in tool_entries] == ["bash-1"]
     assert "not replayed" in await _durable_tool_output_text(
         harness, str(opened.session.id), "bash-1"
     )

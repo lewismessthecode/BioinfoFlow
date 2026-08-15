@@ -46,6 +46,7 @@ from app.services.agent_harness.recovery import (
 from app.services.agent_harness.tool_projection import (
     project_tool_view,
     public_output_summary as _public_output_summary,
+    public_tool_progress_view,
 )
 from app.services.agent_harness.tools import ToolCall, ToolResult
 from app.services.agent_harness.tools.specs import ToolSpec
@@ -316,9 +317,7 @@ class AgentLoop:
                         )
                     if steer_entries:
                         continue
-                    await self.publish(
-                        RunUpdatedEvent(run=run_view(completed))
-                    )
+                    await self.publish(RunUpdatedEvent(run=run_view(completed)))
                     return
 
                 signature = _call_signature(response.tool_calls)
@@ -367,11 +366,7 @@ class AgentLoop:
                                 for call in response.tool_calls
                             ),
                         ),
-                        **(
-                            {"control_input": control_input}
-                            if control_input
-                            else {}
-                        ),
+                        **({"control_input": control_input} if control_input else {}),
                         "iteration": iteration,
                         "last_tool_signature": signature,
                         "repeat_count": repeats,
@@ -465,11 +460,7 @@ class AgentLoop:
                                 "interaction": _interaction_dict(result),
                             },
                         )
-                        await self.publish(
-                            RunUpdatedEvent(
-                                run=run_view(waiting_run)
-                            )
-                        )
+                        await self.publish(RunUpdatedEvent(run=run_view(waiting_run)))
                         await self.publish(
                             ToolUpdatedEvent(
                                 run_id=run_id,
@@ -498,6 +489,7 @@ class AgentLoop:
                             default=str,
                         ),
                         call_id=result.call_id,
+                        tool_name=result.tool_name,
                         is_error=result.status != "completed",
                         tool_status=result.status,
                     )
@@ -588,7 +580,10 @@ class AgentLoop:
             allowed_responses = persisted_interaction.get("allowed_responses")
             if allowed_responses is None:
                 allowed_responses = ["approve", "reject"]
-            if not isinstance(allowed_responses, list) or selected_response not in allowed_responses:
+            if (
+                not isinstance(allowed_responses, list)
+                or selected_response not in allowed_responses
+            ):
                 raise ValueError(
                     "approval response is not allowed by pending interaction"
                 )
@@ -640,9 +635,7 @@ class AgentLoop:
             await self.publish(
                 EntryCommittedEvent(entry=entry_contract(response_entry))
             )
-            await self.publish(
-                RunUpdatedEvent(run=run_view(durable_run))
-            )
+            await self.publish(RunUpdatedEvent(run=run_view(durable_run)))
             await self.publish(
                 ToolUpdatedEvent(
                     run_id=run_id,
@@ -702,6 +695,7 @@ class AgentLoop:
                 default=str,
             ),
             call_id=call.call_id,
+            tool_name=result.tool_name,
             tool_status=result.status,
         )
         await self.publish(EntryCommittedEvent(entry=tool_entry))
@@ -773,9 +767,7 @@ class AgentLoop:
                             "interaction": _interaction_dict(pending_result),
                         },
                     )
-                    await self.publish(
-                        RunUpdatedEvent(run=run_view(waiting_run))
-                    )
+                    await self.publish(RunUpdatedEvent(run=run_view(waiting_run)))
                     await self.publish(
                         ToolUpdatedEvent(
                             run_id=run_id,
@@ -802,6 +794,7 @@ class AgentLoop:
                         pending_result.output, ensure_ascii=False, default=str
                     ),
                     call_id=pending_result.call_id,
+                    tool_name=pending_result.tool_name,
                     tool_status=pending_result.status,
                 )
                 await self.publish(EntryCommittedEvent(entry=pending_entry))
@@ -866,9 +859,7 @@ class AgentLoop:
                 command_id=command_id,
             )
             checkpoint = dict(durable_run.checkpoint or {})
-            await self.publish(
-                RunUpdatedEvent(run=run_view(durable_run))
-            )
+            await self.publish(RunUpdatedEvent(run=run_view(durable_run)))
             await self.publish(
                 ToolUpdatedEvent(
                     run_id=str(run.id),
@@ -919,10 +910,9 @@ class AgentLoop:
             role="tool",
             content=json.dumps(output, ensure_ascii=False, default=str),
             call_id=call.call_id,
+            tool_name=call.name,
             is_error=choice == "retry" and result.status != "completed",
-            tool_status=(
-                result.status if choice == "retry" else "completed"
-            ),
+            tool_status=(result.status if choice == "retry" else "completed"),
         )
         await self.publish(EntryCommittedEvent(entry=tool_entry))
         waiting, history_revision = await self._resume_remaining_recovery_tools(
@@ -1026,6 +1016,7 @@ class AgentLoop:
                     default=str,
                 ),
                 call_id=call.call_id,
+                tool_name=result.tool_name,
                 is_error=result.status != "completed",
                 tool_status=result.status,
             )
@@ -1084,9 +1075,7 @@ class AgentLoop:
                     name=str(item.get("name") or "unknown"),
                     arguments=dict(item.get("arguments") or {}),
                     spec=workspace.tool_spec(str(item.get("name") or "unknown")),
-                    group_id=str(
-                        item.get("group_id") or _missing_group_id(item)
-                    ),
+                    group_id=str(item.get("group_id") or _missing_group_id(item)),
                     execution_mode=str(item.get("execution_mode") or "serial"),
                     status=(
                         "interaction_required"
@@ -1295,6 +1284,7 @@ class AgentLoop:
         role: str,
         content: str,
         call_id: str | None = None,
+        tool_name: str | None = None,
         is_error: bool = False,
         tool_status: str | None = None,
         reasoning_summary: str | None = None,
@@ -1306,12 +1296,19 @@ class AgentLoop:
         if role == "tool":
             if call_id is None:
                 raise ValueError("tool message requires call_id")
+            try:
+                private_output = json.loads(content)
+            except (TypeError, ValueError):
+                private_output = content
             parts.append(
                 {
                     "id": f"tool-result:{call_id}",
                     "type": "tool_result",
                     "call_id": call_id,
                     "status": tool_status or ("failed" if is_error else "completed"),
+                    "summary": _public_output_summary(
+                        private_output, tool_name=tool_name
+                    ),
                     "output": {"type": "text", "text": content},
                     "error": content if is_error else None,
                 }
@@ -1703,8 +1700,7 @@ def _attachment_ids(entries: tuple[dict[str, Any], ...]) -> list[str]:
             part.get("attachment_id")
             for part in payload.get("parts") or []
             if isinstance(part, dict)
-            and part.get("type")
-            in {"attachment_ref", "file_ref", "directory_ref"}
+            and part.get("type") in {"attachment_ref", "file_ref", "directory_ref"}
             and part.get("attachment_id") is not None
         ]
         for raw_id in raw_ids:
@@ -1953,7 +1949,7 @@ def _recovery_tool_progress(
 def _tool_progress_view(run: Any, call_id: str) -> ToolProgressView:
     for item in run.tool_progress or []:
         if isinstance(item, dict) and item.get("call_id") == call_id:
-            return ToolProgressView.model_validate(item)
+            return public_tool_progress_view(item)
     raise LookupError(f"tool progress not found: {call_id}")
 
 

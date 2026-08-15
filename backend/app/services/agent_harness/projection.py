@@ -11,6 +11,7 @@ from app.services.agent_harness.contracts import (
     RunView,
 )
 from app.services.agent_harness.tool_projection import (
+    public_detail_list,
     public_error_message,
     public_result_details,
     public_tool_details,
@@ -160,8 +161,7 @@ def public_run_error(run: AgentHarnessRun) -> dict[str, str] | None:
         (
             candidate
             for candidate in candidates
-            if isinstance(candidate, str)
-            and candidate in _PUBLIC_RUN_ERROR_MESSAGES
+            if isinstance(candidate, str) and candidate in _PUBLIC_RUN_ERROR_MESSAGES
         ),
         "agent_failed",
     )
@@ -205,7 +205,7 @@ def _public_entry_payload(entry_type: str, payload: Any) -> Any:
     if entry_type != "message" or not isinstance(payload, dict):
         return payload
     return {
-        **payload,
+        "role": payload.get("role"),
         "parts": [
             _public_message_part(part)
             for part in payload.get("parts") or []
@@ -218,38 +218,70 @@ def _public_message_part(part: dict[str, Any]) -> dict[str, Any]:
     part_type = part.get("type")
     if part_type == "tool_call":
         name = str(part.get("name") or "unknown")
+        display_name = str(part.get("display_name") or name)
         arguments = part.get("arguments")
         arguments = arguments if isinstance(arguments, dict) else {}
-        summary = public_error_message(str(part.get("summary") or "Tool activity"))
+        summary = public_error_message(str(part.get("summary") or display_name))
         if name == "bash":
             description = arguments.get("description")
-            summary = "Run command"
+            summary = display_name
             if isinstance(description, str) and description.strip():
                 public_description = public_error_message(description.strip())
                 if public_description:
                     summary = f"{summary}: {public_description}"
+        persisted_details = public_detail_list(part.get("public_details"))
+        details = (
+            public_tool_details(name, arguments) if arguments else persisted_details
+        )
         return {
-            **part,
-            "summary": summary or "Tool activity",
+            "id": str(
+                part.get("id") or f"tool-call:{part.get('call_id') or 'unknown'}"
+            ),
+            "type": "tool_call",
+            "call_id": str(part.get("call_id") or "unknown"),
+            "group_id": str(part.get("group_id") or "unknown"),
+            "execution_mode": part.get("execution_mode") or "serial",
+            "name": name,
+            "display_name": display_name,
+            "category": part.get("category") or "other",
+            "summary": summary or display_name,
             "arguments": {},
-            "public_details": [
-                detail.model_dump(mode="json")
-                for detail in public_tool_details(name, arguments)
-            ],
+            "public_details": [detail.model_dump(mode="json") for detail in details],
         }
     if part_type == "tool_result":
+        summary = public_error_message(
+            str(part.get("summary")) if part.get("summary") else None
+        )
         error = public_error_message(
             str(part.get("error")) if part.get("error") else None
         )
+        persisted_details = public_detail_list(part.get("public_details"))
+        generated_details = public_result_details(
+            output_summary=summary,
+            error=error,
+        )
+        persisted_kinds = {detail.kind for detail in persisted_details}
+        details = [
+            *persisted_details,
+            *(
+                detail
+                for detail in generated_details
+                if detail.kind not in persisted_kinds
+            ),
+        ]
         return {
-            **part,
-            "summary": None,
+            "id": str(
+                part.get("id") or f"tool-result:{part.get('call_id') or 'unknown'}"
+            ),
+            "type": "tool_result",
+            "call_id": str(part.get("call_id") or "unknown"),
+            "status": part.get("status") or "completed",
+            "summary": summary,
             "output": _public_tool_output(part.get("output")),
+            "started_at": part.get("started_at"),
+            "completed_at": part.get("completed_at"),
             "error": error,
-            "public_details": [
-                detail.model_dump(mode="json")
-                for detail in public_result_details(error=error)
-            ],
+            "public_details": [detail.model_dump(mode="json") for detail in details],
         }
     return part
 
@@ -257,20 +289,77 @@ def _public_message_part(part: dict[str, Any]) -> dict[str, Any]:
 def _public_tool_output(output: Any) -> dict[str, Any] | None:
     if not isinstance(output, dict) or output.get("type") != "content_parts":
         return None
-    safe_types = {
-        "attachment_ref",
-        "file_ref",
-        "directory_ref",
-        "workflow_ref",
-        "run_ref",
-        "artifact_ref",
-    }
     parts = [
-        part
-        for part in output.get("parts") or []
-        if isinstance(part, dict) and part.get("type") in safe_types
+        public
+        for raw in output.get("parts") or []
+        if isinstance(raw, dict)
+        and (public := _public_content_reference(raw)) is not None
     ]
     return {"type": "content_parts", "parts": parts} if parts else None
+
+
+def _public_content_reference(part: dict[str, Any]) -> dict[str, Any] | None:
+    part_type = part.get("type")
+    part_id = str(part.get("id") or f"{part_type or 'reference'}:unknown")
+
+    if part_type == "attachment_ref":
+        return {
+            "id": part_id,
+            "type": "attachment_ref",
+            "attachment_id": part.get("attachment_id"),
+            "filename": _public_label(part.get("filename")),
+            "kind": str(part.get("kind") or "file"),
+            "mime_type": (
+                str(part["mime_type"]) if part.get("mime_type") is not None else None
+            ),
+            "size_bytes": max(int(part.get("size_bytes") or 0), 0),
+        }
+    if part_type in {"file_ref", "directory_ref"}:
+        path = part.get("path")
+        public_path = _public_path_value(path) if isinstance(path, str) else None
+        return {
+            "id": part_id,
+            "type": part_type,
+            "label": _public_label(part.get("label") or public_path or part_type),
+            "project_id": part.get("project_id"),
+            "attachment_id": part.get("attachment_id"),
+            "path": public_path,
+        }
+    if part_type == "workflow_ref":
+        return {
+            "id": part_id,
+            "type": "workflow_ref",
+            "workflow_id": part.get("workflow_id"),
+            "label": _public_label(part.get("label")),
+            "project_id": part.get("project_id"),
+        }
+    if part_type == "run_ref":
+        return {
+            "id": part_id,
+            "type": "run_ref",
+            "run_id": str(part.get("run_id") or "unknown"),
+            "label": _public_label(part.get("label")),
+        }
+    if part_type == "artifact_ref":
+        return {
+            "id": part_id,
+            "type": "artifact_ref",
+            "artifact_id": part.get("artifact_id"),
+            "title": _public_label(part.get("title")) if part.get("title") else None,
+            "media_type": (
+                str(part["media_type"]) if part.get("media_type") is not None else None
+            ),
+        }
+    return None
+
+
+def _public_label(value: Any) -> str:
+    return public_error_message(str(value or "")) or ""
+
+
+def _public_path_value(value: str) -> str:
+    details = public_tool_details("read", {"path": value})
+    return details[0].value if details else ""
 
 
 def pending_interaction_entry_view(

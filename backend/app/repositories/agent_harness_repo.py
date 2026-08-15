@@ -38,6 +38,7 @@ from app.services.agent_harness.projection import (
 from app.services.agent_harness.tool_projection import (
     public_error_message,
     public_result_details,
+    public_tool_progress_view,
     public_tool_details,
 )
 
@@ -301,8 +302,7 @@ def _referenced_attachment_ids(payloads: Iterable[Any]) -> set[str]:
         for part in payload.get("parts") or []:
             if (
                 isinstance(part, dict)
-                and part.get("type")
-                in {"attachment_ref", "file_ref", "directory_ref"}
+                and part.get("type") in {"attachment_ref", "file_ref", "directory_ref"}
                 and part.get("attachment_id") is not None
             ):
                 referenced.add(str(part["attachment_id"]))
@@ -624,8 +624,7 @@ class AgentHarnessRepository:
             str(item.get("attachment_id"))
             for item in raw_parts
             if isinstance(item, dict)
-            and item.get("type")
-            in {"attachment_ref", "file_ref", "directory_ref"}
+            and item.get("type") in {"attachment_ref", "file_ref", "directory_ref"}
             and item.get("attachment_id") is not None
         ]
         attachments = await AgentHarnessAttachmentRepository(
@@ -957,7 +956,8 @@ class AgentHarnessRepository:
         existing_details = [
             detail
             for detail in existing.get("public_details") or []
-            if isinstance(detail, dict) and detail.get("kind") not in {"output", "error"}
+            if isinstance(detail, dict)
+            and detail.get("kind") not in {"output", "error"}
         ]
         input_details = existing_details or [
             detail.model_dump(mode="json")
@@ -994,7 +994,7 @@ class AgentHarnessRepository:
             raw["started_at"] = now
         if status in {"completed", "failed", "blocked", "cancelled"}:
             raw["completed_at"] = now
-        view = ToolProgressView.model_validate(raw)
+        view = public_tool_progress_view(raw)
         stored = view.model_dump(mode="json")
         for index, item in enumerate(progress):
             if item.get("call_id") == call_id:
@@ -1732,7 +1732,9 @@ class AgentHarnessRepository:
                 .values(lease_generation=AgentHarnessRun.lease_generation)
             )
             if not fenced.rowcount:
-                raise ValueError("terminal Agent run or stale fence rejected plan update")
+                raise ValueError(
+                    "terminal Agent run or stale fence rejected plan update"
+                )
             await self.db.refresh(session, with_for_update=True)
             latest = (
                 await self.db.execute(
@@ -1746,7 +1748,10 @@ class AgentHarnessRepository:
                     .limit(1)
                 )
             ).scalar_one_or_none()
-            revision = int((latest.payload if latest is not None else {}).get("revision") or 0) + 1
+            revision = (
+                int((latest.payload if latest is not None else {}).get("revision") or 0)
+                + 1
+            )
             plan_id = str(
                 (latest.payload if latest is not None else {}).get("plan_id")
                 or f"plan:{run_id}"
@@ -2213,12 +2218,11 @@ class AgentHarnessRepository:
             ),
             runs=[run_view(item) for item in runs],
             entries=[
-                entry_contract(entry)
-                for entry in entries
-                if entry.type != "compaction"
+                entry_contract(entry) for entry in entries if entry.type != "compaction"
             ],
             active_run=active_run,
         )
+
     @staticmethod
     def _assistant_draft(run: AgentHarnessRun | None) -> AssistantDraftView | None:
         if run is None or not run.draft:
@@ -2229,38 +2233,14 @@ class AgentHarnessRepository:
     def _tool_progress(run: AgentHarnessRun | None) -> list[ToolProgressView]:
         if run is None or not run.tool_progress:
             return []
-        return [AgentHarnessRepository._public_tool_progress(item) for item in run.tool_progress]
+        return [
+            AgentHarnessRepository._public_tool_progress(item)
+            for item in run.tool_progress
+        ]
 
     @staticmethod
     def _public_tool_progress(item: Any) -> ToolProgressView:
-        raw = dict(item) if isinstance(item, dict) else {}
-        name = str(raw.get("name") or "unknown")
-        arguments = raw.get("arguments")
-        arguments = arguments if isinstance(arguments, dict) else {}
-        output_summary = public_error_message(
-            str(raw.get("output_summary")) if raw.get("output_summary") else None
-        )
-        error = public_error_message(
-            str(raw.get("error")) if raw.get("error") else None
-        )
-        return ToolProgressView.model_validate(
-            {
-                **raw,
-                "arguments": {},
-                "output_summary": output_summary,
-                "error": error,
-                "public_details": [
-                    detail.model_dump(mode="json")
-                    for detail in [
-                        *public_tool_details(name, arguments),
-                        *public_result_details(
-                            output_summary=output_summary,
-                            error=error,
-                        ),
-                    ]
-                ],
-            }
-        )
+        return public_tool_progress_view(item)
 
     @staticmethod
     def _pending_interaction(

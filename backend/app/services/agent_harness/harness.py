@@ -44,6 +44,7 @@ from app.services.agent_harness.recovery import RecoveryPlanner, create_checkpoi
 from app.services.agent_harness.tool_projection import (
     project_tool_view,
     public_output_summary as _public_output_summary,
+    public_tool_progress_view,
 )
 from app.services.agent_harness.tools import ToolCall
 from app.services.agent_harness.tools.specs import ToolSpec
@@ -572,9 +573,7 @@ class AgentHarness:
                     arguments=dict(call.get("arguments") or {}),
                     spec=workspace.tool_spec(str(call.get("name") or "unknown")),
                     status="pending",
-                    group_id=str(
-                        call.get("group_id") or _missing_group_id(call)
-                    ),
+                    group_id=str(call.get("group_id") or _missing_group_id(call)),
                     execution_mode=str(call.get("execution_mode") or "serial"),
                 )
                 for call in unresolved
@@ -699,9 +698,7 @@ class AgentHarness:
                         if item.get("call_id") == call_id
                         else "pending"
                     ),
-                    group_id=str(
-                        item.get("group_id") or _missing_group_id(item)
-                    ),
+                    group_id=str(item.get("group_id") or _missing_group_id(item)),
                     execution_mode=str(item.get("execution_mode") or "serial"),
                 )
                 for item in [waiting_call, *pending_calls]
@@ -865,9 +862,7 @@ class AgentHarness:
                     str(session.id),
                     InteractionRequestedEvent(
                         run_id=run.id,
-                        interaction=(
-                            pending_interaction_entry_view(entry)
-                        ),
+                        interaction=(pending_interaction_entry_view(entry)),
                     ),
                 )
                 return True
@@ -893,6 +888,9 @@ class AgentHarness:
                             "type": "tool_result",
                             "call_id": item.call_id,
                             "status": result.status,
+                            "summary": _public_output_summary(
+                                result.output, tool_name=result.tool_name
+                            ),
                             "output": {
                                 "type": "text",
                                 "text": _recovered_tool_output(result),
@@ -962,12 +960,9 @@ class AgentHarness:
                     ),
                     status="interaction_required",
                     group_id=str(
-                        waiting_call.get("group_id")
-                        or _missing_group_id(waiting_call)
+                        waiting_call.get("group_id") or _missing_group_id(waiting_call)
                     ),
-                    execution_mode=str(
-                        waiting_call.get("execution_mode") or "serial"
-                    ),
+                    execution_mode=str(waiting_call.get("execution_mode") or "serial"),
                 )
             ],
         )
@@ -1238,7 +1233,7 @@ def _recovered_tool_output(result) -> str:
 def _tool_progress_view(run: Any, call_id: str) -> ToolProgressView:
     for item in run.tool_progress or []:
         if isinstance(item, dict) and item.get("call_id") == call_id:
-            return ToolProgressView.model_validate(item)
+            return public_tool_progress_view(item)
     raise LookupError(f"tool progress not found: {call_id}")
 
 
