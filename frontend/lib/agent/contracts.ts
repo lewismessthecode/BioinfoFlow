@@ -2,7 +2,11 @@ export type JsonPrimitive = string | number | boolean | null
 export type JsonObject = { [key: string]: JsonValue }
 export type JsonValue = JsonPrimitive | JsonValue[] | JsonObject
 
-export type AgentPermissionMode = "read_only" | "ask_dangerous" | "full_access"
+export type AgentPermissionMode =
+  | "ask_changes"
+  | "ask_dangerous"
+  | "full_access"
+export type AgentWorkspaceAccess = "read_only" | "read_write"
 export type AgentSessionStatus = "active" | "archived" | "closing" | "deleted"
 export type AgentRunStatus =
   | "queued"
@@ -32,13 +36,24 @@ export type ToolCategory =
   | "other"
 export type ToolExecutionMode = "parallel" | "serial" | "mixed"
 
+export type AgentModelSummary = {
+  provider: string
+  model: string
+  display_name: string
+  supports_vision: boolean
+  supports_reasoning: boolean
+  supports_tools: boolean
+}
+
 export type SessionView = {
   id: string
   user_id: string
   workspace_id: string
   project_id: string | null
   title: string | null
+  model: AgentModelSummary
   permission_mode: AgentPermissionMode
+  workspace_access: AgentWorkspaceAccess
   status: AgentSessionStatus
   created_at: string
   updated_at: string
@@ -263,13 +278,45 @@ export type RunRefPart = MessagePartBase & {
   label: string
 }
 
+export type InputTextPart = {
+  type: "text"
+  text: string
+}
+
+export type InputAttachmentRefPart = {
+  type: "attachment_ref"
+  attachment_id: string
+}
+
+export type InputFileRefPart =
+  | { type: "file_ref"; attachment_id: string }
+  | { type: "file_ref"; project_id: string; path: string }
+
+export type InputDirectoryRefPart =
+  | { type: "directory_ref"; attachment_id: string }
+  | { type: "directory_ref"; project_id: string; path: string }
+
+export type InputWorkflowRefPart =
+  | { type: "workflow_ref"; workflow_id: string; scope: "global" }
+  | {
+      type: "workflow_ref"
+      workflow_id: string
+      scope: "project"
+      project_id: string
+    }
+
+export type InputRunRefPart = {
+  type: "run_ref"
+  run_id: string
+}
+
 export type InputPart =
-  | TextPart
-  | AttachmentRefPart
-  | FileRefPart
-  | DirectoryRefPart
-  | WorkflowRefPart
-  | RunRefPart
+  | InputTextPart
+  | InputAttachmentRefPart
+  | InputFileRefPart
+  | InputDirectoryRefPart
+  | InputWorkflowRefPart
+  | InputRunRefPart
 
 type AgentCommandBase = {
   command_id: string

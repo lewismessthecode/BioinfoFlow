@@ -4,6 +4,7 @@ import type {
   AgentCommand,
   AgentPermissionMode,
   AgentSessionStatus,
+  AgentWorkspaceAccess,
   SessionSnapshot,
 } from "./contracts"
 
@@ -12,6 +13,7 @@ export type AgentSessionSummary = {
   title: string | null
   project_id: string | null
   permission_mode: AgentPermissionMode
+  workspace_access: AgentWorkspaceAccess
   status: AgentSessionStatus
   created_at: string
   updated_at: string
@@ -30,6 +32,7 @@ export async function createAgentSession(input: {
   projectId?: string | null
   title?: string
   permissionMode?: AgentPermissionMode
+  workspaceAccess?: AgentWorkspaceAccess
   modelId?: string
 }) {
   const response = await apiRequest<SessionSnapshot>("/agent/sessions", {
@@ -38,6 +41,7 @@ export async function createAgentSession(input: {
       project_id: input.projectId ?? null,
       title: input.title,
       permission_mode: input.permissionMode,
+      workspace_access: input.workspaceAccess,
       model_id: input.modelId,
     }),
   })
@@ -56,6 +60,7 @@ export async function updateAgentSession(
   updates: {
     title?: string | null
     permissionMode?: AgentPermissionMode
+    workspaceAccess?: AgentWorkspaceAccess
     status?: Extract<AgentSessionStatus, "active" | "archived">
   },
 ) {
@@ -66,6 +71,7 @@ export async function updateAgentSession(
       body: JSON.stringify({
         title: updates.title,
         permission_mode: updates.permissionMode,
+        workspace_access: updates.workspaceAccess,
         status: updates.status,
       }),
     },

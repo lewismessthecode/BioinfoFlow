@@ -10,6 +10,7 @@ import type {
 const mocks = vi.hoisted(() => ({
   dispatchAgentCommand: vi.fn(),
   getAgentSnapshot: vi.fn(),
+  updateAgentSession: vi.fn(),
   subscribeAgentEvents: vi.fn(),
   unsubscribe: vi.fn(),
 }))
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/agent/client", () => ({
   dispatchAgentCommand: mocks.dispatchAgentCommand,
   getAgentSnapshot: mocks.getAgentSnapshot,
+  updateAgentSession: mocks.updateAgentSession,
 }))
 
 vi.mock("@/lib/agent/stream", () => ({
@@ -35,7 +37,16 @@ function snapshot(title = "Analysis"): SessionSnapshot {
       workspace_id: "workspace-1",
       project_id: "project-1",
       title,
+      model: {
+        provider: "openai",
+        model: "gpt-5.6",
+        display_name: "GPT-5.6",
+        supports_vision: true,
+        supports_reasoning: true,
+        supports_tools: true,
+      },
       permission_mode: "ask_dangerous",
+      workspace_access: "read_write",
       status: "active",
       created_at: timestamp,
       updated_at: timestamp,
@@ -90,6 +101,7 @@ describe("useAgentSession", () => {
   beforeEach(() => {
     mocks.dispatchAgentCommand.mockReset()
     mocks.getAgentSnapshot.mockReset()
+    mocks.updateAgentSession.mockReset()
     mocks.subscribeAgentEvents.mockReset()
     mocks.unsubscribe.mockReset()
     mocks.subscribeAgentEvents.mockReturnValue(mocks.unsubscribe)
@@ -191,7 +203,7 @@ describe("useAgentSession", () => {
       .mockResolvedValueOnce(snapshot("Responded"))
       .mockResolvedValueOnce(snapshot("Cancelled"))
     const parts: InputPart[] = [
-      { id: "part-1", type: "text", text: "Inspect this workflow" },
+      { type: "text", text: "Inspect this workflow" },
     ]
     const response: InteractionResponse = {
       type: "approval",
@@ -257,6 +269,34 @@ describe("useAgentSession", () => {
     expect(result.current.session?.title).toBe("Analysis")
   })
 
+  it("waits for SSE authority after a permission update instead of applying the PATCH response", async () => {
+    const patchResponse = snapshot("PATCH response")
+    patchResponse.session.permission_mode = "full_access"
+    mocks.updateAgentSession.mockResolvedValueOnce(patchResponse)
+
+    const { result } = renderHook(() => useAgentSession("session-1"))
+    const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
+    act(() => {
+      subscription.onEvent({ type: "snapshot", snapshot: snapshot() })
+    })
+
+    await act(async () => {
+      await result.current.updatePermissionMode("full_access")
+    })
+
+    expect(mocks.updateAgentSession).toHaveBeenCalledWith("session-1", {
+      permissionMode: "full_access",
+    })
+    expect(result.current.session?.permission_mode).toBe("ask_dangerous")
+
+    const authoritative = snapshot("Authoritative")
+    authoritative.session.permission_mode = "full_access"
+    act(() => {
+      subscription.onEvent({ type: "snapshot", snapshot: authoritative })
+    })
+    expect(result.current.session?.permission_mode).toBe("full_access")
+  })
+
   it("ignores a stale snapshot refetch after the session changes", async () => {
     let resolveSnapshot!: (value: SessionSnapshot) => void
     mocks.getAgentSnapshot.mockReturnValueOnce(
@@ -311,7 +351,7 @@ describe("useAgentSession", () => {
       }),
     )
     const parts: InputPart[] = [
-      { id: "part-1", type: "text", text: "Long-running command" },
+      { type: "text", text: "Long-running command" },
     ]
 
     const { result, rerender } = renderHook(

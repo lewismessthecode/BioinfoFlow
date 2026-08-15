@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
   dispatchAgentCommand,
   getAgentSnapshot,
+  updateAgentSession,
 } from "@/lib/agent/client"
 import { subscribeAgentEvents } from "@/lib/agent/stream"
 import {
@@ -15,6 +16,7 @@ import {
 import type {
   AgentCommand,
   AgentEvent,
+  AgentPermissionMode,
   InputPart,
   InteractionResponse,
   SessionSnapshot,
@@ -32,6 +34,7 @@ type AgentSessionState = AgentStoreState & {
     response: InteractionResponse,
   ) => Promise<void>
   cancel: () => Promise<void>
+  updatePermissionMode: (mode: AgentPermissionMode) => Promise<void>
 }
 
 type AgentSessionViewState = {
@@ -222,6 +225,32 @@ export function useAgentSession(sessionId: string): AgentSessionState {
     [runCommand],
   )
 
+  const updatePermissionMode = useCallback(
+    async (mode: AgentPermissionMode) => {
+      const generation = generationRef.current
+      setView((current) => ({
+        ...(current.sessionId === sessionId
+          ? current
+          : initialView(sessionId)),
+        error: null,
+      }))
+      try {
+        await updateAgentSession(sessionId, { permissionMode: mode })
+      } catch (caught) {
+        if (generationRef.current === generation) {
+          setView((current) => ({
+            ...(current.sessionId === sessionId
+              ? current
+              : initialView(sessionId)),
+            error: asError(caught, "Agent session update failed"),
+          }))
+        }
+        throw caught
+      }
+    },
+    [sessionId],
+  )
+
   const currentView =
     view.sessionId === sessionId ? view : initialView(sessionId)
 
@@ -234,6 +263,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
     steer,
     respond,
     cancel,
+    updatePermissionMode,
   }
 }
 
