@@ -18,6 +18,7 @@ import type {
   HistoryEntry,
   InteractionResponse,
   InteractionResponseEntry,
+  MessagePart,
   MessageEntry,
   PlanEntry,
   RunView,
@@ -53,6 +54,14 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
         .filter((run) => !prepared.lastEntryIdsByRun.has(run.id)),
     [prepared.lastEntryIdsByRun, runs],
   )
+  const liveToolsByEntryId = useMemo(
+    () =>
+      scopeLiveToolsByEntry(
+        liveToolsByCallId,
+        prepared.toolCallEntryIdsByCallId,
+      ),
+    [liveToolsByCallId, prepared.toolCallEntryIdsByCallId],
+  )
 
   return (
     <div className="grid min-w-0 gap-5" data-testid="agent-history-entries">
@@ -82,13 +91,8 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
 
         if (entry.type === "message") {
           const visibleParts =
-            entry.payload.role === "tool"
-              ? entry.payload.parts.filter(
-                  (part) =>
-                    part.type !== "tool_result" ||
-                    !prepared.consumedToolCallIds.has(part.call_id),
-                )
-              : entry.payload.parts
+            prepared.visibleMessagePartsByEntryId.get(entry.id) ??
+            entry.payload.parts
           if (visibleParts.length === 0) return withOutcome(null)
 
           return withOutcome(
@@ -97,12 +101,12 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
               data-agent-read-anchor={`entry:${entry.id}`}
             >
               <AgentHistoryEntry
-                entry={{
-                  ...entry,
-                  payload: { ...entry.payload, parts: visibleParts },
-                }}
+                entry={entry}
+                messageParts={visibleParts}
                 toolResultsByCallId={prepared.toolResultsByCallId}
-                liveToolsByCallId={liveToolsByCallId}
+                liveToolsByCallId={
+                  liveToolsByEntryId.get(entry.id) ?? EMPTY_LIVE_TOOLS
+                }
                 onOpenRun={onOpenRun}
               />
             </div>
@@ -141,14 +145,16 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
   )
 })
 
-function AgentHistoryEntry({
+const AgentHistoryEntry = memo(function AgentHistoryEntry({
   entry,
+  messageParts,
   toolResultsByCallId,
   liveToolsByCallId,
   interactionResponse,
   onOpenRun,
 }: {
   entry: Exclude<HistoryEntry, InteractionResponseEntry>
+  messageParts?: MessagePart[]
   toolResultsByCallId?: ReadonlyMap<string, ToolResultPart>
   liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
   interactionResponse?: InteractionResponse
@@ -160,6 +166,7 @@ function AgentHistoryEntry({
     return (
       <MessageHistoryEntry
         entry={entry}
+        parts={messageParts ?? entry.payload.parts}
         toolResultsByCallId={toolResultsByCallId}
         liveToolsByCallId={liveToolsByCallId}
         onOpenRun={onOpenRun}
@@ -190,15 +197,17 @@ function AgentHistoryEntry({
       <AlertDescription>{entry.payload.message}</AlertDescription>
     </Alert>
   )
-}
+})
 
 function MessageHistoryEntry({
   entry,
+  parts,
   toolResultsByCallId,
   liveToolsByCallId,
   onOpenRun,
 }: {
   entry: MessageEntry
+  parts: MessagePart[]
   toolResultsByCallId?: ReadonlyMap<string, ToolResultPart>
   liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
   onOpenRun?: (runId: string) => void
@@ -239,7 +248,7 @@ function MessageHistoryEntry({
         )}
       >
         <AgentMessageParts
-          parts={entry.payload.parts}
+          parts={parts}
           toolResultsByCallId={toolResultsByCallId}
           liveToolsByCallId={liveToolsByCallId}
           onOpenRun={onOpenRun}
@@ -290,6 +299,7 @@ function prepareHistory(entries: HistoryEntry[]) {
   const interactionResponses = new Map<string, InteractionResponse>()
   const latestPlans = new Map<string, PlanEntry>()
   const lastEntryIdsByRun = new Map<string, string>()
+  const toolCallEntryIdsByCallId = new Map<string, string>()
   const sortedEntries = [...entries].sort((left, right) =>
     left.sequence === right.sequence
       ? left.created_at.localeCompare(right.created_at)
@@ -305,6 +315,7 @@ function prepareHistory(entries: HistoryEntry[]) {
         }
         if (part.type === "tool_call") {
           consumedToolCallIds.add(part.call_id)
+          toolCallEntryIdsByCallId.set(part.call_id, entry.id)
         }
       }
     }
@@ -333,12 +344,45 @@ function prepareHistory(entries: HistoryEntry[]) {
     entries: sortedEntries,
     toolResultsByCallId,
     consumedToolCallIds,
+    toolCallEntryIdsByCallId,
+    visibleMessagePartsByEntryId: new Map(
+      sortedEntries.flatMap((entry) => {
+        if (entry.type !== "message") return []
+        const parts =
+          entry.payload.role === "tool"
+            ? entry.payload.parts.filter(
+                (part) =>
+                  part.type !== "tool_result" ||
+                  !consumedToolCallIds.has(part.call_id),
+              )
+            : entry.payload.parts
+        return [[entry.id, parts] as const]
+      }),
+    ),
     interactionResponses,
     lastEntryIdsByRun,
     latestPlanEntryIds: new Map(
       [...latestPlans].map(([planId, entry]) => [planId, entry.id]),
     ),
   }
+}
+
+function scopeLiveToolsByEntry(
+  liveToolsByCallId: ReadonlyMap<string, ToolProgressView>,
+  toolCallEntryIdsByCallId: ReadonlyMap<string, string>,
+) {
+  const result = new Map<string, Map<string, ToolProgressView>>()
+  for (const [callId, tool] of liveToolsByCallId) {
+    const entryId = toolCallEntryIdsByCallId.get(callId)
+    if (!entryId) continue
+    const entryTools = result.get(entryId)
+    if (entryTools) {
+      entryTools.set(callId, tool)
+    } else {
+      result.set(entryId, new Map([[callId, tool]]))
+    }
+  }
+  return result
 }
 
 function messageCopyText(entry: MessageEntry) {

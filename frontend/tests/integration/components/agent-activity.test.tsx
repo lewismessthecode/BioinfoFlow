@@ -9,6 +9,8 @@ import {
 import type { ToolProgressView } from "@/lib/agent/contracts"
 import { renderWithProviders } from "@/tests/test-utils"
 
+const clipboardWriteText = vi.fn()
+
 vi.mock("next-intl", () => ({
   useLocale: () => "en",
   useTranslations: () =>
@@ -20,6 +22,10 @@ vi.mock("next-intl", () => ({
         "details.input": "Input",
         "details.output": "Output",
         "details.error": "Error",
+        "details.command": "Command",
+        "details.copy": `Copy ${values?.label ?? "detail"}`,
+        "details.copied": `Copied ${values?.label ?? "detail"}`,
+        "details.copy_failed": "Could not copy detail",
         "status.pending": "Pending",
         "status.running": "Running",
         "status.completed": "Completed",
@@ -69,6 +75,19 @@ const runningTool: ToolProgressView = {
 }
 
 describe("AgentToolCard", () => {
+  it.each(["running", "failed", "completed"] as const)(
+    "keeps %s tool details collapsed by default",
+    (status) => {
+      renderWithProviders(<AgentToolCard tool={{ ...runningTool, status }} />)
+
+      expect(screen.queryByText("nextflow run workflow.nf")).not.toBeInTheDocument()
+      expect(screen.getByRole("button", { name: /Show details/i })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      )
+    },
+  )
+
   it("keeps command details unmounted until the whole summary row is expanded", async () => {
     const user = userEvent.setup()
     renderWithProviders(
@@ -102,6 +121,22 @@ describe("AgentToolCard", () => {
       "aria-expanded",
       "true",
     )
+  })
+
+  it("offers an accessible copy action only for explicitly copyable details", async () => {
+    const user = userEvent.setup()
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: clipboardWriteText.mockResolvedValue(undefined) },
+    })
+    renderWithProviders(<AgentToolCard tool={runningTool} />)
+
+    expect(screen.queryByRole("button", { name: "Copy Command" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: /Show details/i }))
+    await user.click(screen.getByRole("button", { name: "Copy Command" }))
+
+    expect(clipboardWriteText).toHaveBeenCalledWith("nextflow run workflow.nf")
+    expect(screen.getByRole("button", { name: "Copied Command" })).toBeInTheDocument()
   })
 
   it("normalizes rounded duration across minute boundaries", () => {
@@ -138,7 +173,7 @@ describe("AgentToolCard", () => {
 })
 
 describe("AgentActivityGroup", () => {
-  it("expands an active parallel group by default without inferring execution mode", () => {
+  it("keeps an active parallel group collapsed by default", () => {
     renderWithProviders(
       <AgentActivityGroup
         tools={[
@@ -157,13 +192,14 @@ describe("AgentActivityGroup", () => {
 
     expect(screen.getByRole("button", { name: /2 tools running in parallel/i })).toHaveAttribute(
       "aria-expanded",
-      "true",
+      "false",
     )
-    expect(screen.getByText("Read workflow.nf")).toBeInTheDocument()
-    expect(screen.getByText("Read params.json")).toBeInTheDocument()
+    expect(screen.queryByText("Read workflow.nf")).not.toBeInTheDocument()
+    expect(screen.queryByText("Read params.json")).not.toBeInTheDocument()
   })
 
-  it("localizes public tool categories instead of rendering protocol values", () => {
+  it("localizes public tool categories instead of rendering protocol values", async () => {
+    const user = userEvent.setup()
     renderWithProviders(
       <AgentActivityGroup
         tools={[
@@ -180,6 +216,8 @@ describe("AgentActivityGroup", () => {
       />,
     )
 
+    await user.click(screen.getByRole("button", { name: /2 tools running in parallel/i }))
+
     expect(screen.getByText("Reading")).toBeInTheDocument()
     expect(screen.getByText("Commands")).toBeInTheDocument()
     expect(screen.queryByRole("heading", { name: "read" })).not.toBeInTheDocument()
@@ -188,7 +226,8 @@ describe("AgentActivityGroup", () => {
     ).not.toBeInTheDocument()
   })
 
-  it("preserves interleaved model-call order while grouping contiguous categories", () => {
+  it("preserves interleaved model-call order while grouping contiguous categories", async () => {
+    const user = userEvent.setup()
     renderWithProviders(
       <AgentActivityGroup
         tools={[
@@ -211,6 +250,9 @@ describe("AgentActivityGroup", () => {
       />,
     )
 
+
+    await user.click(screen.getByRole("button", { name: /3 tools running in parallel/i }))
+
     expect(
       screen
         .getAllByTestId("agent-tool-card")
@@ -227,7 +269,8 @@ describe("AgentActivityGroup", () => {
     ).toEqual(["Reading", "Commands", "Reading"])
   })
 
-  it("renders grouped tools as flat rows instead of nested bordered cards", () => {
+  it("renders grouped tools as flat rows instead of nested bordered cards", async () => {
+    const user = userEvent.setup()
     renderWithProviders(
       <AgentActivityGroup
         tools={[
@@ -240,6 +283,8 @@ describe("AgentActivityGroup", () => {
         ]}
       />,
     )
+
+    await user.click(screen.getByRole("button", { name: /2 tools running in parallel/i }))
 
     const group = screen.getByTestId("agent-activity-group")
     const childRows = group.querySelectorAll('[data-testid="agent-tool-card"]')

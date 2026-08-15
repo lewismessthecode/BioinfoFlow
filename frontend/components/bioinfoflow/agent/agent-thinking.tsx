@@ -1,8 +1,9 @@
 "use client"
 
-import { useId, useState } from "react"
+import { useId } from "react"
 import { useTranslations } from "next-intl"
 
+import { useActivityDisclosure } from "@/components/bioinfoflow/agent/activity-disclosure"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { ChevronDown, ChevronRight, Loader2, Sparkles } from "@/lib/icons"
 import type { AssistantDraftPartView } from "@/lib/agent/contracts"
@@ -20,7 +21,9 @@ export function AgentThinking({
 }: AgentThinkingProps) {
   const t = useTranslations("agentThinking")
   const detailsId = useId()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useActivityDisclosure(
+    `thinking:${part.id}`,
+  )
   const text = part.text.trim()
 
   if (!text) {
@@ -51,7 +54,7 @@ export function AgentThinking({
           className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[6px] py-1.5 pr-2 text-left text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none"
         aria-expanded={expanded}
         aria-controls={detailsId}
-        aria-label={t(expanded ? "hide" : "show")}
+        aria-label={`${label ?? t("title")}: ${firstLine(text)}. ${t(expanded ? "hide" : "show")}`}
         onClick={() => setExpanded((value) => !value)}
       >
         <Sparkles aria-hidden="true" className="size-4 shrink-0" />

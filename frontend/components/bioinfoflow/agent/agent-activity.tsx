@@ -3,13 +3,17 @@
 import { useId, useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 
+import { useActivityDisclosure } from "@/components/bioinfoflow/agent/activity-disclosure"
+import { Button } from "@/components/ui/button"
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   CircleDashed,
   Clock3,
+  Copy,
   Loader2,
   TerminalSquare,
 } from "@/lib/icons"
@@ -43,8 +47,10 @@ export function AgentToolCard({
   const detailsId = useId()
   const details = tool.public_details ?? []
   const hasDetails = details.length > 0
-  const shouldExpand = defaultExpanded ?? toolNeedsAttention(tool.status)
-  const [expanded, setExpanded] = useState(shouldExpand)
+  const [expanded, setExpanded] = useActivityDisclosure(
+    `tool:${tool.call_id}`,
+    defaultExpanded ?? false,
+  )
   const duration = toolDuration(tool, locale)
   const summary = (
     <>
@@ -141,6 +147,7 @@ export function AgentToolCard({
               ]
                 .filter(Boolean)
                 .join(" · ")}
+              copyable={detail.copyable}
             />
           ))}
         </div>
@@ -156,9 +163,14 @@ export function AgentActivityGroup({
 }: AgentActivityGroupProps) {
   const t = useTranslations("agentActivity")
   const detailsId = useId()
-  const shouldExpand =
-    defaultExpanded ?? tools.some((tool) => toolNeedsAttention(tool.status))
-  const [expanded, setExpanded] = useState(shouldExpand)
+  const disclosureKey = useMemo(
+    () => `tool-group:${tools.map((tool) => tool.call_id).join("|")}`,
+    [tools],
+  )
+  const [expanded, setExpanded] = useActivityDisclosure(
+    disclosureKey,
+    defaultExpanded ?? false,
+  )
   const resolvedExecutionMode =
     executionMode ?? commonExecutionMode(tools) ?? "mixed"
   const summaryKey = `group.${resolvedExecutionMode}`
@@ -226,16 +238,56 @@ function ToolDetail({
   code = false,
   tone = "default",
   note,
+  copyable = false,
 }: {
   label: string
   value: string
   code?: boolean
   tone?: "default" | "error"
   note?: string
+  copyable?: boolean
 }) {
+  const t = useTranslations("agentActivity")
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  )
+
+  async function copyDetail() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable")
+      await navigator.clipboard.writeText(value)
+      setCopyState("copied")
+    } catch {
+      setCopyState("failed")
+    }
+  }
+
   return (
     <div className="grid gap-1.5">
-      <h4 className="text-[11px] font-medium text-muted-foreground">{label}</h4>
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <h4 className="min-w-0 text-[11px] font-medium text-muted-foreground">
+          {label}
+        </h4>
+        {copyable ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            aria-label={t(
+              copyState === "copied" ? "details.copied" : "details.copy",
+              { label },
+            )}
+            onClick={() => void copyDetail()}
+          >
+            {copyState === "copied" ? (
+              <Check aria-hidden="true" />
+            ) : (
+              <Copy aria-hidden="true" />
+            )}
+          </Button>
+        ) : null}
+      </div>
       <div
         className={cn(
           "max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-[8px] bg-muted/45 px-2.5 py-2 text-xs leading-5 text-foreground/75",
@@ -246,6 +298,15 @@ function ToolDetail({
         {value}
       </div>
       {note ? <p className="text-[11px] text-muted-foreground">{note}</p> : null}
+      {copyState === "failed" ? (
+        <p
+          role="alert"
+          aria-live="polite"
+          className="text-[11px] text-error-foreground"
+        >
+          {t("details.copy_failed")}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -324,9 +385,6 @@ function commonExecutionMode(tools: ToolProgressView[]) {
   return tools.every((tool) => tool.execution_mode === first) ? first : null
 }
 
-function toolNeedsAttention(status: ToolProgressView["status"]) {
-  return !["completed", "cancelled"].includes(status)
-}
 
 function toolDuration(tool: ToolProgressView, locale: string) {
   if (!tool.started_at || !tool.completed_at) return null

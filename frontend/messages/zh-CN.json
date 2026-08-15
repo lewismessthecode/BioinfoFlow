@@ -2537,6 +2537,7 @@
     "workspacePanel": {
       "title": "工作区面板",
       "description": "查看工作区文件、工作流进度和资源监控。",
+      "action": "工作区",
       "open": "打开工作区面板",
       "close": "关闭工作区面板"
     },
@@ -2642,6 +2643,9 @@
       "path": "路径",
       "changes": "变更",
       "metadata": "详情",
+      "copy": "复制{label}",
+      "copied": "已复制{label}",
+      "copy_failed": "无法复制此详情，请手动选择并复制。",
       "redacted": "敏感内容已隐藏",
       "truncated": "内容已截断"
     }
