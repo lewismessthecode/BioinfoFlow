@@ -3,10 +3,10 @@
 import { useTranslations } from "next-intl"
 
 import { AgentActivityGroup, AgentToolCard } from "@/components/bioinfoflow/agent/agent-activity"
+import { AgentArtifactReference } from "@/components/bioinfoflow/agent/agent-artifact"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { Badge } from "@/components/ui/badge"
 import type {
-  ArtifactRefPart,
   AttachmentRefPart,
   DirectoryRefPart,
   FileRefPart,
@@ -29,7 +29,6 @@ type ReferencePart =
   | DirectoryRefPart
   | WorkflowRefPart
   | RunRefPart
-  | ArtifactRefPart
 
 type MessageRenderBlock =
   | { kind: "part"; part: Exclude<MessagePart, ToolCallPart> }
@@ -99,6 +98,10 @@ export function AgentMessageParts({
         if (part.type === "tool_result") {
           if (messageToolCallIds.has(part.call_id)) return null
           return <UnpairedToolResult key={part.id} result={part} />
+        }
+
+        if (part.type === "artifact_ref") {
+          return <AgentArtifactReference key={part.id} part={part} />
         }
 
         if (isReferencePart(part)) {
@@ -254,7 +257,6 @@ function isReferencePart(part: MessagePart): part is ReferencePart {
     "directory_ref",
     "workflow_ref",
     "run_ref",
-    "artifact_ref",
   ].includes(part.type)
 }
 
@@ -279,12 +281,5 @@ function referenceView(part: ReferencePart) {
       detail: part.workflow_id,
     }
   }
-  if (part.type === "run_ref") {
-    return { kind: "run" as const, label: part.label, detail: part.run_id }
-  }
-  return {
-    kind: "artifact" as const,
-    label: part.title ?? part.artifact_id,
-    detail: part.media_type,
-  }
+  return { kind: "run" as const, label: part.label, detail: part.run_id }
 }

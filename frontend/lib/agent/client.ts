@@ -1,10 +1,11 @@
-import { apiRequest } from "@/lib/api"
+import { apiRequest, buildApiUrl } from "@/lib/api"
 
 import type {
   AgentCommand,
   AgentPermissionMode,
   AgentSessionStatus,
   AgentWorkspaceAccess,
+  JsonObject,
   SessionSnapshot,
 } from "./contracts"
 
@@ -17,6 +18,33 @@ export type AgentSessionSummary = {
   status: AgentSessionStatus
   created_at: string
   updated_at: string
+}
+
+export type AgentArtifactResource = {
+  kind: "stored_file"
+  filename: string
+  mime_type: string
+  size_bytes: number
+  sha256: string
+}
+
+export type AgentArtifact = {
+  id: string
+  session_id: string
+  run_id: string | null
+  type: string
+  title: string
+  summary: string | null
+  payload: JsonObject | null
+  resource_ref: AgentArtifactResource | null
+  created_at: string
+  updated_at: string
+}
+
+export type AgentArtifactContent = {
+  blob: Blob
+  filename: string
+  mediaType: string
 }
 
 export async function listAgentSessions(options?: {
@@ -53,6 +81,42 @@ export async function getAgentSnapshot(sessionId: string) {
     `/agent/sessions/${sessionId}/snapshot`,
   )
   return response.data
+}
+
+export async function getAgentArtifact(
+  artifactId: string,
+  options?: { signal?: AbortSignal },
+) {
+  const response = await apiRequest<AgentArtifact>(
+    `/agent/artifacts/${artifactId}`,
+    options,
+  )
+  return response.data
+}
+
+export async function fetchAgentArtifactContent(
+  artifactId: string,
+  options?: { signal?: AbortSignal },
+): Promise<AgentArtifactContent> {
+  const response = await fetch(
+    buildApiUrl(`/agent/artifacts/${artifactId}/download`),
+    { credentials: "include", signal: options?.signal },
+  )
+  if (!response.ok) {
+    throw new Error(response.statusText || "Artifact download failed")
+  }
+
+  const blob = await response.blob()
+  return {
+    blob,
+    filename:
+      contentDispositionFilename(response.headers.get("content-disposition")) ??
+      `artifact-${artifactId}`,
+    mediaType: (response.headers.get("content-type") ?? blob.type)
+      .split(";", 1)[0]
+      .trim()
+      .toLowerCase(),
+  }
 }
 
 export async function updateAgentSession(
@@ -92,4 +156,23 @@ export async function dispatchAgentCommand(
 
 export async function deleteAgentSession(sessionId: string) {
   await apiRequest(`/agent/sessions/${sessionId}`, { method: "DELETE" })
+}
+
+function contentDispositionFilename(value: string | null) {
+  if (!value) return null
+  const encoded = value.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  const quoted = value.match(/filename="([^"]+)"/i)?.[1]
+  const plain = value.match(/filename=([^;]+)/i)?.[1]
+  const raw = encoded ?? quoted ?? plain
+  if (!raw) return null
+
+  let decoded = raw.trim().replace(/^"|"$/g, "")
+  if (encoded) {
+    try {
+      decoded = decodeURIComponent(decoded)
+    } catch {
+      // Keep the server-provided name when percent-decoding fails.
+    }
+  }
+  return decoded.split(/[\\/]/).pop() || null
 }

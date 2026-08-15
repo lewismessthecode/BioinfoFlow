@@ -3244,6 +3244,18 @@
       "run": "运行",
       "artifact": "产物"
     },
+    "artifact": {
+      "open": "打开 {name}",
+      "description": "预览或下载这个产物。",
+      "loading": "正在加载产物",
+      "loadFailed": "无法加载这个产物。",
+      "retry": "重试",
+      "download": "下载",
+      "downloading": "正在下载…",
+      "downloadFailed": "无法下载这个产物。",
+      "previewUnavailable": "这种文件类型暂不支持预览。",
+      "previewTooLarge": "这个产物太大，无法直接预览。请下载后查看完整文件。"
+    },
     "unknown": {
       "title": "暂不支持的内容"
     },

@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
   createAgentSession,
   dispatchAgentCommand,
+  fetchAgentArtifactContent,
+  getAgentArtifact,
   getAgentSnapshot,
   listAgentSessions,
   updateAgentSession,
 } from "@/lib/agent/client"
 import type { SessionSnapshot } from "@/lib/agent/contracts"
-import { apiRequest } from "@/lib/api"
+import { apiRequest, buildApiUrl } from "@/lib/api"
 
 vi.mock("@/lib/api", () => ({
   apiRequest: vi.fn(),
@@ -16,10 +18,64 @@ vi.mock("@/lib/api", () => ({
 }))
 
 const mockedApiRequest = vi.mocked(apiRequest)
+const mockedBuildApiUrl = vi.mocked(buildApiUrl)
 
 describe("agent client", () => {
   beforeEach(() => {
     mockedApiRequest.mockReset()
+    mockedBuildApiUrl.mockReset()
+    vi.unstubAllGlobals()
+  })
+
+  it("loads public artifact details without exposing storage paths in its contract", async () => {
+    const artifact = {
+      id: "artifact-1",
+      session_id: "session-1",
+      run_id: "run-1",
+      type: "report",
+      title: "qc-report.html",
+      summary: "Quality-control report",
+      payload: { sections: 4 },
+      resource_ref: {
+        kind: "stored_file",
+        filename: "qc-report.html",
+        mime_type: "text/html",
+        size_bytes: 2048,
+      },
+      created_at: "2026-08-15T08:00:00Z",
+      updated_at: "2026-08-15T08:00:01Z",
+    }
+    mockedApiRequest.mockResolvedValueOnce({ data: artifact })
+
+    await expect(getAgentArtifact("artifact-1")).resolves.toBe(artifact)
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/agent/artifacts/artifact-1",
+      undefined,
+    )
+  })
+
+  it("fetches authenticated artifact bytes and preserves the server filename", async () => {
+    mockedBuildApiUrl.mockReturnValue(
+      "http://localhost:8000/api/v1/agent/artifacts/artifact-1/download",
+    )
+    const response = new Response("report body", {
+      headers: {
+        "content-disposition": "attachment; filename*=UTF-8''qc-report.txt",
+        "content-type": "text/plain; charset=utf-8",
+      },
+    })
+    const fetchMock = vi.fn().mockResolvedValue(response)
+    vi.stubGlobal("fetch", fetchMock)
+
+    const content = await fetchAgentArtifactContent("artifact-1")
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/agent/artifacts/artifact-1/download",
+      { credentials: "include", signal: undefined },
+    )
+    expect(content.filename).toBe("qc-report.txt")
+    expect(content.mediaType).toBe("text/plain")
+    await expect(content.blob.text()).resolves.toBe("report body")
   })
 
   it("creates a session and returns its authoritative snapshot", async () => {

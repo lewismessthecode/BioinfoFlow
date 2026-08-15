@@ -3244,6 +3244,18 @@
       "run": "Run",
       "artifact": "Artifact"
     },
+    "artifact": {
+      "open": "Open {name}",
+      "description": "Preview or download this artifact.",
+      "loading": "Loading artifact",
+      "loadFailed": "Could not load this artifact.",
+      "retry": "Retry",
+      "download": "Download",
+      "downloading": "Downloading…",
+      "downloadFailed": "Could not download this artifact.",
+      "previewUnavailable": "Preview is not available for this file type.",
+      "previewTooLarge": "This artifact is too large to preview. Download it to inspect the full file."
+    },
     "unknown": {
       "title": "Unsupported content"
     },
