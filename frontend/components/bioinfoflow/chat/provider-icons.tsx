@@ -7,7 +7,7 @@
  *
  * ┌─────────────────────────────────────────────────────────────────┐
  * │  To add a new provider:                                        │
- * │  1. Import the icon from "@lobehub/icons"                      │
+ * │  1. Import its leaf Mono component from "@lobehub/icons"       │
  * │  2. Add an entry to PROVIDER_ICON_MAP below                    │
  * │  3. Add a label in PROVIDER_LABELS in model-selector.tsx       │
  * │                                                                │
@@ -15,27 +15,25 @@
  * └─────────────────────────────────────────────────────────────────┘
  */
 
-import {
-  Anthropic,
-  Azure,
-  Cohere,
-  DeepSeek,
-  Fireworks,
-  Gemini,
-  Groq,
-  HuggingFace,
-  Kimi,
-  Minimax,
-  Mistral,
-  Ollama,
-  OpenAI,
-  OpenRouter,
-  Perplexity,
-  Qwen,
-  Together,
-  XAI,
-  ZAI,
-} from "@lobehub/icons"
+import Anthropic from "@lobehub/icons/es/Anthropic/components/Mono.js"
+import Azure from "@lobehub/icons/es/Azure/components/Mono.js"
+import Cohere from "@lobehub/icons/es/Cohere/components/Mono.js"
+import DeepSeek from "@lobehub/icons/es/DeepSeek/components/Mono.js"
+import Fireworks from "@lobehub/icons/es/Fireworks/components/Mono.js"
+import Gemini from "@lobehub/icons/es/Gemini/components/Mono.js"
+import Groq from "@lobehub/icons/es/Groq/components/Mono.js"
+import HuggingFace from "@lobehub/icons/es/HuggingFace/components/Mono.js"
+import Kimi from "@lobehub/icons/es/Kimi/components/Mono.js"
+import Minimax from "@lobehub/icons/es/Minimax/components/Mono.js"
+import Mistral from "@lobehub/icons/es/Mistral/components/Mono.js"
+import Ollama from "@lobehub/icons/es/Ollama/components/Mono.js"
+import OpenAI from "@lobehub/icons/es/OpenAI/components/Mono.js"
+import OpenRouter from "@lobehub/icons/es/OpenRouter/components/Mono.js"
+import Perplexity from "@lobehub/icons/es/Perplexity/components/Mono.js"
+import Qwen from "@lobehub/icons/es/Qwen/components/Mono.js"
+import Together from "@lobehub/icons/es/Together/components/Mono.js"
+import XAI from "@lobehub/icons/es/XAI/components/Mono.js"
+import ZAI from "@lobehub/icons/es/ZAI/components/Mono.js"
 import { Server } from "@/lib/icons"
 import { cn } from "@/lib/utils"
 import {
