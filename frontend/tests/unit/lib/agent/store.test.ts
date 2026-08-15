@@ -1,0 +1,311 @@
+import { describe, expect, it } from "vitest"
+
+import {
+  applyAgentEvent,
+  initialAgentStoreState,
+} from "@/lib/agent/store"
+import type {
+  ActiveRunView,
+  AgentEvent,
+  HistoryEntry,
+  RunView,
+  SessionSnapshot,
+  ToolProgressView,
+} from "@/lib/agent/contracts"
+
+const timestamp = "2026-08-15T00:00:00Z"
+
+const run = (overrides: Partial<RunView> = {}): RunView => ({
+  id: "run-1",
+  session_id: "session-1",
+  status: "running",
+  phase: "model",
+  revision: 1,
+  started_at: timestamp,
+  completed_at: null,
+  termination_reason: null,
+  error: null,
+  created_at: timestamp,
+  updated_at: timestamp,
+  ...overrides,
+})
+
+const activeRun = (overrides: Partial<ActiveRunView> = {}): ActiveRunView => ({
+  run: run(),
+  assistant_draft: {
+    id: "draft-1",
+    run_id: "run-1",
+    parts: [
+      {
+        id: "part-1",
+        type: "text",
+        text: "Hello",
+        end_offset: 5,
+      },
+    ],
+  },
+  tool_progress: [],
+  pending_interaction: null,
+  ...overrides,
+})
+
+const snapshot = (overrides: Partial<SessionSnapshot> = {}): SessionSnapshot => ({
+  session: {
+    id: "session-1",
+    user_id: "user-1",
+    workspace_id: "workspace-1",
+    project_id: "project-1",
+    title: "Analysis",
+    permission_mode: "ask_dangerous",
+    status: "active",
+    created_at: timestamp,
+    updated_at: timestamp,
+  },
+  runs: [run()],
+  entries: [],
+  active_run: activeRun(),
+  history_revision: 1,
+  ...overrides,
+})
+
+function apply(state: ReturnType<typeof snapshotState>, event: AgentEvent) {
+  return applyAgentEvent(state, event)
+}
+
+function snapshotState(value: SessionSnapshot = snapshot()) {
+  return applyAgentEvent(initialAgentStoreState, {
+    type: "snapshot",
+    snapshot: value,
+  }).state
+}
+
+describe("applyAgentEvent", () => {
+  it("replaces all authoritative state from a snapshot", () => {
+    const replacement = snapshot({
+      session: {
+        ...snapshot().session,
+        title: "Replacement",
+      },
+      entries: [userEntry("entry-1", 1)],
+      history_revision: 4,
+    })
+
+    const result = applyAgentEvent(
+      {
+        ...snapshotState(),
+        entries: [userEntry("stale", 99)],
+      },
+      { type: "snapshot", snapshot: replacement },
+    )
+
+    expect(result.outcome).toBe("applied")
+    expect(result.state).toEqual({
+      session: replacement.session,
+      runs: replacement.runs,
+      entries: replacement.entries,
+      activeRun: replacement.active_run,
+      historyRevision: replacement.history_revision,
+    })
+  })
+
+  it("applies run updates by run-local revision without a global revision gate", () => {
+    const state = snapshotState()
+
+    const result = apply(state, {
+      type: "run.updated",
+      run: run({ status: "waiting_user", phase: "interaction", revision: 2 }),
+    })
+
+    expect(result.outcome).toBe("applied")
+    expect(result.state.runs[0]).toMatchObject({
+      status: "waiting_user",
+      phase: "interaction",
+      revision: 2,
+    })
+    expect(result.state.activeRun?.run).toMatchObject({
+      status: "waiting_user",
+      revision: 2,
+    })
+  })
+
+  it("appends a contiguous assistant delta to the identified draft part", () => {
+    const result = apply(snapshotState(), {
+      type: "assistant.delta",
+      run_id: "run-1",
+      draft_id: "draft-1",
+      part_id: "part-1",
+      part_type: "text",
+      start_offset: 5,
+      end_offset: 11,
+      delta: " world",
+    })
+
+    expect(result.outcome).toBe("applied")
+    expect(result.state.activeRun?.assistant_draft?.parts[0]).toEqual({
+      id: "part-1",
+      type: "text",
+      text: "Hello world",
+      end_offset: 11,
+    })
+  })
+
+  it("ignores an assistant delta already covered by the local part offset", () => {
+    const state = snapshotState()
+    const result = apply(state, {
+      type: "assistant.delta",
+      run_id: "run-1",
+      draft_id: "draft-1",
+      part_id: "part-1",
+      part_type: "text",
+      start_offset: 0,
+      end_offset: 5,
+      delta: "Hello",
+    })
+
+    expect(result).toEqual({ outcome: "ignored", state })
+  })
+
+  it.each([
+    ["gap", 6, 12],
+    ["overlap", 4, 10],
+  ])("returns needs_snapshot for a delta %s", (_label, startOffset, endOffset) => {
+    const state = snapshotState()
+    const result = apply(state, {
+      type: "assistant.delta",
+      run_id: "run-1",
+      draft_id: "draft-1",
+      part_id: "part-1",
+      part_type: "text",
+      start_offset: startOffset,
+      end_offset: endOffset,
+      delta: " world",
+    })
+
+    expect(result).toEqual({ outcome: "needs_snapshot", state })
+  })
+
+  it("upserts tool progress by call id and ignores stale call-local revisions", () => {
+    const pending = tool({ revision: 2, status: "running" })
+    const withTool = apply(snapshotState(), {
+      type: "tool.updated",
+      run_id: "run-1",
+      tool: pending,
+    })
+
+    expect(withTool.state.activeRun?.tool_progress).toEqual([pending])
+
+    const stale = apply(withTool.state, {
+      type: "tool.updated",
+      run_id: "run-1",
+      tool: tool({ revision: 1, status: "pending" }),
+    })
+
+    expect(stale.outcome).toBe("ignored")
+    expect(stale.state).toBe(withTool.state)
+  })
+
+  it("replaces the pending interaction using its interaction-local revision", () => {
+    const result = apply(snapshotState(), {
+      type: "interaction.requested",
+      run_id: "run-1",
+      interaction: {
+        interaction_id: "interaction-1",
+        run_id: "run-1",
+        revision: 1,
+        request: {
+          type: "ask_user",
+          call_id: "ask-1",
+          questions: [
+            {
+              id: "sample",
+              header: "Sample",
+              question: "Which sample?",
+              multi_select: false,
+              options: [
+                {
+                  id: "sample-a",
+                  label: "Sample A",
+                  description: "Use the first sample",
+                  recommended: true,
+                },
+                {
+                  id: "sample-b",
+                  label: "Sample B",
+                  description: "Use the second sample",
+                  recommended: false,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    expect(result.outcome).toBe("applied")
+    expect(result.state.activeRun?.pending_interaction).toMatchObject({
+      interaction_id: "interaction-1",
+      request: {
+        type: "ask_user",
+        questions: [{ id: "sample", question: "Which sample?" }],
+      },
+    })
+  })
+
+  it("appends committed entries in sequence order and deduplicates by id", () => {
+    const state = snapshotState(
+      snapshot({
+        entries: [userEntry("entry-2", 2)],
+        history_revision: 2,
+      }),
+    )
+    const entry = userEntry("entry-1", 1)
+
+    const appended = apply(state, { type: "entry.committed", entry })
+    const duplicate = apply(appended.state, { type: "entry.committed", entry })
+
+    expect(appended.state.entries.map((item) => item.id)).toEqual([
+      "entry-1",
+      "entry-2",
+    ])
+    expect(appended.state.historyRevision).toBe(2)
+    expect(duplicate.outcome).toBe("ignored")
+    expect(duplicate.state).toBe(appended.state)
+  })
+})
+
+function userEntry(id: string, sequence: number): HistoryEntry {
+  return {
+    id,
+    session_id: "session-1",
+    run_id: "run-1",
+    sequence,
+    schema_version: 1,
+    created_at: timestamp,
+    type: "message",
+    payload: {
+      role: "user",
+      parts: [{ id: `${id}-text`, type: "text", text: "Hello" }],
+    },
+  }
+}
+
+function tool(overrides: Partial<ToolProgressView> = {}): ToolProgressView {
+  return {
+    call_id: "call-1",
+    group_id: "group-1",
+    execution_mode: "parallel",
+    name: "read_file",
+    display_name: "Read file",
+    category: "read",
+    summary: "Read configuration",
+    arguments: { path: "config.json" },
+    status: "pending",
+    revision: 1,
+    started_at: null,
+    completed_at: null,
+    input_summary: null,
+    output_summary: null,
+    error: null,
+    ...overrides,
+  }
+}
