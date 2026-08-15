@@ -51,7 +51,6 @@ import {
   CircleAlert,
   Loader2,
   RefreshCw,
-  Wifi,
   WifiOff,
 } from "@/lib/icons"
 import { cn } from "@/lib/utils"
@@ -472,19 +471,10 @@ function SessionWorkbench({
     <>
       <ConversationHeader
         title={state.session.title || t("untitled")}
+        model={state.session.model.display_name}
         connectionStatus={state.connectionStatus}
         actions={headerActions}
       />
-      {state.error &&
-      ["reconnecting", "disconnected"].includes(state.connectionStatus) ? (
-        <div
-          role="status"
-          className="flex items-center justify-center gap-2 border-b bg-muted/25 px-3 py-1.5 text-xs text-muted-foreground"
-        >
-          <WifiOff aria-hidden="true" />
-          {t(`connection.${state.connectionStatus}`)}
-        </div>
-      ) : null}
       {isEmpty ? (
         <AgentEmptyState />
       ) : (
@@ -536,10 +526,12 @@ function SessionWorkbench({
 
 function ConversationHeader({
   title,
+  model,
   connectionStatus,
   actions,
 }: {
   title: string
+  model: string
   connectionStatus?:
     | "connecting"
     | "connected"
@@ -548,17 +540,24 @@ function ConversationHeader({
   actions?: ReactNode
 }) {
   const t = useTranslations("agentWorkbench")
+  const showConnection = connectionStatus && connectionStatus !== "connected"
   const ConnectionIcon =
-    connectionStatus === "connected"
-      ? Wifi
-      : connectionStatus === "reconnecting" || connectionStatus === "disconnected"
-        ? WifiOff
-        : Loader2
+    connectionStatus === "reconnecting" || connectionStatus === "disconnected"
+      ? WifiOff
+      : Loader2
   return (
-    <header className="flex min-w-0 items-center gap-3 border-b px-4 py-2.5">
+    <header className="flex min-h-12 min-w-0 items-center gap-3 border-b border-border/70 px-4 py-1.5">
       <Bot aria-hidden="true" className="shrink-0 text-muted-foreground" />
-      <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h1>
-      {connectionStatus ? (
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate text-sm font-medium leading-5">{title}</h1>
+        <p
+          data-testid="agent-header-model"
+          className="truncate text-[11px] leading-4 text-muted-foreground"
+        >
+          {model}
+        </p>
+      </div>
+      {showConnection ? (
         <span
           className="flex items-center gap-1.5 text-xs text-muted-foreground"
           title={t(`connection.${connectionStatus}`)}

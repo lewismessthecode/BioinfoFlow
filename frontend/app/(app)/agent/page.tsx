@@ -197,7 +197,8 @@ export function AgentPageContent({
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
+              size="sm"
+              className="min-h-11 gap-2 px-3 lg:min-h-9"
               aria-label={t(
                 !isMobile && !rightSidebarCollapsed
                   ? "workspacePanel.close"
@@ -212,6 +213,7 @@ export function AgentPageContent({
                 aria-hidden="true"
                 className={rightSidebarCollapsed || isMobile ? "rotate-180" : undefined}
               />
+              <span>{t("workspacePanel.action")}</span>
             </Button>
           ) : null
         }

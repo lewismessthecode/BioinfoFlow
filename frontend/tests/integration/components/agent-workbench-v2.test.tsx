@@ -410,9 +410,9 @@ describe("AgentWorkbench v2", () => {
     )
 
     expect(screen.getByText("Variant review")).toBeInTheDocument()
-    expect(screen.getByText("GPT-5.6")).toBeInTheDocument()
+    expect(screen.getByTestId("agent-header-model")).toHaveTextContent("GPT-5.6")
     expect(screen.getByText("emptyTitle")).toBeInTheDocument()
-    expect(screen.getAllByText("connection.reconnecting")).toHaveLength(2)
+    expect(screen.getByText("connection.reconnecting")).toBeInTheDocument()
   })
 
   it("renders an injected session through the formal workbench without opening a live transport", () => {
@@ -451,12 +451,13 @@ describe("AgentWorkbench v2", () => {
     expect(mocks.useSession).not.toHaveBeenCalled()
   })
 
-  it("keeps connection status accessible when its visible label is hidden", () => {
+  it("keeps the model visible and removes healthy connection noise", () => {
     renderWithProviders(
       <AgentWorkbench sessionId="session-1" projectId="project-1" />,
     )
 
-    expect(screen.getByLabelText("connection.connected")).toBeInTheDocument()
+    expect(screen.getByTestId("agent-header-model")).toHaveTextContent("GPT-5.6")
+    expect(screen.queryByLabelText("connection.connected")).not.toBeInTheDocument()
   })
 
   it.each(["archived", "closing", "deleted"] as const)(

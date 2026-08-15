@@ -1,7 +1,15 @@
 "use client"
 
 import type { ReactNode, Ref } from "react"
-import { FormEvent, KeyboardEvent, useCallback, useEffect, useState } from "react"
+import {
+  FormEvent,
+  KeyboardEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react"
 import { useTranslations } from "next-intl"
 
 import { PermissionMenu } from "@/components/bioinfoflow/agent/permission-menu"
@@ -62,6 +70,7 @@ export function AgentComposer({
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [stopError, setStopError] = useState<string | null>(null)
   const [cancelRequestedRunId, setCancelRequestedRunId] = useState<string | null>(null)
+  const localTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const appendTranscript = useCallback((transcript: string) => {
     const text = transcript.trim()
     if (!text) return
@@ -78,6 +87,30 @@ export function AgentComposer({
   const hasContent = hasText || contextInputs.length > 0
   const controlsDisabled =
     disabled || submitting !== null || cancelling || voiceBusy
+
+  const setTextareaNode = useCallback(
+    (node: HTMLTextAreaElement | null) => {
+      localTextareaRef.current = node
+      if (typeof textareaRef === "function") textareaRef(node)
+      else if (textareaRef) textareaRef.current = node
+    },
+    [textareaRef],
+  )
+
+  const resizeTextarea = useCallback(
+    (node: HTMLTextAreaElement) => {
+      const minimumHeight = placement === "draft" ? 80 : 44
+      node.style.height = "auto"
+      const contentHeight = node.scrollHeight || minimumHeight
+      node.style.height = `${Math.min(Math.max(contentHeight, minimumHeight), 160)}px`
+      node.style.overflowY = contentHeight > 160 ? "auto" : "hidden"
+    },
+    [placement],
+  )
+
+  useLayoutEffect(() => {
+    if (localTextareaRef.current) resizeTextarea(localTextareaRef.current)
+  }, [resizeTextarea, value])
 
   useEffect(() => {
     if (!activeRunId || activeRunId !== cancelRequestedRunId) {
@@ -161,14 +194,15 @@ export function AgentComposer({
         "mx-auto flex w-full max-w-[46rem] flex-col gap-2 px-3 sm:px-4",
         placement === "draft"
           ? "bg-transparent pb-4"
-          : "bg-gradient-to-t from-background via-background to-background/0 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+          : "bg-background pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
       )}
       onSubmit={handleSubmit}
     >
       <div
+        data-testid="agent-composer-surface"
         className={cn(
-          "border border-border/65 bg-card/95 p-2 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20 motion-reduce:transition-none",
-          placement === "draft" ? "rounded-[22px] p-3 shadow-md" : "rounded-2xl",
+          "border border-border/65 bg-card p-2 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20 motion-reduce:transition-none",
+          placement === "draft" ? "rounded-[22px] p-3" : "rounded-2xl",
         )}
       >
         {contextInputs.length > 0 && onRemoveContextInput ? (
@@ -181,7 +215,7 @@ export function AgentComposer({
           </div>
         ) : null}
         <Textarea
-          ref={textareaRef}
+          ref={setTextareaNode}
           value={value}
           onChange={(event) => setValue(event.currentTarget.value)}
           onKeyDown={handleKeyDown}

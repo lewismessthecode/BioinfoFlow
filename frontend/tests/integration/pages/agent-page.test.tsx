@@ -24,6 +24,7 @@ vi.mock("next-intl", () => ({
     ({
       "workspacePanel.open": "Open workspace panel",
       "workspacePanel.close": "Close workspace panel",
+      "workspacePanel.action": "Workspace",
       "workspacePanel.title": "Workspace panel",
       "workspacePanel.description": "Workspace details",
     })[key] ?? key,
@@ -132,6 +133,9 @@ describe("Agent pages", () => {
     })
 
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Open workspace panel" }),
+    ).toHaveTextContent("Workspace")
     fireEvent.click(
       screen.getByRole("button", { name: "Open workspace panel" }),
     )
