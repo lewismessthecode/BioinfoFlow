@@ -70,7 +70,7 @@ Authoritative frontend route/runtime coverage includes:
 - `frontend/tests/unit/protected-layout.test.tsx`
 - `frontend/tests/unit/lib/nav-routes.test.ts`
 - `frontend/tests/unit/hooks/use-events.test.ts`
-- `frontend/tests/unit/lib/agent-runtime/event-stream.test.ts`
+- `frontend/tests/unit/lib/agent/stream.test.ts`
 - EventSource characterization tests added by Phase 8.
 
 ## Runs and Workflow Execution

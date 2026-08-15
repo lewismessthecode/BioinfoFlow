@@ -30,26 +30,22 @@ sections and role filtering live in `frontend/lib/settings-nav.ts`.
 
 ## Agent Frontend Status
 
-The backend Agent Harness contract has been replaced in this refactor; this
-codemap does **not** claim that the frontend Agent workbench has already been
-fully migrated. Existing `frontend/lib/agent-core/`,
-`frontend/lib/agent-runtime/`, `frontend/hooks/use-agent-runtime.ts`, and
-`frontend/components/bioinfoflow/agent-runtime/` code may still contain retired
-Turn, Action, approval, skill, toolset, filesystem, or `/stream` assumptions.
-Those modules are migration inputs, not the source of truth for the new backend.
+The Agent workbench and demo consume one product-level Harness contract. The
+retired `agent-core` and `agent-runtime` frontend modules have been deleted; the
+client does not interpret provider or Harness-private recovery state.
 
-The frontend migration must consume this backend contract:
+The frontend consumes this contract:
 
 - REST resources: Session, Run, Entry, Attachment, and Artifact projections.
-- Commands: `prompt`, `steer`, `follow_up`, `respond`, and `cancel` through `POST /agent/sessions/{session_id}/commands`.
+- Commands: `message`, `steer`, `respond`, and `cancel` through `POST /agent/sessions/{session_id}/commands`.
 - Authoritative state: `GET /agent/sessions/{session_id}/snapshot`.
 - Live state: `GET /agent/sessions/{session_id}/events`, beginning with `snapshot`, then `run.updated`, `assistant.delta`, `tool.updated`, `interaction.requested`, and `entry.committed`.
 - User interaction: `ask_user` questions and dangerous-command confirmations are represented by `interaction.requested`, then answered with a `respond` command.
 - Files and outputs: attachment upload/preview/delete and artifact list/get/download endpoints under `/agent`.
 
-The intended client architecture is one snapshot-plus-event reducer shared by
-the workbench, sidebar, composer, transcript, tool progress, interaction, and
-artifact views. The frontend should not recreate a second durable event model.
+One snapshot-plus-event store is shared by the workbench, composer, transcript,
+tool progress, interactions, artifacts, and demo replay. Activity Groups are a
+view over tool progress, not a second durable event model.
 
 ## Shared UI
 
