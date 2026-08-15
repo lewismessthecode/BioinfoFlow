@@ -124,6 +124,48 @@ function activeRun(): ActiveRunView {
 }
 
 describe("ActiveRun", () => {
+  it("renders streamed response and thinking parts in their original order", () => {
+    const run = activeRun()
+    run.tool_progress = []
+    run.assistant_draft = {
+      id: "draft-ordered",
+      run_id: "run-1",
+      parts: [
+        {
+          id: "text-first",
+          type: "text",
+          text: "First response segment",
+          end_offset: 22,
+        },
+        {
+          id: "thinking-middle",
+          type: "reasoning_summary",
+          text: "Middle thinking segment",
+          end_offset: 23,
+        },
+        {
+          id: "text-last",
+          type: "text",
+          text: "Last response segment",
+          end_offset: 21,
+        },
+      ],
+    }
+
+    renderWithProviders(<ActiveRun activeRun={run} />)
+
+    const first = screen.getByText("First response segment")
+    const middle = screen.getByText("Middle thinking segment")
+    const last = screen.getByText("Last response segment")
+
+    expect(first.compareDocumentPosition(middle)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    expect(middle.compareDocumentPosition(last)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+  })
+
   it("separates streamed thinking and response while showing authoritative phase and tool progress", () => {
     renderWithProviders(<ActiveRun activeRun={activeRun()} />)
 

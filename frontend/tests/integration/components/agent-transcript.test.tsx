@@ -36,6 +36,22 @@ vi.mock("next-intl", () => ({
         "agentRun.progress.label": "Tool progress",
         "agentRun.reasoning": "Thinking summary",
         "agentRun.response": "Response",
+        "agentActivity.details.show": "Show details",
+        "agentActivity.details.hide": "Hide details",
+        "agentActivity.details.arguments": "Arguments",
+        "agentActivity.details.input": "Input",
+        "agentActivity.details.output": "Output",
+        "agentActivity.details.error": "Error",
+        "agentActivity.status.pending": "Pending",
+        "agentActivity.status.running": "Running",
+        "agentActivity.status.completed": "Completed",
+        "agentActivity.status.failed": "Failed",
+        "agentActivity.status.blocked": "Blocked",
+        "agentActivity.status.cancelled": "Cancelled",
+        "agentActivity.status.interaction_required": "Needs approval",
+        "agentActivity.group.parallel": `${values?.count ?? 0} tools running in parallel`,
+        "agentActivity.group.serial": `${values?.count ?? 0} tools running in sequence`,
+        "agentActivity.group.mixed": `${values?.count ?? 0} tool activities`,
         "agentHistory.reasoning.title": "Thinking summary",
         "agentHistory.notice.title": "Agent notice",
         "agentInteraction.status.pending": "Waiting for response",
@@ -204,6 +220,79 @@ describe("AgentTranscript", () => {
       type: "approval",
       approved: true,
     })
+  })
+
+  it("renders a durable tool call once while applying its live progress in place", () => {
+    const toolEntries: HistoryEntry[] = [
+      {
+        id: "assistant-tool-call",
+        session_id: "session-1",
+        run_id: "run-tools",
+        sequence: 1,
+        schema_version: 2,
+        created_at: "2026-08-15T08:00:00.000Z",
+        type: "message",
+        payload: {
+          role: "assistant",
+          parts: [
+            {
+              id: "call-part-1",
+              type: "tool_call",
+              call_id: "call-1",
+              group_id: "group-1",
+              execution_mode: "serial",
+              name: "read",
+              display_name: "Read",
+              category: "read",
+              summary: "Read workflow.nf",
+              arguments: { path: "workflow.nf" },
+            },
+          ],
+        },
+      },
+    ]
+    const activeRun: ActiveRunView = {
+      run: {
+        ...pendingRun.run,
+        id: "run-tools",
+        status: "running",
+        phase: "tools",
+      },
+      assistant_draft: null,
+      tool_progress: [
+        {
+          call_id: "call-1",
+          group_id: "group-1",
+          execution_mode: "serial",
+          name: "read",
+          display_name: "Read",
+          category: "read",
+          summary: "Read workflow.nf",
+          arguments: { path: "workflow.nf" },
+          status: "running",
+          revision: 2,
+          started_at: "2026-08-15T08:00:01.000Z",
+          completed_at: null,
+          input_summary: "workflow.nf",
+          output_summary: null,
+          error: null,
+        },
+      ],
+      pending_interaction: null,
+    }
+
+    renderWithProviders(
+      <AgentTranscript
+        entries={toolEntries}
+        runs={[activeRun.run]}
+        activeRun={activeRun}
+      />,
+    )
+
+    const cards = screen.getAllByTestId("agent-tool-card")
+    expect(cards).toHaveLength(1)
+    expect(cards[0]).toHaveTextContent("Read workflow.nf")
+    expect(cards[0]).toHaveTextContent("Running")
   })
 
   it("pauses bottom-follow while reading history and resumes it on request", async () => {

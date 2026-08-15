@@ -21,6 +21,7 @@ import type {
   MessageEntry,
   PlanEntry,
   RunView,
+  ToolProgressView,
   ToolResultPart,
 } from "@/lib/agent/contracts"
 import { cn } from "@/lib/utils"
@@ -28,11 +29,15 @@ import { cn } from "@/lib/utils"
 type AgentHistoryEntriesProps = {
   entries: HistoryEntry[]
   runs?: RunView[]
+  liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
 }
+
+const EMPTY_LIVE_TOOLS = new Map<string, ToolProgressView>()
 
 export const AgentHistoryEntries = memo(function AgentHistoryEntries({
   entries,
   runs = [],
+  liveToolsByCallId = EMPTY_LIVE_TOOLS,
 }: AgentHistoryEntriesProps) {
   const prepared = useMemo(() => prepareHistory(entries), [entries])
   const runsById = useMemo(
@@ -95,6 +100,7 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
                   payload: { ...entry.payload, parts: visibleParts },
                 }}
                 toolResultsByCallId={prepared.toolResultsByCallId}
+                liveToolsByCallId={liveToolsByCallId}
               />
             </div>
           )
@@ -135,10 +141,12 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
 function AgentHistoryEntry({
   entry,
   toolResultsByCallId,
+  liveToolsByCallId,
   interactionResponse,
 }: {
   entry: Exclude<HistoryEntry, InteractionResponseEntry>
   toolResultsByCallId?: ReadonlyMap<string, ToolResultPart>
+  liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
   interactionResponse?: InteractionResponse
 }) {
   const t = useTranslations("agentHistory")
@@ -148,6 +156,7 @@ function AgentHistoryEntry({
       <MessageHistoryEntry
         entry={entry}
         toolResultsByCallId={toolResultsByCallId}
+        liveToolsByCallId={liveToolsByCallId}
       />
     )
   }
@@ -180,9 +189,11 @@ function AgentHistoryEntry({
 function MessageHistoryEntry({
   entry,
   toolResultsByCallId,
+  liveToolsByCallId,
 }: {
   entry: MessageEntry
   toolResultsByCallId?: ReadonlyMap<string, ToolResultPart>
+  liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
 }) {
   const isUser = entry.payload.role === "user"
   const t = useTranslations("agentTranscript")
@@ -222,6 +233,7 @@ function MessageHistoryEntry({
         <AgentMessageParts
           parts={entry.payload.parts}
           toolResultsByCallId={toolResultsByCallId}
+          liveToolsByCallId={liveToolsByCallId}
         />
       </div>
       {canCopy ? (

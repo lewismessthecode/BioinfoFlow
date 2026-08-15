@@ -10,6 +10,7 @@ import {
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import { buildActiveActivity } from "@/lib/agent/activity"
 import type {
   ActiveRunView,
   AssistantDraftPartView,
@@ -18,24 +19,29 @@ import type {
 
 type ActiveRunProps = {
   activeRun: ActiveRunView
+  durableToolCallIds?: ReadonlySet<string>
 }
 
-type ActivityBlock = {
-  groupId: string
-  tools: ToolProgressView[]
-}
+const EMPTY_DURABLE_TOOL_CALL_IDS = new Set<string>()
 
-export function ActiveRun({ activeRun }: ActiveRunProps) {
+export function ActiveRun({
+  activeRun,
+  durableToolCallIds = EMPTY_DURABLE_TOOL_CALL_IDS,
+}: ActiveRunProps) {
   const t = useTranslations("agentRun")
   const titleId = useId()
-  const reasoningId = useId()
-  const responseId = useId()
-  const draftParts = activeRun.assistant_draft?.parts ?? []
-  const reasoningParts = draftParts.filter(isReasoningPart)
-  const responseParts = draftParts.filter(isTextPart)
-  const activityBlocks = useMemo(
-    () => groupToolActivity(activeRun.tool_progress),
-    [activeRun.tool_progress],
+  const activity = useMemo(
+    () =>
+      buildActiveActivity(
+        activeRun.assistant_draft?.parts ?? [],
+        activeRun.tool_progress,
+        durableToolCallIds,
+      ),
+    [
+      activeRun.assistant_draft?.parts,
+      activeRun.tool_progress,
+      durableToolCallIds,
+    ],
   )
   const finishedTools = activeRun.tool_progress.filter((tool) =>
     isFinished(tool.status),
@@ -88,113 +94,83 @@ export function ActiveRun({ activeRun }: ActiveRunProps) {
         ) : null}
       </header>
 
-      {reasoningParts.length > 0 ? (
-        <section
-          aria-labelledby={reasoningId}
-          className="grid min-w-0 gap-2 border-l-2 border-border/70 pl-3"
-        >
-          <h3
-            id={reasoningId}
-            className="text-xs font-medium text-muted-foreground"
-          >
-            {t("reasoning")}
-          </h3>
-          <DraftParts parts={reasoningParts} tone="muted" />
-        </section>
-      ) : null}
-
-      {responseParts.length > 0 ? (
-        <section
-          aria-labelledby={responseId}
-          aria-live="polite"
-          aria-atomic="false"
-          className="grid min-w-0 gap-2"
-        >
-          <h3 id={responseId} className="sr-only">
-            {t("response")}
-          </h3>
-          <DraftParts parts={responseParts} />
-        </section>
-      ) : null}
-
-      {activityBlocks.length > 0 ? (
+      {activity.length > 0 ? (
         <div className="grid min-w-0 gap-2">
-          {activityBlocks.map((block) =>
-            block.tools.length === 1 ? (
+          {activity.map((item) => {
+            if (item.kind === "thinking") {
+              return (
+                <section
+                  key={item.key}
+                  aria-label={t("reasoning")}
+                  className="grid min-w-0 gap-2 border-l-2 border-border/70 pl-3"
+                  data-activity-kind="thinking"
+                >
+                  <h3 className="text-xs font-medium text-muted-foreground">
+                    {t("reasoning")}
+                  </h3>
+                  <DraftPart part={item.part} tone="muted" />
+                </section>
+              )
+            }
+
+            if (item.kind === "response") {
+              return (
+                <section
+                  key={item.key}
+                  aria-label={t("response")}
+                  aria-live="polite"
+                  aria-atomic="false"
+                  className="min-w-0"
+                  data-activity-kind="response"
+                >
+                  <DraftPart part={item.part} />
+                </section>
+              )
+            }
+
+            return item.tools.length === 1 ? (
               <AgentToolCard
-                key={block.groupId}
-                tool={block.tools[0]}
-                defaultExpanded={toolNeedsAttention(block.tools[0])}
+                key={item.key}
+                tool={item.tools[0]}
+                defaultExpanded={toolNeedsAttention(item.tools[0])}
               />
             ) : (
               <AgentActivityGroup
-                key={block.groupId}
-                tools={block.tools}
-                executionMode={commonExecutionMode(block.tools)}
+                key={item.key}
+                tools={item.tools}
+                executionMode={commonExecutionMode(item.tools)}
               />
-            ),
-          )}
+            )
+          })}
         </div>
       ) : null}
     </section>
   )
 }
 
-function DraftParts({
-  parts,
+function DraftPart({
+  part,
   tone = "default",
 }: {
-  parts: AssistantDraftPartView[]
+  part: AssistantDraftPartView
   tone?: "default" | "muted"
 }) {
   return (
-    <div className="grid min-w-0 gap-2">
-      {parts.map((part) => (
-        <div
-          key={part.id}
-          className="min-w-0"
-          data-agent-read-anchor={`part:${part.id}`}
-        >
-          <MarkdownRenderer
-            content={part.text}
-            className={tone === "muted" ? "text-foreground/70" : undefined}
-          />
-        </div>
-      ))}
+    <div
+      className="min-w-0"
+      data-agent-read-anchor={`part:${part.id}`}
+    >
+      <MarkdownRenderer
+        content={part.text}
+        className={tone === "muted" ? "text-foreground/70" : undefined}
+      />
     </div>
   )
-}
-
-function groupToolActivity(tools: ToolProgressView[]) {
-  const blocks: ActivityBlock[] = []
-  const byGroupId = new Map<string, ActivityBlock>()
-
-  for (const tool of tools) {
-    const existing = byGroupId.get(tool.group_id)
-    if (existing) {
-      existing.tools.push(tool)
-      continue
-    }
-
-    const block = { groupId: tool.group_id, tools: [tool] }
-    byGroupId.set(tool.group_id, block)
-    blocks.push(block)
-  }
-
-  return blocks
 }
 
 function commonExecutionMode(tools: ToolProgressView[]) {
   const first = tools[0].execution_mode
   return tools.every((tool) => tool.execution_mode === first) ? first : "mixed"
-}
-
-function isReasoningPart(part: AssistantDraftPartView) {
-  return part.type === "reasoning_summary"
-}
-
-function isTextPart(part: AssistantDraftPartView) {
-  return part.type === "text"
 }
 
 function isFinished(status: ToolProgressView["status"]) {
