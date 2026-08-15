@@ -198,6 +198,9 @@ describe("AgentTranscript", () => {
     expect(screen.getByRole("region", { name: "Conversation" })).toHaveTextContent(
       "The workflow is valid.",
     )
+    expect(screen.getByTestId("agent-transcript-content")).toHaveClass(
+      "max-w-[46rem]",
+    )
     expect(screen.getByText("I need approval before continuing.")).toBeInTheDocument()
     expect(screen.getAllByTestId("agent-interaction-card")).toHaveLength(1)
     expect(screen.getByTestId("agent-run-outcome")).toHaveTextContent(

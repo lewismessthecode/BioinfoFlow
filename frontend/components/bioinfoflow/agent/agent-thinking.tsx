@@ -48,7 +48,7 @@ export function AgentThinking({
     >
       <button
         type="button"
-        className="flex min-h-10 w-full min-w-0 items-center gap-2 rounded-[6px] py-1.5 pr-2 text-left text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none"
+          className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[6px] py-1.5 pr-2 text-left text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none"
         aria-expanded={expanded}
         aria-controls={detailsId}
         aria-label={t(expanded ? "hide" : "show")}

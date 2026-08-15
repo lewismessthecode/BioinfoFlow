@@ -7,6 +7,7 @@ describe("globals.css theme tokens", () => {
     const css = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8")
 
     expect(css).toContain("--background: #ffffff;")
+    expect(css).toContain("color-scheme: light;")
     expect(css).toContain("--card: #ffffff;")
     expect(css).toContain("--sidebar: #fbfbfa;")
     expect(css).toContain("--sidebar-accent: #f1f1ef;")
@@ -31,6 +32,7 @@ describe("globals.css theme tokens", () => {
     expect(css).toContain(
       "--composer-shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 14px 38px rgba(0, 0, 0, 0.20);",
     )
+    expect(css).toContain("color-scheme: dark;")
     expect(css).not.toContain("--agent-halo")
     expect(css).not.toContain(
       "--composer-shadow: 0 2px 10px rgba(0, 0, 0, 0.28), 0 18px 48px rgba(0, 0, 0, 0.30);",

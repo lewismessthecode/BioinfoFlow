@@ -138,34 +138,39 @@ export function AgentTranscript({
       <section
         ref={scrollRef}
         aria-label={t("title")}
-        className="grid h-full min-h-0 min-w-0 content-start gap-5 overflow-x-clip overflow-y-auto px-3 py-4 sm:px-5"
+        className="h-full min-h-0 min-w-0 overflow-x-clip overflow-y-auto px-3 py-5 sm:px-5 sm:py-6"
         data-testid="agent-transcript"
         onScroll={handleScroll}
       >
-        <AgentHistoryEntries
-          entries={durableEntries}
-          runs={runs}
-          liveToolsByCallId={liveToolsByCallId}
-          onOpenRun={onOpenRun}
-        />
-        {activeRun ? (
-          <ActiveRun
-            activeRun={activeRun}
-            durableToolCallIds={durableToolCallIds}
+        <div
+          className="mx-auto grid w-full max-w-[46rem] min-w-0 content-start gap-5"
+          data-testid="agent-transcript-content"
+        >
+          <AgentHistoryEntries
+            entries={durableEntries}
+            runs={runs}
+            liveToolsByCallId={liveToolsByCallId}
+            onOpenRun={onOpenRun}
           />
-        ) : null}
-        {pendingInteraction ? (
-          <AgentInteractionCard
-            interactionId={pendingInteraction.interaction_id}
-            request={pendingInteraction.request}
-            onRespond={
-              onRespond
-                ? (response) =>
-                    onRespond(pendingInteraction.interaction_id, response)
-                : undefined
-            }
-          />
-        ) : null}
+          {activeRun ? (
+            <ActiveRun
+              activeRun={activeRun}
+              durableToolCallIds={durableToolCallIds}
+            />
+          ) : null}
+          {pendingInteraction ? (
+            <AgentInteractionCard
+              interactionId={pendingInteraction.interaction_id}
+              request={pendingInteraction.request}
+              onRespond={
+                onRespond
+                  ? (response) =>
+                      onRespond(pendingInteraction.interaction_id, response)
+                  : undefined
+              }
+            />
+          ) : null}
+        </div>
       </section>
 
       {hasNewContent ? (

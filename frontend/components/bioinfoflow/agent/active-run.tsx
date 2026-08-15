@@ -54,10 +54,10 @@ export function ActiveRun({
   return (
     <section
       aria-labelledby={titleId}
-      className="grid min-w-0 gap-4 rounded-[12px] border border-border/70 bg-muted/15 px-3 py-3 sm:px-4 sm:py-4"
+      className="grid min-w-0 gap-3 border-l border-border/60 py-1 pl-3 sm:pl-4"
       data-testid="agent-active-run"
     >
-      <header className="grid min-w-0 gap-2">
+      <header className="grid min-w-0 gap-2 pr-1">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h2 id={titleId} className="text-sm font-medium text-foreground/85">
             {t("title")}

@@ -49,6 +49,9 @@ describe("AgentThinking", () => {
     )
 
     expect(screen.getByText("Inspect the workflow first.")).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: /Show thinking/i }),
+    ).toHaveClass("min-h-11")
     expect(screen.getByTestId("agent-thinking")).not.toHaveTextContent(
       "Then validate the parameters.",
     )

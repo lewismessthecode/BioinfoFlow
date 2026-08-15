@@ -22,6 +22,7 @@
 /* Bioinfoflow - Notion-neutral app workspace */
 /* Light Mode - white shell with low-contrast tool chrome */
 :root {
+  color-scheme: light;
   --background: #ffffff;
   --foreground: #191919;
   --card: #ffffff;
@@ -120,6 +121,7 @@
 
 /* Dark Mode - Premium Zinc-based Monochrome */
 .dark {
+  color-scheme: dark;
   /* Surface layers — 7-level depth hierarchy */
   --bg: #09090B;
   --bg-elevated: #111113;

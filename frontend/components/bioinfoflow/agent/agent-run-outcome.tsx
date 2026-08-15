@@ -42,8 +42,8 @@ export function AgentRunOutcome({ run }: { run: TerminalRun }) {
     <section
       aria-label={statusLabel}
       className={cn(
-        "grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2.5 rounded-[10px] border border-border/60 bg-muted/20 px-3 py-2.5 [content-visibility:auto] [contain-intrinsic-size:auto_80px]",
-        run.status === "failed" && "border-error-border bg-error-muted/25",
+        "grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2.5 border-l border-border/60 py-1.5 pl-3 [content-visibility:auto] [contain-intrinsic-size:auto_64px]",
+        run.status === "failed" && "border-error-border bg-error-muted/15 py-2",
       )}
       data-testid="agent-run-outcome"
     >
