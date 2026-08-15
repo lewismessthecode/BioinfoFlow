@@ -251,14 +251,18 @@ def test_unknown_tools_publish_no_details_by_default() -> None:
     assert public_tool_details("future_tool", {"secret": "must-not-render"}) == []
 
 
-def test_public_output_summary_removes_secret_values_and_private_file_content() -> None:
+def test_public_output_summary_never_exposes_bash_output_or_private_file_content() -> (
+    None
+):
     command_summary = public_output_summary(
         {
             "stdout": (
+                "SENTINEL_7ca1d8f4e962\n"
                 'token=private-output\n{"api_key":"private-json-output"}\ncompleted'
             ),
             "stderr": "",
             "exit_code": 0,
+            "truncated": True,
         },
         tool_name="bash",
     )
@@ -274,8 +278,8 @@ def test_public_output_summary_removes_secret_values_and_private_file_content() 
         tool_name="read",
     )
 
-    assert command_summary is not None
-    assert "token=[REDACTED]" in command_summary
+    assert command_summary == "exit_code=0 · truncated=true"
+    assert "SENTINEL_7ca1d8f4e962" not in command_summary
     assert "private-output" not in command_summary
     assert "private-json-output" not in command_summary
     assert read_summary is not None

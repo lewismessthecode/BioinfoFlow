@@ -172,6 +172,19 @@ def public_tool_details(name: str, arguments: dict[str, Any]) -> list[ToolPublic
 def public_output_summary(output: Any, *, tool_name: str | None = None) -> str | None:
     if output is None:
         return None
+    if tool_name == "bash":
+        if not isinstance(output, dict):
+            return None
+        values: list[str] = []
+        exit_code = output.get("exit_code")
+        if isinstance(exit_code, int) and not isinstance(exit_code, bool):
+            values.append(f"exit_code={exit_code}")
+        if any(
+            output.get(field) is True
+            for field in ("truncated", "stdout_truncated", "stderr_truncated")
+        ):
+            values.append("truncated=true")
+        return " · ".join(values) or None
     if tool_name == "read" and isinstance(output, dict):
         path = output.get("path")
         public_path = _public_path(path)[0] if isinstance(path, str) else None
@@ -208,13 +221,7 @@ def public_output_summary(output: Any, *, tool_name: str | None = None) -> str |
             " · ".join(value for value in values if value),
             _MAX_OUTPUT_SUMMARY_LENGTH,
         )
-    if tool_name not in {None, "bash"}:
-        return None
-    if isinstance(output, str):
-        text = output
-    else:
-        text = json.dumps(output, ensure_ascii=False, default=str)
-    return _public_text(text, _MAX_OUTPUT_SUMMARY_LENGTH)[0]
+    return None
 
 
 def public_error_message(error: str | None) -> str | None:
