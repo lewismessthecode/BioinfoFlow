@@ -17,6 +17,7 @@ import type {
   AgentWorkspaceAccess,
 } from "@/lib/agent/contracts"
 import type { AgentContextInput } from "@/lib/agent/context"
+import { cn } from "@/lib/utils"
 
 type AgentComposerProps = {
   permissionMode: AgentPermissionMode
@@ -30,6 +31,8 @@ type AgentComposerProps = {
   onRemoveContextInput?: (inputId: string) => void
   onContextSubmitted?: () => void
   contextControls?: ReactNode
+  modelControls?: ReactNode
+  placement?: "draft" | "dock"
   textareaRef?: Ref<HTMLTextAreaElement>
   disabled?: boolean
 }
@@ -48,6 +51,8 @@ export function AgentComposer({
   onRemoveContextInput,
   onContextSubmitted,
   contextControls,
+  modelControls,
+  placement = "dock",
   textareaRef,
   disabled = false,
 }: AgentComposerProps) {
@@ -151,10 +156,21 @@ export function AgentComposer({
   return (
     <form
       data-testid="agent-composer"
-      className="mx-auto flex w-full max-w-[46rem] flex-col gap-2 border-t border-border/70 bg-background px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4"
+      data-placement={placement}
+      className={cn(
+        "mx-auto flex w-full max-w-[46rem] flex-col gap-2 px-3 sm:px-4",
+        placement === "draft"
+          ? "bg-transparent pb-4"
+          : "bg-gradient-to-t from-background via-background to-background/0 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+      )}
       onSubmit={handleSubmit}
     >
-      <div className="rounded-xl border border-border/70 bg-background p-2 shadow-xs focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
+      <div
+        className={cn(
+          "border border-border/65 bg-card/95 p-2 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20 motion-reduce:transition-none",
+          placement === "draft" ? "rounded-[22px] p-3 shadow-md" : "rounded-2xl",
+        )}
+      >
         {contextInputs.length > 0 && onRemoveContextInput ? (
           <div className="px-1 pt-1 pb-2">
             <AgentContextInputs
@@ -173,13 +189,17 @@ export function AgentComposer({
           placeholder={t("placeholder")}
           name="agent-message"
           autoComplete="off"
-          rows={2}
+          rows={placement === "draft" ? 3 : 2}
           disabled={disabled}
-          className="max-h-40 min-h-11 resize-none border-0 bg-transparent shadow-none focus-visible:border-transparent focus-visible:ring-0"
+          className={cn(
+            "max-h-40 resize-none border-0 bg-transparent shadow-none focus-visible:border-transparent focus-visible:ring-0",
+            placement === "draft" ? "min-h-20 text-[15px]" : "min-h-11",
+          )}
         />
 
         <div className="flex min-w-0 flex-wrap items-end gap-2 pt-2">
           {contextControls}
+          {modelControls}
           <PermissionMenu
             permissionMode={permissionMode}
             workspaceAccess={workspaceAccess}

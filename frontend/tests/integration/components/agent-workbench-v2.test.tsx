@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   useSession: vi.fn(),
   catalogPanel: vi.fn(),
+  setSelectedModel: vi.fn(),
 }))
 
 vi.mock("next/navigation", () => ({
@@ -37,6 +38,40 @@ vi.mock("@/lib/agent/session-preferences", () => ({
 
 vi.mock("@/hooks/use-agent-session", () => ({
   useAgentSession: (...args: unknown[]) => mocks.useSession(...args),
+}))
+
+vi.mock("@/hooks/use-llm-settings", () => ({
+  useLlmSettings: () => ({
+    models: [
+      {
+        provider: "provider-1",
+        provider_kind: "openai",
+        label: "OpenAI",
+        models: [
+          {
+            id: "gpt-5.6",
+            name: "GPT-5.6",
+            model_id: "model-record-1",
+            context_window: 128000,
+            supports_vision: true,
+          },
+        ],
+      },
+    ],
+    selectedModel: {
+      provider: "provider-1",
+      model: "gpt-5.6",
+      model_id: "model-record-1",
+    },
+    setSelectedModel: mocks.setSelectedModel,
+    isLoading: false,
+  }),
+}))
+
+vi.mock("@/components/bioinfoflow/chat/model-selector", () => ({
+  ModelSelector: ({ disabled }: { disabled?: boolean }) => (
+    <button type="button" disabled={disabled}>GPT-5.6 model selector</button>
+  ),
 }))
 
 vi.mock("@/components/bioinfoflow/agent/agent-context-picker", () => ({
@@ -69,6 +104,8 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
     onPermissionModeChange,
     contextControls,
     disabled,
+    placement,
+    modelControls,
   }: {
     onSendMessage: (parts: [{ type: "text"; text: string }]) => Promise<void>
     onSteer: (parts: [{ type: "text"; text: string }]) => Promise<void>
@@ -77,9 +114,12 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
     onPermissionModeChange: (mode: "full_access") => Promise<void>
     contextControls: ReactNode
     disabled?: boolean
+    placement?: "draft" | "dock"
+    modelControls?: ReactNode
   }) => (
-    <div>
+    <div data-testid="mock-composer" data-placement={placement}>
       {contextControls}
+      {modelControls}
       <input aria-label="Draft message" defaultValue="Keep this draft" />
       <span>Permission: {permissionMode}</span>
       <button
@@ -179,6 +219,7 @@ describe("AgentWorkbench v2", () => {
     mocks.push.mockReset()
     mocks.useSession.mockReset()
     mocks.catalogPanel.mockReset()
+    mocks.setSelectedModel.mockReset()
     mocks.useSession.mockReturnValue(sessionState())
   })
 
@@ -202,6 +243,7 @@ describe("AgentWorkbench v2", () => {
       projectId: "project-1",
       permissionMode: "ask_dangerous",
       workspaceAccess: "read_write",
+      modelId: "model-record-1",
     })
     expect(mocks.dispatchCommand).toHaveBeenCalledWith(
       "session-1",
@@ -212,6 +254,29 @@ describe("AgentWorkbench v2", () => {
     )
     expect(mocks.publishSummary).toHaveBeenCalled()
     expect(mocks.replace).toHaveBeenCalledWith("/agent/session-1")
+  })
+
+  it("centers the new-conversation entry and docks the composer after a session exists", () => {
+    const view = renderWithProviders(
+      <AgentWorkbench sessionId={null} projectId="project-1" />,
+    )
+
+    expect(screen.getByTestId("agent-draft-entry")).toBeInTheDocument()
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute(
+      "data-placement",
+      "draft",
+    )
+    expect(screen.getByRole("button", { name: "GPT-5.6 model selector" })).toBeEnabled()
+    expect(screen.queryByRole("heading", { name: "newConversation" })).not.toBeInTheDocument()
+
+    view.rerender(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute(
+      "data-placement",
+      "dock",
+    )
   })
 
   it("opens inline model connection without discarding the draft", async () => {

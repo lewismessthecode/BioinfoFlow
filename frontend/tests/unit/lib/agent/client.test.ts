@@ -98,6 +98,31 @@ describe("agent client", () => {
         permission_mode: "ask_dangerous",
         workspace_access: "read_write",
         model_id: "model-1",
+        provider: undefined,
+        model: undefined,
+      }),
+    })
+  })
+
+  it("creates a session from a provider and model when no catalog id exists", async () => {
+    const snapshot = { session: { id: "session-2" } } as SessionSnapshot
+    mockedApiRequest.mockResolvedValueOnce({ data: snapshot })
+
+    await createAgentSession({
+      provider: "openai-compatible",
+      model: "local-model",
+    })
+
+    expect(mockedApiRequest).toHaveBeenCalledWith("/agent/sessions", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: null,
+        title: undefined,
+        permission_mode: undefined,
+        workspace_access: undefined,
+        model_id: undefined,
+        provider: "openai-compatible",
+        model: "local-model",
       }),
     })
   })

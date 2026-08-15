@@ -17,6 +17,7 @@ import { AgentComposer } from "@/components/bioinfoflow/agent/agent-composer"
 import { AgentContextPicker } from "@/components/bioinfoflow/agent/agent-context-picker"
 import { AgentModelConnectionDialog } from "@/components/bioinfoflow/agent/agent-model-connection-dialog"
 import { AgentTranscript } from "@/components/bioinfoflow/agent/agent-transcript"
+import { ModelSelector } from "@/components/bioinfoflow/chat/model-selector"
 import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -24,6 +25,7 @@ import {
   useAgentSession,
   type AgentSessionState,
 } from "@/hooks/use-agent-session"
+import { useLlmSettings } from "@/hooks/use-llm-settings"
 import {
   createAgentSession,
   dispatchAgentCommand,
@@ -71,6 +73,12 @@ type AgentWorkbenchProps = {
   className?: string
 }
 
+type DraftModelSelector = {
+  modelId?: string
+  provider?: string
+  model?: string
+}
+
 export const AgentWorkbench = forwardRef<
   AgentWorkbenchHandle,
   AgentWorkbenchProps
@@ -109,7 +117,7 @@ export const AgentWorkbench = forwardRef<
     [],
   )
 
-  const ensureSession = useCallback(() => {
+  const ensureSession = useCallback((modelSelector?: DraftModelSelector) => {
     if (effectiveSessionId) return Promise.resolve(effectiveSessionId)
     if (draftSessionId) return Promise.resolve(draftSessionId)
     if (createPromiseRef.current) return createPromiseRef.current
@@ -118,6 +126,7 @@ export const AgentWorkbench = forwardRef<
       projectId,
       permissionMode: draftPermissionMode,
       workspaceAccess: draftWorkspaceAccess,
+      ...modelSelector,
     })
       .then((snapshot) => {
         const id = snapshot.session.id
@@ -262,7 +271,7 @@ type SharedWorkbenchProps = {
   setContextInputs: (inputs: AgentContextInput[]) => void
   addContextInput: (input: AgentContextInput) => void
   removeContextInput: (inputId: string) => void
-  ensureSession: () => Promise<string>
+  ensureSession: (modelSelector?: DraftModelSelector) => Promise<string>
   routeToSession: (sessionId: string) => void
   textareaRef: RefObject<HTMLTextAreaElement | null>
   setCancelHandler: (handler: (() => Promise<void>) | null) => void
@@ -285,12 +294,27 @@ function DraftWorkbench({
 }) {
   const t = useTranslations("agentWorkbench")
   const [error, setError] = useState<string | null>(null)
+  const { models, selectedModel, setSelectedModel, isLoading } = useLlmSettings()
+  const ensureSession = shared.ensureSession
+  const ensureDraftSession = useCallback(
+    () => {
+      const modelSelector: DraftModelSelector | undefined = selectedModel
+        ? selectedModel.model_id
+          ? { modelId: selectedModel.model_id }
+          : selectedModel.provider && selectedModel.model
+            ? { provider: selectedModel.provider, model: selectedModel.model }
+            : undefined
+        : undefined
+      return ensureSession(modelSelector)
+    },
+    [ensureSession, selectedModel],
+  )
 
   const send = async (parts: InputPart[]) => {
     setError(null)
     shared.setModelConnectionOpen(false)
     try {
-      const sessionId = await shared.ensureSession()
+      const sessionId = await ensureDraftSession()
       await dispatchAgentCommand(sessionId, {
         type: "message",
         command_id: globalThis.crypto.randomUUID(),
@@ -309,36 +333,49 @@ function DraftWorkbench({
   }
 
   return (
-    <>
-      <ConversationHeader
-        title={t("newConversation")}
-        modelLabel={t("defaultModel")}
-        actions={headerActions}
-      />
-      <AgentEmptyState />
-      {error ? <WorkbenchError message={error} /> : null}
-      <AgentComposer
-        permissionMode={permissionMode}
-        workspaceAccess={workspaceAccess}
-        activeRun={null}
-        onSendMessage={send}
-        onSteer={send}
-        onCancel={async () => {}}
-        onPermissionModeChange={onPermissionModeChange}
-        contextInputs={shared.contextInputs}
-        onRemoveContextInput={shared.removeContextInput}
-        onContextSubmitted={() => shared.setContextInputs([])}
-        textareaRef={shared.textareaRef}
-        contextControls={
-          <AgentContextPicker
-            projectId={shared.projectId}
-            sessionId={draftSessionId}
-            ensureSession={shared.ensureSession}
-            onAdd={shared.addContextInput}
-          />
-        }
-      />
-    </>
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {headerActions ? (
+        <div className="absolute right-3 top-3 z-10">{headerActions}</div>
+      ) : null}
+      <div
+        data-testid="agent-draft-entry"
+        className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-2 py-10 sm:px-6"
+      >
+        <AgentEmptyState compact />
+        {error ? <WorkbenchError message={error} embedded /> : null}
+        <AgentComposer
+          placement="draft"
+          permissionMode={permissionMode}
+          workspaceAccess={workspaceAccess}
+          activeRun={null}
+          onSendMessage={send}
+          onSteer={send}
+          onCancel={async () => {}}
+          onPermissionModeChange={onPermissionModeChange}
+          contextInputs={shared.contextInputs}
+          onRemoveContextInput={shared.removeContextInput}
+          onContextSubmitted={() => shared.setContextInputs([])}
+          textareaRef={shared.textareaRef}
+          contextControls={
+            <AgentContextPicker
+              projectId={shared.projectId}
+              sessionId={draftSessionId}
+              ensureSession={ensureDraftSession}
+              onAdd={shared.addContextInput}
+            />
+          }
+          modelControls={
+            <ModelSelector
+              models={models}
+              selectedModel={selectedModel}
+              onSelectModel={(selection) => void setSelectedModel(selection)}
+              disabled={isLoading || draftSessionId !== null}
+              variant="composer"
+            />
+          }
+        />
+      </div>
+    </div>
   )
 }
 
@@ -431,7 +468,6 @@ function SessionWorkbench({
     <>
       <ConversationHeader
         title={state.session.title || t("untitled")}
-        modelLabel={state.session.model.display_name}
         connectionStatus={state.connectionStatus}
         actions={headerActions}
       />
@@ -465,6 +501,7 @@ function SessionWorkbench({
         </p>
       ) : null}
       <AgentComposer
+        placement="dock"
         permissionMode={state.session.permission_mode}
         workspaceAccess={state.session.workspace_access}
         activeRun={state.activeRun}
@@ -486,6 +523,7 @@ function SessionWorkbench({
             disabled={!interactive || state.session.status !== "active"}
           />
         }
+        modelControls={<ComposerModelLabel label={state.session.model.display_name} />}
       />
     </>
   )
@@ -493,12 +531,10 @@ function SessionWorkbench({
 
 function ConversationHeader({
   title,
-  modelLabel,
   connectionStatus,
   actions,
 }: {
   title: string
-  modelLabel: string
   connectionStatus?:
     | "connecting"
     | "connected"
@@ -516,10 +552,7 @@ function ConversationHeader({
   return (
     <header className="flex min-w-0 items-center gap-3 border-b px-4 py-2.5">
       <Bot aria-hidden="true" className="shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <h1 className="truncate text-sm font-medium">{title}</h1>
-        <p className="truncate text-xs text-muted-foreground">{modelLabel}</p>
-      </div>
+      <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h1>
       {connectionStatus ? (
         <span
           className="flex items-center gap-1.5 text-xs text-muted-foreground"
@@ -541,13 +574,13 @@ function ConversationHeader({
   )
 }
 
-function AgentEmptyState() {
+function AgentEmptyState({ compact = false }: { compact?: boolean }) {
   const t = useTranslations("agentWorkbench")
   return (
-    <div className="grid min-h-0 flex-1 place-items-center px-6 py-10 text-center">
-      <div className="max-w-md">
+    <div className={cn("grid place-items-center px-6 text-center", compact ? "pb-5" : "min-h-0 flex-1 py-10")}>
+      <div className="max-w-lg">
         <Bot aria-hidden="true" className="mx-auto mb-4 size-7 text-muted-foreground" />
-        <h2 className="text-base font-medium">{t("emptyTitle")}</h2>
+        <h2 className={cn("font-medium tracking-tight", compact ? "text-xl sm:text-2xl" : "text-base")}>{t("emptyTitle")}</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           {t("emptyDescription")}
         </p>
@@ -558,16 +591,29 @@ function AgentEmptyState() {
 
 function WorkbenchError({
   message,
+  embedded = false,
 }: {
   message: string
+  embedded?: boolean
 }) {
   return (
-    <div className="border-t px-4 py-3">
+    <div className={cn("w-full px-4 py-3", !embedded && "border-t")}>
       <Alert variant="destructive" className="mx-auto max-w-[46rem]">
         <CircleAlert aria-hidden="true" />
         <AlertTitle>{message}</AlertTitle>
       </Alert>
     </div>
+  )
+}
+
+function ComposerModelLabel({ label }: { label: string }) {
+  return (
+    <span
+      className="inline-flex min-h-7 min-w-0 max-w-[168px] items-center truncate rounded-[8px] px-2 text-[11px] font-medium text-foreground/68"
+      title={label}
+    >
+      {label}
+    </span>
   )
 }
 
