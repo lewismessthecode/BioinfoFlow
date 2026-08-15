@@ -44,6 +44,7 @@ def _session_create_payload(
     project_id: str | None,
     title: str | None,
     permission_mode: str,
+    workspace_access: str = "read_write",
     model_id: str | None = None,
     profile_id: str | None = None,
     provider: str | None = None,
@@ -54,6 +55,7 @@ def _session_create_payload(
             "project_id": project_id or cli.project_id,
             "title": title,
             "permission_mode": permission_mode,
+            "workspace_access": workspace_access,
             "model_id": model_id,
             "profile_id": profile_id,
             "provider": provider,
@@ -80,6 +82,9 @@ def session_create(
     permission_mode: str = typer.Option(
         "ask_dangerous", "--permission-mode", help="Session permission mode"
     ),
+    workspace_access: str = typer.Option(
+        "read_write", "--workspace-access", help="Session workspace access"
+    ),
     model_id: str | None = typer.Option(None, "--model-id", help="Model record ID"),
     profile_id: str | None = typer.Option(
         None, "--profile-id", help="Model profile ID"
@@ -98,6 +103,7 @@ def session_create(
                 project_id=project_id,
                 title=title,
                 permission_mode=permission_mode,
+                workspace_access=workspace_access,
                 model_id=model_id,
                 profile_id=profile_id,
                 provider=provider,
@@ -169,8 +175,13 @@ def send(
         "--permission-mode",
         help="Permission mode for an automatically created session",
     ),
+    workspace_access: str = typer.Option(
+        "read_write",
+        "--workspace-access",
+        help="Workspace access for an automatically created session",
+    ),
 ) -> None:
-    """Send a prompt, creating a session automatically when needed."""
+    """Send a message, creating a session automatically when needed."""
     cli, renderer = unpack_ctx(ctx)
     created = False
     if session_id is None:
@@ -183,15 +194,23 @@ def send(
                     project_id=project_id,
                     title=title,
                     permission_mode=permission_mode,
+                    workspace_access=workspace_access,
                 ),
             )
         )
         session_id = _snapshot_session_id(created_response.data)
         created = True
 
-    command: dict[str, Any] = {"type": "prompt", "text": message}
-    if attachment_ids:
-        command["attachment_ids"] = attachment_ids
+    command: dict[str, Any] = {
+        "type": "message",
+        "parts": [
+            {"type": "text", "text": message},
+            *(
+                {"type": "attachment_ref", "attachment_id": attachment_id}
+                for attachment_id in attachment_ids or []
+            ),
+        ],
+    }
     response = _dispatch(cli, session_id, command)
 
     if renderer.is_json:
@@ -199,31 +218,18 @@ def send(
         return
     if created:
         renderer.success(f"Agent session {session_id} created.")
-    renderer.success("Agent command prompt accepted.", raw=response)
+    renderer.success("Agent message accepted.", raw=response)
 
 
 @agent_app.command("steer")
 @handle_errors
 def steer(ctx: typer.Context, session_id: str, message: str) -> None:
     """Inject guidance at the active run's next safe point."""
-    _dispatch_command(ctx, session_id, {"type": "steer", "text": message})
-
-
-@agent_app.command("follow-up")
-@handle_errors
-def follow_up(
-    ctx: typer.Context,
-    session_id: str,
-    message: str,
-    attachment_ids: list[str] | None = typer.Option(
-        None, "--attachment", help="Attachment ID; repeat for multiple attachments"
-    ),
-) -> None:
-    """Queue a prompt to start after the active run completes."""
-    command: dict[str, Any] = {"type": "follow_up", "text": message}
-    if attachment_ids:
-        command["attachment_ids"] = attachment_ids
-    _dispatch_command(ctx, session_id, command)
+    _dispatch_command(
+        ctx,
+        session_id,
+        {"type": "steer", "parts": [{"type": "text", "text": message}]},
+    )
 
 
 @agent_app.command("respond")

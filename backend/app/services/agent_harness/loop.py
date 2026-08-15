@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from app.config import settings
 from app.repositories.agent_harness_repo import AgentHarnessRepository
@@ -21,6 +22,8 @@ from app.services.agent_harness.contracts import (
     EntryCommittedEvent,
     InteractionRequestedEvent,
     RunUpdatedEvent,
+    ToolExecutionMode,
+    ToolProgressView,
     ToolUpdatedEvent,
 )
 from app.services.agent_harness.model_resolver import (
@@ -48,6 +51,7 @@ from app.services.model_runtime.contracts import (
     TextPart,
     ToolCallDelta,
     ToolCallPart,
+    ToolResultPart,
     UsageReport,
 )
 from app.services.model_runtime.errors import ModelError
@@ -152,6 +156,7 @@ class AgentLoop:
                                     "iteration",
                                     "last_tool_signature",
                                     "repeat_count",
+                                    "control_input",
                                 )
                                 if key in previous
                             },
@@ -179,9 +184,6 @@ class AgentLoop:
                         entry_type="compaction",
                         payload=plan.payload,
                     )
-                    await self.publish(
-                        EntryCommittedEvent(entry=_entry_contract(compaction))
-                    )
                     await self.repository.update_run(
                         run_id,
                         checkpoint=create_checkpoint(
@@ -203,22 +205,96 @@ class AgentLoop:
                     await self._cancel(run_id)
                     return
 
-                assistant = await self._append_message(
-                    str(session.id),
-                    run_id,
-                    role="assistant",
-                    content=response.text,
-                    reasoning_summary=response.reasoning,
-                    tool_calls=[_tool_call_dict(call) for call in response.tool_calls],
+                control_calls = tuple(
+                    call for call in response.tool_calls if call.name == "update_plan"
                 )
+                control_input: list[dict[str, Any]] = []
+                last_control_sequence: int | None = None
+                if control_calls:
+                    response.tool_calls = tuple(
+                        call
+                        for call in response.tool_calls
+                        if call.name != "update_plan"
+                    )
+                    response.continuation = None
+                    for call in control_calls:
+                        result = await workspace.execute(
+                            call,
+                            cancellation=cancellation,
+                        )
+                        if result.status != "completed":
+                            await self._fail(
+                                run_id,
+                                "invalid_plan",
+                                result.error or "Agent produced an invalid plan.",
+                            )
+                            return
+                        plan = await self.repository.commit_plan(
+                            str(session.id),
+                            run_id=run_id,
+                            title=result.output.get("title"),
+                            items=list(result.output.get("items") or []),
+                        )
+                        last_control_sequence = plan.sequence
+                        control_input.extend(_private_control_exchange(call, plan))
+                        await self.publish(
+                            EntryCommittedEvent(entry=_entry_contract(plan))
+                        )
+
+                execution_mode = workspace.batch_execution_mode(response.tool_calls)
+                group_id = (
+                    f"tool-group:{response.tool_calls[0].call_id}"
+                    if response.tool_calls
+                    else "tool-group:none"
+                )
+                assistant = None
+                if response.text or response.reasoning or response.tool_calls:
+                    assistant = await self._append_message(
+                        str(session.id),
+                        run_id,
+                        role="assistant",
+                        content=response.text,
+                        reasoning_summary=response.reasoning,
+                        tool_calls=[
+                            _public_tool_call_dict(
+                                call,
+                                group_id=group_id,
+                                execution_mode=execution_mode,
+                            )
+                            for call in response.tool_calls
+                        ],
+                    )
                 response.continuation = _advance_response_continuation(response)
-                await self.repository.update_run(run_id, draft=None)
-                await self.publish(EntryCommittedEvent(entry=assistant))
+                if control_input:
+                    current = await self.repository.get_run(run_id)
+                    checkpoint = dict(current.checkpoint or {}) if current else {}
+                    checkpoint.update(
+                        {
+                            "continuation": None,
+                            "control_input": control_input,
+                            "history_revision": (
+                                assistant.sequence
+                                if assistant is not None
+                                else last_control_sequence
+                            ),
+                        }
+                    )
+                    await self.repository.update_run(
+                        run_id,
+                        draft=None,
+                        checkpoint=checkpoint,
+                    )
+                else:
+                    await self.repository.update_run(run_id, draft=None)
+                if assistant is not None:
+                    await self.publish(EntryCommittedEvent(entry=assistant))
 
                 if await self._stop_if_budget_exceeded(run_id):
                     return
 
                 if not response.tool_calls:
+                    if control_calls:
+                        continue
                     (
                         steer_entries,
                         completed,
@@ -232,11 +308,7 @@ class AgentLoop:
                     if steer_entries:
                         continue
                     await self.publish(
-                        RunUpdatedEvent(
-                            run_id=completed.id,
-                            status=completed.status,
-                            phase=completed.phase,
-                        )
+                        RunUpdatedEvent(run=self.repository._run_view(completed))
                     )
                     return
 
@@ -257,7 +329,12 @@ class AgentLoop:
                 await self.repository.update_run(
                     run_id,
                     tool_progress=[
-                        _tool_progress_dict(call, status="pending")
+                        _tool_progress_dict(
+                            call,
+                            status="pending",
+                            group_id=group_id,
+                            execution_mode=execution_mode,
+                        )
                         for call in response.tool_calls
                     ],
                     checkpoint={
@@ -269,6 +346,8 @@ class AgentLoop:
                             in_flight_tools=tuple(
                                 {
                                     "call_id": call.call_id,
+                                    "group_id": group_id,
+                                    "execution_mode": execution_mode,
                                     "name": call.name,
                                     "arguments": call.arguments,
                                     "replay_policy": _replay_policy(
@@ -277,6 +356,11 @@ class AgentLoop:
                                 }
                                 for call in response.tool_calls
                             ),
+                        ),
+                        **(
+                            {"control_input": control_input}
+                            if control_input
+                            else {}
                         ),
                         "iteration": iteration,
                         "last_tool_signature": signature,
@@ -287,24 +371,33 @@ class AgentLoop:
                     },
                 )
                 await self._update(run_id, status="running", phase="tools")
-                await self.repository.update_run(
-                    run_id,
-                    tool_progress=[
-                        _tool_progress_dict(call, status="running")
-                        for call in response.tool_calls
-                    ],
-                )
-                for call in response.tool_calls:
-                    await self.publish(
-                        ToolUpdatedEvent(
-                            run_id=run_id,
-                            call_id=call.call_id,
-                            status="running",
-                        )
+
+                async def mark_started(call: ToolCall) -> None:
+                    await self._mark_tool_progress(
+                        run_id,
+                        call_id=call.call_id,
+                        name=call.name,
+                        status="running",
+                        group_id=group_id,
+                        execution_mode=execution_mode,
+                        arguments=call.arguments,
                     )
+
+                async def mark_finished(result: ToolResult) -> None:
+                    await self._mark_tool_progress(
+                        run_id,
+                        call_id=result.call_id,
+                        name=result.tool_name,
+                        status=result.status,
+                        output_summary=_public_output_summary(result.output),
+                        error=result.error,
+                    )
+
                 batch = await workspace.execute_batch(
                     response.tool_calls,
                     cancellation=cancellation,
+                    on_start=mark_started,
+                    on_result=mark_finished,
                 )
                 for result in batch.results:
                     if result.status == "interaction_required":
@@ -332,7 +425,11 @@ class AgentLoop:
                                 name=pending_call.name,
                                 status="pending",
                             )
-                        _, entry, _ = await self.repository.commit_waiting_interaction(
+                        (
+                            _,
+                            entry,
+                            waiting_run,
+                        ) = await self.repository.commit_waiting_interaction(
                             str(session.id),
                             run_id=run_id,
                             request_payload={
@@ -349,6 +446,8 @@ class AgentLoop:
                                     in_flight_tools=tuple(
                                         {
                                             "call_id": call.call_id,
+                                            "group_id": group_id,
+                                            "execution_mode": execution_mode,
                                             "name": call.name,
                                             "arguments": call.arguments,
                                             "replay_policy": _replay_policy(
@@ -359,6 +458,11 @@ class AgentLoop:
                                     ),
                                     interaction=_interaction_dict(result),
                                 ),
+                                **(
+                                    {"control_input": control_input}
+                                    if control_input
+                                    else {}
+                                ),
                                 "waiting_call": _tool_call_dict(
                                     _find_call(response.tool_calls, result.call_id)
                                 ),
@@ -367,11 +471,14 @@ class AgentLoop:
                             },
                         )
                         await self.publish(
+                            RunUpdatedEvent(
+                                run=self.repository._run_view(waiting_run)
+                            )
+                        )
+                        await self.publish(
                             ToolUpdatedEvent(
                                 run_id=run_id,
-                                call_id=result.call_id,
-                                status=result.status,
-                                update=_tool_result_dict(result),
+                                tool=_tool_progress_view(waiting_run, result.call_id),
                             )
                         )
                         await self.publish(
@@ -380,8 +487,11 @@ class AgentLoop:
                         await self.publish(
                             InteractionRequestedEvent(
                                 run_id=run_id,
-                                interaction_id=interaction.request_id,
-                                request=_interaction_dict(result),
+                                interaction=(
+                                    self.repository._pending_interaction_entry_view(
+                                        entry
+                                    )
+                                ),
                             )
                         )
                         return
@@ -398,6 +508,7 @@ class AgentLoop:
                         ),
                         call_id=result.call_id,
                         is_error=result.status != "completed",
+                        tool_status=result.status,
                     )
                     await self.publish(EntryCommittedEvent(entry=tool_entry))
                     current = await self.repository.get_run(run_id)
@@ -422,20 +533,6 @@ class AgentLoop:
                             run_id,
                             checkpoint=checkpoint_after_result,
                         )
-                    await self._mark_tool_progress(
-                        run_id,
-                        call_id=result.call_id,
-                        name=result.tool_name,
-                        status=result.status,
-                    )
-                    await self.publish(
-                        ToolUpdatedEvent(
-                            run_id=run_id,
-                            call_id=result.call_id,
-                            status=result.status,
-                            update=_tool_result_dict(result),
-                        )
-                    )
                 if await self._stop_if_budget_exceeded(run_id):
                     return
                 await self._update(
@@ -500,7 +597,7 @@ class AgentLoop:
         call_data = checkpoint.get("waiting_call")
         if not isinstance(call_data, dict):
             raise ValueError("waiting interaction has no tool call")
-        call = ToolCall(**call_data)
+        call = _runtime_tool_call(call_data)
         workspace = self.workspace_factory(session, run_id)
         replay_policy = _checkpoint_replay_policy(checkpoint, call.call_id)
         response_entry = None
@@ -536,6 +633,15 @@ class AgentLoop:
             await self.publish(
                 EntryCommittedEvent(entry=_entry_contract(response_entry))
             )
+            await self.publish(
+                RunUpdatedEvent(run=self.repository._run_view(durable_run))
+            )
+            await self.publish(
+                ToolUpdatedEvent(
+                    run_id=run_id,
+                    tool=_tool_progress_view(durable_run, call.call_id),
+                )
+            )
             execution_response = {
                 **response,
                 "assessment_fingerprint": approved_fingerprint,
@@ -547,13 +653,6 @@ class AgentLoop:
                 name=call.name,
                 status="running",
             )
-        await self.publish(
-            ToolUpdatedEvent(
-                run_id=run_id,
-                call_id=call.call_id,
-                status="running",
-            )
-        )
         result = await workspace.execute(
             call,
             cancellation=cancellation,
@@ -566,14 +665,8 @@ class AgentLoop:
             call_id=result.call_id,
             name=result.tool_name,
             status=result.status,
-        )
-        await self.publish(
-            ToolUpdatedEvent(
-                run_id=run_id,
-                call_id=result.call_id,
-                status=result.status,
-                update=_tool_result_dict(result),
-            )
+            output_summary=_public_output_summary(result.output),
+            error=result.error,
         )
         if response_entry is None:
             response_entry = await self.repository.commit_interaction_response(
@@ -600,6 +693,7 @@ class AgentLoop:
                 default=str,
             ),
             call_id=call.call_id,
+            tool_status=result.status,
         )
         await self.publish(EntryCommittedEvent(entry=tool_entry))
         history_revision = tool_entry.sequence
@@ -610,23 +704,30 @@ class AgentLoop:
                 for item in checkpoint.get("in_flight_tools") or []
                 if isinstance(item, dict) and item.get("call_id") != call.call_id
             ]
-            for item in pending:
+            async def mark_started(call: ToolCall) -> None:
                 await self._mark_tool_progress(
                     run_id,
-                    call_id=str(item["call_id"]),
-                    name=str(item["name"]),
+                    call_id=call.call_id,
+                    name=call.name,
                     status="running",
+                    arguments=call.arguments,
                 )
-                await self.publish(
-                    ToolUpdatedEvent(
-                        run_id=run_id,
-                        call_id=str(item["call_id"]),
-                        status="running",
-                    )
+
+            async def mark_finished(result: ToolResult) -> None:
+                await self._mark_tool_progress(
+                    run_id,
+                    call_id=result.call_id,
+                    name=result.tool_name,
+                    status=result.status,
+                    output_summary=_public_output_summary(result.output),
+                    error=result.error,
                 )
+
             remaining = await workspace.execute_batch(
-                tuple(ToolCall(**item) for item in pending),
+                tuple(_runtime_tool_call(item) for item in pending),
                 cancellation=cancellation,
+                on_start=mark_started,
+                on_result=mark_finished,
             )
             for pending_result in remaining.results:
                 if pending_result.status == "interaction_required":
@@ -652,13 +753,13 @@ class AgentLoop:
                             status="pending",
                         )
                     waiting_call = _find_call(
-                        tuple(ToolCall(**item) for item in pending),
+                        tuple(_runtime_tool_call(item) for item in pending),
                         pending_result.call_id,
                     )
                     (
                         _,
                         request_entry,
-                        _,
+                        waiting_run,
                     ) = await self.repository.commit_waiting_interaction(
                         str(session.id),
                         run_id=run_id,
@@ -681,11 +782,14 @@ class AgentLoop:
                         },
                     )
                     await self.publish(
+                        RunUpdatedEvent(run=self.repository._run_view(waiting_run))
+                    )
+                    await self.publish(
                         ToolUpdatedEvent(
                             run_id=run_id,
-                            call_id=pending_result.call_id,
-                            status=pending_result.status,
-                            update=_tool_result_dict(pending_result),
+                            tool=_tool_progress_view(
+                                waiting_run, pending_result.call_id
+                            ),
                         )
                     )
                     await self.publish(
@@ -694,25 +798,14 @@ class AgentLoop:
                     await self.publish(
                         InteractionRequestedEvent(
                             run_id=run_id,
-                            interaction_id=interaction.request_id,
-                            request=_interaction_dict(pending_result),
+                            interaction=(
+                                self.repository._pending_interaction_entry_view(
+                                    request_entry
+                                )
+                            ),
                         )
                     )
                     return
-                await self._mark_tool_progress(
-                    run_id,
-                    call_id=pending_result.call_id,
-                    name=pending_result.tool_name,
-                    status=pending_result.status,
-                )
-                await self.publish(
-                    ToolUpdatedEvent(
-                        run_id=run_id,
-                        call_id=pending_result.call_id,
-                        status=pending_result.status,
-                        update=_tool_result_dict(pending_result),
-                    )
-                )
                 pending_entry = await self._append_message(
                     str(session.id),
                     run_id,
@@ -721,6 +814,7 @@ class AgentLoop:
                         pending_result.output, ensure_ascii=False, default=str
                     ),
                     call_id=pending_result.call_id,
+                    tool_status=pending_result.status,
                 )
                 await self.publish(EntryCommittedEvent(entry=pending_entry))
                 history_revision = pending_entry.sequence
@@ -762,7 +856,7 @@ class AgentLoop:
         call_data = checkpoint.get("waiting_call")
         if not isinstance(call_data, dict):
             raise ValueError("recovery interaction has no tool call")
-        call = ToolCall(**call_data)
+        call = _runtime_tool_call(call_data)
         if choice == "retry":
             workspace = self.workspace_factory(session, str(run.id))
             replay_policy = _replay_policy(workspace, call.name)
@@ -784,6 +878,15 @@ class AgentLoop:
                 command_id=command_id,
             )
             checkpoint = dict(durable_run.checkpoint or {})
+            await self.publish(
+                RunUpdatedEvent(run=self.repository._run_view(durable_run))
+            )
+            await self.publish(
+                ToolUpdatedEvent(
+                    run_id=str(run.id),
+                    tool=_tool_progress_view(durable_run, call.call_id),
+                )
+            )
         else:
             response_entry = await self.repository.commit_interaction_response(
                 str(session.id),
@@ -829,6 +932,9 @@ class AgentLoop:
             content=json.dumps(output, ensure_ascii=False, default=str),
             call_id=call.call_id,
             is_error=choice == "retry" and result.status != "completed",
+            tool_status=(
+                result.status if choice == "retry" else "completed"
+            ),
         )
         await self.publish(EntryCommittedEvent(entry=tool_entry))
         waiting, history_revision = await self._resume_remaining_recovery_tools(
@@ -931,9 +1037,18 @@ class AgentLoop:
                 ),
                 call_id=call.call_id,
                 is_error=result.status != "completed",
+                tool_status=result.status,
             )
             history_revision = tool_entry.sequence
             await self.publish(EntryCommittedEvent(entry=tool_entry))
+            await self._mark_tool_progress(
+                run_id,
+                call_id=result.call_id,
+                name=result.tool_name,
+                status=result.status,
+                output_summary=_public_output_summary(result.output),
+                error=result.error,
+            )
         return False, history_revision
 
     async def _wait_for_recovery_choice(
@@ -971,15 +1086,21 @@ class AgentLoop:
             },
             checkpoint=waiting_checkpoint,
             tool_progress=[
-                {
-                    "call_id": str(item.get("call_id") or ""),
-                    "name": str(item.get("name") or "unknown"),
-                    "status": (
+                _recovery_tool_progress(
+                    call_id=str(item.get("call_id") or ""),
+                    name=str(item.get("name") or "unknown"),
+                    arguments=dict(item.get("arguments") or {}),
+                    group_id=str(
+                        item.get("group_id")
+                        or f"tool-group:{item.get('call_id') or ''}"
+                    ),
+                    execution_mode=str(item.get("execution_mode") or "serial"),
+                    status=(
                         "interaction_required"
                         if item.get("call_id") == call.call_id
                         else "pending"
                     ),
-                }
+                )
                 for item in remaining
             ],
         )
@@ -989,8 +1110,9 @@ class AgentLoop:
         await self.publish(
             InteractionRequestedEvent(
                 run_id=run_id,
-                interaction_id=interaction_id,
-                request=request,
+                interaction=self.repository._pending_interaction_entry_view(
+                    request_entry
+                ),
             )
         )
 
@@ -1003,23 +1125,28 @@ class AgentLoop:
             target = model_target_from_resolved(resolved)
         capabilities = resolved_runtime_capabilities(resolved)
         strategy = resolved_runtime_strategy(resolved)
+        current = await self.repository.get_run(run_id)
+        checkpoint = current.checkpoint if current is not None else None
+        input_items = (
+            *context.input_items,
+            *_private_control_input_parts(checkpoint),
+        )
         if not capabilities.supports_vision and any(
-            isinstance(item, ImagePart) for item in context.input_items
+            isinstance(item, ImagePart) for item in input_items
         ):
             raise ModelVisionUnsupportedError(
                 "The selected model does not support image input."
             )
         reasoning_enabled = capabilities.supports_reasoning and strategy.allow_thinking
-        current = await self.repository.get_run(run_id)
         continuation = responses_continuation_from_checkpoint(
-            current.checkpoint if current is not None else None,
+            checkpoint,
             target=target,
-            input_items=context.input_items,
+            input_items=input_items,
         )
         invocation = ModelInvocation(
             target=target,
             instructions=context.instructions,
-            input_items=context.input_items,
+            input_items=input_items,
             tools=(
                 workspace.model_tools
                 if capabilities.supports_tools and strategy.allow_tools
@@ -1048,20 +1175,23 @@ class AgentLoop:
                         return _ModelResponse(cancelled=True)
                     if isinstance(event, TextDelta):
                         semantic = True
-                        start_offset = len(response.text.encode("utf-8"))
+                        start_offset = len(response.text)
                         response.text += event.text
-                        end_offset = len(response.text.encode("utf-8"))
+                        end_offset = len(response.text)
                         await self.repository.update_run(
                             run_id,
-                            draft={
-                                "text": response.text,
-                                "reasoning": response.reasoning,
-                                "end_offset": end_offset,
-                            },
+                            draft=_assistant_draft_payload(
+                                run_id,
+                                text=response.text,
+                                reasoning=response.reasoning,
+                            ),
                         )
                         await self.publish(
                             AssistantDeltaEvent(
                                 run_id=run_id,
+                                draft_id=f"draft:{run_id}",
+                                part_id=f"draft:{run_id}:text",
+                                part_type="text",
                                 delta=event.text,
                                 start_offset=start_offset,
                                 end_offset=end_offset,
@@ -1069,14 +1199,27 @@ class AgentLoop:
                         )
                     elif isinstance(event, ReasoningDelta):
                         semantic = True
+                        start_offset = len(response.reasoning)
                         response.reasoning += event.text
+                        end_offset = len(response.reasoning)
                         await self.repository.update_run(
                             run_id,
-                            draft={
-                                "text": response.text,
-                                "reasoning": response.reasoning,
-                                "end_offset": len(response.text.encode("utf-8")),
-                            },
+                            draft=_assistant_draft_payload(
+                                run_id,
+                                text=response.text,
+                                reasoning=response.reasoning,
+                            ),
+                        )
+                        await self.publish(
+                            AssistantDeltaEvent(
+                                run_id=run_id,
+                                draft_id=f"draft:{run_id}",
+                                part_id=f"draft:{run_id}:reasoning",
+                                part_type="reasoning_summary",
+                                delta=event.text,
+                                start_offset=start_offset,
+                                end_offset=end_offset,
+                            )
                         )
                     elif isinstance(event, ToolCallDelta):
                         semantic = True
@@ -1102,7 +1245,11 @@ class AgentLoop:
                 await self.repository.update_run(
                     run_id,
                     token_usage=usage or None,
-                    draft={"text": response.text, "reasoning": response.reasoning},
+                    draft=_assistant_draft_payload(
+                        run_id,
+                        text=response.text,
+                        reasoning=response.reasoning,
+                    ),
                 )
                 return response
             except TimeoutError as exc:
@@ -1158,21 +1305,53 @@ class AgentLoop:
         content: str,
         call_id: str | None = None,
         is_error: bool = False,
+        tool_status: str | None = None,
         reasoning_summary: str | None = None,
         tool_calls: list[dict[str, Any]] | None = None,
     ):
+        message_id = str(uuid4())
+        parts: list[dict[str, Any]] = []
+        if role == "tool":
+            if call_id is None:
+                raise ValueError("tool message requires call_id")
+            parts.append(
+                {
+                    "id": f"tool-result:{call_id}",
+                    "type": "tool_result",
+                    "call_id": call_id,
+                    "status": tool_status or ("failed" if is_error else "completed"),
+                    "output": {"type": "text", "text": content},
+                    "error": content if is_error else None,
+                }
+            )
+        else:
+            if reasoning_summary:
+                parts.append(
+                    {
+                        "id": f"message:{message_id}:reasoning",
+                        "type": "reasoning_summary",
+                        "text": reasoning_summary,
+                    }
+                )
+            if content:
+                parts.append(
+                    {
+                        "id": f"message:{message_id}:text",
+                        "type": "text",
+                        "text": content,
+                    }
+                )
+            parts.extend(
+                {"id": f"tool-call:{call['call_id']}", "type": "tool_call", **call}
+                for call in tool_calls or []
+            )
         entry = await self.repository.append_entry(
             session_id,
             run_id=run_id,
             entry_type="message",
             payload={
                 "role": role,
-                "content": ([{"type": "text", "text": content}] if content else []),
-                "call_id": call_id,
-                "is_error": is_error,
-                "reasoning_summary": reasoning_summary or None,
-                "tool_calls": tool_calls or [],
-                "artifact_ids": [],
+                "parts": parts,
             },
         )
         return _entry_contract(entry)
@@ -1187,9 +1366,7 @@ class AgentLoop:
 
     async def _update(self, run_id: str, **changes: Any) -> None:
         run = await self.repository.update_run(run_id, **changes)
-        await self.publish(
-            RunUpdatedEvent(run_id=run.id, status=run.status, phase=run.phase)
-        )
+        await self.publish(RunUpdatedEvent(run=self.repository._run_view(run)))
 
     async def _mark_tool_progress(
         self,
@@ -1198,18 +1375,25 @@ class AgentLoop:
         call_id: str,
         name: str,
         status: str,
-    ) -> None:
-        run = await self.repository.get_run(run_id)
-        if run is None:
-            raise LookupError(f"agent run not found: {run_id}")
-        progress = [dict(item) for item in (run.tool_progress or [])]
-        progress = _replace_tool_progress(
-            progress,
+        group_id: str | None = None,
+        execution_mode: ToolExecutionMode | None = None,
+        arguments: dict[str, Any] | None = None,
+        output_summary: str | None = None,
+        error: str | None = None,
+    ) -> ToolProgressView:
+        view = await self.repository.update_tool_progress(
+            run_id,
             call_id=call_id,
             name=name,
             status=status,
+            group_id=group_id,
+            execution_mode=execution_mode,
+            arguments=arguments,
+            output_summary=output_summary,
+            error=error,
         )
-        await self.repository.update_run(run_id, tool_progress=progress)
+        await self.publish(ToolUpdatedEvent(run_id=run_id, tool=view))
+        return view
 
     async def _cancel(self, run_id: str) -> None:
         run = await self.repository.get_run(run_id)
@@ -1351,6 +1535,86 @@ def _advance_response_continuation(
     return continuation.advance_canonical_input(committed_parts).to_private_dict()
 
 
+def _private_control_exchange(
+    call: ToolCall,
+    plan: Any,
+) -> list[dict[str, Any]]:
+    payload = plan.payload if isinstance(plan.payload, Mapping) else {}
+    acknowledgment = json.dumps(
+        {
+            "plan_id": payload.get("plan_id"),
+            "revision": payload.get("revision"),
+            "status": "completed",
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
+    return [
+        {
+            "type": "tool_call",
+            "call_id": call.call_id,
+            "name": call.name,
+            "arguments": dict(call.arguments),
+        },
+        {
+            "type": "tool_result",
+            "call_id": call.call_id,
+            "output": acknowledgment,
+            "is_error": False,
+        },
+    ]
+
+
+def _private_control_input_parts(
+    checkpoint: Mapping[str, Any] | None,
+) -> tuple[ToolCallPart | ToolResultPart, ...]:
+    if not isinstance(checkpoint, Mapping):
+        return ()
+    raw = checkpoint.get("control_input")
+    if not isinstance(raw, list):
+        return ()
+    parts: list[ToolCallPart | ToolResultPart] = []
+    for index in range(0, len(raw), 2):
+        pair = raw[index : index + 2]
+        if len(pair) != 2:
+            return ()
+        call, result = pair
+        if not isinstance(call, Mapping) or not isinstance(result, Mapping):
+            return ()
+        call_id = call.get("call_id")
+        name = call.get("name")
+        arguments = call.get("arguments")
+        output = result.get("output")
+        if not (
+            call.get("type") == "tool_call"
+            and result.get("type") == "tool_result"
+            and isinstance(call_id, str)
+            and call_id
+            and result.get("call_id") == call_id
+            and isinstance(name, str)
+            and name
+            and isinstance(arguments, Mapping)
+            and isinstance(output, str)
+        ):
+            return ()
+        parts.extend(
+            (
+                ToolCallPart(
+                    call_id=call_id,
+                    name=name,
+                    arguments=dict(arguments),
+                ),
+                ToolResultPart(
+                    call_id=call_id,
+                    output=output,
+                    is_error=bool(result.get("is_error", False)),
+                ),
+            )
+        )
+    return tuple(parts)
+
+
 def _assemble_tool_calls(events: list[ToolCallDelta]) -> tuple[ToolCall, ...]:
     by_index: dict[int, dict[str, Any]] = {}
     for event in events:
@@ -1410,9 +1674,14 @@ def _attachment_ids(entries: tuple[dict[str, Any], ...]) -> list[str]:
         payload = entry.get("payload")
         if not isinstance(payload, dict):
             continue
-        raw_ids = payload.get("attachment_ids")
-        if not isinstance(raw_ids, list):
-            continue
+        raw_ids = [
+            part.get("attachment_id")
+            for part in payload.get("parts") or []
+            if isinstance(part, dict)
+            and part.get("type")
+            in {"attachment_ref", "file_ref", "directory_ref"}
+            and part.get("attachment_id") is not None
+        ]
         for raw_id in raw_ids:
             attachment_id = str(raw_id)
             if attachment_id and attachment_id not in seen:
@@ -1455,6 +1724,16 @@ def _tool_result_dict(result: ToolResult) -> dict[str, Any]:
     }
 
 
+def _public_output_summary(output: Any) -> str | None:
+    if output is None:
+        return None
+    if isinstance(output, str):
+        text = output
+    else:
+        text = json.dumps(output, ensure_ascii=False, default=str)
+    return text if len(text) <= 300 else f"{text[:297]}..."
+
+
 def _interaction_dict(result: ToolResult) -> dict[str, Any]:
     interaction = result.interaction
     if interaction is None:
@@ -1463,6 +1742,7 @@ def _interaction_dict(result: ToolResult) -> dict[str, Any]:
         "request_id": interaction.request_id,
         "call_id": interaction.call_id,
         "kind": interaction.kind,
+        "tool_name": result.tool_name,
         "questions": list(interaction.questions),
         "risk": interaction.risk,
     }
@@ -1524,12 +1804,96 @@ def _tool_call_dict(call: ToolCall) -> dict[str, Any]:
     }
 
 
-def _tool_progress_dict(call: ToolCall, *, status: str) -> dict[str, str]:
+def _runtime_tool_call(item: dict[str, Any]) -> ToolCall:
+    return ToolCall(
+        call_id=str(item.get("call_id") or ""),
+        name=str(item.get("name") or "unknown"),
+        arguments=dict(item.get("arguments") or {}),
+    )
+
+
+def _assistant_draft_payload(
+    run_id: str,
+    *,
+    text: str,
+    reasoning: str,
+) -> dict[str, Any]:
+    draft_id = f"draft:{run_id}"
     return {
-        "call_id": call.call_id,
-        "name": call.name,
-        "status": status,
+        "id": draft_id,
+        "run_id": run_id,
+        "parts": [
+            {
+                "id": f"{draft_id}:reasoning",
+                "type": "reasoning_summary",
+                "text": reasoning,
+                "end_offset": len(reasoning),
+            },
+            {
+                "id": f"{draft_id}:text",
+                "type": "text",
+                "text": text,
+                "end_offset": len(text),
+            },
+        ],
     }
+
+
+def _public_tool_call_dict(
+    call: ToolCall,
+    *,
+    group_id: str,
+    execution_mode: ToolExecutionMode,
+) -> dict[str, Any]:
+    return ToolProgressView.model_validate(
+        {
+            "call_id": call.call_id,
+            "group_id": group_id,
+            "execution_mode": execution_mode,
+            "name": call.name,
+            "display_name": call.name,
+            "category": _tool_category(call.name),
+            "summary": _tool_summary(call.name, call.arguments),
+            "arguments": call.arguments,
+            "status": "pending",
+            "revision": 1,
+        }
+    ).model_dump(
+        mode="json",
+        include={
+            "call_id",
+            "group_id",
+            "execution_mode",
+            "name",
+            "display_name",
+            "category",
+            "summary",
+            "arguments",
+        },
+    )
+
+
+def _tool_progress_dict(
+    call: ToolCall,
+    *,
+    status: str,
+    group_id: str,
+    execution_mode: ToolExecutionMode,
+) -> dict[str, Any]:
+    return ToolProgressView.model_validate(
+        {
+            "call_id": call.call_id,
+            "group_id": group_id,
+            "execution_mode": execution_mode,
+            "name": call.name,
+            "display_name": call.name,
+            "category": _tool_category(call.name),
+            "summary": _tool_summary(call.name, call.arguments),
+            "arguments": call.arguments,
+            "status": status,
+            "revision": 1,
+        }
+    ).model_dump(mode="json")
 
 
 def _replace_tool_progress(
@@ -1539,14 +1903,82 @@ def _replace_tool_progress(
     name: str,
     status: str,
 ) -> list[dict[str, Any]]:
-    replacement = {"call_id": call_id, "name": name, "status": status}
+    replacement: dict[str, Any] | None = None
     for index, item in enumerate(progress):
         if item.get("call_id") == call_id:
+            replacement = {
+                **item,
+                "name": name,
+                "status": status,
+                "revision": int(item.get("revision") or 0) + 1,
+            }
             progress[index] = replacement
             break
     else:
+        replacement = ToolProgressView.model_validate(
+            {
+                "call_id": call_id,
+                "group_id": f"tool-group:{call_id}",
+                "execution_mode": "serial",
+                "name": name,
+                "display_name": name,
+                "category": _tool_category(name),
+                "summary": name,
+                "arguments": {},
+                "status": status,
+                "revision": 1,
+            }
+        ).model_dump(mode="json")
         progress.append(replacement)
     return progress
+
+
+def _tool_category(name: str) -> str:
+    return {
+        "read": "read",
+        "bash": "command",
+        "edit": "edit",
+        "write": "write",
+        "ask_user": "interaction",
+        "update_plan": "plan",
+    }.get(name, "other")
+
+
+def _tool_summary(name: str, arguments: dict[str, Any]) -> str:
+    subject = arguments.get("path") or arguments.get("command")
+    return f"{name}: {subject}" if isinstance(subject, str) and subject else name
+
+
+def _recovery_tool_progress(
+    *,
+    call_id: str,
+    name: str,
+    arguments: dict[str, Any],
+    group_id: str,
+    execution_mode: ToolExecutionMode,
+    status: str,
+) -> dict[str, Any]:
+    return ToolProgressView.model_validate(
+        {
+            "call_id": call_id,
+            "group_id": group_id,
+            "execution_mode": execution_mode,
+            "name": name,
+            "display_name": name,
+            "category": _tool_category(name),
+            "summary": _tool_summary(name, arguments),
+            "arguments": arguments,
+            "status": status,
+            "revision": 1,
+        }
+    ).model_dump(mode="json")
+
+
+def _tool_progress_view(run: Any, call_id: str) -> ToolProgressView:
+    for item in run.tool_progress or []:
+        if isinstance(item, dict) and item.get("call_id") == call_id:
+            return ToolProgressView.model_validate(item)
+    raise LookupError(f"tool progress not found: {call_id}")
 
 
 def _checkpoint_replay_policy(checkpoint: dict[str, Any], call_id: str) -> str:

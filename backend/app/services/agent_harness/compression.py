@@ -89,7 +89,7 @@ class DeterministicCompactor:
                 elif role in {"assistant", "tool"} and content:
                     observations.append(f"{role}: {content}")
                 if role == "assistant":
-                    calls = payload.get("tool_calls")
+                    calls = _typed_tool_calls(payload)
                     if isinstance(calls, list):
                         for call in calls:
                             if not isinstance(call, Mapping):
@@ -241,28 +241,60 @@ def _payload(entry: HistoryEntry | Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def _text(payload: Mapping[str, Any]) -> str:
-    for key in ("content", "text", "message", "summary"):
+    for key in ("parts", "text", "message", "summary"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
-        if key == "content" and isinstance(value, list):
+        if key == "parts" and isinstance(value, list):
             text = "\n".join(
-                str(part.get("text"))
+                part_text
                 for part in value
                 if isinstance(part, Mapping)
-                and part.get("type") == "text"
-                and isinstance(part.get("text"), str)
+                and (part_text := _message_part_text(part))
             ).strip()
             if text:
                 return text
     return ""
 
 
+def _message_part_text(part: Mapping[str, Any]) -> str:
+    if part.get("type") == "text" and isinstance(part.get("text"), str):
+        return str(part["text"])
+    if part.get("type") != "tool_result":
+        return ""
+    output = part.get("output")
+    if not isinstance(output, Mapping):
+        return str(part.get("error") or "")
+    output_type = output.get("type")
+    if output_type == "text" and isinstance(output.get("text"), str):
+        return str(output["text"])
+    if output_type == "json":
+        return json.dumps(output.get("value"), ensure_ascii=False, default=str)
+    if output_type == "content_parts" and isinstance(output.get("parts"), list):
+        return "\n".join(
+            str(item.get("text"))
+            for item in output["parts"]
+            if isinstance(item, Mapping)
+            and item.get("type") in {"text", "reasoning_summary"}
+            and isinstance(item.get("text"), str)
+        )
+    return ""
+
+
+def _typed_tool_calls(payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    parts = payload.get("parts")
+    if not isinstance(parts, list):
+        return []
+    return [
+        item
+        for item in parts
+        if isinstance(item, Mapping) and item.get("type") == "tool_call"
+    ]
+
+
 def _interaction_text(payload: Mapping[str, Any]) -> str:
-    for key in ("response", "answer", "question", "prompt", "content"):
+    for key in ("request", "response"):
         value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
         if value is not None:
             return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
     return ""
@@ -273,11 +305,11 @@ def _avoid_partial_tool_group(
     recent: list[HistoryEntry | Mapping[str, Any]],
 ) -> list[HistoryEntry | Mapping[str, Any]]:
     pending_call_ids = {
-        str(_payload(entry).get("call_id"))
+        str(_tool_result_call_id(_payload(entry)))
         for entry in recent
         if _entry_type(entry) == "message"
         and _payload(entry).get("role") == "tool"
-        and _payload(entry).get("call_id")
+        and _tool_result_call_id(_payload(entry))
     }
     if not pending_call_ids:
         return candidates
@@ -286,17 +318,28 @@ def _avoid_partial_tool_group(
         payload = _payload(entry)
         if _entry_type(entry) != "message" or payload.get("role") != "assistant":
             continue
-        calls = payload.get("tool_calls")
-        if not isinstance(calls, list):
+        calls = _typed_tool_calls(payload)
+        if not calls:
             continue
         produced = {
-            str(call.get("call_id") or call.get("id"))
+            str(call.get("call_id"))
             for call in calls
-            if isinstance(call, Mapping) and (call.get("call_id") or call.get("id"))
+            if isinstance(call, Mapping) and call.get("call_id")
         }
         if produced & pending_call_ids:
             return candidates[:index]
     return candidates
+
+
+def _tool_result_call_id(payload: Mapping[str, Any]) -> str | None:
+    parts = payload.get("parts")
+    if not isinstance(parts, list):
+        return None
+    for part in parts:
+        if isinstance(part, Mapping) and part.get("type") == "tool_result":
+            call_id = part.get("call_id")
+            return str(call_id) if call_id else None
+    return None
 
 
 def _drop_entries_covered_by_latest_compaction(

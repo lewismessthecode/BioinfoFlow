@@ -5,13 +5,18 @@ import os
 from pathlib import Path
 
 import pytest
+from pydantic import TypeAdapter
 from sqlalchemy import event
 
 from app.models.agent_harness import AgentHarnessAttachment
 from app.repositories.agent_harness_repo import AgentHarnessRepository
 from app.services.agent_harness.context_search import AgentContextSearch
 from app.services.agent_harness.context_search import _search_local_paths
-from app.services.agent_harness.contracts import OpenSessionRequest
+from app.services.agent_harness.contracts import (
+    InputPart,
+    MessageCommand,
+    OpenSessionRequest,
+)
 
 
 def test_local_context_search_stops_at_the_entry_budget(monkeypatch, tmp_path) -> None:
@@ -232,5 +237,14 @@ async def test_attachment_context_search_applies_the_result_limit_in_sql(
         event.remove(sync_engine, "before_cursor_execute", capture_statement)
 
     assert len(result.results) == 50
+    input_adapter = TypeAdapter(InputPart)
+    assert all(
+        input_adapter.validate_python(item.input_part).type == "file_ref"
+        for item in result.results
+    )
+    assert all(
+        MessageCommand(command_id=f"submit-{index}", parts=[item.input_part])
+        for index, item in enumerate(result.results)
+    )
     assert statements
     assert " LIMIT " in statements[-1].upper()

@@ -9,8 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.services.agent_harness.contracts import (
     CancelCommand,
+    InputTextPart,
+    MessageCommand,
     OpenSessionRequest,
-    PromptCommand,
     SteerCommand,
 )
 from app.services.agent_harness.command_risk import CommandRiskAssessment
@@ -154,6 +155,26 @@ class BlockingRecoveryWorkspace:
         raise AssertionError("test releases recovery by cancelling the runtime")
 
 
+def _message(command_id: str, text: str) -> MessageCommand:
+    return MessageCommand(
+        command_id=command_id,
+        parts=[InputTextPart(text=text)],
+    )
+
+
+def _steer(command_id: str, text: str) -> SteerCommand:
+    return SteerCommand(
+        command_id=command_id,
+        parts=[InputTextPart(text=text)],
+    )
+
+
+def _latest_run(snapshot):
+    if snapshot.active_run is not None:
+        return snapshot.active_run.run
+    return snapshot.runs[-1]
+
+
 @pytest.mark.asyncio
 async def test_runtime_dispatches_in_background_and_cancel_crosses_requests(
     harness_db: AsyncSession,
@@ -179,13 +200,13 @@ async def test_runtime_dispatches_in_background_and_cancel_crosses_requests(
 
     await runtime.dispatch(
         str(opened.session.id),
-        PromptCommand(command_id="prompt-1", text="wait"),
+        _message("message-1", "wait"),
     )
 
     await asyncio.wait_for(model.started.wait(), timeout=1)
     running = await runtime.snapshot(str(opened.session.id))
-    assert running.current_run is not None
-    assert running.current_run.status == "running"
+    assert running.active_run is not None
+    assert running.active_run.run.status == "running"
 
     await runtime.dispatch(
         str(opened.session.id),
@@ -198,9 +219,8 @@ async def test_runtime_dispatches_in_background_and_cancel_crosses_requests(
         str(opened.session.id),
         "cancelled",
     )
-    assert cancelled.current_run is not None
-    assert cancelled.current_run.status == "cancelled"
-    assert cancelled.current_run.termination_reason == "user_cancelled"
+    assert _latest_run(cancelled).status == "cancelled"
+    assert _latest_run(cancelled).termination_reason == "user_cancelled"
     await runtime.shutdown()
 
 
@@ -238,7 +258,7 @@ async def test_cross_worker_cancel_interrupts_a_running_model(
     session_id = str(opened.session.id)
     await running_worker.dispatch(
         session_id,
-        PromptCommand(command_id="prompt-cross-worker", text="Wait."),
+        _message("message-cross-worker", "Wait."),
     )
     await asyncio.wait_for(model.started.wait(), timeout=1)
 
@@ -254,9 +274,8 @@ async def test_cross_worker_cancel_interrupts_a_running_model(
             session_id,
             "cancelled",
         )
-        assert snapshot.current_run is not None
-        assert snapshot.current_run.status == "cancelled"
-        assert snapshot.current_run.termination_reason == "user_cancelled"
+        assert _latest_run(snapshot).status == "cancelled"
+        assert _latest_run(snapshot).termination_reason == "user_cancelled"
     finally:
         model.release.set()
         await running_worker.shutdown()
@@ -297,7 +316,7 @@ async def test_cross_worker_cancel_stops_a_running_bash_command(
     session_id = str(opened.session.id)
     await running_worker.dispatch(
         session_id,
-        PromptCommand(command_id="prompt-cross-worker-bash", text="Run it."),
+        _message("message-cross-worker-bash", "Run it."),
     )
     await asyncio.wait_for(backend.started.wait(), timeout=1)
 
@@ -316,9 +335,8 @@ async def test_cross_worker_cancel_stops_a_running_bash_command(
             session_id,
             "cancelled",
         )
-        assert snapshot.current_run is not None
-        assert snapshot.current_run.status == "cancelled"
-        assert snapshot.current_run.termination_reason == "user_cancelled"
+        assert _latest_run(snapshot).status == "cancelled"
+        assert _latest_run(snapshot).termination_reason == "user_cancelled"
     finally:
         await running_worker.shutdown()
         await cancelling_worker.shutdown()
@@ -348,7 +366,7 @@ async def test_runtime_cancel_claims_a_waiting_user_run(
     session_id = str(opened.session.id)
     await runtime.dispatch(
         session_id,
-        PromptCommand(command_id="prompt-before-wait", text="Ask me."),
+        _message("message-before-wait", "Ask me."),
     )
     await _wait_for_run_status(runtime, session_id, "waiting_user")
 
@@ -358,8 +376,7 @@ async def test_runtime_cancel_claims_a_waiting_user_run(
     )
 
     cancelled = await _wait_for_run_status(runtime, session_id, "cancelled")
-    assert cancelled.current_run is not None
-    assert cancelled.current_run.termination_reason == "user_cancelled"
+    assert _latest_run(cancelled).termination_reason == "user_cancelled"
     await runtime.shutdown()
 
 
@@ -388,7 +405,7 @@ async def test_runtime_quiesces_active_session_before_file_deletion(
     session_id = str(opened.session.id)
     await runtime.dispatch(
         session_id,
-        PromptCommand(command_id="prompt-before-delete", text="wait"),
+        _message("message-before-delete", "wait"),
     )
     await asyncio.wait_for(model.started.wait(), timeout=1)
 
@@ -396,9 +413,8 @@ async def test_runtime_quiesces_active_session_before_file_deletion(
 
     assert model.cancelled.is_set()
     snapshot = await runtime.snapshot(session_id)
-    assert snapshot.current_run is not None
-    assert snapshot.current_run.status == "cancelled"
-    assert snapshot.current_run.termination_reason == "session_deleted"
+    assert _latest_run(snapshot).status == "cancelled"
+    assert _latest_run(snapshot).termination_reason == "session_deleted"
     await runtime.shutdown()
 
 
@@ -428,7 +444,7 @@ async def test_cross_worker_delete_waits_for_running_bash_to_quiesce(
     session_id = str(opened.session.id)
     await running_worker.dispatch(
         session_id,
-        PromptCommand(command_id="prompt-bash", text="Run the command."),
+        _message("message-bash", "Run the command."),
     )
     await asyncio.wait_for(backend.started.wait(), timeout=1)
 
@@ -436,9 +452,8 @@ async def test_cross_worker_delete_waits_for_running_bash_to_quiesce(
 
     assert backend.stopped.is_set()
     snapshot = await deleting_worker.snapshot(session_id)
-    assert snapshot.current_run is not None
-    assert snapshot.current_run.status == "cancelled"
-    assert snapshot.current_run.termination_reason == "session_deleted"
+    assert _latest_run(snapshot).status == "cancelled"
+    assert _latest_run(snapshot).termination_reason == "session_deleted"
     await deleting_worker.delete_session(session_id)
     with pytest.raises(LookupError, match="agent session not found"):
         await deleting_worker.snapshot(session_id)
@@ -477,7 +492,7 @@ async def test_cross_worker_quiesce_timeout_keeps_closing_session_durable(
     session_id = str(opened.session.id)
     await running_worker.dispatch(
         session_id,
-        PromptCommand(command_id="prompt-resistant", text="Wait."),
+        _message("message-resistant", "Wait."),
     )
     await asyncio.wait_for(model.started.wait(), timeout=1)
 
@@ -486,25 +501,23 @@ async def test_cross_worker_quiesce_timeout_keeps_closing_session_durable(
 
     snapshot = await deleting_worker.snapshot(session_id)
     assert snapshot.session.status == "closing"
-    assert snapshot.current_run is not None
-    assert snapshot.current_run.status == "running"
+    assert snapshot.active_run is not None
+    assert snapshot.active_run.run.status == "running"
     with pytest.raises(ValueError, match="closing"):
         await deleting_worker.dispatch(
             session_id,
-            PromptCommand(command_id="late-prompt", text="Do not start."),
+            _message("late-message", "Do not start."),
         )
 
     model.release.set()
     for _ in range(100):
         snapshot = await deleting_worker.snapshot(session_id)
         if (
-            snapshot.current_run is not None
-            and snapshot.current_run.status == "cancelled"
+            _latest_run(snapshot).status == "cancelled"
         ):
             break
         await asyncio.sleep(0.01)
-    assert snapshot.current_run is not None
-    assert snapshot.current_run.status == "cancelled"
+    assert _latest_run(snapshot).status == "cancelled"
     await deleting_worker.quiesce_session(session_id)
     await running_worker.shutdown()
     await deleting_worker.shutdown()
@@ -563,9 +576,8 @@ async def test_quiesce_terminalizes_run_owned_by_a_dead_worker(
 
     snapshot = await runtime.snapshot(str(session.id))
     assert snapshot.session.status == "closing"
-    assert snapshot.current_run is not None
-    assert snapshot.current_run.status == "cancelled"
-    assert snapshot.current_run.termination_reason == "session_deleted"
+    assert _latest_run(snapshot).status == "cancelled"
+    assert _latest_run(snapshot).termination_reason == "session_deleted"
     await runtime.shutdown()
 
 
@@ -596,7 +608,7 @@ async def test_runtime_shutdown_preserves_active_run_for_startup_recovery(
     session_id = str(opened.session.id)
     await first_runtime.dispatch(
         session_id,
-        PromptCommand(command_id="prompt-before-shutdown", text="Keep working."),
+        _message("message-before-shutdown", "Keep working."),
     )
     await asyncio.wait_for(blocking.started.wait(), timeout=1)
 
@@ -604,8 +616,8 @@ async def test_runtime_shutdown_preserves_active_run_for_startup_recovery(
 
     after_shutdown = await first_runtime.snapshot(session_id)
     assert blocking.cancelled.is_set()
-    assert after_shutdown.current_run is not None
-    assert after_shutdown.current_run.status == "running"
+    assert after_shutdown.active_run is not None
+    assert after_shutdown.active_run.run.status == "running"
 
     recovered_model = ImmediateModel("Recovered after restart.")
 
@@ -624,17 +636,15 @@ async def test_runtime_shutdown_preserves_active_run_for_startup_recovery(
     for _ in range(30):
         recovered = await second_runtime.snapshot(session_id)
         if (
-            recovered.current_run is not None
-            and recovered.current_run.status == "completed"
+            _latest_run(recovered).status == "completed"
         ):
             break
         await asyncio.sleep(0.01)
 
-    assert recovered.current_run is not None
-    assert recovered.current_run.status == "completed"
+    assert _latest_run(recovered).status == "completed"
     assert len(recovered_model.invocations) == 1
     assert [
-        entry.payload.content
+        [part.model_dump(mode="json", exclude={"id"}) for part in entry.payload.parts]
         for entry in recovered.entries
         if entry.type == "message" and entry.payload.role == "assistant"
     ] == [[{"type": "text", "text": "Recovered after restart."}]]
@@ -691,12 +701,12 @@ async def test_runtime_shutdown_does_not_reschedule_commands_after_task_snapshot
     session_id = str(opened.session.id)
     await runtime.dispatch(
         session_id,
-        PromptCommand(command_id="prompt-before-shutdown-race", text="Ask me."),
+        _message("message-before-shutdown-race", "Ask me."),
     )
     await asyncio.wait_for(release_started.wait(), timeout=1)
     waiting = await runtime.snapshot(session_id)
-    assert waiting.current_run is not None
-    assert waiting.current_run.status == "waiting_user"
+    assert waiting.active_run is not None
+    assert waiting.active_run.run.status == "waiting_user"
 
     claim_started = asyncio.Event()
 
@@ -742,7 +752,7 @@ async def test_runtime_shutdown_does_not_reschedule_commands_after_task_snapshot
 
     async with session_factory() as db:
         persisted = await AgentHarnessRepository(db).get_run(
-            str(waiting.current_run.id)
+            str(waiting.active_run.run.id)
         )
     assert persisted is not None
     assert persisted.lease_owner is None
@@ -774,33 +784,31 @@ async def test_steer_arriving_during_model_stream_continues_before_run_completio
     session_id = str(opened.session.id)
     await runtime.dispatch(
         session_id,
-        PromptCommand(command_id="prompt-1", text="Start."),
+        _message("message-1", "Start."),
     )
     await asyncio.wait_for(model.paused.wait(), timeout=1)
 
     await runtime.dispatch(
         session_id,
-        SteerCommand(command_id="steer-while-streaming", text="Also check metadata."),
+        _steer("steer-while-streaming", "Also check metadata."),
     )
     model.release.set()
     for _ in range(50):
         snapshot = await runtime.snapshot(session_id)
         if (
-            snapshot.current_run is not None
-            and snapshot.current_run.status == "completed"
+            _latest_run(snapshot).status == "completed"
         ):
             break
         await asyncio.sleep(0.01)
 
-    assert snapshot.current_run is not None
-    assert snapshot.current_run.status == "completed"
+    assert _latest_run(snapshot).status == "completed"
     assert len(model.invocations) == 2
     user_texts = [
-        part["text"]
+        part.text
         for entry in snapshot.entries
         if entry.type == "message" and entry.payload.role == "user"
-        for part in entry.payload.content
-        if part.get("type") == "text"
+        for part in entry.payload.parts
+        if part.type == "text"
     ]
     assert user_texts == ["Start.", "Also check metadata."]
     assert any(
@@ -838,7 +846,7 @@ async def test_runtime_shares_live_events_across_request_sessions(
 
     await runtime.dispatch(
         str(opened.session.id),
-        PromptCommand(command_id="prompt-1", text="stream"),
+        _message("message-1", "stream"),
     )
 
     observed = []
@@ -850,8 +858,8 @@ async def test_runtime_shares_live_events_across_request_sessions(
     assert "entry.committed" in observed
     assert "run.updated" in observed
     running = await runtime.snapshot(str(opened.session.id))
-    assert running.current_run is not None
-    run_id = running.current_run.id
+    assert running.active_run is not None
+    run_id = running.active_run.run.id
 
     await runtime.dispatch(
         str(opened.session.id),
@@ -861,8 +869,8 @@ async def test_runtime_shares_live_events_across_request_sessions(
         event = await asyncio.wait_for(anext(events), timeout=1)
         if (
             event.type == "run.updated"
-            and event.run_id == run_id
-            and event.status == "cancelled"
+            and event.run.id == run_id
+            and event.run.status == "cancelled"
         ):
             break
     else:
@@ -983,25 +991,36 @@ async def test_background_bootstrap_failure_is_persisted_instead_of_leaking_task
 
     runtime = AgentRuntime(session_factory, harness_factory=build_harness)
     opened = await runtime.open_session(_open_request())
+    events = runtime.events(str(opened.session.id))
+    initial = await asyncio.wait_for(anext(events), timeout=1)
+    assert initial.type == "snapshot"
     await runtime.dispatch(
         str(opened.session.id),
-        PromptCommand(command_id="prompt-1", text="start"),
+        _message("message-1", "start"),
     )
+
+    failed_event = None
+    for _ in range(20):
+        event = await asyncio.wait_for(anext(events), timeout=1)
+        if event.type == "run.updated" and event.run.status == "failed":
+            failed_event = event
+            break
 
     for _ in range(20):
         snapshot = await runtime.snapshot(str(opened.session.id))
-        if snapshot.current_run is not None and snapshot.current_run.status == "failed":
+        if _latest_run(snapshot).status == "failed":
             break
         await asyncio.sleep(0)
 
-    assert snapshot.current_run is not None
-    assert snapshot.current_run.status == "failed"
-    assert snapshot.current_run.termination_reason == "runtime_failed"
-    assert snapshot.current_run.error == {
+    assert _latest_run(snapshot).status == "failed"
+    assert _latest_run(snapshot).termination_reason == "runtime_failed"
+    assert _latest_run(snapshot).error == {
         "code": "runtime_failed",
         "message": "workspace bootstrap failed",
         "type": "RuntimeError",
     }
+    assert failed_event is not None
+    await events.aclose()
     await runtime.shutdown()
 
 
@@ -1012,7 +1031,7 @@ async def _wait_for_run_status(
 ):
     for _ in range(100):
         snapshot = await runtime.snapshot(session_id)
-        if snapshot.current_run is not None and snapshot.current_run.status == status:
+        if _latest_run(snapshot).status == status:
             return snapshot
         await asyncio.sleep(0.01)
     raise AssertionError(f"Agent run did not reach {status}")

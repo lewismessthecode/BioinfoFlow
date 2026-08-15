@@ -225,9 +225,17 @@ def _default_tool_descriptions() -> dict[str, str]:
     from app.services.agent_harness.tools.bash import BashTool
     from app.services.agent_harness.tools.edit import EditTool
     from app.services.agent_harness.tools.read import ReadTool
+    from app.services.agent_harness.tools.update_plan import UpdatePlanTool
     from app.services.agent_harness.tools.write import WriteTool
 
-    tools = (ReadTool(), BashTool(), EditTool(), WriteTool(), AskUserTool())
+    tools = (
+        ReadTool(),
+        BashTool(),
+        EditTool(),
+        WriteTool(),
+        AskUserTool(),
+        UpdatePlanTool(),
+    )
     return {tool.spec.name: tool.spec.description for tool in tools}
 
 

@@ -14,7 +14,7 @@ import sys
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Literal
 
 from app.services.agent_harness.command_risk import (
     CommandTargetProfile,
@@ -34,6 +34,7 @@ from app.services.agent_harness.tools import (
     ToolCall,
     ToolExecutor,
     ToolResult,
+    WorkspaceAccess,
 )
 
 
@@ -1111,6 +1112,7 @@ class WorkspaceRuntime:
         backend: LocalWorkspaceBackend | RemoteWorkspaceBackend,
         *,
         permission_mode: PermissionMode = "ask_dangerous",
+        workspace_access: WorkspaceAccess = "read_write",
         environment: dict[str, str] | None = None,
         bash_environment: dict[str, str] | None = None,
         bash_environment_provider: Callable[[], Awaitable[dict[str, str]]]
@@ -1120,6 +1122,7 @@ class WorkspaceRuntime:
         self._executor = ToolExecutor(
             backend,
             permission_mode=permission_mode,
+            workspace_access=workspace_access,
             environment=environment,
             bash_environment=bash_environment,
             bash_environment_provider=bash_environment_provider,
@@ -1158,9 +1161,24 @@ class WorkspaceRuntime:
         )
 
     async def execute_batch(
-        self, calls: Iterable[ToolCall], *, cancellation: Any | None = None
+        self,
+        calls: Iterable[ToolCall],
+        *,
+        cancellation: Any | None = None,
+        on_start: Callable[[ToolCall], Awaitable[None]] | None = None,
+        on_result: Callable[[ToolResult], Awaitable[None]] | None = None,
     ) -> ToolBatchResult:
-        return await self._executor.execute_batch(calls, cancellation=cancellation)
+        return await self._executor.execute_batch(
+            calls,
+            cancellation=cancellation,
+            on_start=on_start,
+            on_result=on_result,
+        )
+
+    def batch_execution_mode(
+        self, calls: Iterable[ToolCall]
+    ) -> Literal["parallel", "serial", "mixed"]:
+        return self._executor.batch_execution_mode(calls)
 
     def approval_assessment_matches(
         self,

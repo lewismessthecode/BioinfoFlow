@@ -35,9 +35,70 @@ def _entry(sequence: int, entry_type: str, payload: dict) -> dict:
         "run_id": "run-1",
         "sequence": sequence,
         "entry_type": entry_type,
-        "schema_version": 1,
+        "schema_version": 2,
         "payload": payload,
         "created_at": "2026-08-13T00:00:00Z",
+    }
+
+
+def _text_message(role: str, text: str) -> dict:
+    return {
+        "role": role,
+        "parts": [{"id": "text:0", "type": "text", "text": text}],
+    }
+
+
+def _tool_call_message(*calls: dict, text: str | None = None) -> dict:
+    group_id = f"tool-group:{calls[0]['call_id']}"
+    parts = []
+    if text is not None:
+        parts.append({"id": "text:0", "type": "text", "text": text})
+    for call in calls:
+        name = call["name"]
+        parts.append(
+            {
+                "id": f"tool-call:{call['call_id']}",
+                "type": "tool_call",
+                "call_id": call["call_id"],
+                "group_id": group_id,
+                "execution_mode": "serial",
+                "name": name,
+                "display_name": name,
+                "category": {
+                    "read": "read",
+                    "bash": "command",
+                }.get(name, "other"),
+                "summary": name,
+                "arguments": call["arguments"],
+            }
+        )
+    return {"role": "assistant", "parts": parts}
+
+
+def _tool_result_message(
+    call_id: str,
+    output: str | dict,
+    *,
+    status: str = "completed",
+    error: str | None = None,
+) -> dict:
+    typed_output = (
+        {"type": "text", "text": output}
+        if isinstance(output, str)
+        else {"type": "json", "value": output}
+    )
+    return {
+        "role": "tool",
+        "parts": [
+            {
+                "id": f"tool-result:{call_id}",
+                "type": "tool_result",
+                "call_id": call_id,
+                "status": status,
+                "output": typed_output,
+                "error": error,
+            }
+        ],
     }
 
 
@@ -46,19 +107,16 @@ def test_context_is_derived_from_permanent_entries_in_canonical_order() -> None:
         _entry(
             3,
             "message",
-            {"role": "tool", "call_id": "call-1", "content": "alpha.txt"},
+            _tool_result_message("call-1", "alpha.txt"),
         ),
-        _entry(1, "message", {"role": "user", "content": "List files"}),
+        _entry(1, "message", _text_message("user", "List files")),
         _entry(
             2,
             "message",
-            {
-                "role": "assistant",
-                "content": "I will inspect the workspace.",
-                "tool_calls": [
-                    {"call_id": "call-1", "name": "read", "arguments": {"path": "."}}
-                ],
-            },
+            _tool_call_message(
+                {"call_id": "call-1", "name": "read", "arguments": {"path": "."}},
+                text="I will inspect the workspace.",
+            ),
         ),
     ]
 
@@ -81,32 +139,34 @@ def test_context_preserves_tool_error_and_interaction_response() -> None:
         _entry(
             1,
             "message",
-            {
-                "role": "assistant",
-                "content": [],
-                "tool_calls": [
-                    {
-                        "call_id": "bash-1",
-                        "name": "bash",
-                        "arguments": {"command": "false"},
-                    }
-                ],
-            },
+            _tool_call_message(
+                {
+                    "call_id": "bash-1",
+                    "name": "bash",
+                    "arguments": {"command": "false"},
+                }
+            ),
         ),
         _entry(
             2,
             "message",
-            {
-                "role": "tool",
-                "call_id": "bash-1",
-                "content": [{"type": "text", "text": "exit status 1"}],
-                "is_error": True,
-            },
+            _tool_result_message(
+                "bash-1",
+                "exit status 1",
+                status="failed",
+                error="exit status 1",
+            ),
         ),
         _entry(
             3,
             "interaction_response",
-            {"response": {"choice": "continue"}},
+            {
+                "interaction_id": "question-1",
+                "response": {
+                    "type": "ask_user",
+                    "answers": {"choice": "continue"},
+                },
+            },
         ),
     ]
 
@@ -115,7 +175,10 @@ def test_context_preserves_tool_error_and_interaction_response() -> None:
     assert context.input_items == (
         ToolCallPart(call_id="bash-1", name="bash", arguments={"command": "false"}),
         ToolResultPart(call_id="bash-1", output="exit status 1", is_error=True),
-        TextPart('User interaction response: {"choice": "continue"}'),
+        TextPart(
+            'User interaction response: {"answers": {"choice": "continue"}, '
+            '"type": "ask_user"}'
+        ),
     )
 
 
@@ -126,7 +189,7 @@ def test_context_accepts_public_history_entry_contracts() -> None:
         run_id=UUID("20000000-0000-0000-0000-000000000001"),
         sequence=1,
         created_at=datetime(2026, 8, 13, tzinfo=timezone.utc),
-        payload={"role": "user", "content": [{"type": "text", "text": "hello"}]},
+        payload=_text_message("user", "hello"),
     )
 
     context = ContextBuilder().build(prompt_snapshot="Stable", entries=[entry])
@@ -136,8 +199,8 @@ def test_context_accepts_public_history_entry_contracts() -> None:
 
 def test_latest_compaction_replaces_only_covered_history_in_model_context() -> None:
     entries = [
-        _entry(1, "message", {"role": "user", "content": "Old request"}),
-        _entry(2, "message", {"role": "assistant", "content": "Old answer"}),
+        _entry(1, "message", _text_message("user", "Old request")),
+        _entry(2, "message", _text_message("assistant", "Old answer")),
         _entry(
             3,
             "compaction",
@@ -146,7 +209,7 @@ def test_latest_compaction_replaces_only_covered_history_in_model_context() -> N
                 "through_sequence": 2,
             },
         ),
-        _entry(4, "message", {"role": "user", "content": "Continue"}),
+        _entry(4, "message", _text_message("user", "Continue")),
     ]
 
     context = ContextBuilder().build(prompt_snapshot="Stable prompt", entries=entries)
@@ -166,24 +229,30 @@ def test_latest_compaction_replaces_only_covered_history_in_model_context() -> N
 
 def test_compaction_plan_is_deterministic_and_keeps_recent_history() -> None:
     entries = [
-        _entry(1, "message", {"role": "user", "content": "Update sample.py"}),
+        _entry(1, "message", _text_message("user", "Update sample.py")),
         _entry(
             2,
             "message",
-            {"role": "assistant", "content": "I will inspect sample.py first."},
+            _text_message("assistant", "I will inspect sample.py first."),
         ),
         _entry(
             3,
             "message",
-            {"role": "tool", "call_id": "read-1", "content": "def old(): pass"},
+            _tool_result_message("read-1", "def old(): pass"),
         ),
         _entry(
             4,
             "interaction_response",
-            {"response": {"instruction": "Keep backwards compatibility"}},
+            {
+                "interaction_id": "question-1",
+                "response": {
+                    "type": "ask_user",
+                    "answers": {"instruction": "Keep backwards compatibility"},
+                },
+            },
         ),
-        _entry(5, "message", {"role": "user", "content": "Please continue"}),
-        _entry(6, "message", {"role": "assistant", "content": "Continuing now"}),
+        _entry(5, "message", _text_message("user", "Please continue")),
+        _entry(6, "message", _text_message("assistant", "Continuing now")),
     ]
 
     compactor = DeterministicCompactor(preserve_recent_entries=2)
@@ -197,11 +266,12 @@ def test_compaction_plan_is_deterministic_and_keeps_recent_history() -> None:
         "summary": (
             "## Goal and user requests\n"
             "- Update sample.py\n\n"
-            "## Work completed and observations\n"
-            "- assistant: I will inspect sample.py first.\n"
-            "- tool: def old(): pass\n\n"
-            "## User decisions and interactions\n"
-            '- {"instruction": "Keep backwards compatibility"}'
+                "## Work completed and observations\n"
+                "- assistant: I will inspect sample.py first.\n"
+                "- tool: def old(): pass\n\n"
+                "## User decisions and interactions\n"
+                '- {"answers": {"instruction": "Keep backwards compatibility"}, '
+                '"type": "ask_user"}'
         ),
         "through_sequence": 4,
     }
@@ -216,7 +286,7 @@ def test_context_appends_resolved_attachment_parts_without_persisting_blobs() ->
 
     context = ContextBuilder().build(
         prompt_snapshot="Stable",
-        entries=[_entry(1, "message", {"role": "user", "content": "Inspect this"})],
+        entries=[_entry(1, "message", _text_message("user", "Inspect this"))],
         attachment_parts=(attachment,),
     )
 
@@ -230,29 +300,26 @@ def test_read_image_tool_result_becomes_multimodal_model_input() -> None:
             _entry(
                 1,
                 "message",
-                {
-                    "role": "assistant",
-                    "content": [],
-                    "tool_calls": [
-                        {
-                            "call_id": "read-image",
-                            "name": "read",
-                            "arguments": {"path": "plot.png"},
-                        }
-                    ],
-                },
+                _tool_call_message(
+                    {
+                        "call_id": "read-image",
+                        "name": "read",
+                        "arguments": {"path": "plot.png"},
+                    }
+                ),
             ),
             _entry(
                 2,
                 "message",
-                {
-                    "role": "tool",
-                    "call_id": "read-image",
-                    "content": (
-                        '{"path":"/workspace/plot.png","kind":"image",'
-                        '"mime_type":"image/png","data":"aGVsbG8="}'
-                    ),
-                },
+                _tool_result_message(
+                    "read-image",
+                    {
+                        "path": "/workspace/plot.png",
+                        "kind": "image",
+                        "mime_type": "image/png",
+                        "data": "aGVsbG8=",
+                    },
+                ),
             ),
         ],
     )
@@ -281,22 +348,18 @@ def test_read_image_tool_result_becomes_multimodal_model_input() -> None:
 
 def test_compaction_does_not_split_an_assistant_tool_call_group() -> None:
     entries = [
-        _entry(1, "message", {"role": "user", "content": "Inspect both files"}),
+        _entry(1, "message", _text_message("user", "Inspect both files")),
         _entry(
             2,
             "message",
-            {
-                "role": "assistant",
-                "content": [],
-                "tool_calls": [
-                    {"call_id": "r1", "name": "read", "arguments": {"path": "a"}},
-                    {"call_id": "r2", "name": "read", "arguments": {"path": "b"}},
-                ],
-            },
+            _tool_call_message(
+                {"call_id": "r1", "name": "read", "arguments": {"path": "a"}},
+                {"call_id": "r2", "name": "read", "arguments": {"path": "b"}},
+            ),
         ),
-        _entry(3, "message", {"role": "tool", "call_id": "r1", "content": "A"}),
-        _entry(4, "message", {"role": "tool", "call_id": "r2", "content": "B"}),
-        _entry(5, "message", {"role": "assistant", "content": "Both are valid"}),
+        _entry(3, "message", _tool_result_message("r1", "A")),
+        _entry(4, "message", _tool_result_message("r2", "B")),
+        _entry(5, "message", _text_message("assistant", "Both are valid")),
     ]
 
     plan = DeterministicCompactor(preserve_recent_entries=2).plan(
@@ -309,7 +372,7 @@ def test_compaction_does_not_split_an_assistant_tool_call_group() -> None:
 
 def test_compaction_rollover_uses_prior_summary_without_repeating_raw_history() -> None:
     entries = [
-        _entry(1, "message", {"role": "user", "content": "Very old raw request"}),
+        _entry(1, "message", _text_message("user", "Very old raw request")),
         _entry(
             2,
             "compaction",
@@ -318,22 +381,16 @@ def test_compaction_rollover_uses_prior_summary_without_repeating_raw_history() 
         _entry(
             3,
             "message",
-            {
-                "role": "assistant",
-                "content": [],
-                "tool_calls": [
-                    {
-                        "call_id": "bash-1",
-                        "name": "bash",
-                        "arguments": {"command": "pytest test_one.py"},
-                    }
-                ],
-            },
+            _tool_call_message(
+                {
+                    "call_id": "bash-1",
+                    "name": "bash",
+                    "arguments": {"command": "pytest test_one.py"},
+                }
+            ),
         ),
-        _entry(
-            4, "message", {"role": "tool", "call_id": "bash-1", "content": "passed"}
-        ),
-        _entry(5, "message", {"role": "user", "content": "Continue"}),
+        _entry(4, "message", _tool_result_message("bash-1", "passed")),
+        _entry(5, "message", _text_message("user", "Continue")),
     ]
 
     plan = DeterministicCompactor(preserve_recent_entries=1).plan(
@@ -352,10 +409,10 @@ def test_compaction_hard_budget_keeps_large_history_below_model_threshold() -> N
         _entry(
             sequence,
             "message",
-            {
-                "role": "user" if sequence % 2 else "assistant",
-                "content": f"entry-{sequence:03d}:" + ("x" * 490),
-            },
+            _text_message(
+                "user" if sequence % 2 else "assistant",
+                f"entry-{sequence:03d}:" + ("x" * 490),
+            ),
         )
         for sequence in range(1, 301)
     ]
@@ -387,10 +444,7 @@ def test_compaction_summary_fits_worst_case_utf8_token_budget() -> None:
         _entry(
             sequence,
             "message",
-            {
-                "role": "user",
-                "content": f"entry-{sequence:03d}:" + ("🧬" * 500),
-            },
+            _text_message("user", f"entry-{sequence:03d}:" + ("🧬" * 500)),
         )
         for sequence in range(1, 101)
     ]
@@ -411,14 +465,14 @@ def test_compaction_rollover_preserves_prior_summary_beyond_item_limit() -> None
         + "PRIOR-END decision=keep-the-public-contract"
     )
     entries = [
-        _entry(1, "message", {"role": "user", "content": "obsolete raw request"}),
+        _entry(1, "message", _text_message("user", "obsolete raw request")),
         _entry(
             2,
             "compaction",
             {"summary": prior_summary, "through_sequence": 1},
         ),
-        _entry(3, "message", {"role": "assistant", "content": "new observation"}),
-        _entry(4, "message", {"role": "user", "content": "continue"}),
+        _entry(3, "message", _text_message("assistant", "new observation")),
+        _entry(4, "message", _text_message("user", "continue")),
     ]
 
     plan = DeterministicCompactor(preserve_recent_entries=1).plan(

@@ -1250,6 +1250,7 @@ async def test_remote_runtime_resolves_current_credentials_only_when_executing(
         workspace_id=str(workspace.id),
         project_id=str(uuid4()),
         permission_mode="ask_dangerous",
+        workspace_access="read_write",
         workspace_snapshot={
             "runtime": "remote_ssh",
             "root": "/srv/project",
@@ -1394,7 +1395,8 @@ async def test_remote_runtime_rejects_connection_target_drift(
     session = SimpleNamespace(
         workspace_id=str(workspace.id),
         project_id=str(uuid4()),
-        permission_mode="read_only",
+        permission_mode="ask_changes",
+        workspace_access="read_only",
         workspace_snapshot={
             "runtime": "remote_ssh",
             "root": "/srv/project",
@@ -1510,7 +1512,7 @@ async def test_database_remote_executor_serializes_only_credential_resolution(
     assert executor.entered == 2
 
 
-def test_local_runtime_respects_the_frozen_root_and_uses_the_five_tool_contract(
+def test_local_runtime_respects_the_frozen_root_and_uses_the_default_tool_contract(
     db_session, tmp_path, monkeypatch
 ) -> None:
     monkeypatch.setattr(settings, "bioinfoflow_public_api_base_url", "")
@@ -1518,7 +1520,8 @@ def test_local_runtime_respects_the_frozen_root_and_uses_the_five_tool_contract(
         workspace_id="workspace-1",
         user_id="user-1",
         project_id=None,
-        permission_mode="read_only",
+        permission_mode="ask_changes",
+        workspace_access="read_only",
         workspace_snapshot={"runtime": "local", "root": str(tmp_path)},
     )
 
@@ -1535,6 +1538,7 @@ def test_local_runtime_respects_the_frozen_root_and_uses_the_five_tool_contract(
         "edit",
         "write",
         "ask_user",
+        "update_plan",
     ]
 
 
@@ -1586,6 +1590,7 @@ async def test_local_factory_gives_bash_the_same_platform_path_protection(
         user_id="user-1",
         project_id="project-1",
         permission_mode="full_access",
+        workspace_access="read_write",
         workspace_snapshot={"runtime": "local", "root": str(external_root)},
     )
 
@@ -1653,6 +1658,7 @@ async def test_local_factory_keeps_a_project_under_source_dev_data_writable(
         user_id="user-1",
         project_id="project-1",
         permission_mode="full_access",
+        workspace_access="read_write",
         workspace_snapshot={"runtime": "local", "root": str(project_root)},
     )
 
@@ -1696,7 +1702,8 @@ async def test_local_runtime_can_read_every_skill_advertised_in_the_prompt(
         workspace_id="workspace-1",
         user_id="user-1",
         project_id="project-1",
-        permission_mode="read_only",
+        permission_mode="ask_changes",
+        workspace_access="read_only",
         prompt_snapshot=prompt_snapshot,
         workspace_snapshot={"runtime": "local", "root": str(project)},
     )
@@ -1716,7 +1723,8 @@ def test_local_project_runtime_rejects_a_missing_workspace_root(db_session) -> N
         workspace_id="workspace-1",
         user_id="user-1",
         project_id="project-1",
-        permission_mode="read_only",
+        permission_mode="ask_changes",
+        workspace_access="read_only",
         workspace_snapshot={"runtime": "local"},
     )
 
@@ -1731,7 +1739,8 @@ def test_remote_runtime_revalidates_public_api_configuration(
     session = SimpleNamespace(
         workspace_id=str(uuid4()),
         project_id=str(uuid4()),
-        permission_mode="read_only",
+        permission_mode="ask_changes",
+        workspace_access="read_only",
         workspace_snapshot={
             "api_url": "https://previous.example/api/v1",
             "runtime": "remote_ssh",

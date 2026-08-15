@@ -20,6 +20,10 @@ from app.repositories.agent_harness_repo import (
     AgentHarnessRepository,
 )
 from app.repositories.agent_user_settings_repo import AgentUserSettingsRepository
+from app.repositories.project_repo import ProjectRepository
+from app.repositories.project_workflow_binding_repo import (
+    ProjectWorkflowBindingRepository,
+)
 from app.services.agent_harness.assets import (
     AgentHarnessArtifactService,
     AgentHarnessAttachmentService,
@@ -28,8 +32,17 @@ from app.services.agent_harness.assets import (
 from app.services.agent_harness.contracts import (
     AgentCommand,
     AgentEvent,
+    InputAttachmentRefPart,
+    InputDirectoryRefPart,
+    InputFileRefPart,
+    InputRunRefPart,
+    InputWorkflowRefPart,
+    MessageCommand,
     OpenSessionRequest,
+    PermissionMode,
     SessionSnapshot,
+    SteerCommand,
+    WorkspaceAccess,
 )
 from app.services.agent_harness.context import build_session_prompt_snapshot
 from app.services.agent_harness.context_search import (
@@ -42,8 +55,17 @@ from app.services.agent_harness.factory import (
 )
 from app.services.agent_harness.runtime import agent_runtime
 from app.services.agent_harness.system_prompt import default_system_prompt_snapshot
+from app.services.file_service import FileService
+from app.services.run_service import RunService
+from app.services.workflow_service import WorkflowService
 from app.schemas.common import SuccessEnvelope
-from app.utils.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.utils.exceptions import (
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+    PermissionDeniedError,
+)
+from app.utils.authorization import can_access_project
 from app.utils.responses import success_response
 
 
@@ -94,9 +116,8 @@ class AgentSessionCreate(BaseModel):
 
     project_id: UUID | None = None
     title: str | None = Field(default=None, max_length=200)
-    permission_mode: Literal["read_only", "ask_dangerous", "full_access"] = (
-        "ask_dangerous"
-    )
+    permission_mode: PermissionMode = "ask_dangerous"
+    workspace_access: WorkspaceAccess = "read_write"
     model_id: UUID | None = None
     profile_id: UUID | None = None
     provider: str | None = Field(default=None, min_length=1, max_length=200)
@@ -122,6 +143,24 @@ class AgentSessionCreate(BaseModel):
         return self
 
 
+class AgentSessionUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str | None = Field(default=None, max_length=200)
+    permission_mode: PermissionMode | None = None
+    workspace_access: WorkspaceAccess | None = None
+    status: Literal["active", "archived"] | None = None
+
+    @model_validator(mode="after")
+    def validate_update(self) -> AgentSessionUpdate:
+        if not self.model_fields_set:
+            raise ValueError("at least one session setting is required")
+        for field_name in ("permission_mode", "workspace_access", "status"):
+            if field_name in self.model_fields_set and getattr(self, field_name) is None:
+                raise ValueError(f"{field_name} cannot be null")
+        return self
+
+
 class AgentSettingsRead(BaseModel):
     custom_instructions: str = ""
 
@@ -136,9 +175,9 @@ class AgentSessionSummary(BaseModel):
     id: UUID
     title: str | None = None
     project_id: UUID | None = None
-    permission_mode: Literal["read_only", "ask_dangerous", "full_access"]
+    permission_mode: PermissionMode
+    workspace_access: WorkspaceAccess
     status: Literal["active", "archived", "closing", "deleted"]
-    history_revision: int = Field(ge=0)
     created_at: datetime
     updated_at: datetime
 
@@ -175,7 +214,6 @@ class AgentArtifactView(BaseModel):
     title: str
     summary: str | None = None
     payload: dict | None = None
-    file_path: str | None = None
     resource_ref: dict | None = None
     created_at: datetime
     updated_at: datetime
@@ -198,7 +236,7 @@ def _selection(payload: AgentSessionCreate) -> dict[str, str] | None:
 
 
 def _dump(model) -> dict:
-    return model.model_dump(mode="json", exclude_none=True)
+    return model.model_dump(mode="json")
 
 
 async def _owned_session(
@@ -234,6 +272,99 @@ async def _mutable_owned_session(
     return session
 
 
+async def _authorize_command_parts(
+    db: AsyncSession,
+    *,
+    session_id: str,
+    command: AgentCommand,
+    user: AuthUser,
+) -> None:
+    if not isinstance(command, (MessageCommand, SteerCommand)):
+        return
+
+    attachment_ids = []
+    for part in command.parts:
+        if isinstance(part, InputAttachmentRefPart):
+            attachment_ids.append(str(part.attachment_id))
+        elif isinstance(part, (InputFileRefPart, InputDirectoryRefPart)):
+            if part.attachment_id is not None:
+                attachment_ids.append(str(part.attachment_id))
+    attachments_by_id = {}
+    if attachment_ids:
+        try:
+            attachments = await AgentHarnessAttachmentRepository(
+                db
+            ).require_ids_for_session(
+                attachment_ids,
+                session_id=session_id,
+                workspace_id=user.workspace_id,
+                user_id=user.id,
+            )
+        except LookupError as exc:
+            raise NotFoundError("One or more attachments were not found") from exc
+        attachments_by_id = {str(item.id): item for item in attachments}
+
+    file_service = FileService(db)
+    for part in command.parts:
+        if isinstance(part, (InputFileRefPart, InputDirectoryRefPart)):
+            if part.attachment_id is not None:
+                attachment = attachments_by_id[str(part.attachment_id)]
+                is_directory = attachment.kind == "folder"
+                if isinstance(part, InputFileRefPart) and is_directory:
+                    raise BadRequestError("file_ref must reference a file")
+                if isinstance(part, InputDirectoryRefPart) and not is_directory:
+                    raise BadRequestError("directory_ref must reference a directory")
+                continue
+            assert part.project_id is not None
+            assert part.path is not None
+            try:
+                target, root = await file_service.resolve_path(
+                    project_id=str(part.project_id),
+                    path=part.path,
+                    user_id=user.id,
+                    workspace_id=user.workspace_id,
+                )
+            except (FileNotFoundError, PermissionError, PermissionDeniedError) as exc:
+                raise NotFoundError("Referenced path was not found") from exc
+            if isinstance(part, InputFileRefPart) and not target.is_file():
+                raise BadRequestError("file_ref must reference a file")
+            if isinstance(part, InputDirectoryRefPart) and not target.is_dir():
+                raise BadRequestError("directory_ref must reference a directory")
+            part.path = target.relative_to(root).as_posix()
+        elif isinstance(part, InputWorkflowRefPart):
+            workflow_id = str(part.workflow_id)
+            workflow = await WorkflowService(db).get_workflow(workflow_id)
+            if workflow is None:
+                raise NotFoundError("Referenced workflow was not found")
+            if part.scope == "project":
+                assert part.project_id is not None
+                project_id = str(part.project_id)
+                project = await ProjectRepository(db).get(project_id)
+                if project is None or not can_access_project(
+                    project,
+                    user_id=user.id,
+                    workspace_id=user.workspace_id,
+                ):
+                    raise NotFoundError("Referenced workflow was not found")
+                if not await ProjectWorkflowBindingRepository(db).is_enabled(
+                    project_id=project_id,
+                    workflow_id=workflow_id,
+                ):
+                    raise NotFoundError("Referenced workflow was not found")
+        elif isinstance(part, InputRunRefPart):
+            try:
+                run = await RunService(db).get_run(
+                    part.run_id,
+                    user_id=user.id,
+                    workspace_id=user.workspace_id,
+                )
+            except PermissionDeniedError as exc:
+                raise NotFoundError("Referenced run was not found") from exc
+            if run is None:
+                raise NotFoundError("Referenced run was not found")
+            part.run_id = str(run.run_id)
+
+
 def _attachment_data(attachment) -> dict:
     return {
         "id": str(attachment.id),
@@ -266,7 +397,6 @@ def _artifact_data(artifact) -> dict:
         "title": artifact.title,
         "summary": artifact.summary,
         "payload": artifact.payload,
-        "file_path": artifact.file_path,
         "resource_ref": artifact.resource_ref,
         "created_at": artifact.created_at.isoformat(),
         "updated_at": artifact.updated_at.isoformat(),
@@ -379,6 +509,7 @@ async def create_session(
             model=model_snapshot,
             workspace=workspace,
             permission_mode=payload.permission_mode,
+            workspace_access=payload.workspace_access,
             prompt_snapshot=build_session_prompt_snapshot(
                 core_snapshot=default_system_prompt_snapshot(
                     custom_instructions
@@ -413,8 +544,8 @@ async def list_sessions(
                 "title": item.title,
                 "project_id": str(item.project_id) if item.project_id else None,
                 "permission_mode": item.permission_mode,
+                "workspace_access": item.workspace_access,
                 "status": item.status,
-                "history_revision": item.history_revision,
                 "created_at": item.created_at.isoformat(),
                 "updated_at": item.updated_at.isoformat(),
             }
@@ -526,21 +657,33 @@ async def delete_attachment(
     return success_response({"deleted": True}, request=request)
 
 
-@router.get(
+@router.patch(
     "/sessions/{session_id}",
     response_model=SuccessEnvelope[SessionSnapshot],
 )
-async def get_session(
+async def update_session(
     session_id: str,
+    payload: AgentSessionUpdate,
     request: Request,
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     repository = AgentHarnessRepository(db)
     await _owned_session(repository, session_id=session_id, user=user)
-    return success_response(
-        _dump(await repository.snapshot(session_id)), request=request
-    )
+    async with _session_mutation_lock(session_id):
+        db.expire_all()
+        await _owned_session(repository, session_id=session_id, user=user)
+        values = {
+            field_name: getattr(payload, field_name)
+            for field_name in payload.model_fields_set
+        }
+        try:
+            await repository.update_session_settings(session_id, **values)
+        except ValueError as exc:
+            raise ConflictError(str(exc)) from exc
+        snapshot = await repository.snapshot(session_id)
+        await agent_runtime.publish_snapshot(session_id, snapshot)
+    return success_response(_dump(snapshot), request=request)
 
 
 @router.get(
@@ -576,19 +719,16 @@ async def dispatch_command(
     await _owned_session(repository, session_id=session_id, user=user)
     async with _session_mutation_lock(session_id):
         db.expire_all()
-        await _mutable_owned_session(repository, session_id=session_id, user=user)
+        agent_session = await _mutable_owned_session(
+            repository, session_id=session_id, user=user
+        )
         command = payload
-        attachment_ids = [str(item) for item in getattr(command, "attachment_ids", [])]
-        if attachment_ids:
-            try:
-                await AgentHarnessAttachmentRepository(db).require_ids_for_session(
-                    attachment_ids,
-                    session_id=session_id,
-                    workspace_id=user.workspace_id,
-                    user_id=user.id,
-                )
-            except LookupError as exc:
-                raise NotFoundError("One or more attachments were not found") from exc
+        await _authorize_command_parts(
+            db,
+            session_id=str(agent_session.id),
+            command=command,
+            user=user,
+        )
         try:
             await agent_runtime.dispatch(session_id, command)
         except ValueError as exc:

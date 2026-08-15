@@ -117,6 +117,7 @@ class TestAgentSession:
             "project_id": "00000000-0000-0000-0000-000000000002",
             "title": "QC triage",
             "permission_mode": "full_access",
+            "workspace_access": "read_write",
             "provider": "openai",
             "model": "gpt-5.6",
         }
@@ -160,8 +161,8 @@ class TestAgentSession:
         delete.assert_awaited_once_with(ANY, "/agent/sessions/session-1")
 
 
-class TestAgentPrompt:
-    def test_send_dispatches_prompt_to_existing_session(
+class TestAgentMessage:
+    def test_send_dispatches_message_to_existing_session(
         self, runner: CliRunner
     ) -> None:
         with patch(
@@ -186,12 +187,17 @@ class TestAgentPrompt:
         post.assert_awaited_once()
         assert post.await_args.args[1] == "/agent/sessions/session-1/commands"
         payload = post.await_args.args[2]
-        assert payload["type"] == "prompt"
-        assert payload["text"] == "inspect the samples"
-        assert payload["attachment_ids"] == ["00000000-0000-0000-0000-000000000003"]
+        assert payload["type"] == "message"
+        assert payload["parts"] == [
+            {"type": "text", "text": "inspect the samples"},
+            {
+                "type": "attachment_ref",
+                "attachment_id": "00000000-0000-0000-0000-000000000003",
+            },
+        ]
         assert payload["command_id"]
 
-    def test_send_creates_session_before_prompt_when_session_is_omitted(
+    def test_send_creates_session_before_message_when_session_is_omitted(
         self, runner: CliRunner
     ) -> None:
         with patch(
@@ -222,8 +228,9 @@ class TestAgentPrompt:
             "project_id": "00000000-0000-0000-0000-000000000002",
             "title": "Fresh session",
             "permission_mode": "ask_dangerous",
+            "workspace_access": "read_write",
         }
-        assert post.await_args_list[1].args[2]["type"] == "prompt"
+        assert post.await_args_list[1].args[2]["type"] == "message"
 
 
 class TestAgentCommands:
@@ -232,21 +239,9 @@ class TestAgentCommands:
         [
             (
                 ["agent", "steer", "session-1", "focus on RNA"],
-                {"type": "steer", "text": "focus on RNA"},
-            ),
-            (
-                [
-                    "agent",
-                    "follow-up",
-                    "session-1",
-                    "then summarize",
-                    "--attachment",
-                    "00000000-0000-0000-0000-000000000004",
-                ],
                 {
-                    "type": "follow_up",
-                    "text": "then summarize",
-                    "attachment_ids": ["00000000-0000-0000-0000-000000000004"],
+                    "type": "steer",
+                    "parts": [{"type": "text", "text": "focus on RNA"}],
                 },
             ),
             (

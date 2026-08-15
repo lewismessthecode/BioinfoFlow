@@ -73,7 +73,7 @@ def _live_agent_bash_reader_tasks() -> list[asyncio.Task]:
     ]
 
 
-def test_runtime_exposes_only_the_five_default_tools(tmp_path: Path) -> None:
+def test_runtime_exposes_only_the_default_tools(tmp_path: Path) -> None:
     runtime = _runtime(tmp_path)
 
     assert [tool.name for tool in runtime.tools] == [
@@ -82,6 +82,7 @@ def test_runtime_exposes_only_the_five_default_tools(tmp_path: Path) -> None:
         "edit",
         "write",
         "ask_user",
+        "update_plan",
     ]
 
 
@@ -1253,20 +1254,26 @@ def test_remote_cwd_guard_keeps_bubblewrap_command_in_one_ssh_argument() -> None
 
 
 @pytest.mark.asyncio
-async def test_read_only_mode_blocks_mutation(tmp_path: Path) -> None:
-    runtime = _runtime(tmp_path, permission_mode="read_only")
+async def test_read_only_workspace_blocks_mutation_even_in_full_access(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime(
+        tmp_path,
+        permission_mode="full_access",
+        workspace_access="read_only",
+    )
 
     result = await runtime.execute(
         ToolCall("write-1", "write", {"path": "x.txt", "content": "x"})
     )
 
     assert result.status == "blocked"
-    assert "read_only" in result.error
+    assert "read_only workspace" in result.error
     assert not (tmp_path / "x.txt").exists()
 
 
 @pytest.mark.asyncio
-async def test_read_only_mode_allows_bif_queries_but_blocks_bif_mutations(
+async def test_read_only_workspace_allows_bif_queries_but_blocks_bif_mutations(
     tmp_path: Path,
 ) -> None:
     executed: list[str] = []
@@ -1282,7 +1289,11 @@ async def test_read_only_mode_allows_bif_queries_but_blocks_bif_mutations(
         return {"exit_code": 0, "stdout": "{}", "stderr": ""}
 
     backend.run_command = run_command  # type: ignore[method-assign]
-    runtime = WorkspaceRuntime(backend, permission_mode="read_only")
+    runtime = WorkspaceRuntime(
+        backend,
+        permission_mode="full_access",
+        workspace_access="read_only",
+    )
 
     query = await runtime.execute(
         ToolCall("query", "bash", {"command": "bif project show project-1"})
@@ -1297,7 +1308,7 @@ async def test_read_only_mode_allows_bif_queries_but_blocks_bif_mutations(
 
     assert query.status == "completed"
     assert mutation.status == "blocked"
-    assert "read_only" in (mutation.error or "")
+    assert "read_only workspace" in (mutation.error or "")
     assert executed == ["bif project show project-1"]
 
 
@@ -1330,6 +1341,39 @@ async def test_ask_dangerous_runs_bif_submissions_without_prompting(
 
     assert result.status == "completed"
     assert executed == ["bif --output json run submit --workflow workflow-1"]
+
+
+@pytest.mark.asyncio
+async def test_ask_changes_requires_approval_for_workspace_writes(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime(
+        tmp_path,
+        permission_mode="ask_changes",
+        workspace_access="read_write",
+    )
+    call = ToolCall("write-1", "write", {"path": "x.txt", "content": "x"})
+
+    pending = await runtime.execute(call)
+    approved = await runtime.execute(
+        call,
+        interaction_response={
+            "request_id": "tool:write-1",
+            "approved": True,
+        },
+    )
+
+    assert pending.status == "interaction_required"
+    assert pending.interaction is not None
+    assert pending.interaction.kind == "confirmation"
+    assert pending.interaction.risk == {
+        "level": "changes",
+        "effects": ["write"],
+        "reasons": ["session requires approval for workspace changes"],
+        "affected_resources": ["x.txt"],
+    }
+    assert approved.status == "completed"
+    assert (tmp_path / "x.txt").read_text(encoding="utf-8") == "x"
 
 
 @pytest.mark.asyncio
@@ -1382,7 +1426,7 @@ async def test_bif_destructive_commands_require_confirmation(
 
 
 @pytest.mark.asyncio
-async def test_full_access_cannot_bypass_bif_destructive_confirmation(
+async def test_full_access_skips_soft_confirmation_but_keeps_workspace_runtime(
     tmp_path: Path,
 ) -> None:
     backend = LocalWorkspaceBackend(
@@ -1402,7 +1446,7 @@ async def test_full_access_cannot_bypass_bif_destructive_confirmation(
     backend.run_command = run_command  # type: ignore[method-assign]
     runtime = WorkspaceRuntime(backend, permission_mode="full_access")
 
-    pending = await runtime.execute(
+    result = await runtime.execute(
         ToolCall(
             "dangerous",
             "bash",
@@ -1410,8 +1454,8 @@ async def test_full_access_cannot_bypass_bif_destructive_confirmation(
         )
     )
 
-    assert pending.status == "interaction_required"
-    assert executed is False
+    assert result.status == "completed"
+    assert executed is True
 
 
 @pytest.mark.asyncio

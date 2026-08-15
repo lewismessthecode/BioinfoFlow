@@ -304,12 +304,21 @@ def test_complete_harness_migration_preserves_history_and_interrupts_unfinished_
     request = json.loads(entries[5]["payload"])
     response = json.loads(entries[6]["payload"])
     assert request["interaction_id"] == f"legacy-action:{pending_action_id}"
-    assert request["request"]["permission_decision"]["decision"] == "ask"
-    assert response["interaction_id"] == f"legacy-action:{approved_action_id}"
-    assert response["response"]["permission_decision"] == {
-        "decision": "approve",
-        "source": "user",
+    assert request["request"] == {
+        "type": "approval",
+        "call_id": "interaction",
+        "tool_name": "bash",
+        "summary": "Allow this tool to run?",
+        "input_preview": None,
+        "risk": {
+            "level": "act_high",
+            "effects": [],
+            "reasons": [],
+            "affected_resources": [],
+        },
     }
+    assert response["interaction_id"] == f"legacy-action:{approved_action_id}"
+    assert response["response"] == {"type": "approval", "approved": True}
     for entry in entries:
         ENTRY_PAYLOAD_TYPES[entry["type"]].model_validate(json.loads(entry["payload"]))
     assert attachment["filename"] == "reads.txt"
@@ -605,7 +614,8 @@ def test_complete_harness_migration_preserves_canonical_message_ordering_index(
             (session_id,),
         ).fetchall()
 
-    assert [json.loads(row[0])["content"][0]["text"] for row in rows] == [
+    parts = [json.loads(row[0])["parts"][0] for row in rows]
+    assert [part.get("text", part.get("display_text")) for part in parts] == [
         "first",
         "second",
         "third",
@@ -730,21 +740,38 @@ def test_complete_harness_migration_normalizes_legacy_tool_and_attachment_histor
         for row in rows
     ]
 
-    assert entries[0]["payload"]["tool_calls"] == [
+    assert entries[0]["payload"]["parts"] == [
         {
+            "id": "tool-call:read-1",
+            "type": "tool_call",
             "call_id": "read-1",
+            "group_id": "50000000-0000-0000-0000-000000000001",
+            "execution_mode": "serial",
             "name": "read",
+            "display_name": "read",
+            "category": "read",
+            "summary": "read: results.txt",
             "arguments": {"path": "results.txt"},
         }
     ]
-    assert entries[1]["payload"]["call_id"] == "read-1"
-    assert entries[1]["payload"]["is_error"] is True
-    assert entries[2]["payload"]["attachment_ids"] == [attachment_id]
-    assert entries[2]["payload"]["content"][1] == {
-        "type": "attachment",
+    assert entries[1]["payload"]["parts"] == [
+        {
+            "id": "tool-result:read-1",
+            "type": "tool_result",
+            "call_id": "read-1",
+            "status": "failed",
+            "output": {"type": "text", "text": "missing"},
+            "error": "missing",
+        }
+    ]
+    assert entries[2]["payload"]["parts"][1] == {
+        "id": f"attachment:{attachment_id}",
+        "type": "attachment_ref",
         "attachment_id": attachment_id,
-        "sha256": "legacy-sha",
-        "detail": "high",
+        "filename": "plot.png",
+        "kind": "image",
+        "mime_type": None,
+        "size_bytes": 12,
     }
 
     history = build_history_view(

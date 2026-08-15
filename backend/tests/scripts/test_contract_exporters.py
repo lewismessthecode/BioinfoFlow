@@ -174,16 +174,14 @@ def test_agent_openapi_contract_describes_the_harness_wire_protocol(
     command_body = command["requestBody"]["content"]["application/json"]["schema"]
     assert command_body["discriminator"]["propertyName"] == "type"
     assert set(command_body["discriminator"]["mapping"]) == {
-        "prompt",
+        "message",
         "steer",
-        "follow_up",
         "respond",
         "cancel",
     }
     assert {item["$ref"].rsplit("/", 1)[-1] for item in command_body["oneOf"]} == {
-        "PromptCommand",
+        "MessageCommand",
         "SteerCommand",
-        "FollowUpCommand",
         "RespondCommand",
         "CancelCommand",
     }
@@ -216,15 +214,18 @@ def test_agent_openapi_contract_describes_the_harness_wire_protocol(
     assert upload_data["type"] == "array"
     assert upload_data["items"] == {"$ref": "#/components/schemas/AgentAttachmentView"}
 
-    for snapshot_path in (
-        "/api/v1/agent/sessions/{session_id}",
-        "/api/v1/agent/sessions/{session_id}/snapshot",
-    ):
-        assert _success_data_schema(
-            contract,
-            path=snapshot_path,
-            method="get",
-        ) == {"$ref": "#/components/schemas/SessionSnapshot"}
+    assert _success_data_schema(
+        contract,
+        path="/api/v1/agent/sessions/{session_id}/snapshot",
+        method="get",
+    ) == {"$ref": "#/components/schemas/SessionSnapshot"}
+    session_path = contract["paths"]["/api/v1/agent/sessions/{session_id}"]
+    assert "get" not in session_path
+    assert _success_data_schema(
+        contract,
+        path="/api/v1/agent/sessions/{session_id}",
+        method="patch",
+    ) == {"$ref": "#/components/schemas/SessionSnapshot"}
 
     artifact_list_data = _success_data_schema(
         contract,

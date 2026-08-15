@@ -14,7 +14,9 @@ from app.services.agent_harness.contracts import (
     AgentCommand,
     AgentEvent,
     OpenSessionRequest,
+    RunUpdatedEvent,
     SessionSnapshot,
+    SnapshotEvent,
 )
 from app.services.agent_harness.events import AgentEventHub
 from app.services.agent_harness.harness import AgentHarness
@@ -61,6 +63,11 @@ class AgentRuntime:
     async def snapshot(self, session_id: str) -> SessionSnapshot:
         async with self._session_factory() as db:
             return await self._harness(db).snapshot(session_id)
+
+    async def publish_snapshot(
+        self, session_id: str, snapshot: SessionSnapshot
+    ) -> None:
+        await self.event_hub.publish(session_id, SnapshotEvent(snapshot=snapshot))
 
     async def delete_session(self, session_id: str) -> None:
         async with self._session_factory() as db:
@@ -289,7 +296,7 @@ class AgentRuntime:
             run = await repository.get_run(run_id)
             if run is None or run.status in {"completed", "failed", "cancelled"}:
                 return
-            await repository.update_run(
+            failed = await repository.update_run(
                 run_id,
                 status="failed",
                 phase=None,
@@ -299,6 +306,10 @@ class AgentRuntime:
                     "message": str(exc),
                     "type": type(exc).__name__,
                 },
+            )
+            await self.event_hub.publish(
+                str(failed.session_id),
+                RunUpdatedEvent(run=repository._run_view(failed)),
             )
 
     async def _claim_when_available(

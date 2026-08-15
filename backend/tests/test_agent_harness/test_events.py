@@ -1,11 +1,39 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from uuid import UUID
 
 import pytest
 
-from app.services.agent_harness.contracts import AssistantDeltaEvent
+from app.services.agent_harness.contracts import AssistantDeltaEvent, SessionSnapshot
 from app.services.agent_harness.events import AgentEventHub
+
+
+def _snapshot() -> SessionSnapshot:
+    now = datetime(2026, 8, 15, tzinfo=timezone.utc)
+    return SessionSnapshot(
+        session={
+            "id": UUID("10000000-0000-0000-0000-000000000001"),
+            "user_id": "user-1",
+            "workspace_id": UUID("30000000-0000-0000-0000-000000000001"),
+            "model": {
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "display_name": "GPT-5.6",
+                "supports_vision": True,
+                "supports_reasoning": True,
+                "supports_tools": True,
+            },
+            "permission_mode": "ask_dangerous",
+            "workspace_access": "read_write",
+            "status": "active",
+            "created_at": now,
+            "updated_at": now,
+        },
+        runs=[],
+        entries=[],
+        active_run=None,
+    )
 
 
 @pytest.mark.asyncio
@@ -13,7 +41,7 @@ async def test_event_hub_close_ends_existing_stream_and_allows_new_lifecycle() -
     hub = AgentEventHub()
 
     async def first_snapshot():
-        return None
+        return _snapshot()
 
     first = hub.stream("session-1", first_snapshot)
     assert (await anext(first)).type == "snapshot"
@@ -34,7 +62,7 @@ async def test_slow_event_subscriber_is_dropped_without_blocking_fast_subscriber
     hub = AgentEventHub()
 
     async def snapshot():
-        return None
+        return _snapshot()
 
     slow = hub.stream("session-1", snapshot)
     fast = hub.stream("session-1", snapshot)
@@ -44,6 +72,9 @@ async def test_slow_event_subscriber_is_dropped_without_blocking_fast_subscriber
     for index in range(257):
         event = AssistantDeltaEvent(
             run_id=UUID("00000000-0000-0000-0000-000000000001"),
+            draft_id="draft-1",
+            part_id="draft-1:text",
+            part_type="text",
             delta=str(index),
             start_offset=index,
             end_offset=index + 1,
@@ -57,6 +88,9 @@ async def test_slow_event_subscriber_is_dropped_without_blocking_fast_subscriber
 
     final = AssistantDeltaEvent(
         run_id=UUID("00000000-0000-0000-0000-000000000001"),
+        draft_id="draft-1",
+        part_id="draft-1:text",
+        part_type="text",
         delta="final",
         start_offset=257,
         end_offset=262,

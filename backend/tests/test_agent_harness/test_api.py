@@ -81,6 +81,408 @@ async def test_session_create_passes_one_explicit_model_selection(
 
 
 @pytest.mark.asyncio
+async def test_session_create_and_summary_expose_permission_and_workspace_access(
+    async_client,
+) -> None:
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post(
+            "/api/v1/agent/sessions",
+            json={
+                "permission_mode": "ask_changes",
+                "workspace_access": "read_only",
+            },
+        )
+
+    assert created.status_code == 201
+    snapshot = created.json()["data"]
+    assert "history_revision" not in snapshot
+    session = snapshot["session"]
+    assert session["permission_mode"] == "ask_changes"
+    assert session["workspace_access"] == "read_only"
+
+    listed = await async_client.get("/api/v1/agent/sessions")
+
+    assert listed.status_code == 200
+    summary = next(item for item in listed.json()["data"] if item["id"] == session["id"])
+    assert summary["permission_mode"] == "ask_changes"
+    assert summary["workspace_access"] == "read_only"
+    assert "history_revision" not in summary
+
+
+@pytest.mark.asyncio
+async def test_session_snapshot_exposes_only_safe_model_summary(async_client) -> None:
+    private_snapshot = {
+        "target": {
+            "endpoint_id": "provider-record",
+            "provider_kind": "openai",
+            "model_name": "gpt-5.6",
+            "base_url": "https://private.example/v1",
+            "target_revision": "secret-revision",
+        },
+        "capabilities": {
+            "supports_vision": True,
+            "supports_reasoning": True,
+            "supports_tools": True,
+        },
+    }
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value=private_snapshot,
+    ):
+        created = await async_client.post("/api/v1/agent/sessions", json={})
+
+    assert created.status_code == 201
+    session = created.json()["data"]["session"]
+    assert session["model"] == {
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "display_name": "gpt-5.6",
+        "supports_vision": True,
+        "supports_reasoning": True,
+        "supports_tools": True,
+    }
+    assert "private.example" not in repr(session)
+    assert "secret-revision" not in repr(session)
+
+
+@pytest.mark.asyncio
+async def test_session_patch_updates_settings_and_publishes_authoritative_snapshot(
+    async_client,
+) -> None:
+    from app.services.agent_harness.runtime import agent_runtime
+
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post(
+            "/api/v1/agent/sessions",
+            json={"title": "Before"},
+        )
+    session_id = created.json()["data"]["session"]["id"]
+    events = agent_runtime.events(session_id)
+    initial = await anext(events)
+
+    updated = await async_client.patch(
+        f"/api/v1/agent/sessions/{session_id}",
+        json={
+            "title": "After",
+            "permission_mode": "ask_changes",
+            "workspace_access": "read_only",
+        },
+    )
+    published = await asyncio.wait_for(anext(events), timeout=1)
+    await events.aclose()
+
+    assert initial.type == "snapshot"
+    assert updated.status_code == 200
+    snapshot = updated.json()["data"]
+    assert snapshot["session"]["title"] == "After"
+    assert snapshot["session"]["permission_mode"] == "ask_changes"
+    assert snapshot["session"]["workspace_access"] == "read_only"
+    assert published.type == "snapshot"
+    assert published.snapshot.session.title == "After"
+    assert published.snapshot.session.permission_mode == "ask_changes"
+    assert published.snapshot.session.workspace_access == "read_only"
+
+
+@pytest.mark.asyncio
+async def test_session_snapshot_has_one_canonical_get_route(async_client) -> None:
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["session"]["id"]
+
+    duplicate = await async_client.get(f"/api/v1/agent/sessions/{session_id}")
+    snapshot = await async_client.get(
+        f"/api/v1/agent/sessions/{session_id}/snapshot"
+    )
+
+    assert duplicate.status_code == 405
+    assert snapshot.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"title": "After", "permission_mode": "full_access"},
+        {"title": "After", "workspace_access": "read_only"},
+    ],
+)
+async def test_session_patch_rejects_policy_changes_atomically_during_active_run(
+    async_client,
+    payload: dict,
+) -> None:
+    from app.repositories.agent_harness_repo import AgentHarnessRepository
+    import app.database as app_database
+
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post(
+            "/api/v1/agent/sessions",
+            json={"title": "Before"},
+        )
+    session_id = created.json()["data"]["session"]["id"]
+    async with app_database.async_session_maker() as db:
+        await AgentHarnessRepository(db).create_run(session_id)
+
+    response = await async_client.patch(
+        f"/api/v1/agent/sessions/{session_id}",
+        json=payload,
+    )
+    current = await async_client.get(
+        f"/api/v1/agent/sessions/{session_id}/snapshot"
+    )
+
+    assert response.status_code == 409
+    session = current.json()["data"]["session"]
+    assert session["title"] == "Before"
+    assert session["permission_mode"] == "ask_dangerous"
+    assert session["workspace_access"] == "read_write"
+
+
+@pytest.mark.asyncio
+async def test_session_patch_allows_title_change_during_active_run(async_client) -> None:
+    from app.repositories.agent_harness_repo import AgentHarnessRepository
+    import app.database as app_database
+
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post(
+            "/api/v1/agent/sessions",
+            json={"title": "Before"},
+        )
+    session_id = created.json()["data"]["session"]["id"]
+    async with app_database.async_session_maker() as db:
+        await AgentHarnessRepository(db).create_run(session_id)
+
+    response = await async_client.patch(
+        f"/api/v1/agent/sessions/{session_id}",
+        json={"title": None},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["session"]["title"] is None
+
+
+@pytest.mark.asyncio
+async def test_session_patch_archives_and_unarchives_idle_session(async_client) -> None:
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["session"]["id"]
+
+    archived = await async_client.patch(
+        f"/api/v1/agent/sessions/{session_id}",
+        json={"status": "archived"},
+    )
+    unarchived = await async_client.patch(
+        f"/api/v1/agent/sessions/{session_id}",
+        json={"status": "active"},
+    )
+
+    assert archived.status_code == 200
+    assert archived.json()["data"]["session"]["status"] == "archived"
+    assert unarchived.status_code == 200
+    assert unarchived.json()["data"]["session"]["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_session_patch_rejects_archive_atomically_during_active_run(
+    async_client,
+) -> None:
+    from app.repositories.agent_harness_repo import AgentHarnessRepository
+    import app.database as app_database
+
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post(
+            "/api/v1/agent/sessions",
+            json={"title": "Before"},
+        )
+    session_id = created.json()["data"]["session"]["id"]
+    async with app_database.async_session_maker() as db:
+        await AgentHarnessRepository(db).create_run(session_id)
+
+    response = await async_client.patch(
+        f"/api/v1/agent/sessions/{session_id}",
+        json={"title": "After", "status": "archived"},
+    )
+    current = await async_client.get(
+        f"/api/v1/agent/sessions/{session_id}/snapshot"
+    )
+
+    assert response.status_code == 409
+    assert current.json()["data"]["session"]["status"] == "active"
+    assert current.json()["data"]["session"]["title"] == "Before"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"permission_mode": None},
+        {"workspace_access": None},
+    ],
+)
+async def test_session_patch_requires_at_least_one_valid_setting(
+    async_client,
+    payload: dict,
+) -> None:
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["session"]["id"]
+
+    response = await async_client.patch(
+        f"/api/v1/agent/sessions/{session_id}",
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reference_type",
+    ["attachment_ref", "file_ref", "directory_ref"],
+)
+async def test_message_command_rejects_attachment_from_another_session(
+    async_client,
+    reference_type: str,
+) -> None:
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        source = await async_client.post("/api/v1/agent/sessions", json={})
+        target = await async_client.post("/api/v1/agent/sessions", json={})
+    source_id = source.json()["data"]["session"]["id"]
+    target_id = target.json()["data"]["session"]["id"]
+    uploaded = await async_client.post(
+        f"/api/v1/agent/sessions/{source_id}/attachments",
+        data={"kind": "file", "source": "upload"},
+        files={"files": ("private.txt", b"private", "text/plain")},
+    )
+    attachment_id = uploaded.json()["data"][0]["id"]
+
+    with patch("app.api.v1.agent.agent_runtime.dispatch", return_value=None) as dispatch:
+        response = await async_client.post(
+            f"/api/v1/agent/sessions/{target_id}/commands",
+            json={
+                "type": "message",
+                "command_id": "message-with-foreign-attachment",
+                "parts": [
+                    {"type": "text", "text": "read this"},
+                    {"type": reference_type, "attachment_id": attachment_id},
+                ],
+            },
+        )
+
+    assert response.status_code == 404
+    dispatch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_message_command_rejects_project_path_traversal(
+    async_client,
+    db_session,
+    tmp_path,
+) -> None:
+    from app.models.project import Project
+
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    project = Project(
+        name="agent-context-path-project",
+        storage_mode="external",
+        external_root_path=str(workspace),
+        user_id="dev",
+    )
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["session"]["id"]
+
+    with patch("app.api.v1.agent.agent_runtime.dispatch", return_value=None) as dispatch:
+        response = await async_client.post(
+            f"/api/v1/agent/sessions/{session_id}/commands",
+            json={
+                "type": "message",
+                "command_id": "path-traversal",
+                "parts": [
+                    {
+                        "type": "file_ref",
+                        "project_id": str(project.id),
+                        "path": "../secret.txt",
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 404
+    dispatch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_message_command_rejects_attachment_reference_kind_mismatch(
+    async_client,
+) -> None:
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["session"]["id"]
+    uploaded = await async_client.post(
+        f"/api/v1/agent/sessions/{session_id}/attachments",
+        data={"kind": "file", "source": "upload"},
+        files={"files": ("sample.txt", b"sample", "text/plain")},
+    )
+    attachment_id = uploaded.json()["data"][0]["id"]
+
+    with patch("app.api.v1.agent.agent_runtime.dispatch", return_value=None) as dispatch:
+        response = await async_client.post(
+            f"/api/v1/agent/sessions/{session_id}/commands",
+            json={
+                "type": "message",
+                "command_id": "wrong-reference-kind",
+                "parts": [
+                    {
+                        "type": "directory_ref",
+                        "attachment_id": attachment_id,
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 400
+    dispatch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_session_mutation_locks_are_request_scoped(async_client) -> None:
     from app.api.v1 import agent as agent_api
 
@@ -120,13 +522,17 @@ async def test_command_body_validation_and_state_conflicts_are_client_errors(
         created = await async_client.post("/api/v1/agent/sessions", json={})
     session_id = created.json()["data"]["session"]["id"]
 
-    missing_prompt_text = await async_client.post(
+    missing_message_parts = await async_client.post(
         f"/api/v1/agent/sessions/{session_id}/commands",
-        json={"type": "prompt", "command_id": "invalid-prompt"},
+        json={"type": "message", "command_id": "invalid-message"},
     )
     steer_without_run = await async_client.post(
         f"/api/v1/agent/sessions/{session_id}/commands",
-        json={"type": "steer", "command_id": "invalid-steer", "text": "now"},
+        json={
+            "type": "steer",
+            "command_id": "invalid-steer",
+            "parts": [{"type": "text", "text": "now"}],
+        },
     )
     respond_without_run = await async_client.post(
         f"/api/v1/agent/sessions/{session_id}/commands",
@@ -134,11 +540,11 @@ async def test_command_body_validation_and_state_conflicts_are_client_errors(
             "type": "respond",
             "command_id": "invalid-response",
             "interaction_id": "tool:missing",
-            "response": {"approved": True},
+            "response": {"type": "approval", "approved": True},
         },
     )
 
-    assert missing_prompt_text.status_code == 422
+    assert missing_message_parts.status_code == 422
     assert steer_without_run.status_code == 409
     assert respond_without_run.status_code == 409
 
@@ -291,9 +697,13 @@ async def test_session_delete_rejects_upload_from_another_worker_after_closing(
         uploaded = await asyncio.wait_for(uploading, timeout=1)
         assert uploaded.status_code == 409
         assert not agent_session_attachments_root(session_id).exists()
-        prompted = await async_client.post(
+        messaged = await async_client.post(
             f"/api/v1/agent/sessions/{session_id}/commands",
-            json={"type": "prompt", "command_id": "late-prompt", "text": "late"},
+            json={
+                "type": "message",
+                "command_id": "late-message",
+                "parts": [{"type": "text", "text": "late"}],
+            },
         )
         responded = await async_client.post(
             f"/api/v1/agent/sessions/{session_id}/commands",
@@ -301,10 +711,10 @@ async def test_session_delete_rejects_upload_from_another_worker_after_closing(
                 "type": "respond",
                 "command_id": "late-response",
                 "interaction_id": "tool:late",
-                "response": {"approved": True},
+                "response": {"type": "approval", "approved": True},
             },
         )
-        assert prompted.status_code == 409
+        assert messaged.status_code == 409
         assert responded.status_code == 409
         release_delete.set()
         deleted = await deleting
@@ -370,7 +780,7 @@ async def test_concurrent_session_delete_never_restores_files_after_db_delete(
 
 
 @pytest.mark.asyncio
-async def test_agent_api_creates_session_dispatches_prompt_and_returns_snapshot(
+async def test_agent_api_creates_session_dispatches_message_and_returns_snapshot(
     async_client,
 ) -> None:
     with (
@@ -408,7 +818,11 @@ async def test_agent_api_creates_session_dispatches_prompt_and_returns_snapshot(
     with patch("app.api.v1.agent.agent_runtime.dispatch", return_value=None):
         dispatched = await async_client.post(
             f"/api/v1/agent/sessions/{session_id}/commands",
-            json={"type": "prompt", "command_id": "prompt-1", "text": "hello"},
+            json={
+                "type": "message",
+                "command_id": "message-1",
+                "parts": [{"type": "text", "text": "hello"}],
+            },
         )
     snapshot = await async_client.get(f"/api/v1/agent/sessions/{session_id}/snapshot")
 
@@ -485,8 +899,10 @@ async def test_agent_api_preserves_attachment_and_artifact_frontend_contracts(
     assert artifacts.json()["data"][0]["id"] == artifact_id
     assert "turn_id" not in artifacts.json()["data"][0]
     assert "action_id" not in artifacts.json()["data"][0]
+    assert "file_path" not in artifacts.json()["data"][0]
     assert detail.status_code == 200
     assert detail.json()["data"]["run_id"] == str(run.id)
+    assert "file_path" not in detail.json()["data"]
     assert download.status_code == 200
     assert download.headers["content-type"] == "application/json"
     assert b'"stdout":"ok"' in download.content

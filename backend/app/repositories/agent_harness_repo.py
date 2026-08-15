@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import json
 from typing import Any, Iterable
 
 from pydantic import TypeAdapter
@@ -19,9 +18,11 @@ from app.models.agent_harness import (
 from app.repositories.base import BaseRepository
 from app.services.agent_harness.contracts import (
     ENTRY_PAYLOAD_TYPES,
+    ActiveRunView,
     AgentCommand,
     AssistantDraftView,
     HistoryEntry,
+    MessageCommand,
     OpenSessionRequest,
     PendingInteractionView,
     RunView,
@@ -34,12 +35,129 @@ from app.services.agent_harness.contracts import (
 ACTIVE_RUN_STATUSES = ("queued", "running", "waiting_user")
 TERMINAL_RUN_STATUSES = ("completed", "failed", "cancelled")
 _history_entry_adapter = TypeAdapter(HistoryEntry)
+_SESSION_SETTING_UNSET = object()
 
 
 @dataclass(frozen=True)
 class RunFence:
     owner: str
     generation: int
+
+
+def _public_model_summary(snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    private = snapshot if isinstance(snapshot, dict) else {}
+    target = private.get("target")
+    target = target if isinstance(target, dict) else {}
+    capabilities = private.get("capabilities")
+    capabilities = capabilities if isinstance(capabilities, dict) else {}
+    provider = str(target.get("provider_kind") or "unknown")
+    model = str(target.get("model_name") or "unknown")
+    display_name = str(private.get("display_name") or model)
+    return {
+        "provider": provider,
+        "model": model,
+        "display_name": display_name,
+        "supports_vision": bool(capabilities.get("supports_vision", False)),
+        "supports_reasoning": bool(capabilities.get("supports_reasoning", False)),
+        "supports_tools": bool(capabilities.get("supports_tools", False)),
+    }
+
+
+def _public_interaction_request(value: dict[str, Any]) -> dict[str, Any]:
+    kind = value.get("kind")
+    call_id = str(value.get("call_id") or "interaction")
+    if kind == "question":
+        questions: list[dict[str, Any]] = []
+        for index, raw in enumerate(value.get("questions") or []):
+            question = raw if isinstance(raw, dict) else {"question": str(raw)}
+            header = str(question.get("header") or f"Question {index + 1}")
+            questions.append(
+                {
+                    "id": str(question.get("id") or header),
+                    "header": header,
+                    "question": str(question.get("question") or ""),
+                    "multi_select": bool(
+                        question.get("multi_select", question.get("multiSelect", False))
+                    ),
+                    "options": _public_interaction_options(question.get("options")),
+                }
+            )
+        return {"type": "ask_user", "call_id": call_id, "questions": questions}
+    if kind == "confirmation":
+        risk = value.get("risk") if isinstance(value.get("risk"), dict) else {}
+        resources = risk.get("affected_resources") or risk.get("referenced_paths") or []
+        return {
+            "type": "approval",
+            "call_id": call_id,
+            "tool_name": str(value.get("tool_name") or "tool"),
+            "summary": str(value.get("summary") or "Allow this tool to run?"),
+            "input_preview": value.get("input_preview"),
+            "risk": {
+                "level": str(risk.get("level") or "unknown"),
+                "effects": [str(item) for item in risk.get("effects") or []],
+                "reasons": [str(item) for item in risk.get("reasons") or []],
+                "affected_resources": [
+                    str(item.get("id") if isinstance(item, dict) else item)
+                    for item in resources
+                ],
+            },
+        }
+    if kind == "recovery":
+        return {
+            "type": "recovery",
+            "call_id": call_id,
+            "tool_name": str(value.get("tool_name") or "tool"),
+            "message": str(value.get("message") or "Recovery requires a decision."),
+            "options": _public_interaction_options(value.get("options")),
+        }
+    raise ValueError(f"unsupported interaction kind: {kind}")
+
+
+def _public_interaction_options(values: Any) -> list[dict[str, Any]]:
+    options: list[dict[str, Any]] = []
+    for index, raw in enumerate(values if isinstance(values, list) else []):
+        if not isinstance(raw, dict):
+            continue
+        label = str(raw.get("label") or raw.get("id") or f"Option {index + 1}")
+        options.append(
+            {
+                "id": str(raw.get("id") or label),
+                "label": label,
+                "description": str(raw.get("description") or ""),
+                "recommended": bool(raw.get("recommended", False)),
+            }
+        )
+    if len(options) >= 2:
+        return options
+    return [
+        {
+            "id": "continue",
+            "label": "Continue",
+            "description": "Continue working",
+            "recommended": True,
+        },
+        {
+            "id": "cancel",
+            "label": "Cancel",
+            "description": "Stop here",
+            "recommended": False,
+        },
+    ]
+
+
+def _public_interaction_response(value: dict[str, Any]) -> dict[str, Any]:
+    response_type = value.get("type")
+    if response_type == "ask_user" or "answers" in value:
+        return {"type": "ask_user", "answers": value.get("answers") or {}}
+    if response_type == "approval" or "approved" in value:
+        return {"type": "approval", "approved": value.get("approved") is True}
+    if response_type == "recovery" or value.get("choice") in {
+        "inspect",
+        "retry",
+        "cancel",
+    }:
+        return {"type": "recovery", "choice": value.get("choice")}
+    raise ValueError("unsupported interaction response")
 
 
 class AgentHarnessAttachmentRepository(BaseRepository[AgentHarnessAttachment]):
@@ -287,11 +405,39 @@ def _referenced_attachment_ids(payloads: Iterable[Any]) -> set[str]:
     for payload in payloads:
         if not isinstance(payload, dict):
             continue
-        referenced.update(str(item) for item in payload.get("attachment_ids") or [])
-        for part in payload.get("content") or []:
-            if isinstance(part, dict) and part.get("attachment_id") is not None:
+        for part in payload.get("parts") or []:
+            if (
+                isinstance(part, dict)
+                and part.get("type")
+                in {"attachment_ref", "file_ref", "directory_ref"}
+                and part.get("attachment_id") is not None
+            ):
                 referenced.add(str(part["attachment_id"]))
     return referenced
+
+
+def _tool_result_call_id(payload: dict[str, Any]) -> str | None:
+    for part in payload.get("parts") or []:
+        if isinstance(part, dict) and part.get("type") == "tool_result":
+            call_id = part.get("call_id")
+            return str(call_id) if call_id else None
+    return None
+
+
+def _tool_category(name: str) -> str:
+    return {
+        "read": "read",
+        "bash": "command",
+        "edit": "edit",
+        "write": "write",
+        "ask_user": "interaction",
+        "update_plan": "plan",
+    }.get(name, "other")
+
+
+def _tool_summary(name: str, arguments: dict[str, Any]) -> str:
+    subject = arguments.get("path") or arguments.get("command")
+    return f"{name}: {subject}" if isinstance(subject, str) and subject else name
 
 
 class AgentHarnessArtifactRepository(BaseRepository[AgentHarnessArtifact]):
@@ -398,6 +544,7 @@ class AgentHarnessRepository:
             model_snapshot=request.model,
             workspace_snapshot=request.workspace,
             permission_mode=request.permission_mode,
+            workspace_access=request.workspace_access,
             prompt_snapshot=request.prompt_snapshot,
             session_metadata=request.metadata,
             history_revision=0,
@@ -434,6 +581,66 @@ class AgentHarnessRepository:
         )
         return list(result.scalars().all())
 
+    async def update_session_settings(
+        self,
+        session_id: str,
+        *,
+        title: str | None | object = _SESSION_SETTING_UNSET,
+        permission_mode: str | object = _SESSION_SETTING_UNSET,
+        workspace_access: str | object = _SESSION_SETTING_UNSET,
+        status: str | object = _SESSION_SETTING_UNSET,
+    ) -> AgentHarnessSession:
+        values: dict[str, object] = {}
+        if title is not _SESSION_SETTING_UNSET:
+            values["title"] = title
+        if permission_mode is not _SESSION_SETTING_UNSET:
+            values["permission_mode"] = permission_mode
+        if workspace_access is not _SESSION_SETTING_UNSET:
+            values["workspace_access"] = workspace_access
+        if status is not _SESSION_SETTING_UNSET:
+            values["status"] = status
+        if not values:
+            raise ValueError("at least one session setting is required")
+
+        requires_idle_run = bool(
+            {"permission_mode", "workspace_access"} & values.keys()
+            or values.get("status") == "archived"
+        )
+        stmt = update(AgentHarnessSession).where(
+            AgentHarnessSession.id == session_id,
+            AgentHarnessSession.status.in_(("active", "archived")),
+        )
+        if requires_idle_run:
+            active_run_exists = (
+                select(AgentHarnessRun.id)
+                .where(
+                    AgentHarnessRun.session_id == session_id,
+                    AgentHarnessRun.status.in_(ACTIVE_RUN_STATUSES),
+                )
+                .exists()
+            )
+            stmt = stmt.where(~active_run_exists)
+
+        result = await self.db.execute(stmt.values(**values))
+        if not result.rowcount:
+            await self.db.rollback()
+            session = await self.get_session(session_id)
+            if session is None:
+                raise LookupError(f"agent session not found: {session_id}")
+            if session.status != "active":
+                raise ValueError("agent session is not accepting changes")
+            if requires_idle_run and await self.get_current_run(session_id):
+                raise ValueError(
+                    "execution policy and archive status cannot change during an active run"
+                )
+            raise ValueError("agent session settings were not updated")
+
+        await self.db.commit()
+        session = await self.get_session(session_id)
+        assert session is not None
+        await self.db.refresh(session)
+        return session
+
     async def create_run(
         self, session_id: str, *, model_snapshot: dict | None = None
     ) -> AgentHarnessRun:
@@ -457,14 +664,14 @@ class AgentHarnessRepository:
     async def submit_user_command(
         self,
         session_id: str,
-        command: AgentCommand,
+        command: MessageCommand,
         *,
         model_snapshot: dict | None = None,
     ) -> tuple[AgentHarnessRun | None, AgentHarnessEntry | None, bool]:
         """Durably submit one user command without exposing a partial Run."""
 
-        if command.type not in {"prompt", "follow_up"}:
-            raise ValueError("submit_user_command requires prompt or follow_up")
+        if command.type != "message":
+            raise ValueError("submit_user_command requires message")
         session = await self.get_session(session_id)
         if session is None or session.status != "active":
             raise LookupError(f"agent session not found: {session_id}")
@@ -487,8 +694,6 @@ class AgentHarnessRepository:
 
             current = await self.get_current_run(session_id)
             if current is not None:
-                if command.type == "prompt":
-                    raise ValueError("session already has an active run")
                 await self._user_message_payload(session, command)
                 session.command_ids = [*command_ids, command.command_id]
                 session.command_queue = [
@@ -515,7 +720,7 @@ class AgentHarnessRepository:
                 run_id=str(run.id),
                 sequence=sequence,
                 type="message",
-                schema_version=1,
+                schema_version=2,
                 payload=payload,
             )
             session.history_revision = sequence
@@ -535,7 +740,17 @@ class AgentHarnessRepository:
         command: AgentCommand | dict[str, Any],
     ) -> dict[str, Any]:
         raw = command if isinstance(command, dict) else command.model_dump(mode="json")
-        attachment_ids = [str(item) for item in raw.get("attachment_ids") or []]
+        raw_parts = raw.get("parts")
+        if not isinstance(raw_parts, list) or not raw_parts:
+            raise ValueError("message command requires parts")
+        attachment_ids = [
+            str(item.get("attachment_id"))
+            for item in raw_parts
+            if isinstance(item, dict)
+            and item.get("type")
+            in {"attachment_ref", "file_ref", "directory_ref"}
+            and item.get("attachment_id") is not None
+        ]
         attachments = await AgentHarnessAttachmentRepository(
             self.db
         ).require_ids_for_session(
@@ -544,31 +759,79 @@ class AgentHarnessRepository:
             workspace_id=str(session.workspace_id),
             user_id=session.user_id,
         )
-        content: list[dict[str, Any]] = [
-            {"type": "text", "text": str(raw.get("text") or "")}
-        ]
-        content.extend(
-            {
-                "type": "attachment",
-                "attachment_id": str(attachment.id),
-                "filename": attachment.filename,
-                "kind": attachment.kind,
-                "mime_type": attachment.mime_type,
-                "size_bytes": attachment.size_bytes,
-            }
-            for attachment in attachments
-        )
+        attachments_by_id = {str(item.id): item for item in attachments}
+        command_id = str(raw.get("command_id") or "message")
+        parts: list[dict[str, Any]] = []
+        for index, item in enumerate(raw_parts):
+            if not isinstance(item, dict):
+                raise ValueError("message command parts must be objects")
+            part_id = f"input:{command_id}:{index}"
+            part_type = item.get("type")
+            if part_type == "text":
+                parts.append({"id": part_id, "type": "text", "text": item["text"]})
+            elif part_type == "attachment_ref":
+                attachment_id = str(item["attachment_id"])
+                attachment = attachments_by_id[attachment_id]
+                parts.append(
+                    {
+                        "id": part_id,
+                        "type": "attachment_ref",
+                        "attachment_id": attachment_id,
+                        "filename": attachment.filename,
+                        "kind": attachment.kind,
+                        "mime_type": attachment.mime_type,
+                        "size_bytes": attachment.size_bytes,
+                    }
+                )
+            elif part_type in {"file_ref", "directory_ref"}:
+                attachment_id = item.get("attachment_id")
+                if attachment_id is not None:
+                    attachment = attachments_by_id[str(attachment_id)]
+                    parts.append(
+                        {
+                            "id": part_id,
+                            "type": part_type,
+                            "label": attachment.filename,
+                            "attachment_id": str(attachment.id),
+                        }
+                    )
+                else:
+                    parts.append(
+                        {
+                            "id": part_id,
+                            "type": part_type,
+                            "label": str(item["path"]),
+                            "project_id": item["project_id"],
+                            "path": item["path"],
+                        }
+                    )
+            elif part_type == "workflow_ref":
+                parts.append(
+                    {
+                        "id": part_id,
+                        "type": "workflow_ref",
+                        "workflow_id": item["workflow_id"],
+                        "label": str(item["workflow_id"]),
+                        "project_id": item.get("project_id"),
+                    }
+                )
+            elif part_type == "run_ref":
+                parts.append(
+                    {
+                        "id": part_id,
+                        "type": "run_ref",
+                        "run_id": item["run_id"],
+                        "label": str(item["run_id"]),
+                    }
+                )
+            else:
+                raise ValueError(f"unsupported message part: {part_type}")
         return (
             ENTRY_PAYLOAD_TYPES["message"]
             .model_validate(
                 {
                     "role": "user",
-                    "content": content,
-                    "tool_calls": [],
-                    "artifact_ids": [],
-                    "attachment_ids": [
-                        str(attachment.id) for attachment in attachments
-                    ],
+                    "parts": parts,
                 }
             )
             .model_dump(mode="json")
@@ -608,6 +871,22 @@ class AgentHarnessRepository:
             .limit(1)
         )
         return result.scalar_one_or_none()
+
+    async def list_runs(self, session_id: str) -> list[AgentHarnessRun]:
+        result = await self.db.execute(
+            select(AgentHarnessRun)
+            .where(AgentHarnessRun.session_id == session_id)
+            .order_by(
+                func.coalesce(
+                    AgentHarnessRun.started_at,
+                    AgentHarnessRun.completed_at,
+                    AgentHarnessRun.created_at,
+                ),
+                AgentHarnessRun.created_at,
+                AgentHarnessRun.id,
+            )
+        )
+        return list(result.scalars().all())
 
     async def list_recoverable_runs(self) -> list[AgentHarnessRun]:
         result = await self.db.execute(
@@ -735,6 +1014,17 @@ class AgentHarnessRepository:
             allowed_statuses = ACTIVE_RUN_STATUSES
         else:
             allowed_statuses = ACTIVE_RUN_STATUSES
+        public_run_fields = {
+            "status",
+            "phase",
+            "started_at",
+            "completed_at",
+            "termination_reason",
+            "error",
+        }
+        values = dict(changes)
+        if public_run_fields.intersection(changes):
+            values["revision"] = AgentHarnessRun.revision + 1
         result = await self.db.execute(
             update(AgentHarnessRun)
             .where(
@@ -742,7 +1032,7 @@ class AgentHarnessRepository:
                 AgentHarnessRun.status.in_(allowed_statuses),
                 *self._fence_predicates(run_id),
             )
-            .values(**changes)
+            .values(**values)
         )
         if not result.rowcount:
             await self.db.commit()
@@ -751,6 +1041,74 @@ class AgentHarnessRepository:
         await self.db.commit()
         await self.db.refresh(run)
         return run
+
+    async def update_tool_progress(
+        self,
+        run_id: str,
+        *,
+        call_id: str,
+        name: str,
+        status: str,
+        group_id: str | None = None,
+        execution_mode: str | None = None,
+        arguments: dict[str, Any] | None = None,
+        output_summary: str | None = None,
+        error: str | None = None,
+    ) -> ToolProgressView:
+        run = await self.get_run(run_id)
+        if run is None:
+            raise LookupError(f"agent run not found: {run_id}")
+        progress = [
+            dict(item) for item in run.tool_progress or [] if isinstance(item, dict)
+        ]
+        existing = next(
+            (item for item in progress if item.get("call_id") == call_id),
+            None,
+        )
+        now = datetime.now(timezone.utc)
+        raw: dict[str, Any] = {
+            **(existing or {}),
+            "call_id": call_id,
+            "group_id": (existing or {}).get("group_id")
+            or group_id
+            or f"tool-group:{call_id}",
+            "execution_mode": (existing or {}).get("execution_mode")
+            or execution_mode
+            or "serial",
+            "name": name,
+            "display_name": (existing or {}).get("display_name") or name,
+            "category": (existing or {}).get("category") or _tool_category(name),
+            "arguments": (existing or {}).get("arguments") or arguments or {},
+            "status": status,
+            "revision": int((existing or {}).get("revision") or 0) + 1,
+        }
+        raw["summary"] = (existing or {}).get("summary") or _tool_summary(
+            name, raw["arguments"]
+        )
+        if group_id is not None and existing is None:
+            raw["group_id"] = group_id
+        if execution_mode is not None and existing is None:
+            raw["execution_mode"] = execution_mode
+        if arguments is not None:
+            raw["arguments"] = arguments
+        if output_summary is not None:
+            raw["output_summary"] = output_summary
+        if error is not None:
+            raw["error"] = error
+        if status == "running" and raw.get("started_at") is None:
+            raw["started_at"] = now
+        if status in {"completed", "failed", "blocked", "cancelled"}:
+            raw["completed_at"] = now
+        view = ToolProgressView.model_validate(raw)
+        stored = view.model_dump(mode="json")
+        for index, item in enumerate(progress):
+            if item.get("call_id") == call_id:
+                progress[index] = stored
+                break
+        else:
+            progress.append(stored)
+        await self.update_run(run_id, tool_progress=progress)
+        return view
 
     async def terminalize_run(self, run_id: str, **changes: Any) -> AgentHarnessRun:
         status = changes.get("status")
@@ -772,7 +1130,7 @@ class AgentHarnessRepository:
                 AgentHarnessRun.status.in_(ACTIVE_RUN_STATUSES),
                 *self._fence_predicates(run_id),
             )
-            .values(**changes)
+            .values(revision=AgentHarnessRun.revision + 1, **changes)
         )
         if not result.rowcount:
             await self.db.rollback()
@@ -811,6 +1169,7 @@ class AgentHarnessRepository:
                     *self._fence_predicates(run_id),
                 )
                 .values(
+                    revision=AgentHarnessRun.revision + 1,
                     status="cancelled",
                     phase=None,
                     termination_reason=reason,
@@ -841,11 +1200,11 @@ class AgentHarnessRepository:
                 )
             )
             resolved_call_ids = {
-                str(payload.get("call_id"))
+                call_id
                 for payload in resolved_result.scalars().all()
                 if isinstance(payload, dict)
                 and payload.get("role") == "tool"
-                and payload.get("call_id")
+                and (call_id := _tool_result_call_id(payload)) is not None
             }
             sequence = int(session.history_revision)
             committed: list[AgentHarnessEntry] = []
@@ -858,11 +1217,15 @@ class AgentHarnessRepository:
                     .model_validate(
                         {
                             "role": "tool",
-                            "content": [
+                            "parts": [
                                 {
-                                    "type": "text",
-                                    "text": json.dumps(
-                                        {
+                                    "id": f"tool-result:{call_id}",
+                                    "type": "tool_result",
+                                    "call_id": call_id,
+                                    "status": "cancelled",
+                                    "output": {
+                                        "type": "json",
+                                        "value": {
                                             "error": {
                                                 "code": "interrupted",
                                                 "message": (
@@ -871,12 +1234,13 @@ class AgentHarnessRepository:
                                                 ),
                                             }
                                         },
-                                        ensure_ascii=False,
+                                    },
+                                    "error": (
+                                        "Tool execution was interrupted by user "
+                                        "cancellation."
                                     ),
                                 }
                             ],
-                            "call_id": call_id,
-                            "is_error": True,
                         }
                     )
                     .model_dump(mode="json")
@@ -887,7 +1251,7 @@ class AgentHarnessRepository:
                     run_id=run_id,
                     sequence=sequence,
                     type="message",
-                    schema_version=1,
+                    schema_version=2,
                     payload=payload,
                 )
                 self.db.add(entry)
@@ -908,7 +1272,7 @@ class AgentHarnessRepository:
                 run_id=run_id,
                 sequence=sequence,
                 type="notice",
-                schema_version=1,
+                schema_version=2,
                 payload=notice_payload,
             )
             self.db.add(notice)
@@ -933,7 +1297,13 @@ class AgentHarnessRepository:
             raise LookupError(f"agent session not found: {session_id}")
         if session.status != "active":
             raise ValueError("agent session is closing")
-        attachment_ids = [str(item) for item in getattr(command, "attachment_ids", [])]
+        attachment_ids = [
+            str(part.attachment_id)
+            for part in getattr(command, "parts", [])
+            if getattr(part, "type", None)
+            in {"attachment_ref", "file_ref", "directory_ref"}
+            and getattr(part, "attachment_id", None) is not None
+        ]
         if attachment_ids:
             await AgentHarnessAttachmentRepository(self.db).require_ids_for_session(
                 attachment_ids,
@@ -942,6 +1312,8 @@ class AgentHarnessRepository:
                 user_id=session.user_id,
             )
         run = await self.get_current_run(session_id)
+        if run is None and command.type == "steer":
+            raise ValueError("there is no active run to steer")
         target: AgentHarnessSession | AgentHarnessRun
         if run is not None and command.type in {"steer", "respond", "cancel"}:
             target = run
@@ -979,12 +1351,6 @@ class AgentHarnessRepository:
         command_ids.append(command.command_id)
         target.command_ids = command_ids
         queued_command = command.model_dump(mode="json")
-        if run is None and command.type == "steer":
-            queued_command = {
-                **queued_command,
-                "type": "follow_up",
-                "attachment_ids": [],
-            }
         target.command_queue = [*(target.command_queue or []), queued_command]
         if run is not None and command.type == "cancel":
             target.cancel_requested_at = target.cancel_requested_at or datetime.now(
@@ -1081,30 +1447,14 @@ class AgentHarnessRepository:
             sequence = int(session.history_revision)
             entries: list[AgentHarnessEntry] = []
             for command in selected:
-                payload = (
-                    ENTRY_PAYLOAD_TYPES["message"]
-                    .model_validate(
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": str(command.get("text") or ""),
-                                }
-                            ],
-                            "tool_calls": [],
-                            "artifact_ids": [],
-                        }
-                    )
-                    .model_dump(mode="json")
-                )
+                payload = await self._user_message_payload(session, command)
                 sequence += 1
                 entry = AgentHarnessEntry(
                     session_id=session_id,
                     run_id=run_id,
                     sequence=sequence,
                     type="message",
-                    schema_version=1,
+                    schema_version=2,
                     payload=payload,
                 )
                 self.db.add(entry)
@@ -1162,30 +1512,14 @@ class AgentHarnessRepository:
             if selected:
                 sequence = int(session.history_revision)
                 for command in selected:
-                    payload = (
-                        ENTRY_PAYLOAD_TYPES["message"]
-                        .model_validate(
-                            {
-                                "role": "user",
-                                "content": [
-                                    {
-                                        "type": "text",
-                                        "text": str(command.get("text") or ""),
-                                    }
-                                ],
-                                "tool_calls": [],
-                                "artifact_ids": [],
-                            }
-                        )
-                        .model_dump(mode="json")
-                    )
+                    payload = await self._user_message_payload(session, command)
                     sequence += 1
                     entry = AgentHarnessEntry(
                         session_id=session_id,
                         run_id=run_id,
                         sequence=sequence,
                         type="message",
-                        schema_version=1,
+                        schema_version=2,
                         payload=payload,
                     )
                     self.db.add(entry)
@@ -1193,6 +1527,7 @@ class AgentHarnessRepository:
                 run.command_queue = retained
                 session.history_revision = sequence
             else:
+                run.revision = int(run.revision) + 1
                 run.status = "completed"
                 run.phase = None
                 run.termination_reason = "completed"
@@ -1311,7 +1646,7 @@ class AgentHarnessRepository:
                 run_id=str(run.id),
                 sequence=sequence,
                 type="message",
-                schema_version=1,
+                schema_version=2,
                 payload=payload,
             )
             session.history_revision = sequence
@@ -1430,7 +1765,7 @@ class AgentHarnessRepository:
         run_id: str | None,
         entry_type: str,
         payload: dict,
-        schema_version: int = 1,
+        schema_version: int = 2,
     ) -> AgentHarnessEntry:
         payload_type = ENTRY_PAYLOAD_TYPES.get(entry_type)
         if payload_type is None:
@@ -1473,6 +1808,81 @@ class AgentHarnessRepository:
         await self.db.refresh(entry)
         return entry
 
+    async def commit_plan(
+        self,
+        session_id: str,
+        *,
+        run_id: str,
+        title: str | None,
+        items: list[dict[str, Any]],
+    ) -> AgentHarnessEntry:
+        """Atomically replace the visible plan with the next durable revision."""
+
+        session = await self.get_session(session_id)
+        if session is None:
+            raise LookupError(f"agent session not found: {session_id}")
+        try:
+            fenced = await self.db.execute(
+                update(AgentHarnessRun)
+                .where(
+                    AgentHarnessRun.id == run_id,
+                    AgentHarnessRun.session_id == session_id,
+                    AgentHarnessRun.status.in_(ACTIVE_RUN_STATUSES),
+                    *self._fence_predicates(run_id),
+                )
+                .values(lease_generation=AgentHarnessRun.lease_generation)
+            )
+            if not fenced.rowcount:
+                raise ValueError("terminal Agent run or stale fence rejected plan update")
+            await self.db.refresh(session, with_for_update=True)
+            latest = (
+                await self.db.execute(
+                    select(AgentHarnessEntry)
+                    .where(
+                        AgentHarnessEntry.session_id == session_id,
+                        AgentHarnessEntry.run_id == run_id,
+                        AgentHarnessEntry.type == "plan",
+                    )
+                    .order_by(AgentHarnessEntry.sequence.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            revision = int((latest.payload if latest is not None else {}).get("revision") or 0) + 1
+            plan_id = str(
+                (latest.payload if latest is not None else {}).get("plan_id")
+                or f"plan:{run_id}"
+            )
+            payload = (
+                ENTRY_PAYLOAD_TYPES["plan"]
+                .model_validate(
+                    {
+                        "plan_id": plan_id,
+                        "revision": revision,
+                        "title": title,
+                        "items": items,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                )
+                .model_dump(mode="json")
+            )
+            sequence = int(session.history_revision) + 1
+            entry = AgentHarnessEntry(
+                session_id=session_id,
+                run_id=run_id,
+                sequence=sequence,
+                type="plan",
+                schema_version=2,
+                payload=payload,
+            )
+            session.history_revision = sequence
+            self.db.add(entry)
+            await self.db.commit()
+            await self.db.refresh(entry)
+            return entry
+        except Exception:
+            await self.db.rollback()
+            raise
+
     async def commit_interaction_response(
         self,
         session_id: str,
@@ -1486,7 +1896,12 @@ class AgentHarnessRepository:
 
         response_payload = (
             ENTRY_PAYLOAD_TYPES["interaction_response"]
-            .model_validate({"interaction_id": interaction_id, "response": response})
+            .model_validate(
+                {
+                    "interaction_id": interaction_id,
+                    "response": _public_interaction_response(response),
+                }
+            )
             .model_dump(mode="json")
         )
         session = await self.get_session(session_id)
@@ -1532,7 +1947,7 @@ class AgentHarnessRepository:
                     run_id=run_id,
                     sequence=sequence,
                     type="interaction_response",
-                    schema_version=1,
+                    schema_version=2,
                     payload=response_payload,
                 )
                 self.db.add(entry)
@@ -1557,9 +1972,15 @@ class AgentHarnessRepository:
     ) -> tuple[AgentHarnessEntry | None, AgentHarnessEntry, AgentHarnessRun]:
         """Atomically publish an interaction and make the Run wait for its answer."""
 
+        public_request = _public_interaction_request(request_payload["request"])
         request = (
             ENTRY_PAYLOAD_TYPES["interaction_request"]
-            .model_validate(request_payload)
+            .model_validate(
+                {
+                    "interaction_id": request_payload["interaction_id"],
+                    "request": public_request,
+                }
+            )
             .model_dump(mode="json")
         )
         notice = (
@@ -1595,7 +2016,7 @@ class AgentHarnessRepository:
                     run_id=run_id,
                     sequence=sequence,
                     type="notice",
-                    schema_version=1,
+                    schema_version=2,
                     payload=notice,
                 )
                 self.db.add(notice_entry)
@@ -1605,7 +2026,7 @@ class AgentHarnessRepository:
                 run_id=run_id,
                 sequence=sequence,
                 type="interaction_request",
-                schema_version=1,
+                schema_version=2,
                 payload=request,
             )
             self.db.add(request_entry)
@@ -1619,6 +2040,7 @@ class AgentHarnessRepository:
                     *self._fence_predicates(run_id),
                 )
                 .values(
+                    revision=AgentHarnessRun.revision + 1,
                     status="waiting_user",
                     phase="interaction",
                     checkpoint=durable_checkpoint,
@@ -1654,7 +2076,12 @@ class AgentHarnessRepository:
 
         response_payload = (
             ENTRY_PAYLOAD_TYPES["interaction_response"]
-            .model_validate({"interaction_id": interaction_id, "response": response})
+            .model_validate(
+                {
+                    "interaction_id": interaction_id,
+                    "response": _public_interaction_response(response),
+                }
+            )
             .model_dump(mode="json")
         )
         session = await self.get_session(session_id)
@@ -1687,7 +2114,7 @@ class AgentHarnessRepository:
                 run_id=run_id,
                 sequence=sequence,
                 type="interaction_response",
-                schema_version=1,
+                schema_version=2,
                 payload=response_payload,
             )
             self.db.add(response_entry)
@@ -1727,11 +2154,40 @@ class AgentHarnessRepository:
             progress = [
                 dict(item) for item in run.tool_progress or [] if isinstance(item, dict)
             ]
-            replacement = {
-                "call_id": str(call.get("call_id") or ""),
-                "name": str(call.get("name") or "unknown"),
-                "status": "running",
-            }
+            existing = next(
+                (
+                    item
+                    for item in progress
+                    if item.get("call_id") == call.get("call_id")
+                ),
+                None,
+            )
+            call_id = str(call.get("call_id") or "")
+            name = str(call.get("name") or "unknown")
+            arguments = call.get("arguments")
+            safe_arguments = arguments if isinstance(arguments, dict) else {}
+            replacement = ToolProgressView.model_validate(
+                {
+                    **(existing or {}),
+                    "call_id": call_id,
+                    "group_id": (existing or {}).get("group_id")
+                    or f"tool-group:{call_id}",
+                    "execution_mode": (existing or {}).get("execution_mode")
+                    or "serial",
+                    "name": name,
+                    "display_name": (existing or {}).get("display_name") or name,
+                    "category": (existing or {}).get("category")
+                    or _tool_category(name),
+                    "summary": (existing or {}).get("summary")
+                    or _tool_summary(name, safe_arguments),
+                    "arguments": (existing or {}).get("arguments")
+                    or safe_arguments,
+                    "status": "running",
+                    "revision": int((existing or {}).get("revision") or 0) + 1,
+                    "started_at": (existing or {}).get("started_at")
+                    or datetime.now(timezone.utc),
+                }
+            ).model_dump(mode="json")
             for index, item in enumerate(progress):
                 if item.get("call_id") == call.get("call_id"):
                     progress[index] = replacement
@@ -1748,6 +2204,7 @@ class AgentHarnessRepository:
                     *self._fence_predicates(run_id),
                 )
                 .values(
+                    revision=AgentHarnessRun.revision + 1,
                     status="running",
                     phase="tools",
                     checkpoint=checkpoint,
@@ -1830,8 +2287,22 @@ class AgentHarnessRepository:
         session = await self.get_session(session_id)
         if session is None:
             raise LookupError(f"agent session not found: {session_id}")
-        run = await self.get_latest_run(session_id)
+        runs = await self.list_runs(session_id)
+        run = next(
+            (item for item in reversed(runs) if item.status in ACTIVE_RUN_STATUSES),
+            None,
+        )
         entries = await self.list_entries(session_id)
+        active_run = (
+            ActiveRunView(
+                run=self._run_view(run),
+                assistant_draft=self._assistant_draft(run),
+                tool_progress=self._tool_progress(run),
+                pending_interaction=self._pending_interaction(run, entries),
+            )
+            if run is not None
+            else None
+        )
         return SessionSnapshot(
             session=SessionView.model_validate(
                 {
@@ -1840,33 +2311,27 @@ class AgentHarnessRepository:
                     "workspace_id": session.workspace_id,
                     "project_id": session.project_id,
                     "title": session.title,
+                    "model": _public_model_summary(session.model_snapshot),
                     "permission_mode": session.permission_mode,
+                    "workspace_access": session.workspace_access,
                     "status": session.status,
                     "created_at": session.created_at,
                     "updated_at": session.updated_at,
                 }
             ),
-            current_run=self._run_view(run) if run else None,
-            entries=[self._entry_contract(entry) for entry in entries],
-            assistant_draft=self._assistant_draft(run),
-            tool_progress=self._tool_progress(run),
-            pending_interaction=self._pending_interaction(run, entries),
-            revision=session.history_revision,
+            runs=[self._run_view(item) for item in runs],
+            entries=[
+                self._entry_contract(entry)
+                for entry in entries
+                if entry.type != "compaction"
+            ],
+            active_run=active_run,
         )
-
     @staticmethod
     def _assistant_draft(run: AgentHarnessRun | None) -> AssistantDraftView | None:
         if run is None or not run.draft:
             return None
-        text = str(run.draft.get("text") or "")
-        reasoning = str(run.draft.get("reasoning") or "")
-        if not text and not reasoning:
-            return None
-        return AssistantDraftView(
-            text=text,
-            reasoning_summary=reasoning or None,
-            end_offset=int(run.draft.get("end_offset") or len(text.encode("utf-8"))),
-        )
+        return AssistantDraftView.model_validate(run.draft)
 
     @staticmethod
     def _tool_progress(run: AgentHarnessRun | None) -> list[ToolProgressView]:
@@ -1895,9 +2360,19 @@ class AgentHarnessRepository:
         if not pending:
             return None
         request = max(pending.values(), key=lambda item: item.sequence)
+        return AgentHarnessRepository._pending_interaction_entry_view(request)
+
+    @staticmethod
+    def _pending_interaction_entry_view(
+        entry: AgentHarnessEntry,
+    ) -> PendingInteractionView:
+        if entry.run_id is None or entry.type != "interaction_request":
+            raise ValueError("pending interaction requires a Run request entry")
         return PendingInteractionView(
-            interaction_id=str(request.payload["interaction_id"]),
-            request=dict(request.payload.get("request") or {}),
+            interaction_id=str(entry.payload["interaction_id"]),
+            run_id=entry.run_id,
+            revision=entry.sequence,
+            request=dict(entry.payload.get("request") or {}),
         )
 
     @staticmethod
@@ -1908,6 +2383,7 @@ class AgentHarnessRepository:
                 "session_id": run.session_id,
                 "status": run.status,
                 "phase": run.phase,
+                "revision": run.revision,
                 "started_at": run.started_at,
                 "completed_at": run.completed_at,
                 "termination_reason": run.termination_reason,

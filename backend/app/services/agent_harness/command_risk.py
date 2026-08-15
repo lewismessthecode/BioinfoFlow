@@ -683,7 +683,6 @@ _BIF_WRITE_COMMANDS = frozenset(
         ("agent", "session", "create"),
         ("agent", "send"),
         ("agent", "steer"),
-        ("agent", "follow-up"),
         ("agent", "respond"),
     }
 )

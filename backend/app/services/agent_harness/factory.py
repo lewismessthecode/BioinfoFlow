@@ -245,6 +245,7 @@ def workspace_runtime_for_session(
     return WorkspaceRuntime(
         backend,
         permission_mode=session.permission_mode,
+        workspace_access=session.workspace_access,
         environment=environment,
     )
 
