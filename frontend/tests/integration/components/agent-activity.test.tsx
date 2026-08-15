@@ -10,6 +10,7 @@ import type { ToolProgressView } from "@/lib/agent/contracts"
 import { renderWithProviders } from "@/tests/test-utils"
 
 vi.mock("next-intl", () => ({
+  useLocale: () => "en",
   useTranslations: () =>
     (key: string, values?: Record<string, string | number>) => {
       const copy: Record<string, string> = {
@@ -68,6 +69,21 @@ describe("AgentToolCard", () => {
     expect(screen.getByText("Arguments").parentElement).toHaveTextContent(
       '"path": "workflow.nf"',
     )
+  })
+
+  it("normalizes rounded duration across minute boundaries", () => {
+    renderWithProviders(
+      <AgentToolCard
+        tool={{
+          ...runningTool,
+          status: "completed",
+          started_at: "2026-08-15T08:00:00.000Z",
+          completed_at: "2026-08-15T08:01:59.600Z",
+        }}
+      />,
+    )
+
+    expect(screen.getByText("2m 0s")).toBeInTheDocument()
   })
 })
 

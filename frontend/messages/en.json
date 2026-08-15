@@ -3150,6 +3150,44 @@
       "error": "Error"
     }
   },
+  "agentHistory": {
+    "reasoning": {
+      "title": "Thinking summary"
+    },
+    "reference": {
+      "attachment": "Attachment",
+      "file": "File",
+      "directory": "Directory",
+      "workflow": "Workflow",
+      "run": "Run",
+      "artifact": "Artifact"
+    },
+    "unknown": {
+      "title": "Unsupported content"
+    },
+    "plan": {
+      "title": "Plan",
+      "status": {
+        "pending": "Pending",
+        "in_progress": "In progress",
+        "completed": "Completed"
+      }
+    },
+    "notice": {
+      "title": "Agent notice"
+    },
+    "compaction": "Context compressed",
+    "interaction": {
+      "ask_user": "The agent asked for input",
+      "approval": "Approval requested",
+      "recovery": "Recovery requested",
+      "pending": "Waiting for response",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "answered": "Answered",
+      "resolved": "Resolved"
+    }
+  },
   "executionMode": {
     "askShort": "Ask",
     "approveAllShort": "Approve all",

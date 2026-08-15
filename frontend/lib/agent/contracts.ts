@@ -194,15 +194,34 @@ export type ToolCallPart = MessagePartBase & {
   arguments: JsonObject
 }
 
+export type ToolTextOutput = {
+  type: "text"
+  text: string
+}
+
+export type ToolJsonOutput = {
+  type: "json"
+  value: JsonValue
+}
+
+export type ToolContentPartsOutput = {
+  type: "content_parts"
+  parts: ToolOutputContentPart[]
+}
+
+export type ToolOutput =
+  | ToolTextOutput
+  | ToolJsonOutput
+  | ToolContentPartsOutput
+
 export type ToolResultPart = MessagePartBase & {
   type: "tool_result"
   call_id: string
   status: ToolProgressStatus
   summary: string | null
-  content: JsonValue
+  output: ToolOutput | null
   started_at: string | null
   completed_at: string | null
-  artifact_refs: ArtifactRefPart[]
   error: string | null
 }
 
@@ -295,6 +314,17 @@ export type UnknownPart = MessagePartBase & {
   original_type: string
   display_text: string
 }
+
+export type ToolOutputContentPart =
+  | TextPart
+  | ReasoningSummaryPart
+  | AttachmentRefPart
+  | FileRefPart
+  | DirectoryRefPart
+  | WorkflowRefPart
+  | RunRefPart
+  | ArtifactRefPart
+  | UnknownPart
 
 export type MessagePart =
   | TextPart

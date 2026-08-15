@@ -3150,6 +3150,44 @@
       "error": "错误"
     }
   },
+  "agentHistory": {
+    "reasoning": {
+      "title": "思考摘要"
+    },
+    "reference": {
+      "attachment": "附件",
+      "file": "文件",
+      "directory": "目录",
+      "workflow": "工作流",
+      "run": "运行",
+      "artifact": "产物"
+    },
+    "unknown": {
+      "title": "暂不支持的内容"
+    },
+    "plan": {
+      "title": "计划",
+      "status": {
+        "pending": "等待中",
+        "in_progress": "进行中",
+        "completed": "已完成"
+      }
+    },
+    "notice": {
+      "title": "Agent 提示"
+    },
+    "compaction": "上下文已压缩",
+    "interaction": {
+      "ask_user": "Agent 请求补充信息",
+      "approval": "请求审批",
+      "recovery": "请求恢复处理",
+      "pending": "等待回复",
+      "approved": "已批准",
+      "rejected": "已拒绝",
+      "answered": "已回答",
+      "resolved": "已处理"
+    }
+  },
   "executionMode": {
     "askShort": "询问",
     "approveAllShort": "全部确认",

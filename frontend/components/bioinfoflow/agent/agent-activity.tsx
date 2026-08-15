@@ -1,7 +1,7 @@
 "use client"
 
 import { useId, useMemo, useState } from "react"
-import { useTranslations } from "next-intl"
+import { useLocale, useTranslations } from "next-intl"
 
 import {
   AlertTriangle,
@@ -32,8 +32,11 @@ type AgentActivityGroupProps = {
   defaultExpanded?: boolean
 }
 
+const durationNumberFormatters = new Map<string, Intl.NumberFormat>()
+
 export function AgentToolCard({ tool, defaultExpanded }: AgentToolCardProps) {
   const t = useTranslations("agentActivity")
+  const locale = useLocale()
   const detailsId = useId()
   const hasDetails = Boolean(
     hasDisplayValue(tool.arguments) ||
@@ -49,7 +52,7 @@ export function AgentToolCard({ tool, defaultExpanded }: AgentToolCardProps) {
   })
   const expanded =
     expansion.key === expansionKey ? expansion.expanded : shouldExpand
-  const duration = toolDuration(tool)
+  const duration = toolDuration(tool, locale)
 
   return (
     <article
@@ -70,7 +73,10 @@ export function AgentToolCard({ tool, defaultExpanded }: AgentToolCardProps) {
           {tool.summary}
         </span>
         {duration ? (
-          <span className="shrink-0 tabular-nums text-[11px] text-muted-foreground">
+          <span
+            className="shrink-0 tabular-nums text-[11px] text-muted-foreground"
+            translate="no"
+          >
             {duration}
           </span>
         ) : null}
@@ -306,16 +312,28 @@ function toolNeedsAttention(status: ToolProgressView["status"]) {
   return !["completed", "cancelled"].includes(status)
 }
 
-function toolDuration(tool: ToolProgressView) {
+function toolDuration(tool: ToolProgressView, locale: string) {
   if (!tool.started_at || !tool.completed_at) return null
   const milliseconds =
     new Date(tool.completed_at).getTime() - new Date(tool.started_at).getTime()
   if (!Number.isFinite(milliseconds) || milliseconds < 0) return null
-  if (milliseconds < 1000) return `${milliseconds} ms`
-  if (milliseconds < 60_000) return `${(milliseconds / 1000).toFixed(1)} s`
-  const minutes = Math.floor(milliseconds / 60_000)
-  const seconds = Math.round((milliseconds % 60_000) / 1000)
-  return `${minutes}m ${seconds}s`
+  const number = durationNumberFormatter(locale)
+  if (milliseconds < 1000) return `${number.format(milliseconds)} ms`
+  if (milliseconds < 60_000) {
+    return `${number.format(milliseconds / 1000)} s`
+  }
+  const totalSeconds = Math.round(milliseconds / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${number.format(minutes)}m ${number.format(seconds)}s`
+}
+
+function durationNumberFormatter(locale: string) {
+  const cached = durationNumberFormatters.get(locale)
+  if (cached) return cached
+  const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 })
+  durationNumberFormatters.set(locale, formatter)
+  return formatter
 }
 
 function publicErrorMessage(error: ToolProgressView["error"]) {
