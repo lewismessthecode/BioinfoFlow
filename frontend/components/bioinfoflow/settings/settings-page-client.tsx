@@ -42,11 +42,6 @@ import {
   useReducedMotionPreference,
 } from "@/lib/celebrations"
 import {
-  readAgentTurnPolicy,
-  writeAgentTurnPolicy,
-  type AgentTurnPolicy,
-} from "@/lib/agent-runtime/turn-policy"
-import {
   filterSettingsNavItems,
   isSettingsSectionKey,
   SETTINGS_NAV_ITEMS,
@@ -69,8 +64,6 @@ type SettingsPageClientProps = {
     authLocalEnabled: boolean
   }
 }
-
-const AGENT_TURN_POLICIES: AgentTurnPolicy[] = ["steer", "queue"]
 
 function SettingsSectionHeader({
   title,
@@ -336,9 +329,6 @@ export default function SettingsPageClient({
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [savingPassword, setSavingPassword] = useState(false)
-  const [agentTurnPolicy, setAgentTurnPolicy] = useState<AgentTurnPolicy>(
-    readAgentTurnPolicy,
-  )
   const celebrationsEnabled = useCelebrationsEnabledPreference()
   const reducedMotion = useReducedMotionPreference()
   const canManageRegistries =
@@ -386,11 +376,6 @@ export default function SettingsPageClient({
   }
 
   const modeLabel = t(`account.modes.${viewer.mode}`)
-
-  const handleAgentTurnPolicyChange = (policy: AgentTurnPolicy) => {
-    setAgentTurnPolicy(policy)
-    writeAgentTurnPolicy(policy)
-  }
 
   const lightTokens = appearancePresets[lightPreset].light
   const darkTokens = appearancePresets[darkPreset].dark
@@ -647,46 +632,6 @@ export default function SettingsPageClient({
               />
 
               <SettingsGroup>
-                <SettingsRow
-                  title={t("agent.turnPolicy.label")}
-                  description={t("agent.turnPolicy.description")}
-                  className="lg:items-start"
-                >
-                  <fieldset className="w-full space-y-2 lg:w-[360px]">
-                    <legend className="sr-only">{t("agent.turnPolicy.label")}</legend>
-                    {AGENT_TURN_POLICIES.map((policy) => {
-                      const selected = agentTurnPolicy === policy
-                      return (
-                        <label
-                          key={policy}
-                          className={cn(
-                            "grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-lg border px-3.5 py-3 text-left transition-colors focus-within:outline-hidden focus-within:ring-2 focus-within:ring-ring",
-                            selected
-                              ? "border-border bg-secondary/45 text-foreground"
-                              : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/35 hover:text-foreground",
-                          )}
-                        >
-                          <span>
-                            <span className="block text-sm font-medium">
-                              {t(`agent.turnPolicy.options.${policy}.label`)}
-                            </span>
-                            <span className="mt-1 block text-[13px] leading-5">
-                              {t(`agent.turnPolicy.options.${policy}.description`)}
-                            </span>
-                          </span>
-                          <input
-                            type="radio"
-                            name="agent-turn-policy"
-                            value={policy}
-                            checked={selected}
-                            onChange={() => handleAgentTurnPolicyChange(policy)}
-                            className="mt-1 size-4 accent-foreground"
-                          />
-                        </label>
-                      )
-                    })}
-                  </fieldset>
-                </SettingsRow>
                 <SettingsRow
                   title={t("agent.customInstructions.label")}
                   description={t("agent.customInstructions.description")}

@@ -5,7 +5,6 @@ import { apiRequest } from "@/lib/api"
 import { useAppearance } from "@/lib/appearance/use-appearance"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
 import { createCelebrationsPreferenceMock } from "@/tests/support/mock-celebrations-preference"
-import { AGENT_TURN_POLICY_STORAGE_KEY } from "@/lib/agent-runtime/turn-policy"
 
 type ProviderTestResult = {
   success: boolean
@@ -67,7 +66,7 @@ vi.mock("next-intl", () => ({
       "appearance.celebrations.preview": "Preview",
       "appearance.celebrations.reducedMotion": "Reduced motion is on, so confetti is paused.",
       "agent.title": "Agent defaults",
-      "agent.description": "Choose how Bioinfoflow handles active messages.",
+      "agent.description": "Set lasting context for new agent conversations.",
       "agent.turnPolicy.label": "During active responses",
       "agent.turnPolicy.description": "Apply this behavior while the current turn runs.",
       "agent.turnPolicy.options.steer.label": "Guide current response",
@@ -833,7 +832,7 @@ describe("SettingsPage", () => {
     expect(screen.queryByText("Members Panel")).not.toBeInTheDocument()
   })
 
-  it("persists the agent active-turn policy from settings", async () => {
+  it("does not expose a frontend-only active-turn delivery policy", async () => {
     window.history.replaceState(null, "", "/settings?section=agent")
     render(
       <SettingsPageClient
@@ -848,12 +847,13 @@ describe("SettingsPage", () => {
       />,
     )
 
-    expect(screen.getByRole("radio", { name: /Guide current response/ })).toBeChecked()
-
-    fireEvent.click(screen.getByRole("radio", { name: /Queue for next turn/ }))
-
-    expect(screen.getByRole("radio", { name: /Queue for next turn/ })).toBeChecked()
-    expect(window.localStorage.getItem(AGENT_TURN_POLICY_STORAGE_KEY)).toBe("queue")
+    expect(
+      screen.queryByRole("radio", { name: /Guide current response/ }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("radio", { name: /Queue for next turn/ }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText("During active responses")).not.toBeInTheDocument()
     await screen.findByRole("textbox", { name: "Custom instructions" })
   })
 
@@ -873,8 +873,9 @@ describe("SettingsPage", () => {
       />,
     )
 
-    expect(screen.getByText("Choose how Bioinfoflow handles active messages.")).toBeInTheDocument()
-    expect(screen.getByRole("radio", { name: /Guide current response/ })).toBeChecked()
+    expect(
+      screen.getByText("Set lasting context for new agent conversations."),
+    ).toBeInTheDocument()
     const textarea = await screen.findByRole("textbox", { name: "Custom instructions" })
     expect(textarea).toHaveValue(
       "Use approved platform conventions.",
@@ -884,9 +885,7 @@ describe("SettingsPage", () => {
     ).toBeInTheDocument()
     const customInstructions = screen.getByTestId("agent-custom-instructions")
     expect(customInstructions).toHaveAttribute("data-layout", "flat")
-    expect(customInstructions.closest("section")).toBe(
-      screen.getByRole("radio", { name: /Guide current response/ }).closest("section"),
-    )
+    expect(customInstructions.closest("section")).toBeInTheDocument()
     expect(screen.getByText("New conversations only.")).toBeInTheDocument()
   })
 })
