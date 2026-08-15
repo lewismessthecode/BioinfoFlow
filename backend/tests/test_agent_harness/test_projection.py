@@ -117,6 +117,25 @@ def test_tool_progress_projection_redacts_arguments_and_builds_safe_details() ->
     assert "/Users/private" not in str(dumped)
 
 
+def test_bash_projection_hides_absolute_paths_inside_commands() -> None:
+    details = public_tool_details(
+        "bash",
+        {
+            "command": (
+                "OPENAI_API_KEY=sk-private-value "
+                "cat /Users/private/workspace/sample-sheet.csv"
+            )
+        },
+    )
+
+    assert len(details) == 1
+    assert details[0].value == (
+        "OPENAI_API_KEY=[REDACTED] cat …/workspace/sample-sheet.csv"
+    )
+    assert details[0].redacted is True
+    assert "/Users/private" not in details[0].value
+
+
 def test_write_projection_never_exposes_written_content() -> None:
     projected = project_tool_view(
         spec=WriteTool.spec,
