@@ -13,9 +13,7 @@ import {
   Loader2,
   TerminalSquare,
 } from "@/lib/icons"
-import { Button } from "@/components/ui/button"
 import type {
-  JsonValue,
   ToolExecutionMode,
   ToolProgressView,
 } from "@/lib/agent/contracts"
@@ -24,6 +22,7 @@ import { cn } from "@/lib/utils"
 type AgentToolCardProps = {
   tool: ToolProgressView
   defaultExpanded?: boolean
+  grouped?: boolean
 }
 
 type AgentActivityGroupProps = {
@@ -34,110 +33,116 @@ type AgentActivityGroupProps = {
 
 const durationNumberFormatters = new Map<string, Intl.NumberFormat>()
 
-export function AgentToolCard({ tool, defaultExpanded }: AgentToolCardProps) {
+export function AgentToolCard({
+  tool,
+  defaultExpanded,
+  grouped = false,
+}: AgentToolCardProps) {
   const t = useTranslations("agentActivity")
   const locale = useLocale()
   const detailsId = useId()
-  const hasDetails = Boolean(
-    hasDisplayValue(tool.arguments) ||
-      tool.input_summary ||
-      tool.output_summary ||
-      tool.error,
-  )
-  const expansionKey = `${tool.call_id}:${tool.status}:${hasDetails}`
-  const shouldExpand = defaultExpanded ?? false
-  const [expansion, setExpansion] = useState({
-    key: expansionKey,
-    expanded: shouldExpand,
-  })
-  const expanded =
-    expansion.key === expansionKey ? expansion.expanded : shouldExpand
+  const details = tool.public_details ?? []
+  const hasDetails = details.length > 0
+  const shouldExpand = defaultExpanded ?? toolNeedsAttention(tool.status)
+  const [expanded, setExpanded] = useState(shouldExpand)
   const duration = toolDuration(tool, locale)
+  const summary = (
+    <>
+      <ToolStatusIcon status={tool.status} />
+      <span
+        className="min-w-0 max-w-[40%] truncate rounded-[5px] bg-muted/70 px-1.5 py-0.5 font-mono text-[11px] text-foreground/72"
+        title={tool.display_name}
+        translate="no"
+      >
+        {tool.display_name}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-foreground/78">
+        {tool.summary}
+      </span>
+      {duration ? (
+        <span
+          className="shrink-0 tabular-nums text-[11px] text-muted-foreground"
+          translate="no"
+        >
+          {duration}
+        </span>
+      ) : null}
+      <span className="shrink-0 text-[11px] text-muted-foreground">
+        {t(`status.${tool.status}`)}
+      </span>
+      {hasDetails ? (
+        expanded ? (
+          <ChevronDown aria-hidden="true" />
+        ) : (
+          <ChevronRight aria-hidden="true" />
+        )
+      ) : null}
+    </>
+  )
 
   return (
     <article
       className={cn(
-        "min-w-0 rounded-[10px] border border-border/70 bg-background",
-        tool.status === "failed" && "border-error-border bg-error-muted/25",
+        "min-w-0",
+        !grouped && "rounded-[10px] border border-border/60 bg-background",
+        grouped && "bg-transparent",
+        tool.status === "failed" && !grouped && "border-error-border bg-error-muted/25",
         tool.status === "interaction_required" &&
+          !grouped &&
           "border-warning-border bg-warning-muted/25",
       )}
+      data-grouped={grouped ? "true" : undefined}
       data-testid="agent-tool-card"
     >
-      <div className="flex min-h-10 min-w-0 items-center gap-2 px-3 py-2 text-xs">
-        <ToolStatusIcon status={tool.status} />
-        <span
-          className="min-w-0 max-w-[40%] truncate rounded-[5px] bg-muted/70 px-1.5 py-0.5 font-mono text-[11px] text-foreground/72"
-          title={tool.display_name}
-          translate="no"
+      {hasDetails ? (
+        <button
+          type="button"
+          className={cn(
+            "flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[10px] px-3 py-2 text-left text-xs transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none",
+            grouped && "rounded-[6px] px-2",
+          )}
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+          aria-label={`${tool.display_name}: ${tool.summary}. ${t(expanded ? "details.hide" : "details.show")}`}
+          onClick={() => setExpanded((value) => !value)}
         >
-          {tool.display_name}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-foreground/78">
-          {tool.summary}
-        </span>
-        {duration ? (
-          <span
-            className="shrink-0 tabular-nums text-[11px] text-muted-foreground"
-            translate="no"
-          >
-            {duration}
-          </span>
-        ) : null}
-        <span className="shrink-0 text-[11px] text-muted-foreground">
-          {t(`status.${tool.status}`)}
-        </span>
-        {hasDetails ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
-            aria-expanded={expanded}
-            aria-controls={detailsId}
-            aria-label={t(expanded ? "details.hide" : "details.show")}
-            onClick={() =>
-              setExpansion({ key: expansionKey, expanded: !expanded })
-            }
-          >
-            {expanded ? (
-              <ChevronDown aria-hidden="true" />
-            ) : (
-              <ChevronRight aria-hidden="true" />
-            )}
-          </Button>
-        ) : null}
-      </div>
+          {summary}
+        </button>
+      ) : (
+        <div
+          className={cn(
+            "flex min-h-11 min-w-0 items-center gap-2 px-3 py-2 text-xs",
+            grouped && "px-2",
+          )}
+        >
+          {summary}
+        </div>
+      )}
 
       {hasDetails && expanded ? (
         <div
           id={detailsId}
-          className="grid gap-3 border-t border-border/60 px-3 py-3"
+          className={cn(
+            "grid gap-3 border-l border-border/50 py-2 pl-4 pr-3",
+            grouped && "ml-4 pr-2",
+            !grouped && "mx-3 mb-3",
+          )}
         >
-          {tool.input_summary ? (
-            <ToolDetail label={t("details.input")} value={tool.input_summary} />
-          ) : null}
-          {hasDisplayValue(tool.arguments) ? (
+          {details.map((detail) => (
             <ToolDetail
-              label={t("details.arguments")}
-              value={formatJsonValue(tool.arguments)}
-              code
+              key={detail.id}
+              label={detail.label ?? t(`details.${detail.kind}`)}
+              value={detail.value}
+              code={detail.format !== "text"}
+              tone={detail.kind === "error" ? "error" : "default"}
+              note={[
+                detail.redacted ? t("details.redacted") : null,
+                detail.truncated ? t("details.truncated") : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             />
-          ) : null}
-          {tool.output_summary ? (
-            <ToolDetail
-              label={t("details.output")}
-              value={tool.output_summary}
-              code
-            />
-          ) : null}
-          {tool.error ? (
-            <ToolDetail
-              label={t("details.error")}
-              value={publicErrorMessage(tool.error)}
-              tone="error"
-            />
-          ) : null}
+          ))}
         </div>
       ) : null}
     </article>
@@ -151,14 +156,9 @@ export function AgentActivityGroup({
 }: AgentActivityGroupProps) {
   const t = useTranslations("agentActivity")
   const detailsId = useId()
-  const statusKey = tools.map((tool) => `${tool.call_id}:${tool.status}`).join("|")
   const shouldExpand =
     defaultExpanded ?? tools.some((tool) => toolNeedsAttention(tool.status))
-  const [expansion, setExpansion] = useState({
-    key: statusKey,
-    expanded: shouldExpand,
-  })
-  const expanded = expansion.key === statusKey ? expansion.expanded : shouldExpand
+  const [expanded, setExpanded] = useState(shouldExpand)
   const resolvedExecutionMode =
     executionMode ?? commonExecutionMode(tools) ?? "mixed"
   const summaryKey = `group.${resolvedExecutionMode}`
@@ -169,16 +169,16 @@ export function AgentActivityGroup({
 
   return (
     <section
-      className="min-w-0 rounded-[10px] border border-border/70 bg-background"
+      className="min-w-0"
       data-testid="agent-activity-group"
     >
       <button
         type="button"
-        className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[10px] px-3 py-2 text-left text-sm transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[8px] px-2 py-2 text-left text-sm transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
         aria-expanded={expanded}
         aria-controls={detailsId}
         aria-label={t(summaryKey, { count: tools.length })}
-        onClick={() => setExpansion({ key: statusKey, expanded: !expanded })}
+        onClick={() => setExpanded((value) => !value)}
       >
         <GroupStatusIcon tools={tools} />
         <span className="min-w-0 flex-1 truncate text-foreground/78">
@@ -197,7 +197,7 @@ export function AgentActivityGroup({
       {expanded ? (
         <div
           id={detailsId}
-          className="grid gap-3 border-t border-border/60 px-3 py-3"
+          className="ml-3 grid gap-3 border-l border-border/55 py-2 pl-3"
         >
           {groupedTools.map(([category, categoryTools]) => (
             <div
@@ -210,7 +210,7 @@ export function AgentActivityGroup({
                 </h3>
               ) : null}
               {categoryTools.map((tool) => (
-                <AgentToolCard key={tool.call_id} tool={tool} />
+                <AgentToolCard key={tool.call_id} tool={tool} grouped />
               ))}
             </div>
           ))}
@@ -225,11 +225,13 @@ function ToolDetail({
   value,
   code = false,
   tone = "default",
+  note,
 }: {
   label: string
   value: string
   code?: boolean
   tone?: "default" | "error"
+  note?: string
 }) {
   return (
     <div className="grid gap-1.5">
@@ -243,6 +245,7 @@ function ToolDetail({
       >
         {value}
       </div>
+      {note ? <p className="text-[11px] text-muted-foreground">{note}</p> : null}
     </div>
   )
 }
@@ -347,21 +350,4 @@ function durationNumberFormatter(locale: string) {
   const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 })
   durationNumberFormatters.set(locale, formatter)
   return formatter
-}
-
-function publicErrorMessage(error: ToolProgressView["error"]) {
-  return error ?? ""
-}
-
-function hasDisplayValue(value: JsonValue) {
-  if (value === null) return false
-  if (typeof value === "string") return value.length > 0
-  if (Array.isArray(value)) return value.length > 0
-  if (typeof value === "object") return Object.keys(value).length > 0
-  return true
-}
-
-function formatJsonValue(value: JsonValue) {
-  const formatted = JSON.stringify(value, null, 2)
-  return formatted ?? String(value)
 }

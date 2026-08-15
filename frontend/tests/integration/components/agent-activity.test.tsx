@@ -54,25 +54,53 @@ const runningTool: ToolProgressView = {
   input_summary: "workflow.nf",
   output_summary: null,
   error: null,
+  public_details: [
+    {
+      id: "command",
+      kind: "command",
+      label: null,
+      value: "nextflow run workflow.nf",
+      format: "code",
+      copyable: true,
+      truncated: false,
+      redacted: false,
+    },
+  ],
 }
 
 describe("AgentToolCard", () => {
-  it("shows the public tool summary and reveals structured details on demand", async () => {
+  it("keeps command details unmounted until the whole summary row is expanded", async () => {
     const user = userEvent.setup()
-    renderWithProviders(<AgentToolCard tool={runningTool} />)
+    renderWithProviders(
+      <AgentToolCard tool={{ ...runningTool, status: "completed" }} />,
+    )
 
     expect(screen.getByText("read")).toBeInTheDocument()
     expect(screen.getByText("Read workflow.nf")).toBeInTheDocument()
-    expect(screen.getByText("Running")).toBeInTheDocument()
-    expect(screen.queryByText("Arguments")).not.toBeInTheDocument()
+    expect(screen.queryByText("nextflow run workflow.nf")).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole("button", { name: "Show details" }))
+    const summaryRow = screen.getByRole("button", { name: /Show details/i })
+    expect(summaryRow).toHaveTextContent("Read workflow.nf")
+    await user.click(summaryRow)
 
-    expect(
-      screen.getAllByRole("heading", { name: "Arguments" }),
-    ).toHaveLength(1)
-    expect(screen.getByText("Arguments").parentElement).toHaveTextContent(
-      '"path": "workflow.nf"',
+    expect(screen.getByText("nextflow run workflow.nf")).toBeInTheDocument()
+  })
+
+  it("preserves the user's disclosure choice across live status revisions", async () => {
+    const user = userEvent.setup()
+    const view = renderWithProviders(
+      <AgentToolCard tool={{ ...runningTool, status: "completed" }} />,
+    )
+
+    await user.click(screen.getByRole("button", { name: /Show details/i }))
+    expect(screen.getByText("nextflow run workflow.nf")).toBeInTheDocument()
+
+    view.rerender(<AgentToolCard tool={{ ...runningTool, status: "running" }} />)
+
+    expect(screen.getByText("nextflow run workflow.nf")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Hide details/i })).toHaveAttribute(
+      "aria-expanded",
+      "true",
     )
   })
 
@@ -193,7 +221,32 @@ describe("AgentActivityGroup", () => {
       expect.stringContaining("Read results.json"),
     ])
     expect(
-      screen.getAllByRole("heading").map((heading) => heading.textContent),
+      screen
+        .getAllByRole("heading", { level: 3 })
+        .map((heading) => heading.textContent),
     ).toEqual(["Reading", "Commands", "Reading"])
+  })
+
+  it("renders grouped tools as flat rows instead of nested bordered cards", () => {
+    renderWithProviders(
+      <AgentActivityGroup
+        tools={[
+          runningTool,
+          {
+            ...runningTool,
+            call_id: "call-read-2",
+            summary: "Read params.json",
+          },
+        ]}
+      />,
+    )
+
+    const group = screen.getByTestId("agent-activity-group")
+    const childRows = group.querySelectorAll('[data-testid="agent-tool-card"]')
+    expect(childRows).toHaveLength(2)
+    for (const row of childRows) {
+      expect(row).toHaveAttribute("data-grouped", "true")
+      expect(row).not.toHaveClass("border")
+    }
   })
 })

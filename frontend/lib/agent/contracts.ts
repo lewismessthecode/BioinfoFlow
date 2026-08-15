@@ -93,6 +93,25 @@ export type AssistantDraftView = {
   parts: AssistantDraftPartView[]
 }
 
+export type ToolPublicDetail = {
+  id: string
+  kind:
+    | "command"
+    | "working_directory"
+    | "path"
+    | "input"
+    | "output"
+    | "changes"
+    | "error"
+    | "metadata"
+  label: string | null
+  value: string
+  format: "text" | "code" | "path" | "json" | "diff"
+  copyable: boolean
+  truncated: boolean
+  redacted: boolean
+}
+
 export type ToolProgressView = {
   call_id: string
   group_id: string
@@ -109,6 +128,7 @@ export type ToolProgressView = {
   input_summary: string | null
   output_summary: string | null
   error: string | null
+  public_details?: ToolPublicDetail[]
 }
 
 export type AskUserOption = {
@@ -215,6 +235,7 @@ export type ToolCallPart = MessagePartBase & {
   category: ToolCategory
   summary: string
   arguments: JsonObject
+  public_details?: ToolPublicDetail[]
 }
 
 type ToolTextOutput = {
@@ -246,6 +267,7 @@ export type ToolResultPart = MessagePartBase & {
   started_at: string | null
   completed_at: string | null
   error: string | null
+  public_details?: ToolPublicDetail[]
 }
 
 export type AttachmentRefPart = MessagePartBase & {

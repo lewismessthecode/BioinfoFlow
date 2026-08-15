@@ -7,6 +7,7 @@ import {
   AgentActivityGroup,
   AgentToolCard,
 } from "@/components/bioinfoflow/agent/agent-activity"
+import { AgentThinking } from "@/components/bioinfoflow/agent/agent-thinking"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
@@ -99,17 +100,12 @@ export function ActiveRun({
           {activity.map((item) => {
             if (item.kind === "thinking") {
               return (
-                <section
+                <AgentThinking
                   key={item.key}
-                  aria-label={t("reasoning")}
-                  className="grid min-w-0 gap-2 border-l-2 border-border/70 pl-3"
-                  data-activity-kind="thinking"
-                >
-                  <h3 className="text-xs font-medium text-muted-foreground">
-                    {t("reasoning")}
-                  </h3>
-                  <DraftPart part={item.part} tone="muted" />
-                </section>
+                  active
+                  label={t("reasoning")}
+                  part={item.part}
+                />
               )
             }
 
@@ -150,10 +146,8 @@ export function ActiveRun({
 
 function DraftPart({
   part,
-  tone = "default",
 }: {
   part: AssistantDraftPartView
-  tone?: "default" | "muted"
 }) {
   return (
     <div
@@ -162,7 +156,6 @@ function DraftPart({
     >
       <MarkdownRenderer
         content={part.text}
-        className={tone === "muted" ? "text-foreground/70" : undefined}
       />
     </div>
   )
