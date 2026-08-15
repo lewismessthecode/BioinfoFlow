@@ -330,9 +330,8 @@ describe("WorkspaceShell sidebar integration", () => {
       }
 
       if (path === "/agent/sessions") {
-        const projectId = String(options?.params?.project_id ?? "")
         return {
-          data: [...(conversationsState.get(projectId) ?? [])],
+          data: [...conversationsState.values()].flat(),
           meta: undefined,
         }
       }
@@ -401,6 +400,9 @@ describe("WorkspaceShell sidebar integration", () => {
     expect(screen.getByTestId("active-project-name")).toHaveTextContent("Alpha")
     expect(screen.getByTestId("active-conversation-title")).toHaveTextContent("Alpha thread")
     expect(routerPushMock).toHaveBeenCalledWith("/agent/conv-alpha-1")
+    expect(
+      apiRequestMock.mock.calls.filter(([path]) => path === "/agent/sessions"),
+    ).toHaveLength(1)
   })
 
   it("restores the last used regular project into workspace context on /agent", async () => {

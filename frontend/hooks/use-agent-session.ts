@@ -35,6 +35,7 @@ type AgentSessionState = AgentStoreState & {
   ) => Promise<void>
   cancel: () => Promise<void>
   updatePermissionMode: (mode: AgentPermissionMode) => Promise<void>
+  retry: () => void
 }
 
 type AgentSessionViewState = {
@@ -46,6 +47,7 @@ type AgentSessionViewState = {
 }
 
 export function useAgentSession(sessionId: string): AgentSessionState {
+  const [retryRevision, setRetryRevision] = useState(0)
   const [view, setView] = useState<AgentSessionViewState>(() =>
     initialView(sessionId),
   )
@@ -85,11 +87,17 @@ export function useAgentSession(sessionId: string): AgentSessionState {
     generationRef.current = generation
     storeRef.current = initialAgentStoreState
 
-    const refreshSnapshot = () => {
-      if (snapshotRequest) return snapshotRequest
+    const refreshSnapshot = (options?: {
+      skipIfHydrated?: boolean
+    }): Promise<boolean> => {
+      if (snapshotRequest) {
+        if (options?.skipIfHydrated) return snapshotRequest
+        return snapshotRequest.then(() => refreshSnapshot())
+      }
       snapshotRequest = getAgentSnapshot(sessionId)
         .then((snapshot) => {
           if (!active) return false
+          if (options?.skipIfHydrated && storeRef.current.session) return true
           return replaceSnapshot(generation, sessionId, snapshot)
         })
         .catch((caught) => {
@@ -99,6 +107,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
               ? current
               : initialView(sessionId)),
             error: asError(caught, "Unable to load agent session"),
+            isLoading: false,
           }))
           return false
         })
@@ -151,13 +160,14 @@ export function useAgentSession(sessionId: string): AgentSessionState {
         }))
       },
     })
+    void refreshSnapshot({ skipIfHydrated: true })
 
     return () => {
       active = false
       if (generationRef.current === generation) generationRef.current += 1
       unsubscribe()
     }
-  }, [replaceSnapshot, sessionId])
+  }, [replaceSnapshot, retryRevision, sessionId])
 
   const runCommand = useCallback(
     async (command: AgentCommand) => {
@@ -264,6 +274,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
     respond,
     cancel,
     updatePermissionMode,
+    retry: () => setRetryRevision((revision) => revision + 1),
   }
 }
 

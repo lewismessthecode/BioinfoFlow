@@ -2169,21 +2169,7 @@
     },
     "agent": {
       "title": "Agent defaults",
-      "description": "Choose how Bioinfoflow handles a new message while the agent is still working.",
-      "turnPolicy": {
-        "label": "During active responses",
-        "description": "Apply this behavior when you send a message before the current turn finishes.",
-        "options": {
-          "steer": {
-            "label": "Guide current response",
-            "description": "Add this message to the active response at the next safe step."
-          },
-          "queue": {
-            "label": "Queue for next turn",
-            "description": "Keep the active response running and send your draft after it finishes."
-          }
-        }
-      },
+      "description": "Set lasting context for new agent conversations.",
       "customInstructions": {
         "label": "Custom instructions",
         "description": "Add lasting context for new conversations.",
@@ -3125,6 +3111,36 @@
     },
     "tokens": "{count}k tokens"
   },
+  "agentWorkbench": {
+    "newConversation": "New conversation",
+    "untitled": "Untitled conversation",
+    "defaultModel": "Default model",
+    "emptyTitle": "What would you like to work on?",
+    "emptyDescription": "Ask a question, attach data, or reference a workflow. Bioinfoflow will show its plan, progress, tool activity, and any approval it needs.",
+    "createError": "The conversation could not be started. Your message is still here; try again.",
+    "loadErrorTitle": "Conversation unavailable",
+    "loadErrorDescription": "The conversation could not be loaded.",
+    "retry": "Try again",
+    "connection": {
+      "connecting": "Connecting",
+      "connected": "Connected",
+      "reconnecting": "Connection interrupted. Reconnecting…"
+    }
+  },
+  "agentContextPicker": {
+    "add": "Add context",
+    "searchPlaceholder": "Search files, workflows, and runs",
+    "empty": "No matching context",
+    "uploadFiles": "Upload files",
+    "uploadFolder": "Upload folder",
+    "searching": "Searching…",
+    "uploadError": "The attachment could not be uploaded.",
+    "searchError": "Context search is unavailable."
+  },
+  "agentContext": {
+    "label": "Attached context",
+    "remove": "Remove {label}"
+  },
   "agentComposer": {
     "label": "Message the agent",
     "placeholder": "Ask Bioinfoflow to do something…",
@@ -3205,6 +3221,15 @@
     },
     "reasoning": "Thinking summary",
     "response": "Response"
+  },
+  "agentTranscript": {
+    "title": "Conversation",
+    "copy": "Copy message",
+    "copied": "Copied",
+    "copy_failed": "Could not copy. Select the message and copy it manually.",
+    "scroll_to_bottom": "Jump to latest",
+    "run_finished": "Finished {time}",
+    "run_duration": "{duration}"
   },
   "agentHistory": {
     "reasoning": {

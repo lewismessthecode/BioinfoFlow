@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
   AgentWorkbench,
   type AgentWorkbenchHandle,
-} from "@/components/bioinfoflow/agent-runtime/agent-workbench"
+} from "@/components/bioinfoflow/agent/agent-workbench"
 import { LiveDeck } from "@/components/bioinfoflow/live-deck"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useEvents } from "@/hooks/use-events"
@@ -12,43 +12,40 @@ import type { DagData, Run } from "@/lib/types"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useIsMobile } from "@/hooks/use-media-query"
 import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard-shortcuts-overlay"
+import type { SessionView } from "@/lib/agent/contracts"
 
 const RIGHT_SIDEBAR_MIN = 300
 const RIGHT_SIDEBAR_MAX = 600
 const RIGHT_SIDEBAR_DEFAULT = 400
 
 export default function AgentPage() {
-  const { selectedProjectId, conversationProjectId, activeConversationId } = useProjectContext()
-
-  // A draft gets an active conversation id during submit; remounting here would
-  // discard its optimistic turn and live stream subscription.
-  return (
-    <AgentPageContent
-      key={`${selectedProjectId || "no-selected"}:${conversationProjectId || "no-conversation-project"}`}
-      selectedProjectId={selectedProjectId}
-      conversationProjectId={conversationProjectId}
-      activeConversationId={activeConversationId}
-    />
-  )
+  return <AgentPageContent routeSessionId={null} />
 }
 
 export function AgentPageContent({
-  selectedProjectId,
-  conversationProjectId,
-  activeConversationId,
+  routeSessionId,
 }: {
-  selectedProjectId: string
-  conversationProjectId: string
-  activeConversationId: string
+  routeSessionId: string | null
 }) {
   const isMobile = useIsMobile()
   const chatRef = useRef<AgentWorkbenchHandle>(null)
-  const { setActiveConversationId } = useProjectContext()
+  const {
+    selectedProjectId,
+    conversationProjectId,
+    setSelectedProjectId,
+    setConversationProjectId,
+    setActiveConversationId,
+    setActiveConversationTitle,
+  } = useProjectContext()
   const [liveDeckTab, setLiveDeckTab] = useState<"workspace" | "dag" | "monitor">("workspace")
   const [rightSidebarWidth, setRightSidebarWidth] = useState(RIGHT_SIDEBAR_DEFAULT)
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(true)
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
   const [dag, setDag] = useState<DagData | null>(null)
+
+  useEffect(() => {
+    setActiveConversationId(routeSessionId ?? "")
+  }, [routeSessionId, setActiveConversationId])
 
   useEffect(() => {
     const savedWidth = localStorage.getItem("right-sidebar-width")
@@ -93,6 +90,22 @@ export function AgentPageContent({
   }, [])
 
   const [showShortcuts, setShowShortcuts] = useState(false)
+
+  const handleSessionResolved = useCallback(
+    (session: SessionView) => {
+      const projectId = session.project_id ?? ""
+      setActiveConversationId(session.id)
+      setActiveConversationTitle(session.title ?? "")
+      setConversationProjectId(projectId)
+      setSelectedProjectId(projectId)
+    },
+    [
+      setActiveConversationId,
+      setActiveConversationTitle,
+      setConversationProjectId,
+      setSelectedProjectId,
+    ],
+  )
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -143,11 +156,12 @@ export function AgentPageContent({
       data-testid="agent-page-shell"
     >
       <AgentWorkbench
+        key={routeSessionId ?? "draft"}
         ref={chatRef}
-        projectId={conversationProjectId || null}
-        activeSessionId={activeConversationId}
+        projectId={conversationProjectId || selectedProjectId || null}
+        sessionId={routeSessionId}
         onActiveSessionIdChange={setActiveConversationId}
-        workspaceEnabled
+        onSessionResolved={handleSessionResolved}
         className="min-w-0 flex-1"
       />
       {showShortcuts && (

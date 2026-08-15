@@ -73,7 +73,14 @@ function applyRunUpdate(
       ? isTerminalRun(run)
         ? null
         : { ...state.activeRun, run }
-      : state.activeRun
+      : !state.activeRun && !isTerminalRun(run)
+        ? {
+            run,
+            assistant_draft: null,
+            tool_progress: [],
+            pending_interaction: null,
+          }
+        : state.activeRun
 
   return applied({ ...state, runs, activeRun })
 }
@@ -84,18 +91,62 @@ function applyAssistantDelta(
 ): AgentEventApplication {
   const activeRun = state.activeRun
   const draft = activeRun?.assistant_draft
-  if (
-    !activeRun ||
-    activeRun.run.id !== event.run_id ||
-    !draft ||
-    draft.id !== event.draft_id
-  ) {
+  if (!activeRun || activeRun.run.id !== event.run_id) {
     return needsSnapshot(state)
   }
 
+  if (!draft) {
+    if (event.start_offset !== 0 || event.end_offset < event.start_offset) {
+      return needsSnapshot(state)
+    }
+    return applied({
+      ...state,
+      activeRun: {
+        ...activeRun,
+        assistant_draft: {
+          id: event.draft_id,
+          run_id: event.run_id,
+          parts: [
+            {
+              id: event.part_id,
+              type: event.part_type,
+              text: event.delta,
+              end_offset: event.end_offset,
+            },
+          ],
+        },
+      },
+    })
+  }
+
+  if (draft.id !== event.draft_id) return needsSnapshot(state)
+
   const partIndex = draft.parts.findIndex((part) => part.id === event.part_id)
   const part = draft.parts[partIndex]
-  if (!part || part.type !== event.part_type) return needsSnapshot(state)
+  if (!part) {
+    if (event.start_offset !== 0 || event.end_offset < event.start_offset) {
+      return needsSnapshot(state)
+    }
+    return applied({
+      ...state,
+      activeRun: {
+        ...activeRun,
+        assistant_draft: {
+          ...draft,
+          parts: [
+            ...draft.parts,
+            {
+              id: event.part_id,
+              type: event.part_type,
+              text: event.delta,
+              end_offset: event.end_offset,
+            },
+          ],
+        },
+      },
+    })
+  }
+  if (part.type !== event.part_type) return needsSnapshot(state)
   if (event.end_offset < event.start_offset) return needsSnapshot(state)
   if (event.end_offset <= part.end_offset) return ignored(state)
   if (event.start_offset !== part.end_offset) {

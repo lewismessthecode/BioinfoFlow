@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import type { AgentCoreSession } from "@/lib/agent-core"
+import type { AgentSessionSummary } from "@/lib/agent/client"
 import type { Project } from "@/lib/types"
 import { ConversationItem } from "./conversation-item"
 
@@ -20,20 +20,14 @@ interface ProjectItemProps {
   isActive: boolean
   isExpanded: boolean
   collapsed: boolean
-  isDropTarget?: boolean
-  conversations: AgentCoreSession[]
+  conversations: AgentSessionSummary[]
   isLoadingConversations: boolean
   activeConversationId: string
   onToggleExpand: (projectId: string) => void
   onSelectProject: (project: Project) => void
-  onSelectConversation: (conversation: AgentCoreSession, projectId: string) => void
-  onConversationDragStart: (conversation: AgentCoreSession, projectId: string) => void
-  onConversationDragEnd: () => void
-  onConversationDrop: (projectId: string) => void
-  onConversationDragOver: (projectId: string) => void
-  onConversationDragLeave: (projectId: string) => void
+  onSelectConversation: (conversation: AgentSessionSummary, projectId: string) => void
   onCreateConversation: (projectId: string) => void
-  onRenameConversation: (conversation: AgentCoreSession, projectId: string, newTitle: string) => void
+  onRenameConversation: (conversation: AgentSessionSummary, projectId: string, newTitle: string) => void
   onDeleteConversation: (conversationId: string, projectId: string, name: string) => void
   onRenameProject: (project: Project, newName: string) => void
   onDuplicateProject: (project: Project) => void
@@ -48,18 +42,12 @@ export function ProjectItem({
   isActive,
   isExpanded,
   collapsed,
-  isDropTarget = false,
   conversations,
   isLoadingConversations,
   activeConversationId,
   onToggleExpand,
   onSelectProject,
   onSelectConversation,
-  onConversationDragStart,
-  onConversationDragEnd,
-  onConversationDrop,
-  onConversationDragOver,
-  onConversationDragLeave,
   onCreateConversation,
   onRenameConversation,
   onDeleteConversation,
@@ -97,7 +85,7 @@ export function ProjectItem({
                 : "text-sidebar-foreground/78 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
             )}
           >
-            <FolderKanban className="h-3.5 w-3.5" />
+            <FolderKanban aria-hidden="true" className="h-3.5 w-3.5" />
           </button>
         </TooltipTrigger>
         <TooltipContent side="right" sideOffset={12}>{project.name}</TooltipContent>
@@ -106,21 +94,7 @@ export function ProjectItem({
   }
 
   return (
-    <div
-      className={cn(
-        "transition-colors duration-150",
-        isDropTarget && "rounded-[8px] bg-sidebar-foreground/[0.04] ring-1 ring-sidebar-border/45"
-      )}
-      onDragOver={(event) => {
-        event.preventDefault()
-        onConversationDragOver(project.id)
-      }}
-      onDragLeave={() => onConversationDragLeave(project.id)}
-      onDrop={(event) => {
-        event.preventDefault()
-        onConversationDrop(project.id)
-      }}
-      >
+    <div className="transition-colors duration-150">
         {/* Project Header */}
       <div
         className={cn(
@@ -168,7 +142,7 @@ export function ProjectItem({
             onCreateConversation(project.id)
           }}
         >
-          <Plus className="h-3 w-3" />
+          <Plus data-icon="inline-start" aria-hidden="true" className="h-3 w-3" />
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -179,7 +153,7 @@ export function ProjectItem({
               aria-label={tCommon("actions")}
               onClick={(event) => event.stopPropagation()}
             >
-              <MoreVertical className="h-3 w-3" />
+              <MoreVertical data-icon="inline-start" aria-hidden="true" className="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -192,7 +166,7 @@ export function ProjectItem({
               {tSidebar("renameProject")}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onDuplicateProject(project)}>
-              <Copy className="h-3.5 w-3.5 mr-2" />
+              <Copy data-icon="inline-start" aria-hidden="true" />
               {tCommon("duplicate") || "Duplicate"}
             </DropdownMenuItem>
             {canDeleteWorkspaceResources ? (
@@ -202,7 +176,7 @@ export function ProjectItem({
                   className="text-destructive"
                   onClick={() => onDeleteProject(project.id, project.name)}
                 >
-                  <Trash2 className="h-3.5 w-3.5 mr-2" />
+                  <Trash2 data-icon="inline-start" aria-hidden="true" />
                   {tCommon("delete")}
                 </DropdownMenuItem>
               </>
@@ -226,8 +200,6 @@ export function ProjectItem({
                 projectId={project.id}
                 index={index}
                 isActive={activeConversationId === conversation.id}
-                onDragStart={onConversationDragStart}
-                onDragEnd={onConversationDragEnd}
                 onSelect={onSelectConversation}
                 onRename={onRenameConversation}
                 onDelete={onDeleteConversation}

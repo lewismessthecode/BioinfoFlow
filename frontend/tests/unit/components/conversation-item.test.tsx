@@ -21,14 +21,10 @@ const noop = vi.fn()
 const baseConversation = {
   id: "conv-1",
   project_id: "project-1",
-  workspace_id: "workspace-1",
-  user_id: "user-1",
   title: "Conversation 2",
-  role_profile: "bioinformatician",
-  permission_mode: "guarded_auto",
-  automation_mode: "assisted",
+  permission_mode: "ask_changes",
+  workspace_access: "read_write",
   status: "active",
-  pinned: false,
   created_at: "2026-07-17T04:00:00Z",
   updated_at: "2026-07-17T04:00:00Z",
 } as const
@@ -53,7 +49,6 @@ describe("ConversationItem", () => {
         isActive={false}
         onSelect={noop}
         onRename={noop}
-        onTogglePin={noop}
         onDelete={noop}
         tSidebar={(key) => key}
         tCommon={(key) => key}
@@ -76,7 +71,6 @@ describe("ConversationItem", () => {
         isActive
         onSelect={noop}
         onRename={noop}
-        onTogglePin={noop}
         onDelete={noop}
         tSidebar={(key) => key}
         tCommon={(key) => key}
@@ -99,7 +93,6 @@ describe("ConversationItem", () => {
         isActive={false}
         onSelect={noop}
         onRename={noop}
-        onTogglePin={noop}
         onDelete={noop}
         tSidebar={(key) => key}
         tCommon={(key) => key}
@@ -113,6 +106,24 @@ describe("ConversationItem", () => {
     expect(row?.className).not.toContain("px-3")
   })
 
+  it("does not make sessions draggable between projects", () => {
+    const { container } = render(
+      <ConversationItem
+        conversation={baseConversation}
+        projectId="project-1"
+        index={1}
+        isActive={false}
+        onSelect={noop}
+        onRename={noop}
+        onDelete={noop}
+        tSidebar={(key) => key}
+        tCommon={(key) => key}
+      />,
+    )
+
+    expect(container.querySelector("[draggable='true']")).toBeNull()
+  })
+
   it("shows zh relative dates for conversation updates", () => {
     const { rerender } = render(
       <ConversationItem
@@ -122,7 +133,6 @@ describe("ConversationItem", () => {
         isActive={false}
         onSelect={noop}
         onRename={noop}
-        onTogglePin={noop}
         onDelete={noop}
         tSidebar={(key) => key}
         tCommon={(key) => key}
@@ -138,7 +148,6 @@ describe("ConversationItem", () => {
         isActive={false}
         onSelect={noop}
         onRename={noop}
-        onTogglePin={noop}
         onDelete={noop}
         tSidebar={(key) => key}
         tCommon={(key) => key}
@@ -154,7 +163,6 @@ describe("ConversationItem", () => {
         isActive={false}
         onSelect={noop}
         onRename={noop}
-        onTogglePin={noop}
         onDelete={noop}
         tSidebar={(key) => key}
         tCommon={(key) => key}
@@ -173,7 +181,6 @@ describe("ConversationItem", () => {
         isActive={false}
         onSelect={noop}
         onRename={noop}
-        onTogglePin={noop}
         onDelete={noop}
         tSidebar={(key) => key}
         tCommon={(key) => key}
@@ -189,7 +196,6 @@ describe("ConversationItem", () => {
         isActive={false}
         onSelect={noop}
         onRename={noop}
-        onTogglePin={noop}
         onDelete={noop}
         tSidebar={(key) => key}
         tCommon={(key) => key}
@@ -205,7 +211,6 @@ describe("ConversationItem", () => {
         isActive={false}
         onSelect={noop}
         onRename={noop}
-        onTogglePin={noop}
         onDelete={noop}
         tSidebar={(key) => key}
         tCommon={(key) => key}

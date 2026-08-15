@@ -1,29 +1,27 @@
 "use client"
 
-import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { Plus } from "@/lib/icons"
-import type { AgentCoreSession } from "@/lib/agent-core"
+import type { AgentSessionSummary } from "@/lib/agent/client"
 import type { Project } from "@/lib/types"
 import { ProjectItem } from "./project-item"
 import { ConversationItem } from "./conversation-item"
 
 interface ProjectListProps {
   projects: Project[]
-  inboxConversations: AgentCoreSession[]
+  inboxConversations: AgentSessionSummary[]
   defaultProjectId?: string
   expandedProjects: Set<string>
-  projectConversations: Map<string, AgentCoreSession[]>
+  projectConversations: Map<string, AgentSessionSummary[]>
   loadingProjects: Set<string>
   collapsed: boolean
   activeProjectId: string
   activeConversationId: string
   onToggleExpand: (projectId: string) => void
   onSelectProject: (project: Project) => void
-  onSelectConversation: (conversation: AgentCoreSession, projectId: string) => void
-  onMoveConversation: (conversationId: string, fromProjectId: string, targetProjectId: string) => void
+  onSelectConversation: (conversation: AgentSessionSummary, projectId: string) => void
   onCreateConversation: (projectId: string) => void
-  onRenameConversation: (conversation: AgentCoreSession, projectId: string, newTitle: string) => void
+  onRenameConversation: (conversation: AgentSessionSummary, projectId: string, newTitle: string) => void
   onDeleteConversation: (conversationId: string, projectId: string, name: string) => void
   onRenameProject: (project: Project, newName: string) => void
   onDuplicateProject: (project: Project) => void
@@ -47,7 +45,6 @@ export function ProjectList({
   onToggleExpand,
   onSelectProject,
   onSelectConversation,
-  onMoveConversation,
   onCreateConversation,
   onRenameConversation,
   onDeleteConversation,
@@ -59,39 +56,6 @@ export function ProjectList({
   tSidebar,
   tCommon,
 }: ProjectListProps) {
-  const [draggingConversation, setDraggingConversation] = useState<{
-    id: string
-    projectId: string
-  } | null>(null)
-  const [dropTargetProjectId, setDropTargetProjectId] = useState<string | null>(null)
-
-  const handleConversationDragStart = (conversation: AgentCoreSession, projectId: string) => {
-    setDraggingConversation({ id: conversation.id, projectId })
-  }
-
-  const handleConversationDragEnd = () => {
-    setDraggingConversation(null)
-    setDropTargetProjectId(null)
-  }
-
-  const handleConversationDragOver = (projectId: string) => {
-    if (!draggingConversation || draggingConversation.projectId === projectId) return
-    setDropTargetProjectId(projectId)
-  }
-
-  const handleConversationDragLeave = (projectId: string) => {
-    setDropTargetProjectId((current) => (current === projectId ? null : current))
-  }
-
-  const handleConversationDrop = (projectId: string) => {
-    if (!draggingConversation) return
-    setDropTargetProjectId(null)
-    if (draggingConversation.projectId !== projectId) {
-      onMoveConversation(draggingConversation.id, draggingConversation.projectId, projectId)
-    }
-    setDraggingConversation(null)
-  }
-
   if (collapsed) {
     return (
       <div className="space-y-1">
@@ -108,11 +72,6 @@ export function ProjectList({
             onToggleExpand={onToggleExpand}
             onSelectProject={onSelectProject}
             onSelectConversation={onSelectConversation}
-            onConversationDragStart={handleConversationDragStart}
-            onConversationDragEnd={handleConversationDragEnd}
-            onConversationDrop={handleConversationDrop}
-            onConversationDragOver={handleConversationDragOver}
-            onConversationDragLeave={handleConversationDragLeave}
             onCreateConversation={onCreateConversation}
             onRenameConversation={onRenameConversation}
             onDeleteConversation={onDeleteConversation}
@@ -129,7 +88,7 @@ export function ProjectList({
           aria-label={tSidebar("newProject")}
           className="flex h-8 w-full items-center justify-center rounded-[7px] text-sidebar-foreground/78 transition-colors hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus aria-hidden="true" className="h-3.5 w-3.5" />
         </button>
       </div>
     )
@@ -143,17 +102,7 @@ export function ProjectList({
           className={cn(
             "space-y-0.5 transition-colors duration-150",
             inboxConversations.length === 0 && "h-0 overflow-hidden",
-            dropTargetProjectId === defaultProjectId && "rounded-[8px] bg-sidebar-foreground/[0.04] ring-1 ring-sidebar-border/45"
           )}
-          onDragOver={(event) => {
-            event.preventDefault()
-            handleConversationDragOver(defaultProjectId)
-          }}
-          onDragLeave={() => handleConversationDragLeave(defaultProjectId)}
-          onDrop={(event) => {
-            event.preventDefault()
-            handleConversationDrop(defaultProjectId)
-          }}
         >
           {inboxConversations.map((conversation, index) => (
             <ConversationItem
@@ -162,9 +111,6 @@ export function ProjectList({
               projectId={defaultProjectId}
               index={index}
               isActive={activeConversationId === conversation.id}
-              isDragging={draggingConversation?.id === conversation.id}
-              onDragStart={handleConversationDragStart}
-              onDragEnd={handleConversationDragEnd}
               onSelect={onSelectConversation}
               onRename={onRenameConversation}
               onDelete={onDeleteConversation}
@@ -183,18 +129,12 @@ export function ProjectList({
           isActive={project.id === activeProjectId}
           isExpanded={expandedProjects.has(project.id)}
           collapsed={false}
-          isDropTarget={dropTargetProjectId === project.id}
           conversations={projectConversations.get(project.id) || []}
           isLoadingConversations={loadingProjects.has(project.id)}
           activeConversationId={activeConversationId}
           onToggleExpand={onToggleExpand}
           onSelectProject={onSelectProject}
           onSelectConversation={onSelectConversation}
-          onConversationDragStart={handleConversationDragStart}
-          onConversationDragEnd={handleConversationDragEnd}
-          onConversationDrop={handleConversationDrop}
-          onConversationDragOver={handleConversationDragOver}
-          onConversationDragLeave={handleConversationDragLeave}
           onCreateConversation={onCreateConversation}
           onRenameConversation={onRenameConversation}
           onDeleteConversation={onDeleteConversation}

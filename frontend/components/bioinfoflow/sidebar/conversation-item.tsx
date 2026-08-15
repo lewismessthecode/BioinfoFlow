@@ -11,23 +11,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import type { AgentCoreSession } from "@/lib/agent-core"
+import type { AgentSessionSummary } from "@/lib/agent/client"
 import {
   dateTimeAttribute,
   formatAbsoluteDateTime,
   formatSidebarRelativeDate,
-} from "@/lib/agent-runtime/date-format"
+} from "@/lib/agent/date-format"
 
 interface ConversationItemProps {
-  conversation: AgentCoreSession
+  conversation: AgentSessionSummary
   projectId: string
   index: number
   isActive: boolean
-  isDragging?: boolean
-  onSelect: (conversation: AgentCoreSession, projectId: string) => void
-  onDragStart?: (conversation: AgentCoreSession, projectId: string) => void
-  onDragEnd?: () => void
-  onRename: (conversation: AgentCoreSession, projectId: string, newTitle: string) => void
+  onSelect: (conversation: AgentSessionSummary, projectId: string) => void
+  onRename: (conversation: AgentSessionSummary, projectId: string, newTitle: string) => void
   onDelete: (conversationId: string, projectId: string, name: string) => void
   canDelete?: boolean
   tSidebar: (key: string, values?: Record<string, number>) => string
@@ -39,10 +36,7 @@ export function ConversationItem({
   projectId,
   index,
   isActive,
-  isDragging = false,
   onSelect,
-  onDragStart,
-  onDragEnd,
   onRename,
   onDelete,
   canDelete = true,
@@ -74,22 +68,11 @@ export function ConversationItem({
 
   return (
     <div
-      draggable={false}
-      onDragStart={(event) => {
-        event.dataTransfer.effectAllowed = "move"
-        event.dataTransfer.setData(
-          "application/bioinfoflow-conversation",
-          JSON.stringify({ id: conversation.id, projectId }),
-        )
-        onDragStart?.(conversation, projectId)
-      }}
-      onDragEnd={() => onDragEnd?.()}
       className={cn(
         "group flex items-center gap-1.5 rounded-[7px] border border-transparent px-2 py-1 text-[12px] leading-4 transition-colors duration-150",
         isActive
           ? "bg-sidebar-foreground/[0.08] text-sidebar-foreground font-semibold"
           : "text-sidebar-foreground/78 font-medium hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground",
-        isDragging && "opacity-45"
       )}
     >
       {isEditing ? (
@@ -125,7 +108,7 @@ export function ConversationItem({
               dateTime={dateTime}
               aria-hidden="true"
               className="ml-auto shrink-0 text-[11px] font-normal leading-none tabular-nums text-sidebar-foreground/42"
-              title={absoluteDateLabel ?? dateLabel}
+              title={absoluteDateLabel ?? dateLabel ?? undefined}
               suppressHydrationWarning
             >
               {dateLabel}
@@ -141,7 +124,7 @@ export function ConversationItem({
             className="h-6 w-6 rounded-[6px] opacity-0 transition-opacity hover:bg-sidebar-foreground/[0.055] group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
             aria-label={tCommon("actions")}
           >
-            <MoreVertical className="h-3 w-3" />
+            <MoreVertical data-icon="inline-start" aria-hidden="true" className="h-3 w-3" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -154,7 +137,7 @@ export function ConversationItem({
                 className="text-destructive"
                 onClick={() => onDelete(conversation.id, projectId, label)}
               >
-                <Trash2 className="h-3.5 w-3.5 mr-2" />
+                <Trash2 data-icon="inline-start" aria-hidden="true" />
                 {tCommon("delete")}
               </DropdownMenuItem>
             </>

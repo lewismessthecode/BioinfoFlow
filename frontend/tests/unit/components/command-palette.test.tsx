@@ -8,8 +8,7 @@ const {
   setSelectedProjectIdMock,
   setConversationProjectIdMock,
   setActiveConversationIdMock,
-  clearStoredAgentSessionIdMock,
-  setStoredAgentSessionIdMock,
+  useWorkspaceShellMock,
   translateMock,
   toastErrorMock,
   toastSuccessMock,
@@ -18,8 +17,7 @@ const {
   setSelectedProjectIdMock: vi.fn(),
   setConversationProjectIdMock: vi.fn(),
   setActiveConversationIdMock: vi.fn(),
-  clearStoredAgentSessionIdMock: vi.fn(),
-  setStoredAgentSessionIdMock: vi.fn(),
+  useWorkspaceShellMock: vi.fn(),
   translateMock: vi.fn((key: string, values?: Record<string, string | number>) => {
     const labels: Record<string, string> = {
       searchPlaceholder: "Search",
@@ -67,17 +65,8 @@ vi.mock("@/components/bioinfoflow/project-context", () => ({
   }),
 }))
 
-vi.mock("@/lib/agent-core/session-storage", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/agent-core/session-storage")>("@/lib/agent-core/session-storage")
-  return {
-    ...actual,
-    clearStoredAgentSessionId: clearStoredAgentSessionIdMock,
-    setStoredAgentSessionId: setStoredAgentSessionIdMock,
-  }
-})
-
-vi.mock("@/lib/recent-conversations", () => ({
-  getRecentConversations: () => [],
+vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
+  useWorkspaceShell: () => useWorkspaceShellMock(),
 }))
 
 vi.mock("sonner", () => ({
@@ -144,36 +133,26 @@ describe("CommandPalette", () => {
     setSelectedProjectIdMock.mockReset()
     setConversationProjectIdMock.mockReset()
     setActiveConversationIdMock.mockReset()
-    clearStoredAgentSessionIdMock.mockReset()
-    setStoredAgentSessionIdMock.mockReset()
+    useWorkspaceShellMock.mockReset()
     toastErrorMock.mockReset()
     toastSuccessMock.mockReset()
 
-    apiRequestMock.mockImplementation(async (path, options) => {
-      if (path === "/projects/default") {
-        return {
-          data: {
-            id: "project-default",
-            name: "Recent",
-            project_root: "asset://project",
-            is_default: true,
-          },
-          meta: undefined,
-        }
-      }
-      if (path === "/projects") {
-        return {
-          data: [
-            { id: "project-b", name: "Bravo", project_root: "asset://project" },
-            { id: "project-a", name: "Alpha", project_root: "asset://project" },
-          ],
-          meta: undefined,
-        }
-      }
-      if (path === "/agent/sessions" && options?.method === "POST") {
-        throw new Error("New conversations should start as local drafts")
-      }
-      if (path === "/workflows" || path === "/runs" || path === "/agent/sessions") {
+    useWorkspaceShellMock.mockReturnValue({
+      projects: [
+        { id: "project-b", name: "Bravo", project_root: "asset://project" },
+        { id: "project-a", name: "Alpha", project_root: "asset://project" },
+      ],
+      defaultProject: {
+        id: "project-default",
+        name: "Recent",
+        project_root: "asset://project",
+        is_default: true,
+      },
+      projectConversations: new Map(),
+    })
+
+    apiRequestMock.mockImplementation(async (path) => {
+      if (path === "/runs") {
         return { data: [], meta: undefined }
       }
       throw new Error(`Unexpected path: ${path}`)
@@ -199,53 +178,39 @@ describe("CommandPalette", () => {
     expect(setSelectedProjectIdMock).toHaveBeenCalledWith("")
     expect(setConversationProjectIdMock).toHaveBeenCalledWith("project-default")
     expect(setActiveConversationIdMock).toHaveBeenCalledWith("")
-    expect(clearStoredAgentSessionIdMock).toHaveBeenCalledWith("project-default")
-    expect(setStoredAgentSessionIdMock).not.toHaveBeenCalled()
     expect(apiRequestMock).not.toHaveBeenCalledWith("/demos", expect.anything())
   })
 
   it("opens existing conversations with a session deep link", async () => {
-    apiRequestMock.mockImplementation(async (path, options) => {
-      if (path === "/projects/default") {
-        return {
-          data: {
-            id: "project-default",
-            name: "Recent",
-            project_root: "asset://project",
-            is_default: true,
-          },
-          meta: undefined,
-        }
-      }
-      if (path === "/projects") {
-        return {
-          data: [{ id: "project-a", name: "Alpha", project_root: "asset://project" }],
-          meta: undefined,
-        }
-      }
-      if (path === "/runs") {
-        return { data: [], meta: undefined }
-      }
-      if (path === "/agent/sessions" && !options?.method) {
-        return {
-          data: [
+    useWorkspaceShellMock.mockReturnValue({
+      projects: [{ id: "project-a", name: "Alpha", project_root: "asset://project" }],
+      defaultProject: {
+        id: "project-default",
+        name: "Recent",
+        project_root: "asset://project",
+        is_default: true,
+      },
+      projectConversations: new Map([
+        [
+          "project-a",
+          [
             {
               id: "session-9",
               project_id: "project-a",
-              workspace_id: "workspace-1",
-              user_id: "dev",
               title: "Genome QC",
-              role_profile: "bioinformatician",
-              permission_mode: "guarded_auto",
-              automation_mode: "assisted",
-              runtime_mode: "api",
+              permission_mode: "ask_changes",
+              workspace_access: "read_write",
               status: "active",
               created_at: "2026-06-04T00:00:00Z",
               updated_at: "2026-06-04T00:00:00Z",
             },
           ],
-          meta: undefined,
-        }
+        ],
+      ]),
+    })
+    apiRequestMock.mockImplementation(async (path) => {
+      if (path === "/runs") {
+        return { data: [], meta: undefined }
       }
       throw new Error(`Unexpected path: ${path}`)
     })
@@ -255,7 +220,6 @@ describe("CommandPalette", () => {
 
     expect(setConversationProjectIdMock).toHaveBeenCalledWith("project-a")
     expect(setActiveConversationIdMock).toHaveBeenCalledWith("session-9")
-    expect(setStoredAgentSessionIdMock).toHaveBeenCalledWith("project-a", "session-9")
     expect(pushMock).toHaveBeenCalledWith("/agent/session-9")
   })
 })

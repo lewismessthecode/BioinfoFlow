@@ -1,9 +1,11 @@
 "use client"
 
+import type { ReactNode, Ref } from "react"
 import { FormEvent, KeyboardEvent, useEffect, useState } from "react"
 import { useTranslations } from "next-intl"
 
 import { PermissionMenu } from "@/components/bioinfoflow/agent/permission-menu"
+import { AgentContextInputs } from "@/components/bioinfoflow/agent/context-inputs"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Loader2, Send, Square } from "@/lib/icons"
@@ -13,6 +15,7 @@ import type {
   InputPart,
   AgentWorkspaceAccess,
 } from "@/lib/agent/contracts"
+import type { AgentContextInput } from "@/lib/agent/context"
 
 type AgentComposerProps = {
   permissionMode: AgentPermissionMode
@@ -22,6 +25,11 @@ type AgentComposerProps = {
   onSteer: (parts: InputPart[]) => Promise<void>
   onCancel: () => Promise<void>
   onPermissionModeChange: (mode: AgentPermissionMode) => Promise<void>
+  contextInputs?: AgentContextInput[]
+  onRemoveContextInput?: (inputId: string) => void
+  onContextSubmitted?: () => void
+  contextControls?: ReactNode
+  textareaRef?: Ref<HTMLTextAreaElement>
   disabled?: boolean
 }
 
@@ -35,6 +43,11 @@ export function AgentComposer({
   onSteer,
   onCancel,
   onPermissionModeChange,
+  contextInputs = [],
+  onRemoveContextInput,
+  onContextSubmitted,
+  contextControls,
+  textareaRef,
   disabled = false,
 }: AgentComposerProps) {
   const t = useTranslations("agentComposer")
@@ -46,6 +59,7 @@ export function AgentComposer({
   const activeRunId = activeRun?.run.id ?? null
   const cancelling = Boolean(activeRunId && cancelRequestedRunId === activeRunId)
   const hasText = value.trim().length > 0
+  const hasContent = hasText || contextInputs.length > 0
   const controlsDisabled = disabled || submitting !== null || cancelling
 
   useEffect(() => {
@@ -56,14 +70,18 @@ export function AgentComposer({
 
   const submit = async (action: SubmitAction) => {
     const text = value.trim()
-    if (!text || controlsDisabled) return
+    if (!hasContent || controlsDisabled) return
     setSubmitting(action)
     setSubmitError(null)
     try {
-      const parts: InputPart[] = [{ type: "text", text }]
+      const parts: InputPart[] = [
+        ...contextInputs.map((input) => input.input_part),
+        ...(text ? [{ type: "text" as const, text }] : []),
+      ]
       if (action === "steer") await onSteer(parts)
       else await onSendMessage(parts)
       setValue("")
+      onContextSubmitted?.()
     } catch {
       setSubmitError(t("submitError"))
     } finally {
@@ -106,7 +124,17 @@ export function AgentComposer({
       onSubmit={handleSubmit}
     >
       <div className="rounded-xl border border-border/70 bg-background p-2 shadow-xs focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
+        {contextInputs.length > 0 && onRemoveContextInput ? (
+          <div className="px-1 pt-1 pb-2">
+            <AgentContextInputs
+              inputs={contextInputs}
+              onRemove={onRemoveContextInput}
+              disabled={controlsDisabled}
+            />
+          </div>
+        ) : null}
         <Textarea
+          ref={textareaRef}
           value={value}
           onChange={(event) => setValue(event.currentTarget.value)}
           onKeyDown={handleKeyDown}
@@ -120,6 +148,7 @@ export function AgentComposer({
         />
 
         <div className="flex min-w-0 flex-wrap items-end gap-2 pt-2">
+          {contextControls}
           <PermissionMenu
             permissionMode={permissionMode}
             workspaceAccess={workspaceAccess}
@@ -134,7 +163,7 @@ export function AgentComposer({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  disabled={!hasText || controlsDisabled}
+                  disabled={!hasContent || controlsDisabled}
                   onClick={() => void submit("steer")}
                 >
                   {submitting === "steer" ? (
@@ -161,7 +190,7 @@ export function AgentComposer({
             <Button
               type="submit"
               size="icon-sm"
-              disabled={!hasText || controlsDisabled}
+              disabled={!hasContent || controlsDisabled}
               aria-label={t(
                 submitting === "message"
                   ? "sending"

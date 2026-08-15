@@ -10,6 +10,7 @@ import type {
   AgentWorkspaceAccess,
   InputPart,
 } from "@/lib/agent/contracts"
+import type { AgentContextInput } from "@/lib/agent/context"
 import { renderWithProviders } from "@/tests/test-utils"
 
 vi.mock("next-intl", () => ({
@@ -76,6 +77,9 @@ function renderComposer({
   onSteer = vi.fn().mockResolvedValue(undefined),
   onCancel = vi.fn().mockResolvedValue(undefined),
   onPermissionModeChange = vi.fn().mockResolvedValue(undefined),
+  contextInputs = [],
+  onRemoveContextInput = vi.fn(),
+  onContextSubmitted = vi.fn(),
 }: {
   permissionMode?: AgentPermissionMode
   workspaceAccess?: AgentWorkspaceAccess
@@ -84,6 +88,9 @@ function renderComposer({
   onSteer?: (parts: InputPart[]) => Promise<void>
   onCancel?: () => Promise<void>
   onPermissionModeChange?: (mode: AgentPermissionMode) => Promise<void>
+  contextInputs?: AgentContextInput[]
+  onRemoveContextInput?: (inputId: string) => void
+  onContextSubmitted?: () => void
 } = {}) {
   return {
     ...renderWithProviders(
@@ -95,12 +102,17 @@ function renderComposer({
         onSteer={onSteer}
         onCancel={onCancel}
         onPermissionModeChange={onPermissionModeChange}
+        contextInputs={contextInputs}
+        onRemoveContextInput={onRemoveContextInput}
+        onContextSubmitted={onContextSubmitted}
       />,
     ),
     onSendMessage,
     onSteer,
     onCancel,
     onPermissionModeChange,
+    onRemoveContextInput,
+    onContextSubmitted,
   }
 }
 
@@ -120,6 +132,39 @@ describe("AgentComposer", () => {
       { type: "text", text: "First line\nSecond line" },
     ])
     expect(input).toHaveValue("")
+  })
+
+  it("submits typed context without translating it into display-only metadata", async () => {
+    const user = userEvent.setup()
+    const contextInputs: AgentContextInput[] = [
+      {
+        id: "workflow:workflow-1",
+        kind: "workflow",
+        label: "RNA-seq",
+        input_part: {
+          type: "workflow_ref",
+          workflow_id: "workflow-1",
+          scope: "project",
+          project_id: "project-1",
+        },
+      },
+    ]
+    const { onSendMessage, onContextSubmitted } = renderComposer({
+      contextInputs,
+    })
+
+    expect(screen.getByText("RNA-seq")).toBeInTheDocument()
+    await user.type(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+      "Inspect it",
+    )
+    await user.click(screen.getByRole("button", { name: "Send message" }))
+
+    expect(onSendMessage).toHaveBeenCalledWith([
+      contextInputs[0].input_part,
+      { type: "text", text: "Inspect it" },
+    ])
+    expect(onContextSubmitted).toHaveBeenCalledTimes(1)
   })
 
   it("queues an ordinary message during a run and offers explicit steer and stop actions", async () => {

@@ -13,17 +13,10 @@ import {
   CommandSeparator,
 } from "@/components/ui/command"
 import { apiRequest, getApiErrorMessage } from "@/lib/api"
-import {
-  listAgentSessions,
-  type AgentCoreSession,
-} from "@/lib/agent-core"
+import type { AgentSessionSummary } from "@/lib/agent/client"
 import type { Project, Run } from "@/lib/types"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
-import {
-  clearStoredAgentSessionId,
-  setStoredAgentSessionId,
-} from "@/lib/agent-core/session-storage"
-import { getRecentConversations } from "@/lib/recent-conversations"
+import { useWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { toast } from "sonner"
 
 type CommandPaletteProps = {
@@ -40,30 +33,29 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     setConversationProjectId,
     setActiveConversationId,
   } = useProjectContext()
-  const [projects, setProjects] = useState<Project[]>([])
-  const [defaultProjectId, setDefaultProjectId] = useState<string | null>(null)
+  const workspaceShell = useWorkspaceShell()
   const [runs, setRuns] = useState<Run[]>([])
-  const [conversations, setConversations] = useState<AgentCoreSession[]>([])
+  const projects = workspaceShell.projects
+  const defaultProjectId = workspaceShell.defaultProject?.id ?? null
+  const conversations = useMemo(() => {
+    const seen = new Set<string>()
+    const result: AgentSessionSummary[] = []
+    for (const group of workspaceShell.projectConversations.values()) {
+      for (const session of group) {
+        if (seen.has(session.id)) continue
+        seen.add(session.id)
+        result.push(session)
+      }
+    }
+    return result
+  }, [workspaceShell.projectConversations])
 
   const fetchPaletteData = useCallback(async () => {
     try {
-      const [
-        projectsResponse,
-        defaultProjectResponse,
-        runsResponse,
-        conversationsResponse,
-      ] = await Promise.all([
-        apiRequest<Project[]>("/projects", { params: { limit: 20 } }),
-        apiRequest<Project>("/projects/default").catch(() => null),
-        apiRequest<Run[]>("/runs", {
-          params: { limit: 20, project_id: selectedProjectId || undefined },
-        }),
-        listAgentSessions(),
-      ])
-      setProjects(projectsResponse.data.filter((project) => !project.is_default))
-      setDefaultProjectId(defaultProjectResponse?.data?.id ?? null)
+      const runsResponse = await apiRequest<Run[]>("/runs", {
+        params: { limit: 20, project_id: selectedProjectId || undefined },
+      })
       setRuns(runsResponse.data)
-      setConversations(conversationsResponse)
     } catch (error) {
       const message = getApiErrorMessage(error, tPalette("errors.loadFailed"))
       toast.error(message)
@@ -85,8 +77,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     router.push("/agent")
   }
 
-  const handleSelectConversation = (conversation: AgentCoreSession) => {
-    const projectId = String(conversation.project_id)
+  const handleSelectConversation = (conversation: AgentSessionSummary) => {
+    const projectId = conversation.project_id ?? defaultProjectId ?? ""
     if (projectId === defaultProjectId) {
       setSelectedProjectId("")
     } else {
@@ -94,7 +86,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     }
     setConversationProjectId(projectId)
     setActiveConversationId(conversation.id)
-    setStoredAgentSessionId(projectId, conversation.id)
     onOpenChange(false)
     router.push(`/agent/${conversation.id}`)
   }
@@ -114,7 +105,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       }
       setConversationProjectId(resolvedProjectId)
       setActiveConversationId("")
-      clearStoredAgentSessionId(resolvedProjectId)
       onOpenChange(false)
       router.push("/agent")
     } catch (error) {
@@ -128,8 +118,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     [projects],
   )
 
-  const recentConversations = getRecentConversations()
-
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
       <CommandInput
@@ -142,36 +130,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         <CommandGroup heading={tPalette("groups.actions")}>
           <CommandItem onSelect={handleNewConversation}>{tPalette("actions.newConversation")}</CommandItem>
         </CommandGroup>
-
-        {recentConversations.length > 0 && (
-          <>
-            <CommandSeparator />
-            <CommandGroup heading="Recent">
-              {recentConversations.map((item) => (
-                <CommandItem
-                  key={item.id}
-                  onSelect={() => {
-                    if (item.projectId === defaultProjectId) {
-                      setSelectedProjectId("")
-                    } else {
-                      setSelectedProjectId(item.projectId)
-                    }
-                    setConversationProjectId(item.projectId)
-                    setActiveConversationId(item.id)
-                    setStoredAgentSessionId(item.projectId, item.id)
-                    onOpenChange(false)
-                    router.push(`/agent/${item.id}`)
-                  }}
-                >
-                  <span className="truncate">{item.title || "Untitled"}</span>
-                  {item.projectId !== defaultProjectId ? (
-                    <span className="ml-auto text-xs text-muted-foreground">{item.projectName}</span>
-                  ) : null}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        )}
 
         <CommandSeparator />
         <CommandGroup heading={tPalette("groups.projects")}>

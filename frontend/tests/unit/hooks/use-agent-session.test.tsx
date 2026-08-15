@@ -101,13 +101,14 @@ describe("useAgentSession", () => {
   beforeEach(() => {
     mocks.dispatchAgentCommand.mockReset()
     mocks.getAgentSnapshot.mockReset()
+    mocks.getAgentSnapshot.mockResolvedValue(snapshot())
     mocks.updateAgentSession.mockReset()
     mocks.subscribeAgentEvents.mockReset()
     mocks.unsubscribe.mockReset()
     mocks.subscribeAgentEvents.mockReturnValue(mocks.unsubscribe)
   })
 
-  it("subscribes immediately and finishes loading on the stream snapshot", async () => {
+  it("loads an initial snapshot while subscribing immediately to live events", async () => {
     const { result } = renderHook(() => useAgentSession("session-1"))
 
     expect(result.current.isLoading).toBe(true)
@@ -118,7 +119,7 @@ describe("useAgentSession", () => {
       onConnectionChange: expect.any(Function),
       onError: expect.any(Function),
     })
-    expect(mocks.getAgentSnapshot).not.toHaveBeenCalled()
+    expect(mocks.getAgentSnapshot).toHaveBeenCalledWith("session-1")
 
     const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
     act(() => {
@@ -154,7 +155,9 @@ describe("useAgentSession", () => {
   })
 
   it("applies live events and refetches when a delta cannot be reconciled", async () => {
-    mocks.getAgentSnapshot.mockResolvedValueOnce(snapshot("Recovered"))
+    mocks.getAgentSnapshot
+      .mockResolvedValueOnce(snapshot("Initial"))
+      .mockResolvedValueOnce(snapshot("Recovered"))
 
     const { result } = renderHook(() => useAgentSession("session-1"))
 
@@ -191,8 +194,8 @@ describe("useAgentSession", () => {
       })
     })
 
-    await waitFor(() => expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(1))
-    expect(mocks.getAgentSnapshot).toHaveBeenCalledWith("session-1")
+    await waitFor(() => expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(2))
+    expect(mocks.getAgentSnapshot).toHaveBeenLastCalledWith("session-1")
     await waitFor(() => expect(result.current.session?.title).toBe("Recovered"))
   })
 
@@ -405,6 +408,6 @@ describe("useAgentSession", () => {
     })
 
     expect(mocks.unsubscribe).toHaveBeenCalledOnce()
-    expect(mocks.getAgentSnapshot).not.toHaveBeenCalled()
+    expect(mocks.getAgentSnapshot).toHaveBeenCalledOnce()
   })
 })

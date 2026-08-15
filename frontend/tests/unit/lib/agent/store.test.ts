@@ -137,6 +137,62 @@ describe("applyAgentEvent", () => {
     })
   })
 
+  it("creates the active run when the first live event is a non-terminal run update", () => {
+    const state = {
+      ...snapshotState(),
+      runs: [],
+      activeRun: null,
+    }
+    const started = run({ revision: 1, status: "running", phase: "model" })
+
+    const result = apply(state, { type: "run.updated", run: started })
+
+    expect(result.outcome).toBe("applied")
+    expect(result.state.activeRun).toEqual({
+      run: started,
+      assistant_draft: null,
+      tool_progress: [],
+      pending_interaction: null,
+    })
+  })
+
+  it("creates a draft and part from a first contiguous assistant delta", () => {
+    const state = {
+      ...snapshotState(),
+      activeRun: {
+        run: run(),
+        assistant_draft: null,
+        tool_progress: [],
+        pending_interaction: null,
+      },
+    }
+
+    const result = apply(state, {
+      type: "assistant.delta",
+      run_id: "run-1",
+      draft_id: "draft-new",
+      part_id: "part-new",
+      part_type: "reasoning_summary",
+      start_offset: 0,
+      end_offset: 8,
+      delta: "Checking",
+    })
+
+    expect(result.outcome).toBe("applied")
+    expect(result.state.activeRun?.assistant_draft).toEqual({
+      id: "draft-new",
+      run_id: "run-1",
+      parts: [
+        {
+          id: "part-new",
+          type: "reasoning_summary",
+          text: "Checking",
+          end_offset: 8,
+        },
+      ],
+    })
+  })
+
   it("appends a contiguous assistant delta to the identified draft part", () => {
     const result = apply(snapshotState(), {
       type: "assistant.delta",

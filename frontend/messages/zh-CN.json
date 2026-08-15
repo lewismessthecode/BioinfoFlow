@@ -2169,21 +2169,7 @@
     },
     "agent": {
       "title": "智能助手默认值",
-      "description": "选择 Bioinfoflow 在智能助手仍在处理时如何接收新消息。",
-      "turnPolicy": {
-        "label": "回复进行中收到新消息",
-        "description": "当前轮次尚未结束时，发送新消息会按这个策略处理。",
-        "options": {
-          "steer": {
-            "label": "融入当前回复",
-            "description": "在下一个安全步骤把这条消息交给当前回复继续处理。"
-          },
-          "queue": {
-            "label": "排队到下一轮",
-            "description": "保留当前回复继续运行，等它结束后再发送你的草稿。"
-          }
-        }
-      },
+      "description": "为新的智能助手会话设置长期上下文。",
       "customInstructions": {
         "label": "自定义指令",
         "description": "为新会话补充长期上下文。",
@@ -3125,6 +3111,36 @@
     },
     "tokens": "{count}k tokens"
   },
+  "agentWorkbench": {
+    "newConversation": "新对话",
+    "untitled": "未命名对话",
+    "defaultModel": "默认模型",
+    "emptyTitle": "你想先做什么？",
+    "emptyDescription": "可以直接提问、添加数据，或引用工作流。Bioinfoflow 会展示计划、进度、工具执行，以及需要你确认的操作。",
+    "createError": "无法开始对话。你的消息仍然保留，请重试。",
+    "loadErrorTitle": "无法打开对话",
+    "loadErrorDescription": "当前对话暂时无法加载。",
+    "retry": "重试",
+    "connection": {
+      "connecting": "正在连接",
+      "connected": "已连接",
+      "reconnecting": "连接已中断，正在重连…"
+    }
+  },
+  "agentContextPicker": {
+    "add": "添加上下文",
+    "searchPlaceholder": "搜索文件、工作流和运行记录",
+    "empty": "没有匹配的上下文",
+    "uploadFiles": "上传文件",
+    "uploadFolder": "上传文件夹",
+    "searching": "正在搜索…",
+    "uploadError": "附件上传失败。",
+    "searchError": "暂时无法搜索上下文。"
+  },
+  "agentContext": {
+    "label": "已添加的上下文",
+    "remove": "移除 {label}"
+  },
   "agentComposer": {
     "label": "给智能助手发送消息",
     "placeholder": "让 Bioinfoflow 帮你完成一项工作…",
@@ -3205,6 +3221,15 @@
     },
     "reasoning": "思考摘要",
     "response": "回复"
+  },
+  "agentTranscript": {
+    "title": "对话",
+    "copy": "复制消息",
+    "copied": "已复制",
+    "copy_failed": "复制失败，请选中消息后手动复制。",
+    "scroll_to_bottom": "回到最新内容",
+    "run_finished": "结束于 {time}",
+    "run_duration": "{duration}"
   },
   "agentHistory": {
     "reasoning": {
