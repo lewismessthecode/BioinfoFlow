@@ -47,6 +47,9 @@ _KNOWN_SECRET = re.compile(
     r")"
 )
 _UNIX_ABSOLUTE_PATH = re.compile(r"(?<![A-Za-z0-9_:/\\…])/(?:[^\s'\";&|<>`$()]+)")
+_BASH_RESULT_SUMMARY = re.compile(
+    r"(?:exit_code=-?\d+(?: · truncated=true)?|truncated=true)"
+)
 
 
 def project_tool_view(
@@ -278,10 +281,17 @@ def public_tool_progress_view(value: Any) -> ToolProgressView:
         if raw.get("input_summary")
         else None
     )
+    raw_output_summary = (
+        str(raw["output_summary"]) if raw.get("output_summary") else None
+    )
     output_summary = (
-        _public_text(str(raw["output_summary"]), _MAX_OUTPUT_SUMMARY_LENGTH)[0]
-        if raw.get("output_summary")
-        else None
+        _public_bash_result_summary(raw_output_summary)
+        if name == "bash"
+        else (
+            _public_text(raw_output_summary, _MAX_OUTPUT_SUMMARY_LENGTH)[0]
+            if raw_output_summary
+            else None
+        )
     )
     error = public_error_message(str(raw["error"])) if raw.get("error") else None
 
@@ -298,7 +308,7 @@ def public_tool_progress_view(value: Any) -> ToolProgressView:
         output_summary=output_summary,
         error=error,
     )
-    if output_summary is None:
+    if output_summary is None and name != "bash":
         result_details.extend(
             detail for detail in persisted_details if detail.kind == "output"
         )
@@ -360,6 +370,13 @@ def _summary_value(value: Any) -> str | None:
 
 def _bounded_text(text: str, limit: int) -> str:
     return text if len(text) <= limit else f"{text[: limit - 3]}..."
+
+
+def _public_bash_result_summary(value: str | None) -> str | None:
+    if not value:
+        return None
+    cleaned = " ".join(value.split())
+    return cleaned if _BASH_RESULT_SUMMARY.fullmatch(cleaned) else None
 
 
 def _public_text(text: str, limit: int) -> tuple[str, bool, bool]:
