@@ -23,7 +23,7 @@ import type {
 } from "@/lib/agent/contracts"
 import type { AgentConnectionStatus } from "@/lib/agent/stream"
 
-type AgentSessionState = AgentStoreState & {
+export type AgentSessionState = AgentStoreState & {
   connectionStatus: AgentConnectionStatus
   error: Error | null
   isLoading: boolean

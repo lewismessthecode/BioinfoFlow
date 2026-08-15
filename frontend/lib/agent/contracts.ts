@@ -139,12 +139,15 @@ export type ApprovalRiskView = {
   affected_resources: string[]
 }
 
+export type ApprovalAllowedResponse = "approve" | "reject"
+
 export type ApprovalRequest = {
   type: "approval"
   call_id: string
   tool_name: string
   summary: string
   input_preview: string | null
+  allowed_responses: ApprovalAllowedResponse[]
   risk: ApprovalRiskView
 }
 

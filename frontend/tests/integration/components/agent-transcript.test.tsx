@@ -100,6 +100,7 @@ const pendingRun: ActiveRunView = {
       tool_name: "bash",
       summary: "Install the workflow dependency",
       input_preview: "uv sync",
+      allowed_responses: ["approve", "reject"],
       risk: {
         level: "medium",
         effects: ["Writes dependency files"],

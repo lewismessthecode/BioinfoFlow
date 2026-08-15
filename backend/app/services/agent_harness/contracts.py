@@ -15,6 +15,7 @@ from pydantic import (
 
 PermissionMode = Literal["ask_changes", "ask_dangerous", "full_access"]
 WorkspaceAccess = Literal["read_only", "read_write"]
+ApprovalAllowedResponse = Literal["approve", "reject"]
 SessionStatus = Literal["active", "archived", "closing", "deleted"]
 RunStatus = Literal[
     "queued", "running", "waiting_user", "completed", "failed", "cancelled"
@@ -372,6 +373,7 @@ class ApprovalInteractionRequest(StrictContract):
     tool_name: str
     summary: str
     input_preview: str | None = None
+    allowed_responses: list[ApprovalAllowedResponse] = Field(min_length=1)
     risk: ApprovalRiskView
 
 

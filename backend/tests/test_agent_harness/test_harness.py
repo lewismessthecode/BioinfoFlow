@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
@@ -2116,6 +2117,94 @@ async def test_approved_bash_rejects_changed_cwd_assessment_before_execution(
 
 
 @pytest.mark.asyncio
+async def test_approval_response_must_be_allowed_by_pending_request(
+    harness_db, tmp_path
+) -> None:
+    class RecordingBackend(LocalWorkspaceBackend):
+        def __init__(self) -> None:
+            super().__init__(
+                working_directory=tmp_path,
+                read_roots=(tmp_path,),
+                write_roots=(tmp_path,),
+                sandbox_runner=None,
+            )
+            self.executed = False
+
+        async def run_command(self, **_kwargs):
+            self.executed = True
+            return {
+                "exit_code": 0,
+                "stdout": "",
+                "stderr": "",
+                "cwd": str(tmp_path),
+            }
+
+    backend = RecordingBackend()
+
+    class RestrictedWorkspace(WorkspaceRuntime):
+        async def execute_batch(self, *args, **kwargs):
+            batch = await super().execute_batch(*args, **kwargs)
+            return replace(
+                batch,
+                results=tuple(
+                    replace(
+                        result,
+                        interaction=replace(
+                            result.interaction,
+                            allowed_responses=("reject",),
+                        ),
+                    )
+                    if result.interaction is not None
+                    else result
+                    for result in batch.results
+                ),
+            )
+
+    workspace = RestrictedWorkspace(backend)
+    model = ScriptedModel(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="bash-1",
+                name="bash",
+                arguments_delta='{"command":"rm -f harmless"}',
+            ),
+            CompletionMetadata(response_id="response-1", finish_reason="tool_calls"),
+        ),
+        (
+            TextDelta(text="Finished."),
+            CompletionMetadata(response_id="response-2", finish_reason="stop"),
+        ),
+    )
+    harness = AgentHarness.for_database(
+        harness_db,
+        model_gateway=model,
+        workspace_factory=lambda _session: workspace,
+    )
+    opened = await harness.open_session(_open_request())
+    session_id = str(opened.session.id)
+
+    await harness.dispatch(session_id, _message("request-bash", "Run it."))
+    waiting = await harness.snapshot(session_id)
+    assert _active(waiting).pending_interaction is not None
+    assert _active(waiting).pending_interaction.request.allowed_responses == ["reject"]
+
+    with pytest.raises(ValueError, match="approval response is not allowed"):
+        await harness.dispatch(
+            session_id,
+            RespondCommand(
+                command_id="disallowed-approve",
+                interaction_id="tool:bash-1",
+                response={"type": "approval", "approved": True},
+            ),
+        )
+
+    still_waiting = await harness.snapshot(session_id)
+    assert _active(still_waiting).run.status == "waiting_user"
+    assert backend.executed is False
+
+
+@pytest.mark.asyncio
 async def test_corrupt_checkpoint_restores_pending_bash_approval_fence(
     harness_db, tmp_path
 ) -> None:
@@ -2152,6 +2241,7 @@ async def test_corrupt_checkpoint_restores_pending_bash_approval_fence(
         "tool_name": call.name,
         "summary": "Allow this tool to run?",
         "input_preview": call.arguments["command"],
+        "allowed_responses": ["approve", "reject"],
         "risk": {
             "level": pending.interaction.risk["level"],
             "effects": pending.interaction.risk.get("effects", []),
@@ -2269,6 +2359,7 @@ async def test_corrupt_checkpoint_restores_registered_tool_replay_policies(
                 "call_id": "bash-1",
                 "tool_name": "bash",
                 "summary": "Allow this tool to run?",
+                "allowed_responses": ["approve", "reject"],
                 "risk": {"level": "act_high"},
             },
         },
@@ -2482,6 +2573,7 @@ async def test_crash_during_approved_bash_recovers_as_unknown_effect_without_rep
         "tool_name": call.name,
         "summary": "Allow this tool to run?",
         "input_preview": call.arguments["command"],
+        "allowed_responses": ["approve", "reject"],
         "risk": {
             "level": pending.interaction.risk["level"],
             "effects": pending.interaction.risk.get("effects", []),

@@ -457,6 +457,110 @@ async def test_message_command_rejects_project_path_traversal(
 
 
 @pytest.mark.asyncio
+async def test_message_command_accepts_run_ref_only_from_the_session_project(
+    async_client,
+    db_session,
+) -> None:
+    from app.models.run import Run, RunStatus
+    from tests.support.path_contract import bind_workflow, create_project, create_workflow
+
+    current_project = await create_project(
+        db_session,
+        name="agent-current-project",
+    )
+    other_project = await create_project(
+        db_session,
+        name="agent-other-project",
+    )
+    workflow = await create_workflow(
+        db_session,
+        name="agent-run-reference-workflow",
+        content="workflow { }\n",
+    )
+    current_run = Run(
+        run_id="agent-current-project-run",
+        project_id=str(current_project.id),
+        workflow_id=str(workflow.id),
+        status=RunStatus.COMPLETED.value,
+        config={},
+        samples_count=0,
+        tasks_total=0,
+        tasks_completed=0,
+    )
+    other_run = Run(
+        run_id="agent-other-project-run",
+        project_id=str(other_project.id),
+        workflow_id=str(workflow.id),
+        status=RunStatus.COMPLETED.value,
+        config={},
+        samples_count=0,
+        tasks_total=0,
+        tasks_completed=0,
+    )
+    db_session.add_all((current_run, other_run))
+    await db_session.commit()
+    await bind_workflow(
+        db_session,
+        project_id=str(other_project.id),
+        workflow_id=str(workflow.id),
+    )
+
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post(
+            "/api/v1/agent/sessions",
+            json={"project_id": str(current_project.id)},
+        )
+    session_id = created.json()["data"]["session"]["id"]
+
+    with patch("app.api.v1.agent.agent_runtime.dispatch", return_value=None) as dispatch:
+        rejected = await async_client.post(
+            f"/api/v1/agent/sessions/{session_id}/commands",
+            json={
+                "type": "message",
+                "command_id": "foreign-project-run",
+                "parts": [
+                    {"type": "run_ref", "run_id": other_run.run_id},
+                ],
+            },
+        )
+        rejected_after_foreign_workflow = await async_client.post(
+            f"/api/v1/agent/sessions/{session_id}/commands",
+            json={
+                "type": "message",
+                "command_id": "foreign-workflow-and-run",
+                "parts": [
+                    {
+                        "type": "workflow_ref",
+                        "scope": "project",
+                        "project_id": str(other_project.id),
+                        "workflow_id": str(workflow.id),
+                    },
+                    {"type": "run_ref", "run_id": other_run.run_id},
+                ],
+            },
+        )
+        accepted = await async_client.post(
+            f"/api/v1/agent/sessions/{session_id}/commands",
+            json={
+                "type": "message",
+                "command_id": "current-project-run",
+                "parts": [
+                    {"type": "run_ref", "run_id": current_run.run_id},
+                ],
+            },
+        )
+
+    assert rejected.status_code == 404
+    assert rejected_after_foreign_workflow.status_code == 404
+    assert accepted.status_code == 202
+    dispatch.assert_awaited_once()
+    assert dispatch.await_args.args[1].parts[0].run_id == current_run.run_id
+
+
+@pytest.mark.asyncio
 async def test_message_command_rejects_attachment_reference_kind_mismatch(
     async_client,
 ) -> None:

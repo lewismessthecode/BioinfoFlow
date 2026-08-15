@@ -58,6 +58,7 @@ class ToolInteraction:
     kind: InteractionKind
     questions: tuple[dict[str, Any], ...] = ()
     risk: dict[str, Any] | None = None
+    allowed_responses: tuple[Literal["approve", "reject"], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +82,7 @@ class ToolResult:
         kind: InteractionKind,
         questions: tuple[dict[str, Any], ...] = (),
         risk: dict[str, Any] | None = None,
+        allowed_responses: tuple[Literal["approve", "reject"], ...] = (),
     ) -> ToolResult:
         return cls(
             call_id=call_id,
@@ -93,6 +95,7 @@ class ToolResult:
                 kind=kind,
                 questions=questions,
                 risk=risk,
+                allowed_responses=allowed_responses,
             ),
         )
 

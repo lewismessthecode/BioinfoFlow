@@ -1,7 +1,7 @@
-import { screen, waitFor } from "@testing-library/react"
+import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { AgentComposer } from "@/components/bioinfoflow/agent/agent-composer"
 import type {
@@ -120,6 +120,10 @@ function renderComposer({
 }
 
 describe("AgentComposer", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it("sends trimmed text with Enter and keeps Shift+Enter as a newline", async () => {
     const user = userEvent.setup()
     const { onSendMessage } = renderComposer()
@@ -224,6 +228,7 @@ describe("AgentComposer", () => {
   })
 
   it("patches approval mode only while idle and waits for authoritative session state", async () => {
+    stubMatchMedia(false)
     const user = userEvent.setup()
     const onPermissionModeChange = vi.fn().mockResolvedValue(undefined)
     const view = renderComposer({ onPermissionModeChange })
@@ -240,7 +245,7 @@ describe("AgentComposer", () => {
       screen.getByRole("button", {
         name: "Approval mode: Approve safe actions",
       }),
-    ).toBeInTheDocument()
+    ).toBeDisabled()
     expect(screen.getByText("Updating approval mode…")).toBeInTheDocument()
 
     view.rerender(
@@ -263,8 +268,59 @@ describe("AgentComposer", () => {
     expect(screen.queryByText("Updating approval mode…")).not.toBeInTheDocument()
   })
 
-  it("cannot use approval mode to bypass a read-only workspace or an active run", async () => {
+  it("uses an accessible bottom sheet for approval mode on mobile", async () => {
+    stubMatchMedia(true)
     const user = userEvent.setup()
+    const onPermissionModeChange = vi.fn().mockResolvedValue(undefined)
+    renderComposer({ onPermissionModeChange })
+
+    const trigger = screen.getByRole("button", {
+      name: "Approval mode: Approve safe actions",
+    })
+    await user.click(trigger)
+
+    let sheet = await screen.findByRole("dialog")
+    expect(sheet).toHaveAccessibleName(
+      "How should agent actions be approved?",
+    )
+    expect(sheet).toHaveAccessibleDescription(
+      "Only ask for dangerous or critical actions.",
+    )
+    expect(screen.queryByRole("menuitemradio")).not.toBeInTheDocument()
+
+    const options = within(sheet).getByRole("group", {
+      name: "How should agent actions be approved?",
+    })
+    expect(options).toHaveClass("overscroll-contain")
+    expect(options).toHaveClass(
+      "pb-[max(1rem,env(safe-area-inset-bottom))]",
+    )
+    expect(
+      within(options).getByRole("button", { name: /Approve safe actions/i }),
+    ).toHaveAttribute("aria-pressed", "true")
+
+    await user.keyboard("{Escape}")
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+
+    await user.click(trigger)
+    sheet = await screen.findByRole("dialog")
+    const nextMode = within(sheet).getByRole("button", {
+      name: /Ask before changes/i,
+    })
+    nextMode.focus()
+    await user.keyboard("{Enter}")
+
+    expect(onPermissionModeChange).toHaveBeenCalledWith("ask_changes")
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(
+      screen.getByRole("button", {
+        name: "Approval mode: Approve safe actions",
+      }),
+    ).toBeDisabled()
+  })
+
+  it("cannot use approval mode to bypass a read-only workspace or an active run", () => {
     const onPermissionModeChange = vi.fn()
     const view = renderComposer({
       permissionMode: "full_access",
@@ -277,13 +333,9 @@ describe("AgentComposer", () => {
         "This workspace is read-only. Approval mode cannot grant write access.",
       ),
     ).toBeInTheDocument()
-    await user.click(
+    expect(
       screen.getByRole("button", { name: "Approval mode: Full access" }),
-    )
-    expect(screen.getByRole("menuitemradio", { name: /Full access/i })).toHaveTextContent(
-      "hard workspace and safety limits",
-    )
-    await user.keyboard("{Escape}")
+    ).toBeDisabled()
 
     view.rerender(
       <AgentComposer
@@ -397,4 +449,20 @@ function deferred<T>() {
     reject = rejectPromise
   })
   return { promise, resolve, reject }
+}
+
+function stubMatchMedia(matches: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation((media: string) => ({
+      matches,
+      media,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  )
 }

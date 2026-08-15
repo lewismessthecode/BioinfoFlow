@@ -1,10 +1,13 @@
 import { act, fireEvent, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import DemoPage from "@/app/(demo)/demo/page"
-import { DemoReplayProvider } from "@/lib/demo/demo-context"
+import { DemoPageClient } from "@/app/(demo)/demo/demo-page-client"
 import type { SessionSnapshot } from "@/lib/agent/contracts"
 import { renderWithProviders } from "@/tests/test-utils"
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+}))
 
 vi.mock("next-intl", () => ({
   useLocale: () => "en",
@@ -31,7 +34,7 @@ describe("public agent demo", () => {
     vi.useRealTimers()
   })
 
-  it("renders the recording through the formal Agent Transcript", async () => {
+  it("renders the recording through the formal Agent Workbench", async () => {
     vi.useFakeTimers()
     const snapshot: SessionSnapshot = {
       session: {
@@ -90,11 +93,9 @@ describe("public agent demo", () => {
       .map((event) => JSON.stringify(event))
       .join("\n")
 
-    renderWithProviders(
-      <DemoReplayProvider recording={recording} autoPlay={false}>
-        <DemoPage />
-      </DemoReplayProvider>,
-    )
+    renderWithProviders(<DemoPageClient recording={recording} autoPlay={false} />)
+
+    expect(screen.getByTestId("agent-workbench")).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Start Demo" }))
     expect(
@@ -103,7 +104,7 @@ describe("public agent demo", () => {
     expect(
       screen.getByRole("progressbar", { name: "Demo progress" }),
     ).toBeInTheDocument()
-    expect(screen.getByRole("banner")).toHaveClass("flex-wrap")
+    expect(screen.getAllByRole("banner")[0]).toHaveClass("flex-wrap")
     fireEvent.click(screen.getByRole("button", { name: "Pause Demo" }))
     fireEvent.click(screen.getByRole("button", { name: "Restart Demo" }))
     await act(async () => vi.runAllTimersAsync())

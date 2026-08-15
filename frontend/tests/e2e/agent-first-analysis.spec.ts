@@ -35,9 +35,9 @@ test.describe("Agent workbench live run journey", () => {
       name: "Connect a model to continue",
     })
     await expect(dialog).toBeVisible({ timeout: 20_000 })
-    await expect(dialog.getByRole("group", { name: "OpenAI" })).toBeVisible({
-      timeout: 20_000,
-    })
+    await expect(
+      dialog.getByRole("group", { name: "OpenAI", exact: true }),
+    ).toBeVisible({ timeout: 20_000 })
     await expect(
       dialog.getByRole("link", { name: "Open full provider settings" }),
     ).toHaveAttribute("href", "/settings?section=providers")

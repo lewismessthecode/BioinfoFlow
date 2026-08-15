@@ -9,6 +9,7 @@ from pydantic import TypeAdapter, ValidationError
 from app.services.agent_harness.contracts import (
     AgentCommand,
     AgentEvent,
+    ApprovalInteractionRequest,
     HistoryEntry,
     MessageEntry,
     OpenSessionRequest,
@@ -71,6 +72,38 @@ def test_public_contract_rejects_unknown_commands_and_unknown_fields() -> None:
             prompt_snapshot={},
             engine="pi",  # type: ignore[call-arg]
         )
+
+
+def test_approval_request_requires_explicit_supported_responses() -> None:
+    request = {
+        "type": "approval",
+        "call_id": "bash-1",
+        "tool_name": "bash",
+        "summary": "Run command",
+        "input_preview": "bif runs submit workflow.nf",
+        "risk": {
+            "level": "high",
+            "effects": ["write"],
+            "reasons": ["changes project state"],
+            "affected_resources": ["project-1"],
+        },
+    }
+
+    with pytest.raises(ValidationError):
+        ApprovalInteractionRequest.model_validate(request)
+    with pytest.raises(ValidationError):
+        ApprovalInteractionRequest.model_validate(
+            {**request, "allowed_responses": []}
+        )
+    with pytest.raises(ValidationError):
+        ApprovalInteractionRequest.model_validate(
+            {**request, "allowed_responses": ["retry"]}
+        )
+
+    parsed = ApprovalInteractionRequest.model_validate(
+        {**request, "allowed_responses": ["reject"]}
+    )
+    assert parsed.allowed_responses == ["reject"]
 
 
 def test_snapshot_contains_renderable_history_without_checkpoint() -> None:

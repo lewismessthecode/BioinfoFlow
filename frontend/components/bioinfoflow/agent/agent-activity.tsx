@@ -162,7 +162,10 @@ export function AgentActivityGroup({
   const resolvedExecutionMode =
     executionMode ?? commonExecutionMode(tools) ?? "mixed"
   const summaryKey = `group.${resolvedExecutionMode}`
-  const groupedTools = useMemo(() => groupToolsByCategory(tools), [tools])
+  const groupedTools = useMemo(
+    () => groupContiguousToolsByCategory(tools),
+    [tools],
+  )
 
   return (
     <section
@@ -197,7 +200,10 @@ export function AgentActivityGroup({
           className="grid gap-3 border-t border-border/60 px-3 py-3"
         >
           {groupedTools.map(([category, categoryTools]) => (
-            <div key={category} className="grid gap-2">
+            <div
+              key={`${category}:${categoryTools[0]?.call_id}`}
+              className="grid gap-2"
+            >
               {groupedTools.length > 1 ? (
                 <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                   {t(`category.${category}`)}
@@ -296,14 +302,17 @@ function groupStatusLabel(
   return t("status.pending")
 }
 
-function groupToolsByCategory(tools: ToolProgressView[]) {
-  const categories = new Map<string, ToolProgressView[]>()
+function groupContiguousToolsByCategory(tools: ToolProgressView[]) {
+  const categories: Array<[ToolProgressView["category"], ToolProgressView[]]> = []
   for (const tool of tools) {
-    const categoryTools = categories.get(tool.category) ?? []
-    categoryTools.push(tool)
-    categories.set(tool.category, categoryTools)
+    const current = categories.at(-1)
+    if (current?.[0] === tool.category) {
+      current[1].push(tool)
+    } else {
+      categories.push([tool.category, [tool]])
+    }
   }
-  return [...categories.entries()]
+  return categories
 }
 
 function commonExecutionMode(tools: ToolProgressView[]) {

@@ -13,6 +13,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
+import { useIsMobile } from "@/hooks/use-media-query"
+import {
   ChevronDown,
   Loader2,
   ShieldAlert,
@@ -54,8 +63,12 @@ export function PermissionMenu({
   onPermissionModeChange,
 }: PermissionMenuProps) {
   const t = useTranslations("agentComposer")
+  const tCommon = useTranslations("common")
   const descriptionId = useId()
   const [update, setUpdate] = useState<PermissionUpdate>(null)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const isMobile = useIsMobile()
+  const readOnlyWorkspace = workspaceAccess === "read_only"
   const visibleUpdate =
     update?.state === "pending" && update.mode === permissionMode
       ? null
@@ -65,6 +78,7 @@ export function PermissionMenu({
     if (
       activeRun ||
       disabled ||
+      readOnlyWorkspace ||
       visibleUpdate?.state === "pending" ||
       mode === permissionMode
     ) {
@@ -80,64 +94,115 @@ export function PermissionMenu({
 
   const CurrentIcon = modeIcons[permissionMode]
   const isUpdating = visibleUpdate?.state === "pending"
+  const controlsDisabled =
+    disabled || activeRun || readOnlyWorkspace || isUpdating
+  const trigger = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      disabled={controlsDisabled}
+      aria-label={`${t("permission.label")}: ${t(`permission.${permissionMode}.name`)}`}
+      aria-describedby={descriptionId}
+    >
+      {isUpdating ? (
+        <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
+      ) : (
+        <CurrentIcon aria-hidden="true" />
+      )}
+      <span>{t(`permission.${permissionMode}.name`)}</span>
+      <ChevronDown aria-hidden="true" />
+    </Button>
+  )
+
+  const selectMode = (mode: AgentPermissionMode) => {
+    setMobileOpen(false)
+    void requestChange(mode)
+  }
+
   return (
     <div className="flex min-w-0 flex-col items-start gap-1.5">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={disabled || activeRun || isUpdating}
-            aria-label={`${t("permission.label")}: ${t(`permission.${permissionMode}.name`)}`}
-            aria-describedby={descriptionId}
+      {isMobile ? (
+        <Sheet
+          open={mobileOpen}
+          onOpenChange={(open) => {
+            if (!open || !controlsDisabled) setMobileOpen(open)
+          }}
+        >
+          <SheetTrigger asChild>{trigger}</SheetTrigger>
+          <SheetContent
+            side="bottom"
+            closeLabel={tCommon("close")}
+            className="max-h-[85svh] rounded-t-2xl"
           >
-            {isUpdating ? (
-              <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
-            ) : (
-              <CurrentIcon aria-hidden="true" />
-            )}
-            <span>{t(`permission.${permissionMode}.name`)}</span>
-            <ChevronDown aria-hidden="true" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" side="top" className="w-[min(24rem,calc(100vw-2rem))]">
-          <DropdownMenuLabel>{t("permission.title")}</DropdownMenuLabel>
-          <DropdownMenuRadioGroup
-            value={permissionMode}
-            onValueChange={(value) => {
-              if (isPermissionMode(value)) void requestChange(value)
-            }}
+            <SheetHeader className="border-b pr-12">
+              <SheetTitle>{t("permission.title")}</SheetTitle>
+              <SheetDescription>
+                {t(`permission.${permissionMode}.description`)}
+              </SheetDescription>
+            </SheetHeader>
+            <div
+              role="group"
+              aria-label={t("permission.title")}
+              className="grid gap-2 overflow-y-auto overscroll-contain px-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+            >
+              {modes.map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={mode === permissionMode}
+                  disabled={controlsDisabled}
+                  onClick={() => selectMode(mode)}
+                  className={cn(
+                    "flex min-h-16 w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors",
+                    "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none",
+                    mode === permissionMode && "border-primary/40 bg-accent",
+                    mode === "full_access" && "text-warning-foreground",
+                    controlsDisabled && "cursor-not-allowed opacity-50",
+                  )}
+                >
+                  <PermissionOptionContent mode={mode} />
+                </button>
+              ))}
+            </div>
+          </SheetContent>
+        </Sheet>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            side="top"
+            className="w-[min(24rem,calc(100vw-2rem))]"
           >
-            {modes.map((mode) => {
-              const Icon = modeIcons[mode]
-              return (
+            <DropdownMenuLabel>{t("permission.title")}</DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={permissionMode}
+              onValueChange={(value) => {
+                if (isPermissionMode(value)) selectMode(value)
+              }}
+            >
+              {modes.map((mode) => (
                 <DropdownMenuRadioItem
                   key={mode}
                   value={mode}
-                  disabled={isUpdating}
+                  disabled={controlsDisabled}
                   className={cn(
                     "items-start py-2.5",
                     mode === "full_access" && "text-warning-foreground",
                   )}
                 >
-                  <Icon aria-hidden="true" className="mt-0.5" />
-                  <span className="grid min-w-0 gap-0.5">
-                    <span className="font-medium">{t(`permission.${mode}.name`)}</span>
-                    <span className="whitespace-normal text-xs leading-5 text-muted-foreground">
-                      {t(`permission.${mode}.description`)}
-                    </span>
-                  </span>
+                  <PermissionOptionContent mode={mode} />
                 </DropdownMenuRadioItem>
-              )
-            })}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       <div id={descriptionId} className="text-xs leading-5 text-muted-foreground">
         {activeRun ? <p>{t("permission.activeRun")}</p> : null}
-        {workspaceAccess === "read_only" ? (
+        {readOnlyWorkspace ? (
           <p>{t("permission.readOnlyWorkspace")}</p>
         ) : null}
         {isUpdating ? <p role="status">{t("permission.updating")}</p> : null}
@@ -156,6 +221,23 @@ export function PermissionMenu({
         ) : null}
       </div>
     </div>
+  )
+}
+
+function PermissionOptionContent({ mode }: { mode: AgentPermissionMode }) {
+  const t = useTranslations("agentComposer")
+  const Icon = modeIcons[mode]
+
+  return (
+    <>
+      <Icon aria-hidden="true" className="mt-0.5" />
+      <span className="grid min-w-0 gap-0.5">
+        <span className="font-medium">{t(`permission.${mode}.name`)}</span>
+        <span className="whitespace-normal text-xs leading-5 text-muted-foreground">
+          {t(`permission.${mode}.description`)}
+        </span>
+      </span>
+    </>
   )
 }
 

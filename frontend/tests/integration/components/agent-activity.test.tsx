@@ -159,4 +159,41 @@ describe("AgentActivityGroup", () => {
       screen.queryByRole("heading", { name: "command" }),
     ).not.toBeInTheDocument()
   })
+
+  it("preserves interleaved model-call order while grouping contiguous categories", () => {
+    renderWithProviders(
+      <AgentActivityGroup
+        tools={[
+          runningTool,
+          {
+            ...runningTool,
+            call_id: "call-command-1",
+            name: "bash",
+            display_name: "bash",
+            category: "command",
+            summary: "Run workflow",
+          },
+          {
+            ...runningTool,
+            call_id: "call-read-2",
+            summary: "Read results.json",
+            arguments: { path: "results.json" },
+          },
+        ]}
+      />,
+    )
+
+    expect(
+      screen
+        .getAllByTestId("agent-tool-card")
+        .map((card) => card.textContent),
+    ).toEqual([
+      expect.stringContaining("Read workflow.nf"),
+      expect.stringContaining("Run workflow"),
+      expect.stringContaining("Read results.json"),
+    ])
+    expect(
+      screen.getAllByRole("heading").map((heading) => heading.textContent),
+    ).toEqual(["Reading", "Commands", "Reading"])
+  })
 })

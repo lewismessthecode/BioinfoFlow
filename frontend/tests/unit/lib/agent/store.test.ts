@@ -314,23 +314,56 @@ describe("applyAgentEvent", () => {
     })
   })
 
-  it("appends committed entries in sequence order and deduplicates by id", () => {
+  it("ignores an exact duplicate committed entry", () => {
+    const entry = userEntry("entry-2", 2)
     const state = snapshotState(
       snapshot({
-        entries: [userEntry("entry-2", 2)],
+        entries: [entry],
       }),
     )
-    const entry = userEntry("entry-1", 1)
+    const duplicate = apply(state, { type: "entry.committed", entry })
 
-    const appended = apply(state, { type: "entry.committed", entry })
-    const duplicate = apply(appended.state, { type: "entry.committed", entry })
-
-    expect(appended.state.entries.map((item) => item.id)).toEqual([
-      "entry-1",
-      "entry-2",
-    ])
     expect(duplicate.outcome).toBe("ignored")
-    expect(duplicate.state).toBe(appended.state)
+    expect(duplicate.state).toBe(state)
+  })
+
+  it("ignores a stale committed entry even when its id was not seen", () => {
+    const state = snapshotState(
+      snapshot({ entries: [userEntry("entry-2", 2)] }),
+    )
+
+    const stale = apply(state, {
+      type: "entry.committed",
+      entry: userEntry("late-entry-1", 1),
+    })
+
+    expect(stale).toEqual({ outcome: "ignored", state })
+  })
+
+  it("requests a snapshot for a sequence gap and accepts the entries in order", () => {
+    const state = snapshotState(
+      snapshot({ entries: [userEntry("entry-2", 2)] }),
+    )
+    const outOfOrder = userEntry("entry-4", 4)
+
+    const gap = apply(state, { type: "entry.committed", entry: outOfOrder })
+    expect(gap).toEqual({ outcome: "needs_snapshot", state })
+
+    const next = apply(state, {
+      type: "entry.committed",
+      entry: userEntry("entry-3", 3),
+    })
+    expect(next.outcome).toBe("applied")
+    expect(next.state.entries.map((entry) => entry.sequence)).toEqual([2, 3])
+
+    const retried = apply(next.state, {
+      type: "entry.committed",
+      entry: outOfOrder,
+    })
+    expect(retried.outcome).toBe("applied")
+    expect(retried.state.entries.map((entry) => entry.sequence)).toEqual([
+      2, 3, 4,
+    ])
   })
 
   it("removes the matching assistant draft when its durable message is committed", () => {
@@ -348,7 +381,10 @@ describe("applyAgentEvent", () => {
       },
     }
 
-    const result = apply(snapshotState(), { type: "entry.committed", entry })
+    const result = apply(
+      snapshotState(snapshot({ entries: [userEntry("entry-1", 1)] })),
+      { type: "entry.committed", entry },
+    )
 
     expect(result.state.activeRun?.assistant_draft).toBeNull()
   })
@@ -357,7 +393,10 @@ describe("applyAgentEvent", () => {
     const first = tool({ call_id: "call-1" })
     const second = tool({ call_id: "call-2" })
     const state = snapshotState(
-      snapshot({ active_run: activeRun({ tool_progress: [first, second] }) }),
+      snapshot({
+        entries: [userEntry("entry-1", 1)],
+        active_run: activeRun({ tool_progress: [first, second] }),
+      }),
     )
     const entry: HistoryEntry = {
       id: "tool-entry",
@@ -393,6 +432,7 @@ describe("applyAgentEvent", () => {
   it("clears a pending interaction when its durable response is committed", () => {
     const state = snapshotState(
       snapshot({
+        entries: [userEntry("entry-1", 1)],
         active_run: activeRun({
           pending_interaction: {
             interaction_id: "interaction-1",
@@ -404,6 +444,7 @@ describe("applyAgentEvent", () => {
               tool_name: "bash",
               summary: "Run command",
               input_preview: "bif run",
+              allowed_responses: ["approve", "reject"],
               risk: {
                 level: "high",
                 effects: ["Runs a workflow"],

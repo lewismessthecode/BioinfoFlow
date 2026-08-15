@@ -5,6 +5,7 @@ export type KeylessAgentScenario =
   | "plan"
   | "parallel-tools"
   | "serial-tools"
+  | "workflow-run"
   | "approval"
   | "ask-user"
   | "stop"
@@ -30,6 +31,19 @@ type AgentSessionSnapshot = {
   entries: Array<Record<string, unknown>>
 }
 
+export type KeylessWorkflowFixture = {
+  projectId: string
+  workflowId: string
+  workflowName: string
+}
+
+export type KeylessProjectRun = {
+  run_id: string
+  project_id: string
+  workflow_id: string
+  status: string
+}
+
 const backendPort = Number(process.env.PLAYWRIGHT_BACKEND_PORT || 8100)
 const modelPort = Number(process.env.PLAYWRIGHT_MODEL_PORT || 9100)
 const apiBaseUrl = `http://127.0.0.1:${backendPort}/api/v1`
@@ -39,6 +53,7 @@ const scenarioModelPrefix: Record<KeylessAgentScenario, string> = {
   plan: "e2e-plan",
   "parallel-tools": "e2e-parallel-tools",
   "serial-tools": "e2e-serial-tools",
+  "workflow-run": "e2e-workflow-run",
   approval: "e2e-approval",
   "ask-user": "e2e-ask-user",
   stop: "e2e-stop",
@@ -97,6 +112,7 @@ export async function createKeylessAgentSession(
   request: APIRequestContext,
   input: {
     modelId: string
+    projectId?: string
     permissionMode?: "ask_changes" | "ask_dangerous" | "full_access"
     workspaceAccess?: "read_only" | "read_write"
   },
@@ -104,11 +120,79 @@ export async function createKeylessAgentSession(
   const response = await request.post(`${apiBaseUrl}/agent/sessions`, {
     data: {
       model_id: input.modelId,
+      project_id: input.projectId,
       permission_mode: input.permissionMode ?? "ask_dangerous",
       workspace_access: input.workspaceAccess ?? "read_write",
     },
   })
   return requireSuccess<AgentSessionSnapshot>(response, "create Agent session")
+}
+
+export async function setupKeylessWorkflowFixture(
+  request: APIRequestContext,
+  testInfo: TestInfo,
+): Promise<KeylessWorkflowFixture> {
+  const suffix = safeIdentifier(
+    `${testInfo.project.name}-${testInfo.workerIndex}-${testInfo.retry}`,
+  )
+  const project = await requireSuccess<{ id: string }>(
+    await request.post(`${apiBaseUrl}/projects`, {
+      data: {
+        name: `Agent Workflow E2E ${suffix}`,
+        description: "Project created through the public API for Agent workflow coverage",
+      },
+    }),
+    "create Agent workflow project",
+  )
+  const workflowName = `agent-workflow-e2e-${suffix}`
+  const workflow = await requireSuccess<{ id: string }>(
+    await request.post(`${apiBaseUrl}/workflows`, {
+      data: {
+        source: "local",
+        engine: "nextflow",
+        name: workflowName,
+        version: "1.0.0",
+        file_name: "main.nf",
+        content: [
+          "nextflow.enable.dsl=2",
+          "",
+          "process AGENT_E2E {",
+          "  output:",
+          "  stdout",
+          "",
+          "  script:",
+          "  '''",
+          "  echo agent-workflow-e2e",
+          "  '''",
+          "}",
+          "",
+          "workflow {",
+          "  AGENT_E2E()",
+          "}",
+        ].join("\n"),
+      },
+    }),
+    "register Agent workflow",
+  )
+  const binding = await request.post(
+    `${apiBaseUrl}/projects/${project.id}/workflows/${workflow.id}:bind`,
+  )
+  await requireSuccess(binding, "bind Agent workflow to project")
+  return {
+    projectId: project.id,
+    workflowId: workflow.id,
+    workflowName,
+  }
+}
+
+export async function listKeylessProjectRuns(
+  request: APIRequestContext,
+  projectId: string,
+): Promise<KeylessProjectRun[]> {
+  const response = await request.get(`${apiBaseUrl}/runs`, {
+    params: { project_id: projectId, limit: 100 },
+  })
+  return requireSuccess<KeylessProjectRun[]>(response, "list Agent workflow runs")
 }
 
 export async function dispatchKeylessAgentMessage(

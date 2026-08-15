@@ -26,7 +26,7 @@ test("advertises the deterministic keyless scenarios", async () => {
   assert.deepEqual(
     payload.data.map((item) => item.id),
     [
-      "e2e-runs-submit",
+      "e2e-workflow-run",
       "e2e-reasoning-stream",
       "e2e-plan",
       "e2e-parallel-tools",
@@ -114,6 +114,32 @@ test("emits plan, serial, stop, and recovery scenarios", async () => {
       command: "sleep 30",
     })
   }
+})
+
+test("submits workflows through the public bif CLI in bash", async () => {
+  const workflowId = "22222222-2222-2222-2222-222222222222"
+  const first = await completion("e2e-workflow-run-selfcheck", [
+    { role: "user", content: `Submit workflow ${workflowId} through bif.` },
+  ])
+  const call = first[0].choices[0].delta.tool_calls[0]
+  assert.equal(call.function.name, "bash")
+  assert.deepEqual(JSON.parse(call.function.arguments), {
+    command: `bif --output json run submit --workflow ${workflowId} --values '{}'`,
+    description: "Submit the workflow through bif",
+  })
+
+  const second = await completion("e2e-workflow-run-selfcheck", [
+    { role: "user", content: `Submit workflow ${workflowId} through bif.` },
+    {
+      role: "tool",
+      tool_call_id: call.id,
+      content: '{"exit_code":0,"stdout":"{\\"run_id\\":\\"run-e2e\\"}"}',
+    },
+  ])
+  assert.equal(
+    second.map((event) => event.choices[0].delta.content || "").join(""),
+    "Workflow submitted through bif.",
+  )
 })
 
 async function completion(

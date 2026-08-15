@@ -575,6 +575,23 @@ class AgentLoop:
             raise ValueError(
                 "response interaction does not match the pending interaction"
             )
+        persisted_interaction = checkpoint.get("interaction")
+        if (
+            isinstance(response.get("approved"), bool)
+            and isinstance(persisted_interaction, dict)
+            and (
+                persisted_interaction.get("kind") == "confirmation"
+                or persisted_interaction.get("type") == "approval"
+            )
+        ):
+            selected_response = "approve" if response["approved"] else "reject"
+            allowed_responses = persisted_interaction.get("allowed_responses")
+            if allowed_responses is None:
+                allowed_responses = ["approve", "reject"]
+            if not isinstance(allowed_responses, list) or selected_response not in allowed_responses:
+                raise ValueError(
+                    "approval response is not allowed by pending interaction"
+                )
         if checkpoint.get("recovery_interaction"):
             await self._resume_recovery_interaction(
                 run=run,
@@ -594,7 +611,6 @@ class AgentLoop:
         response_entry = None
         execution_response = response
         if response.get("approved") is True and replay_policy == "never":
-            persisted_interaction = checkpoint.get("interaction")
             if not workspace.approval_assessment_matches(
                 call,
                 persisted_interaction
@@ -1727,7 +1743,7 @@ def _interaction_dict(result: ToolResult) -> dict[str, Any]:
     interaction = result.interaction
     if interaction is None:
         return {}
-    return {
+    payload = {
         "request_id": interaction.request_id,
         "call_id": interaction.call_id,
         "kind": interaction.kind,
@@ -1735,6 +1751,11 @@ def _interaction_dict(result: ToolResult) -> dict[str, Any]:
         "questions": list(interaction.questions),
         "risk": interaction.risk,
     }
+    if interaction.kind == "confirmation":
+        payload["allowed_responses"] = list(
+            interaction.allowed_responses or ("approve", "reject")
+        )
+    return payload
 
 
 def checkpoint_interaction_id(checkpoint: dict[str, Any]) -> str:

@@ -229,10 +229,14 @@ function applyCommittedEntry(
   entry: HistoryEntry,
 ): AgentEventApplication {
   if (state.entries.some((item) => item.id === entry.id)) return ignored(state)
-
-  const entries = [...state.entries, entry].sort(
-    (left, right) => left.sequence - right.sequence,
+  const latestSequence = state.entries.reduce(
+    (latest, item) => Math.max(latest, item.sequence),
+    0,
   )
+  if (entry.sequence <= latestSequence) return ignored(state)
+  if (entry.sequence > latestSequence + 1) return needsSnapshot(state)
+
+  const entries = [...state.entries, entry]
   const activeRun = reconcileCommittedEntry(state.activeRun, entry)
   return applied({
     ...state,

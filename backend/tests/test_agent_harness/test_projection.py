@@ -92,6 +92,7 @@ def test_pending_interaction_projection_uses_entry_revision() -> None:
                 "call_id": "bash-1",
                 "tool_name": "bash",
                 "summary": "Run command",
+                "allowed_responses": ["reject"],
                 "risk": {
                     "level": "high",
                     "effects": ["write"],
@@ -110,6 +111,7 @@ def test_pending_interaction_projection_uses_entry_revision() -> None:
     assert projected.run_id == RUN_ID
     assert projected.revision == 5
     assert projected.request.type == "approval"
+    assert projected.request.allowed_responses == ["reject"]
 
 
 def test_model_projection_exposes_only_rendering_capabilities() -> None:
@@ -149,6 +151,7 @@ def test_interaction_request_projection_normalizes_approval_risk() -> None:
             "tool_name": "bash",
             "summary": "Run command",
             "input_preview": "rm output.txt",
+            "allowed_responses": ["reject"],
             "risk": {
                 "level": "high",
                 "effects": ["delete"],
@@ -165,6 +168,7 @@ def test_interaction_request_projection_normalizes_approval_risk() -> None:
         "tool_name": "bash",
         "summary": "Run command",
         "input_preview": "rm output.txt",
+        "allowed_responses": ["reject"],
         "risk": {
             "level": "high",
             "effects": ["delete"],

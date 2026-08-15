@@ -21,8 +21,12 @@ const databasePath = path.join(stateRoot, "bioinfoflow.db")
 
 const env = {
   ...process.env,
+  PATH: [path.dirname(pythonExecutable), process.env.PATH]
+    .filter(Boolean)
+    .join(path.delimiter),
   AUTH_MODE: "dev",
   BIOINFOFLOW_HOME: bioinfoflowHome,
+  BIOINFOFLOW_PUBLIC_API_BASE_URL: `http://127.0.0.1:${backendPort}/api/v1`,
   DATABASE_URL: `sqlite+aiosqlite:///${databasePath}`,
   AGENT_RUN_LEASE_SECONDS: "1",
   SCHEDULER_POLL_INTERVAL: "30",

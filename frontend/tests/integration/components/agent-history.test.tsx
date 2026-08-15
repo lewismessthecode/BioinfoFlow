@@ -538,6 +538,7 @@ describe("AgentHistoryEntries", () => {
             tool_name: "bash",
             summary: "Allow the workflow submission?",
             input_preview: "bif runs submit",
+            allowed_responses: ["approve", "reject"],
             risk: {
               level: "medium",
               effects: ["Creates a workflow run"],

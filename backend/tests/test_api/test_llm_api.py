@@ -132,6 +132,7 @@ async def test_llm_provider_templates_drive_frontend_configuration(async_client)
     templates = {item["id"]: item for item in response.json()["data"]}
     assert set(templates) == {
         "openai",
+        "openai-compatible",
         "anthropic",
         "openrouter",
         "fireworks",

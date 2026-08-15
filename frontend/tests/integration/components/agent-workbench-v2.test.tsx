@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentWorkbench } from "@/components/bioinfoflow/agent/agent-workbench"
+import type { AgentSessionState } from "@/hooks/use-agent-session"
 import type { SessionSnapshot } from "@/lib/agent/contracts"
 import { ApiError } from "@/lib/api"
 import { renderWithProviders } from "@/tests/test-utils"
@@ -147,7 +148,9 @@ function snapshot(): SessionSnapshot {
   }
 }
 
-function sessionState(overrides: Record<string, unknown> = {}) {
+function sessionState(
+  overrides: Partial<AgentSessionState> = {},
+): AgentSessionState {
   return {
     session: snapshot().session,
     runs: [],
@@ -345,6 +348,42 @@ describe("AgentWorkbench v2", () => {
     expect(screen.getByText("GPT-5.6")).toBeInTheDocument()
     expect(screen.getByText("emptyTitle")).toBeInTheDocument()
     expect(screen.getAllByText("connection.reconnecting")).toHaveLength(2)
+  })
+
+  it("renders an injected session through the formal workbench without opening a live transport", () => {
+    const injectedState = sessionState({
+      entries: [
+        {
+          id: "assistant-demo",
+          session_id: "session-1",
+          run_id: null,
+          sequence: 1,
+          schema_version: 2,
+          created_at: timestamp,
+          type: "message",
+          payload: {
+            role: "assistant",
+            parts: [{ id: "text-demo", type: "text", text: "Demo replay" }],
+          },
+        },
+      ],
+    })
+
+    renderWithProviders(
+      <AgentWorkbench
+        sessionId="session-1"
+        projectId="project-1"
+        sessionState={injectedState}
+        interactive={false}
+      />,
+    )
+
+    expect(screen.getByTestId("agent-workbench")).toBeInTheDocument()
+    expect(screen.getByTestId("transcript")).toHaveTextContent("entries:1")
+    expect(
+      screen.getByRole("button", { name: "Change permission" }),
+    ).toBeDisabled()
+    expect(mocks.useSession).not.toHaveBeenCalled()
   })
 
   it("keeps connection status accessible when its visible label is hidden", () => {

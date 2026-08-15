@@ -50,6 +50,7 @@ const approvalRequest: ApprovalRequest = {
   tool_name: "bash",
   summary: "Allow workflow submission?",
   input_preview: "bif runs submit workflow.nf",
+  allowed_responses: ["approve", "reject"],
   risk: {
     level: "medium",
     effects: ["Creates a workflow run"],
@@ -213,6 +214,42 @@ describe("AgentInteractionCard", () => {
     await user.click(screen.getByRole("button", { name: "Reject" }))
 
     expect(onRespond).toHaveBeenCalledWith({ type: "approval", approved: false })
+  })
+
+  it("renders only the approval actions allowed by the public protocol", () => {
+    const { rerender } = renderWithProviders(
+      <AgentInteractionCard
+        interactionId="interaction-approve-only"
+        request={{ ...approvalRequest, allowed_responses: ["approve"] }}
+        onRespond={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled()
+    expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument()
+
+    rerender(
+      <AgentInteractionCard
+        interactionId="interaction-reject-only"
+        request={{ ...approvalRequest, allowed_responses: ["reject"] }}
+        onRespond={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled()
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument()
+  })
+
+  it("disables the allowed approval action when no response handler exists", () => {
+    renderWithProviders(
+      <AgentInteractionCard
+        interactionId="interaction-read-only"
+        request={{ ...approvalRequest, allowed_responses: ["reject"] }}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled()
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument()
   })
 
   it("shows a public error and allows retry after submission fails", async () => {

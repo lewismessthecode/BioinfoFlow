@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { DemoReplayProvider, useDemoReplay } from "@/lib/demo/demo-context"
+import { useDemoReplay } from "@/lib/demo/use-demo-replay"
 import type {
   AgentEvent,
   RunView,
@@ -49,13 +49,13 @@ const runningRun: RunView = {
   updated_at: "2026-04-24T09:00:01Z",
 }
 
-describe("DemoReplayProvider", () => {
+describe("useDemoReplay", () => {
   afterEach(() => {
     vi.runOnlyPendingTimers()
     vi.useRealTimers()
   })
 
-  it("applies the formal Agent product events without a second event projection", async () => {
+  it("applies the formal Agent store events for the injected workbench state", async () => {
     vi.useFakeTimers()
     const events: AgentEvent[] = [
       { type: "snapshot", snapshot: sessionSnapshot },
@@ -152,25 +152,19 @@ describe("DemoReplayProvider", () => {
     }))
     const recording = timeline.map((item) => JSON.stringify(item)).join("\n")
 
-    const { result } = renderHook(() => useDemoReplay(), {
-      wrapper: ({ children }) => (
-        <DemoReplayProvider recording={recording} autoPlay={false}>
-          {children}
-        </DemoReplayProvider>
-      ),
-    })
+    const { result } = renderHook(() => useDemoReplay(recording, false))
 
-    expect(result.current.snapshot).toEqual(sessionSnapshot)
+    expect(result.current.sessionState.session).toEqual(sessionSnapshot.session)
     act(() => result.current.play())
     await act(async () => vi.runAllTimersAsync())
 
     expect(result.current.status).toBe("finished")
-    expect(result.current.snapshot.active_run).toBeNull()
-    expect(result.current.snapshot.runs[0]).toMatchObject({
+    expect(result.current.sessionState.activeRun).toBeNull()
+    expect(result.current.sessionState.runs[0]).toMatchObject({
       status: "completed",
       termination_reason: "completed",
     })
-    expect(result.current.snapshot.entries[0]).toMatchObject({
+    expect(result.current.sessionState.entries[0]).toMatchObject({
       type: "message",
       payload: {
         role: "assistant",
@@ -201,13 +195,7 @@ describe("DemoReplayProvider", () => {
       kind: "agent",
       event: { type: "snapshot", snapshot: sessionSnapshot },
     })
-    const { result } = renderHook(() => useDemoReplay(), {
-      wrapper: ({ children }) => (
-        <DemoReplayProvider recording={recording} autoPlay>
-          {children}
-        </DemoReplayProvider>
-      ),
-    })
+    const { result } = renderHook(() => useDemoReplay(recording, true))
 
     await act(async () => vi.runAllTimersAsync())
 

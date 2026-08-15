@@ -1,13 +1,78 @@
 import { expect, test } from "@playwright/test"
 
 import { AgentPage } from "./pages/agent-page"
+import { RunsPage } from "./pages/runs-page"
 import {
   createKeylessAgentSession,
+  getKeylessAgentSnapshot,
+  listKeylessProjectRuns,
   restartKeylessBackend,
   setupKeylessAgentModel,
+  setupKeylessWorkflowFixture,
 } from "./support/keyless-agent"
 
 test.describe("Agent interaction journey", () => {
+  test("submits a workflow through bif and surfaces the created run", async ({
+    page,
+    request,
+  }, testInfo) => {
+    const agent = new AgentPage(page)
+    const runs = new RunsPage(page)
+    const fixture = await setupKeylessWorkflowFixture(request, testInfo)
+    const modelId = await setupKeylessAgentModel(request, "workflow-run", testInfo)
+    const opened = await createKeylessAgentSession(request, {
+      modelId,
+      projectId: fixture.projectId,
+      permissionMode: "full_access",
+    })
+
+    await agent.gotoSession(opened.session.id)
+    await agent.expectComposerReady()
+    await agent.sendMessage(
+      `Submit workflow ${fixture.workflowId} through bif for this project.`,
+    )
+
+    await expect(
+      agent.transcript.getByText("Workflow submitted through bif.", {
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(
+      agent.transcript.getByText("Run command: Submit the workflow through bif", {
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await expect
+      .poll(async () => JSON.stringify((await getKeylessAgentSnapshot(
+        request,
+        opened.session.id,
+      )).entries))
+      .toContain('"name":"bash"')
+    await expect
+      .poll(async () => JSON.stringify((await getKeylessAgentSnapshot(
+        request,
+        opened.session.id,
+      )).entries))
+      .toContain("bif --output json run submit")
+
+    let createdRunId: string | null = null
+    await expect
+      .poll(async () => {
+        const projectRuns = await listKeylessProjectRuns(request, fixture.projectId)
+        createdRunId =
+          projectRuns.find((run) => run.workflow_id === fixture.workflowId)?.run_id ??
+          null
+        return createdRunId
+      })
+      .not.toBeNull()
+    if (!createdRunId) throw new Error("Agent did not create a workflow run")
+
+    await runs.goto(fixture.projectId)
+    await runs.expectLoaded()
+    await runs.expectRunVisible(createdRunId)
+  })
+
   test("approves a guarded tool call and resumes the same run", async ({
     page,
     request,

@@ -188,25 +188,37 @@ function ApprovalInteraction({
 
       {!completed ? (
         <div className="flex flex-wrap justify-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={submitting || !canRespond}
-            onClick={() =>
-              void onSubmit({ type: "approval", approved: false }, "reject")
-            }
-          >
-            {pendingAction === "reject" ? <SubmittingLabel /> : t("approval.reject")}
-          </Button>
-          <Button
-            type="button"
-            disabled={submitting || !canRespond}
-            onClick={() =>
-              void onSubmit({ type: "approval", approved: true }, "approve")
-            }
-          >
-            {pendingAction === "approve" ? <SubmittingLabel /> : t("approval.approve")}
-          </Button>
+          {request.allowed_responses.includes("reject") ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={submitting || !canRespond}
+              onClick={() =>
+                void onSubmit({ type: "approval", approved: false }, "reject")
+              }
+            >
+              {pendingAction === "reject" ? (
+                <SubmittingLabel />
+              ) : (
+                t("approval.reject")
+              )}
+            </Button>
+          ) : null}
+          {request.allowed_responses.includes("approve") ? (
+            <Button
+              type="button"
+              disabled={submitting || !canRespond}
+              onClick={() =>
+                void onSubmit({ type: "approval", approved: true }, "approve")
+              }
+            >
+              {pendingAction === "approve" ? (
+                <SubmittingLabel />
+              ) : (
+                t("approval.approve")
+              )}
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </div>

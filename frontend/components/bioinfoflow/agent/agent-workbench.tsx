@@ -20,7 +20,10 @@ import { AgentTranscript } from "@/components/bioinfoflow/agent/agent-transcript
 import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useAgentSession } from "@/hooks/use-agent-session"
+import {
+  useAgentSession,
+  type AgentSessionState,
+} from "@/hooks/use-agent-session"
 import {
   createAgentSession,
   dispatchAgentCommand,
@@ -60,6 +63,8 @@ export type AgentWorkbenchHandle = {
 type AgentWorkbenchProps = {
   sessionId: string | null
   projectId: string | null
+  sessionState?: AgentSessionState
+  interactive?: boolean
   onActiveSessionIdChange?: (sessionId: string) => void
   onSessionResolved?: (session: SessionView) => void
   headerActions?: ReactNode
@@ -73,6 +78,8 @@ export const AgentWorkbench = forwardRef<
   {
     sessionId,
     projectId,
+    sessionState,
+    interactive = true,
     onActiveSessionIdChange,
     onSessionResolved,
     headerActions,
@@ -211,13 +218,26 @@ export const AgentWorkbench = forwardRef<
       data-testid="agent-workbench"
     >
       {effectiveSessionId ? (
-        <SessionWorkbench
-          key={effectiveSessionId}
-          sessionId={effectiveSessionId}
-          onSessionResolved={onSessionResolved}
-          headerActions={headerActions}
-          {...common}
-        />
+        sessionState ? (
+          <SessionWorkbench
+            key={effectiveSessionId}
+            sessionId={effectiveSessionId}
+            state={sessionState}
+            interactive={interactive}
+            onSessionResolved={onSessionResolved}
+            headerActions={headerActions}
+            {...common}
+          />
+        ) : (
+          <LiveSessionWorkbench
+            key={effectiveSessionId}
+            sessionId={effectiveSessionId}
+            interactive={interactive}
+            onSessionResolved={onSessionResolved}
+            headerActions={headerActions}
+            {...common}
+          />
+        )
       ) : (
         <DraftWorkbench
           permissionMode={draftPermissionMode}
@@ -322,26 +342,42 @@ function DraftWorkbench({
   )
 }
 
+function LiveSessionWorkbench({
+  sessionId,
+  ...props
+}: SharedWorkbenchProps & {
+  sessionId: string
+  interactive: boolean
+  onSessionResolved?: (session: SessionView) => void
+  headerActions?: ReactNode
+}) {
+  const state = useAgentSession(sessionId)
+  return <SessionWorkbench sessionId={sessionId} state={state} {...props} />
+}
+
 function SessionWorkbench({
   sessionId,
+  state,
+  interactive,
   onSessionResolved,
   headerActions,
   ...shared
 }: SharedWorkbenchProps & {
   sessionId: string
+  state: AgentSessionState
+  interactive: boolean
   onSessionResolved?: (session: SessionView) => void
   headerActions?: ReactNode
 }) {
   const t = useTranslations("agentWorkbench")
-  const state = useAgentSession(sessionId)
   const setCancelHandler = shared.setCancelHandler
 
   useEffect(() => {
-    setCancelHandler(state.cancel)
+    setCancelHandler(interactive ? state.cancel : null)
     return () => {
       setCancelHandler(null)
     }
-  }, [setCancelHandler, state.cancel])
+  }, [interactive, setCancelHandler, state.cancel])
 
   useEffect(() => {
     if (!state.session) return
@@ -417,7 +453,7 @@ function SessionWorkbench({
           entries={state.entries}
           runs={state.runs}
           activeRun={state.activeRun}
-          onRespond={state.respond}
+          onRespond={interactive ? state.respond : undefined}
         />
       )}
       {state.session.status !== "active" ? (
@@ -440,14 +476,14 @@ function SessionWorkbench({
         onRemoveContextInput={shared.removeContextInput}
         onContextSubmitted={() => shared.setContextInputs([])}
         textareaRef={shared.textareaRef}
-        disabled={state.session.status !== "active"}
+        disabled={!interactive || state.session.status !== "active"}
         contextControls={
           <AgentContextPicker
             projectId={state.session.project_id}
             sessionId={sessionId}
             ensureSession={shared.ensureSession}
             onAdd={shared.addContextInput}
-            disabled={state.session.status !== "active"}
+            disabled={!interactive || state.session.status !== "active"}
           />
         }
       />

@@ -81,12 +81,16 @@ def public_interaction_request(value: dict[str, Any]) -> dict[str, Any]:
     if kind == "confirmation":
         risk = value.get("risk") if isinstance(value.get("risk"), dict) else {}
         resources = risk.get("affected_resources") or risk.get("referenced_paths") or []
+        allowed_responses = value.get("allowed_responses")
+        if allowed_responses is None:
+            allowed_responses = ["approve", "reject"]
         return {
             "type": "approval",
             "call_id": call_id,
             "tool_name": str(value.get("tool_name") or "tool"),
             "summary": str(value.get("summary") or "Allow this tool to run?"),
             "input_preview": value.get("input_preview"),
+            "allowed_responses": allowed_responses,
             "risk": {
                 "level": str(risk.get("level") or "unknown"),
                 "effects": [str(item) for item in risk.get("effects") or []],

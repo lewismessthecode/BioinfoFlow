@@ -1,59 +1,27 @@
 "use client"
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
-import type { SessionSnapshot } from "@/lib/agent/contracts"
+import type { AgentSessionState } from "@/hooks/use-agent-session"
 import {
   applyAgentEvent,
+  initialAgentStoreState,
   type AgentStoreState,
 } from "@/lib/agent/store"
 import type { DagData, RunStatus } from "@/lib/types"
 import { parseNDJSON, scheduleReplay } from "./replay-engine"
 import type { DemoTimelineItem, ReplayStatus } from "./types"
 
-type DemoContextValue = {
-  snapshot: SessionSnapshot
-  dag: DagData | null
-  runStatus: RunStatus | null
-  currentTask: string | null
-  status: ReplayStatus
-  progress: number
-  play: () => void
-  pause: () => void
-}
-
-const DemoContext = createContext<DemoContextValue | null>(null)
-
-export function DemoReplayProvider({
-  recording,
-  autoPlay = true,
-  children,
-}: {
-  recording: string
-  autoPlay?: boolean
-  children: ReactNode
-}) {
+export function useDemoReplay(recording: string, autoPlay = true) {
   const timeline = useMemo(() => parseNDJSON(recording), [recording])
-  const initialSnapshot = useMemo(
-    () => snapshotFromTimeline(timeline),
-    [timeline],
-  )
-  const [snapshot, setSnapshot] = useState(initialSnapshot)
+  const initialStore = useMemo(() => storeFromTimeline(timeline), [timeline])
+  const [store, setStore] = useState(initialStore)
   const [dag, setDag] = useState<DagData | null>(null)
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null)
   const [currentTask, setCurrentTask] = useState<string | null>(null)
   const [status, setStatus] = useState<ReplayStatus>("idle")
   const [progress, setProgress] = useState(0)
-  const storeRef = useRef(storeFromSnapshot(initialSnapshot))
+  const storeRef = useRef(initialStore)
   const cancelRef = useRef<(() => void) | null>(null)
 
   const applyTimelineItem = useCallback((item: DemoTimelineItem) => {
@@ -67,7 +35,7 @@ export function DemoReplayProvider({
     const application = applyAgentEvent(storeRef.current, item.event)
     if (application.outcome !== "applied") return
     storeRef.current = application.state
-    setSnapshot(snapshotFromStore(application.state))
+    setStore(application.state)
   }, [])
 
   const handleEvent = useCallback(
@@ -80,8 +48,8 @@ export function DemoReplayProvider({
 
   const play = useCallback(() => {
     cancelRef.current?.()
-    storeRef.current = storeFromSnapshot(initialSnapshot)
-    setSnapshot(initialSnapshot)
+    storeRef.current = initialStore
+    setStore(initialStore)
     setDag(null)
     setRunStatus(null)
     setCurrentTask(null)
@@ -91,7 +59,7 @@ export function DemoReplayProvider({
       onEvent: handleEvent,
       onFinish: () => setStatus("finished"),
     })
-  }, [handleEvent, initialSnapshot, timeline])
+  }, [handleEvent, initialStore, timeline])
 
   const pause = useCallback(() => {
     cancelRef.current?.()
@@ -107,40 +75,35 @@ export function DemoReplayProvider({
 
   useEffect(() => () => cancelRef.current?.(), [])
 
-  return (
-    <DemoContext.Provider
-      value={{
-        snapshot,
-        dag,
-        runStatus,
-        currentTask,
-        status,
-        progress,
-        play,
-        pause,
-      }}
-    >
-      {children}
-    </DemoContext.Provider>
+  const sessionState = useMemo<AgentSessionState>(
+    () => ({
+      ...store,
+      connectionStatus: "connected",
+      error: null,
+      isLoading: false,
+      sendMessage: async () => {},
+      steer: async () => {},
+      respond: async () => {},
+      cancel: async () => {},
+      updatePermissionMode: async () => {},
+      retry: play,
+    }),
+    [play, store],
   )
-}
 
-function prefersReducedMotion() {
-  return (
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  )
-}
-
-export function useDemoReplay() {
-  const context = useContext(DemoContext)
-  if (!context) {
-    throw new Error("useDemoReplay must be used inside <DemoReplayProvider>")
+  return {
+    sessionState,
+    dag,
+    runStatus,
+    currentTask,
+    status,
+    progress,
+    play,
+    pause,
   }
-  return context
 }
 
-function snapshotFromTimeline(timeline: DemoTimelineItem[]) {
+function storeFromTimeline(timeline: DemoTimelineItem[]): AgentStoreState {
   const snapshotItem = timeline[0]
   if (!snapshotItem || snapshotItem.kind !== "agent") {
     throw new Error("Demo timeline must begin with an Agent snapshot")
@@ -148,24 +111,12 @@ function snapshotFromTimeline(timeline: DemoTimelineItem[]) {
   if (snapshotItem.event.type !== "snapshot") {
     throw new Error("Demo timeline snapshot is invalid")
   }
-  return snapshotItem.event.snapshot
+  return applyAgentEvent(initialAgentStoreState, snapshotItem.event).state
 }
 
-function storeFromSnapshot(snapshot: SessionSnapshot): AgentStoreState {
-  return {
-    session: snapshot.session,
-    runs: snapshot.runs,
-    entries: snapshot.entries,
-    activeRun: snapshot.active_run,
-  }
-}
-
-function snapshotFromStore(store: AgentStoreState): SessionSnapshot {
-  if (!store.session) throw new Error("Demo replay session is unavailable")
-  return {
-    session: store.session,
-    runs: store.runs,
-    entries: store.entries,
-    active_run: store.activeRun,
-  }
+function prefersReducedMotion() {
+  return (
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  )
 }

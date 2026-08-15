@@ -310,6 +310,7 @@ def test_complete_harness_migration_preserves_history_and_interrupts_unfinished_
         "tool_name": "bash",
         "summary": "Allow this tool to run?",
         "input_preview": None,
+        "allowed_responses": ["approve", "reject"],
         "risk": {
             "level": "act_high",
             "effects": [],

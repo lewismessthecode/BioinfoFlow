@@ -41,9 +41,9 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
   )
   const orphanedOutcomes = useMemo(
     () =>
-      runs.filter(
-        (run) => isTerminalRun(run) && !prepared.lastEntryIdsByRun.has(run.id),
-      ),
+      runs
+        .filter(isTerminalRun)
+        .filter((run) => !prepared.lastEntryIdsByRun.has(run.id)),
     [prepared.lastEntryIdsByRun, runs],
   )
 

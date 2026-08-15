@@ -276,6 +276,7 @@ async def _authorize_command_parts(
     db: AsyncSession,
     *,
     session_id: str,
+    project_id: str | None,
     command: AgentCommand,
     user: AuthUser,
 ) -> None:
@@ -338,8 +339,8 @@ async def _authorize_command_parts(
                 raise NotFoundError("Referenced workflow was not found")
             if part.scope == "project":
                 assert part.project_id is not None
-                project_id = str(part.project_id)
-                project = await ProjectRepository(db).get(project_id)
+                referenced_project_id = str(part.project_id)
+                project = await ProjectRepository(db).get(referenced_project_id)
                 if project is None or not can_access_project(
                     project,
                     user_id=user.id,
@@ -347,7 +348,7 @@ async def _authorize_command_parts(
                 ):
                     raise NotFoundError("Referenced workflow was not found")
                 if not await ProjectWorkflowBindingRepository(db).is_enabled(
-                    project_id=project_id,
+                    project_id=referenced_project_id,
                     workflow_id=workflow_id,
                 ):
                     raise NotFoundError("Referenced workflow was not found")
@@ -360,7 +361,7 @@ async def _authorize_command_parts(
                 )
             except PermissionDeniedError as exc:
                 raise NotFoundError("Referenced run was not found") from exc
-            if run is None:
+            if run is None or str(run.project_id) != project_id:
                 raise NotFoundError("Referenced run was not found")
             part.run_id = str(run.run_id)
 
@@ -726,6 +727,9 @@ async def dispatch_command(
         await _authorize_command_parts(
             db,
             session_id=str(agent_session.id),
+            project_id=(
+                str(agent_session.project_id) if agent_session.project_id else None
+            ),
             command=command,
             user=user,
         )

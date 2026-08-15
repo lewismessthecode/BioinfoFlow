@@ -431,6 +431,7 @@ def _normalize_interaction_request(value: Any) -> dict[str, Any]:
             "tool_name": str(request.get("tool_name") or action.get("name") or "tool"),
             "summary": str(request.get("summary") or "Allow this tool to run?"),
             "input_preview": request.get("input_preview") or action.get("input_preview"),
+            "allowed_responses": ["approve", "reject"],
             "risk": _public_risk(risk),
         }
     if kind in {"ask_user", "question"}:

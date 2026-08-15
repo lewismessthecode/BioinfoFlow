@@ -395,6 +395,7 @@ def test_agent_harness_v2_migrates_durable_public_state_and_keeps_private_recove
             "tool_name": "bash",
             "summary": "Allow this tool to run?",
             "input_preview": None,
+            "allowed_responses": ["approve", "reject"],
             "risk": {
                 "level": "high",
                 "effects": ["writes_workspace"],

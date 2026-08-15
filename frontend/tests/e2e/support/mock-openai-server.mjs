@@ -5,7 +5,7 @@ const port = Number(process.env.PLAYWRIGHT_MODEL_PORT || 9100)
 const host = process.env.PLAYWRIGHT_MODEL_HOST || "127.0.0.1"
 
 const advertisedModels = [
-  "e2e-runs-submit",
+  "e2e-workflow-run",
   "e2e-reasoning-stream",
   "e2e-plan",
   "e2e-parallel-tools",
@@ -220,15 +220,23 @@ async function streamCompletion(response, body) {
     return
   }
 
-  if (scenarioModel === "e2e-runs-submit") {
+  if (scenarioModel.startsWith("e2e-workflow-run")) {
+    if (hasToolResult) {
+      await streamText(response, model, {
+        chunks: toolResultSucceeded(messages)
+          ? ["Workflow submitted ", "through bif."]
+          : ["Workflow submission ", "failed."],
+      })
+      return
+    }
+    const workflowId = workflowIdFromMessages(messages)
     streamToolCalls(response, model, [
       {
-        id: "call-e2e-runs-submit",
-        name: "runs__submit",
+        id: "call-e2e-workflow-run",
+        name: "bash",
         arguments: {
-          project_id: "e2e-project",
-          workflow_id: "e2e-workflow",
-          values: {},
+          command: `bif --output json run submit --workflow ${workflowId} --values '{}'`,
+          description: "Submit the workflow through bif",
         },
       },
     ])
@@ -237,6 +245,30 @@ async function streamCompletion(response, body) {
 
   await streamText(response, model || "unknown", {
     chunks: ["Unknown keyless model scenario."],
+  })
+}
+
+function workflowIdFromMessages(messages) {
+  const prompt = messages
+    .filter((message) => message?.role === "user")
+    .map((message) =>
+      typeof message.content === "string"
+        ? message.content
+        : JSON.stringify(message.content ?? ""),
+    )
+    .join("\n")
+  const match = prompt.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i)
+  return match?.[0] ?? "00000000-0000-0000-0000-000000000000"
+}
+
+function toolResultSucceeded(messages) {
+  return messages.some((message) => {
+    if (message?.role !== "tool") return false
+    const content =
+      typeof message.content === "string"
+        ? message.content
+        : JSON.stringify(message.content ?? "")
+    return /["']?exit_code["']?\s*[:=]\s*0\b/.test(content)
   })
 }
 
