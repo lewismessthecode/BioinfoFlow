@@ -1,68 +1,231 @@
 import http from "node:http"
+import { pathToFileURL } from "node:url"
 
 const port = Number(process.env.PLAYWRIGHT_MODEL_PORT || 9100)
-const model = "e2e-runs-submit"
+const host = process.env.PLAYWRIGHT_MODEL_HOST || "127.0.0.1"
 
-const server = http.createServer((request, response) => {
-  if (request.method === "GET" && request.url === "/v1/models") {
-    response.writeHead(200, { "content-type": "application/json" })
-    response.end(JSON.stringify({ object: "list", data: [{ id: model, object: "model" }] }))
+const advertisedModels = [
+  "e2e-runs-submit",
+  "e2e-reasoning-stream",
+  "e2e-parallel-tools",
+  "e2e-approval",
+  "e2e-ask-user",
+]
+
+export function createMockOpenAIServer() {
+  return http.createServer(async (request, response) => {
+    if (request.method === "GET" && request.url === "/v1/models") {
+      writeJson(response, 200, {
+        object: "list",
+        data: advertisedModels.map((id) => ({ id, object: "model" })),
+      })
+      return
+    }
+
+    if (request.method === "POST" && request.url === "/v1/chat/completions") {
+      let body
+      try {
+        body = JSON.parse(await readBody(request))
+      } catch {
+        writeJson(response, 400, { error: { message: "invalid JSON request" } })
+        return
+      }
+
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      })
+      await streamCompletion(response, body)
+      return
+    }
+
+    writeJson(response, 404, { error: { message: "not found" } })
+  })
+}
+
+if (isMainModule()) {
+  const server = createMockOpenAIServer()
+  server.listen(port, host)
+
+  const close = () => server.close(() => process.exit(0))
+  process.on("SIGINT", close)
+  process.on("SIGTERM", close)
+}
+
+async function streamCompletion(response, body) {
+  const model = String(body?.model || "")
+  const scenarioModel = model.split("/").at(-1) || model
+  const messages = Array.isArray(body?.messages) ? body.messages : []
+  const hasToolResult = messages.some((message) => message?.role === "tool")
+
+  if (scenarioModel.startsWith("e2e-reasoning-stream")) {
+    await streamText(response, model, {
+      reasoning: "Checking the keyless request.",
+      chunks: ["Keyless model ", "stream completed."],
+    })
     return
   }
 
-  if (request.method === "POST" && request.url === "/v1/chat/completions") {
-    response.writeHead(200, {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
-      connection: "keep-alive",
-    })
-    const chunk = {
-      id: "chatcmpl-e2e-runs-submit",
-      object: "chat.completion.chunk",
-      created: 0,
-      model,
-      choices: [
+  if (scenarioModel.startsWith("e2e-parallel-tools")) {
+    if (!hasToolResult) {
+      streamToolCalls(response, model, [
         {
-          index: 0,
-          delta: {
-            role: "assistant",
-            tool_calls: [
+          id: "call-e2e-parallel-alpha",
+          name: "bash",
+          arguments: { command: "sleep 0.2; printf alpha" },
+        },
+        {
+          id: "call-e2e-parallel-beta",
+          name: "bash",
+          arguments: { command: "sleep 0.2; printf beta" },
+        },
+      ])
+      return
+    }
+    await streamText(response, model, {
+      chunks: ["Both keyless tools ", "completed."],
+    })
+    return
+  }
+
+  if (scenarioModel.startsWith("e2e-approval")) {
+    if (!hasToolResult) {
+      streamToolCalls(response, model, [
+        {
+          id: "call-e2e-approval",
+          name: "bash",
+          arguments: { command: "touch e2e-approved.txt" },
+        },
+      ])
+      return
+    }
+    await streamText(response, model, {
+      chunks: ["Approval scenario ", "completed."],
+    })
+    return
+  }
+
+  if (scenarioModel.startsWith("e2e-ask-user")) {
+    if (!hasToolResult) {
+      streamToolCalls(response, model, [
+        {
+          id: "call-e2e-ask-user",
+          name: "ask_user",
+          arguments: {
+            questions: [
               {
-                index: 0,
-                id: "call-e2e-runs-submit",
-                type: "function",
-                function: {
-                  name: "runs__submit",
-                  arguments: JSON.stringify({
-                    project_id: "e2e-project",
-                    workflow_id: "e2e-workflow",
-                    values: {},
-                  }),
-                },
+                header: "Continue",
+                question: "Should the keyless run continue?",
+                options: [
+                  { label: "Continue", description: "Finish the Agent run." },
+                  { label: "Stop", description: "Do not continue the run." },
+                ],
               },
             ],
           },
-          finish_reason: null,
         },
-      ],
+      ])
+      return
     }
-    response.write(`data: ${JSON.stringify(chunk)}\n\n`)
-    response.write(
-      `data: ${JSON.stringify({
-        ...chunk,
-        choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
-      })}\n\n`,
-    )
-    response.end("data: [DONE]\n\n")
+    await streamText(response, model, {
+      chunks: ["The keyless answer ", "was received."],
+    })
     return
   }
 
-  response.writeHead(404, { "content-type": "application/json" })
-  response.end(JSON.stringify({ error: "not found" }))
-})
+  if (scenarioModel === "e2e-runs-submit") {
+    streamToolCalls(response, model, [
+      {
+        id: "call-e2e-runs-submit",
+        name: "runs__submit",
+        arguments: {
+          project_id: "e2e-project",
+          workflow_id: "e2e-workflow",
+          values: {},
+        },
+      },
+    ])
+    return
+  }
 
-server.listen(port, "127.0.0.1")
+  await streamText(response, model || "unknown", {
+    chunks: ["Unknown keyless model scenario."],
+  })
+}
 
-const close = () => server.close(() => process.exit(0))
-process.on("SIGINT", close)
-process.on("SIGTERM", close)
+async function streamText(response, model, { reasoning, chunks }) {
+  if (reasoning) {
+    writeChunk(response, model, { role: "assistant", reasoning_content: reasoning })
+    await delay(100)
+  }
+  for (const content of chunks) {
+    writeChunk(response, model, { role: "assistant", content })
+    await delay(100)
+  }
+  writeChunk(response, model, {}, "stop")
+  finishStream(response)
+}
+
+function streamToolCalls(response, model, calls) {
+  writeChunk(response, model, {
+    role: "assistant",
+    tool_calls: calls.map((call, index) => ({
+      index,
+      id: call.id,
+      type: "function",
+      function: {
+        name: call.name,
+        arguments: JSON.stringify(call.arguments),
+      },
+    })),
+  })
+  writeChunk(response, model, {}, "tool_calls")
+  finishStream(response)
+}
+
+function writeChunk(response, model, delta, finishReason = null) {
+  if (response.destroyed || response.writableEnded) return
+  response.write(
+    `data: ${JSON.stringify({
+      id: `chatcmpl-${model}`,
+      object: "chat.completion.chunk",
+      created: 0,
+      model,
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
+    })}\n\n`,
+  )
+}
+
+function finishStream(response) {
+  if (response.destroyed || response.writableEnded) return
+  response.end("data: [DONE]\n\n")
+}
+
+function writeJson(response, status, body) {
+  response.writeHead(status, { "content-type": "application/json" })
+  response.end(JSON.stringify(body))
+}
+
+function readBody(request) {
+  return new Promise((resolve, reject) => {
+    let body = ""
+    request.setEncoding("utf8")
+    request.on("data", (chunk) => {
+      body += chunk
+    })
+    request.on("end", () => resolve(body))
+    request.on("error", reject)
+  })
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+function isMainModule() {
+  return (
+    Boolean(process.argv[1]) &&
+    pathToFileURL(process.argv[1]).href === import.meta.url
+  )
+}
