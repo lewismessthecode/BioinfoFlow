@@ -222,7 +222,9 @@ async def test_tool_progress_revisions_are_local_to_each_call(
     assert (running.revision, completed.revision, other.revision) == (1, 2, 1)
     assert completed.group_id == "group-1"
     assert completed.execution_mode == "parallel"
-    assert completed.arguments == {"path": "README.md"}
+    assert completed.arguments == {}
+    assert completed.public_details[0].kind == "path"
+    assert completed.public_details[0].value == "README.md"
 
 
 @pytest.mark.asyncio
@@ -1202,7 +1204,9 @@ async def test_approved_tool_execution_preserves_complete_progress_in_snapshot(
     assert progress.status == "running"
     assert progress.revision == 2
     assert progress.group_id == "group-1"
-    assert progress.arguments == {"command": "printf safe"}
+    assert progress.arguments == {}
+    assert progress.public_details[0].kind == "command"
+    assert progress.public_details[0].value == "printf safe"
 
 
 @pytest.mark.asyncio

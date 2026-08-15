@@ -876,7 +876,9 @@ class AgentHarness:
                 call_id=item.call_id,
                 name=item.name,
                 status=result.status,
-                output_summary=_public_output_summary(result.output),
+                output_summary=_public_output_summary(
+                    result.output, tool_name=result.tool_name
+                ),
                 error=result.error,
             )
             entry = await self.repository.append_entry(

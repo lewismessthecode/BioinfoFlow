@@ -253,6 +253,26 @@ class ArtifactRefPart(_MessagePart):
     media_type: str | None = None
 
 
+class ToolPublicDetail(StrictContract):
+    id: str
+    kind: Literal[
+        "command",
+        "working_directory",
+        "path",
+        "input",
+        "output",
+        "changes",
+        "error",
+        "metadata",
+    ]
+    label: str | None = None
+    value: str
+    format: Literal["text", "code", "path", "json", "diff"] = "text"
+    copyable: bool = False
+    truncated: bool = False
+    redacted: bool = False
+
+
 class ToolCallPart(_MessagePart):
     type: Literal["tool_call"] = "tool_call"
     call_id: str
@@ -263,6 +283,7 @@ class ToolCallPart(_MessagePart):
     category: ToolCategory = "other"
     summary: str
     arguments: dict[str, JsonValue] = Field(default_factory=dict)
+    public_details: list[ToolPublicDetail] = Field(default_factory=list)
 
 
 class UnknownPart(_MessagePart):
@@ -315,6 +336,7 @@ class ToolResultPart(_MessagePart):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error: str | None = None
+    public_details: list[ToolPublicDetail] = Field(default_factory=list)
 
 
 MessagePart = Annotated[
@@ -560,6 +582,7 @@ class ToolProgressView(StrictContract):
     input_summary: str | None = None
     output_summary: str | None = None
     error: str | None = None
+    public_details: list[ToolPublicDetail] = Field(default_factory=list)
 
 
 class PendingInteractionView(StrictContract):

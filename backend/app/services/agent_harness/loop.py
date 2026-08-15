@@ -672,7 +672,9 @@ class AgentLoop:
             call_id=result.call_id,
             name=result.tool_name,
             status=result.status,
-            output_summary=_public_output_summary(result.output),
+            output_summary=_public_output_summary(
+                result.output, tool_name=result.tool_name
+            ),
             error=result.error,
         )
         if response_entry is None:
@@ -1034,7 +1036,9 @@ class AgentLoop:
                 call_id=result.call_id,
                 name=result.tool_name,
                 status=result.status,
-                output_summary=_public_output_summary(result.output),
+                output_summary=_public_output_summary(
+                    result.output, tool_name=result.tool_name
+                ),
                 error=result.error,
             )
         return False, history_revision
@@ -1408,7 +1412,9 @@ class AgentLoop:
                 call_id=result.call_id,
                 name=result.tool_name,
                 status=result.status,
-                output_summary=_public_output_summary(result.output),
+                output_summary=_public_output_summary(
+                    result.output, tool_name=result.tool_name
+                ),
                 error=result.error,
             )
 
@@ -1856,7 +1862,7 @@ def _public_tool_call_dict(
     group_id: str,
     execution_mode: ToolExecutionMode,
 ) -> dict[str, Any]:
-    return project_tool_view(
+    projected = project_tool_view(
         spec=spec,
         call_id=call.call_id,
         name=call.name,
@@ -1877,6 +1883,8 @@ def _public_tool_call_dict(
             "arguments",
         },
     )
+    projected["arguments"] = dict(call.arguments)
+    return projected
 
 
 def _tool_progress_dict(
