@@ -336,10 +336,10 @@ async def test_harness_rejects_legacy_resolved_model_id_snapshot(
     snapshot = await harness.snapshot(str(opened.session.id))
     assert recording.invocations == []
     assert snapshot.runs[-1].status == "failed"
-    assert snapshot.runs[-1].error == {
+    assert snapshot.runs[-1].error is not None
+    assert snapshot.runs[-1].error.model_dump() == {
         "code": "agent_failed",
-        "message": "The Agent session model is no longer available",
-        "type": "ValueError",
+        "message": "The Agent run failed.",
     }
 
 
@@ -441,10 +441,10 @@ async def test_harness_profile_uses_only_primary_model_without_fallback_snapshot
     assert recording.invocations[0].target.model_name == primary_model.model_id
     failed = await harness.snapshot(str(opened.session.id))
     assert failed.runs[-1].status == "failed"
-    assert failed.runs[-1].error == {
+    assert failed.runs[-1].error is not None
+    assert failed.runs[-1].error.model_dump() == {
         "code": "agent_failed",
-        "message": "primary model failed",
-        "type": "ModelError",
+        "message": "The Agent run failed.",
     }
 
 

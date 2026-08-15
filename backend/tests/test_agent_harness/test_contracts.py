@@ -13,6 +13,7 @@ from app.services.agent_harness.contracts import (
     MessageEntry,
     OpenSessionRequest,
     PlanEntry,
+    RunView,
     SessionSnapshot,
     ToolResultPart,
     UnknownPart,
@@ -181,6 +182,64 @@ def test_public_message_parts_are_typed_and_unknown_parts_are_safe() -> None:
             call_id="call-2",
             status="completed",
             output={"type": "json", "value": object()},
+        )
+
+
+def test_public_run_error_rejects_private_runtime_fields() -> None:
+    created_at = datetime(2026, 8, 15, tzinfo=timezone.utc)
+    public_run = {
+        "id": RUN_ID,
+        "session_id": SESSION_ID,
+        "status": "failed",
+        "phase": None,
+        "revision": 4,
+        "started_at": created_at,
+        "completed_at": created_at,
+        "termination_reason": "agent_failed",
+        "created_at": created_at,
+        "updated_at": created_at,
+    }
+
+    run = RunView.model_validate(
+        {
+            **public_run,
+            "error": {
+                "code": "agent_failed",
+                "message": "The Agent run failed.",
+            },
+        }
+    )
+    assert run.error is not None
+    assert run.error.model_dump() == {
+        "code": "agent_failed",
+        "message": "The Agent run failed.",
+    }
+
+    with pytest.raises(ValidationError):
+        RunView.model_validate(
+            {
+                **public_run,
+                "error": {
+                    "code": "agent_failed",
+                    "message": "The Agent run failed.",
+                    "type": "ProviderCredentialError",
+                },
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        RunView.model_validate({**public_run, "error": None})
+    with pytest.raises(ValidationError):
+        RunView.model_validate(
+            {
+                **public_run,
+                "status": "completed",
+                "termination_reason": "completed",
+                "error": {
+                    "code": "agent_failed",
+                    "message": "The Agent run failed.",
+                },
+            }
         )
 
 

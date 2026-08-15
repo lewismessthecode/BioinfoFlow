@@ -21,11 +21,14 @@ vi.mock("next-intl", () => ({
         "agentTranscript.copied": "Copied",
         "agentTranscript.copy_failed": "Could not copy. Select the message and copy it manually.",
         "agentTranscript.scroll_to_bottom": "Jump to latest",
-        "agentTranscript.run_finished": `Finished ${values?.time ?? ""}`,
+        "agentTranscript.run_ended": `Ended ${values?.time ?? ""}`,
         "agentTranscript.run_duration": `${values?.duration ?? ""}`,
         "agentRun.title": "Agent run in progress",
         "agentRun.status.running": "Running",
         "agentRun.status.waiting_user": "Waiting for input",
+        "agentRun.status.completed": "Completed",
+        "agentRun.status.failed": "Failed",
+        "agentRun.status.cancelled": "Cancelled",
         "agentRun.phase.model": "Working with the model",
         "agentRun.phase.tools": "Using tools",
         "agentRun.phase.interaction": "Waiting for input",
@@ -180,7 +183,10 @@ describe("AgentTranscript", () => {
     )
     expect(screen.getByText("I need approval before continuing.")).toBeInTheDocument()
     expect(screen.getAllByTestId("agent-interaction-card")).toHaveLength(1)
-    expect(screen.getByText(/Finished/)).toHaveAttribute(
+    expect(screen.getByTestId("agent-run-outcome")).toHaveTextContent(
+      "Completed",
+    )
+    expect(screen.getByText(/Ended/)).toHaveAttribute(
       "datetime",
       completedRun.completed_at,
     )
@@ -289,6 +295,54 @@ describe("AgentTranscript", () => {
     expect(
       screen.queryByRole("button", { name: "Jump to latest" }),
     ).not.toBeInTheDocument()
+  })
+
+  it("treats a historical Run revision becoming failed as new transcript content", async () => {
+    const runningRun: RunView = {
+      ...completedRun,
+      status: "running",
+      phase: "model",
+      revision: 1,
+      completed_at: null,
+      termination_reason: null,
+    }
+    const failedRun: RunView = {
+      ...completedRun,
+      status: "failed",
+      revision: 2,
+      termination_reason: "agent_failed",
+      error: {
+        code: "agent_failed",
+        message: "The Agent run failed.",
+      },
+    }
+    const view = renderWithProviders(
+      <AgentTranscript
+        entries={entries.slice(0, 1)}
+        runs={[runningRun]}
+        activeRun={null}
+      />,
+    )
+    const transcript = screen.getByTestId("agent-transcript")
+    Object.defineProperties(transcript, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 1000 },
+      scrollTop: { configurable: true, writable: true, value: 100 },
+    })
+    fireEvent.scroll(transcript)
+
+    view.rerender(
+      <AgentTranscript
+        entries={entries.slice(0, 1)}
+        runs={[failedRun]}
+        activeRun={null}
+      />,
+    )
+
+    expect(screen.getByTestId("agent-run-outcome")).toHaveTextContent("Failed")
+    expect(
+      await screen.findByRole("button", { name: "Jump to latest" }),
+    ).toBeInTheDocument()
   })
 
   it("keeps the visible history anchor in place when authoritative content is replaced", () => {

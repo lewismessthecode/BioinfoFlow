@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   replace: vi.fn(),
   push: vi.fn(),
   useSession: vi.fn(),
+  catalogPanel: vi.fn(),
 }))
 
 vi.mock("next/navigation", () => ({
@@ -51,9 +52,17 @@ vi.mock("@/components/bioinfoflow/agent/agent-transcript", () => ({
   ),
 }))
 
+vi.mock("@/components/bioinfoflow/settings/llm-catalog-panel", () => ({
+  LlmCatalogPanel: () => {
+    mocks.catalogPanel()
+    return <div>Model catalog panel</div>
+  },
+}))
+
 vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
   AgentComposer: ({
     onSendMessage,
+    onSteer,
     onCancel,
     permissionMode,
     onPermissionModeChange,
@@ -61,6 +70,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
     disabled,
   }: {
     onSendMessage: (parts: [{ type: "text"; text: string }]) => Promise<void>
+    onSteer: (parts: [{ type: "text"; text: string }]) => Promise<void>
     onCancel: () => Promise<void>
     permissionMode: string
     onPermissionModeChange: (mode: "full_access") => Promise<void>
@@ -69,6 +79,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
   }) => (
     <div>
       {contextControls}
+      <input aria-label="Draft message" defaultValue="Keep this draft" />
       <span>Permission: {permissionMode}</span>
       <button
         type="button"
@@ -86,6 +97,14 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
         }
       >
         Send message
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void onSteer([{ type: "text", text: "Continue" }]).catch(() => {})
+        }
+      >
+        Steer message
       </button>
       <button type="button" onClick={() => onCancel()}>
         Stop run
@@ -156,6 +175,7 @@ describe("AgentWorkbench v2", () => {
     mocks.replace.mockReset()
     mocks.push.mockReset()
     mocks.useSession.mockReset()
+    mocks.catalogPanel.mockReset()
     mocks.useSession.mockReturnValue(sessionState())
   })
 
@@ -191,7 +211,7 @@ describe("AgentWorkbench v2", () => {
     expect(mocks.replace).toHaveBeenCalledWith("/agent/session-1")
   })
 
-  it("offers a model connection path when no usable session model is configured", async () => {
+  it("opens inline model connection without discarding the draft", async () => {
     const user = userEvent.setup()
     mocks.createSession.mockRejectedValue(
       new ApiError("Configuration required", {
@@ -206,15 +226,27 @@ describe("AgentWorkbench v2", () => {
 
     await user.click(screen.getByRole("button", { name: "Send message" }))
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog).toHaveAccessibleName("modelConnection.title")
+    expect(dialog).toHaveTextContent(
       "modelConnection.description",
     )
+    expect(await screen.findByText("Model catalog panel")).toBeInTheDocument()
+    await waitFor(() => expect(mocks.catalogPanel).toHaveBeenCalledTimes(1))
     expect(
-      screen.getByRole("link", { name: "modelConnection.action" }),
+      screen.getByRole("link", { name: "modelConnection.fullSettings" }),
     ).toMatchObject({
       href: expect.stringContaining("/settings?section=providers"),
       target: "_blank",
     })
+
+    await user.keyboard("{Escape}")
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Draft message" })).toHaveValue(
+      "Keep this draft",
+    )
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   })
 
   it("does not infer model setup from a generic validation message", async () => {
@@ -233,10 +265,42 @@ describe("AgentWorkbench v2", () => {
     await user.click(screen.getByRole("button", { name: "Send message" }))
 
     expect(await screen.findByRole("alert")).toHaveTextContent("createError")
-    expect(
-      screen.queryByRole("link", { name: "modelConnection.action" }),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(mocks.catalogPanel).not.toHaveBeenCalled()
   })
+
+  it.each([
+    ["sendMessage", "Send message"],
+    ["steer", "Steer message"],
+  ] as const)(
+    "opens inline model connection when an existing session cannot %s",
+    async (method, buttonName) => {
+      const user = userEvent.setup()
+      const state = sessionState({
+        [method]: vi.fn().mockRejectedValue(
+          new ApiError("Configuration required", {
+            code: "AGENT_MODEL_REQUIRED",
+            status: 422,
+          }),
+        ),
+      })
+      mocks.useSession.mockReturnValue(state)
+
+      renderWithProviders(
+        <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+      )
+
+      await user.click(screen.getByRole("button", { name: buttonName }))
+
+      expect(await screen.findByRole("dialog")).toHaveAccessibleName(
+        "modelConnection.title",
+      )
+      await user.keyboard("{Escape}")
+      expect(screen.getByRole("textbox", { name: "Draft message" })).toHaveValue(
+        "Keep this draft",
+      )
+    },
+  )
 
   it("persists permission changes after context upload creates a draft session", async () => {
     const user = userEvent.setup()

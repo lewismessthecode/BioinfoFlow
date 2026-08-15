@@ -35,6 +35,11 @@ from app.services.agent_harness.loop import (
     LoopLimits,
     checkpoint_interaction_id,
 )
+from app.services.agent_harness.projection import (
+    entry_contract,
+    pending_interaction_entry_view,
+    run_view,
+)
 from app.services.agent_harness.recovery import RecoveryPlanner, create_checkpoint
 from app.services.agent_harness.tool_projection import (
     project_tool_view,
@@ -166,7 +171,7 @@ class AgentHarness:
                 assert entry is not None
                 await self.event_hub.publish(
                     session_id,
-                    EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+                    EntryCommittedEvent(entry=entry_contract(entry)),
                 )
                 await self._start_run(session_id, str(run.id), wait=True)
             return
@@ -423,11 +428,11 @@ class AgentHarness:
             for entry in committed:
                 await self.event_hub.publish(
                     session_id,
-                    EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+                    EntryCommittedEvent(entry=entry_contract(entry)),
                 )
             await self.event_hub.publish(
                 session_id,
-                RunUpdatedEvent(run=self.repository._run_view(cancelled)),
+                RunUpdatedEvent(run=run_view(cancelled)),
             )
             await self._after_run(session_id, run_id, wait=True)
             return True
@@ -492,7 +497,7 @@ class AgentHarness:
         for entry in steer_entries:
             await self.event_hub.publish(
                 session_id,
-                EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+                EntryCommittedEvent(entry=entry_contract(entry)),
             )
         if steer_entries:
             return False
@@ -720,7 +725,7 @@ class AgentHarness:
         )
         await self.event_hub.publish(
             session_id,
-            EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+            EntryCommittedEvent(entry=entry_contract(entry)),
         )
         return entry
 
@@ -854,14 +859,14 @@ class AgentHarness:
                 )
                 await self.event_hub.publish(
                     str(session.id),
-                    EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+                    EntryCommittedEvent(entry=entry_contract(entry)),
                 )
                 await self.event_hub.publish(
                     str(session.id),
                     InteractionRequestedEvent(
                         run_id=run.id,
                         interaction=(
-                            self.repository._pending_interaction_entry_view(entry)
+                            pending_interaction_entry_view(entry)
                         ),
                     ),
                 )
@@ -898,7 +903,7 @@ class AgentHarness:
             committed_call_ids.add(item.call_id)
             await self.event_hub.publish(
                 str(session.id),
-                EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+                EntryCommittedEvent(entry=entry_contract(entry)),
             )
         checkpoint = dict(run.checkpoint or {})
         checkpoint["history_revision"] = int(session.history_revision)
@@ -967,15 +972,15 @@ class AgentHarness:
         assert notice is not None
         await self.event_hub.publish(
             str(session.id),
-            RunUpdatedEvent(run=self.repository._run_view(waiting_run)),
+            RunUpdatedEvent(run=run_view(waiting_run)),
         )
         await self.event_hub.publish(
             str(session.id),
-            EntryCommittedEvent(entry=self.repository._entry_contract(notice)),
+            EntryCommittedEvent(entry=entry_contract(notice)),
         )
         await self.event_hub.publish(
             str(session.id),
-            EntryCommittedEvent(entry=self.repository._entry_contract(request)),
+            EntryCommittedEvent(entry=entry_contract(request)),
         )
         await self.event_hub.publish(
             str(session.id),
@@ -990,7 +995,7 @@ class AgentHarness:
             str(session.id),
             InteractionRequestedEvent(
                 run_id=run.id,
-                interaction=self.repository._pending_interaction_entry_view(request),
+                interaction=pending_interaction_entry_view(request),
             ),
         )
 
@@ -1089,7 +1094,7 @@ class AgentHarness:
         run, entry = next_run
         await self.event_hub.publish(
             session_id,
-            EntryCommittedEvent(entry=self.repository._entry_contract(entry)),
+            EntryCommittedEvent(entry=entry_contract(entry)),
         )
         await self._start_run(session_id, str(run.id), wait=wait)
         return True

@@ -45,6 +45,11 @@ export type AgentModelSummary = {
   supports_tools: boolean
 }
 
+export type RunErrorView = {
+  code: string
+  message: string
+}
+
 export type SessionView = {
   id: string
   user_id: string
@@ -68,7 +73,7 @@ export type RunView = {
   started_at: string | null
   completed_at: string | null
   termination_reason: string | null
-  error: JsonValue
+  error: RunErrorView | null
   created_at: string
   updated_at: string
 }

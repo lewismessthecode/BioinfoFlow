@@ -17,6 +17,7 @@ from app.services.agent_harness.contracts import (
     RespondCommand,
     SteerCommand,
 )
+from app.services.agent_harness.projection import entry_contract
 
 
 WORKSPACE_ID = UUID("30000000-0000-0000-0000-000000000001")
@@ -81,6 +82,78 @@ async def test_repository_opens_session_and_appends_strictly_ordered_history(
     assert snapshot.active_run is not None
     assert snapshot.active_run.run.id == run.id
     assert snapshot.active_run.assistant_draft is None
+
+
+@pytest.mark.asyncio
+async def test_snapshot_projects_failed_run_error_without_private_diagnostics(
+    harness_db: AsyncSession,
+) -> None:
+    repository = AgentHarnessRepository(harness_db)
+    session = await repository.open_session(_request())
+    run = await repository.create_run(str(session.id))
+    await repository.update_run(str(run.id), status="running", phase="model")
+    await repository.update_run(
+        str(run.id),
+        status="failed",
+        phase=None,
+        termination_reason="agent_failed",
+        error={
+            "code": "agent_failed",
+            "message": "Provider rejected credential sk-private-value",
+            "type": "ProviderCredentialError",
+        },
+    )
+
+    snapshot = await repository.snapshot(str(session.id))
+
+    public_run = snapshot.runs[0]
+    assert public_run.status == "failed"
+    assert public_run.error is not None
+    assert public_run.error.model_dump() == {
+        "code": "agent_failed",
+        "message": "The Agent run failed.",
+    }
+    assert "sk-private-value" not in str(snapshot.model_dump(mode="json"))
+    assert "ProviderCredentialError" not in str(snapshot.model_dump(mode="json"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "private_error",
+    [
+        "provider returned sk-private-value",
+        {
+            "code": "provider_specific_failure",
+            "message": "provider returned sk-private-value",
+            "details": {"credential": "sk-private-value"},
+        },
+    ],
+)
+async def test_snapshot_replaces_unknown_or_malformed_run_errors(
+    harness_db: AsyncSession,
+    private_error: object,
+) -> None:
+    repository = AgentHarnessRepository(harness_db)
+    session = await repository.open_session(_request())
+    run = await repository.create_run(str(session.id))
+    await repository.update_run(str(run.id), status="running", phase="model")
+    await repository.update_run(
+        str(run.id),
+        status="failed",
+        phase=None,
+        termination_reason="provider_specific_failure",
+        error=private_error,
+    )
+
+    snapshot = await repository.snapshot(str(session.id))
+
+    assert snapshot.runs[0].error is not None
+    assert snapshot.runs[0].error.model_dump() == {
+        "code": "agent_failed",
+        "message": "The Agent run failed.",
+    }
+    assert "sk-private-value" not in str(snapshot.model_dump(mode="json"))
+    assert "credential" not in str(snapshot.model_dump(mode="json"))
 
 
 @pytest.mark.asyncio
@@ -368,7 +441,7 @@ async def test_message_submission_atomically_creates_run_and_user_history(
     snapshot = await repository.snapshot(str(session.id))
     assert snapshot.active_run is not None
     assert snapshot.active_run.run.id == run.id
-    assert snapshot.entries == [repository._entry_contract(entry)]
+    assert snapshot.entries == [entry_contract(entry)]
     assert snapshot.entries[0].schema_version == 2
     assert snapshot.entries[0].payload.parts[0].type == "text"
     assert snapshot.entries[0].payload.parts[0].text == "hello"

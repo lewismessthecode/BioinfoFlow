@@ -1045,10 +1045,10 @@ async def test_background_bootstrap_failure_is_persisted_instead_of_leaking_task
 
     assert _latest_run(snapshot).status == "failed"
     assert _latest_run(snapshot).termination_reason == "runtime_failed"
-    assert _latest_run(snapshot).error == {
+    assert _latest_run(snapshot).error is not None
+    assert _latest_run(snapshot).error.model_dump() == {
         "code": "runtime_failed",
-        "message": "workspace bootstrap failed",
-        "type": "RuntimeError",
+        "message": "The Agent runtime stopped unexpectedly.",
     }
     assert failed_event is not None
     await events.aclose()

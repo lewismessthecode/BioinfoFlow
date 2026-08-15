@@ -2523,8 +2523,8 @@
     "createError": "The conversation could not be started. Your message is still here; try again.",
     "modelConnection": {
       "title": "Connect a model to continue",
-      "description": "No usable model is available. Open AI Provider settings in a new tab, connect one, then send your message again.",
-      "action": "Connect a model"
+      "description": "Connect an AI provider here, then resend your message. Your draft will stay in the composer.",
+      "fullSettings": "Open full provider settings"
     },
     "loadErrorTitle": "Conversation unavailable",
     "loadErrorDescription": "The conversation could not be loaded.",
@@ -2573,6 +2573,14 @@
     "steering": "Steering…",
     "submitError": "The message could not be submitted. Try again.",
     "stopError": "The run could not be stopped. Try again.",
+    "voice": {
+      "start": "Start voice dictation",
+      "stop": "Stop recording",
+      "recording": "Recording {seconds}s",
+      "transcribing": "Transcribing voice…",
+      "error": "Voice dictation failed. Try again.",
+      "retry": "Retry voice dictation"
+    },
     "permission": {
       "label": "Approval mode",
       "title": "How should agent actions be approved?",
@@ -2659,7 +2667,7 @@
     "copied": "Copied",
     "copy_failed": "Could not copy. Select the message and copy it manually.",
     "scroll_to_bottom": "Jump to latest",
-    "run_finished": "Finished {time}",
+    "run_ended": "Ended {time}",
     "run_duration": "{duration}"
   },
   "agentHistory": {

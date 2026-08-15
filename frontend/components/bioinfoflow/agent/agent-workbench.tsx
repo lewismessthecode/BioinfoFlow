@@ -10,14 +10,14 @@ import {
 } from "react"
 import type { RefObject } from "react"
 import type { ReactNode } from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 
 import { AgentComposer } from "@/components/bioinfoflow/agent/agent-composer"
 import { AgentContextPicker } from "@/components/bioinfoflow/agent/agent-context-picker"
+import { AgentModelConnectionDialog } from "@/components/bioinfoflow/agent/agent-model-connection-dialog"
 import { AgentTranscript } from "@/components/bioinfoflow/agent/agent-transcript"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAgentSession } from "@/hooks/use-agent-session"
@@ -44,7 +44,6 @@ import { ApiError } from "@/lib/api"
 import {
   Bot,
   CircleAlert,
-  ExternalLink,
   Loader2,
   RefreshCw,
   Wifi,
@@ -89,6 +88,7 @@ export const AgentWorkbench = forwardRef<
   const [draftWorkspaceAccess] =
     useState<AgentWorkspaceAccess>("read_write")
   const [contextInputs, setContextInputs] = useState<AgentContextInput[]>([])
+  const [modelConnectionOpen, setModelConnectionOpen] = useState(false)
   const createPromiseRef = useRef<Promise<string> | null>(null)
   const cancelRef = useRef<(() => Promise<void>) | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -199,6 +199,7 @@ export const AgentWorkbench = forwardRef<
     routeToSession,
     textareaRef,
     setCancelHandler,
+    setModelConnectionOpen,
   }
 
   return (
@@ -227,6 +228,10 @@ export const AgentWorkbench = forwardRef<
           {...common}
         />
       )}
+      <AgentModelConnectionDialog
+        open={modelConnectionOpen}
+        onOpenChange={setModelConnectionOpen}
+      />
     </main>
   )
 })
@@ -241,6 +246,7 @@ type SharedWorkbenchProps = {
   routeToSession: (sessionId: string) => void
   textareaRef: RefObject<HTMLTextAreaElement | null>
   setCancelHandler: (handler: (() => Promise<void>) | null) => void
+  setModelConnectionOpen: (open: boolean) => void
 }
 
 function DraftWorkbench({
@@ -258,13 +264,11 @@ function DraftWorkbench({
   headerActions?: ReactNode
 }) {
   const t = useTranslations("agentWorkbench")
-  const [error, setError] = useState<{
-    message: string
-    modelConnectionRequired: boolean
-  } | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const send = async (parts: InputPart[]) => {
     setError(null)
+    shared.setModelConnectionOpen(false)
     try {
       const sessionId = await shared.ensureSession()
       await dispatchAgentCommand(sessionId, {
@@ -275,13 +279,11 @@ function DraftWorkbench({
       shared.setContextInputs([])
       shared.routeToSession(sessionId)
     } catch (caught) {
-      const modelConnectionRequired = isModelConfigurationError(caught)
-      setError({
-        message: t(
-          modelConnectionRequired ? "modelConnection.title" : "createError",
-        ),
-        modelConnectionRequired,
-      })
+      if (isModelConfigurationError(caught)) {
+        shared.setModelConnectionOpen(true)
+      } else {
+        setError(t("createError"))
+      }
       throw new Error("Unable to create agent session")
     }
   }
@@ -294,12 +296,7 @@ function DraftWorkbench({
         actions={headerActions}
       />
       <AgentEmptyState />
-      {error ? (
-        <WorkbenchError
-          message={error.message}
-          modelConnectionRequired={error.modelConnectionRequired}
-        />
-      ) : null}
+      {error ? <WorkbenchError message={error} /> : null}
       <AgentComposer
         permissionMode={permissionMode}
         workspaceAccess={workspaceAccess}
@@ -352,13 +349,25 @@ function SessionWorkbench({
     onSessionResolved?.(state.session)
   }, [onSessionResolved, state.session])
 
+  const runSessionCommand = async (command: () => Promise<void>) => {
+    shared.setModelConnectionOpen(false)
+    try {
+      await command()
+    } catch (caught) {
+      if (isModelConfigurationError(caught)) {
+        shared.setModelConnectionOpen(true)
+      }
+      throw caught
+    }
+  }
+
   const sendMessage = async (parts: InputPart[]) => {
-    await state.sendMessage(parts)
+    await runSessionCommand(() => state.sendMessage(parts))
     shared.setContextInputs([])
     shared.routeToSession(sessionId)
   }
   const steer = async (parts: InputPart[]) => {
-    await state.steer(parts)
+    await runSessionCommand(() => state.steer(parts))
     shared.setContextInputs([])
   }
 
@@ -513,32 +522,14 @@ function AgentEmptyState() {
 
 function WorkbenchError({
   message,
-  modelConnectionRequired,
 }: {
   message: string
-  modelConnectionRequired: boolean
 }) {
-  const t = useTranslations("agentWorkbench")
   return (
     <div className="border-t px-4 py-3">
       <Alert variant="destructive" className="mx-auto max-w-[46rem]">
         <CircleAlert aria-hidden="true" />
         <AlertTitle>{message}</AlertTitle>
-        {modelConnectionRequired ? (
-          <AlertDescription className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-pretty">{t("modelConnection.description")}</p>
-            <Button asChild variant="outline" size="sm">
-              <Link
-                href="/settings?section=providers"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {t("modelConnection.action")}
-                <ExternalLink data-icon="inline-end" aria-hidden="true" />
-              </Link>
-            </Button>
-          </AlertDescription>
-        ) : null}
       </Alert>
     </div>
   )

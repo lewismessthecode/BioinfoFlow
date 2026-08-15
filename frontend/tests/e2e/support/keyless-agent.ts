@@ -19,6 +19,8 @@ type ProviderSetupResult = {
   models: Array<{ id: string; model_id: string }>
 }
 
+type ProviderListResult = Array<{ id: string; enabled: boolean }>
+
 type AgentSessionSnapshot = {
   session: { id: string }
   runs: Array<{ id: string; status: string }>
@@ -41,6 +43,24 @@ const scenarioModelPrefix: Record<KeylessAgentScenario, string> = {
   "ask-user": "e2e-ask-user",
   stop: "e2e-stop",
   recovery: "e2e-recovery",
+}
+
+export async function disableKeylessAgentProviders(
+  request: APIRequestContext,
+): Promise<void> {
+  const response = await request.get(`${apiBaseUrl}/llm/providers`)
+  const providers = await requireSuccess<ProviderListResult>(
+    response,
+    "list providers",
+  )
+  for (const provider of providers) {
+    if (!provider.enabled) continue
+    const disabled = await request.patch(
+      `${apiBaseUrl}/llm/providers/${provider.id}`,
+      { data: { enabled: false } },
+    )
+    await requireSuccess(disabled, `disable provider ${provider.id}`)
+  }
 }
 
 export async function setupKeylessAgentModel(

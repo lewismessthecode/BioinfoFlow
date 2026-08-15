@@ -77,6 +77,7 @@ export {
   MemoryStick,
   Menu,
   MessageSquare,
+  Mic,
   Monitor,
   Moon,
   MoreHorizontal,

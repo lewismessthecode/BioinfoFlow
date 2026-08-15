@@ -806,10 +806,10 @@ async def test_image_input_fails_before_invoking_model_without_vision_support(
     assert model.invocations == []
     assert _latest_run(snapshot).status == "failed"
     assert _latest_run(snapshot).termination_reason == "model_vision_unsupported"
-    assert _latest_run(snapshot).error == {
+    assert _latest_run(snapshot).error is not None
+    assert _latest_run(snapshot).error.model_dump() == {
         "code": "model_vision_unsupported",
         "message": "The selected model does not support image input.",
-        "type": None,
     }
     notices = [entry for entry in snapshot.entries if entry.type == "notice"]
     assert len(notices) == 1

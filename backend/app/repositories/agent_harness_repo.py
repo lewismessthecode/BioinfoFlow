@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from pydantic import TypeAdapter
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,20 +20,25 @@ from app.services.agent_harness.contracts import (
     ActiveRunView,
     AgentCommand,
     AssistantDraftView,
-    HistoryEntry,
     MessageCommand,
     OpenSessionRequest,
     PendingInteractionView,
-    RunView,
     SessionSnapshot,
     SessionView,
     ToolProgressView,
+)
+from app.services.agent_harness.projection import (
+    entry_contract,
+    pending_interaction_entry_view,
+    public_interaction_request,
+    public_interaction_response,
+    public_model_summary,
+    run_view,
 )
 
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "waiting_user")
 TERMINAL_RUN_STATUSES = ("completed", "failed", "cancelled")
-_history_entry_adapter = TypeAdapter(HistoryEntry)
 _SESSION_SETTING_UNSET = object()
 
 
@@ -42,122 +46,6 @@ _SESSION_SETTING_UNSET = object()
 class RunFence:
     owner: str
     generation: int
-
-
-def _public_model_summary(snapshot: dict[str, Any] | None) -> dict[str, Any]:
-    private = snapshot if isinstance(snapshot, dict) else {}
-    target = private.get("target")
-    target = target if isinstance(target, dict) else {}
-    capabilities = private.get("capabilities")
-    capabilities = capabilities if isinstance(capabilities, dict) else {}
-    provider = str(target.get("provider_kind") or "unknown")
-    model = str(target.get("model_name") or "unknown")
-    display_name = str(private.get("display_name") or model)
-    return {
-        "provider": provider,
-        "model": model,
-        "display_name": display_name,
-        "supports_vision": bool(capabilities.get("supports_vision", False)),
-        "supports_reasoning": bool(capabilities.get("supports_reasoning", False)),
-        "supports_tools": bool(capabilities.get("supports_tools", False)),
-    }
-
-
-def _public_interaction_request(value: dict[str, Any]) -> dict[str, Any]:
-    kind = value.get("kind")
-    call_id = str(value.get("call_id") or "interaction")
-    if kind == "question":
-        questions: list[dict[str, Any]] = []
-        for index, raw in enumerate(value.get("questions") or []):
-            question = raw if isinstance(raw, dict) else {"question": str(raw)}
-            header = str(question.get("header") or f"Question {index + 1}")
-            questions.append(
-                {
-                    "id": str(question.get("id") or header),
-                    "header": header,
-                    "question": str(question.get("question") or ""),
-                    "multi_select": bool(
-                        question.get("multi_select", question.get("multiSelect", False))
-                    ),
-                    "options": _public_interaction_options(question.get("options")),
-                }
-            )
-        return {"type": "ask_user", "call_id": call_id, "questions": questions}
-    if kind == "confirmation":
-        risk = value.get("risk") if isinstance(value.get("risk"), dict) else {}
-        resources = risk.get("affected_resources") or risk.get("referenced_paths") or []
-        return {
-            "type": "approval",
-            "call_id": call_id,
-            "tool_name": str(value.get("tool_name") or "tool"),
-            "summary": str(value.get("summary") or "Allow this tool to run?"),
-            "input_preview": value.get("input_preview"),
-            "risk": {
-                "level": str(risk.get("level") or "unknown"),
-                "effects": [str(item) for item in risk.get("effects") or []],
-                "reasons": [str(item) for item in risk.get("reasons") or []],
-                "affected_resources": [
-                    str(item.get("id") if isinstance(item, dict) else item)
-                    for item in resources
-                ],
-            },
-        }
-    if kind == "recovery":
-        return {
-            "type": "recovery",
-            "call_id": call_id,
-            "tool_name": str(value.get("tool_name") or "tool"),
-            "message": str(value.get("message") or "Recovery requires a decision."),
-            "options": _public_interaction_options(value.get("options")),
-        }
-    raise ValueError(f"unsupported interaction kind: {kind}")
-
-
-def _public_interaction_options(values: Any) -> list[dict[str, Any]]:
-    options: list[dict[str, Any]] = []
-    for index, raw in enumerate(values if isinstance(values, list) else []):
-        if not isinstance(raw, dict):
-            continue
-        label = str(raw.get("label") or raw.get("id") or f"Option {index + 1}")
-        options.append(
-            {
-                "id": str(raw.get("id") or label),
-                "label": label,
-                "description": str(raw.get("description") or ""),
-                "recommended": bool(raw.get("recommended", False)),
-            }
-        )
-    if len(options) >= 2:
-        return options
-    return [
-        {
-            "id": "continue",
-            "label": "Continue",
-            "description": "Continue working",
-            "recommended": True,
-        },
-        {
-            "id": "cancel",
-            "label": "Cancel",
-            "description": "Stop here",
-            "recommended": False,
-        },
-    ]
-
-
-def _public_interaction_response(value: dict[str, Any]) -> dict[str, Any]:
-    response_type = value.get("type")
-    if response_type == "ask_user" or "answers" in value:
-        return {"type": "ask_user", "answers": value.get("answers") or {}}
-    if response_type == "approval" or "approved" in value:
-        return {"type": "approval", "approved": value.get("approved") is True}
-    if response_type == "recovery" or value.get("choice") in {
-        "inspect",
-        "retry",
-        "cancel",
-    }:
-        return {"type": "recovery", "choice": value.get("choice")}
-    raise ValueError("unsupported interaction response")
 
 
 class AgentHarnessAttachmentRepository(BaseRepository[AgentHarnessAttachment]):
@@ -1879,7 +1767,7 @@ class AgentHarnessRepository:
             .model_validate(
                 {
                     "interaction_id": interaction_id,
-                    "response": _public_interaction_response(response),
+                    "response": public_interaction_response(response),
                 }
             )
             .model_dump(mode="json")
@@ -1952,7 +1840,7 @@ class AgentHarnessRepository:
     ) -> tuple[AgentHarnessEntry | None, AgentHarnessEntry, AgentHarnessRun]:
         """Atomically publish an interaction and make the Run wait for its answer."""
 
-        public_request = _public_interaction_request(request_payload["request"])
+        public_request = public_interaction_request(request_payload["request"])
         request = (
             ENTRY_PAYLOAD_TYPES["interaction_request"]
             .model_validate(
@@ -2059,7 +1947,7 @@ class AgentHarnessRepository:
             .model_validate(
                 {
                     "interaction_id": interaction_id,
-                    "response": _public_interaction_response(response),
+                    "response": public_interaction_response(response),
                 }
             )
             .model_dump(mode="json")
@@ -2268,7 +2156,7 @@ class AgentHarnessRepository:
         entries = await self.list_entries(session_id)
         active_run = (
             ActiveRunView(
-                run=self._run_view(run),
+                run=run_view(run),
                 assistant_draft=self._assistant_draft(run),
                 tool_progress=self._tool_progress(run),
                 pending_interaction=self._pending_interaction(run, entries),
@@ -2284,7 +2172,7 @@ class AgentHarnessRepository:
                     "workspace_id": session.workspace_id,
                     "project_id": session.project_id,
                     "title": session.title,
-                    "model": _public_model_summary(session.model_snapshot),
+                    "model": public_model_summary(session.model_snapshot),
                     "permission_mode": session.permission_mode,
                     "workspace_access": session.workspace_access,
                     "status": session.status,
@@ -2292,9 +2180,9 @@ class AgentHarnessRepository:
                     "updated_at": session.updated_at,
                 }
             ),
-            runs=[self._run_view(item) for item in runs],
+            runs=[run_view(item) for item in runs],
             entries=[
-                self._entry_contract(entry)
+                entry_contract(entry)
                 for entry in entries
                 if entry.type != "compaction"
             ],
@@ -2333,53 +2221,7 @@ class AgentHarnessRepository:
         if not pending:
             return None
         request = max(pending.values(), key=lambda item: item.sequence)
-        return AgentHarnessRepository._pending_interaction_entry_view(request)
-
-    @staticmethod
-    def _pending_interaction_entry_view(
-        entry: AgentHarnessEntry,
-    ) -> PendingInteractionView:
-        if entry.run_id is None or entry.type != "interaction_request":
-            raise ValueError("pending interaction requires a Run request entry")
-        return PendingInteractionView(
-            interaction_id=str(entry.payload["interaction_id"]),
-            run_id=entry.run_id,
-            revision=entry.sequence,
-            request=dict(entry.payload.get("request") or {}),
-        )
-
-    @staticmethod
-    def _run_view(run: AgentHarnessRun) -> RunView:
-        return RunView.model_validate(
-            {
-                "id": run.id,
-                "session_id": run.session_id,
-                "status": run.status,
-                "phase": run.phase,
-                "revision": run.revision,
-                "started_at": run.started_at,
-                "completed_at": run.completed_at,
-                "termination_reason": run.termination_reason,
-                "error": run.error,
-                "created_at": run.created_at,
-                "updated_at": run.updated_at,
-            }
-        )
-
-    @staticmethod
-    def _entry_contract(entry: AgentHarnessEntry) -> HistoryEntry:
-        return _history_entry_adapter.validate_python(
-            {
-                "id": entry.id,
-                "session_id": entry.session_id,
-                "run_id": entry.run_id,
-                "sequence": entry.sequence,
-                "type": entry.type,
-                "schema_version": entry.schema_version,
-                "payload": entry.payload,
-                "created_at": entry.created_at,
-            }
-        )
+        return pending_interaction_entry_view(request)
 
 
 __all__ = [

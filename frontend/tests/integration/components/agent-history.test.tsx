@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
 import { AgentHistoryEntries } from "@/components/bioinfoflow/agent/conversation-entries"
-import type { HistoryEntry } from "@/lib/agent/contracts"
+import type { HistoryEntry, RunView } from "@/lib/agent/contracts"
 import { renderWithProviders } from "@/tests/test-utils"
 
 vi.mock("next-intl", () => ({
@@ -40,6 +40,11 @@ vi.mock("next-intl", () => ({
         "agentHistory.plan.status.in_progress": "In progress",
         "agentHistory.plan.status.completed": "Completed",
         "agentHistory.notice.title": "Agent notice",
+        "agentRun.status.completed": "Completed",
+        "agentRun.status.failed": "Failed",
+        "agentRun.status.cancelled": "Cancelled",
+        "agentTranscript.run_ended": `Ended ${values?.time ?? ""}`,
+        "agentTranscript.run_duration": `${values?.duration ?? ""}`,
         "agentInteraction.ask_user.title": "The agent asked for input",
         "agentInteraction.ask_user.submit": "Submit answers",
         "agentInteraction.ask_user.recommended": "Recommended",
@@ -75,6 +80,83 @@ const baseEntry = {
 }
 
 describe("AgentHistoryEntries", () => {
+  it("renders a failed Run outcome even when no assistant entry exists", () => {
+    const failedRun: RunView = {
+      id: "run-1",
+      session_id: "session-1",
+      status: "failed",
+      phase: null,
+      revision: 4,
+      started_at: "2026-08-15T08:00:00.000Z",
+      completed_at: "2026-08-15T08:00:02.500Z",
+      termination_reason: "agent_failed",
+      error: {
+        code: "agent_failed",
+        message: "The Agent run failed.",
+      },
+      created_at: "2026-08-15T08:00:00.000Z",
+      updated_at: "2026-08-15T08:00:02.500Z",
+    }
+    const entries: HistoryEntry[] = [
+      {
+        ...baseEntry,
+        id: "user-only",
+        sequence: 1,
+        type: "message",
+        payload: {
+          role: "user",
+          parts: [{ id: "text-1", type: "text", text: "Inspect this workflow." }],
+        },
+      },
+    ]
+
+    renderWithProviders(
+      <AgentHistoryEntries entries={entries} runs={[failedRun]} />,
+    )
+
+    const outcome = screen.getByTestId("agent-run-outcome")
+    expect(outcome).toHaveTextContent("Failed")
+    expect(outcome).toHaveTextContent("The Agent run failed.")
+    expect(outcome).toHaveTextContent("agent_failed")
+    expect(outcome).toHaveTextContent(/Ended/)
+    expect(outcome).toHaveTextContent("2.5 s")
+  })
+
+  it("labels completed and cancelled Run outcomes independently", () => {
+    const baseRun: RunView = {
+      id: "completed-run",
+      session_id: "session-1",
+      status: "completed",
+      phase: null,
+      revision: 3,
+      started_at: "2026-08-15T08:00:00.000Z",
+      completed_at: "2026-08-15T08:00:01.000Z",
+      termination_reason: "completed",
+      error: null,
+      created_at: "2026-08-15T08:00:00.000Z",
+      updated_at: "2026-08-15T08:00:01.000Z",
+    }
+    const cancelledRun: RunView = {
+      ...baseRun,
+      id: "cancelled-run",
+      status: "cancelled",
+      termination_reason: "user_cancelled",
+      completed_at: "2026-08-15T08:00:02.000Z",
+      updated_at: "2026-08-15T08:00:02.000Z",
+    }
+
+    renderWithProviders(
+      <AgentHistoryEntries entries={[]} runs={[baseRun, cancelledRun]} />,
+    )
+
+    const outcomes = screen.getAllByTestId("agent-run-outcome")
+    expect(outcomes).toHaveLength(2)
+    expect(outcomes[0]).toHaveTextContent("Completed")
+    expect(outcomes[1]).toHaveTextContent("Cancelled")
+    expect(outcomes[0]).not.toHaveTextContent("Failed")
+    expect(outcomes[1]).not.toHaveTextContent("Failed")
+  })
+
   it("renders typed assistant content and groups tool calls with their durable results", async () => {
     const user = userEvent.setup()
     const entries: HistoryEntry[] = [

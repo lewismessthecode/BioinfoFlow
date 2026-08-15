@@ -1,19 +1,19 @@
 "use client"
 
-import { memo, useMemo, useState } from "react"
-import { useLocale, useTranslations } from "next-intl"
+import { Fragment, memo, useMemo, useState } from "react"
+import type { ReactNode } from "react"
+import { useTranslations } from "next-intl"
 
 import { AgentInteractionCard } from "@/components/bioinfoflow/agent/interaction-card"
 import { AgentMessageParts } from "@/components/bioinfoflow/agent/message-parts"
 import { AgentPlanEntry } from "@/components/bioinfoflow/agent/plan-entry"
+import {
+  AgentRunOutcome,
+  isTerminalRun,
+} from "@/components/bioinfoflow/agent/agent-run-outcome"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Check, Copy } from "@/lib/icons"
-import {
-  dateTimeAttribute,
-  formatAgentDuration,
-  formatAgentEndTime,
-} from "@/lib/agent/date-format"
 import type {
   HistoryEntry,
   InteractionResponse,
@@ -39,18 +39,39 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
     () => new Map(runs.map((run) => [run.id, run])),
     [runs],
   )
+  const orphanedOutcomes = useMemo(
+    () =>
+      runs.filter(
+        (run) => isTerminalRun(run) && !prepared.lastEntryIdsByRun.has(run.id),
+      ),
+    [prepared.lastEntryIdsByRun, runs],
+  )
 
   return (
     <div className="grid min-w-0 gap-5" data-testid="agent-history-entries">
       {prepared.entries.map((entry) => {
+        const run = entry.run_id ? runsById.get(entry.run_id) : undefined
+        const outcome =
+          run &&
+          isTerminalRun(run) &&
+          prepared.lastEntryIdsByRun.get(run.id) === entry.id
+            ? run
+            : null
+        const withOutcome = (content: ReactNode) => (
+          <Fragment key={entry.id}>
+            {content}
+            {outcome ? <AgentRunOutcome run={outcome} /> : null}
+          </Fragment>
+        )
+
         if (
           entry.type === "plan" &&
           prepared.latestPlanEntryIds.get(entry.payload.plan_id) !== entry.id
         ) {
-          return null
+          return withOutcome(null)
         }
 
-        if (entry.type === "interaction_response") return null
+        if (entry.type === "interaction_response") return withOutcome(null)
 
         if (entry.type === "message") {
           const visibleParts =
@@ -61,11 +82,10 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
                     !prepared.consumedToolCallIds.has(part.call_id),
                 )
               : entry.payload.parts
-          if (visibleParts.length === 0) return null
+          if (visibleParts.length === 0) return withOutcome(null)
 
-          return (
+          return withOutcome(
             <div
-              key={entry.id}
               className="min-w-0"
               data-agent-read-anchor={`entry:${entry.id}`}
             >
@@ -75,23 +95,14 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
                   payload: { ...entry.payload, parts: visibleParts },
                 }}
                 toolResultsByCallId={prepared.toolResultsByCallId}
-                run={entry.run_id ? runsById.get(entry.run_id) : undefined}
-                showRunCompletion={
-                  entry.payload.role === "assistant" &&
-                  Boolean(entry.run_id) &&
-                  prepared.latestAssistantEntryIdsByRun.get(
-                    entry.run_id ?? "",
-                  ) === entry.id
-                }
               />
             </div>
           )
         }
 
         if (entry.type === "interaction_request") {
-          return (
+          return withOutcome(
             <div
-              key={entry.id}
               className="min-w-0"
               data-agent-read-anchor={`entry:${entry.id}`}
             >
@@ -105,9 +116,8 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
           )
         }
 
-        return (
+        return withOutcome(
           <div
-            key={entry.id}
             className="min-w-0"
             data-agent-read-anchor={`entry:${entry.id}`}
           >
@@ -115,6 +125,9 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
           </div>
         )
       })}
+      {orphanedOutcomes.map((run) => (
+        <AgentRunOutcome key={run.id} run={run} />
+      ))}
     </div>
   )
 })
@@ -123,14 +136,10 @@ function AgentHistoryEntry({
   entry,
   toolResultsByCallId,
   interactionResponse,
-  run,
-  showRunCompletion = false,
 }: {
   entry: Exclude<HistoryEntry, InteractionResponseEntry>
   toolResultsByCallId?: ReadonlyMap<string, ToolResultPart>
   interactionResponse?: InteractionResponse
-  run?: RunView
-  showRunCompletion?: boolean
 }) {
   const t = useTranslations("agentHistory")
 
@@ -139,8 +148,6 @@ function AgentHistoryEntry({
       <MessageHistoryEntry
         entry={entry}
         toolResultsByCallId={toolResultsByCallId}
-        run={run}
-        showRunCompletion={showRunCompletion}
       />
     )
   }
@@ -173,17 +180,12 @@ function AgentHistoryEntry({
 function MessageHistoryEntry({
   entry,
   toolResultsByCallId,
-  run,
-  showRunCompletion,
 }: {
   entry: MessageEntry
   toolResultsByCallId?: ReadonlyMap<string, ToolResultPart>
-  run?: RunView
-  showRunCompletion: boolean
 }) {
   const isUser = entry.payload.role === "user"
   const t = useTranslations("agentTranscript")
-  const locale = useLocale()
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
   )
@@ -191,8 +193,6 @@ function MessageHistoryEntry({
   const canCopy =
     (entry.payload.role === "user" || entry.payload.role === "assistant") &&
     copyText.length > 0
-  const runCompletion =
-    showRunCompletion && run ? completedRunView(run, locale) : null
 
   async function copyMessage() {
     try {
@@ -224,40 +224,27 @@ function MessageHistoryEntry({
           toolResultsByCallId={toolResultsByCallId}
         />
       </div>
-      {canCopy || runCompletion ? (
+      {canCopy ? (
         <footer
           className={cn(
             "mt-1.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground",
             isUser ? "justify-end" : "justify-start",
           )}
         >
-          {runCompletion ? (
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5 tabular-nums">
-              <time dateTime={runCompletion.dateTime} translate="no">
-                {t("run_finished", { time: runCompletion.time })}
-              </time>
-              <span aria-hidden="true">·</span>
-              <span translate="no">
-                {t("run_duration", { duration: runCompletion.duration })}
-              </span>
-            </div>
-          ) : null}
-          {canCopy ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t(copyState === "copied" ? "copied" : "copy")}
-              className="text-muted-foreground hover:text-foreground"
-              onClick={() => void copyMessage()}
-            >
-              {copyState === "copied" ? (
-                <Check data-icon="inline-start" aria-hidden="true" />
-              ) : (
-                <Copy data-icon="inline-start" aria-hidden="true" />
-              )}
-            </Button>
-          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t(copyState === "copied" ? "copied" : "copy")}
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => void copyMessage()}
+          >
+            {copyState === "copied" ? (
+              <Check data-icon="inline-start" aria-hidden="true" />
+            ) : (
+              <Copy data-icon="inline-start" aria-hidden="true" />
+            )}
+          </Button>
         </footer>
       ) : null}
       {copyState === "failed" ? (
@@ -281,7 +268,7 @@ function prepareHistory(entries: HistoryEntry[]) {
   const consumedToolCallIds = new Set<string>()
   const interactionResponses = new Map<string, InteractionResponse>()
   const latestPlans = new Map<string, PlanEntry>()
-  const latestAssistantEntryIdsByRun = new Map<string, string>()
+  const lastEntryIdsByRun = new Map<string, string>()
   const sortedEntries = [...entries].sort((left, right) =>
     left.sequence === right.sequence
       ? left.created_at.localeCompare(right.created_at)
@@ -289,10 +276,8 @@ function prepareHistory(entries: HistoryEntry[]) {
   )
 
   for (const entry of sortedEntries) {
+    if (entry.run_id) lastEntryIdsByRun.set(entry.run_id, entry.id)
     if (entry.type === "message") {
-      if (entry.payload.role === "assistant" && entry.run_id) {
-        latestAssistantEntryIdsByRun.set(entry.run_id, entry.id)
-      }
       for (const part of entry.payload.parts) {
         if (part.type === "tool_result") {
           toolResultsByCallId.set(part.call_id, part)
@@ -328,7 +313,7 @@ function prepareHistory(entries: HistoryEntry[]) {
     toolResultsByCallId,
     consumedToolCallIds,
     interactionResponses,
-    latestAssistantEntryIdsByRun,
+    lastEntryIdsByRun,
     latestPlanEntryIds: new Map(
       [...latestPlans].map(([planId, entry]) => [planId, entry.id]),
     ),
@@ -340,20 +325,4 @@ function messageCopyText(entry: MessageEntry) {
     .flatMap((part) => (part.type === "text" ? [part.text.trim()] : []))
     .filter(Boolean)
     .join("\n\n")
-}
-
-function completedRunView(run: RunView, locale: string) {
-  const time = formatAgentEndTime(run.completed_at, locale)
-  const duration = formatAgentDuration(
-    run.started_at,
-    run.completed_at,
-    locale,
-  )
-  if (!time || !duration) return null
-
-  return {
-    time,
-    duration,
-    dateTime: dateTimeAttribute(run.completed_at),
-  }
 }

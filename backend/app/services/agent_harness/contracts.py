@@ -501,6 +501,11 @@ class SessionView(StrictContract):
     updated_at: datetime
 
 
+class RunErrorView(StrictContract):
+    code: str
+    message: str
+
+
 class RunView(StrictContract):
     id: UUID
     session_id: UUID
@@ -510,9 +515,17 @@ class RunView(StrictContract):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     termination_reason: str | None = None
-    error: JsonValue | None = None
+    error: RunErrorView | None = None
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def validate_error_state(self) -> RunView:
+        if self.status == "failed" and self.error is None:
+            raise ValueError("failed RunView requires a public error")
+        if self.status != "failed" and self.error is not None:
+            raise ValueError("only failed RunView may expose an error")
+        return self
 
 
 class AssistantDraftPartView(StrictContract):
@@ -671,6 +684,7 @@ __all__ = [
     "RunRefPart",
     "RunStatus",
     "RunUpdatedEvent",
+    "RunErrorView",
     "RunView",
     "SessionSnapshot",
     "SessionStatus",

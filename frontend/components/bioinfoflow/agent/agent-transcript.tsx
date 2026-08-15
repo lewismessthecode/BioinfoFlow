@@ -43,7 +43,7 @@ export function AgentTranscript({
   className,
 }: AgentTranscriptProps) {
   const t = useTranslations("agentTranscript")
-  const contentRevision = transcriptContentRevision(entries, activeRun)
+  const contentRevision = transcriptContentRevision(entries, runs, activeRun)
   const scrollRef = useRef<HTMLElement>(null)
   const initializedRef = useRef(false)
   const contentRevisionRef = useRef(contentRevision)
@@ -164,6 +164,7 @@ export function AgentTranscript({
 
 function transcriptContentRevision(
   entries: HistoryEntry[],
+  runs: RunView[],
   activeRun: ActiveRunView | null,
 ) {
   const lastEntry = entries.at(-1)
@@ -173,11 +174,15 @@ function transcriptContentRevision(
   const toolRevision = activeRun?.tool_progress
     .map((tool) => `${tool.call_id}:${tool.revision}`)
     .join("|")
+  const runRevision = runs
+    .map((run) => `${run.id}:${run.revision}:${run.status}`)
+    .join("|")
 
   return [
     entries.length,
     lastEntry?.id,
     lastEntry?.sequence,
+    runRevision,
     activeRun?.run.revision,
     draftRevision,
     toolRevision,

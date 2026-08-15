@@ -100,7 +100,9 @@ test.describe("Agent interaction journey", () => {
 
     await expect(agent.activeRun).toHaveCount(0, { timeout: 20_000 })
     await expect(
-      agent.transcript.getByText("Cancelled", { exact: true }),
+      agent.transcript
+        .getByTestId("agent-run-outcome")
+        .filter({ hasText: "Cancelled" }),
     ).toBeVisible()
     await expect(agent.sendButton).toBeVisible()
     await expect(

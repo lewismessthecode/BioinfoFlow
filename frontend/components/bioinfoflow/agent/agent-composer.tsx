@@ -1,14 +1,15 @@
 "use client"
 
 import type { ReactNode, Ref } from "react"
-import { FormEvent, KeyboardEvent, useEffect, useState } from "react"
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useState } from "react"
 import { useTranslations } from "next-intl"
 
 import { PermissionMenu } from "@/components/bioinfoflow/agent/permission-menu"
 import { AgentContextInputs } from "@/components/bioinfoflow/agent/context-inputs"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2, Send, Square } from "@/lib/icons"
+import { useVoiceDictation } from "@/hooks/use-voice-dictation"
+import { Loader2, Mic, RotateCcw, Send, Square } from "@/lib/icons"
 import type {
   ActiveRunView,
   AgentPermissionMode,
@@ -56,11 +57,22 @@ export function AgentComposer({
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [stopError, setStopError] = useState<string | null>(null)
   const [cancelRequestedRunId, setCancelRequestedRunId] = useState<string | null>(null)
+  const appendTranscript = useCallback((transcript: string) => {
+    const text = transcript.trim()
+    if (!text) return
+    setValue((current) =>
+      current ? `${current}${/\s$/.test(current) ? "" : " "}${text}` : text,
+    )
+  }, [])
+  const voice = useVoiceDictation({ onTranscript: appendTranscript })
   const activeRunId = activeRun?.run.id ?? null
   const cancelling = Boolean(activeRunId && cancelRequestedRunId === activeRunId)
+  const voiceBusy =
+    voice.state === "recording" || voice.state === "transcribing"
   const hasText = value.trim().length > 0
   const hasContent = hasText || contextInputs.length > 0
-  const controlsDisabled = disabled || submitting !== null || cancelling
+  const controlsDisabled =
+    disabled || submitting !== null || cancelling || voiceBusy
 
   useEffect(() => {
     if (!activeRunId || activeRunId !== cancelRequestedRunId) {
@@ -118,6 +130,24 @@ export function AgentComposer({
     void submit("message")
   }
 
+  const handleVoiceAction = () => {
+    if (voice.state === "recording") {
+      voice.stop()
+      return
+    }
+    if (voice.state === "error") voice.resetError()
+    void voice.start()
+  }
+
+  const voiceActionLabel =
+    voice.state === "recording"
+      ? t("voice.stop")
+      : voice.state === "transcribing"
+        ? t("voice.transcribing")
+        : voice.state === "error"
+          ? t("voice.retry")
+          : t("voice.start")
+
   return (
     <form
       data-testid="agent-composer"
@@ -159,6 +189,47 @@ export function AgentComposer({
           />
 
           <div className="ml-auto flex items-center gap-2">
+            {voice.available ? (
+              <>
+                {voice.state === "recording" ? (
+                  <span role="status" className="text-xs text-muted-foreground">
+                    {t("voice.recording", {
+                      seconds: voice.elapsedSeconds,
+                    })}
+                  </span>
+                ) : voice.state === "transcribing" ? (
+                  <span role="status" className="text-xs text-muted-foreground">
+                    {t("voice.transcribing")}
+                  </span>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={
+                    voice.state === "transcribing" ||
+                    (voice.state !== "recording" &&
+                      (disabled || submitting !== null || cancelling))
+                  }
+                  onClick={handleVoiceAction}
+                  aria-label={voiceActionLabel}
+                  aria-pressed={voice.state === "recording"}
+                >
+                  {voice.state === "transcribing" ? (
+                    <Loader2
+                      aria-hidden="true"
+                      className="animate-spin motion-reduce:animate-none"
+                    />
+                  ) : voice.state === "recording" ? (
+                    <Square aria-hidden="true" />
+                  ) : voice.state === "error" ? (
+                    <RotateCcw aria-hidden="true" />
+                  ) : (
+                    <Mic aria-hidden="true" />
+                  )}
+                </Button>
+              </>
+            ) : null}
             {activeRun ? (
               <>
                 <Button
@@ -213,6 +284,11 @@ export function AgentComposer({
 
       {submitError ? <p role="alert" className="text-sm text-destructive">{submitError}</p> : null}
       {stopError ? <p role="alert" className="text-sm text-destructive">{stopError}</p> : null}
+      {voice.state === "error" ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t("voice.error")}
+        </p>
+      ) : null}
     </form>
   )
 }

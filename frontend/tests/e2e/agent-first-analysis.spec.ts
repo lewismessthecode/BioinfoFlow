@@ -3,10 +3,52 @@ import { expect, test } from "@playwright/test"
 import { AgentPage } from "./pages/agent-page"
 import {
   createKeylessAgentSession,
+  disableKeylessAgentProviders,
   setupKeylessAgentModel,
 } from "./support/keyless-agent"
 
 test.describe("Agent workbench live run journey", () => {
+  test("opens inline model setup and preserves the draft when no model is available", async ({
+    page,
+    request,
+  }) => {
+    const agent = new AgentPage(page)
+    const prompt = "Keep this message while I connect a model."
+    await disableKeylessAgentProviders(request)
+
+    await agent.goto()
+    await agent.expectComposerReady()
+    const responsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().endsWith("/api/v1/agent/sessions"),
+    )
+    await agent.sendMessage(prompt)
+
+    const response = await responsePromise
+    expect(response.status()).toBe(422)
+    await expect
+      .poll(async () => (await response.json()).error?.code)
+      .toBe("AGENT_MODEL_REQUIRED")
+
+    const dialog = page.getByRole("dialog", {
+      name: "Connect a model to continue",
+    })
+    await expect(dialog).toBeVisible({ timeout: 20_000 })
+    await expect(dialog.getByRole("group", { name: "OpenAI" })).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(
+      dialog.getByRole("link", { name: "Open full provider settings" }),
+    ).toHaveAttribute("href", "/settings?section=providers")
+    await expect(agent.messageInput).toHaveValue(prompt)
+
+    await page.keyboard.press("Escape")
+
+    await expect(dialog).toHaveCount(0)
+    await expect(agent.messageInput).toHaveValue(prompt)
+  })
+
   test("creates a Session on the first browser message", async ({
     page,
     request,
@@ -66,9 +108,11 @@ test.describe("Agent workbench live run journey", () => {
       }),
     ).toBeVisible({ timeout: 20_000 })
     await expect(agent.activeRun).toHaveCount(0)
-    await expect(
-      agent.transcript.getByText("Finished", { exact: false }),
-    ).toBeVisible()
+    const outcome = agent.transcript
+      .getByTestId("agent-run-outcome")
+      .filter({ hasText: "Completed" })
+    await expect(outcome).toBeVisible()
+    await expect(outcome.getByText(/^Ended /)).toBeVisible()
   })
 
   test("renders a structured plan without a duplicate tool card", async ({

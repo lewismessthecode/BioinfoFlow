@@ -34,6 +34,11 @@ from app.services.agent_harness.model_target import (
     model_target_from_resolved,
     model_target_from_snapshot,
 )
+from app.services.agent_harness.projection import (
+    entry_contract,
+    pending_interaction_entry_view,
+    run_view,
+)
 from app.services.agent_harness.recovery import (
     create_checkpoint,
     responses_continuation_from_checkpoint,
@@ -243,7 +248,7 @@ class AgentLoop:
                         last_control_sequence = plan.sequence
                         control_input.extend(_private_control_exchange(call, plan))
                         await self.publish(
-                            EntryCommittedEvent(entry=_entry_contract(plan))
+                            EntryCommittedEvent(entry=entry_contract(plan))
                         )
 
                 execution_mode = workspace.batch_execution_mode(response.tool_calls)
@@ -307,12 +312,12 @@ class AgentLoop:
                     )
                     for entry in steer_entries:
                         await self.publish(
-                            EntryCommittedEvent(entry=_entry_contract(entry))
+                            EntryCommittedEvent(entry=entry_contract(entry))
                         )
                     if steer_entries:
                         continue
                     await self.publish(
-                        RunUpdatedEvent(run=self.repository._run_view(completed))
+                        RunUpdatedEvent(run=run_view(completed))
                     )
                     return
 
@@ -377,26 +382,11 @@ class AgentLoop:
                 )
                 await self._update(run_id, status="running", phase="tools")
 
-                async def mark_started(call: ToolCall) -> None:
-                    await self._mark_tool_progress(
-                        run_id,
-                        call_id=call.call_id,
-                        name=call.name,
-                        status="running",
-                        group_id=group_id,
-                        execution_mode=execution_mode,
-                        arguments=call.arguments,
-                    )
-
-                async def mark_finished(result: ToolResult) -> None:
-                    await self._mark_tool_progress(
-                        run_id,
-                        call_id=result.call_id,
-                        name=result.tool_name,
-                        status=result.status,
-                        output_summary=_public_output_summary(result.output),
-                        error=result.error,
-                    )
+                mark_started, mark_finished = self._tool_progress_callbacks(
+                    run_id,
+                    group_id=group_id,
+                    execution_mode=execution_mode,
+                )
 
                 batch = await workspace.execute_batch(
                     response.tool_calls,
@@ -477,7 +467,7 @@ class AgentLoop:
                         )
                         await self.publish(
                             RunUpdatedEvent(
-                                run=self.repository._run_view(waiting_run)
+                                run=run_view(waiting_run)
                             )
                         )
                         await self.publish(
@@ -487,16 +477,12 @@ class AgentLoop:
                             )
                         )
                         await self.publish(
-                            EntryCommittedEvent(entry=_entry_contract(entry))
+                            EntryCommittedEvent(entry=entry_contract(entry))
                         )
                         await self.publish(
                             InteractionRequestedEvent(
                                 run_id=run_id,
-                                interaction=(
-                                    self.repository._pending_interaction_entry_view(
-                                        entry
-                                    )
-                                ),
+                                interaction=pending_interaction_entry_view(entry),
                             )
                         )
                         return
@@ -564,7 +550,7 @@ class AgentLoop:
                     "message": str(exc),
                 },
             )
-            await self.publish(EntryCommittedEvent(entry=_entry_contract(notice)))
+            await self.publish(EntryCommittedEvent(entry=entry_contract(notice)))
             await self._fail(run_id, "model_vision_unsupported", str(exc))
         except Exception as exc:  # noqa: BLE001 - terminal run must be durable
             await self._fail(run_id, "agent_failed", str(exc), exc=exc)
@@ -636,10 +622,10 @@ class AgentLoop:
             )
             checkpoint = dict(durable_run.checkpoint or {})
             await self.publish(
-                EntryCommittedEvent(entry=_entry_contract(response_entry))
+                EntryCommittedEvent(entry=entry_contract(response_entry))
             )
             await self.publish(
-                RunUpdatedEvent(run=self.repository._run_view(durable_run))
+                RunUpdatedEvent(run=run_view(durable_run))
             )
             await self.publish(
                 ToolUpdatedEvent(
@@ -684,7 +670,7 @@ class AgentLoop:
                 response=response,
             )
             await self.publish(
-                EntryCommittedEvent(entry=_entry_contract(response_entry))
+                EntryCommittedEvent(entry=entry_contract(response_entry))
             )
         tool_entry = await self._append_message(
             str(session.id),
@@ -709,24 +695,7 @@ class AgentLoop:
                 for item in checkpoint.get("in_flight_tools") or []
                 if isinstance(item, dict) and item.get("call_id") != call.call_id
             ]
-            async def mark_started(call: ToolCall) -> None:
-                await self._mark_tool_progress(
-                    run_id,
-                    call_id=call.call_id,
-                    name=call.name,
-                    status="running",
-                    arguments=call.arguments,
-                )
-
-            async def mark_finished(result: ToolResult) -> None:
-                await self._mark_tool_progress(
-                    run_id,
-                    call_id=result.call_id,
-                    name=result.tool_name,
-                    status=result.status,
-                    output_summary=_public_output_summary(result.output),
-                    error=result.error,
-                )
+            mark_started, mark_finished = self._tool_progress_callbacks(run_id)
 
             remaining = await workspace.execute_batch(
                 tuple(_runtime_tool_call(item) for item in pending),
@@ -787,7 +756,7 @@ class AgentLoop:
                         },
                     )
                     await self.publish(
-                        RunUpdatedEvent(run=self.repository._run_view(waiting_run))
+                        RunUpdatedEvent(run=run_view(waiting_run))
                     )
                     await self.publish(
                         ToolUpdatedEvent(
@@ -798,16 +767,12 @@ class AgentLoop:
                         )
                     )
                     await self.publish(
-                        EntryCommittedEvent(entry=_entry_contract(request_entry))
+                        EntryCommittedEvent(entry=entry_contract(request_entry))
                     )
                     await self.publish(
                         InteractionRequestedEvent(
                             run_id=run_id,
-                            interaction=(
-                                self.repository._pending_interaction_entry_view(
-                                    request_entry
-                                )
-                            ),
+                            interaction=pending_interaction_entry_view(request_entry),
                         )
                     )
                     return
@@ -884,7 +849,7 @@ class AgentLoop:
             )
             checkpoint = dict(durable_run.checkpoint or {})
             await self.publish(
-                RunUpdatedEvent(run=self.repository._run_view(durable_run))
+                RunUpdatedEvent(run=run_view(durable_run))
             )
             await self.publish(
                 ToolUpdatedEvent(
@@ -900,7 +865,7 @@ class AgentLoop:
                 interaction_id=interaction_id,
                 response=response,
             )
-        await self.publish(EntryCommittedEvent(entry=_entry_contract(response_entry)))
+        await self.publish(EntryCommittedEvent(entry=entry_contract(response_entry)))
         if choice == "cancel":
             await self._cancel(str(run.id))
             return
@@ -1113,14 +1078,12 @@ class AgentLoop:
             ],
         )
         assert notice is not None
-        await self.publish(EntryCommittedEvent(entry=_entry_contract(notice)))
-        await self.publish(EntryCommittedEvent(entry=_entry_contract(request_entry)))
+        await self.publish(EntryCommittedEvent(entry=entry_contract(notice)))
+        await self.publish(EntryCommittedEvent(entry=entry_contract(request_entry)))
         await self.publish(
             InteractionRequestedEvent(
                 run_id=run_id,
-                interaction=self.repository._pending_interaction_entry_view(
-                    request_entry
-                ),
+                interaction=pending_interaction_entry_view(request_entry),
             )
         )
 
@@ -1364,19 +1327,19 @@ class AgentLoop:
                 "parts": parts,
             },
         )
-        return _entry_contract(entry)
+        return entry_contract(entry)
 
     async def apply_steers(self, run_id: str, session_id: str) -> int:
         entries = await self.repository.commit_steers_to_history(
             session_id, run_id=run_id
         )
         for entry in entries:
-            await self.publish(EntryCommittedEvent(entry=_entry_contract(entry)))
+            await self.publish(EntryCommittedEvent(entry=entry_contract(entry)))
         return len(entries)
 
     async def _update(self, run_id: str, **changes: Any) -> None:
         run = await self.repository.update_run(run_id, **changes)
-        await self.publish(RunUpdatedEvent(run=self.repository._run_view(run)))
+        await self.publish(RunUpdatedEvent(run=run_view(run)))
 
     async def _mark_tool_progress(
         self,
@@ -1404,6 +1367,36 @@ class AgentLoop:
         )
         await self.publish(ToolUpdatedEvent(run_id=run_id, tool=view))
         return view
+
+    def _tool_progress_callbacks(
+        self,
+        run_id: str,
+        *,
+        group_id: str | None = None,
+        execution_mode: ToolExecutionMode | None = None,
+    ):
+        async def mark_started(call: ToolCall) -> None:
+            await self._mark_tool_progress(
+                run_id,
+                call_id=call.call_id,
+                name=call.name,
+                status="running",
+                group_id=group_id,
+                execution_mode=execution_mode,
+                arguments=call.arguments,
+            )
+
+        async def mark_finished(result: ToolResult) -> None:
+            await self._mark_tool_progress(
+                run_id,
+                call_id=result.call_id,
+                name=result.tool_name,
+                status=result.status,
+                output_summary=_public_output_summary(result.output),
+                error=result.error,
+            )
+
+        return mark_started, mark_finished
 
     async def _cancel(self, run_id: str) -> None:
         run = await self.repository.get_run(run_id)
@@ -1456,7 +1449,7 @@ class AgentLoop:
             entry_type="notice",
             payload={"code": code, "message": message},
         )
-        await self.publish(EntryCommittedEvent(entry=_entry_contract(notice)))
+        await self.publish(EntryCommittedEvent(entry=entry_contract(notice)))
         await self._fail(run_id, code, message)
         return True
 
@@ -1719,10 +1712,6 @@ def _latest_compaction_through(entries: list[dict[str, Any]]) -> int:
         ):
             return through_sequence
     return 0
-
-
-def _entry_contract(entry):
-    return AgentHarnessRepository._entry_contract(entry)
 
 
 def _tool_result_dict(result: ToolResult) -> dict[str, Any]:

@@ -20,6 +20,7 @@ from app.services.agent_harness.contracts import (
 )
 from app.services.agent_harness.events import AgentEventHub
 from app.services.agent_harness.harness import AgentHarness
+from app.services.agent_harness.projection import run_view
 from app.utils.logging import get_logger
 
 
@@ -309,7 +310,7 @@ class AgentRuntime:
             )
             await self.event_hub.publish(
                 str(failed.session_id),
-                RunUpdatedEvent(run=repository._run_view(failed)),
+                RunUpdatedEvent(run=run_view(failed)),
             )
 
     async def _claim_when_available(
