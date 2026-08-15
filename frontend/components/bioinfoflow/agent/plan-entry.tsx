@@ -9,6 +9,10 @@ import { cn } from "@/lib/utils"
 
 export function AgentPlanEntry({ entry }: { entry: PlanEntry }) {
   const t = useTranslations("agentHistory")
+  const total = entry.payload.items.length
+  const completed = entry.payload.items.filter(
+    (item) => item.status === "completed",
+  ).length
 
   return (
     <section className="grid gap-3 border-y border-border/60 py-3 [content-visibility:auto] [contain-intrinsic-size:auto_128px]">
@@ -16,11 +20,8 @@ export function AgentPlanEntry({ entry }: { entry: PlanEntry }) {
         <h2 className="truncate text-sm font-semibold text-foreground">
           {entry.payload.title ?? t("plan.title")}
         </h2>
-        <span
-          className="shrink-0 font-mono text-[10px] text-muted-foreground"
-          translate="no"
-        >
-          v{entry.payload.revision}
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {t("plan.progress", { completed, total })}
         </span>
       </div>
       <ol className="grid gap-2">
@@ -30,8 +31,7 @@ export function AgentPlanEntry({ entry }: { entry: PlanEntry }) {
             <span
               className={cn(
                 "min-w-0 flex-1 break-words leading-5",
-                item.status === "completed" &&
-                  "text-muted-foreground line-through decoration-border",
+                item.status === "completed" && "text-muted-foreground",
                 item.status === "in_progress" && "font-medium text-foreground",
                 item.status === "pending" && "text-foreground/72",
               )}

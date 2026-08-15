@@ -202,6 +202,18 @@ describe("ActiveRun", () => {
         status: "failed",
         error: "Command exited with status 1",
         output_summary: null,
+        public_details: [
+          {
+            id: "error",
+            kind: "error",
+            label: null,
+            value: "Command exited with status 1",
+            format: "text",
+            copyable: false,
+            truncated: false,
+            redacted: false,
+          },
+        ],
       },
     ]
 

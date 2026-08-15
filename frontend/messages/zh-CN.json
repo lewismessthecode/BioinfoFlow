@@ -2636,7 +2636,14 @@
       "arguments": "参数",
       "input": "输入",
       "output": "输出",
-      "error": "错误"
+      "error": "错误",
+      "command": "命令",
+      "working_directory": "工作目录",
+      "path": "路径",
+      "changes": "变更",
+      "metadata": "详情",
+      "redacted": "敏感内容已隐藏",
+      "truncated": "内容已截断"
     }
   },
   "agentRun": {
@@ -2660,6 +2667,12 @@
     },
     "reasoning": "思考摘要",
     "response": "回复"
+  },
+  "agentThinking": {
+    "title": "思考",
+    "running": "正在思考…",
+    "show": "展开思考内容",
+    "hide": "收起思考内容"
   },
   "agentTranscript": {
     "title": "对话",
@@ -2699,6 +2712,7 @@
     },
     "plan": {
       "title": "计划",
+      "progress": "已完成 {completed}/{total}",
       "status": {
         "pending": "等待中",
         "in_progress": "进行中",

@@ -2636,7 +2636,14 @@
       "arguments": "Arguments",
       "input": "Input",
       "output": "Output",
-      "error": "Error"
+      "error": "Error",
+      "command": "Command",
+      "working_directory": "Working directory",
+      "path": "Path",
+      "changes": "Changes",
+      "metadata": "Details",
+      "redacted": "Sensitive values hidden",
+      "truncated": "Truncated"
     }
   },
   "agentRun": {
@@ -2660,6 +2667,12 @@
     },
     "reasoning": "Thinking summary",
     "response": "Response"
+  },
+  "agentThinking": {
+    "title": "Thinking",
+    "running": "Thinking…",
+    "show": "Show thinking",
+    "hide": "Hide thinking"
   },
   "agentTranscript": {
     "title": "Conversation",
@@ -2699,6 +2712,7 @@
     },
     "plan": {
       "title": "Plan",
+      "progress": "{completed}/{total} complete",
       "status": {
         "pending": "Pending",
         "in_progress": "In progress",

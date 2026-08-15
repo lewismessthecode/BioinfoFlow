@@ -39,6 +39,7 @@ vi.mock("next-intl", () => ({
         "agentHistory.plan.status.pending": "Pending",
         "agentHistory.plan.status.in_progress": "In progress",
         "agentHistory.plan.status.completed": "Completed",
+        "agentHistory.plan.progress": `${values?.completed ?? 0}/${values?.total ?? 0} complete`,
         "agentHistory.notice.title": "Agent notice",
         "agentRun.status.completed": "Completed",
         "agentRun.status.failed": "Failed",
@@ -189,6 +190,18 @@ describe("AgentHistoryEntries", () => {
               category: "read",
               summary: "Read workflow.nf",
               arguments: { path: "workflow.nf" },
+              public_details: [
+                {
+                  id: "path-1",
+                  kind: "path",
+                  label: "Path",
+                  value: "workflow.nf",
+                  format: "path",
+                  copyable: false,
+                  truncated: false,
+                  redacted: false,
+                },
+              ],
             },
             {
               id: "call-part-2",
@@ -201,6 +214,18 @@ describe("AgentHistoryEntries", () => {
               category: "read",
               summary: "Read params.json",
               arguments: { path: "params.json" },
+              public_details: [
+                {
+                  id: "path-2",
+                  kind: "path",
+                  label: "Path",
+                  value: "params.json",
+                  format: "path",
+                  copyable: false,
+                  truncated: false,
+                  redacted: false,
+                },
+              ],
             },
           ],
         },
@@ -248,6 +273,18 @@ describe("AgentHistoryEntries", () => {
               started_at: "2026-08-15T08:00:01Z",
               completed_at: "2026-08-15T08:00:02Z",
               error: null,
+              public_details: [
+                {
+                  id: "output-2",
+                  kind: "output",
+                  label: "Output",
+                  value: "Read 18 lines",
+                  format: "text",
+                  copyable: false,
+                  truncated: false,
+                  redacted: false,
+                },
+              ],
             },
           ],
         },
@@ -271,7 +308,7 @@ describe("AgentHistoryEntries", () => {
       /provider_private|must not render/,
     )
 
-    await user.click(screen.getAllByRole("button", { name: "Show details" })[1])
+    await user.click(screen.getAllByRole("button", { name: /Show details/i })[1])
     expect(screen.getByText("Read 18 lines")).toBeInTheDocument()
   })
 
@@ -365,6 +402,8 @@ describe("AgentHistoryEntries", () => {
     expect(screen.queryByText("Inspect old inputs")).not.toBeInTheDocument()
     expect(screen.getByText("Inspect current inputs")).toBeInTheDocument()
     expect(screen.getByText("Run the workflow")).toBeInTheDocument()
+    expect(screen.getByText("1/2 complete")).toBeInTheDocument()
+    expect(screen.queryByText("v2")).not.toBeInTheDocument()
   })
 
   it("keeps non-contiguous tool activity in transcript order", () => {

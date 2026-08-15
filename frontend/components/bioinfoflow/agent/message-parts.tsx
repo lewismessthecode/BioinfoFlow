@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl"
 
 import { AgentActivityGroup, AgentToolCard } from "@/components/bioinfoflow/agent/agent-activity"
 import { AgentArtifactReference } from "@/components/bioinfoflow/agent/agent-artifact"
+import { AgentThinking } from "@/components/bioinfoflow/agent/agent-thinking"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { Badge } from "@/components/ui/badge"
 import type {
@@ -84,18 +85,11 @@ export function AgentMessageParts({
 
         if (part.type === "reasoning_summary") {
           return (
-            <details
+            <AgentThinking
               key={part.id}
-              className="group rounded-[10px] border border-border/60 bg-muted/25 px-3 py-2"
-            >
-              <summary className="cursor-pointer text-xs font-medium text-muted-foreground marker:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
-                {t("reasoning.title")}
-              </summary>
-              <MarkdownRenderer
-                content={part.text}
-                className="mt-2 border-t border-border/50 pt-2 text-foreground/75"
-              />
-            </details>
+              label={t("reasoning.title")}
+              part={part}
+            />
           )
         }
 
@@ -164,9 +158,7 @@ function ReferenceRow({ part }: { part: ReferencePart }) {
 function UnpairedToolResult({ result }: { result: ToolResultPart }) {
   const t = useTranslations("agentActivity")
   const publicContent =
-    result.summary ??
-    toolTextOutput(result) ??
-    result.error
+    result.summary ?? result.error
 
   return (
     <div className="grid min-w-0 gap-2">
@@ -209,15 +201,18 @@ function toolProgressFromParts(
     display_name: call.display_name,
     category: call.category,
     summary: call.summary,
-    arguments: call.arguments,
+    arguments: {},
     status: result?.status ?? "pending",
     revision: 0,
     started_at: result?.started_at ?? null,
     completed_at: result?.completed_at ?? null,
     input_summary: null,
-    output_summary:
-      result?.summary ?? (result ? toolTextOutput(result) : null),
+    output_summary: result?.summary ?? null,
     error: result?.error ?? null,
+    public_details: [
+      ...(call.public_details ?? []),
+      ...(result?.public_details ?? []),
+    ],
   }
 
   if (!live) return durable
@@ -231,11 +226,8 @@ function toolProgressFromParts(
     input_summary: live.input_summary,
     output_summary: live.output_summary ?? durable.output_summary,
     error: live.error ?? durable.error,
+    public_details: live.public_details ?? durable.public_details,
   }
-}
-
-function toolTextOutput(result: ToolResultPart) {
-  return result.output?.type === "text" ? result.output.text : null
 }
 
 function groupContiguousToolCalls(parts: MessagePart[]): MessageRenderBlock[] {
