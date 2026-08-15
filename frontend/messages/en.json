@@ -2537,6 +2537,7 @@
     "workspacePanel": {
       "title": "Workspace panel",
       "description": "Inspect workspace files, workflow progress, and resource monitoring.",
+      "action": "Workspace",
       "open": "Open workspace panel",
       "close": "Close workspace panel"
     },
@@ -2642,6 +2643,9 @@
       "path": "Path",
       "changes": "Changes",
       "metadata": "Details",
+      "copy": "Copy {label}",
+      "copied": "Copied {label}",
+      "copy_failed": "Could not copy this detail. Select it and copy manually.",
       "redacted": "Sensitive values hidden",
       "truncated": "Truncated"
     }

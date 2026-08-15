@@ -11,6 +11,15 @@ import type {
 } from "@/lib/agent/contracts"
 import { renderWithProviders } from "@/tests/test-utils"
 
+const markdownRenderSpy = vi.hoisted(() => vi.fn())
+
+vi.mock("@/components/bioinfoflow/markdown-renderer", () => ({
+  MarkdownRenderer: ({ content }: { content: string }) => {
+    markdownRenderSpy(content)
+    return <div>{content}</div>
+  },
+}))
+
 vi.mock("next-intl", () => ({
   useLocale: () => "en",
   useTranslations: (namespace: string) =>
@@ -42,6 +51,9 @@ vi.mock("next-intl", () => ({
         "agentActivity.details.input": "Input",
         "agentActivity.details.output": "Output",
         "agentActivity.details.error": "Error",
+        "agentActivity.details.copy": `Copy ${values?.label ?? "detail"}`,
+        "agentActivity.details.copied": `Copied ${values?.label ?? "detail"}`,
+        "agentActivity.details.copy_failed": "Could not copy detail",
         "agentActivity.status.pending": "Pending",
         "agentActivity.status.running": "Running",
         "agentActivity.status.completed": "Completed",
@@ -54,6 +66,10 @@ vi.mock("next-intl", () => ({
         "agentActivity.group.mixed": `${values?.count ?? 0} tool activities`,
         "agentHistory.reasoning.title": "Thinking summary",
         "agentHistory.notice.title": "Agent notice",
+        "agentThinking.title": "Thinking",
+        "agentThinking.running": "Thinking…",
+        "agentThinking.show": "Show thinking",
+        "agentThinking.hide": "Hide thinking",
         "agentInteraction.status.pending": "Waiting for response",
         "agentInteraction.approval.title": "Approval requested",
         "agentInteraction.approval.approve": "Approve",
@@ -171,6 +187,7 @@ const entries: HistoryEntry[] = [
 
 describe("AgentTranscript", () => {
   beforeEach(() => {
+    markdownRenderSpy.mockClear()
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
@@ -296,6 +313,283 @@ describe("AgentTranscript", () => {
     expect(cards).toHaveLength(1)
     expect(cards[0]).toHaveTextContent("Read workflow.nf")
     expect(cards[0]).toHaveTextContent("Running")
+  })
+
+  it("preserves a tool disclosure when a live tool becomes durable", async () => {
+    const user = userEvent.setup()
+    const liveTool = {
+      call_id: "call-stable",
+      group_id: "group-stable",
+      execution_mode: "serial" as const,
+      name: "bash",
+      display_name: "Bash",
+      category: "command" as const,
+      summary: "Run workflow",
+      arguments: {},
+      status: "running" as const,
+      revision: 1,
+      started_at: "2026-08-15T08:00:01.000Z",
+      completed_at: null,
+      input_summary: null,
+      output_summary: null,
+      error: null,
+      public_details: [
+        {
+          id: "command",
+          kind: "command" as const,
+          label: "Command",
+          value: "nextflow run main.nf",
+          format: "code" as const,
+          copyable: true,
+          truncated: false,
+          redacted: false,
+        },
+      ],
+    }
+    const activeRun: ActiveRunView = {
+      run: { ...pendingRun.run, id: "run-stable", status: "running", phase: "tools" },
+      assistant_draft: null,
+      tool_progress: [liveTool],
+      pending_interaction: null,
+    }
+    const view = renderWithProviders(
+      <AgentTranscript entries={[]} runs={[activeRun.run]} activeRun={activeRun} />,
+    )
+
+    await user.click(screen.getByRole("button", { name: /Show details/i }))
+    expect(screen.getByText("nextflow run main.nf")).toBeInTheDocument()
+
+    const durableEntry: HistoryEntry = {
+      id: "durable-tool",
+      session_id: "session-1",
+      run_id: "run-stable",
+      sequence: 1,
+      schema_version: 2,
+      created_at: "2026-08-15T08:00:02.000Z",
+      type: "message",
+      payload: {
+        role: "assistant",
+        parts: [
+          {
+            id: "call-part-stable",
+            type: "tool_call",
+            call_id: liveTool.call_id,
+            group_id: liveTool.group_id,
+            execution_mode: liveTool.execution_mode,
+            name: liveTool.name,
+            display_name: liveTool.display_name,
+            category: liveTool.category,
+            summary: liveTool.summary,
+            arguments: {},
+            public_details: liveTool.public_details,
+          },
+        ],
+      },
+    }
+    view.rerender(
+      <AgentTranscript
+        entries={[durableEntry]}
+        runs={[activeRun.run]}
+        activeRun={{ ...activeRun, tool_progress: [{ ...liveTool, revision: 2 }] }}
+      />,
+    )
+
+    expect(screen.getAllByTestId("agent-tool-card")).toHaveLength(1)
+    expect(screen.getByText("nextflow run main.nf")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Hide details/i })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    )
+  })
+
+  it("preserves thinking disclosure when a stable reasoning part becomes durable", async () => {
+    const user = userEvent.setup()
+    const activeRun: ActiveRunView = {
+      run: { ...pendingRun.run, id: "run-thinking", status: "running", phase: "model" },
+      assistant_draft: {
+        id: "draft-thinking",
+        run_id: "run-thinking",
+        parts: [
+          {
+            id: "reasoning-stable",
+            type: "reasoning_summary",
+            text: "Inspect first.\nValidate second.",
+            end_offset: 31,
+          },
+        ],
+      },
+      tool_progress: [],
+      pending_interaction: null,
+    }
+    const view = renderWithProviders(
+      <AgentTranscript entries={[]} runs={[activeRun.run]} activeRun={activeRun} />,
+    )
+
+    await user.click(screen.getByRole("button", { name: /Show thinking/i }))
+    expect(screen.getByText(/Validate second/)).toBeInTheDocument()
+
+    const durableEntry: HistoryEntry = {
+      id: "durable-thinking",
+      session_id: "session-1",
+      run_id: "run-thinking",
+      sequence: 1,
+      schema_version: 2,
+      created_at: "2026-08-15T08:00:02.000Z",
+      type: "message",
+      payload: {
+        role: "assistant",
+        parts: [
+          {
+            id: "reasoning-stable",
+            type: "reasoning_summary",
+            text: "Inspect first.\nValidate second.",
+          },
+        ],
+      },
+    }
+    view.rerender(
+      <AgentTranscript entries={[durableEntry]} runs={[activeRun.run]} activeRun={null} />,
+    )
+
+    expect(screen.getByText(/Validate second/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Hide thinking/i })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    )
+  })
+
+  it("does not rerender unrelated historical markdown for a live tool revision", () => {
+    const toolEntry: HistoryEntry = {
+      id: "tool-entry",
+      session_id: "session-1",
+      run_id: "run-tools",
+      sequence: 2,
+      schema_version: 2,
+      created_at: "2026-08-15T08:00:01.000Z",
+      type: "message",
+      payload: {
+        role: "assistant",
+        parts: [
+          {
+            id: "call-part",
+            type: "tool_call",
+            call_id: "call-live",
+            group_id: "group-live",
+            execution_mode: "serial",
+            name: "read",
+            display_name: "Read",
+            category: "read",
+            summary: "Read workflow.nf",
+            arguments: {},
+          },
+        ],
+      },
+    }
+    const activeRun: ActiveRunView = {
+      run: { ...pendingRun.run, id: "run-tools", status: "running", phase: "tools" },
+      assistant_draft: null,
+      tool_progress: [
+        {
+          call_id: "call-live",
+          group_id: "group-live",
+          execution_mode: "serial",
+          name: "read",
+          display_name: "Read",
+          category: "read",
+          summary: "Read workflow.nf",
+          arguments: {},
+          status: "running",
+          revision: 1,
+          started_at: null,
+          completed_at: null,
+          input_summary: null,
+          output_summary: null,
+          error: null,
+        },
+      ],
+      pending_interaction: null,
+    }
+    const stableEntries = [entries[0], toolEntry]
+    const view = renderWithProviders(
+      <AgentTranscript entries={stableEntries} runs={[activeRun.run]} activeRun={activeRun} />,
+    )
+    markdownRenderSpy.mockClear()
+
+    view.rerender(
+      <AgentTranscript
+        entries={stableEntries}
+        runs={[activeRun.run]}
+        activeRun={{
+          ...activeRun,
+          tool_progress: [{ ...activeRun.tool_progress[0], revision: 2 }],
+        }}
+      />,
+    )
+
+    expect(markdownRenderSpy).not.toHaveBeenCalledWith("Inspect this workflow.")
+  })
+
+  it("does not remeasure the history anchor for an active-only revision", () => {
+    const activeRun: ActiveRunView = {
+      run: { ...pendingRun.run, id: "run-stream", status: "running", phase: "model" },
+      assistant_draft: {
+        id: "draft-stream",
+        run_id: "run-stream",
+        parts: [
+          {
+            id: "draft-stream-text",
+            type: "text",
+            text: "Working",
+            end_offset: 7,
+          },
+        ],
+      },
+      tool_progress: [],
+      pending_interaction: null,
+    }
+    const stableEntries = entries.slice(0, 2)
+    const stableRuns = [activeRun.run]
+    const view = renderWithProviders(
+      <AgentTranscript
+        entries={stableEntries}
+        runs={stableRuns}
+        activeRun={activeRun}
+      />,
+    )
+    const transcript = screen.getByTestId("agent-transcript")
+    Object.defineProperties(transcript, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 1000 },
+      scrollTop: { configurable: true, writable: true, value: 100 },
+    })
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue(domRect(0, 100))
+
+    fireEvent.scroll(transcript)
+    rectSpy.mockClear()
+    view.rerender(
+      <AgentTranscript
+        entries={stableEntries}
+        runs={stableRuns}
+        activeRun={{
+          ...activeRun,
+          assistant_draft: {
+            ...activeRun.assistant_draft!,
+            parts: [
+              {
+                ...activeRun.assistant_draft!.parts[0],
+                text: "Working on the next step",
+                end_offset: 24,
+              },
+            ],
+          },
+        }}
+      />,
+    )
+
+    expect(rectSpy).not.toHaveBeenCalled()
+    rectSpy.mockRestore()
   })
 
   it("pauses bottom-follow while reading history and resumes it on request", async () => {

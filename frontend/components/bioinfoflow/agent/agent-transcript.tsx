@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 
 import { ActiveRun } from "@/components/bioinfoflow/agent/active-run"
+import { ActivityDisclosureProvider } from "@/components/bioinfoflow/agent/activity-disclosure"
 import { AgentHistoryEntries } from "@/components/bioinfoflow/agent/conversation-entries"
 import { AgentInteractionCard } from "@/components/bioinfoflow/agent/interaction-card"
 import { Button } from "@/components/ui/button"
@@ -94,7 +95,7 @@ export function AgentTranscript({
       anchorElement.getBoundingClientRect().top -
       scrollElement.getBoundingClientRect().top
     scrollElement.scrollTop += currentOffset - anchor.offset
-  }, [activeRun, entries, followingBottom, runs])
+  }, [durableEntries, followingBottom])
 
   useEffect(() => {
     const scrollElement = scrollRef.current
@@ -142,35 +143,37 @@ export function AgentTranscript({
         data-testid="agent-transcript"
         onScroll={handleScroll}
       >
-        <div
-          className="mx-auto grid w-full max-w-[46rem] min-w-0 content-start gap-5"
-          data-testid="agent-transcript-content"
-        >
-          <AgentHistoryEntries
-            entries={durableEntries}
-            runs={runs}
-            liveToolsByCallId={liveToolsByCallId}
-            onOpenRun={onOpenRun}
-          />
-          {activeRun ? (
-            <ActiveRun
-              activeRun={activeRun}
-              durableToolCallIds={durableToolCallIds}
+        <ActivityDisclosureProvider>
+          <div
+            className="mx-auto grid w-full max-w-[46rem] min-w-0 content-start gap-5"
+            data-testid="agent-transcript-content"
+          >
+            <AgentHistoryEntries
+              entries={durableEntries}
+              runs={runs}
+              liveToolsByCallId={liveToolsByCallId}
+              onOpenRun={onOpenRun}
             />
-          ) : null}
-          {pendingInteraction ? (
-            <AgentInteractionCard
-              interactionId={pendingInteraction.interaction_id}
-              request={pendingInteraction.request}
-              onRespond={
-                onRespond
-                  ? (response) =>
-                      onRespond(pendingInteraction.interaction_id, response)
-                  : undefined
-              }
-            />
-          ) : null}
-        </div>
+            {activeRun ? (
+              <ActiveRun
+                activeRun={activeRun}
+                durableToolCallIds={durableToolCallIds}
+              />
+            ) : null}
+            {pendingInteraction ? (
+              <AgentInteractionCard
+                interactionId={pendingInteraction.interaction_id}
+                request={pendingInteraction.request}
+                onRespond={
+                  onRespond
+                    ? (response) =>
+                        onRespond(pendingInteraction.interaction_id, response)
+                    : undefined
+                }
+              />
+            ) : null}
+          </div>
+        </ActivityDisclosureProvider>
       </section>
 
       {hasNewContent ? (

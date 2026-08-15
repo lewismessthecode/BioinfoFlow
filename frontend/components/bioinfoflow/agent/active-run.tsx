@@ -128,7 +128,6 @@ export function ActiveRun({
               <AgentToolCard
                 key={item.key}
                 tool={item.tools[0]}
-                defaultExpanded={toolNeedsAttention(item.tools[0])}
               />
             ) : (
               <AgentActivityGroup
@@ -168,8 +167,4 @@ function commonExecutionMode(tools: ToolProgressView[]) {
 
 function isFinished(status: ToolProgressView["status"]) {
   return ["completed", "failed", "cancelled"].includes(status)
-}
-
-function toolNeedsAttention(tool: ToolProgressView) {
-  return !["completed", "cancelled"].includes(tool.status)
 }
