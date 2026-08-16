@@ -1750,7 +1750,7 @@ async def test_llm_provider_test_selects_model_and_rejects_foreign_model(
 
     async def fake_probe(self, **kwargs):
         del self
-        selected_models.append(kwargs["model_id"])
+        selected_models.append(kwargs["target"].model_name)
         return FakeProbeResult()
 
     monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", fake_probe)
@@ -1831,7 +1831,7 @@ async def test_llm_provider_test_skips_and_rejects_stale_models(
 
     async def fake_probe(self, **kwargs):
         del self
-        selected_models.append(kwargs["model_id"])
+        selected_models.append(kwargs["target"].model_name)
         return FakeProbeResult()
 
     monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", fake_probe)
@@ -1977,21 +1977,21 @@ async def test_provider_test_status_preserves_equivalent_and_unrelated_edits(
 
     async def fake_probe(*args, **kwargs):
         del args
-        probe_base_urls.append(kwargs.get("base_url"))
+        probe_base_urls.append(kwargs["target"].base_url)
         return FakeProbeResult()
 
     monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", fake_probe)
     tested = await async_client.post(f"/api/v1/llm/providers/{provider_id}/test")
     assert tested.status_code == 200
     assert tested.json()["data"]["success"] is True
-    assert probe_base_urls == ["https://stable.example/v1"]
+    assert probe_base_urls == ["https://stable.example"]
     assert "_invocation_fingerprint" not in tested.text
 
     for update in (
         {"name": "Renamed stable provider"},
         {"allow_insecure_http": True},
         {"metadata": {"note": "unrelated"}},
-        {"base_url": "https://stable.example/v1/"},
+        {"base_url": "https://stable.example/"},
     ):
         response = await async_client.patch(
             f"/api/v1/llm/providers/{provider_id}",
@@ -2574,7 +2574,7 @@ async def test_public_provider_probe_and_discovery_receive_public_only_network_p
 
     async def fake_probe(*args, **kwargs):
         del args
-        probe_policies.append(kwargs["network_access"])
+        probe_policies.append(kwargs["target"].network_access)
         return FakeProbeResult()
 
     async def fake_discovery(self, selected_provider, *, timeout=10.0, network_access):

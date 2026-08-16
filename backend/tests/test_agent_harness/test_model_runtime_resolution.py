@@ -193,7 +193,7 @@ async def test_model_snapshot_resolves_each_api_selection_without_persisting_sec
         "model_name": "claude-test",
         "routed_model_name": "anthropic/claude-test",
         "wire_protocol": "chat_completions",
-        "base_url": None,
+        "base_url": "https://api.anthropic.com",
         "target_revision": snapshot["target"]["target_revision"],
         "network_access": "public_only",
     }
@@ -205,6 +205,66 @@ async def test_model_snapshot_resolves_each_api_selection_without_persisting_sec
     }
     assert "api_key" not in repr(snapshot)
     assert "session-secret" not in repr(snapshot)
+
+
+@pytest.mark.asyncio
+async def test_model_snapshot_uses_registry_endpoint_for_legacy_null_deepseek_base(
+    harness_db,
+    monkeypatch,
+) -> None:
+    provider, model, _profile = await _catalog(
+        harness_db,
+        monkeypatch,
+        api_key="deepseek-secret",
+        provider_kind="deepseek",
+        model_name="deepseek-chat",
+    )
+
+    snapshot = await resolve_model_snapshot(
+        harness_db,
+        workspace_id=WORKSPACE_ID,
+        user_id="user-1",
+        selection={"model_id": str(model.id)},
+    )
+
+    assert provider.base_url is None
+    assert snapshot["target"]["provider_kind"] == "deepseek"
+    assert snapshot["target"]["routed_model_name"] == "deepseek/deepseek-chat"
+    assert snapshot["target"]["base_url"] == "https://api.deepseek.com/v1"
+
+
+@pytest.mark.asyncio
+async def test_model_snapshot_resolves_network_policy_from_effective_endpoint(
+    harness_db,
+    monkeypatch,
+) -> None:
+    _provider, model, _profile = await _catalog(
+        harness_db,
+        monkeypatch,
+        api_key="deepseek-secret",
+        provider_kind="deepseek",
+        model_name="deepseek-chat",
+    )
+    resolved_endpoints: list[str | None] = []
+
+    async def fake_network_access(base_url, **kwargs):
+        del kwargs
+        resolved_endpoints.append(base_url)
+        return "public_only"
+
+    monkeypatch.setattr(
+        "app.services.llm.target_resolution.resolve_provider_network_access",
+        fake_network_access,
+    )
+
+    await resolve_model_snapshot(
+        harness_db,
+        workspace_id=WORKSPACE_ID,
+        user_id="user-1",
+        selection={"model_id": str(model.id)},
+    )
+
+    assert resolved_endpoints == ["https://api.deepseek.com/v1"]
 
 
 @pytest.mark.asyncio

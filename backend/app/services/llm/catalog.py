@@ -41,7 +41,6 @@ from app.services.llm.provider_templates import (
     list_provider_templates,
     normalize_ollama_base_url,
     normalize_openai_compatible_base_url,
-    normalize_provider_base_url,
     provider_template_for_kind,
     provider_template_for_provider,
     validate_provider_configuration,
@@ -49,6 +48,11 @@ from app.services.llm.provider_templates import (
 from app.services.llm.probe import LlmProviderProbe
 from app.services.llm.profiles import ProviderConnection, profile_for
 from app.services.llm.registry import provider_spec_for_kind
+from app.services.llm.target_resolution import (
+    build_model_target,
+    resolve_model_target,
+    resolve_provider_endpoint,
+)
 from app.services.model_runtime.backend.litellm_network import (
     network_policy_http_client,
 )
@@ -206,14 +210,20 @@ class LlmCatalogService:
         )
         base_url = data.get("base_url")
         if base_url:
-            base_url = normalize_provider_base_url(template.kind, str(base_url))
+            base_url = resolve_provider_endpoint(
+                template.kind,
+                str(base_url),
+                provider_metadata={"providerTemplate": template.id},
+            )
             _validate_provider_base_url(
                 base_url,
                 allow_insecure_http=allow_insecure_http,
             )
         elif template.default_base_url:
-            base_url = normalize_provider_base_url(
-                template.kind, template.default_base_url
+            base_url = resolve_provider_endpoint(
+                template.kind,
+                template.default_base_url,
+                provider_metadata={"providerTemplate": template.id},
             )
 
         existing_metadata = provider.provider_metadata if provider is not None else None
@@ -425,22 +435,21 @@ class LlmCatalogService:
             return sanitize_provider_test_status(internal_status) or {}
 
         credential = await self.credential_repo.get_for_provider(str(provider.id))
-        probe_base_url = normalize_provider_base_url(provider.kind, provider.base_url)
-        network_access = await resolve_provider_network_access(
-            probe_base_url,
+        if credential is not None and credential.source == LlmCredentialSource.ENV:
+            authorize_server_environment_credential(role=role)
+        target = await resolve_model_target(
+            endpoint_id=str(provider.id),
+            provider_kind=provider.kind,
+            model_name=model.model_id,
+            wire_protocol=provider.wire_protocol,
+            base_url=provider.base_url,
+            provider_metadata=provider.provider_metadata,
+            credential=resolve_credential_material(credential),
             private_endpoint_authorized=can_manage_server_integrations(role),
             resolve_dns=not can_manage_server_integrations(role),
         )
-        if credential is not None and credential.source == LlmCredentialSource.ENV:
-            authorize_server_environment_credential(role=role)
         result = await self.probe.probe(
-            endpoint_id=str(provider.id),
-            provider_kind=provider.kind,
-            model_id=model.model_id,
-            wire_protocol=provider.wire_protocol,
-            base_url=probe_base_url,
-            network_access=network_access,
-            credential=resolve_credential_material(credential),
+            target=target,
             credential_required=_provider_requires_credential(provider),
         )
         public_result = result.to_public_dict()
@@ -728,8 +737,10 @@ class LlmCatalogService:
                 endpoint_id=str(provider.id),
                 provider_kind=provider.kind,
                 wire_protocol=provider.wire_protocol,
-                base_url=normalize_provider_base_url(
-                    provider.kind, provider.base_url
+                base_url=resolve_provider_endpoint(
+                    provider.kind,
+                    provider.base_url,
+                    provider_metadata=provider.provider_metadata,
                 ),
                 private_endpoint_authorized=server_authorized,
                 resolve_dns=not server_authorized,
@@ -753,14 +764,17 @@ class LlmCatalogService:
                 private_endpoint_authorized=snapshot.private_endpoint_authorized,
                 resolve_dns=snapshot.resolve_dns,
             )
-            result = await self.probe.probe(
+            target = build_model_target(
                 endpoint_id=snapshot.endpoint_id,
                 provider_kind=snapshot.provider_kind,
-                model_id=snapshot.model_name,
+                model_name=snapshot.model_name,
                 wire_protocol=snapshot.wire_protocol,
-                base_url=snapshot.base_url,
+                exact_endpoint=snapshot.base_url,
                 network_access=network_access,
                 credential=snapshot.credential,
+            )
+            result = await self.probe.probe(
+                target=target,
                 credential_required=snapshot.credential_required,
             )
         except (PermissionDeniedError, ValueError):
@@ -860,7 +874,12 @@ class LlmCatalogService:
             material = await self._provider_credential_material(provider)
             request = profile.catalog_request(
                 ProviderConnection(
-                    base_url=provider.base_url or spec.endpoint.default_base_url,
+                    base_url=resolve_provider_endpoint(
+                        provider.kind,
+                        provider.base_url,
+                        provider_metadata=provider.provider_metadata,
+                    )
+                    or spec.endpoint.default_base_url,
                     api_key=material.api_key,
                 )
             )
@@ -916,8 +935,11 @@ class LlmCatalogService:
             )
         if discovery == "anthropic_models":
             base_url = (
-                provider.base_url
-                or (template.default_base_url if template else None)
+                resolve_provider_endpoint(
+                    provider.kind,
+                    provider.base_url,
+                    provider_metadata=provider.provider_metadata,
+                )
                 or "https://api.anthropic.com"
             ).rstrip("/")
             material = await self._provider_credential_material(provider)
@@ -944,8 +966,11 @@ class LlmCatalogService:
             )
         if discovery == "gemini_models":
             base_url = (
-                provider.base_url
-                or (template.default_base_url if template else None)
+                resolve_provider_endpoint(
+                    provider.kind,
+                    provider.base_url,
+                    provider_metadata=provider.provider_metadata,
+                )
                 or "https://generativelanguage.googleapis.com"
             ).rstrip("/")
             material = await self._provider_credential_material(provider)
@@ -989,9 +1014,11 @@ class LlmCatalogService:
                 _cohere_models_from_list(response.json()),
             )
         if discovery == "openai_models":
-            discovery_base_url = provider.base_url
-            if not discovery_base_url and template:
-                discovery_base_url = template.default_base_url
+            discovery_base_url = resolve_provider_endpoint(
+                provider.kind,
+                provider.base_url,
+                provider_metadata=provider.provider_metadata,
+            )
             if template and template.metadata.get("preserveOpenAIBaseUrl") is True:
                 base_url = (discovery_base_url or "").strip().rstrip("/")
             else:
@@ -1584,10 +1611,21 @@ def _provider_discovery_base_url(provider: LlmProvider) -> str | None:
     template = provider_template_for_provider(provider)
     discovery = template.discovery if template else "openai_models"
     if discovery == "ollama_tags":
-        return normalize_ollama_base_url(provider.base_url or settings.ollama_base_url)
+        return normalize_ollama_base_url(
+            resolve_provider_endpoint(
+                provider.kind,
+                provider.base_url,
+                provider_metadata=provider.provider_metadata,
+            )
+            or settings.ollama_base_url
+        )
     if discovery == "cohere_models":
         return _provider_model_discovery_base_url(provider, template)
-    return provider.base_url or (template.default_base_url if template else None)
+    return resolve_provider_endpoint(
+        provider.kind,
+        provider.base_url,
+        provider_metadata=provider.provider_metadata,
+    )
 
 
 def _provider_model_discovery_base_url(
@@ -1696,7 +1734,9 @@ def validate_provider_transport(provider: LlmProvider) -> None:
 def _normalize_persisted_base_url(kind: str, base_url: str | None) -> str | None:
     if provider_template_for_kind(kind) is None:
         return base_url
-    return normalize_provider_base_url(kind, base_url)
+    if not base_url:
+        return None
+    return resolve_provider_endpoint(kind, base_url)
 
 
 def _ollama_models_from_tags(payload: Any) -> list[dict[str, Any]]:

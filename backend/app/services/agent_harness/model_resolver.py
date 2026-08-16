@@ -16,7 +16,6 @@ from app.services.authorization_service import AuthorizationService
 from app.services.llm.access_policy import (
     authorize_server_environment_credential,
     provider_has_server_integration_authority,
-    resolve_provider_network_access,
 )
 from app.services.llm.catalog import (
     _provider_requires_credential,
@@ -25,13 +24,9 @@ from app.services.llm.catalog import (
 from app.services.llm.credentials import (
     credential_available,
     credential_configured,
-    derive_model_target_revision,
     resolve_credential_material,
 )
-from app.services.llm.provider_templates import (
-    normalize_provider_base_url,
-    route_provider_model_name,
-)
+from app.services.llm.target_resolution import resolve_model_target
 from app.utils.exceptions import PermissionDeniedError
 
 
@@ -112,14 +107,6 @@ class AgentModelResolver:
             role=role,
         )
         try:
-            network_access = await resolve_provider_network_access(
-                provider.base_url,
-                private_endpoint_authorized=server_authorized,
-                resolve_dns=not server_authorized,
-            )
-        except PermissionDeniedError:
-            return None
-        try:
             validate_provider_transport(provider)
         except ValueError:
             return None
@@ -140,30 +127,25 @@ class AgentModelResolver:
             return None
         material = resolve_credential_material(credential)
         wire_protocol = str(getattr(provider, "wire_protocol", "chat_completions"))
-        routed_model_name = route_provider_model_name(
-            provider.kind,
-            model.model_id,
-            wire_protocol=wire_protocol,
-        )
-        normalized_base_url = (
-            normalize_provider_base_url(provider.kind, provider.base_url)
-            if provider.base_url
-            else None
-        )
-        target_revision = derive_model_target_revision(
-            endpoint_id=str(provider.id),
-            provider_kind=str(provider.kind),
-            model_name=str(model.model_id),
-            wire_protocol=wire_protocol,
-            routed_model_name=routed_model_name,
-            base_url=normalized_base_url,
-            credential_material=material,
-        )
+        try:
+            target = await resolve_model_target(
+                endpoint_id=str(provider.id),
+                provider_kind=str(provider.kind),
+                model_name=str(model.model_id),
+                wire_protocol=wire_protocol,
+                base_url=provider.base_url,
+                provider_metadata=provider.provider_metadata,
+                credential=material,
+                private_endpoint_authorized=server_authorized,
+                resolve_dns=not server_authorized,
+            )
+        except PermissionDeniedError:
+            return None
         request_args: dict[str, Any] = {}
-        if material.api_key:
-            request_args["api_key"] = material.api_key
-        if normalized_base_url:
-            request_args["api_base"] = normalized_base_url
+        if target.resolved_api_key():
+            request_args["api_key"] = target.resolved_api_key()
+        if target.base_url:
+            request_args["api_base"] = target.base_url
         capabilities = capabilities_from_model(model)
         runtime_strategy = resolve_runtime_strategy(
             capabilities=capabilities,
@@ -173,15 +155,15 @@ class AgentModelResolver:
             "endpoint_id": str(provider.id),
             "provider": provider.kind,
             "model": model.model_id,
-            "routed_model_name": routed_model_name,
+            "routed_model_name": target.resolved_model_name(),
             "model_id": str(model.id),
             "source": source,
             "capabilities": capabilities.as_dict(),
             "runtime_strategy": runtime_strategy.as_dict(),
             "request_args": request_args,
             "wire_protocol": wire_protocol,
-            "target_revision": target_revision,
-            "network_access": network_access,
+            "target_revision": target.resolved_target_revision(),
+            "network_access": target.network_access,
         }
         if profile_id:
             result["profile_id"] = profile_id

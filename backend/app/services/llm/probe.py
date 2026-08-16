@@ -6,13 +6,10 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
 
-from app.services.llm.credentials import CredentialMaterial
-from app.services.llm.provider_templates import route_provider_model_name
 from app.services.model_runtime.contracts import (
     ModelInvocation,
     ReasoningRequest,
     ModelTarget,
-    NetworkAccessPolicy,
     TextPart,
     WireProtocol,
 )
@@ -68,36 +65,17 @@ class LlmProviderProbe:
     async def probe(
         self,
         *,
-        endpoint_id: str,
-        provider_kind: str,
-        model_id: str,
-        wire_protocol: WireProtocol,
-        base_url: str | None,
-        network_access: NetworkAccessPolicy,
-        credential: CredentialMaterial,
+        target: ModelTarget,
         credential_required: bool,
     ) -> LlmProviderProbeResult:
-        if credential_required and not credential.api_key:
+        if credential_required and not target.resolved_api_key():
             return self.missing_credential_result(
-                wire_protocol=wire_protocol,
-                model_id=model_id,
+                wire_protocol=target.wire_protocol,
+                model_id=target.model_name,
             )
 
         invocation = ModelInvocation(
-            target=ModelTarget(
-                endpoint_id=endpoint_id,
-                provider_kind=provider_kind,
-                model_name=model_id,
-                routed_model_name=route_provider_model_name(
-                    provider_kind,
-                    model_id,
-                    wire_protocol=wire_protocol,
-                ),
-                wire_protocol=wire_protocol,
-                base_url=base_url,
-                network_access=network_access,
-                api_key=credential.api_key,
-            ),
+            target=target,
             instructions="Reply with OK.",
             input_items=(TextPart(text="ping"),),
             tools=(),
@@ -114,8 +92,8 @@ class LlmProviderProbe:
             return LlmProviderProbeResult(
                 success=False,
                 latency_ms=self._elapsed_ms(started_at),
-                wire_protocol=wire_protocol,
-                model_id=model_id,
+                wire_protocol=target.wire_protocol,
+                model_id=target.model_name,
                 error_code="timeout",
                 error_message=_PROBE_TIMEOUT_MESSAGE,
                 retryable=True,
@@ -126,8 +104,8 @@ class LlmProviderProbe:
             return LlmProviderProbeResult(
                 success=False,
                 latency_ms=self._elapsed_ms(started_at),
-                wire_protocol=wire_protocol,
-                model_id=model_id,
+                wire_protocol=target.wire_protocol,
+                model_id=target.model_name,
                 error_code=exc.category,
                 error_message=exc.message,
                 retryable=exc.retryable,
@@ -138,8 +116,8 @@ class LlmProviderProbe:
             return LlmProviderProbeResult(
                 success=False,
                 latency_ms=self._elapsed_ms(started_at),
-                wire_protocol=wire_protocol,
-                model_id=model_id,
+                wire_protocol=target.wire_protocol,
+                model_id=target.model_name,
                 error_code="probe_failed",
                 error_message=_PROBE_FAILED_MESSAGE,
             )
@@ -147,8 +125,8 @@ class LlmProviderProbe:
         return LlmProviderProbeResult(
             success=True,
             latency_ms=self._elapsed_ms(started_at),
-            wire_protocol=wire_protocol,
-            model_id=model_id,
+            wire_protocol=target.wire_protocol,
+            model_id=target.model_name,
         )
 
     @staticmethod
