@@ -9,6 +9,9 @@ from app.repositories.agent_harness_repo import AgentHarnessRepository
 from app.services.agent_harness.environment_runtime import (
     routed_workspace_runtime_for_session,
 )
+from app.services.agent_harness.turn_execution_config import (
+    resolve_turn_execution_config,
+)
 from app.services.agent_harness.tools.specs import ToolCall
 from app.services.agent_harness.turn_settings import effective_turn_session
 from app.services.remote_execution import RemoteCommandResult
@@ -37,7 +40,16 @@ async def test_auto_environment_scope_resolves_once_when_run_is_created(
         created = await async_client.post("/api/v1/agent/sessions", json={})
     session_id = created.json()["data"]["session"]["id"]
 
-    run = await AgentHarnessRepository(db_session).create_run(session_id)
+    repository = AgentHarnessRepository(db_session)
+    session = await repository.get_session(session_id)
+    assert session is not None
+    run = await repository.create_run(
+        session_id,
+        turn_execution_config=await resolve_turn_execution_config(
+            db_session,
+            session,
+        ),
+    )
     second = RemoteConnection(
         workspace_id=DEFAULT_WORKSPACE_ID,
         name="Second",
@@ -103,8 +115,14 @@ async def test_run_rejects_ssh_credential_drift_before_tool_execution(
     repository = AgentHarnessRepository(db_session)
     session_id = created.json()["data"]["session"]["id"]
     session = await repository.get_session(session_id)
-    run = await repository.create_run(session_id)
     assert session is not None
+    run = await repository.create_run(
+        session_id,
+        turn_execution_config=await resolve_turn_execution_config(
+            db_session,
+            session,
+        ),
+    )
 
     connection.encrypted_password = "cipher-after"
     await db_session.commit()

@@ -43,6 +43,10 @@ from app.services.agent_harness.contracts import (
 )
 from app.utils.exceptions import ConflictError, NotFoundError
 from app.workspace import DEFAULT_WORKSPACE_ID
+from tests.test_agent_harness.run_test_helpers import (
+    agent_turn_execution_config,
+    create_agent_run,
+)
 
 
 PNG_1X1 = base64.b64decode(
@@ -352,9 +356,11 @@ async def test_orphan_cleanup_removes_unreferenced_attachment_from_existing_hist
 ) -> None:
     session = await _session(db_session)
     repository = AgentHarnessRepository(db_session)
+    session_id = str(session.id)
     await repository.submit_user_command(
-        str(session.id),
+        session_id,
         _message("message-1", "existing history"),
+        turn_execution_config=await agent_turn_execution_config(repository, session_id),
     )
     service = AgentHarnessAttachmentService(db_session)
     attachment = (
@@ -389,13 +395,16 @@ async def test_orphan_cleanup_preserves_attachment_referenced_by_history(
     )[0]
     attachment.created_at = datetime.now(timezone.utc) - timedelta(days=2)
     await db_session.commit()
-    await AgentHarnessRepository(db_session).submit_user_command(
-        str(session.id),
+    repository = AgentHarnessRepository(db_session)
+    session_id = str(session.id)
+    await repository.submit_user_command(
+        session_id,
         _message(
             "message-1",
             "use attachment",
             attachment_ids=[attachment.id],
         ),
+        turn_execution_config=await agent_turn_execution_config(repository, session_id),
     )
     attachment_id = str(attachment.id)
     root = agent_attachment_root(str(session.id), attachment_id)
@@ -420,13 +429,16 @@ async def test_explicit_delete_rejects_attachment_referenced_by_history(
             files=[_upload("used.txt", b"used")],
         )
     )[0]
-    await AgentHarnessRepository(db_session).submit_user_command(
-        str(session.id),
+    repository = AgentHarnessRepository(db_session)
+    session_id = str(session.id)
+    await repository.submit_user_command(
+        session_id,
         _message(
             "message-1",
             "keep this attachment in permanent history",
             attachment_ids=[attachment.id],
         ),
+        turn_execution_config=await agent_turn_execution_config(repository, session_id),
     )
     attachment_id = str(attachment.id)
     root = agent_attachment_root(str(session.id), attachment_id)
@@ -460,6 +472,9 @@ async def test_cross_worker_prompt_and_delete_serialize_attachment_reference(
     )[0]
     attachment_id = str(attachment.id)
     root = agent_attachment_root(session_id, attachment_id)
+    turn_execution_config = await agent_turn_execution_config(
+        AgentHarnessRepository(db_session), session_id
+    )
     factory = async_sessionmaker(
         db_session.bind,
         expire_on_commit=False,
@@ -513,6 +528,7 @@ async def test_cross_worker_prompt_and_delete_serialize_attachment_reference(
                     "Use the attachment if it still exists.",
                     attachment_ids=[attachment_id],
                 ),
+                turn_execution_config=turn_execution_config,
             )
         )
         delete_task = asyncio.create_task(
@@ -564,6 +580,9 @@ async def test_cross_worker_delete_waits_for_prompt_history_commit(
     )[0]
     attachment_id = str(attachment.id)
     root = agent_attachment_root(session_id, attachment_id)
+    turn_execution_config = await agent_turn_execution_config(
+        AgentHarnessRepository(db_session), session_id
+    )
     factory = async_sessionmaker(
         db_session.bind,
         expire_on_commit=False,
@@ -602,6 +621,7 @@ async def test_cross_worker_delete_waits_for_prompt_history_commit(
                     "Commit this attachment permanently.",
                     attachment_ids=[attachment_id],
                 ),
+                turn_execution_config=turn_execution_config,
             )
         )
         await asyncio.wait_for(prompt_commit_ready.wait(), timeout=5)
@@ -763,7 +783,7 @@ async def test_artifact_writer_persists_large_output_and_enforces_ownership(
     session = await _session(db_session)
     session_id = str(session.id)
     repository = AgentHarnessRepository(db_session)
-    run = await repository.create_run(session_id)
+    run = await create_agent_run(repository, session_id)
     generation = await repository.claim_run(
         str(run.id),
         owner="worker-1",
@@ -832,7 +852,7 @@ async def test_stale_artifact_writer_leaves_no_database_row_or_file(
     session = await _session(db_session)
     session_id = str(session.id)
     repository = AgentHarnessRepository(db_session)
-    run = await repository.create_run(session_id)
+    run = await create_agent_run(repository, session_id)
     first_generation = await repository.claim_run(
         str(run.id),
         owner="worker-1",
@@ -878,7 +898,7 @@ async def test_artifact_download_rejects_legacy_paths_outside_managed_home(
 ) -> None:
     session = await _session(db_session)
     repository = AgentHarnessRepository(db_session)
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     generation = await repository.claim_run(
         str(run.id),
         owner="worker-1",
@@ -900,6 +920,8 @@ async def test_artifact_download_rejects_legacy_paths_outside_managed_home(
             workspace_id=DEFAULT_WORKSPACE_ID,
             user_id="dev",
         )
+
+
 def _message(command_id: str, text: str, *, attachment_ids=()) -> MessageCommand:
     return MessageCommand(
         command_id=command_id,

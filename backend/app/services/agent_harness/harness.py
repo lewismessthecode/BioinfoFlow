@@ -41,6 +41,7 @@ from app.services.agent_harness.projection import (
     run_view,
 )
 from app.services.agent_harness.recovery import RecoveryPlanner, create_checkpoint
+from app.services.agent_harness.run_submission import AgentRunSubmissionService
 from app.services.agent_harness.tool_projection import (
     project_tool_view,
     public_output_summary as _public_output_summary,
@@ -73,6 +74,7 @@ class AgentHarness:
         lease_owner: str | None = None,
     ) -> None:
         self.repository = repository
+        self.run_submission = AgentRunSubmissionService(repository)
         self.event_hub = event_hub or AgentEventHub()
         self._tasks = tasks if tasks is not None else {}
         self._cancellations = cancellations if cancellations is not None else {}
@@ -166,10 +168,9 @@ class AgentHarness:
             raise ValueError("agent session is closing")
         current = await self.repository.get_current_run(session_id)
         if isinstance(command, MessageCommand):
-            run, entry, inserted = await self.repository.submit_user_command(
+            run, entry, inserted = await self.run_submission.submit_user_command(
                 session_id,
                 command,
-                model_snapshot=session.model_snapshot,
             )
             if not inserted:
                 return
@@ -1104,10 +1105,9 @@ class AgentHarness:
         session = await self.repository.get_session(session_id)
         if session is None or session.status != "active":
             return False
-        next_run = await self.repository.create_run_from_next_session_command(
+        next_run = await self.run_submission.create_run_from_next_session_command(
             session_id,
             kind="message",
-            model_snapshot=session.model_snapshot,
         )
         if next_run is None:
             return False

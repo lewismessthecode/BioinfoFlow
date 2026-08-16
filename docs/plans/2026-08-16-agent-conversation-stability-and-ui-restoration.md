@@ -2,8 +2,10 @@
 
 ## Status
 
-Accepted for TDD implementation. Work will be delivered as one reviewable PR in
-three committed phases and will not be merged automatically.
+Accepted for TDD implementation. Work is delivered in PR #234 as reviewable,
+separately committed phases. After ordinary review, full verification, and a
+rebase onto current `origin/main`, the PR is authorized for rebase merge once
+required checks pass.
 
 ## Problem
 
@@ -288,8 +290,8 @@ Browser:
 - fix all actionable findings and rerun affected checks;
 - rebase on current `origin/main` before publishing;
 - push `codex/stabilize-agent-conversation-ui`;
-- open one Conventional Commit titled PR;
-- do not merge or enable auto-merge.
+- keep PR #234 on a Conventional Commit title;
+- wait for required checks, then rebase merge PR #234 without enabling auto-merge.
 
 ## Final screenshot acceptance: selector and shell restoration
 
