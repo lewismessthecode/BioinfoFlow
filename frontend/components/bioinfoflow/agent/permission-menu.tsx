@@ -11,8 +11,10 @@ import {
 } from "@/components/bioinfoflow/composer-selector-chip"
 import {
   ComposerSelectorChevronSlot,
+  ComposerSelectorField,
   ComposerSelectorIconSlot,
   ComposerSelectorMenuSurface,
+  ComposerSelectorOptionContent,
   ComposerSelectorText,
   ComposerSelectorTrigger,
 } from "@/components/bioinfoflow/composer-selector"
@@ -104,6 +106,24 @@ export function PermissionMenu({
   const CurrentIcon = modeIcons[displayedMode]
   const isUpdating = visibleUpdate?.state === "pending"
   const controlsDisabled = disabled || readOnlyWorkspace || isUpdating
+  const feedback = readOnlyWorkspace ? (
+    <p>{t("permission.readOnlyWorkspace")}</p>
+  ) : isUpdating ? (
+    <p role="status">{t("permission.updating")}</p>
+  ) : visibleUpdate?.state === "error" ? (
+    <div className="flex flex-wrap items-center gap-2" role="alert">
+      <span>{t("permission.updateError")}</span>
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        className="h-auto px-1 text-[11px]"
+        onClick={() => void requestChange(visibleUpdate.mode)}
+      >
+        {t("permission.retry")}
+      </Button>
+    </div>
+  ) : null
   const trigger = (
     <ComposerSelectorTrigger
       type="button"
@@ -111,7 +131,7 @@ export function PermissionMenu({
       size="sm"
       disabled={controlsDisabled}
       aria-label={`${t("permission.label")}: ${t(`permission.${displayedMode}.name`)}`}
-      aria-describedby={descriptionId}
+      aria-describedby={feedback ? descriptionId : undefined}
       className="max-w-[12rem]"
     >
       <ComposerSelectorIconSlot>
@@ -142,7 +162,7 @@ export function PermissionMenu({
   }
 
   return (
-    <div className="flex min-w-0 flex-col items-start gap-1.5">
+    <ComposerSelectorField feedback={feedback} feedbackId={descriptionId}>
       {isMobile ? (
         <Sheet
           open={mobileOpen}
@@ -225,27 +245,7 @@ export function PermissionMenu({
         </DropdownMenu>
       )}
 
-      <div
-        id={descriptionId}
-        className="px-2 text-[11px] leading-4 text-muted-foreground"
-      >
-        {readOnlyWorkspace ? <p>{t("permission.readOnlyWorkspace")}</p> : null}
-        {isUpdating ? <p role="status">{t("permission.updating")}</p> : null}
-        {visibleUpdate?.state === "error" ? (
-          <div className="flex flex-wrap items-center gap-2" role="alert">
-            <span>{t("permission.updateError")}</span>
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              onClick={() => void requestChange(visibleUpdate.mode)}
-            >
-              {t("permission.retry")}
-            </Button>
-          </div>
-        ) : null}
-      </div>
-    </div>
+    </ComposerSelectorField>
   )
 }
 
@@ -258,15 +258,11 @@ function PermissionOptionContent({
   const Icon = modeIcons[mode]
 
   return (
-    <>
-      <Icon aria-hidden="true" className="mt-0.5" />
-      <span className="grid min-w-0 gap-0.5">
-        <span className="font-medium">{t(`permission.${mode}.name`)}</span>
-        <span className="whitespace-normal text-xs leading-5 text-muted-foreground">
-          {t(`permission.${mode}.description`)}
-        </span>
-      </span>
-    </>
+    <ComposerSelectorOptionContent
+      icon={<Icon aria-hidden="true" />}
+      title={t(`permission.${mode}.name`)}
+      description={t(`permission.${mode}.description`)}
+    />
   )
 }
 

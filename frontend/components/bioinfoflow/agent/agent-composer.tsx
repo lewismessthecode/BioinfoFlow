@@ -24,10 +24,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { useVoiceDictation } from "@/hooks/use-voice-dictation"
 import {
   ArrowUpRight,
-  Check,
-  History,
+  CircleCheck,
   Loader2,
-  MessageSquare,
+  MessageCircle,
   Mic,
   RotateCcw,
   Send,
@@ -66,20 +65,89 @@ type AgentComposerProps = {
   placement?: "draft" | "dock"
   textareaRef?: Ref<HTMLTextAreaElement>
   disabled?: boolean
+  renderCommandDiscoveryHint?: boolean
+  onDraftEmptyChange?: (empty: boolean) => void
 }
 
 type SubmitAction = "message" | "steer"
 
 const starterSlotIcons = [
-  { name: "check", icon: Check },
-  { name: "message-square", icon: MessageSquare },
-  { name: "history", icon: History },
+  { name: "circle-check", icon: CircleCheck },
+  { name: "message-circle", icon: MessageCircle },
+  { name: "rotate-ccw", icon: RotateCcw },
 ] as const
 
 const commandHints = [
   { key: "skills", token: "/" },
   { key: "context", token: "@" },
 ] as const
+
+export function AgentCommandDiscoveryHint({
+  visible,
+}: {
+  visible: boolean
+}) {
+  const t = useTranslations("agentComposer")
+  const [commandHintIndex, setCommandHintIndex] = useState(0)
+  const [commandHintSwapState, setCommandHintSwapState] = useState<
+    "" | "is-exit" | "is-enter-start"
+  >("")
+
+  useEffect(() => {
+    if (
+      !visible ||
+      globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return
+    }
+
+    const timers = new Set<ReturnType<typeof setTimeout>>()
+    const addTimer = (callback: () => void, delay: number) => {
+      const timer = setTimeout(() => {
+        timers.delete(timer)
+        callback()
+      }, delay)
+      timers.add(timer)
+    }
+    const interval = setInterval(() => {
+      setCommandHintSwapState("is-exit")
+      addTimer(() => {
+        setCommandHintIndex((index) => (index + 1) % commandHints.length)
+        setCommandHintSwapState("is-enter-start")
+        addTimer(() => setCommandHintSwapState(""), 16)
+      }, 150)
+    }, 5200)
+
+    return () => {
+      clearInterval(interval)
+      timers.forEach((timer) => clearTimeout(timer))
+    }
+  }, [visible])
+
+  if (!visible) return null
+  const hint = commandHints[commandHintIndex] ?? commandHints[0]
+
+  return (
+    <div
+      data-testid="agent-command-discovery-hint"
+      className="agent-center-stage pointer-events-none absolute inset-x-14 bottom-24 flex justify-center sm:inset-x-4 sm:bottom-12"
+    >
+      <p
+        className={cn(
+          "t-text-swap inline-flex max-w-[calc(100vw-2rem)] items-center justify-center gap-1.5 truncate text-center text-[12px] font-normal leading-5 tracking-normal text-muted-foreground/75 sm:text-[13px]",
+          commandHintSwapState,
+        )}
+        aria-label={`${t(`commandHints.${hint.key}.prefix`)} ${hint.token} ${t(`commandHints.${hint.key}.suffix`)}`}
+      >
+        <span className="truncate">{t(`commandHints.${hint.key}.prefix`)}</span>
+        <kbd className="rounded-[5px] border border-border/35 bg-foreground/[0.055] px-1.5 py-px font-mono text-[11px] font-normal leading-none text-muted-foreground/85">
+          {hint.token}
+        </kbd>
+        <span className="truncate">{t(`commandHints.${hint.key}.suffix`)}</span>
+      </p>
+    </div>
+  )
+}
 
 export function AgentComposer({
   permissionMode,
@@ -103,16 +171,14 @@ export function AgentComposer({
   placement = "dock",
   textareaRef,
   disabled = false,
+  renderCommandDiscoveryHint = true,
+  onDraftEmptyChange,
 }: AgentComposerProps) {
   const t = useTranslations("agentComposer")
   const [value, setValue] = useState("")
   const [submitting, setSubmitting] = useState<SubmitAction | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [stopError, setStopError] = useState<string | null>(null)
-  const [commandHintIndex, setCommandHintIndex] = useState(0)
-  const [commandHintSwapState, setCommandHintSwapState] = useState<
-    "" | "is-exit" | "is-enter-start"
-  >("")
   const [cancelRequestedRunId, setCancelRequestedRunId] = useState<
     string | null
   >(null)
@@ -167,35 +233,8 @@ export function AgentComposer({
   }, [activeRunId, cancelRequestedRunId])
 
   useEffect(() => {
-    if (
-      placement !== "draft" ||
-      globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-    ) {
-      return
-    }
-
-    const timers = new Set<ReturnType<typeof setTimeout>>()
-    const addTimer = (callback: () => void, delay: number) => {
-      const timer = setTimeout(() => {
-        timers.delete(timer)
-        callback()
-      }, delay)
-      timers.add(timer)
-    }
-    const interval = setInterval(() => {
-      setCommandHintSwapState("is-exit")
-      addTimer(() => {
-        setCommandHintIndex((index) => (index + 1) % commandHints.length)
-        setCommandHintSwapState("is-enter-start")
-        addTimer(() => setCommandHintSwapState(""), 16)
-      }, 150)
-    }, 5200)
-
-    return () => {
-      clearInterval(interval)
-      timers.forEach((timer) => clearTimeout(timer))
-    }
-  }, [placement])
+    if (placement === "draft") onDraftEmptyChange?.(!value.trim())
+  }, [onDraftEmptyChange, placement, value])
 
   const submit = async (action: SubmitAction) => {
     const text = value.trim()
@@ -270,77 +309,83 @@ export function AgentComposer({
       data-testid="agent-composer"
       data-placement={placement}
       className={cn(
-        "mx-auto flex w-full flex-col gap-2 px-3 sm:px-4",
+        "mx-auto flex w-full flex-col gap-2",
         placement === "draft"
-          ? "max-w-[42rem] bg-transparent pb-4"
-          : "max-w-[48rem] bg-background pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+          ? "max-w-[42rem] bg-transparent px-0 pb-4"
+          : "max-w-[48rem] bg-background px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4",
       )}
       onSubmit={handleSubmit}
     >
       <div
-        data-testid="agent-composer-surface"
-        className={cn(
-          "flex flex-col border border-border/85 bg-card p-2 transition-[border-color,box-shadow,background-color] focus-within:border-foreground/25 focus-within:shadow-[0_12px_28px_-24px_color-mix(in_oklab,var(--foreground)_22%,transparent)] motion-reduce:transition-none",
-          placement === "draft"
-            ? "min-h-[160px] rounded-[24px] p-3 shadow-[0_10px_24px_-22px_color-mix(in_oklab,var(--foreground)_24%,transparent)]"
-            : "rounded-[18px] shadow-[0_12px_34px_-28px_color-mix(in_oklab,var(--foreground)_24%,transparent)]",
-        )}
+        data-testid={
+          placement === "draft" ? "agent-composer-draft-shell" : undefined
+        }
+        className={placement === "draft" ? "relative" : "contents"}
       >
-        {contextInputs.length > 0 && onRemoveContextInput ? (
-          <div className="px-1 pt-1 pb-2">
-            <AgentContextInputs
-              inputs={contextInputs}
-              onRemove={onRemoveContextInput}
-              disabled={controlsDisabled}
-            />
-          </div>
-        ) : null}
-        <Textarea
-          ref={setTextareaNode}
-          value={value}
-          onChange={(event) => setValue(event.currentTarget.value)}
-          onKeyDown={handleKeyDown}
-          aria-label={t("label")}
-          placeholder={t("placeholder")}
-          name="agent-message"
-          autoComplete="off"
-          rows={placement === "draft" ? 3 : 2}
-          disabled={disabled}
-          className={cn(
-            "max-h-40 resize-none border-0 bg-transparent shadow-none dark:bg-transparent focus-visible:border-transparent focus-visible:ring-0",
-            placement === "draft"
-              ? "min-h-20 flex-1 text-[15px]"
-              : "min-h-11",
-          )}
-        />
-
         <div
-          data-testid="agent-composer-controls"
+          data-testid="agent-composer-surface"
           className={cn(
-            "flex min-w-0 flex-wrap gap-2 pt-2",
-            placement === "draft" ? "mt-auto items-center" : "items-end",
+            "flex flex-col border border-border bg-card p-2 transition-[border-color,box-shadow,background-color] focus-within:border-foreground/25 focus-within:shadow-[0_12px_28px_-24px_color-mix(in_oklab,var(--foreground)_22%,transparent)] motion-reduce:transition-none",
+            placement === "draft"
+              ? "rounded-[24px] shadow-[0_1px_2px_rgba(15,15,15,0.035)]"
+              : "rounded-[18px] shadow-[0_12px_34px_-28px_color-mix(in_oklab,var(--foreground)_24%,transparent)]",
           )}
         >
-          {contextControls}
-          {modelControls}
-          <PermissionMenu
-            permissionMode={permissionMode}
-            workspaceAccess={workspaceAccess}
-            disabled={disabled}
-            onPermissionModeChange={onPermissionModeChange}
-          />
-          {onEnvironmentSelectionChange ? (
-            <EnvironmentSelector
-              targets={environmentTargets}
-              requested={environmentSelection}
-              effective={effectiveEnvironmentSelection}
-              pending={environmentSelectionPending}
-              disabled={disabled}
-              onChange={onEnvironmentSelectionChange}
-            />
+          {contextInputs.length > 0 && onRemoveContextInput ? (
+            <div className="px-1 pt-1 pb-2">
+              <AgentContextInputs
+                inputs={contextInputs}
+                onRemove={onRemoveContextInput}
+                disabled={controlsDisabled}
+              />
+            </div>
           ) : null}
+          <Textarea
+            ref={setTextareaNode}
+            value={value}
+            onChange={(event) => setValue(event.currentTarget.value)}
+            onKeyDown={handleKeyDown}
+            aria-label={t("label")}
+            placeholder={t("placeholder")}
+            name="agent-message"
+            autoComplete="off"
+            rows={placement === "draft" ? 3 : 2}
+            disabled={disabled}
+            className={cn(
+              "max-h-40 resize-none border-0 bg-transparent shadow-none dark:bg-transparent focus-visible:border-transparent focus-visible:ring-0",
+              placement === "draft"
+                ? "min-h-20 flex-1 text-[15px]"
+                : "min-h-11",
+            )}
+          />
 
-          <div className="ml-auto flex items-center gap-2">
+          <div
+            data-testid="agent-composer-controls"
+            className={cn(
+              "flex min-w-0 flex-wrap gap-2 pt-2",
+              placement === "draft" ? "mt-auto items-center" : "items-end",
+            )}
+          >
+            {contextControls}
+            {modelControls}
+            <PermissionMenu
+              permissionMode={permissionMode}
+              workspaceAccess={workspaceAccess}
+              disabled={disabled}
+              onPermissionModeChange={onPermissionModeChange}
+            />
+            {onEnvironmentSelectionChange ? (
+              <EnvironmentSelector
+                targets={environmentTargets}
+                requested={environmentSelection}
+                effective={effectiveEnvironmentSelection}
+                pending={environmentSelectionPending}
+                disabled={disabled}
+                onChange={onEnvironmentSelectionChange}
+              />
+            ) : null}
+
+            <div className="ml-auto flex items-center gap-2">
             {voice.available ? (
               <>
                 {voice.state === "recording" ? (
@@ -448,18 +493,15 @@ export function AgentComposer({
                 <Send data-icon="inline-start" aria-hidden="true" />
               )}
             </Button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {placement === "draft" && starterPrompts.length > 0 ? (
-        <section
-          className="mx-auto mt-2 w-full"
-          aria-label={t("starterHint")}
-        >
-          <div
+        {placement === "draft" && starterPrompts.length > 0 ? (
+          <section
             data-testid="agent-starter-prompt-list"
-            className="divide-y divide-border/45"
+            className="absolute inset-x-0 top-full mt-5 w-full overflow-hidden"
+            aria-label={t("starterHint")}
           >
             {starterPrompts.slice(0, 3).map((prompt, index) => {
               const slot = starterSlotIcons[index]
@@ -468,7 +510,10 @@ export function AgentComposer({
                 <button
                   key={prompt}
                   type="button"
-                  className="group grid min-h-10 w-full grid-cols-[0.875rem_minmax(0,1fr)] items-center gap-2 px-1 py-2 text-left text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  className={cn(
+                    "group grid min-h-[32px] w-full grid-cols-[0.875rem_minmax(0,1fr)] items-center gap-2 rounded-[5px] px-4 text-left transition-colors duration-150 hover:bg-foreground/[0.025] focus-visible:relative focus-visible:z-10 focus-visible:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/18 focus-visible:ring-offset-1 focus-visible:ring-offset-background sm:min-h-[35px]",
+                    index > 0 && "border-t border-border/75",
+                  )}
                   onClick={() => {
                     setValue(prompt)
                     window.requestAnimationFrame(() =>
@@ -479,39 +524,20 @@ export function AgentComposer({
                   <SlotIcon
                     aria-hidden="true"
                     data-starter-slot-icon={slot.name}
-                    className="size-3.5 text-muted-foreground/55 transition-colors group-hover:text-muted-foreground/85"
+                    className="size-3.5 text-muted-foreground/65 transition-colors duration-150 group-hover:text-muted-foreground/85"
                   />
-                  <span className="truncate">{prompt}</span>
+                  <span className="min-w-0 truncate text-[12px] font-normal leading-[18px] tracking-normal text-muted-foreground transition-colors duration-150 group-hover:text-foreground/70 sm:text-[13px]">
+                    {prompt}
+                  </span>
                 </button>
               )
             })}
-          </div>
-        </section>
-      ) : null}
+          </section>
+        ) : null}
+      </div>
 
-      {placement === "draft" && !value.trim() ? (
-        <div
-          data-testid="agent-command-discovery-hint"
-          className="pointer-events-none absolute inset-x-4 bottom-10 flex justify-center"
-        >
-          {(() => {
-            const hint = commandHints[commandHintIndex] ?? commandHints[0]
-            return (
-              <p
-                className={cn(
-                  "t-text-swap inline-flex items-center gap-1.5 text-center text-xs text-muted-foreground/60",
-                  commandHintSwapState,
-                )}
-              >
-                <span>{t(`commandHints.${hint.key}.prefix`)}</span>
-                <kbd className="rounded-[5px] border border-border/35 bg-foreground/[0.05] px-1.5 py-px font-mono text-[11px] leading-none text-muted-foreground/80">
-                  {hint.token}
-                </kbd>
-                <span>{t(`commandHints.${hint.key}.suffix`)}</span>
-              </p>
-            )
-          })()}
-        </div>
+      {placement === "draft" && renderCommandDiscoveryHint ? (
+        <AgentCommandDiscoveryHint visible={!value.trim()} />
       ) : null}
 
       {submitError ? (

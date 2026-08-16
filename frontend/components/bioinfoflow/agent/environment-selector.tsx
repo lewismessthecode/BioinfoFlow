@@ -11,8 +11,10 @@ import {
 } from "@/components/bioinfoflow/composer-selector-chip"
 import {
   ComposerSelectorChevronSlot,
+  ComposerSelectorField,
   ComposerSelectorIconSlot,
   ComposerSelectorMenuSurface,
+  ComposerSelectorOptionContent,
   ComposerSelectorText,
   ComposerSelectorTrigger,
 } from "@/components/bioinfoflow/composer-selector"
@@ -120,8 +122,25 @@ export function EnvironmentSelector({
     })
   }
 
+  const feedback = isPending ? (
+    <p role="status">{t("updating")}</p>
+  ) : errorSelection ? (
+    <div role="alert" className="flex items-center gap-1 text-destructive">
+      <span>{t("updateError")}</span>
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        className="h-auto px-1 text-[11px]"
+        onClick={() => void requestChange(errorSelection)}
+      >
+        {t("retry")}
+      </Button>
+    </div>
+  ) : null
+
   return (
-    <div className="flex min-w-0 flex-col items-start gap-1.5">
+    <ComposerSelectorField feedback={feedback}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <ComposerSelectorTrigger
@@ -189,14 +208,17 @@ export function EnvironmentSelector({
                   "items-start pl-8 pr-2",
                 )}
               >
-                <span className="grid gap-0.5">
-                  <span className="font-medium text-foreground">
-                    {t(`${mode}.name`)}
-                  </span>
-                  <span className="whitespace-normal leading-4 text-muted-foreground">
-                    {t(`${mode}.description`)}
-                  </span>
-                </span>
+                <ComposerSelectorOptionContent
+                  icon={
+                    mode === "auto" ? (
+                      <Server aria-hidden="true" />
+                    ) : (
+                      <Monitor aria-hidden="true" />
+                    )
+                  }
+                  title={t(`${mode}.name`)}
+                  description={t(`${mode}.description`)}
+                />
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
@@ -217,59 +239,37 @@ export function EnvironmentSelector({
                     "items-start gap-2 pl-8 pr-2",
                   )}
                 >
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "mt-1 size-1.5 shrink-0 rounded-full bg-muted-foreground/45",
-                      target.status === "online" && "bg-emerald-500",
-                      target.status === "error" && "bg-destructive",
-                      target.status === "offline" && "bg-muted-foreground/30",
-                    )}
+                  <ComposerSelectorOptionContent
+                    icon={
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "size-1.5 rounded-full bg-muted-foreground/45",
+                          target.status === "online" && "bg-emerald-500",
+                          target.status === "error" && "bg-destructive",
+                          target.status === "offline" &&
+                            "bg-muted-foreground/30",
+                        )}
+                      />
+                    }
+                    title={target.label}
+                    description={target.description}
+                    descriptionClassName="truncate font-mono"
+                    trailing={
+                      target.status ? (
+                        <span className="text-[10px] text-muted-foreground">
+                          {t(`status.${target.status}`)}
+                        </span>
+                      ) : null
+                    }
                   />
-                  <span className="grid min-w-0 flex-1 gap-0.5">
-                    <span className="font-medium text-foreground">
-                      {target.label}
-                    </span>
-                    {target.description ? (
-                      <span className="truncate font-mono text-[11px] text-muted-foreground">
-                        {target.description}
-                      </span>
-                    ) : null}
-                  </span>
-                  {target.status ? (
-                    <span className="text-[10px] text-muted-foreground">
-                      {t(`status.${target.status}`)}
-                    </span>
-                  ) : null}
                 </DropdownMenuCheckboxItem>
               ))}
             </>
           ) : null}
         </ComposerSelectorMenuSurface>
       </DropdownMenu>
-      {isPending ? (
-        <p role="status" className="px-2 text-[11px] text-muted-foreground">
-          {t("updating")}
-        </p>
-      ) : null}
-      {errorSelection ? (
-        <div
-          role="alert"
-          className="flex items-center gap-1 px-2 text-[11px] text-destructive"
-        >
-          <span>{t("updateError")}</span>
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            className="h-auto px-1 text-[11px]"
-            onClick={() => void requestChange(errorSelection)}
-          >
-            {t("retry")}
-          </Button>
-        </div>
-      ) : null}
-    </div>
+    </ComposerSelectorField>
   )
 }
 

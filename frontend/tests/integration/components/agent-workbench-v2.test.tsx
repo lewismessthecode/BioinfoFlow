@@ -105,7 +105,7 @@ vi.mock("@/components/bioinfoflow/chat/model-selector", () => ({
     onSelectModel,
   }: {
     disabled?: boolean
-    selectedModel?: { model?: string | null } | null
+    selectedModel?: { provider?: string | null; model?: string | null } | null
     onSelectModel: (selection: {
       provider: string
       model: string
@@ -160,6 +160,8 @@ vi.mock("@/components/bioinfoflow/settings/llm-catalog-panel", () => ({
 }))
 
 vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
+  AgentCommandDiscoveryHint: ({ visible }: { visible: boolean }) =>
+    visible ? <div data-testid="mock-command-discovery-hint" /> : null,
   AgentComposer: ({
     onSendMessage,
     onSteer,
@@ -273,7 +275,7 @@ function snapshot(): SessionSnapshot {
       permission_mode: "ask_dangerous",
       workspace_access: "read_write",
       settings_revision: 1,
-      environment_scope: { mode: "auto" },
+      environment_scope: { mode: "auto", environment_ids: null },
       status: "active",
       created_at: timestamp,
       updated_at: timestamp,
@@ -419,7 +421,14 @@ describe("AgentWorkbench v2", () => {
       <AgentWorkbench sessionId={null} projectId="project-1" />,
     )
 
-    expect(screen.getByTestId("agent-draft-entry")).toBeInTheDocument()
+    expect(screen.getByTestId("agent-draft-entry")).toHaveClass(
+      "agent-halo-surface",
+    )
+    expect(screen.getByTestId("agent-draft-stage")).toHaveClass(
+      "agent-center-stage",
+      "max-w-[42rem]",
+      "-translate-y-8",
+    )
     expect(screen.queryByRole("banner")).not.toBeInTheDocument()
     expect(screen.getByTestId("mock-composer")).toHaveAttribute(
       "data-placement",
@@ -429,7 +438,15 @@ describe("AgentWorkbench v2", () => {
       screen.getByRole("button", { name: "gpt-5.6 model selector" }),
     ).toBeEnabled()
     expect(screen.getByText("Environment: auto")).toBeInTheDocument()
-    expect(screen.getByText("emptyTitle")).toBeInTheDocument()
+    expect(
+      screen.getByRole("heading", { name: "emptyTitle", level: 1 }),
+    ).toHaveClass(
+      "mb-4",
+      "text-[15px]",
+      "font-medium",
+      "tracking-normal",
+      "text-muted-foreground",
+    )
     expect(screen.queryByText("emptyDescription")).not.toBeInTheDocument()
     expect(screen.queryByText("capabilityHint")).not.toBeInTheDocument()
     expect(
@@ -583,7 +600,7 @@ describe("AgentWorkbench v2", () => {
         if (updates.environmentScope) {
           updated.session.environment_scope = {
             mode: "manual",
-            selected_environment_ids: ["local", "gpu-01"],
+            environment_ids: ["local", "gpu-01"],
           }
         }
         return updated
