@@ -19,6 +19,7 @@ import type { ConversationViewModel } from "@/lib/agent/conversation-model/types
 import {
   applyConversationProjectionDiagnostic,
   applyConversationProjectionEvent,
+  applyConversationSessionTitle,
   createConversationProjection,
   type ConversationProjectionState,
 } from "@/lib/agent/projection/conversation-projection"
@@ -305,7 +306,27 @@ export function useAgentSession(sessionId: string): AgentSessionState {
         error: null,
       }))
       try {
-        await dispatchAgentCommand(sessionId, command)
+        const snapshot = await dispatchAgentCommand(sessionId, command)
+        if (generationRef.current !== generation) return
+        const currentProjection = projectionRef.current
+        if (!currentProjection) return
+        const application = applyConversationSessionTitle(
+          currentProjection,
+          snapshot.session,
+        )
+        if (application.outcome === "ignored") return
+        projectionRef.current = application.state
+        conversationViewRef.current = application.view
+        storeRef.current = application.state.transportState
+        setView((current) =>
+          current.sessionId === sessionId
+            ? {
+                ...current,
+                store: application.state.transportState,
+                conversationView: application.view,
+              }
+            : current,
+        )
       } catch (caught) {
         if (generationRef.current === generation) {
           setView((current) => ({
