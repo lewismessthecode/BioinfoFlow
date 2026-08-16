@@ -59,6 +59,7 @@ class EnvironmentCatalog:
                         f"{connection.username}@{connection.host}:{connection.port}"
                     ),
                     status=str(connection.last_status),
+                    host=str(connection.host),
                 )
                 for connection in connections
             )

@@ -297,6 +297,12 @@ def routed_workspace_runtime_for_session(
                     environment_targets.get(environment_id)
                 )
             ),
+            host=(
+                None
+                if environment_id == "local"
+                else str(environment_targets.get(environment_id, {}).get("host") or "")
+                or None
+            ),
         )
         for environment_id in (selected_ids or ("local",))
     }

@@ -33,6 +33,11 @@ _history_entry_adapter = TypeAdapter(HistoryEntry)
 _PUBLIC_ENTRY_TYPES = frozenset(
     {"message", "interaction_request", "interaction_response", "notice", "plan"}
 )
+_PUBLIC_NOTICE_PARAM_KEYS = {
+    "run_timeout_exceeded": frozenset({"limit_seconds"}),
+    "token_budget_exceeded": frozenset({"total_tokens", "token_budget"}),
+    "unknown_tool_effect": frozenset({"interaction_id", "tool_name"}),
+}
 _REASONING_TEXT_FIELDS = {
     "reasoning_summary": "text",
     "reasoning_trace": "text",
@@ -131,11 +136,18 @@ def public_interaction_request(value: dict[str, Any]) -> dict[str, Any]:
             },
         }
     if kind == "recovery":
+        message_code = value.get("message_code")
         return {
             "type": "recovery",
             "call_id": call_id,
             "tool_name": str(value.get("tool_name") or "tool"),
             "message": str(value.get("message") or "Recovery requires a decision."),
+            "message_code": (
+                str(message_code) if isinstance(message_code, str) else None
+            ),
+            "message_params": _public_localization_params(
+                value.get("message_params"), frozenset({"tool_name"})
+            ),
             "options": _public_interaction_options(value.get("options")),
         }
     raise ValueError(f"unsupported interaction kind: {kind}")
@@ -191,6 +203,64 @@ def public_run_error(run: AgentHarnessRun) -> dict[str, str] | None:
     return {"code": code, "message": _PUBLIC_RUN_ERROR_MESSAGES[code]}
 
 
+def public_run_execution_config(run: AgentHarnessRun) -> dict[str, Any] | None:
+    config = run.turn_execution_config
+    if not isinstance(config, dict):
+        return None
+    scope = config.get("environment_scope")
+    scope = scope if isinstance(scope, dict) else {}
+    environment_ids = [
+        str(item)
+        for item in scope.get("environment_ids") or []
+        if isinstance(item, str) and item
+    ]
+    private_targets = config.get("environment_targets")
+    private_targets = private_targets if isinstance(private_targets, dict) else {}
+    targets: list[dict[str, Any]] = []
+    for environment_id in environment_ids:
+        if environment_id == "local":
+            targets.append(
+                {
+                    "environment_id": "local",
+                    "display_name": "Local",
+                    "kind": "local",
+                    "host": None,
+                }
+            )
+            continue
+        private_target = private_targets.get(environment_id)
+        private_target = private_target if isinstance(private_target, dict) else {}
+        targets.append(
+            {
+                "environment_id": environment_id,
+                "display_name": str(
+                    private_target.get("display_name") or environment_id
+                ),
+                "kind": "ssh",
+                "host": (
+                    str(private_target["host"])
+                    if isinstance(private_target.get("host"), str)
+                    and private_target["host"]
+                    else None
+                ),
+            }
+        )
+    model = config.get("model")
+    return {
+        "settings_revision": int(config.get("settings_revision") or 1),
+        "model": public_model_summary(
+            model if isinstance(model, dict) else run.model_snapshot
+        ),
+        "permission_mode": str(config.get("permission_mode") or "ask_dangerous"),
+        "workspace_access": str(config.get("workspace_access") or "read_write"),
+        "environment_scope": {
+            "mode": "manual" if scope.get("mode") == "manual" else "auto",
+            "environment_ids": environment_ids,
+        },
+        "environment_targets": targets,
+    }
+
+
 def run_view(run: AgentHarnessRun) -> RunView:
     return RunView.model_validate(
         {
@@ -203,6 +273,7 @@ def run_view(run: AgentHarnessRun) -> RunView:
             "completed_at": run.completed_at,
             "termination_reason": run.termination_reason,
             "error": public_run_error(run),
+            "execution_config": public_run_execution_config(run),
             "created_at": run.created_at,
             "updated_at": run.updated_at,
         }
@@ -235,6 +306,16 @@ def _public_entry_payload(
             "original_type": original_entry_type,
             "display_text": "Unsupported conversation activity",
         }
+    if entry_type == "notice" and isinstance(payload, dict):
+        code = str(payload.get("code") or "unknown_notice")
+        return {
+            "code": code,
+            "message": public_error_message(str(payload.get("message") or "")) or "",
+            "params": _public_localization_params(
+                payload.get("details"), _PUBLIC_NOTICE_PARAM_KEYS.get(code, frozenset())
+            ),
+            "details": None,
+        }
     if entry_type != "message" or not isinstance(payload, dict):
         return payload
     return {
@@ -244,6 +325,19 @@ def _public_entry_payload(
             for part in payload.get("parts") or []
             if isinstance(part, dict)
         ],
+    }
+
+
+def _public_localization_params(
+    value: Any,
+    allowed_keys: frozenset[str],
+) -> dict[str, str | int | float | bool]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: item
+        for key in allowed_keys
+        if isinstance((item := value.get(key)), (str, int, float, bool))
     }
 
 
@@ -457,5 +551,6 @@ __all__ = [
     "public_interaction_response",
     "public_model_summary",
     "public_run_error",
+    "public_run_execution_config",
     "run_view",
 ]

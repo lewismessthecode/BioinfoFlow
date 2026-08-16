@@ -73,6 +73,44 @@ async def test_routed_tool_call_selects_runtime_and_strips_routing_argument() ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["failed", "blocked", "cancelled"])
+async def test_resolved_routed_tool_results_record_environment_for_every_terminal_status(
+    status: str,
+) -> None:
+    scope = resolve_environment_scope(
+        EnvironmentScopeRequest(mode="auto"),
+        [EnvironmentDescriptor("ssh:gpu", "ssh", "GPU")],
+    )
+
+    async def authorize(_environment_id: str) -> bool:
+        return True
+
+    async def resolve(_environment_id: str) -> str | None:
+        return "gpu-runtime"
+
+    async def execute(_runtime: str, call: ToolCall) -> ToolResult:
+        return ToolResult(
+            call_id=call.call_id,
+            tool_name=call.name,
+            status=status,  # type: ignore[arg-type]
+            replay_policy="never",
+            output={"code": "runtime_result"},
+            error="runtime result",
+        )
+
+    result = await execute_routed_tool_call(
+        WorkspaceRouter(scope=scope, authorize=authorize, resolve=resolve),
+        ToolCall("call-terminal", "bash", {"environment_id": "ssh:gpu", "command": "pwd"}),
+        execute=execute,
+    )
+
+    assert result.output == {
+        "code": "runtime_result",
+        "environment_id": "ssh:gpu",
+    }
+
+
+@pytest.mark.asyncio
 async def test_routed_tool_call_defaults_to_local_when_environment_is_omitted() -> None:
     scope = resolve_environment_scope(
         EnvironmentScopeRequest(mode="auto"),

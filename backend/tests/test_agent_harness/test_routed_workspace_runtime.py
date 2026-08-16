@@ -62,7 +62,9 @@ class _Runtime:
 def _routed_runtime() -> tuple[RoutedWorkspaceRuntime, dict[str, _Runtime], list[str]]:
     environments = (
         EnvironmentDescriptor("local", "local", "Local", status="online"),
-        EnvironmentDescriptor("ssh:gpu", "ssh", "GPU", status="online"),
+        EnvironmentDescriptor(
+            "ssh:gpu", "ssh", "GPU", status="online", host="gpu.internal"
+        ),
     )
     scope = resolve_environment_scope(
         EnvironmentScopeRequest(mode="auto"), environments
@@ -161,6 +163,7 @@ async def test_routed_runtime_attaches_execution_target_to_approval() -> None:
         "environment_id": "ssh:gpu",
         "display_name": "GPU",
         "kind": "ssh",
+        "host": "gpu.internal",
     }
 
 

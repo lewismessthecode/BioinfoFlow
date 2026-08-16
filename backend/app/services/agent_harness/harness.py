@@ -1322,6 +1322,8 @@ def _verification_recovery_request(result) -> dict[str, Any]:
             f"Bioinfoflow could not prove whether the interrupted {result.tool_name} "
             "operation changed the target. Choose how to continue."
         ),
+        "message_code": "unknown_tool_effect",
+        "message_params": {"tool_name": result.tool_name},
         "options": [
             {
                 "id": "inspect",

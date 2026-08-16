@@ -27,6 +27,7 @@ class EnvironmentDescriptor:
     display_name: str
     description: str | None = None
     status: EnvironmentStatus = "unknown"
+    host: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -455,6 +455,8 @@ class RecoveryInteractionRequest(StrictContract):
     call_id: str
     tool_name: str
     message: str
+    message_code: str | None = None
+    message_params: dict[str, JsonValue] = Field(default_factory=dict)
     options: list[InteractionOption]
 
 
@@ -501,6 +503,7 @@ class ContextUpdatePayload(StrictContract):
 class NoticePayload(StrictContract):
     code: str
     message: str
+    params: dict[str, JsonValue] = Field(default_factory=dict)
     details: dict | None = None
 
 
@@ -593,6 +596,27 @@ class ModelSummary(StrictContract):
     supports_tools: bool = False
 
 
+class RunEnvironmentScopeView(StrictContract):
+    mode: Literal["auto", "manual"]
+    environment_ids: list[str] = Field(default_factory=list)
+
+
+class RunEnvironmentTargetView(StrictContract):
+    environment_id: str
+    display_name: str
+    kind: Literal["local", "ssh"]
+    host: str | None = None
+
+
+class RunExecutionConfigView(StrictContract):
+    settings_revision: int = Field(ge=1)
+    model: ModelSummary
+    permission_mode: PermissionMode
+    workspace_access: WorkspaceAccess
+    environment_scope: RunEnvironmentScopeView
+    environment_targets: list[RunEnvironmentTargetView] = Field(default_factory=list)
+
+
 class SessionView(StrictContract):
     id: UUID
     user_id: str
@@ -624,6 +648,7 @@ class RunView(StrictContract):
     completed_at: datetime | None = None
     termination_reason: str | None = None
     error: RunErrorView | None = None
+    execution_config: RunExecutionConfigView | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -807,6 +832,9 @@ __all__ = [
     "RunStatus",
     "RunUpdatedEvent",
     "RunErrorView",
+    "RunEnvironmentScopeView",
+    "RunEnvironmentTargetView",
+    "RunExecutionConfigView",
     "RunView",
     "SessionSnapshot",
     "SessionStatus",

@@ -62,6 +62,83 @@ def test_run_projection_exposes_only_stable_public_error() -> None:
     }
 
 
+def test_run_projection_exposes_immutable_public_execution_config() -> None:
+    run = _run(
+        model_snapshot={
+            "display_name": "GPT Run Snapshot",
+            "target": {
+                "provider_kind": "openai",
+                "model_name": "gpt-run",
+                "api_key": "must-not-leak",
+            },
+            "capabilities": {"supports_reasoning": True, "private": "hidden"},
+        },
+        turn_execution_config={
+            "settings_revision": 7,
+            "model": {
+                "display_name": "GPT Run Snapshot",
+                "target": {
+                    "provider_kind": "openai",
+                    "model_name": "gpt-run",
+                    "api_key": "must-not-leak",
+                },
+                "capabilities": {"supports_reasoning": True},
+            },
+            "permission_mode": "ask_changes",
+            "workspace_access": "read_only",
+            "environment_scope": {
+                "mode": "manual",
+                "environment_ids": ["local", "ssh:gpu"],
+            },
+            "environment_targets": {
+                "ssh:gpu": {
+                    "display_name": "GPU",
+                    "host": "gpu.internal",
+                    "port": 22,
+                    "username": "runner",
+                    "credential_revision": "private-revision",
+                }
+            },
+        },
+    )
+
+    projected = run_view(run).model_dump(mode="json")["execution_config"]
+
+    assert projected == {
+        "settings_revision": 7,
+        "model": {
+            "provider": "openai",
+            "model": "gpt-run",
+            "display_name": "GPT Run Snapshot",
+            "supports_vision": False,
+            "supports_reasoning": True,
+            "supports_tools": False,
+        },
+        "permission_mode": "ask_changes",
+        "workspace_access": "read_only",
+        "environment_scope": {
+            "mode": "manual",
+            "environment_ids": ["local", "ssh:gpu"],
+        },
+        "environment_targets": [
+            {
+                "environment_id": "local",
+                "display_name": "Local",
+                "kind": "local",
+                "host": None,
+            },
+            {
+                "environment_id": "ssh:gpu",
+                "display_name": "GPU",
+                "kind": "ssh",
+                "host": "gpu.internal",
+            },
+        ],
+    }
+    assert "must-not-leak" not in str(projected)
+    assert "private-revision" not in str(projected)
+
+
 def test_entry_projection_returns_typed_public_history() -> None:
     entry = AgentHarnessEntry(
         id=UUID("30000000-0000-0000-0000-000000000001"),
@@ -83,6 +160,34 @@ def test_entry_projection_returns_typed_public_history() -> None:
     assert projected.type == "message"
     assert projected.payload.parts[0].type == "text"
     assert projected.payload.parts[0].text == "Finished"
+
+
+def test_notice_projection_exposes_stable_code_params_and_safe_fallback() -> None:
+    entry = AgentHarnessEntry(
+        id=UUID("30000000-0000-0000-0000-000000000013"),
+        session_id=SESSION_ID,
+        run_id=RUN_ID,
+        sequence=13,
+        type="notice",
+        schema_version=2,
+        payload={
+            "code": "run_timeout_exceeded",
+            "message": "Agent Run exceeded its 300-second wall-clock budget.",
+            "details": {"limit_seconds": 300, "private": {"token": "secret"}},
+        },
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    projected = entry_contract(entry).model_dump(mode="json")["payload"]
+
+    assert projected == {
+        "code": "run_timeout_exceeded",
+        "message": "Agent Run exceeded its 300-second wall-clock budget.",
+        "params": {"limit_seconds": 300},
+        "details": None,
+    }
+    assert "secret" not in str(projected)
 
 
 def test_entry_projection_upgrades_legacy_and_provider_reasoning_to_traces() -> None:
@@ -661,6 +766,53 @@ def test_pending_interaction_projection_uses_entry_revision() -> None:
     assert projected.revision == 5
     assert projected.request.type == "approval"
     assert projected.request.allowed_responses == ["reject"]
+
+
+def test_recovery_interaction_projection_exposes_localization_code_and_params() -> None:
+    projected = public_interaction_request(
+        {
+            "kind": "recovery",
+            "call_id": "bash-1",
+            "tool_name": "bash",
+            "message": "Backend-owned English fallback",
+            "message_code": "unknown_tool_effect",
+            "message_params": {"tool_name": "bash"},
+            "options": [
+                {"id": "inspect", "label": "Inspect state"},
+                {"id": "retry", "label": "Retry operation"},
+                {"id": "cancel", "label": "Cancel run"},
+            ],
+        }
+    )
+
+    assert projected == {
+        "type": "recovery",
+        "call_id": "bash-1",
+        "tool_name": "bash",
+        "message": "Backend-owned English fallback",
+        "message_code": "unknown_tool_effect",
+        "message_params": {"tool_name": "bash"},
+        "options": [
+            {
+                "id": "inspect",
+                "label": "Inspect state",
+                "description": "",
+                "recommended": False,
+            },
+            {
+                "id": "retry",
+                "label": "Retry operation",
+                "description": "",
+                "recommended": False,
+            },
+            {
+                "id": "cancel",
+                "label": "Cancel run",
+                "description": "",
+                "recommended": False,
+            },
+        ],
+    }
 
 
 def test_model_projection_exposes_only_rendering_capabilities() -> None:
