@@ -36,6 +36,45 @@ test.describe("Agent workbench live run journey", () => {
       const starterList = document.querySelector<HTMLElement>(
         '[data-testid="agent-starter-prompt-list"]',
       )
+      const commandHint = document.querySelector<HTMLElement>(
+        '[data-testid="agent-command-discovery-hint"]',
+      )
+      const surfaceStyle = getComputedStyle(surface)
+      const workbenchStyle = getComputedStyle(workbench)
+      const selectorMetrics = Array.from(
+        composer.querySelectorAll<HTMLElement>(
+          '[data-composer-selector-trigger="true"]',
+        ),
+      ).map((selector) => {
+        const selectorBox = selector.getBoundingClientRect()
+        const icon = selector.querySelector<HTMLElement>(
+          '[data-composer-selector-slot="icon"]',
+        )
+        const text = selector.querySelector<HTMLElement>(
+          '[data-composer-selector-slot="text"]',
+        )
+        const chevron = selector.querySelector<HTMLElement>(
+          '[data-composer-selector-slot="chevron"]',
+        )
+        const textBox = text?.getBoundingClientRect()
+        const style = getComputedStyle(selector)
+        return {
+          height: selectorBox.height,
+          fontSize: style.fontSize,
+          lineHeight: style.lineHeight,
+          textTop: textBox ? textBox.top - selectorBox.top : null,
+          iconSize: icon
+            ? [icon.getBoundingClientRect().width, icon.getBoundingClientRect().height]
+            : null,
+          textHeight: textBox?.height ?? null,
+          chevronSize: chevron
+            ? [
+                chevron.getBoundingClientRect().width,
+                chevron.getBoundingClientRect().height,
+              ]
+            : null,
+        }
+      })
       return {
         centerDelta: Math.abs(
           workbenchBox.left + workbenchBox.width / 2 -
@@ -43,32 +82,59 @@ test.describe("Agent workbench live run journey", () => {
         ),
         composerWidth: composerBox.width,
         composerHeight: surface.getBoundingClientRect().height,
-        selectorHeights: Array.from(
-          composer.querySelectorAll<HTMLElement>(
-            '[data-composer-selector-trigger="true"]',
-          ),
-        ).map((selector) => selector.getBoundingClientRect().height),
+        selectorMetrics,
         starterBorderTop: starterList
           ? getComputedStyle(starterList).borderTopWidth
           : null,
         starterBorderBottom: starterList
           ? getComputedStyle(starterList).borderBottomWidth
           : null,
-        surfaceBackground: getComputedStyle(surface).backgroundColor,
+        surfaceBackground: surfaceStyle.backgroundColor,
+        canvasBackground: workbenchStyle.backgroundColor,
+        surfaceBorderWidth: surfaceStyle.borderTopWidth,
         textareaBackground: getComputedStyle(textarea).backgroundColor,
+        hintBottomInset: commandHint
+          ? window.innerHeight - commandHint.getBoundingClientRect().bottom
+          : null,
       }
     })
     expect(desktopGeometry).not.toBeNull()
     expect(desktopGeometry?.centerDelta).toBeLessThan(2)
     expect(desktopGeometry?.composerWidth).toBeLessThanOrEqual(672)
     expect(desktopGeometry?.composerHeight).toBeGreaterThanOrEqual(160)
-    expect(desktopGeometry?.selectorHeights).toHaveLength(3)
-    expect(new Set(desktopGeometry?.selectorHeights).size).toBe(1)
-    expect(desktopGeometry?.selectorHeights[0]).toBe(32)
+    expect(desktopGeometry?.selectorMetrics).toHaveLength(3)
+    expect(
+      new Set(desktopGeometry?.selectorMetrics.map(({ height }) => height)).size,
+    ).toBe(1)
+    expect(desktopGeometry?.selectorMetrics[0]?.height).toBe(32)
+    expect(
+      new Set(desktopGeometry?.selectorMetrics.map(({ fontSize }) => fontSize)).size,
+    ).toBe(1)
+    expect(
+      new Set(desktopGeometry?.selectorMetrics.map(({ lineHeight }) => lineHeight))
+        .size,
+    ).toBe(1)
+    expect(
+      new Set(desktopGeometry?.selectorMetrics.map(({ textTop }) => textTop)).size,
+    ).toBe(1)
+    for (const metrics of desktopGeometry?.selectorMetrics ?? []) {
+      expect(metrics.iconSize).toEqual([16, 16])
+      expect(metrics.textHeight).toBe(16)
+      if (metrics.chevronSize) expect(metrics.chevronSize).toEqual([16, 16])
+    }
+    expect(
+      desktopGeometry?.selectorMetrics.filter(({ chevronSize }) => chevronSize)
+        .length,
+    ).toBeGreaterThanOrEqual(2)
     expect(desktopGeometry?.starterBorderTop).toBe("0px")
     expect(desktopGeometry?.starterBorderBottom).toBe("0px")
     expect(desktopGeometry?.surfaceBackground).not.toBe("rgb(0, 0, 0)")
+    expect(desktopGeometry?.surfaceBackground).not.toBe(
+      desktopGeometry?.canvasBackground,
+    )
+    expect(desktopGeometry?.surfaceBorderWidth).toBe("1px")
     expect(desktopGeometry?.textareaBackground).toBe("rgba(0, 0, 0, 0)")
+    expect(desktopGeometry?.hintBottomInset).toBeGreaterThanOrEqual(40)
     await expect(
       page.getByRole("heading", {
         name: "What would you like to work on?",
@@ -185,6 +251,11 @@ test.describe("Agent workbench live run journey", () => {
         right: box.right,
         viewportWidth: window.innerWidth,
         documentWidth: document.documentElement.scrollWidth,
+        selectorHeights: Array.from(
+          composer.querySelectorAll<HTMLElement>(
+            '[data-composer-selector-trigger="true"]',
+          ),
+        ).map((selector) => selector.getBoundingClientRect().height),
       }
     })
     expect(mobileGeometry).not.toBeNull()
@@ -195,6 +266,9 @@ test.describe("Agent workbench live run journey", () => {
     expect(mobileGeometry?.documentWidth).toBeLessThanOrEqual(
       mobileGeometry?.viewportWidth ?? 0,
     )
+    expect(mobileGeometry?.selectorHeights).toHaveLength(3)
+    expect(new Set(mobileGeometry?.selectorHeights).size).toBe(1)
+    expect(mobileGeometry?.selectorHeights[0]).toBeGreaterThanOrEqual(44)
   })
 
   test("opens inline model setup and preserves the draft when no model is available", async ({
@@ -259,6 +333,7 @@ test.describe("Agent workbench live run journey", () => {
         exact: true,
       }),
     ).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId("agent-header-model")).toHaveCount(0)
     await expect(
       agent.transcript.getByText("Thinking", { exact: true }),
     ).toBeVisible()
@@ -348,11 +423,11 @@ test.describe("Agent workbench live run journey", () => {
       }),
     ).toBeVisible({ timeout: 20_000 })
     await expect(agent.activityGroups).toHaveCount(1)
-    await expect(
-      agent.activityGroups.getByRole("button", {
-        name: "2 tools running in parallel",
-      }),
-    ).toBeVisible()
+    const disclosure = agent.activityGroups.getByRole("button", {
+      name: "2 tools running in parallel",
+    })
+    await expect(disclosure).toBeVisible()
+    expect(await disclosure.evaluate((button) => button.getBoundingClientRect().height)).toBe(36)
   })
 
   test("labels an ordered tool batch as sequential activity", async ({
