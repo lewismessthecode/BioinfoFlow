@@ -370,7 +370,9 @@ def test_complete_harness_migration_is_intentionally_irreversible(
         revision = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchone()
-    assert tuple(revision) == (get_alembic_head_revision(),)
+    # Reversible migrations newer than the one-way harness cutover may already
+    # have downgraded before Alembic reaches the intentional 0059 refusal.
+    assert tuple(revision) == ("0060_agent_harness_public_revisions",)
 
 
 def test_complete_harness_migration_merges_interleaved_legacy_timeline(

@@ -97,12 +97,12 @@ class ChatCompletionsCodec:
 
         choice = _first_choice(response)
         message = _get(choice, "message") or {}
-        reasoning = _extract_content(
-            message,
-            ("reasoning_content", "reasoning", "reasoning_text", "thinking", "thinking_content"),
-        )
-        if reasoning:
-            yield ReasoningDelta(text=reasoning)
+        for source, reasoning in _reasoning_parts(message):
+            yield ReasoningDelta(
+                text=reasoning,
+                source=source,
+                truncated=bool(_get(message, "reasoning_truncated")),
+            )
         text = _extract_content(message, ("content", "text", "content_text"))
         if text:
             yield TextDelta(text=text, phase="final_answer")
@@ -121,7 +121,15 @@ class ChatCompletionsCodec:
         request: dict[str, Any],
         event: ModelEvent,
     ) -> ModelEvent:
-        del invocation, request
+        del request
+        if isinstance(event, ReasoningDelta):
+            return ReasoningDelta(
+                text=event.text,
+                provider=invocation.target.provider_kind,
+                model=invocation.target.model_name,
+                source=event.source,
+                truncated=event.truncated,
+            )
         return event
 
     async def _decode_stream(self, response: Any) -> AsyncIterator[ModelEvent]:
@@ -135,18 +143,12 @@ class ChatCompletionsCodec:
                 chunk_finish_reason = _string_or_none(_get(choice, "finish_reason"))
                 finish_reason = chunk_finish_reason or finish_reason
                 delta = _get(choice, "delta") or {}
-                reasoning = _extract_content(
-                    delta,
-                    (
-                        "reasoning_content",
-                        "reasoning",
-                        "reasoning_text",
-                        "thinking",
-                        "thinking_content",
-                    ),
-                )
-                if reasoning:
-                    yield ReasoningDelta(text=reasoning)
+                for source, reasoning in _reasoning_parts(delta):
+                    yield ReasoningDelta(
+                        text=reasoning,
+                        source=source,
+                        truncated=bool(_get(delta, "reasoning_truncated")),
+                    )
                 text = _extract_content(delta, ("content", "text", "content_text"))
                 if text:
                     yield TextDelta(text=text, phase="final_answer")
@@ -295,9 +297,35 @@ def _extract_content(source: Any, keys: tuple[str, ...]) -> str:
     return ""
 
 
+def _reasoning_parts(source: Any) -> list[tuple[str, str]]:
+    parts: list[tuple[str, str]] = []
+    for key in (
+        "reasoning_content",
+        "reasoning",
+        "reasoning_text",
+        "thinking",
+        "thinking_content",
+    ):
+        text = _normalize_text(_get(source, key))
+        if text:
+            parts.append((key, text))
+    return parts
+
+
 def _normalize_text(value: Any) -> str:
     if isinstance(value, str):
         return value
+    if (
+        isinstance(value, Mapping)
+        or hasattr(value, "text")
+        or hasattr(value, "content")
+    ):
+        text = _get(value, "text")
+        if isinstance(text, str):
+            return text
+        content = _get(value, "content")
+        if content is not value:
+            return _normalize_text(content)
     if isinstance(value, list):
         parts: list[str] = []
         for item in value:

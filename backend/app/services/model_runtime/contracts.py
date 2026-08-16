@@ -353,6 +353,10 @@ class TextDelta:
 @dataclass(frozen=True)
 class ReasoningDelta:
     text: str
+    provider: str = "unknown"
+    model: str = "unknown"
+    source: str = "unknown"
+    truncated: bool = False
     kind: Literal["reasoning_delta"] = field(default="reasoning_delta", init=False)
 
 

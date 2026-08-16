@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -50,6 +51,7 @@ from app.services.agent_harness.tool_projection import (
 )
 from app.services.agent_harness.tools import ToolCall, ToolResult
 from app.services.agent_harness.tools.specs import ToolSpec
+from app.services.agent_harness.turn_settings import effective_turn_session
 from app.services.agent_harness.workspace_runtime import WorkspaceRuntime
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
@@ -125,6 +127,7 @@ class AgentLoop:
         session = await self.repository.get_session(str(run.session_id))
         if session is None:
             raise LookupError(f"agent session not found: {run.session_id}")
+        session = effective_turn_session(session, run)
         workspace = self.workspace_factory(session, run_id)
         await self._update(run_id, status="running", phase="model")
         try:
@@ -256,13 +259,13 @@ class AgentLoop:
                 assistant_entry_id = str(uuid4())
                 group_id = assistant_entry_id
                 assistant = None
-                if response.text or response.reasoning or response.tool_calls:
+                if response.text or response.reasoning_traces or response.tool_calls:
                     assistant = await self._append_message(
                         str(session.id),
                         run_id,
                         role="assistant",
                         content=response.text,
-                        reasoning_summary=response.reasoning,
+                        reasoning_traces=response.reasoning_traces,
                         entry_id=assistant_entry_id,
                         tool_calls=[
                             _public_tool_call_dict(
@@ -561,6 +564,7 @@ class AgentLoop:
         session = await self.repository.get_session(str(run.session_id))
         if session is None:
             raise LookupError(f"agent session not found: {run.session_id}")
+        session = effective_turn_session(session, run)
         checkpoint = run.checkpoint or {}
         expected_interaction_id = checkpoint_interaction_id(checkpoint)
         if response.get("request_id") != expected_interaction_id:
@@ -606,12 +610,13 @@ class AgentLoop:
         response_entry = None
         execution_response = response
         if response.get("approved") is True and replay_policy == "never":
-            if not workspace.approval_assessment_matches(
+            assessment_matches = workspace.approval_assessment_matches(
                 call,
                 persisted_interaction
                 if isinstance(persisted_interaction, dict)
                 else None,
-            ):
+            )
+            if not await _await_if_needed(assessment_matches):
                 raise ValueError("Bash approval assessment changed before execution")
             approved_risk = persisted_interaction.get("risk")
             assert isinstance(approved_risk, dict)
@@ -841,11 +846,11 @@ class AgentLoop:
         if choice == "retry":
             workspace = self.workspace_factory(session, str(run.id))
             replay_policy = _replay_policy(workspace, call.name)
-            retry_fingerprint = (
-                workspace.approval_assessment_fingerprint(call)
-                if call.name == "bash"
-                else None
-            )
+            retry_fingerprint = None
+            if call.name == "bash":
+                retry_fingerprint = await _await_if_needed(
+                    workspace.approval_assessment_fingerprint(call)
+                )
             (
                 response_entry,
                 durable_run,
@@ -1163,7 +1168,7 @@ class AgentLoop:
                             draft=_assistant_draft_payload(
                                 run_id,
                                 text=response.text,
-                                reasoning=response.reasoning,
+                                reasoning_traces=response.reasoning_traces,
                             ),
                         )
                         await self.publish(
@@ -1179,26 +1184,32 @@ class AgentLoop:
                         )
                     elif isinstance(event, ReasoningDelta):
                         semantic = True
-                        start_offset = len(response.reasoning)
-                        response.reasoning += event.text
-                        end_offset = len(response.reasoning)
+                        segment_index, start_offset, end_offset = (
+                            response.add_reasoning(event)
+                        )
+                        segment = response.reasoning_traces[segment_index]
                         await self.repository.update_run(
                             run_id,
                             draft=_assistant_draft_payload(
                                 run_id,
                                 text=response.text,
-                                reasoning=response.reasoning,
+                                reasoning_traces=response.reasoning_traces,
                             ),
                         )
                         await self.publish(
                             AssistantDeltaEvent(
                                 run_id=run_id,
                                 draft_id=f"draft:{run_id}",
-                                part_id=f"draft:{run_id}:reasoning",
-                                part_type="reasoning_summary",
+                                part_id=f"draft:{run_id}:reasoning:{segment_index}",
+                                part_type="reasoning_trace",
                                 delta=event.text,
                                 start_offset=start_offset,
                                 end_offset=end_offset,
+                                provider=segment.provider,
+                                model=segment.model,
+                                source=segment.source,
+                                truncated=segment.truncated,
+                                started_at=segment.started_at,
                             )
                         )
                     elif isinstance(event, ToolCallDelta):
@@ -1228,7 +1239,7 @@ class AgentLoop:
                     draft=_assistant_draft_payload(
                         run_id,
                         text=response.text,
-                        reasoning=response.reasoning,
+                        reasoning_traces=response.reasoning_traces,
                     ),
                 )
                 return response
@@ -1287,7 +1298,7 @@ class AgentLoop:
         tool_name: str | None = None,
         is_error: bool = False,
         tool_status: str | None = None,
-        reasoning_summary: str | None = None,
+        reasoning_traces: list[_ReasoningTraceSegment] | None = None,
         entry_id: str | None = None,
         tool_calls: list[dict[str, Any]] | None = None,
     ):
@@ -1314,14 +1325,15 @@ class AgentLoop:
                 }
             )
         else:
-            if reasoning_summary:
-                parts.append(
-                    {
-                        "id": f"message:{message_id}:reasoning",
-                        "type": "reasoning_summary",
-                        "text": reasoning_summary,
-                    }
+            completed_at = datetime.now(timezone.utc)
+            parts.extend(
+                trace.public_part(
+                    part_id=f"message:{message_id}:reasoning:{index}",
+                    completed_at=completed_at,
                 )
+                for index, trace in enumerate(reasoning_traces or [])
+                if trace.text
+            )
             if content:
                 parts.append(
                     {
@@ -1523,9 +1535,41 @@ async def _model_events_with_timeout(
 
 
 @dataclass
+class _ReasoningTraceSegment:
+    provider: str
+    model: str
+    source: str
+    truncated: bool = False
+    text: str = ""
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def identity(self) -> tuple[str, str, str, bool]:
+        return (self.provider, self.model, self.source, self.truncated)
+
+    def public_part(
+        self,
+        *,
+        part_id: str,
+        completed_at: datetime | None,
+    ) -> dict[str, Any]:
+        return {
+            "id": part_id,
+            "type": "reasoning_trace",
+            "text": self.text,
+            "provider": self.provider,
+            "model": self.model,
+            "source": self.source,
+            "truncated": self.truncated,
+            "started_at": self.started_at.isoformat(),
+            "completed_at": completed_at.isoformat() if completed_at else None,
+        }
+
+
+@dataclass
 class _ModelResponse:
     text: str = ""
-    reasoning: str = ""
+    reasoning_traces: list[_ReasoningTraceSegment] = None  # type: ignore[assignment]
     tool_deltas: list[ToolCallDelta] = None  # type: ignore[assignment]
     tool_calls: tuple[ToolCall, ...] = ()
     usage: dict[str, int] | None = None
@@ -1533,8 +1577,31 @@ class _ModelResponse:
     cancelled: bool = False
 
     def __post_init__(self) -> None:
+        if self.reasoning_traces is None:
+            self.reasoning_traces = []
         if self.tool_deltas is None:
             self.tool_deltas = []
+
+    def add_reasoning(self, event: ReasoningDelta) -> tuple[int, int, int]:
+        identity = (
+            event.provider,
+            event.model,
+            event.source,
+            event.truncated,
+        )
+        if self.reasoning_traces and self.reasoning_traces[-1].identity == identity:
+            segment = self.reasoning_traces[-1]
+        else:
+            segment = _ReasoningTraceSegment(
+                provider=event.provider,
+                model=event.model,
+                source=event.source,
+                truncated=event.truncated,
+            )
+            self.reasoning_traces.append(segment)
+        start_offset = len(segment.text)
+        segment.text += event.text
+        return len(self.reasoning_traces) - 1, start_offset, len(segment.text)
 
 
 def _advance_response_continuation(
@@ -1824,23 +1891,30 @@ def _runtime_tool_call(item: dict[str, Any]) -> ToolCall:
     )
 
 
+async def _await_if_needed(value: Any) -> Any:
+    return await value if inspect.isawaitable(value) else value
+
+
 def _assistant_draft_payload(
     run_id: str,
     *,
     text: str,
-    reasoning: str,
+    reasoning_traces: list[_ReasoningTraceSegment] | None = None,
 ) -> dict[str, Any]:
     draft_id = f"draft:{run_id}"
     return {
         "id": draft_id,
         "run_id": run_id,
         "parts": [
-            {
-                "id": f"{draft_id}:reasoning",
-                "type": "reasoning_summary",
-                "text": reasoning,
-                "end_offset": len(reasoning),
-            },
+            *(
+                trace.public_part(
+                    part_id=f"{draft_id}:reasoning:{index}",
+                    completed_at=None,
+                )
+                | {"end_offset": len(trace.text)}
+                for index, trace in enumerate(reasoning_traces or [])
+                if trace.text
+            ),
             {
                 "id": f"{draft_id}:text",
                 "type": "text",

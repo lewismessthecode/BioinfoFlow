@@ -310,7 +310,9 @@ async def test_parallel_tool_calls_share_one_assistant_message_and_round_trip() 
 
 
 @pytest.mark.asyncio
-async def test_decode_non_stream_response_emits_text_tools_usage_and_completion() -> None:
+async def test_decode_non_stream_response_emits_text_tools_usage_and_completion() -> (
+    None
+):
     response = SimpleNamespace(
         id="chatcmpl-1",
         model="gpt-test",
@@ -342,7 +344,7 @@ async def test_decode_non_stream_response_emits_text_tools_usage_and_completion(
     events = [event async for event in ChatCompletionsCodec().decode_response(response)]
 
     assert events == [
-        ReasoningDelta(text="Checking inputs."),
+        ReasoningDelta(text="Checking inputs.", source="reasoning_content"),
         TextDelta(text="I will run it.", phase="final_answer"),
         ToolCallDelta(
             index=0,
@@ -356,6 +358,60 @@ async def test_decode_non_stream_response_emits_text_tools_usage_and_completion(
             finish_reason="tool_calls",
         ),
     ]
+
+
+@pytest.mark.asyncio
+async def test_decode_preserves_each_textual_reasoning_field_without_opaque_state() -> (
+    None
+):
+    response = {
+        "id": "chatcmpl-reasoning",
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "message": {
+                    "reasoning_content": "First trace.",
+                    "reasoning": {
+                        "content": [{"text": "Structured trace."}],
+                        "signature": "nested-private-signature",
+                    },
+                    "thinking": [
+                        {"text": "Second "},
+                        {"content": "trace."},
+                    ],
+                    "encrypted_content": "opaque-private-state",
+                    "signature": "private-signature",
+                },
+            }
+        ],
+    }
+
+    events = [event async for event in ChatCompletionsCodec().decode_response(response)]
+
+    assert events[:3] == [
+        ReasoningDelta(text="First trace.", source="reasoning_content"),
+        ReasoningDelta(text="Structured trace.", source="reasoning"),
+        ReasoningDelta(text="Second trace.", source="thinking"),
+    ]
+    assert "opaque-private-state" not in repr(events)
+    assert "private-signature" not in repr(events)
+    assert "nested-private-signature" not in repr(events)
+
+
+def test_finalize_reasoning_adds_effective_provider_and_model_metadata() -> None:
+    event = ChatCompletionsCodec().finalize_event(
+        _invocation(),
+        {},
+        ReasoningDelta(text="Trace", source="reasoning_content", truncated=True),
+    )
+
+    assert event == ReasoningDelta(
+        text="Trace",
+        provider="openai",
+        model="gpt-test",
+        source="reasoning_content",
+        truncated=True,
+    )
 
 
 @pytest.mark.asyncio
@@ -411,13 +467,16 @@ async def test_decode_usage_from_model_dump_only_object() -> None:
 
     events = [event async for event in ChatCompletionsCodec().decode_response(response)]
 
-    assert UsageReport(
-        input_tokens=17,
-        output_tokens=9,
-        total_tokens=26,
-        cached_input_tokens=5,
-        reasoning_tokens=3,
-    ) in events
+    assert (
+        UsageReport(
+            input_tokens=17,
+            output_tokens=9,
+            total_tokens=26,
+            cached_input_tokens=5,
+            reasoning_tokens=3,
+        )
+        in events
+    )
 
 
 @pytest.mark.asyncio
@@ -434,13 +493,16 @@ async def test_decode_usage_preserves_missing_optional_token_details() -> None:
 
     events = [event async for event in ChatCompletionsCodec().decode_response(response)]
 
-    assert UsageReport(
-        input_tokens=17,
-        output_tokens=9,
-        total_tokens=26,
-        cached_input_tokens=None,
-        reasoning_tokens=None,
-    ) in events
+    assert (
+        UsageReport(
+            input_tokens=17,
+            output_tokens=9,
+            total_tokens=26,
+            cached_input_tokens=None,
+            reasoning_tokens=None,
+        )
+        in events
+    )
 
 
 @pytest.mark.asyncio
@@ -494,7 +556,7 @@ async def test_decode_stream_response_emits_deltas_and_final_usage() -> None:
     events = [event async for event in ChatCompletionsCodec().decode_response(response)]
 
     assert events == [
-        ReasoningDelta(text="Think "),
+        ReasoningDelta(text="Think ", source="reasoning_content"),
         TextDelta(text="Run ", phase="final_answer"),
         ToolCallDelta(
             index=0,

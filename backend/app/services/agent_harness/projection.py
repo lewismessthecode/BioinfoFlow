@@ -30,6 +30,18 @@ _PUBLIC_RUN_ERROR_MESSAGES = {
     "token_budget_exceeded": "The Agent run reached its token limit.",
 }
 _history_entry_adapter = TypeAdapter(HistoryEntry)
+_PUBLIC_ENTRY_TYPES = frozenset(
+    {"message", "interaction_request", "interaction_response", "notice", "plan"}
+)
+_REASONING_TEXT_FIELDS = {
+    "reasoning_summary": "text",
+    "reasoning_trace": "text",
+    "reasoning_content": "reasoning_content",
+    "reasoning_text": "reasoning_text",
+    "reasoning": "reasoning",
+    "thinking": "thinking",
+    "thinking_content": "thinking_content",
+}
 
 
 def _public_interaction_options(values: Any) -> list[dict[str, Any]]:
@@ -187,21 +199,31 @@ def run_view(run: AgentHarnessRun) -> RunView:
 
 
 def entry_contract(entry: AgentHarnessEntry) -> HistoryEntry:
+    entry_type = entry.type if entry.type in _PUBLIC_ENTRY_TYPES else "unknown"
     return _history_entry_adapter.validate_python(
         {
             "id": entry.id,
             "session_id": entry.session_id,
             "run_id": entry.run_id,
             "sequence": entry.sequence,
-            "type": entry.type,
+            "type": entry_type,
             "schema_version": entry.schema_version,
-            "payload": _public_entry_payload(entry.type, entry.payload),
+            "payload": _public_entry_payload(entry_type, entry.payload, entry.type),
             "created_at": entry.created_at,
         }
     )
 
 
-def _public_entry_payload(entry_type: str, payload: Any) -> Any:
+def _public_entry_payload(
+    entry_type: str,
+    payload: Any,
+    original_entry_type: str,
+) -> Any:
+    if entry_type == "unknown":
+        return {
+            "original_type": original_entry_type,
+            "display_text": "Unsupported conversation activity",
+        }
     if entry_type != "message" or not isinstance(payload, dict):
         return payload
     return {
@@ -216,6 +238,9 @@ def _public_entry_payload(entry_type: str, payload: Any) -> Any:
 
 def _public_message_part(part: dict[str, Any]) -> dict[str, Any]:
     part_type = part.get("type")
+    reasoning = _public_reasoning_trace(part)
+    if reasoning is not None:
+        return reasoning
     if part_type == "tool_call":
         name = str(part.get("name") or "unknown")
         display_name = str(part.get("display_name") or name)
@@ -283,7 +308,46 @@ def _public_message_part(part: dict[str, Any]) -> dict[str, Any]:
             "error": error,
             "public_details": [detail.model_dump(mode="json") for detail in details],
         }
-    return part
+    if part_type in {
+        "text",
+        "attachment_ref",
+        "file_ref",
+        "directory_ref",
+        "workflow_ref",
+        "run_ref",
+        "artifact_ref",
+    }:
+        return part
+    return {
+        "id": str(part.get("id") or f"unknown:{part_type or 'part'}"),
+        "type": "unknown",
+        "original_type": str(part_type or "unknown"),
+        "display_text": "Unsupported conversation content",
+    }
+
+
+def _public_reasoning_trace(part: dict[str, Any]) -> dict[str, Any] | None:
+    part_type = str(part.get("type") or "")
+    field = _REASONING_TEXT_FIELDS.get(part_type)
+    if field is None:
+        return None
+    text = part.get(field)
+    if not isinstance(text, str) and field != "text":
+        text = part.get("text")
+    if not isinstance(text, str):
+        return None
+    source = part.get("source") if part_type == "reasoning_trace" else part_type
+    return {
+        "id": str(part.get("id") or f"reasoning:{part_type}"),
+        "type": "reasoning_trace",
+        "text": text,
+        "provider": str(part.get("provider") or "unknown"),
+        "model": str(part.get("model") or "unknown"),
+        "source": str(source or part_type),
+        "truncated": bool(part.get("truncated", False)),
+        "started_at": part.get("started_at"),
+        "completed_at": part.get("completed_at"),
+    }
 
 
 def _public_tool_output(output: Any) -> dict[str, Any] | None:

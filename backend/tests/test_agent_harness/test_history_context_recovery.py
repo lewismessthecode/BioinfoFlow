@@ -197,6 +197,147 @@ def test_context_accepts_public_history_entry_contracts() -> None:
     assert context.input_items == (TextPart("hello"),)
 
 
+def test_context_ignores_public_reasoning_trace_but_preserves_final_answer() -> None:
+    context = ContextBuilder().build(
+        prompt_snapshot="Stable",
+        entries=[
+            _entry(
+                1,
+                "message",
+                {
+                    "role": "assistant",
+                    "parts": [
+                        {
+                            "id": "reasoning-1",
+                            "type": "reasoning_trace",
+                            "text": "Provider-returned trace",
+                            "provider": "openai",
+                            "model": "gpt-5.6",
+                            "source": "reasoning_content",
+                            "truncated": False,
+                        },
+                        {"id": "text-1", "type": "text", "text": "Final answer"},
+                    ],
+                },
+            )
+        ],
+    )
+
+    assert context.input_items == (TextPart("Final answer", phase="final_answer"),)
+
+
+def test_tool_content_history_accepts_reasoning_trace_and_legacy_summary() -> None:
+    entries = [
+        _entry(
+            1,
+            "message",
+            _tool_call_message(
+                {
+                    "call_id": "inspect-1",
+                    "name": "inspect",
+                    "arguments": {},
+                }
+            ),
+        ),
+        _entry(
+            2,
+            "message",
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "id": "result-1",
+                        "type": "tool_result",
+                        "call_id": "inspect-1",
+                        "status": "completed",
+                        "output": {
+                            "type": "content_parts",
+                            "parts": [
+                                {
+                                    "id": "trace-1",
+                                    "type": "reasoning_trace",
+                                    "text": "New trace",
+                                    "provider": "openai",
+                                    "model": "gpt-5.6",
+                                    "source": "reasoning_content",
+                                    "truncated": False,
+                                },
+                                {
+                                    "id": "summary-1",
+                                    "type": "reasoning_summary",
+                                    "text": "Legacy summary",
+                                },
+                            ],
+                        },
+                    }
+                ],
+            },
+        ),
+    ]
+
+    context = ContextBuilder().build(prompt_snapshot="Stable", entries=entries)
+
+    assert context.input_items[-1] == ToolResultPart(
+        call_id="inspect-1",
+        output="New trace\nLegacy summary",
+    )
+
+
+def test_compaction_accepts_reasoning_trace_tool_content() -> None:
+    entries = [
+        _entry(1, "message", _text_message("user", "Inspect")),
+        _entry(
+            2,
+            "message",
+            _tool_call_message(
+                {
+                    "call_id": "inspect-1",
+                    "name": "inspect",
+                    "arguments": {},
+                }
+            ),
+        ),
+        _entry(
+            3,
+            "message",
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "id": "result-1",
+                        "type": "tool_result",
+                        "call_id": "inspect-1",
+                        "status": "completed",
+                        "output": {
+                            "type": "content_parts",
+                            "parts": [
+                                {
+                                    "id": "trace-1",
+                                    "type": "reasoning_trace",
+                                    "text": "Visible provider trace",
+                                    "provider": "openai",
+                                    "model": "gpt-5.6",
+                                    "source": "reasoning_content",
+                                    "truncated": False,
+                                }
+                            ],
+                        },
+                    }
+                ],
+            },
+        ),
+        _entry(4, "message", _text_message("user", "Continue")),
+    ]
+
+    plan = DeterministicCompactor(preserve_recent_entries=1).plan(
+        entries,
+        threshold_chars=1,
+    )
+
+    assert plan is not None
+    assert "Visible provider trace" in plan.payload["summary"]
+
+
 def test_latest_compaction_replaces_only_covered_history_in_model_context() -> None:
     entries = [
         _entry(1, "message", _text_message("user", "Old request")),
@@ -266,12 +407,12 @@ def test_compaction_plan_is_deterministic_and_keeps_recent_history() -> None:
         "summary": (
             "## Goal and user requests\n"
             "- Update sample.py\n\n"
-                "## Work completed and observations\n"
-                "- assistant: I will inspect sample.py first.\n"
-                "- tool: def old(): pass\n\n"
-                "## User decisions and interactions\n"
-                '- {"answers": {"instruction": "Keep backwards compatibility"}, '
-                '"type": "ask_user"}'
+            "## Work completed and observations\n"
+            "- assistant: I will inspect sample.py first.\n"
+            "- tool: def old(): pass\n\n"
+            "## User decisions and interactions\n"
+            '- {"answers": {"instruction": "Keep backwards compatibility"}, '
+            '"type": "ask_user"}'
         ),
         "through_sequence": 4,
     }

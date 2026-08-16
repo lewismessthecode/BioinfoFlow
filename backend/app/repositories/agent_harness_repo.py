@@ -15,6 +15,7 @@ from app.models.agent_harness import (
     AgentHarnessSession,
 )
 from app.repositories.base import BaseRepository
+from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.services.agent_harness.contracts import (
     ENTRY_PAYLOAD_TYPES,
     ActiveRunView,
@@ -35,6 +36,11 @@ from app.services.agent_harness.projection import (
     public_model_summary,
     run_view,
 )
+from app.services.agent_harness.environment_catalog import EnvironmentCatalog
+from app.services.agent_harness.environment_scope import (
+    EnvironmentScopeRequest,
+    resolve_environment_scope,
+)
 from app.services.agent_harness.tool_projection import (
     public_error_message,
     public_result_details,
@@ -46,6 +52,39 @@ from app.services.agent_harness.tool_projection import (
 ACTIVE_RUN_STATUSES = ("queued", "running", "waiting_user")
 TERMINAL_RUN_STATUSES = ("completed", "failed", "cancelled")
 _SESSION_SETTING_UNSET = object()
+
+
+async def _turn_execution_config(
+    db: AsyncSession,
+    session: AgentHarnessSession,
+    *,
+    model_snapshot: dict | None = None,
+) -> dict[str, Any]:
+    requested_scope = session.environment_scope or {"mode": "auto"}
+    authorized = await EnvironmentCatalog(
+        RemoteConnectionRepository(db)
+    ).list_authorized(workspace_id=str(session.workspace_id))
+    resolved_scope = resolve_environment_scope(
+        EnvironmentScopeRequest(
+            mode=("manual" if requested_scope.get("mode") == "manual" else "auto"),
+            selected_environment_ids=tuple(
+                str(item)
+                for item in (requested_scope.get("environment_ids") or ())
+                if isinstance(item, str) and item
+            ),
+        ),
+        authorized,
+    )
+    return {
+        "settings_revision": int(session.settings_revision or 1),
+        "model": model_snapshot or session.model_snapshot,
+        "permission_mode": session.permission_mode,
+        "workspace_access": session.workspace_access,
+        "environment_scope": {
+            "mode": resolved_scope.mode,
+            "environment_ids": list(resolved_scope.environment_ids),
+        },
+    }
 
 
 @dataclass(frozen=True)
@@ -422,6 +461,7 @@ class AgentHarnessRepository:
             workspace_snapshot=request.workspace,
             permission_mode=request.permission_mode,
             workspace_access=request.workspace_access,
+            environment_scope=request.environment_scope.model_dump(exclude_none=True),
             prompt_snapshot=request.prompt_snapshot,
             session_metadata=request.metadata,
             history_revision=0,
@@ -463,26 +503,37 @@ class AgentHarnessRepository:
         session_id: str,
         *,
         title: str | None | object = _SESSION_SETTING_UNSET,
+        model_snapshot: dict | None | object = _SESSION_SETTING_UNSET,
         permission_mode: str | object = _SESSION_SETTING_UNSET,
         workspace_access: str | object = _SESSION_SETTING_UNSET,
+        environment_scope: dict | object = _SESSION_SETTING_UNSET,
         status: str | object = _SESSION_SETTING_UNSET,
     ) -> AgentHarnessSession:
         values: dict[str, object] = {}
         if title is not _SESSION_SETTING_UNSET:
             values["title"] = title
+        if model_snapshot is not _SESSION_SETTING_UNSET:
+            values["model_snapshot"] = model_snapshot
         if permission_mode is not _SESSION_SETTING_UNSET:
             values["permission_mode"] = permission_mode
         if workspace_access is not _SESSION_SETTING_UNSET:
             values["workspace_access"] = workspace_access
+        if environment_scope is not _SESSION_SETTING_UNSET:
+            values["environment_scope"] = environment_scope
         if status is not _SESSION_SETTING_UNSET:
             values["status"] = status
         if not values:
             raise ValueError("at least one session setting is required")
 
-        requires_idle_run = bool(
-            {"permission_mode", "workspace_access"} & values.keys()
-            or values.get("status") == "archived"
-        )
+        settings_fields = {
+            "model_snapshot",
+            "permission_mode",
+            "workspace_access",
+            "environment_scope",
+        }
+        if settings_fields & values.keys():
+            values["settings_revision"] = AgentHarnessSession.settings_revision + 1
+        requires_idle_run = values.get("status") == "archived"
         stmt = update(AgentHarnessSession).where(
             AgentHarnessSession.id == session_id,
             AgentHarnessSession.status.in_(("active", "archived")),
@@ -507,9 +558,7 @@ class AgentHarnessRepository:
             if session.status != "active":
                 raise ValueError("agent session is not accepting changes")
             if requires_idle_run and await self.get_current_run(session_id):
-                raise ValueError(
-                    "execution policy and archive status cannot change during an active run"
-                )
+                raise ValueError("archive status cannot change during an active run")
             raise ValueError("agent session settings were not updated")
 
         await self.db.commit()
@@ -529,7 +578,12 @@ class AgentHarnessRepository:
         run = AgentHarnessRun(
             session_id=session_id,
             status="queued",
-            model_snapshot=model_snapshot,
+            model_snapshot=model_snapshot or session.model_snapshot,
+            turn_execution_config=await _turn_execution_config(
+                self.db,
+                session,
+                model_snapshot=model_snapshot,
+            ),
             command_queue=[],
             command_ids=[],
         )
@@ -585,7 +639,12 @@ class AgentHarnessRepository:
             run = AgentHarnessRun(
                 session_id=session_id,
                 status="queued",
-                model_snapshot=model_snapshot,
+                model_snapshot=model_snapshot or session.model_snapshot,
+                turn_execution_config=await _turn_execution_config(
+                    self.db,
+                    session,
+                    model_snapshot=model_snapshot,
+                ),
                 command_queue=[],
                 command_ids=[],
             )
@@ -1529,7 +1588,12 @@ class AgentHarnessRepository:
             run = AgentHarnessRun(
                 session_id=session_id,
                 status="queued",
-                model_snapshot=model_snapshot,
+                model_snapshot=model_snapshot or session.model_snapshot,
+                turn_execution_config=await _turn_execution_config(
+                    self.db,
+                    session,
+                    model_snapshot=model_snapshot,
+                ),
                 command_queue=[],
                 command_ids=[],
             )
@@ -2211,6 +2275,8 @@ class AgentHarnessRepository:
                     "model": public_model_summary(session.model_snapshot),
                     "permission_mode": session.permission_mode,
                     "workspace_access": session.workspace_access,
+                    "settings_revision": session.settings_revision,
+                    "environment_scope": session.environment_scope or {"mode": "auto"},
                     "status": session.status,
                     "created_at": session.created_at,
                     "updated_at": session.updated_at,

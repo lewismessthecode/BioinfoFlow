@@ -24,6 +24,7 @@ from app.repositories.project_repo import ProjectRepository
 from app.repositories.project_workflow_binding_repo import (
     ProjectWorkflowBindingRepository,
 )
+from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.services.agent_harness.assets import (
     AgentHarnessArtifactService,
     AgentHarnessAttachmentService,
@@ -32,6 +33,7 @@ from app.services.agent_harness.assets import (
 from app.services.agent_harness.contracts import (
     AgentCommand,
     AgentEvent,
+    EnvironmentScope,
     InputAttachmentRefPart,
     InputDirectoryRefPart,
     InputFileRefPart,
@@ -52,6 +54,12 @@ from app.services.agent_harness.context_search import (
 from app.services.agent_harness.factory import (
     open_session_request_workspace,
     resolve_model_snapshot,
+)
+from app.services.agent_harness.environment_catalog import EnvironmentCatalog
+from app.services.agent_harness.environment_scope import (
+    EnvironmentScopeRequest,
+    EnvironmentSelectionError,
+    resolve_environment_scope,
 )
 from app.services.agent_harness.runtime import agent_runtime
 from app.services.agent_harness.system_prompt import default_system_prompt_snapshot
@@ -118,6 +126,7 @@ class AgentSessionCreate(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     permission_mode: PermissionMode = "ask_dangerous"
     workspace_access: WorkspaceAccess = "read_write"
+    environment_scope: EnvironmentScope = Field(default_factory=EnvironmentScope)
     model_id: UUID | None = None
     profile_id: UUID | None = None
     provider: str | None = Field(default=None, min_length=1, max_length=200)
@@ -149,15 +158,45 @@ class AgentSessionUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     permission_mode: PermissionMode | None = None
     workspace_access: WorkspaceAccess | None = None
+    environment_scope: EnvironmentScope | None = None
     status: Literal["active", "archived"] | None = None
+    model_id: UUID | None = None
+    profile_id: UUID | None = None
+    provider: str | None = Field(default=None, min_length=1, max_length=200)
+    model: str | None = Field(default=None, min_length=1, max_length=500)
 
     @model_validator(mode="after")
     def validate_update(self) -> AgentSessionUpdate:
         if not self.model_fields_set:
             raise ValueError("at least one session setting is required")
-        for field_name in ("permission_mode", "workspace_access", "status"):
-            if field_name in self.model_fields_set and getattr(self, field_name) is None:
+        for field_name in (
+            "permission_mode",
+            "workspace_access",
+            "environment_scope",
+            "status",
+        ):
+            if (
+                field_name in self.model_fields_set
+                and getattr(self, field_name) is None
+            ):
                 raise ValueError(f"{field_name} cannot be null")
+        selector_fields = {"model_id", "profile_id", "provider", "model"}
+        if selector_fields & self.model_fields_set:
+            provider_selected = self.provider is not None or self.model is not None
+            if provider_selected and (self.provider is None or self.model is None):
+                raise ValueError("provider and model must be supplied together")
+            selector_count = sum(
+                (
+                    self.model_id is not None,
+                    self.profile_id is not None,
+                    provider_selected,
+                )
+            )
+            if selector_count != 1:
+                raise ValueError(
+                    "choose exactly one model selector: model_id, profile_id, "
+                    "or provider and model"
+                )
         return self
 
 
@@ -167,6 +206,16 @@ class AgentSettingsRead(BaseModel):
 
 class AgentSettingsUpdate(BaseModel):
     custom_instructions: str = Field(default="", max_length=20_000)
+
+
+class AgentEnvironmentView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    kind: Literal["local", "ssh"]
+    label: str
+    description: str | None = None
+    status: Literal["online", "offline", "error", "unknown"]
 
 
 class AgentSessionSummary(BaseModel):
@@ -225,7 +274,9 @@ class DeletedResource(BaseModel):
     deleted: Literal[True]
 
 
-def _selection(payload: AgentSessionCreate) -> dict[str, str] | None:
+def _selection(
+    payload: AgentSessionCreate | AgentSessionUpdate,
+) -> dict[str, str] | None:
     if payload.model_id:
         return {"model_id": str(payload.model_id)}
     if payload.profile_id:
@@ -233,6 +284,33 @@ def _selection(payload: AgentSessionCreate) -> dict[str, str] | None:
     if payload.provider and payload.model:
         return {"provider": payload.provider, "model": payload.model}
     return None
+
+
+async def _environment_scope(
+    db: AsyncSession,
+    *,
+    workspace_id: str,
+    requested: EnvironmentScope,
+) -> dict[str, object]:
+    authorized = await EnvironmentCatalog(
+        RemoteConnectionRepository(db)
+    ).list_authorized(workspace_id=workspace_id)
+    try:
+        resolved = resolve_environment_scope(
+            EnvironmentScopeRequest(
+                mode=requested.mode,
+                selected_environment_ids=tuple(requested.environment_ids or ()),
+            ),
+            authorized,
+        )
+    except EnvironmentSelectionError as exc:
+        raise BadRequestError(str(exc)) from exc
+    if resolved.mode == "auto":
+        return {"mode": "auto"}
+    return {
+        "mode": "manual",
+        "environment_ids": list(resolved.environment_ids),
+    }
 
 
 def _dump(model) -> dict:
@@ -470,6 +548,33 @@ async def search_context(
     return success_response(result.model_dump(mode="json"), request=request)
 
 
+@router.get(
+    "/environments",
+    response_model=SuccessEnvelope[list[AgentEnvironmentView]],
+)
+async def list_agent_environments(
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    environments = await EnvironmentCatalog(
+        RemoteConnectionRepository(db)
+    ).list_authorized(workspace_id=user.workspace_id)
+    return success_response(
+        [
+            {
+                "id": environment.environment_id,
+                "kind": environment.kind,
+                "label": environment.display_name,
+                "description": environment.description,
+                "status": environment.status,
+            }
+            for environment in environments
+        ],
+        request=request,
+    )
+
+
 @router.post(
     "/sessions",
     status_code=201,
@@ -501,6 +606,11 @@ async def create_session(
     custom_instructions = (
         user_settings.custom_instructions if user_settings is not None else ""
     )
+    environment_scope = await _environment_scope(
+        db,
+        workspace_id=user.workspace_id,
+        requested=payload.environment_scope,
+    )
     snapshot = await agent_runtime.open_session(
         OpenSessionRequest(
             user_id=user.id,
@@ -511,6 +621,7 @@ async def create_session(
             workspace=workspace,
             permission_mode=payload.permission_mode,
             workspace_access=payload.workspace_access,
+            environment_scope=EnvironmentScope.model_validate(environment_scope),
             prompt_snapshot=build_session_prompt_snapshot(
                 core_snapshot=default_system_prompt_snapshot(
                     custom_instructions
@@ -678,6 +789,26 @@ async def update_session(
             field_name: getattr(payload, field_name)
             for field_name in payload.model_fields_set
         }
+        if "environment_scope" in payload.model_fields_set:
+            assert payload.environment_scope is not None
+            values["environment_scope"] = await _environment_scope(
+                db,
+                workspace_id=user.workspace_id,
+                requested=payload.environment_scope,
+            )
+        selector_fields = {"model_id", "profile_id", "provider", "model"}
+        if selector_fields & payload.model_fields_set:
+            values = {
+                key: value
+                for key, value in values.items()
+                if key not in selector_fields
+            }
+            values["model_snapshot"] = await resolve_model_snapshot(
+                db,
+                workspace_id=user.workspace_id,
+                user_id=user.id,
+                selection=_selection(payload),
+            )
         try:
             await repository.update_session_settings(session_id, **values)
         except ValueError as exc:

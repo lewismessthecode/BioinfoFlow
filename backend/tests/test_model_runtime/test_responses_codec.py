@@ -814,6 +814,51 @@ async def test_decode_non_stream_response_preserves_all_output_items() -> None:
 
 
 @pytest.mark.asyncio
+async def test_decode_reasoning_item_preserves_public_text_and_excludes_opaque_state() -> (
+    None
+):
+    response = {
+        "id": "resp-reasoning",
+        "status": "completed",
+        "output": [
+            {
+                "id": "reasoning-1",
+                "type": "reasoning",
+                "summary": [{"type": "summary_text", "text": "Summary text."}],
+                "content": [{"type": "reasoning_text", "text": "Trace text."}],
+                "encrypted_content": "opaque-private-state",
+                "signature": "private-signature",
+            }
+        ],
+    }
+
+    events = [event async for event in ResponsesCodec().decode_response(response)]
+
+    assert events[:2] == [
+        ReasoningDelta(text="Summary text.", source="reasoning_summary"),
+        ReasoningDelta(text="Trace text.", source="reasoning_text"),
+    ]
+    assert "opaque-private-state" not in repr(events)
+    assert "private-signature" not in repr(events)
+
+
+def test_finalize_reasoning_adds_effective_provider_and_model_metadata() -> None:
+    event = ResponsesCodec().finalize_event(
+        _invocation(),
+        {},
+        ReasoningDelta(text="Trace", source="reasoning_text", truncated=True),
+    )
+
+    assert event == ReasoningDelta(
+        text="Trace",
+        provider="openai",
+        model="gpt-test",
+        source="reasoning_text",
+        truncated=True,
+    )
+
+
+@pytest.mark.asyncio
 async def test_decode_stream_preserves_phase_reasoning_calls_and_arbitrary_chunks() -> (
     None
 ):
@@ -827,7 +872,7 @@ async def test_decode_stream_preserves_phase_reasoning_calls_and_arbitrary_chunk
     assert events == [
         TextDelta(text="Checking ", phase="commentary"),
         TextDelta(text="inputs.", phase="commentary"),
-        ReasoningDelta(text="Reasoning chunk."),
+        ReasoningDelta(text="Reasoning chunk.", source="reasoning_summary"),
         ToolCallDelta(
             index=2,
             call_id="call-stream",

@@ -48,6 +48,7 @@ from app.services.agent_harness.tool_projection import (
 )
 from app.services.agent_harness.tools import ToolCall
 from app.services.agent_harness.tools.specs import ToolSpec
+from app.services.agent_harness.turn_settings import effective_turn_session
 from app.services.model_runtime.gateway import ModelGateway
 
 
@@ -307,6 +308,7 @@ class AgentHarness:
         session = await self.repository.get_session(str(run.session_id))
         if session is None or session.status == "deleted":
             return 0
+        session = effective_turn_session(session, run)
         if self.token_service is not None:
             await self.token_service.revoke_run(str(run.id))
         self._run_tokens.pop(str(run.id), None)
@@ -354,6 +356,7 @@ class AgentHarness:
                 return 1
             session = await self.repository.get_session(str(run.session_id))
             assert session is not None
+            session = effective_turn_session(session, run)
             recovery_revision = int(session.history_revision)
         if plan.source == "history" and await self._recover_committed_tool_calls(
             session=session,
@@ -659,6 +662,10 @@ class AgentHarness:
         session = await self.repository.get_session(session_id)
         if session is None:
             return False
+        run = await self.repository.get_run(run_id)
+        if run is None:
+            return False
+        session = effective_turn_session(session, run)
         workspace = self.loop.workspace_factory(session, run_id)
         replay_policies = {spec.name: spec.replay_policy for spec in workspace.tools}
         private_interaction = request

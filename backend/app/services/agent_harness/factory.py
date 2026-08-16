@@ -26,6 +26,13 @@ from app.services.agent_harness.context import bounded_skill_metadata_for_prompt
 from app.services.agent_harness.sandbox import SandboxRunner
 from app.services.agent_harness.harness import AgentHarness
 from app.services.agent_harness.model_target import private_model_snapshot
+from app.services.agent_harness.environment_catalog import EnvironmentCatalog
+from app.services.agent_harness.environment_scope import (
+    EnvironmentDescriptor,
+    ResolvedEnvironmentScope,
+)
+from app.services.agent_harness.routed_workspace_runtime import RoutedWorkspaceRuntime
+from app.services.agent_harness.workspace_router import WorkspaceRouter
 from app.services.agent_harness.workspace_runtime import (
     LocalWorkspaceBackend,
     RemoteWorkspaceBackend,
@@ -164,7 +171,7 @@ def harness_for_database(db: AsyncSession, **runtime: Any) -> AgentHarness:
         session,
         run_id: str,
         fence: RunFence | None,
-    ) -> WorkspaceRuntime:
+    ) -> RoutedWorkspaceRuntime:
         if fence is None:
             raise ValueError("Agent workspace requires a claimed Run fence")
         write_artifact = AgentHarnessArtifactService(db).writer(
@@ -172,7 +179,7 @@ def harness_for_database(db: AsyncSession, **runtime: Any) -> AgentHarness:
             run_id=run_id,
             fence=fence,
         )
-        return workspace_runtime_for_session(
+        return routed_workspace_runtime_for_session(
             db,
             session,
             artifact_writer=write_artifact,
@@ -247,6 +254,178 @@ def workspace_runtime_for_session(
         permission_mode=session.permission_mode,
         workspace_access=session.workspace_access,
         environment=environment,
+    )
+
+
+def routed_workspace_runtime_for_session(
+    db: AsyncSession,
+    session: Any,
+    *,
+    remote_executor: RemoteExecutor | None = None,
+    artifact_writer=None,
+) -> RoutedWorkspaceRuntime:
+    catalog = EnvironmentCatalog(RemoteConnectionRepository(db))
+    scope_data = getattr(session, "environment_scope", None) or {"mode": "auto"}
+    mode = "manual" if scope_data.get("mode") == "manual" else "auto"
+    selected_ids = tuple(
+        str(item)
+        for item in (scope_data.get("environment_ids") or ())
+        if isinstance(item, str) and item
+    )
+    scope_environments = {
+        environment_id: EnvironmentDescriptor(
+            environment_id,
+            "local" if environment_id == "local" else "ssh",
+            "Local" if environment_id == "local" else environment_id,
+        )
+        for environment_id in (selected_ids or ("local",))
+    }
+    resolved_scope = ResolvedEnvironmentScope(
+        mode=mode,
+        environments=scope_environments,
+    )
+    local_runtime = _local_workspace_runtime_for_session(
+        session,
+        artifact_writer=artifact_writer,
+    )
+
+    async def authorize(environment_id: str) -> bool:
+        return await catalog.is_authorized(
+            environment_id,
+            workspace_id=str(session.workspace_id),
+        )
+
+    async def resolve(environment_id: str) -> WorkspaceRuntime | None:
+        if environment_id == "local":
+            return local_runtime
+        return await _remote_environment_runtime(
+            db,
+            session,
+            environment_id=environment_id,
+            remote_executor=remote_executor,
+            artifact_writer=artifact_writer,
+        )
+
+    async def visible_environments() -> tuple[EnvironmentDescriptor, ...]:
+        environments = await catalog.list_authorized(
+            workspace_id=str(session.workspace_id)
+        )
+        selected = set(selected_ids)
+        if not selected:
+            selected = {"local"}
+        return tuple(
+            environment
+            for environment in environments
+            if environment.environment_id in selected
+        )
+
+    return RoutedWorkspaceRuntime(
+        router=WorkspaceRouter(
+            scope=resolved_scope,
+            authorize=authorize,
+            resolve=resolve,
+        ),
+        control_runtime=local_runtime,
+        environments=visible_environments,
+    )
+
+
+def _local_workspace_runtime_for_session(
+    session: Any,
+    *,
+    artifact_writer=None,
+) -> WorkspaceRuntime:
+    snapshot = session.workspace_snapshot or {}
+    raw_root = snapshot.get("root") if snapshot.get("runtime") == "local" else None
+    root = (
+        Path(raw_root).expanduser().resolve()
+        if isinstance(raw_root, str) and raw_root.strip()
+        else agent_user_workspace_root(
+            str(session.workspace_id),
+            str(session.user_id),
+        ).resolve()
+    )
+    root.mkdir(parents=True, exist_ok=True)
+    backend = LocalWorkspaceBackend(
+        working_directory=root,
+        read_roots=(root, *_local_skill_read_roots(session)),
+        write_roots=(root,),
+        protected_roots=(),
+        sandbox_runner=SandboxRunner.from_settings(),
+        artifact_writer=artifact_writer,
+    )
+    return WorkspaceRuntime(
+        backend,
+        permission_mode=session.permission_mode,
+        workspace_access=session.workspace_access,
+        environment={
+            "BIOFLOW_API_URL": _workspace_api_url("local"),
+            "BIOFLOW_PROJECT": str(session.project_id or ""),
+            "BIOFLOW_OUTPUT": "json",
+        },
+    )
+
+
+async def _remote_environment_runtime(
+    db: AsyncSession,
+    session: Any,
+    *,
+    environment_id: str,
+    remote_executor: RemoteExecutor | None,
+    artifact_writer=None,
+) -> WorkspaceRuntime | None:
+    service = RemoteConnectionService(db)
+    model = await service.get_connection(
+        environment_id,
+        workspace_id=str(session.workspace_id),
+    )
+    if model is None:
+        return None
+    connection = await service.resolve_connection_config(model)
+    executor = remote_executor or SshRemoteExecutor()
+    snapshot = session.workspace_snapshot or {}
+    raw_connection = snapshot.get("remote_connection")
+    if (
+        snapshot.get("runtime") == "remote_ssh"
+        and isinstance(raw_connection, dict)
+        and str(raw_connection.get("id") or "") == environment_id
+    ):
+        root = str(snapshot.get("root") or "")
+    else:
+        try:
+            result = await executor.run(
+                connection,
+                "pwd -P",
+                timeout_seconds=10,
+                output_limit=4096,
+            )
+        except Exception:  # noqa: BLE001 - unavailable is normalized by the router
+            return None
+        root = result.stdout.strip() if result.exit_code == 0 else ""
+    if not root.startswith("/") or "\n" in root:
+        return None
+    backend = RemoteWorkspaceBackend(
+        connection=connection,
+        executor=_DatabaseRemoteExecutor(
+            db,
+            workspace_id=str(session.workspace_id),
+            connection_id=environment_id,
+            executor=executor,
+        ),
+        working_directory=root,
+        read_roots=(root,),
+        write_roots=(root,),
+        artifact_writer=artifact_writer,
+    )
+    return WorkspaceRuntime(
+        backend,
+        permission_mode=session.permission_mode,
+        workspace_access=session.workspace_access,
+        environment={
+            "BIOFLOW_API_URL": _workspace_api_url("remote_ssh"),
+            "BIOFLOW_PROJECT": str(session.project_id or ""),
+            "BIOFLOW_OUTPUT": "json",
+        },
     )
 
 
