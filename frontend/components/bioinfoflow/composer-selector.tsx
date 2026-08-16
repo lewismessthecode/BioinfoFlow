@@ -12,21 +12,22 @@ import { PopoverContent } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
 type ComposerSelectorTriggerProps = ComponentProps<typeof Button> & {
-  composer?: boolean
+  presentation?: "default" | "composer"
 }
 
 export function ComposerSelectorTrigger({
-  composer = true,
+  presentation = "composer",
   className,
   ...props
 }: ComposerSelectorTriggerProps) {
+  const isComposer = presentation === "composer"
   return (
     <Button
       {...props}
-      data-composer-selector-trigger={composer ? "true" : undefined}
+      data-composer-selector-trigger={isComposer ? "true" : undefined}
       className={cn(
-        composer && composerSelectorChipClassName,
-        composer && "h-8 min-h-8 lg:h-8",
+        isComposer && composerSelectorChipClassName,
+        isComposer && "h-8 min-h-8 lg:h-8",
         className,
       )}
     />
@@ -35,7 +36,7 @@ export function ComposerSelectorTrigger({
 
 type ComposerSelectorMenuSurfaceProps = {
   kind: "dropdown" | "popover"
-  composer?: boolean
+  presentation?: "default" | "composer"
   children: ReactNode
   className?: string
   align?: "start" | "center" | "end"
@@ -45,19 +46,20 @@ type ComposerSelectorMenuSurfaceProps = {
 
 export function ComposerSelectorMenuSurface({
   kind,
-  composer = true,
+  presentation = "composer",
   children,
   className,
   align = "start",
   side = "top",
   sideOffset = 10,
 }: ComposerSelectorMenuSurfaceProps) {
+  const isComposer = presentation === "composer"
   const surfaceProps = {
     align,
     side,
     sideOffset,
-    className: cn(composer && composerSelectorMenuClassName, className),
-    "data-testid": composer ? "composer-selector-menu" : undefined,
+    className: cn(isComposer && composerSelectorMenuClassName, className),
+    "data-testid": isComposer ? "composer-selector-menu" : undefined,
     children,
   }
 

@@ -23,7 +23,8 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useVoiceDictation } from "@/hooks/use-voice-dictation"
 import {
-  CheckCircle2,
+  Check,
+  History,
   Loader2,
   MessageSquare,
   Mic,
@@ -69,9 +70,9 @@ type AgentComposerProps = {
 type SubmitAction = "message" | "steer"
 
 const starterSlotIcons = [
-  { name: "check", icon: CheckCircle2 },
-  { name: "message", icon: MessageSquare },
-  { name: "rotate", icon: RotateCcw },
+  { name: "check", icon: Check },
+  { name: "message-square", icon: MessageSquare },
+  { name: "history", icon: History },
 ] as const
 
 const commandHints = [

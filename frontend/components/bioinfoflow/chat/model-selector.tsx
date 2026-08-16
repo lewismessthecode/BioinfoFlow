@@ -81,7 +81,7 @@ export function ModelSelector({
   if (models.length === 0) {
     return (
       <ComposerSelectorTrigger
-        composer={isComposer}
+        presentation={variant}
         variant="ghost"
         size="sm"
         className={configureClassName}
@@ -105,7 +105,7 @@ export function ModelSelector({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <ComposerSelectorTrigger
-          composer={isComposer}
+          presentation={variant}
           variant="ghost"
           size="sm"
           className={triggerClassName}
@@ -141,7 +141,7 @@ export function ModelSelector({
       </PopoverTrigger>
       <ComposerSelectorMenuSurface
         kind="popover"
-        composer={isComposer}
+        presentation={variant}
         align="start"
         side="top"
         className={cn(
