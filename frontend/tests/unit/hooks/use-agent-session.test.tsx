@@ -502,6 +502,52 @@ describe("useAgentSession", () => {
     expect(result.current.session?.title).toBe("Analysis")
   })
 
+  it("applies an automatic command title without replacing newer live run state", async () => {
+    let resolveCommand!: (snapshot: SessionSnapshot) => void
+    mocks.dispatchAgentCommand.mockReturnValueOnce(
+      new Promise<SessionSnapshot>((resolve) => {
+        resolveCommand = resolve
+      }),
+    )
+    const liveSnapshot = streamingSnapshot()
+    liveSnapshot.session.title = null
+
+    const { result } = renderHook(() => useAgentSession("session-1"))
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
+    const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
+    act(() => {
+      subscription.onEvent({ type: "snapshot", snapshot: liveSnapshot })
+    })
+    await waitFor(() => expect(result.current.session?.title).toBeNull())
+
+    let pendingCommand!: Promise<void>
+    act(() => {
+      pendingCommand = result.current.sendMessage([
+        { type: "text", text: "Inspect this workflow" },
+      ])
+      subscription.onEvent({
+        type: "assistant.delta",
+        run_id: "run-1",
+        draft_id: "draft-1",
+        part_id: "part-1",
+        part_type: "text",
+        start_offset: 5,
+        end_offset: 6,
+        delta: "!",
+      })
+      resolveCommand(snapshot("Workflow inspection"))
+    })
+    await act(async () => {
+      await pendingCommand
+    })
+
+    expect(result.current.session?.title).toBe("Workflow inspection")
+    expect(result.current.activeRun?.assistant_draft?.parts[0]).toMatchObject({
+      text: "Hello!",
+      end_offset: 6,
+    })
+  })
+
   it("waits for SSE authority after a permission update instead of applying the PATCH response", async () => {
     const patchResponse = snapshot("PATCH response")
     patchResponse.session.permission_mode = "full_access"

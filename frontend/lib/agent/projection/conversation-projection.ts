@@ -16,6 +16,7 @@ import type {
   HistoryEntry,
   MessagePart,
   RunView,
+  SessionView,
   ToolCallPart,
   ToolPublicDetail,
   ToolResultPart,
@@ -129,6 +130,43 @@ export function applyConversationProjectionEvent(
   }
 }
 
+export function applyConversationSessionTitle(
+  current: ConversationProjectionState,
+  incoming: SessionView,
+): ConversationProjectionEventResult {
+  const session = current.transportState.session
+  const incomingTitle = incoming.title?.trim()
+  if (
+    !session ||
+    session.id !== incoming.id ||
+    session.title !== null ||
+    !incomingTitle ||
+    isOlderTimestamp(incoming.updated_at, session.updated_at)
+  ) {
+    return {
+      outcome: "ignored",
+      state: current,
+      view: projectConversationView(current),
+    }
+  }
+  const state = {
+    ...current,
+    transportState: {
+      ...current.transportState,
+      session: {
+        ...session,
+        title: incomingTitle,
+        updated_at: incoming.updated_at,
+      },
+    },
+  }
+  return {
+    outcome: "applied",
+    state,
+    view: projectConversationView(state),
+  }
+}
+
 export function applyConversationProjectionDiagnostic(
   current: ConversationProjectionState,
   diagnostic: PresentationDiagnostic,
@@ -139,6 +177,16 @@ export function applyConversationProjectionDiagnostic(
     state,
     view: projectConversationView(state),
   }
+}
+
+function isOlderTimestamp(incoming: string, current: string) {
+  const incomingTimestamp = Date.parse(incoming)
+  const currentTimestamp = Date.parse(current)
+  return (
+    Number.isFinite(incomingTimestamp) &&
+    Number.isFinite(currentTimestamp) &&
+    incomingTimestamp < currentTimestamp
+  )
 }
 
 function projectConversationView(
