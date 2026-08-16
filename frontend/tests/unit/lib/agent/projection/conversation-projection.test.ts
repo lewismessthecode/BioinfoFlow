@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import type { ApprovalRequest } from "@/lib/agent/contracts"
 import { createConversationProjection } from "@/lib/agent/projection/conversation-projection"
 
 import {
@@ -9,6 +10,7 @@ import {
   entryFixture,
   failedSnapshotFixture,
   interactionSnapshotFixture,
+  runFixture,
 } from "../fixtures/presentation-contract"
 
 describe("Conversation projection", () => {
@@ -95,7 +97,7 @@ describe("Conversation projection", () => {
             },
             permissionMode: "ask_dangerous",
             workspaceAccess: "read_write",
-            revision: 0,
+            revision: 1,
             environmentScope: { mode: "auto", environmentIds: [] },
           },
           capabilities: {
@@ -114,7 +116,7 @@ describe("Conversation projection", () => {
     })
   })
 
-  it("projects completed history into ordered UI-only Transcript Blocks", () => {
+  it("projects completed history without a redundant success outcome row", () => {
     const result = createConversationProjection(completedSnapshotFixture)
     if (!result.ok) throw new Error(result.diagnostic.message)
 
@@ -155,15 +157,13 @@ describe("Conversation projection", () => {
         artifactId: "report-1",
         title: "Run report",
       }),
-      expect.objectContaining({
-        type: "outcome",
-        runId: "run-1",
-        status: "completed",
-      }),
+    ])
+    expect(result.view.runs).toEqual([
+      expect.objectContaining({ id: "run-1", status: "completed" }),
     ])
   })
 
-  it("projects one terminal outcome per stable Run identity using the latest revision", () => {
+  it("keeps only the latest Run revision without surfacing a success outcome", () => {
     const result = createConversationProjection({
       ...completedSnapshotFixture,
       runs: [
@@ -191,13 +191,212 @@ describe("Conversation projection", () => {
     const outcomes = result.view.transcript.filter(
       (block) => block.type === "outcome" && block.runId === "run-1",
     )
-    expect(outcomes).toEqual([
+    expect(outcomes).toEqual([])
+    expect(result.view.runs.filter((run) => run.id === "run-1")).toHaveLength(1)
+    expect(result.view.runs[0]).toEqual(
+      expect.objectContaining({ id: "run-1", status: "completed" }),
+    )
+  })
+
+  it("inserts failed and cancelled outcomes after the final block for their Run", () => {
+    const result = createConversationProjection({
+      ...emptySnapshotFixture,
+      runs: [
+        runFixture({
+          id: "run-failed",
+          status: "failed",
+          phase: null,
+          revision: 2,
+          completed_at: "2026-08-16T08:00:02.000Z",
+          termination_reason: "runtime_failed",
+          error: { code: "runtime_failed", message: "Runtime failed" },
+        }),
+        runFixture({
+          id: "run-cancelled",
+          status: "cancelled",
+          phase: null,
+          revision: 2,
+          completed_at: "2026-08-16T08:01:02.000Z",
+          termination_reason: "user_cancelled",
+        }),
+        runFixture({
+          id: "run-completed",
+          status: "completed",
+          phase: null,
+          revision: 2,
+          completed_at: "2026-08-16T08:02:02.000Z",
+          termination_reason: "completed",
+        }),
+      ],
+      entries: [
+        entryFixture({
+          id: "failed-message",
+          run_id: "run-failed",
+          sequence: 1,
+          type: "message",
+          payload: {
+            role: "assistant",
+            parts: [{ id: "failed-text", type: "text", text: "First run" }],
+          },
+        }),
+        entryFixture({
+          id: "cancelled-message",
+          run_id: "run-cancelled",
+          sequence: 2,
+          type: "message",
+          payload: {
+            role: "assistant",
+            parts: [{ id: "cancelled-text", type: "text", text: "Second run" }],
+          },
+        }),
+        entryFixture({
+          id: "completed-message",
+          run_id: "run-completed",
+          sequence: 3,
+          type: "message",
+          payload: {
+            role: "assistant",
+            parts: [{ id: "completed-text", type: "text", text: "Third run" }],
+          },
+        }),
+      ],
+    })
+    if (!result.ok) throw new Error(result.diagnostic.message)
+
+    expect(
+      result.view.transcript.map((block) =>
+        block.type === "outcome"
+          ? `${block.runId}:${block.status}`
+          : `${block.runId}:${block.type}`,
+      ),
+    ).toEqual([
+      "run-failed:message",
+      "run-failed:failed",
+      "run-cancelled:message",
+      "run-cancelled:cancelled",
+      "run-completed:message",
+    ])
+  })
+
+  it("merges active tool and interaction state into matching durable history", () => {
+    const waitingRun = runFixture({
+      status: "waiting_user",
+      phase: "interaction",
+      revision: 4,
+    })
+    const request: ApprovalRequest = {
+      type: "approval",
+      call_id: "call-1",
+      tool_name: "bash",
+      summary: "Run the requested command",
+      input_preview: "echo ok",
+      allowed_responses: ["approve", "reject"],
+      risk: {
+        level: "high",
+        effects: ["execute"],
+        reasons: ["requires approval"],
+        affected_resources: [],
+      },
+    }
+    const result = createConversationProjection({
+      ...emptySnapshotFixture,
+      runs: [waitingRun],
+      entries: [
+        entryFixture({
+          id: "assistant-tools",
+          sequence: 1,
+          type: "message",
+          payload: {
+            role: "assistant",
+            parts: [
+              {
+                id: "tool-call",
+                type: "tool_call",
+                call_id: "call-1",
+                group_id: "group-1",
+                execution_mode: "serial",
+                name: "bash",
+                display_name: "Bash",
+                category: "command",
+                summary: "Bash: Check the workspace",
+                arguments: {},
+              },
+            ],
+          },
+        }),
+        entryFixture({
+          id: "approval-request",
+          sequence: 2,
+          type: "interaction_request",
+          payload: { interaction_id: "interaction-1", request },
+        }),
+      ],
+      active_run: {
+        run: waitingRun,
+        assistant_draft: null,
+        tool_progress: [
+          {
+            call_id: "call-1",
+            group_id: "group-1",
+            execution_mode: "serial",
+            name: "bash",
+            display_name: "Bash",
+            category: "command",
+            summary: "Bash: Check the workspace",
+            arguments: {},
+            status: "interaction_required",
+            revision: 3,
+            started_at: "2026-08-16T08:00:00.000Z",
+            completed_at: null,
+            input_summary: "Check the workspace",
+            output_summary: null,
+            error: null,
+            public_details: [
+              {
+                id: "command",
+                kind: "command",
+                label: null,
+                value: "echo ok",
+                format: "code",
+                copyable: true,
+                truncated: false,
+                redacted: false,
+              },
+            ],
+          },
+        ],
+        pending_interaction: {
+          interaction_id: "interaction-1",
+          run_id: "run-1",
+          revision: 1,
+          request,
+        },
+      },
+    })
+    if (!result.ok) throw new Error(result.diagnostic.message)
+
+    const groups = result.view.transcript.filter(
+      (block) => block.type === "activity_group",
+    )
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toMatchObject({
+      activities: [
+        expect.objectContaining({
+          callId: "call-1",
+          summary: "Bash: Check the workspace",
+          status: "interaction_required",
+          details: [expect.objectContaining({ kind: "command", value: "echo ok" })],
+        }),
+      ],
+    })
+    expect(
+      result.view.transcript.filter((block) => block.type === "interaction"),
+    ).toEqual([
       expect.objectContaining({
-        id: "run:run-1:outcome",
-        status: "completed",
+        interactionId: "interaction-1",
+        status: "pending",
       }),
     ])
-    expect(result.view.runs.filter((run) => run.id === "run-1")).toHaveLength(1)
   })
 
   it("projects live draft and tool progress through the same Transcript Block model", () => {
@@ -611,6 +810,7 @@ describe("Conversation projection", () => {
           expect.objectContaining({
             callId: "call-1",
             status: "completed",
+            summary: "Read file",
             output: { type: "text", text: "BioinfoFlow" },
           }),
         ],
@@ -643,6 +843,8 @@ describe("Conversation projection", () => {
                 model: "gpt-5.6",
                 source: "reasoning_content",
                 truncated: true,
+                started_at: null,
+                completed_at: null,
               },
             ],
           },

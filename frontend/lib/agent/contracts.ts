@@ -2,6 +2,11 @@ type JsonPrimitive = string | number | boolean | null
 export type JsonObject = { [key: string]: JsonValue }
 export type JsonValue = JsonPrimitive | JsonValue[] | JsonObject
 
+export type PresentationEnvelope = {
+  presentation_protocol: "bioinfoflow.agent.presentation"
+  presentation_schema_version: number
+}
+
 export type AgentPermissionMode =
   | "ask_changes"
   | "ask_dangerous"
@@ -10,6 +15,9 @@ export type AgentWorkspaceAccess = "read_only" | "read_write"
 export type AgentEnvironmentScope =
   | { mode: "auto" }
   | { mode: "manual"; selected_environment_ids: string[] }
+export type AgentSessionEnvironmentScope =
+  | { mode: "auto"; environment_ids: null }
+  | { mode: "manual"; environment_ids: string[] }
 export type AgentSessionStatus = "active" | "archived" | "closing" | "deleted"
 export type AgentRunStatus =
   | "queued"
@@ -80,7 +88,7 @@ export type SessionView = {
   permission_mode: AgentPermissionMode
   workspace_access: AgentWorkspaceAccess
   settings_revision?: number
-  environment_scope?: AgentEnvironmentScope
+  environment_scope?: AgentSessionEnvironmentScope
   status: AgentSessionStatus
   created_at: string
   updated_at: string
@@ -101,14 +109,39 @@ export type RunView = {
   updated_at: string
 }
 
-export type AssistantDraftPartType = "text" | "reasoning_summary"
+export type ReasoningTraceMetadata = {
+  provider: string
+  model: string
+  source: string
+  truncated: boolean
+  started_at: string | null
+  completed_at: string | null
+}
 
-export type AssistantDraftPartView = {
+type OptionalReasoningTraceMetadata = {
+  provider?: string | null
+  model?: string | null
+  source?: string | null
+  truncated?: boolean
+  started_at?: string | null
+  completed_at?: string | null
+}
+
+type AssistantDraftPartBase = {
   id: string
-  type: AssistantDraftPartType
   text: string
   end_offset: number
 }
+
+export type AssistantDraftPartView =
+  | (AssistantDraftPartBase &
+      OptionalReasoningTraceMetadata & {
+        type: "text" | "reasoning_summary"
+      })
+  | (AssistantDraftPartBase &
+      ReasoningTraceMetadata & {
+        type: "reasoning_trace"
+      })
 
 export type AssistantDraftView = {
   id: string
@@ -257,6 +290,11 @@ export type ReasoningSummaryPart = MessagePartBase & {
   type: "reasoning_summary"
   text: string
 }
+
+export type ReasoningTracePart = MessagePartBase & {
+  type: "reasoning_trace"
+  text: string
+} & ReasoningTraceMetadata
 
 export type ToolCallPart = MessagePartBase & {
   type: "tool_call"
@@ -428,6 +466,7 @@ export type UnknownPart = MessagePartBase & {
 type ToolOutputContentPart =
   | TextPart
   | ReasoningSummaryPart
+  | ReasoningTracePart
   | AttachmentRefPart
   | FileRefPart
   | DirectoryRefPart
@@ -439,6 +478,7 @@ type ToolOutputContentPart =
 export type MessagePart =
   | TextPart
   | ReasoningSummaryPart
+  | ReasoningTracePart
   | ToolCallPart
   | ToolResultPart
   | AttachmentRefPart
@@ -484,7 +524,7 @@ type NoticePayload = {
   code: string
   message: string
   params?: JsonObject
-  details: JsonValue
+  details: JsonObject | null
 }
 
 type HistoryEntryBase = {
@@ -521,12 +561,21 @@ export type NoticeEntry = HistoryEntryBase & {
   payload: NoticePayload
 }
 
+export type UnknownEntry = HistoryEntryBase & {
+  type: "unknown"
+  payload: {
+    original_type: string
+    display_text: string
+  }
+}
+
 export type HistoryEntry =
   | MessageEntry
   | PlanEntry
   | InteractionRequestEntry
   | InteractionResponseEntry
   | NoticeEntry
+  | UnknownEntry
 
 export type ActiveRunView = {
   run: RunView
@@ -542,6 +591,8 @@ export type SessionSnapshot = {
   active_run: ActiveRunView | null
 }
 
+export type PresentationSnapshot = SessionSnapshot & PresentationEnvelope
+
 export type SnapshotEvent = {
   type: "snapshot"
   snapshot: SessionSnapshot
@@ -552,16 +603,25 @@ export type RunUpdatedEvent = {
   run: RunView
 }
 
-export type AssistantDeltaEvent = {
+type AssistantDeltaEventBase = {
   type: "assistant.delta"
   run_id: string
   draft_id: string
   part_id: string
-  part_type: AssistantDraftPartType
   start_offset: number
   end_offset: number
   delta: string
 }
+
+export type AssistantDeltaEvent =
+  | (AssistantDeltaEventBase &
+      OptionalReasoningTraceMetadata & {
+        part_type: "text" | "reasoning_summary"
+      })
+  | (AssistantDeltaEventBase &
+      ReasoningTraceMetadata & {
+        part_type: "reasoning_trace"
+      })
 
 export type ToolUpdatedEvent = {
   type: "tool.updated"
@@ -587,3 +647,5 @@ export type AgentEvent =
   | ToolUpdatedEvent
   | InteractionRequestedEvent
   | EntryCommittedEvent
+
+export type PresentationEvent = AgentEvent & PresentationEnvelope

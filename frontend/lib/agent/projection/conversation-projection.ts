@@ -6,6 +6,7 @@ import type {
   ConversationInteractionRequest,
   ConversationInteractionResponse,
   ConversationExecutionConfig,
+  InteractionTranscriptBlock,
   ConversationViewModel,
   MessageReference,
   TranscriptBlock,
@@ -15,6 +16,7 @@ import type {
   MessagePart,
   RunView,
   ToolCallPart,
+  ToolPublicDetail,
   ToolResultPart,
 } from "../contracts"
 import {
@@ -45,6 +47,7 @@ export type ConversationProjectionEventResult = {
 type HistoryProjectionContext = {
   groups: Map<string, ActivityGroupTranscriptBlock>
   calls: Map<string, { groupKey: string; activity: ActivityItem }>
+  interactions: Map<string, InteractionTranscriptBlock>
 }
 
 const COMPOSER_CAPABILITIES = {
@@ -399,6 +402,7 @@ function projectTranscript(
   const context: HistoryProjectionContext = {
     groups: new Map(),
     calls: new Map(),
+    interactions: new Map(),
   }
   const entries = [...state.entries].sort((left, right) => left.sequence - right.sequence)
   for (const entry of entries) {
@@ -406,27 +410,9 @@ function projectTranscript(
     seenEntryIds.add(entry.id)
     transcript.push(...projectEntry(entry, state, context))
   }
-  coalesceInteractions(transcript)
-
-  for (const run of state.runs) {
-    if (
-      run.status !== "completed" &&
-      run.status !== "failed" &&
-      run.status !== "cancelled"
-    ) {
-      continue
-    }
-    transcript.push({
-      type: "outcome",
-      id: `run:${run.id}:outcome`,
-      runId: run.id,
-      createdAt: run.completed_at ?? run.updated_at,
-      status: run.status,
-      reason: run.termination_reason,
-      error: run.error,
-    })
-  }
-  appendActiveRun(transcript, state)
+  coalesceInteractions(transcript, context)
+  insertExceptionalOutcomes(transcript, state.runs)
+  appendActiveRun(transcript, state, context)
   diagnostics.forEach((diagnostic, index) => {
     transcript.push({
       type: "unknown",
@@ -441,32 +427,73 @@ function projectTranscript(
   return transcript
 }
 
-function coalesceInteractions(transcript: TranscriptBlock[]) {
+function coalesceInteractions(
+  transcript: TranscriptBlock[],
+  context: HistoryProjectionContext,
+) {
   const pendingIndexes = new Map<string, number>()
   for (let index = 0; index < transcript.length; index += 1) {
     const block = transcript[index]
     if (block.type !== "interaction") continue
+    const key = interactionKey(block.runId, block.interactionId)
     if (block.status === "pending") {
-      pendingIndexes.set(block.interactionId, index)
+      pendingIndexes.set(key, index)
       continue
     }
-    const pendingIndex = pendingIndexes.get(block.interactionId)
+    const pendingIndex = pendingIndexes.get(key)
     if (pendingIndex === undefined) continue
     const pending = transcript[pendingIndex]
     if (pending.type !== "interaction") continue
-    transcript[pendingIndex] = {
+    const resolved: InteractionTranscriptBlock = {
       ...pending,
       status: "resolved",
       response: block.response,
     }
+    transcript[pendingIndex] = resolved
+    context.interactions.set(key, resolved)
     transcript.splice(index, 1)
     index -= 1
   }
 }
 
+function insertExceptionalOutcomes(
+  transcript: TranscriptBlock[],
+  runs: RunView[],
+) {
+  for (const run of runs) {
+    if (run.status !== "failed" && run.status !== "cancelled") continue
+    const outcome: TranscriptBlock = {
+      type: "outcome",
+      id: `run:${run.id}:outcome`,
+      runId: run.id,
+      createdAt: run.completed_at ?? run.updated_at,
+      status: run.status,
+      reason: run.termination_reason,
+      error: run.error,
+    }
+    const finalRunBlockIndex = findFinalRunBlockIndex(transcript, run.id)
+    if (finalRunBlockIndex === -1) {
+      transcript.push(outcome)
+    } else {
+      transcript.splice(finalRunBlockIndex + 1, 0, outcome)
+    }
+  }
+}
+
+function findFinalRunBlockIndex(
+  transcript: readonly TranscriptBlock[],
+  runId: string,
+) {
+  for (let index = transcript.length - 1; index >= 0; index -= 1) {
+    if (transcript[index].runId === runId) return index
+  }
+  return -1
+}
+
 function appendActiveRun(
   transcript: TranscriptBlock[],
   state: AgentStoreState,
+  context: HistoryProjectionContext,
 ) {
   const activeRun = state.activeRun
   if (!activeRun) return
@@ -506,9 +533,38 @@ function appendActiveRun(
     }
   }
 
-  const groups = new Map<string, ActivityGroupTranscriptBlock>()
   for (const tool of activeRun.tool_progress) {
-    let group = groups.get(tool.group_id)
+    const runKey = activeRun.run.id
+    const callKey = `${runKey}:${tool.call_id}`
+    const existingCall = context.calls.get(callKey)
+    if (existingCall) {
+      const existingGroup = context.groups.get(existingCall.groupKey)
+      const activityIndex =
+        existingGroup?.activities.indexOf(existingCall.activity) ?? -1
+      if (existingGroup && activityIndex >= 0) {
+        const activity: ActivityItem = {
+          ...existingCall.activity,
+          status: tool.status,
+          output: tool.output_summary ?? existingCall.activity.output,
+          error: tool.error,
+          startedAt: tool.started_at ?? existingCall.activity.startedAt,
+          completedAt: tool.completed_at,
+          details: mergeActivityDetails(
+            existingCall.activity.details,
+            projectActivityDetails(tool.public_details),
+          ),
+        }
+        existingGroup.activities[activityIndex] = activity
+        context.calls.set(callKey, {
+          groupKey: existingCall.groupKey,
+          activity,
+        })
+        continue
+      }
+    }
+
+    const groupKey = `${runKey}:${tool.group_id}`
+    let group = context.groups.get(groupKey)
     if (!group) {
       group = {
         type: "activity_group",
@@ -518,10 +574,10 @@ function appendActiveRun(
         executionMode: tool.execution_mode,
         activities: [],
       }
-      groups.set(tool.group_id, group)
+      context.groups.set(groupKey, group)
       transcript.push(group)
     }
-    group.activities.push({
+    const activity: ActivityItem = {
       id: `active:${activeRun.run.id}:tool:${tool.call_id}`,
       callId: tool.call_id,
       name: tool.name,
@@ -534,25 +590,17 @@ function appendActiveRun(
       error: tool.error,
       startedAt: tool.started_at,
       completedAt: tool.completed_at,
-      ...(tool.public_details?.length
-        ? {
-            details: tool.public_details.map((detail) => ({
-              id: detail.id,
-              kind: detail.kind,
-              label: detail.label,
-              value: detail.value,
-              format: detail.format,
-              copyable: detail.copyable,
-              truncated: detail.truncated,
-              redacted: detail.redacted,
-            })),
-          }
-        : {}),
-    })
+      details: projectActivityDetails(tool.public_details),
+    }
+    group.activities.push(activity)
+    context.calls.set(callKey, { groupKey, activity })
   }
   const interaction = activeRun.pending_interaction
-  if (interaction) {
-    transcript.push({
+  const interactionIdentity = interaction
+    ? interactionKey(activeRun.run.id, interaction.interaction_id)
+    : null
+  if (interaction && interactionIdentity && !context.interactions.has(interactionIdentity)) {
+    const block: InteractionTranscriptBlock = {
       type: "interaction",
       id: `active:${activeRun.run.id}:interaction:${interaction.interaction_id}`,
       runId: activeRun.run.id,
@@ -561,7 +609,9 @@ function appendActiveRun(
       status: "pending",
       request: projectInteractionRequest(interaction.request),
       response: null,
-    })
+    }
+    context.interactions.set(interactionIdentity, block)
+    transcript.push(block)
   }
 }
 
@@ -589,31 +639,9 @@ function projectEntry(
         },
       ]
     case "interaction_request":
-      return [
-        {
-          type: "interaction",
-          id: entry.id,
-          runId: entry.run_id,
-          createdAt: entry.created_at,
-          interactionId: entry.payload.interaction_id,
-          status: "pending",
-          request: projectInteractionRequest(entry.payload.request),
-          response: null,
-        },
-      ]
+      return projectInteractionRequestEntry(entry, context)
     case "interaction_response":
-      return [
-        {
-          type: "interaction",
-          id: entry.id,
-          runId: entry.run_id,
-          createdAt: entry.created_at,
-          interactionId: entry.payload.interaction_id,
-          status: "resolved",
-          request: null,
-          response: projectInteractionResponse(entry.payload.response),
-        },
-      ]
+      return projectInteractionResponseEntry(entry)
     case "plan":
       return [
         {
@@ -800,6 +828,7 @@ function projectToolCall(
     error: null,
     startedAt: null,
     completedAt: null,
+    details: projectActivityDetails(part.public_details),
   }
   group.activities.push(activity)
   context.calls.set(`${runKey}:${part.call_id}`, { groupKey, activity })
@@ -832,14 +861,86 @@ function projectToolResult(
   const activity = {
     ...call.activity,
     status: part.status,
-    summary: part.summary ?? call.activity.summary,
     output: part.output,
     error: part.error,
     startedAt: part.started_at,
     completedAt: part.completed_at,
+    details: mergeActivityDetails(
+      call.activity.details,
+      projectActivityDetails(part.public_details),
+    ),
   }
   group.activities[activityIndex] = activity
   context.calls.set(callKey, { groupKey: call.groupKey, activity })
+}
+
+function projectInteractionRequestEntry(
+  entry: Extract<HistoryEntry, { type: "interaction_request" }>,
+  context: HistoryProjectionContext,
+): InteractionTranscriptBlock[] {
+  const block: InteractionTranscriptBlock = {
+    type: "interaction",
+    id: entry.id,
+    runId: entry.run_id,
+    createdAt: entry.created_at,
+    interactionId: entry.payload.interaction_id,
+    status: "pending",
+    request: projectInteractionRequest(entry.payload.request),
+    response: null,
+  }
+  context.interactions.set(
+    interactionKey(entry.run_id, entry.payload.interaction_id),
+    block,
+  )
+  return [block]
+}
+
+function projectInteractionResponseEntry(
+  entry: Extract<HistoryEntry, { type: "interaction_response" }>,
+): InteractionTranscriptBlock[] {
+  return [
+    {
+      type: "interaction",
+      id: entry.id,
+      runId: entry.run_id,
+      createdAt: entry.created_at,
+      interactionId: entry.payload.interaction_id,
+      status: "resolved",
+      request: null,
+      response: projectInteractionResponse(entry.payload.response),
+    },
+  ]
+}
+
+function interactionKey(runId: string | null, interactionId: string) {
+  return `${runId ?? "session"}:${interactionId}`
+}
+
+function projectActivityDetails(
+  details: readonly ToolPublicDetail[] | undefined,
+): ActivityItem["details"] {
+  if (!details?.length) return undefined
+  return details.map((detail) => ({
+    id: detail.id,
+    kind: detail.kind,
+    label: detail.label,
+    value: detail.value,
+    format: detail.format,
+    copyable: detail.copyable,
+    truncated: detail.truncated,
+    redacted: detail.redacted,
+  }))
+}
+
+function mergeActivityDetails(
+  current: ActivityItem["details"],
+  incoming: ActivityItem["details"],
+) {
+  if (!incoming?.length) return current
+  if (!current?.length) return incoming
+  const merged = new Map(current.map((detail) => [detail.id, detail]))
+  for (const detail of incoming) merged.set(detail.id, detail)
+  return [...merged.values()]
 }
 
 function appendReference(
@@ -849,6 +950,7 @@ function appendReference(
     MessagePart,
     | { type: "text" }
     | { type: "reasoning_summary" }
+    | { type: "reasoning_trace" }
     | { type: "tool_call" }
     | { type: "tool_result" }
     | { type: "artifact_ref" }
@@ -878,6 +980,7 @@ function toMessageReference(
     MessagePart,
     | { type: "text" }
     | { type: "reasoning_summary" }
+    | { type: "reasoning_trace" }
     | { type: "tool_call" }
     | { type: "tool_result" }
     | { type: "artifact_ref" }
@@ -917,19 +1020,22 @@ function unknownEntry(
   entry: HistoryEntry,
   diagnosticCode: string,
 ): TranscriptBlock {
+  const originalType =
+    entry.type === "unknown" ? entry.payload.original_type : String(entry.type)
+
   return {
     type: "unknown",
     id: entry.id,
     runId: entry.run_id,
     createdAt: entry.created_at,
-    originalType: String(entry.type),
+    originalType,
     diagnosticCode,
     diagnosticParams:
       diagnosticCode === "unsupported_entry_version"
         ? {
-            originalType: String(entry.type),
+            originalType,
             version: String(entry.schema_version),
           }
-        : { originalType: String(entry.type) },
+        : { originalType },
   }
 }

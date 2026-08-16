@@ -49,7 +49,7 @@ function snapshot(title = "Analysis"): SessionSnapshot {
       permission_mode: "ask_dangerous",
       workspace_access: "read_write",
       settings_revision: 1,
-      environment_scope: { mode: "auto" },
+      environment_scope: { mode: "auto", environment_ids: null },
       status: "active",
       created_at: timestamp,
       updated_at: timestamp,
@@ -541,7 +541,7 @@ describe("useAgentSession", () => {
     }
     patchResponse.session.environment_scope = {
       mode: "manual",
-      selected_environment_ids: ["local", "gpu-01"],
+      environment_ids: ["local", "gpu-01"],
     }
     mocks.updateAgentSession
       .mockResolvedValueOnce(patchResponse)
@@ -572,7 +572,10 @@ describe("useAgentSession", () => {
       },
     })
     expect(result.current.session?.model.model).toBe("gpt-5.6")
-    expect(result.current.session?.environment_scope).toEqual({ mode: "auto" })
+    expect(result.current.session?.environment_scope).toEqual({
+      mode: "auto",
+      environment_ids: null,
+    })
 
     act(() => {
       subscription.onEvent({ type: "snapshot", snapshot: patchResponse })
@@ -580,7 +583,7 @@ describe("useAgentSession", () => {
     expect(result.current.session?.model.model).toBe("claude-sonnet")
     expect(result.current.session?.environment_scope).toEqual({
       mode: "manual",
-      selected_environment_ids: ["local", "gpu-01"],
+      environment_ids: ["local", "gpu-01"],
     })
   })
 
