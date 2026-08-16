@@ -370,7 +370,7 @@ def test_complete_harness_migration_is_intentionally_irreversible(
         revision = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchone()
-    assert tuple(revision) == (get_alembic_head_revision(),)
+    assert tuple(revision) == ("0060_agent_harness_public_revisions",)
 
 
 def test_complete_harness_migration_merges_interleaved_legacy_timeline(

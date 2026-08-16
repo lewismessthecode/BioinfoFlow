@@ -32,11 +32,11 @@ def upgrade() -> None:
     )
 
     bind = op.get_bind()
-    metadata = sa.MetaData()
-    sessions = sa.Table(
+    sessions = sa.table(
         "agent_sessions",
-        metadata,
-        autoload_with=bind,
+        sa.column("id", sa.String(length=36)),
+        sa.column("workspace_snapshot", sa.JSON()),
+        sa.column("execution_scope", sa.JSON()),
     )
     rows = bind.execute(
         sa.select(sessions.c.id, sessions.c.workspace_snapshot)
