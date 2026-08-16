@@ -6,7 +6,9 @@ import pytest
 
 from app.models.remote_connection import RemoteConnection
 from app.repositories.agent_harness_repo import AgentHarnessRepository
-from app.services.agent_harness.factory import routed_workspace_runtime_for_session
+from app.services.agent_harness.environment_runtime import (
+    routed_workspace_runtime_for_session,
+)
 from app.services.agent_harness.tools.specs import ToolCall
 from app.services.agent_harness.turn_settings import effective_turn_session
 from app.services.remote_execution import RemoteCommandResult
