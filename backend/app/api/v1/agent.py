@@ -57,7 +57,7 @@ from app.services.agent_harness.factory import (
 from app.services.agent_harness.runtime import agent_runtime
 from app.services.agent_harness.system_prompt import default_system_prompt_snapshot
 from app.services.agent_ui.bootstrap import build_agent_ui_bootstrap
-from app.services.agent_ui.contracts import AgentUiBootstrap, StoredArtifactResourceView
+from app.services.agent_ui.contracts import AgentArtifactView, AgentUiBootstrap
 from app.services.agent_ui.projector import public_artifact_resource
 from app.services.agent_ui.execution_targets import (
     execution_target_catalog,
@@ -230,21 +230,6 @@ class AgentAttachmentView(BaseModel):
     status: str
     metadata: dict | None = None
     error_message: str | None = None
-    created_at: datetime
-    updated_at: datetime
-
-
-class AgentArtifactView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: UUID
-    session_id: UUID
-    run_id: UUID | None = None
-    type: str
-    title: str
-    summary: str | None = None
-    payload: dict | None = None
-    resource_ref: StoredArtifactResourceView | None = None
     created_at: datetime
     updated_at: datetime
 

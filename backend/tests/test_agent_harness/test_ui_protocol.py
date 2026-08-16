@@ -4,6 +4,15 @@ from unittest.mock import patch
 
 import pytest
 
+from app.services.agent_ui.contracts import AgentUiContractBundle
+
+
+def test_agent_ui_contract_bundle_generates_artifact_detail_shape() -> None:
+    schema = AgentUiContractBundle.model_json_schema()
+
+    assert "artifact" in schema["properties"]
+    assert "StoredArtifactResourceView" in schema["$defs"]
+
 
 @pytest.mark.asyncio
 async def test_agent_ui_bootstrap_exposes_versioned_stable_slots(async_client) -> None:
@@ -115,6 +124,32 @@ async def test_agent_ui_bootstrap_only_enables_verified_remote_roots(
         if target["id"] == connection_id
     )
     assert remote_after["disabled_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_agent_ui_bootstrap_redacts_user_at_host_remote_labels(async_client) -> None:
+    created = await async_client.post(
+        "/api/v1/connections",
+        json={
+            "name": "alice@10.0.0.5",
+            "host": "10.0.0.5",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "agent",
+        },
+    )
+    assert created.status_code == 201
+    connection_id = created.json()["data"]["id"]
+
+    response = await async_client.get("/api/v1/agent/ui/bootstrap")
+
+    remote = next(
+        target
+        for target in response.json()["data"]["execution_targets"]
+        if target["id"] == connection_id
+    )
+    assert remote["alias"] == "Remote 1"
+    assert "@" not in remote["handle"]
 
 
 @pytest.mark.asyncio

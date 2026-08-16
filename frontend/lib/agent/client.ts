@@ -5,11 +5,15 @@ import type {
   AgentPermissionMode,
   AgentSessionStatus,
   AgentWorkspaceAccess,
-  JsonObject,
   SessionSnapshot,
   AgentExecutionScope,
 } from "./contracts"
-import { decodeAgentSnapshot } from "./protocol"
+import {
+  decodeAgentArtifact,
+  decodeAgentSnapshot,
+} from "./protocol"
+
+export type { AgentArtifact } from "./protocol"
 
 export type AgentSessionSummary = {
   id: string
@@ -18,27 +22,6 @@ export type AgentSessionSummary = {
   permission_mode: AgentPermissionMode
   workspace_access: AgentWorkspaceAccess
   status: AgentSessionStatus
-  created_at: string
-  updated_at: string
-}
-
-export type AgentArtifactResource = {
-  kind: "stored_file"
-  filename: string
-  mime_type: string
-  size_bytes: number
-  sha256: string
-}
-
-export type AgentArtifact = {
-  id: string
-  session_id: string
-  run_id: string | null
-  type: string
-  title: string
-  summary: string | null
-  payload: JsonObject | null
-  resource_ref: AgentArtifactResource | null
   created_at: string
   updated_at: string
 }
@@ -95,11 +78,13 @@ export async function getAgentArtifact(
   artifactId: string,
   options?: { signal?: AbortSignal },
 ) {
-  const response = await apiRequest<AgentArtifact>(
+  const response = await apiRequest<unknown>(
     `/agent/artifacts/${artifactId}`,
     options,
   )
-  return response.data
+  const decoded = decodeAgentArtifact(response.data)
+  if (!decoded.ok) throw new Error("Invalid Agent artifact payload")
+  return decoded.value
 }
 
 export async function fetchAgentArtifactContent(

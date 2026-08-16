@@ -2809,6 +2809,25 @@
       "suffix": "to get started."
     }
   },
+  "agentBootstrapCopy": {
+    "composerHint": "Type / to choose a skill, or add files, workflows, and runs as context",
+    "project": {
+      "checkWorkflowTitle": "Check and run the workflow",
+      "checkWorkflowPrompt": "Inspect this project's workflow and inputs, then run it when everything is ready.",
+      "explainInputsTitle": "Explain the project inputs",
+      "explainInputsPrompt": "Explain the workflow inputs available in this project and how I should prepare the data.",
+      "reviewRunTitle": "Review the latest run",
+      "reviewRunPrompt": "Review the latest run in this project, summarize the result, and identify anything that needs attention."
+    },
+    "workspace": {
+      "inspectTitle": "Inspect the workspace",
+      "inspectPrompt": "Inspect the current workspace and summarize its projects, workflows, and recent runs.",
+      "planTitle": "Plan an analysis",
+      "planPrompt": "Help me plan a new bioinformatics analysis and list what I need before starting.",
+      "reviewTitle": "Review failed runs",
+      "reviewPrompt": "Find recent failed runs, explain the most likely causes, and recommend next steps."
+    }
+  },
   "executionMode": {
     "askShort": "Ask",
     "approveAllShort": "Approve all",

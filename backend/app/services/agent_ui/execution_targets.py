@@ -201,7 +201,7 @@ def _remote_target(
     has_safe_root: bool,
 ) -> ExecutionTargetView:
     alias = str(connection.name or "").strip() or str(connection.ssh_alias or "").strip()
-    if not alias:
+    if not alias or "@" in alias:
         alias = f"Remote {index}"
     return ExecutionTargetView(
         id=str(connection.id),

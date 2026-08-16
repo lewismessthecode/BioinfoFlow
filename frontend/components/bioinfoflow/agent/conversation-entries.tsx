@@ -15,6 +15,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import type {
   HistoryEntry,
+  InteractionResponse,
   InteractionResponseEntry,
   MessagePart,
   MessageEntry,
@@ -22,6 +23,7 @@ import type {
   ToolProgressView,
   ToolResultPart,
 } from "@/lib/agent/contracts"
+import type { AgentUiCapabilities } from "@/lib/agent/bootstrap"
 import { cn } from "@/lib/utils"
 import {
   buildTranscriptView,
@@ -35,6 +37,7 @@ type AgentHistoryEntriesProps = {
   onOpenRun?: (runId: string) => void
   onRetryMessage?: (entry: MessageEntry) => void | Promise<void>
   onEditMessage?: (entry: MessageEntry) => void
+  capabilities?: AgentUiCapabilities
 }
 
 const EMPTY_LIVE_TOOLS = new Map<string, ToolProgressView>()
@@ -46,6 +49,7 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
   onOpenRun,
   onRetryMessage,
   onEditMessage,
+  capabilities,
 }: AgentHistoryEntriesProps) {
   const prepared = useMemo(() => buildTranscriptView(entries), [entries])
   const runsById = useMemo(
@@ -95,9 +99,11 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
         if (entry.type === "interaction_response") return withOutcome(null)
 
         if (entry.type === "message") {
-          const visibleParts =
+          const visibleParts = filterPartsForCapabilities(
             prepared.visibleMessagePartsByEntryId.get(entry.id) ??
-            entry.payload.parts
+              entry.payload.parts,
+            capabilities,
+          )
           if (visibleParts.length === 0) return withOutcome(null)
 
           return withOutcome(
@@ -120,7 +126,11 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
           )
         }
 
-        if (entry.type === "interaction_request") {
+        if (
+          entry.type === "interaction_request" &&
+          (entry.payload.request.type !== "approval" ||
+            capabilities?.approvals !== false)
+        ) {
           return withOutcome(
             <div
               className="min-w-0"
@@ -151,6 +161,32 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
     </div>
   )
 })
+
+function isPartCapabilityEnabled(
+  part: MessagePart,
+  capabilities?: AgentUiCapabilities,
+) {
+  if (part.type === "reasoning_summary") return capabilities?.reasoning !== false
+  if (part.type === "tool_call" || part.type === "tool_result") {
+    return capabilities?.toolActivity !== false
+  }
+  if (part.type === "artifact_ref") return capabilities?.artifacts !== false
+  return true
+}
+
+function filterPartsForCapabilities(
+  parts: MessagePart[],
+  capabilities?: AgentUiCapabilities,
+) {
+  if (
+    capabilities?.reasoning !== false &&
+    capabilities?.toolActivity !== false &&
+    capabilities?.artifacts !== false
+  ) {
+    return parts
+  }
+  return parts.filter((part) => isPartCapabilityEnabled(part, capabilities))
+}
 
 const AgentHistoryEntry = memo(function AgentHistoryEntry({
   entry,

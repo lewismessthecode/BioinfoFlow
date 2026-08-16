@@ -2809,6 +2809,25 @@
       "suffix": "即可开始。"
     }
   },
+  "agentBootstrapCopy": {
+    "composerHint": "输入 / 选择技能，或添加文件、工作流和运行记录作为上下文",
+    "project": {
+      "checkWorkflowTitle": "检查并运行工作流",
+      "checkWorkflowPrompt": "检查当前项目的工作流和输入，确认无误后运行它。",
+      "explainInputsTitle": "解释项目输入",
+      "explainInputsPrompt": "解释当前项目可用的工作流输入，以及应该如何准备数据。",
+      "reviewRunTitle": "复盘最近一次运行",
+      "reviewRunPrompt": "查看当前项目最近一次运行，概括结果并指出需要处理的问题。"
+    },
+    "workspace": {
+      "inspectTitle": "检查工作区",
+      "inspectPrompt": "检查当前工作区，告诉我有哪些项目、工作流和最近的运行记录。",
+      "planTitle": "规划一次分析",
+      "planPrompt": "帮我规划一次新的生物信息分析，并列出开始前需要准备的内容。",
+      "reviewTitle": "检查失败运行",
+      "reviewPrompt": "查找最近失败的运行，解释最可能的原因并给出下一步建议。"
+    }
+  },
   "executionMode": {
     "askShort": "询问",
     "approveAllShort": "全部确认",

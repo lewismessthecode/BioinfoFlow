@@ -42,6 +42,7 @@ const part: ArtifactRefPart = {
 }
 
 const artifact = {
+  protocol_version: 1,
   id: "artifact-1",
   session_id: "session-1",
   run_id: "run-1",
@@ -54,6 +55,7 @@ const artifact = {
     filename: "qc-report.html",
     mime_type: "text/html",
     size_bytes: 68,
+    sha256: "abc123",
   },
   created_at: "2026-08-15T08:00:00Z",
   updated_at: "2026-08-15T08:00:01Z",
@@ -136,6 +138,7 @@ describe("AgentArtifactReference", () => {
           filename: "alignment.bam",
           mime_type: "application/octet-stream",
           size_bytes: 4096,
+          sha256: "def456",
         },
       },
     })

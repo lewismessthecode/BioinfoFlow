@@ -57,7 +57,9 @@
           "payload": {
             "anyOf": [
               {
-                "additionalProperties": true,
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
                 "type": "object"
               },
               {
@@ -66,17 +68,21 @@
             ],
             "title": "Payload"
           },
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
           "resource_ref": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/StoredArtifactResourceView"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Resource Ref"
+            ]
           },
           "run_id": {
             "anyOf": [
@@ -637,6 +643,26 @@
             },
             "title": "Execution Targets",
             "type": "array"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "permission_mode": {
+            "default": "ask_dangerous",
+            "enum": [
+              "ask_changes",
+              "ask_dangerous",
+              "full_access"
+            ],
+            "title": "Permission Mode",
+            "type": "string"
           },
           "protocol_version": {
             "const": 1,
@@ -5426,6 +5452,42 @@
           "project_id"
         ],
         "title": "StorageScanRequest",
+        "type": "object"
+      },
+      "StoredArtifactResourceView": {
+        "additionalProperties": false,
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "kind": {
+            "const": "stored_file",
+            "default": "stored_file",
+            "title": "Kind",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "minimum": 0.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filename",
+          "mime_type",
+          "size_bytes",
+          "sha256"
+        ],
+        "title": "StoredArtifactResourceView",
         "type": "object"
       },
       "SuccessEnvelope_AgentArtifactView_": {

@@ -42,6 +42,106 @@
       "title": "ActiveRunView",
       "type": "object"
     },
+    "AgentArtifactView": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "payload": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Payload"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "resource_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StoredArtifactResourceView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "session_id": {
+          "format": "uuid",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summary"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "type",
+        "title",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "AgentArtifactView",
+      "type": "object"
+    },
     "AgentUiBootstrap": {
       "additionalProperties": false,
       "properties": {
@@ -2123,6 +2223,42 @@
       "title": "StarterPromptView",
       "type": "object"
     },
+    "StoredArtifactResourceView": {
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "title": "Filename",
+          "type": "string"
+        },
+        "kind": {
+          "const": "stored_file",
+          "default": "stored_file",
+          "title": "Kind",
+          "type": "string"
+        },
+        "mime_type": {
+          "title": "Mime Type",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "filename",
+        "mime_type",
+        "size_bytes",
+        "sha256"
+      ],
+      "title": "StoredArtifactResourceView",
+      "type": "object"
+    },
     "TextPart": {
       "additionalProperties": false,
       "properties": {
@@ -2935,6 +3071,9 @@
   },
   "additionalProperties": false,
   "properties": {
+    "artifact": {
+      "$ref": "#/$defs/AgentArtifactView"
+    },
     "bootstrap": {
       "$ref": "#/$defs/AgentUiBootstrap"
     },
@@ -2985,7 +3124,8 @@
   "required": [
     "bootstrap",
     "snapshot",
-    "event"
+    "event",
+    "artifact"
   ],
   "title": "AgentUiContractBundle",
   "type": "object"

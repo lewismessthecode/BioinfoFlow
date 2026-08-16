@@ -17,6 +17,7 @@ import type {
   RunView,
   MessageEntry,
 } from "@/lib/agent/contracts"
+import type { AgentUiCapabilities } from "@/lib/agent/bootstrap"
 import { cn } from "@/lib/utils"
 
 type AgentTranscriptProps = {
@@ -30,6 +31,7 @@ type AgentTranscriptProps = {
   onOpenRun?: (runId: string) => void
   onRetryMessage?: (entry: MessageEntry) => void | Promise<void>
   onEditMessage?: (entry: MessageEntry) => void
+  capabilities?: AgentUiCapabilities
   className?: string
 }
 
@@ -49,6 +51,7 @@ export function AgentTranscript({
   onOpenRun,
   onRetryMessage,
   onEditMessage,
+  capabilities,
   className,
 }: AgentTranscriptProps) {
   const t = useTranslations("agentTranscript")
@@ -160,14 +163,18 @@ export function AgentTranscript({
               onOpenRun={onOpenRun}
               onRetryMessage={onRetryMessage}
               onEditMessage={onEditMessage}
+              capabilities={capabilities}
             />
             {activeRun ? (
               <ActiveRun
                 activeRun={activeRun}
                 durableToolCallIds={durableToolCallIds}
+                capabilities={capabilities}
               />
             ) : null}
-            {pendingInteraction ? (
+            {pendingInteraction &&
+            (pendingInteraction.request.type !== "approval" ||
+              capabilities?.approvals !== false) ? (
               <AgentInteractionCard
                 interactionId={pendingInteraction.interaction_id}
                 request={pendingInteraction.request}

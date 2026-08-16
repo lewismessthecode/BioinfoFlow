@@ -17,10 +17,12 @@ import type {
   AssistantDraftPartView,
   ToolProgressView,
 } from "@/lib/agent/contracts"
+import type { AgentUiCapabilities } from "@/lib/agent/bootstrap"
 
 type ActiveRunProps = {
   activeRun: ActiveRunView
   durableToolCallIds?: ReadonlySet<string>
+  capabilities?: AgentUiCapabilities
 }
 
 const EMPTY_DURABLE_TOOL_CALL_IDS = new Set<string>()
@@ -28,26 +30,33 @@ const EMPTY_DURABLE_TOOL_CALL_IDS = new Set<string>()
 export function ActiveRun({
   activeRun,
   durableToolCallIds = EMPTY_DURABLE_TOOL_CALL_IDS,
+  capabilities,
 }: ActiveRunProps) {
   const t = useTranslations("agentRun")
   const titleId = useId()
   const activity = useMemo(
     () =>
       buildActiveActivity(
-        activeRun.assistant_draft?.parts ?? [],
-        activeRun.tool_progress,
+        (activeRun.assistant_draft?.parts ?? []).filter(
+          (part) => part.type !== "reasoning_summary" || capabilities?.reasoning !== false,
+        ),
+        capabilities?.toolActivity === false ? [] : activeRun.tool_progress,
         durableToolCallIds,
       ),
     [
       activeRun.assistant_draft?.parts,
       activeRun.tool_progress,
+      capabilities?.reasoning,
+      capabilities?.toolActivity,
       durableToolCallIds,
     ],
   )
-  const finishedTools = activeRun.tool_progress.filter((tool) =>
+  const visibleTools =
+    capabilities?.toolActivity === false ? [] : activeRun.tool_progress
+  const finishedTools = visibleTools.filter((tool) =>
     isFinished(tool.status),
   ).length
-  const toolCount = activeRun.tool_progress.length
+  const toolCount = visibleTools.length
   const progressValue =
     toolCount === 0 ? 0 : Math.round((finishedTools / toolCount) * 100)
 

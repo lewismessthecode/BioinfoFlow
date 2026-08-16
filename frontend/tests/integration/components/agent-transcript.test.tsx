@@ -197,6 +197,72 @@ describe("AgentTranscript", () => {
     })
   })
 
+  it("degrades reasoning, tool, approval, and artifact cards independently", () => {
+    const restrictedEntries: HistoryEntry[] = [
+      ...entries,
+      {
+        ...entries[1],
+        id: "restricted-parts",
+        sequence: 4,
+        type: "message",
+        payload: {
+          role: "assistant",
+          parts: [
+            { id: "visible-text", type: "text", text: "Visible response" },
+            {
+              id: "hidden-reasoning",
+              type: "reasoning_summary",
+              text: "Hidden reasoning",
+            },
+            {
+              id: "hidden-tool",
+              type: "tool_call",
+              call_id: "call-hidden",
+              group_id: "group-hidden",
+              execution_mode: "serial",
+              name: "bash",
+              display_name: "Hidden tool",
+              category: "command",
+              summary: "Run a hidden tool",
+              arguments: {},
+            },
+            {
+              id: "hidden-artifact",
+              type: "artifact_ref",
+              artifact_id: "artifact-hidden",
+              title: "hidden-report.html",
+              media_type: "text/html",
+            },
+          ],
+        },
+      },
+    ]
+
+    renderWithProviders(
+      <AgentTranscript
+        entries={restrictedEntries}
+        runs={[completedRun, pendingRun.run]}
+        activeRun={pendingRun}
+        capabilities={{
+          reasoning: false,
+          toolActivity: false,
+          approvals: false,
+          artifacts: false,
+          starterPrompts: true,
+          multiTargetExecution: true,
+          retry: true,
+          editAndResend: true,
+        }}
+      />,
+    )
+
+    expect(screen.getByText("Visible response")).toBeInTheDocument()
+    expect(screen.queryByText("Hidden reasoning")).not.toBeInTheDocument()
+    expect(screen.queryByText("Hidden tool")).not.toBeInTheDocument()
+    expect(screen.queryByText("hidden-report.html")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("agent-interaction-card")).not.toBeInTheDocument()
+  })
+
   it("combines durable history, active work, run timing, copy, and one actionable interaction", async () => {
     const user = userEvent.setup()
     const writeText = vi

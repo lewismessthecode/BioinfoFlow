@@ -111,6 +111,14 @@ vi.mock("@/components/bioinfoflow/agent/agent-context-picker", () => ({
   ),
 }))
 
+vi.mock("@/components/bioinfoflow/agent/execution-target-selector", () => ({
+  ExecutionTargetSelector: ({ disabled }: { disabled?: boolean }) => (
+    <button type="button" disabled={disabled}>
+      Execution targets
+    </button>
+  ),
+}))
+
 vi.mock("@/components/bioinfoflow/agent/agent-transcript", () => ({
   AgentTranscript: ({
     entries,
@@ -156,6 +164,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
     disabled,
     placement,
     modelControls,
+    executionControls,
     initialValue,
     contextInputs = [],
   }: {
@@ -168,12 +177,14 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
     disabled?: boolean
     placement?: "draft" | "dock"
     modelControls?: ReactNode
+    executionControls?: ReactNode
     initialValue?: string
     contextInputs?: Array<{ label: string }>
   }) => (
     <div data-testid="mock-composer" data-placement={placement}>
       {contextControls}
       {modelControls}
+      {executionControls}
       <input aria-label="Draft message" defaultValue={initialValue || "Keep this draft"} />
       <span data-testid="composer-context-count">{contextInputs.length}</span>
       <span>Permission: {permissionMode}</span>
@@ -319,6 +330,15 @@ describe("AgentWorkbench v2", () => {
     mocks.catalogPanel.mockReset()
     mocks.setSelectedModel.mockReset()
     mocks.useSession.mockReturnValue(sessionState())
+  })
+
+  it("disables only the execution target slot when multi-target capability is absent", () => {
+    renderWithProviders(
+      <AgentWorkbench sessionId={null} projectId="project-1" />,
+    )
+
+    expect(screen.getByRole("button", { name: "Execution targets" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "GPT-5.6 model selector" })).toBeEnabled()
   })
 
   it("creates the draft session once, sends the public message command, and routes to it", async () => {

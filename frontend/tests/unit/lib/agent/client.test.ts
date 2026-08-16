@@ -22,9 +22,30 @@ const mockedBuildApiUrl = vi.mocked(buildApiUrl)
 
 function createSnapshot(sessionId: string): SessionSnapshot {
   return {
-    session: { id: sessionId },
+    protocol_version: 1,
+    session: {
+      id: sessionId,
+      user_id: "user-1",
+      workspace_id: "workspace-1",
+      project_id: null,
+      title: null,
+      model: {
+        provider: "openai",
+        model: "gpt-test",
+        display_name: "GPT Test",
+        supports_vision: false,
+        supports_reasoning: true,
+        supports_tools: true,
+      },
+      permission_mode: "ask_dangerous",
+      workspace_access: "read_write",
+      status: "active",
+      created_at: "2026-08-16T00:00:00Z",
+      updated_at: "2026-08-16T00:00:00Z",
+    },
     runs: [],
     entries: [],
+    active_run: null,
   } as SessionSnapshot
 }
 
@@ -37,6 +58,7 @@ describe("agent client", () => {
 
   it("loads public artifact details without exposing storage paths in its contract", async () => {
     const artifact = {
+      protocol_version: 1,
       id: "artifact-1",
       session_id: "session-1",
       run_id: "run-1",
@@ -49,6 +71,7 @@ describe("agent client", () => {
         filename: "qc-report.html",
         mime_type: "text/html",
         size_bytes: 2048,
+        sha256: "abc123",
       },
       created_at: "2026-08-15T08:00:00Z",
       updated_at: "2026-08-15T08:00:01Z",
@@ -59,6 +82,20 @@ describe("agent client", () => {
     expect(mockedApiRequest).toHaveBeenCalledWith(
       "/agent/artifacts/artifact-1",
       undefined,
+    )
+  })
+
+  it("rejects malformed public artifact details at the generated contract seam", async () => {
+    mockedApiRequest.mockResolvedValueOnce({
+      data: {
+        protocol_version: 1,
+        id: "artifact-1",
+        resource_ref: { kind: "stored_file", filename: "report.html" },
+      },
+    })
+
+    await expect(getAgentArtifact("artifact-1")).rejects.toThrow(
+      "Invalid Agent artifact payload",
     )
   })
 

@@ -453,18 +453,25 @@ function DraftWorkbench({
             <ExecutionTargetSelector
               targets={bootstrap?.executionTargets ?? []}
               scope={toUiScope(executionScope)}
-              disabled={!bootstrap}
+              disabled={
+                !bootstrap || !bootstrap.capabilities.multiTargetExecution
+              }
               onChange={(scope) => onExecutionScopeChange(toContractScope(scope))}
             />
           }
           hint={bootstrap?.composerHint}
         />
-        <AgentStarterPrompts
-          prompts={bootstrap?.starterPrompts ?? []}
-          onSelect={(prompt) =>
-            setStarterDraft((current) => ({ key: current.key + 1, text: prompt.prompt }))
-          }
-        />
+        {bootstrap?.capabilities.starterPrompts ? (
+          <AgentStarterPrompts
+            prompts={bootstrap.starterPrompts}
+            onSelect={(prompt) =>
+              setStarterDraft((current) => ({
+                key: current.key + 1,
+                text: prompt.prompt,
+              }))
+            }
+          />
+        ) : null}
       </div>
     </div>
   )
@@ -637,6 +644,7 @@ function SessionWorkbench({
               ? editMessage
               : undefined
           }
+          capabilities={bootstrap?.capabilities}
         />
       )}
       {state.session.status !== "active" ? (
@@ -696,7 +704,12 @@ function SessionWorkbench({
             targets={bootstrap?.executionTargets ?? []}
             scope={toUiScope(executionScope)}
             activeTarget={activeExecutionTarget(state, bootstrap)}
-            disabled={!interactive || state.session.status !== "active" || !bootstrap}
+            disabled={
+              !interactive ||
+              state.session.status !== "active" ||
+              !bootstrap ||
+              !bootstrap.capabilities.multiTargetExecution
+            }
             onChange={(scope) => setExecutionScope(toContractScope(scope))}
           />
         }

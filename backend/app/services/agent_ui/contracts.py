@@ -124,6 +124,20 @@ class StoredArtifactResourceView(StrictContract):
     sha256: str
 
 
+class AgentArtifactView(StrictContract):
+    protocol_version: Literal[1] = AGENT_UI_PROTOCOL_VERSION
+    id: UUID
+    session_id: UUID
+    run_id: UUID | None = None
+    type: str
+    title: str
+    summary: str | None = None
+    payload: dict[str, JsonValue] | None = None
+    resource_ref: StoredArtifactResourceView | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class AgentUiBootstrap(StrictContract):
     protocol_version: Literal[1] = AGENT_UI_PROTOCOL_VERSION
     capabilities: UiCapabilities = Field(default_factory=default_ui_capabilities)
@@ -629,12 +643,14 @@ class AgentUiContractBundle(StrictContract):
     bootstrap: AgentUiBootstrap
     snapshot: SessionSnapshot
     event: AgentEvent
+    artifact: AgentArtifactView
 
 
 __all__ = [
     "AGENT_UI_PROTOCOL_VERSION",
     "ActiveRunView",
     "AgentEvent",
+    "AgentArtifactView",
     "AgentUiBootstrap",
     "AgentUiContractBundle",
     "ApprovalInteractionRequest",
@@ -688,6 +704,7 @@ __all__ = [
     "SessionView",
     "SnapshotEvent",
     "StarterPromptView",
+    "StoredArtifactResourceView",
     "StrictContract",
     "TextPart",
     "ToolCallPart",
