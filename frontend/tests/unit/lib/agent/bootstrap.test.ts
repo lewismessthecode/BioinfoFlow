@@ -24,6 +24,13 @@ describe("getAgentUiBootstrap", () => {
           retry: true,
           edit_and_resend: true,
         },
+        model: {
+          catalog_model_id: "model-record-1",
+          provider: "openai",
+          model: "gpt-5.6",
+          display_name: "GPT-5.6",
+        },
+        permission_mode: "ask_changes",
         execution_scope: { mode: "manual", target_ids: ["remote-1"] },
         execution_targets: [
           {
@@ -50,6 +57,8 @@ describe("getAgentUiBootstrap", () => {
     await expect(getAgentUiBootstrap("project-1", "en")).resolves.toEqual(
       expect.objectContaining({
         protocolVersion: 1,
+        model: expect.objectContaining({ catalogModelId: "model-record-1" }),
+        permissionMode: "ask_changes",
         executionScope: { mode: "manual", targetIds: ["remote-1"] },
         executionTargets: [
           expect.objectContaining({ alias: "Cluster A", handle: "ssh:cluster-a" }),

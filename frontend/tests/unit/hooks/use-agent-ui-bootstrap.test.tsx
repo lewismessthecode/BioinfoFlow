@@ -48,6 +48,8 @@ function bootstrap(composerHint: string) {
       retry: true,
       editAndResend: true,
     },
+    model: null,
+    permissionMode: "ask_dangerous" as const,
     executionTargets: [],
     executionScope: { mode: "auto" as const, targetIds: [] },
     starterPrompts: [],

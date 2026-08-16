@@ -9,6 +9,7 @@ import type {
   SessionSnapshot,
   AgentExecutionScope,
 } from "./contracts"
+import { decodeAgentSnapshot } from "./protocol"
 
 export type AgentSessionSummary = {
   id: string
@@ -67,7 +68,7 @@ export async function createAgentSession(input: {
   model?: string
   executionScope?: AgentExecutionScope
 }) {
-  const response = await apiRequest<SessionSnapshot>("/agent/sessions", {
+  const response = await apiRequest<unknown>("/agent/sessions", {
     method: "POST",
     body: JSON.stringify({
       project_id: input.projectId ?? null,
@@ -80,14 +81,14 @@ export async function createAgentSession(input: {
       execution_scope: input.executionScope,
     }),
   })
-  return response.data
+  return requireAgentSnapshot(response.data)
 }
 
 export async function getAgentSnapshot(sessionId: string) {
-  const response = await apiRequest<SessionSnapshot>(
+  const response = await apiRequest<unknown>(
     `/agent/sessions/${sessionId}/snapshot`,
   )
-  return response.data
+  return requireAgentSnapshot(response.data)
 }
 
 export async function getAgentArtifact(
@@ -136,7 +137,7 @@ export async function updateAgentSession(
     modelId?: string
   },
 ) {
-  const response = await apiRequest<SessionSnapshot>(
+  const response = await apiRequest<unknown>(
     `/agent/sessions/${sessionId}`,
     {
       method: "PATCH",
@@ -149,18 +150,18 @@ export async function updateAgentSession(
       }),
     },
   )
-  return response.data
+  return requireAgentSnapshot(response.data)
 }
 
 export async function dispatchAgentCommand(
   sessionId: string,
   command: AgentCommand,
 ) {
-  const response = await apiRequest<SessionSnapshot>(
+  const response = await apiRequest<unknown>(
     `/agent/sessions/${sessionId}/commands`,
     { method: "POST", body: JSON.stringify(command) },
   )
-  return response.data
+  return requireAgentSnapshot(response.data)
 }
 
 export async function deleteAgentSession(sessionId: string) {
@@ -184,4 +185,10 @@ function contentDispositionFilename(value: string | null) {
     }
   }
   return decoded.split(/[\\/]/).pop() || null
+}
+
+function requireAgentSnapshot(value: unknown): SessionSnapshot {
+  const decoded = decodeAgentSnapshot(value)
+  if (!decoded.ok) throw new Error("Invalid Agent snapshot payload")
+  return decoded.value
 }

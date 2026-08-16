@@ -229,6 +229,13 @@ vi.mock("@/hooks/use-agent-ui-bootstrap", () => ({
         retry: true,
         editAndResend: true,
       },
+      model: {
+        catalogModelId: "model-record-1",
+        provider: "openai",
+        model: "gpt-5.6",
+        displayName: "GPT-5.6",
+      },
+      permissionMode: "ask_dangerous",
       executionTargets: [
         {
           id: "local",
@@ -372,6 +379,36 @@ describe("AgentWorkbench v2", () => {
     expect(screen.getByTestId("mock-composer")).toHaveAttribute(
       "data-placement",
       "dock",
+    )
+  })
+
+  it("hydrates a persisted manual execution scope before sending", async () => {
+    const user = userEvent.setup()
+    const hydrated = sessionState()
+    hydrated.session = {
+      ...hydrated.session!,
+      execution_scope: { mode: "manual", target_ids: ["remote-1"] },
+    }
+    mocks.useSession
+      .mockReturnValueOnce(
+        sessionState({ session: null, isLoading: true }),
+      )
+      .mockReturnValue(hydrated)
+
+    const view = renderWithProviders(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+    view.rerender(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Send message" }))
+
+    expect(hydrated.sendMessage).toHaveBeenCalledWith(
+      [{ type: "text", text: "Hello" }],
+      expect.objectContaining({
+        execution_scope: { mode: "manual", target_ids: ["remote-1"] },
+      }),
     )
   })
 

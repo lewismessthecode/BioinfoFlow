@@ -26,6 +26,7 @@ import { AlertCircle, Download, Loader2, RefreshCw } from "@/lib/icons"
 
 const MAX_TEXT_PREVIEW_BYTES = 1024 * 1024
 const MAX_IMAGE_PREVIEW_BYTES = 4 * 1024 * 1024
+const MAX_PDF_PREVIEW_BYTES = 8 * 1024 * 1024
 const RASTER_IMAGE_TYPES = new Set([
   "image/avif",
   "image/gif",
@@ -47,6 +48,7 @@ type ArtifactPreview =
   | { kind: "loading" }
   | { kind: "text"; text: string }
   | { kind: "image"; url: string }
+  | { kind: "pdf"; url: string }
   | { kind: "metadata"; text: string }
   | { kind: "unavailable"; reason: "type" | "size" }
   | { kind: "error" }
@@ -152,6 +154,12 @@ export function AgentArtifactReference({ part }: AgentArtifactReferenceProps) {
         const url = URL.createObjectURL(content.blob)
         imageUrlRef.current = url
         setPreview({ kind: "image", url })
+        return
+      }
+      if (responseMediaType === "application/pdf") {
+        const url = URL.createObjectURL(content.blob)
+        imageUrlRef.current = url
+        setPreview({ kind: "pdf", url })
         return
       }
       setPreview({ kind: "text", text: await content.blob.text() })
@@ -336,6 +344,16 @@ function ArtifactPreviewContent({
       />
     )
   }
+  if (preview.kind === "pdf") {
+    return (
+      <iframe
+        src={preview.url}
+        title={label}
+        sandbox=""
+        className="h-[min(60dvh,48rem)] w-full rounded border border-border bg-background"
+      />
+    )
+  }
   return (
     <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground/85">
       {preview.text}
@@ -359,6 +377,7 @@ function artifactSize(artifact: AgentArtifact) {
 
 function previewSizeLimit(mediaType: string) {
   if (RASTER_IMAGE_TYPES.has(mediaType)) return MAX_IMAGE_PREVIEW_BYTES
+  if (mediaType === "application/pdf") return MAX_PDF_PREVIEW_BYTES
   if (mediaType.startsWith("text/") || TEXT_APPLICATION_TYPES.has(mediaType)) {
     return MAX_TEXT_PREVIEW_BYTES
   }

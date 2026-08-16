@@ -20,6 +20,14 @@ vi.mock("@/lib/api", () => ({
 const mockedApiRequest = vi.mocked(apiRequest)
 const mockedBuildApiUrl = vi.mocked(buildApiUrl)
 
+function createSnapshot(sessionId: string): SessionSnapshot {
+  return {
+    session: { id: sessionId },
+    runs: [],
+    entries: [],
+  } as SessionSnapshot
+}
+
 describe("agent client", () => {
   beforeEach(() => {
     mockedApiRequest.mockReset()
@@ -79,7 +87,7 @@ describe("agent client", () => {
   })
 
   it("creates a session and returns its authoritative snapshot", async () => {
-    const snapshot = { session: { id: "session-1" } } as SessionSnapshot
+    const snapshot = createSnapshot("session-1")
     mockedApiRequest.mockResolvedValueOnce({ data: snapshot })
 
     await expect(
@@ -105,7 +113,7 @@ describe("agent client", () => {
   })
 
   it("creates a session from a provider and model when no catalog id exists", async () => {
-    const snapshot = { session: { id: "session-2" } } as SessionSnapshot
+    const snapshot = createSnapshot("session-2")
     mockedApiRequest.mockResolvedValueOnce({ data: snapshot })
 
     await createAgentSession({
@@ -129,7 +137,7 @@ describe("agent client", () => {
 
   it("loads summaries and the explicit snapshot endpoint", async () => {
     const summaries = [{ id: "session-1" }]
-    const snapshot = { session: { id: "session-1" } } as SessionSnapshot
+    const snapshot = createSnapshot("session-1")
     mockedApiRequest
       .mockResolvedValueOnce({ data: summaries })
       .mockResolvedValueOnce({ data: snapshot })
@@ -149,7 +157,7 @@ describe("agent client", () => {
   })
 
   it("sends one of the four public commands without choosing prompt or follow-up", async () => {
-    const snapshot = { session: { id: "session-1" } } as SessionSnapshot
+    const snapshot = createSnapshot("session-1")
     mockedApiRequest.mockResolvedValueOnce({ data: snapshot })
     const command = {
       type: "message" as const,
@@ -167,7 +175,7 @@ describe("agent client", () => {
   })
 
   it("preserves the exact public context-reference command shapes", async () => {
-    const snapshot = { session: { id: "session-1" } } as SessionSnapshot
+    const snapshot = createSnapshot("session-1")
     mockedApiRequest.mockResolvedValueOnce({ data: snapshot })
     const command = {
       type: "message" as const,
@@ -205,7 +213,7 @@ describe("agent client", () => {
   })
 
   it("patches only editable session metadata", async () => {
-    const snapshot = { session: { id: "session-1" } } as SessionSnapshot
+    const snapshot = createSnapshot("session-1")
     mockedApiRequest.mockResolvedValueOnce({ data: snapshot })
 
     await expect(

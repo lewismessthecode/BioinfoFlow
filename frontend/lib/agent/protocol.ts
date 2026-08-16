@@ -1,8 +1,13 @@
 import type { Event as GeneratedAgentEvent } from "./protocol.generated"
+import type {
+  AgentEvent as CanonicalAgentEvent,
+  SessionSnapshot,
+} from "./contracts"
 
 const AGENT_UI_PROTOCOL_VERSION = 1 as const
 
-export type AgentEvent = GeneratedAgentEvent
+export type AgentEvent = CanonicalAgentEvent
+type AgentWireEvent = GeneratedAgentEvent
 export type ProtocolDecodeFailure = "malformed" | "unsupported_version"
 export type ProtocolDecodeResult<T> =
   | { ok: true; value: T }
@@ -31,7 +36,7 @@ export function decodeAgentEvent(value: unknown): ProtocolDecodeResult<AgentEven
   const valid = (() => {
     switch (value.type) {
       case "snapshot":
-        return isRecord(value.snapshot)
+        return decodeAgentSnapshot(value.snapshot).ok
       case "run.updated":
         return isRecord(value.run) && isNonEmptyString(value.run.id)
       case "assistant.delta":
@@ -55,7 +60,29 @@ export function decodeAgentEvent(value: unknown): ProtocolDecodeResult<AgentEven
     }
   })()
 
-  return valid ? { ok: true, value: value as AgentEvent } : malformed()
+  return valid
+    ? { ok: true, value: value as unknown as AgentWireEvent as AgentEvent }
+    : malformed()
+}
+
+export function decodeAgentSnapshot(
+  value: unknown,
+): ProtocolDecodeResult<SessionSnapshot> {
+  if (!isRecord(value)) return malformed()
+  if (
+    !isRecord(value.session) ||
+    !isNonEmptyString(value.session.id) ||
+    !Array.isArray(value.runs) ||
+    !Array.isArray(value.entries) ||
+    !(
+      value.active_run === undefined ||
+      value.active_run === null ||
+      isRecord(value.active_run)
+    )
+  ) {
+    return malformed()
+  }
+  return { ok: true, value: value as unknown as SessionSnapshot }
 }
 
 function malformed(): ProtocolDecodeResult<never> {

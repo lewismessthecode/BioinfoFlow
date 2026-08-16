@@ -116,6 +116,7 @@ export const AgentWorkbench = forwardRef<
   const [draftSessionId, setDraftSessionId] = useState<string | null>(null)
   const [draftPermissionMode, setDraftPermissionMode] =
     useState<AgentPermissionMode>("ask_dangerous")
+  const [draftPermissionTouched, setDraftPermissionTouched] = useState(false)
   const [draftWorkspaceAccess] =
     useState<AgentWorkspaceAccess>("read_write")
   const { bootstrap } = useAgentUiBootstrap(projectId)
@@ -125,6 +126,9 @@ export const AgentWorkbench = forwardRef<
   const effectiveDraftExecutionScope = draftScopeTouched
     ? draftExecutionScope
     : toContractScope(bootstrap?.executionScope)
+  const effectiveDraftPermissionMode = draftPermissionTouched
+    ? draftPermissionMode
+    : (bootstrap?.permissionMode ?? draftPermissionMode)
   const [contextInputs, setContextInputs] = useState<AgentContextInput[]>([])
   const [modelConnectionOpen, setModelConnectionOpen] = useState(false)
   const createPromiseRef = useRef<Promise<string> | null>(null)
@@ -147,7 +151,7 @@ export const AgentWorkbench = forwardRef<
 
     const request = createAgentSession({
       projectId,
-      permissionMode: draftPermissionMode,
+      permissionMode: effectiveDraftPermissionMode,
       workspaceAccess: draftWorkspaceAccess,
       executionScope: effectiveDraftExecutionScope,
       ...modelSelector,
@@ -164,7 +168,7 @@ export const AgentWorkbench = forwardRef<
     createPromiseRef.current = request
     return request
   }, [
-    draftPermissionMode,
+    effectiveDraftPermissionMode,
     draftWorkspaceAccess,
     effectiveDraftExecutionScope,
     draftSessionId,
@@ -202,6 +206,7 @@ export const AgentWorkbench = forwardRef<
   const updateDraftPermissionMode = useCallback(
     async (mode: AgentPermissionMode) => {
       if (!draftSessionId) {
+        setDraftPermissionTouched(true)
         setDraftPermissionMode(mode)
         return
       }
@@ -211,6 +216,7 @@ export const AgentWorkbench = forwardRef<
       })
       publishAgentSessionSummary(sessionSummaryFromView(snapshot.session))
       setDraftPermissionMode(snapshot.session.permission_mode)
+      setDraftPermissionTouched(true)
     },
     [draftSessionId],
   )
@@ -277,7 +283,7 @@ export const AgentWorkbench = forwardRef<
         )
       ) : (
         <DraftWorkbench
-          permissionMode={draftPermissionMode}
+          permissionMode={effectiveDraftPermissionMode}
           workspaceAccess={draftWorkspaceAccess}
           draftSessionId={draftSessionId}
           onPermissionModeChange={updateDraftPermissionMode}
@@ -336,20 +342,35 @@ function DraftWorkbench({
   const t = useTranslations("agentWorkbench")
   const [error, setError] = useState<string | null>(null)
   const [starterDraft, setStarterDraft] = useState({ key: 0, text: "" })
+  const [modelTouched, setModelTouched] = useState(false)
   const { models, selectedModel, setSelectedModel, isLoading } = useLlmSettings()
+  const bootstrapModel = bootstrap?.model
+    ? modelSelectionForSession(
+        models,
+        bootstrap.model.catalogModelId,
+        bootstrap.model.provider,
+        bootstrap.model.model,
+      )
+    : null
+  const effectiveSelectedModel = modelTouched
+    ? selectedModel
+    : (bootstrapModel ?? selectedModel)
   const ensureSession = shared.ensureSession
   const ensureDraftSession = useCallback(
     () => {
-      const modelSelector: DraftModelSelector | undefined = selectedModel
-        ? selectedModel.model_id
-          ? { modelId: selectedModel.model_id }
-          : selectedModel.provider && selectedModel.model
-            ? { provider: selectedModel.provider, model: selectedModel.model }
+      const modelSelector: DraftModelSelector | undefined = effectiveSelectedModel
+        ? effectiveSelectedModel.model_id
+          ? { modelId: effectiveSelectedModel.model_id }
+          : effectiveSelectedModel.provider && effectiveSelectedModel.model
+            ? {
+                provider: effectiveSelectedModel.provider,
+                model: effectiveSelectedModel.model,
+              }
             : undefined
         : undefined
       return ensureSession(modelSelector)
     },
-    [ensureSession, selectedModel],
+    [effectiveSelectedModel, ensureSession],
   )
 
   const send = async (parts: InputPart[]) => {
@@ -419,8 +440,11 @@ function DraftWorkbench({
           modelControls={
             <ModelSelector
               models={models}
-              selectedModel={selectedModel}
-              onSelectModel={(selection) => void setSelectedModel(selection)}
+              selectedModel={effectiveSelectedModel}
+              onSelectModel={(selection) => {
+                setModelTouched(true)
+                void setSelectedModel(selection)
+              }}
               disabled={isLoading || draftSessionId !== null}
               variant="composer"
             />
@@ -504,6 +528,12 @@ function SessionWorkbench({
   useEffect(() => {
     setSelectedModelId(state.session?.model.catalog_model_id ?? null)
   }, [state.session?.model.catalog_model_id])
+
+  useEffect(() => {
+    if (state.session?.execution_scope) {
+      setExecutionScope(state.session.execution_scope)
+    }
+  }, [state.session?.execution_scope])
 
   const runSessionCommand = async (command: () => Promise<void>) => {
     shared.setModelConnectionOpen(false)

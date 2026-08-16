@@ -70,6 +70,27 @@
           "title": "Execution Targets",
           "type": "array"
         },
+        "model": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "permission_mode": {
+          "default": "ask_dangerous",
+          "enum": [
+            "ask_changes",
+            "ask_dangerous",
+            "full_access"
+          ],
+          "title": "Permission Mode",
+          "type": "string"
+        },
         "protocol_version": {
           "const": 1,
           "default": 1,

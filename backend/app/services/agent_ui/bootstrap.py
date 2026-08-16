@@ -7,7 +7,10 @@ from app.services.agent_ui.contracts import (
     StarterPromptView,
     default_ui_capabilities,
 )
+from app.services.agent_harness.factory import resolve_model_snapshot
+from app.services.agent_harness.projection import public_model_summary
 from app.services.agent_ui.execution_targets import execution_target_catalog
+from app.utils.exceptions import AgentModelRequiredError
 
 
 async def build_agent_ui_bootstrap(
@@ -24,9 +27,22 @@ async def build_agent_ui_bootstrap(
         user_id=user_id,
         project_id=project_id,
     )
+    try:
+        model = public_model_summary(
+            await resolve_model_snapshot(
+                db,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                selection=None,
+            )
+        )
+    except AgentModelRequiredError:
+        model = None
     chinese = locale.lower().startswith("zh")
     return AgentUiBootstrap(
         capabilities=default_ui_capabilities(),
+        model=model,
+        permission_mode="ask_dangerous",
         execution_targets=targets,
         execution_scope=default_scope,
         starter_prompts=_starter_prompts(project_id=project_id, chinese=chinese),

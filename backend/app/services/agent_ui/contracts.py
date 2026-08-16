@@ -116,9 +116,19 @@ class StarterPromptView(StrictContract):
     icon: Literal["check", "explain", "review", "chat"] = "chat"
 
 
+class StoredArtifactResourceView(StrictContract):
+    kind: Literal["stored_file"] = "stored_file"
+    filename: str
+    mime_type: str
+    size_bytes: int = Field(ge=0)
+    sha256: str
+
+
 class AgentUiBootstrap(StrictContract):
     protocol_version: Literal[1] = AGENT_UI_PROTOCOL_VERSION
     capabilities: UiCapabilities = Field(default_factory=default_ui_capabilities)
+    model: ModelSummary | None = None
+    permission_mode: PermissionMode = "ask_dangerous"
     execution_targets: list[ExecutionTargetView] = Field(default_factory=list)
     execution_scope: ExecutionScopeSelection = Field(
         default_factory=ExecutionScopeSelection

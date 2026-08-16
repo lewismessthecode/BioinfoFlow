@@ -36,11 +36,20 @@ export type AgentUiCapabilities = {
 export type AgentUiBootstrap = {
   protocolVersion: 1
   capabilities: AgentUiCapabilities
+  model: AgentDefaultModel | null
+  permissionMode: "ask_changes" | "ask_dangerous" | "full_access"
   executionTargets: AgentExecutionTarget[]
   executionScope: AgentExecutionScope
   starterPrompts: AgentStarterPrompt[]
   composerHint: string | null
   degradedReason: "unsupported_version" | "invalid_payload" | null
+}
+
+export type AgentDefaultModel = {
+  catalogModelId: string | null
+  provider: string
+  model: string
+  displayName: string
 }
 
 export async function getAgentUiBootstrap(
@@ -78,6 +87,8 @@ export function normalizeAgentUiBootstrap(
   return {
     protocolVersion: 1,
     capabilities: normalizeCapabilities(value.capabilities),
+    model: normalizeModel(value.model),
+    permissionMode: normalizePermissionMode(value.permission_mode),
     executionTargets: targets.length > 0 ? targets : fallback.executionTargets,
     executionScope: scope ?? fallback.executionScope,
     starterPrompts: prompts.length > 0 ? prompts : fallback.starterPrompts,
@@ -87,6 +98,34 @@ export function normalizeAgentUiBootstrap(
         : fallback.composerHint,
     degradedReason: null,
   }
+}
+
+function normalizeModel(value: unknown): AgentDefaultModel | null {
+  if (
+    !isRecord(value) ||
+    !isText(value.provider, 200) ||
+    !isText(value.model, 500) ||
+    !isText(value.display_name, 500)
+  ) {
+    return null
+  }
+  return {
+    catalogModelId:
+      typeof value.catalog_model_id === "string" ? value.catalog_model_id : null,
+    provider: value.provider,
+    model: value.model,
+    displayName: value.display_name,
+  }
+}
+
+function normalizePermissionMode(
+  value: unknown,
+): AgentUiBootstrap["permissionMode"] {
+  return value === "ask_changes" ||
+    value === "ask_dangerous" ||
+    value === "full_access"
+    ? value
+    : "ask_dangerous"
 }
 
 function normalizeCapabilities(value: unknown): AgentUiCapabilities {
@@ -179,6 +218,8 @@ function fallbackBootstrap(
       retry: true,
       editAndResend: true,
     },
+    model: null,
+    permissionMode: "ask_dangerous",
     executionTargets: [
       {
         id: "local",

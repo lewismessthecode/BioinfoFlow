@@ -154,6 +154,43 @@ describe("AgentArtifactReference", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it("previews a bounded PDF in a sandboxed frame", async () => {
+    const user = userEvent.setup()
+    vi.mocked(apiRequest).mockResolvedValueOnce({
+      data: {
+        ...artifact,
+        title: "report.pdf",
+        resource_ref: {
+          ...artifact.resource_ref,
+          filename: "report.pdf",
+          mime_type: "application/pdf",
+        },
+      },
+    })
+    vi.mocked(buildApiUrl).mockReturnValue("/artifact-download")
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(new Uint8Array([37, 80, 68, 70]), {
+          headers: { "content-type": "application/pdf" },
+        }),
+      ),
+    )
+    const createObjectURL = vi.fn().mockReturnValue("blob:pdf")
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL: vi.fn() })
+
+    renderWithProviders(
+      <AgentArtifactReference
+        part={{ ...part, title: "report.pdf", media_type: "application/pdf" }}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: "Open report.pdf" }))
+
+    const frame = await screen.findByTitle("report.pdf")
+    expect(frame).toHaveAttribute("src", "blob:pdf")
+    expect(frame).toHaveAttribute("sandbox", "")
+  })
+
   it("offers an inline retry when artifact loading fails", async () => {
     const user = userEvent.setup()
     vi.mocked(apiRequest)

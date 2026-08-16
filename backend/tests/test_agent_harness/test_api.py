@@ -1130,6 +1130,13 @@ async def test_agent_api_preserves_attachment_and_artifact_frontend_contracts(
     assert "file_path" not in artifacts.json()["data"][0]
     assert detail.status_code == 200
     assert detail.json()["data"]["run_id"] == str(run.id)
+    assert detail.json()["data"]["resource_ref"].keys() == {
+        "kind",
+        "filename",
+        "mime_type",
+        "size_bytes",
+        "sha256",
+    }
     assert "file_path" not in detail.json()["data"]
     assert download.status_code == 200
     assert download.headers["content-type"] == "application/json"

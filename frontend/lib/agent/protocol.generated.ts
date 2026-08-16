@@ -19,6 +19,14 @@ export type Kind = "local" | "remote_ssh"
 export type Primary = boolean
 export type Status = "online" | "offline" | "error" | "unknown"
 export type ExecutionTargets = ExecutionTargetView[]
+export type CatalogModelId = string | null
+export type DisplayName = string
+export type Model = string
+export type Provider = string
+export type SupportsReasoning = boolean
+export type SupportsTools = boolean
+export type SupportsVision = boolean
+export type PermissionMode = "ask_changes" | "ask_dangerous" | "full_access"
 export type ProtocolVersion = 1
 export type Icon = "check" | "explain" | "review" | "chat"
 export type Id1 = string
@@ -97,14 +105,7 @@ export type Phase = ("model" | "tools" | "interaction") | null
 export type Revision1 = number
 export type SessionId = string
 export type AllowedTargets = ExecutionTargetView[]
-export type CatalogModelId = string | null
-export type DisplayName = string
-export type Model = string
-export type Provider = string
-export type SupportsReasoning = boolean
-export type SupportsTools = boolean
-export type SupportsVision = boolean
-export type PermissionMode = "ask_changes" | "ask_dangerous" | "full_access"
+export type PermissionMode1 = "ask_changes" | "ask_dangerous" | "full_access"
 export type StartedAt = string | null
 export type Status1 = "queued" | "running" | "waiting_user" | "completed" | "failed" | "cancelled"
 export type TerminationReason = string | null
@@ -288,7 +289,7 @@ export type ProtocolVersion2 = 1
 export type Runs = RunView[]
 export type CreatedAt6 = string
 export type Id26 = string
-export type PermissionMode1 = "ask_changes" | "ask_dangerous" | "full_access"
+export type PermissionMode2 = "ask_changes" | "ask_dangerous" | "full_access"
 export type ProjectId3 = string | null
 export type Status5 = "active" | "archived" | "closing" | "deleted"
 export type Title3 = string | null
@@ -330,6 +331,8 @@ export interface AgentUiBootstrap {
   composer_hint?: ComposerHint
   execution_scope?: ExecutionScopeSelection
   execution_targets?: ExecutionTargets
+  model?: ModelSummary | null
+  permission_mode?: PermissionMode
   protocol_version?: ProtocolVersion
   starter_prompts?: StarterPrompts1
 }
@@ -355,6 +358,15 @@ export interface ExecutionTargetView {
   kind: Kind
   primary?: Primary
   status?: Status
+}
+export interface ModelSummary {
+  catalog_model_id?: CatalogModelId
+  display_name: DisplayName
+  model: Model
+  provider: Provider
+  supports_reasoning?: SupportsReasoning
+  supports_tools?: SupportsTools
+  supports_vision?: SupportsVision
 }
 export interface StarterPromptView {
   icon?: Icon
@@ -468,16 +480,7 @@ export interface RunSettingsView {
   allowed_targets?: AllowedTargets
   execution_scope: ExecutionScopeSelection
   model: ModelSummary
-  permission_mode: PermissionMode
-}
-export interface ModelSummary {
-  catalog_model_id?: CatalogModelId
-  display_name: DisplayName
-  model: Model
-  provider: Provider
-  supports_reasoning?: SupportsReasoning
-  supports_tools?: SupportsTools
-  supports_vision?: SupportsVision
+  permission_mode: PermissionMode1
 }
 export interface ToolProgressView {
   arguments?: Arguments
@@ -713,7 +716,7 @@ export interface SessionView {
   execution_scope?: ExecutionScopeSelection
   id: Id26
   model: ModelSummary
-  permission_mode: PermissionMode1
+  permission_mode: PermissionMode2
   project_id?: ProjectId3
   status: Status5
   title?: Title3

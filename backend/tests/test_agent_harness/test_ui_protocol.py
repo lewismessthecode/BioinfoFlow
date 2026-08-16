@@ -7,14 +7,35 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_agent_ui_bootstrap_exposes_versioned_stable_slots(async_client) -> None:
-    response = await async_client.get(
-        "/api/v1/agent/ui/bootstrap",
-        params={"locale": "zh-CN"},
-    )
+    with patch(
+        "app.services.agent_ui.bootstrap.resolve_model_snapshot",
+        return_value={
+            "model_id": "model-record-1",
+            "capabilities": {"supports_tools": True},
+            "target": {
+                "provider_kind": "openai",
+                "model_name": "gpt-5.6",
+            },
+        },
+    ):
+        response = await async_client.get(
+            "/api/v1/agent/ui/bootstrap",
+            params={"locale": "zh-CN"},
+        )
 
     assert response.status_code == 200
     payload = response.json()["data"]
     assert payload["protocol_version"] == 1
+    assert payload["model"] == {
+        "catalog_model_id": "model-record-1",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "display_name": "gpt-5.6",
+        "supports_vision": False,
+        "supports_reasoning": False,
+        "supports_tools": True,
+    }
+    assert payload["permission_mode"] == "ask_dangerous"
     assert payload["capabilities"] == {
         "reasoning": True,
         "tool_activity": True,

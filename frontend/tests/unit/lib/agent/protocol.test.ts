@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { decodeAgentEvent } from "@/lib/agent/protocol"
+import { decodeAgentEvent, decodeAgentSnapshot } from "@/lib/agent/protocol"
 
 describe("decodeAgentEvent", () => {
   it("accepts a versioned event with the expected discriminator and ids", () => {
@@ -41,6 +41,28 @@ describe("decodeAgentEvent", () => {
         type: "tool.updated",
         protocol_version: 1,
         run_id: "run-1",
+      }),
+    ).toEqual({ ok: false, reason: "malformed" })
+  })
+})
+
+describe("decodeAgentSnapshot", () => {
+  it("accepts legacy snapshots that omit the optional active run", () => {
+    expect(
+      decodeAgentSnapshot({ session: { id: "session-1" }, runs: [], entries: [] }),
+    ).toEqual({
+      ok: true,
+      value: { session: { id: "session-1" }, runs: [], entries: [] },
+    })
+  })
+
+  it("rejects snapshots with an invalid active run", () => {
+    expect(
+      decodeAgentSnapshot({
+        session: { id: "session-1" },
+        runs: [],
+        entries: [],
+        active_run: "run-1",
       }),
     ).toEqual({ ok: false, reason: "malformed" })
   })
