@@ -20,7 +20,6 @@ import {
 import type {
   ActivityGroupTranscriptBlock,
   ActivityItem,
-  ActivityStatus,
 } from "@/lib/agent/conversation-model/types"
 import { cn } from "@/lib/utils"
 
@@ -169,7 +168,7 @@ export function AgentActivityGroup({
   )
   const [expanded, setExpanded] = useActivityDisclosure(
     disclosureKey,
-    defaultExpanded ?? activities.some((activity) => isActive(activity.status)),
+    defaultExpanded ?? false,
   )
   const summaryKey = `group.${activityGroup.executionMode}`
   const groupedActivities = useMemo(
@@ -184,7 +183,7 @@ export function AgentActivityGroup({
     >
       <button
         type="button"
-        className="group/summary flex min-h-9 w-full min-w-0 items-center gap-2 rounded-[6px] px-1 py-1.5 text-left text-xs transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
+        className="group/summary flex min-h-8 w-full min-w-0 items-center gap-1.5 rounded-[6px] px-1 py-1 text-left text-xs transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
         aria-expanded={expanded}
         aria-controls={detailsId}
         aria-label={t(summaryKey, { count: activities.length })}
@@ -227,12 +226,6 @@ export function AgentActivityGroup({
         </div>
       ) : null}
     </section>
-  )
-}
-
-function isActive(status: ActivityStatus) {
-  return ["pending", "running", "blocked", "interaction_required"].includes(
-    status,
   )
 }
 

@@ -195,7 +195,8 @@ describe("AgentToolCard", () => {
 })
 
 describe("AgentActivityGroup", () => {
-  it("keeps an active parallel group open while work is progressing", () => {
+  it("keeps an active parallel group collapsed until the user opens it", async () => {
+    const user = userEvent.setup()
     renderWithProviders(
       <AgentActivityGroup
         tools={[
@@ -212,15 +213,24 @@ describe("AgentActivityGroup", () => {
       />,
     )
 
-    expect(screen.getByRole("button", { name: /2 tools running in parallel/i })).toHaveAttribute(
+    const disclosure = screen.getByRole("button", {
+      name: /2 tools running in parallel/i,
+    })
+    expect(disclosure).toHaveAttribute(
       "aria-expanded",
-      "true",
+      "false",
     )
+    expect(screen.queryByText("Read workflow.nf")).not.toBeInTheDocument()
+    expect(screen.queryByText("Read params.json")).not.toBeInTheDocument()
+
+    await user.click(disclosure)
+
     expect(screen.getByText("Read workflow.nf")).toBeInTheDocument()
     expect(screen.getByText("Read params.json")).toBeInTheDocument()
   })
 
-  it("localizes public tool categories instead of rendering protocol values", () => {
+  it("localizes public tool categories instead of rendering protocol values", async () => {
+    const user = userEvent.setup()
     renderWithProviders(
       <AgentActivityGroup
         tools={[
@@ -237,6 +247,8 @@ describe("AgentActivityGroup", () => {
       />,
     )
 
+    await user.click(screen.getByRole("button", { name: /2 tools running in parallel/i }))
+
     expect(screen.getByText("Reading")).toBeInTheDocument()
     expect(screen.getByText("Commands")).toBeInTheDocument()
     expect(screen.queryByRole("heading", { name: "read" })).not.toBeInTheDocument()
@@ -245,7 +257,8 @@ describe("AgentActivityGroup", () => {
     ).not.toBeInTheDocument()
   })
 
-  it("preserves interleaved model-call order while grouping contiguous categories", () => {
+  it("preserves interleaved model-call order while grouping contiguous categories", async () => {
+    const user = userEvent.setup()
     renderWithProviders(
       <AgentActivityGroup
         tools={[
@@ -268,6 +281,7 @@ describe("AgentActivityGroup", () => {
       />,
     )
 
+    await user.click(screen.getByRole("button", { name: /3 tools running in parallel/i }))
 
     expect(
       screen
@@ -285,7 +299,8 @@ describe("AgentActivityGroup", () => {
     ).toEqual(["Reading", "Commands", "Reading"])
   })
 
-  it("renders grouped tools as flat rows instead of nested bordered cards", () => {
+  it("renders grouped tools as flat rows instead of nested bordered cards", async () => {
+    const user = userEvent.setup()
     renderWithProviders(
       <AgentActivityGroup
         tools={[
@@ -300,6 +315,7 @@ describe("AgentActivityGroup", () => {
     )
 
     const group = screen.getByTestId("agent-activity-group")
+    await user.click(screen.getByRole("button", { name: /2 tools running in parallel/i }))
     const childRows = group.querySelectorAll('[data-testid="agent-tool-card"]')
     expect(childRows).toHaveLength(2)
     for (const row of childRows) {

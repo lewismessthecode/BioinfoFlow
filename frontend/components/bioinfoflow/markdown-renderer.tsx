@@ -33,6 +33,23 @@ function normalizeCodeLanguage(className?: string) {
   return match?.[1]?.toLowerCase() || "text"
 }
 
+function codeLanguageLabel(language: string) {
+  const labels: Record<string, string> = {
+    bash: "Shell",
+    javascript: "JavaScript",
+    js: "JavaScript",
+    json: "JSON",
+    jsx: "JSX",
+    python: "Python",
+    shell: "Shell",
+    text: "Plain text",
+    ts: "TypeScript",
+    tsx: "TSX",
+    typescript: "TypeScript",
+  }
+  return labels[language] ?? language.toUpperCase()
+}
+
 function CodeBlock({
   code,
   language,
@@ -95,12 +112,16 @@ function CodeBlock({
 
   return (
     <div
-      className="markdown-code-highlight mb-3 min-w-0 max-w-full overflow-hidden rounded-xl border border-border/60 bg-secondary/60"
+      className="markdown-code-highlight my-3 min-w-0 max-w-full overflow-hidden rounded-xl border border-border/60 bg-secondary/60"
+      data-code-language={language}
       data-testid="markdown-code-block"
     >
-      <div className="flex items-center justify-between border-b border-border/50 px-3 py-1.5">
-        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-          {language}
+      <div
+        className="flex min-h-9 items-center justify-between border-b border-border/50 bg-muted/20 px-3"
+        data-testid="markdown-code-header"
+      >
+        <span className="font-mono text-[10px] font-medium tracking-[0.08em] text-muted-foreground">
+          {codeLanguageLabel(language)}
         </span>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -119,13 +140,23 @@ function CodeBlock({
       </div>
       {highlightedHtml ? (
         <div
-          className="min-w-0 max-w-full overflow-hidden [&_.shiki]:m-0 [&_.shiki]:max-w-full [&_.shiki]:overflow-x-auto [&_.shiki]:bg-transparent! [&_.shiki]:p-3 [&_.shiki_pre]:m-0"
+          className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain [tab-size:2] [&_.shiki]:m-0 [&_.shiki]:min-w-max [&_.shiki]:whitespace-pre [&_.shiki]:bg-transparent! [&_.shiki]:px-4 [&_.shiki]:py-3 [&_.shiki]:font-mono [&_.shiki]:text-[13px] [&_.shiki]:leading-5 [&_.shiki_code]:font-inherit"
+          data-testid="markdown-code-scroller"
           dangerouslySetInnerHTML={{ __html: highlightedHtml }}
         />
       ) : (
-        <pre className="max-w-full overflow-x-auto p-3 text-sm-tight">
-          <code className={`font-mono language-${language}`}>{code}</code>
-        </pre>
+        <div
+          className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain [tab-size:2]"
+          data-testid="markdown-code-scroller"
+        >
+          <pre className="m-0 min-w-max whitespace-pre px-4 py-3 font-mono text-[13px] leading-5">
+            <code
+              className={`block min-w-max whitespace-pre font-inherit language-${language}`}
+            >
+              {code}
+            </code>
+          </pre>
+        </div>
       )}
     </div>
   )

@@ -74,6 +74,10 @@ export function ConversationTranscript({
   const [followingBottom, setFollowingBottom] = useState(true)
   const [hasNewContent, setHasNewContent] = useState(false)
   const activeInteractionBlockId = currentActiveInteractionBlockId(view)
+  const copyableMessageIds = useMemo(
+    () => completedFinalAssistantMessageIds(view.transcript),
+    [view.transcript],
+  )
 
   useLayoutEffect(() => {
     const scrollElement = scrollRef.current
@@ -155,6 +159,7 @@ export function ConversationTranscript({
                   onRespond={onRespond}
                   onOpenRun={onOpenRun}
                   activeInteractionBlockId={activeInteractionBlockId}
+                  copyableMessageIds={copyableMessageIds}
                 />
               </div>
             ))}
@@ -189,18 +194,26 @@ function TranscriptBlockView({
   onRespond,
   onOpenRun,
   activeInteractionBlockId,
+  copyableMessageIds,
 }: {
   block: TranscriptBlock
   onRespond: ConversationTranscriptProps["onRespond"]
   onOpenRun?: (runId: string) => void
   activeInteractionBlockId: string | null
+  copyableMessageIds: ReadonlySet<string>
 }) {
   const tHistory = useTranslations("agentHistory")
   const tRun = useTranslations("agentRun")
 
   switch (block.type) {
     case "message":
-      return <ConversationMessage block={block} onOpenRun={onOpenRun} />
+      return (
+        <ConversationMessage
+          block={block}
+          copyable={copyableMessageIds.has(block.id)}
+          onOpenRun={onOpenRun}
+        />
+      )
     case "reasoning":
       return (
         <AgentThinking
@@ -341,9 +354,11 @@ function knownRunErrorCode(code: string | null | undefined) {
 
 function ConversationMessage({
   block,
+  copyable,
   onOpenRun,
 }: {
   block: MessageTranscriptBlock
+  copyable: boolean
   onOpenRun?: (runId: string) => void
 }) {
   const t = useTranslations("agentTranscript")
@@ -374,7 +389,7 @@ function ConversationMessage({
   return (
     <article
       className={cn(
-        "min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_96px]",
+        "group/message min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_96px]",
         isUser && "ml-auto w-fit max-w-[76%]",
       )}
       data-role={block.role}
@@ -420,7 +435,7 @@ function ConversationMessage({
             isUser ? "justify-end" : "justify-start",
           )}
         >
-          {block.text ? (
+          {copyable && block.text ? (
             <Button
               type="button"
               variant="ghost"
@@ -438,6 +453,7 @@ function ConversationMessage({
           ) : null}
           {timestamp ? (
             <time
+              className="opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 group-focus-within/message:opacity-100 motion-reduce:transition-none"
               dateTime={dateTimeAttribute(block.createdAt)}
               title={absoluteTimestamp ?? timestamp}
               data-testid={
@@ -495,6 +511,31 @@ function currentActiveInteractionBlockId(view: ConversationViewModel) {
     }
   }
   return null
+}
+
+function completedFinalAssistantMessageIds(
+  transcript: readonly TranscriptBlock[],
+) {
+  const completedRunIds = new Set(
+    transcript.flatMap((block) =>
+      block.type === "outcome" && block.status === "completed"
+        ? [block.runId]
+        : [],
+    ),
+  )
+  const finalMessageByRun = new Map<string, string>()
+  for (const block of transcript) {
+    if (
+      block.type === "message" &&
+      block.role === "assistant" &&
+      !block.streaming &&
+      block.runId &&
+      completedRunIds.has(block.runId)
+    ) {
+      finalMessageByRun.set(block.runId, block.id)
+    }
+  }
+  return new Set(finalMessageByRun.values())
 }
 
 function knownDiagnosticCode(code: string) {

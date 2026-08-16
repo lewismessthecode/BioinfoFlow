@@ -12,6 +12,8 @@ vi.mock("next-intl", () => ({
     (key: string, values?: Record<string, string | number>) => {
       const copy: Record<string, string> = {
         "agentTranscript.title": "Agent transcript",
+        "agentTranscript.copy": "Copy response",
+        "agentTranscript.copied": "Copied response",
         "agentHistory.plan.title": "Plan",
         "agentHistory.plan.progress": `${values?.completed ?? 0}/${values?.total ?? 0} complete`,
         "agentHistory.plan.status.pending": "Pending",
@@ -284,5 +286,126 @@ describe("ConversationTranscript", () => {
       "run-current:tool-call-reused",
       { type: "approval", approved: true },
     )
+  })
+
+  it("reveals timestamps on message interaction and offers one copy action for the completed final response", async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    })
+    const { container } = renderWithProviders(
+      <ConversationTranscript
+        view={{
+          ...planView,
+          transcript: [
+            {
+              type: "message",
+              id: "user-1",
+              runId: "run-1",
+              createdAt: "2026-08-16T08:00:00.000Z",
+              role: "user",
+              text: "Inspect this workflow",
+              references: [],
+              streaming: false,
+            },
+            {
+              type: "message",
+              id: "assistant-part-1",
+              runId: "run-1",
+              createdAt: "2026-08-16T08:00:01.000Z",
+              role: "assistant",
+              text: "I inspected the workflow.",
+              references: [],
+              streaming: false,
+            },
+            {
+              type: "message",
+              id: "assistant-final",
+              runId: "run-1",
+              createdAt: "2026-08-16T08:00:02.000Z",
+              role: "assistant",
+              text: "The workflow is valid.",
+              references: [],
+              streaming: false,
+            },
+            {
+              type: "outcome",
+              id: "run-1-outcome",
+              runId: "run-1",
+              createdAt: "2026-08-16T08:00:03.000Z",
+              status: "completed",
+              reason: null,
+              error: null,
+            },
+          ],
+        }}
+      />,
+    )
+
+    const messages = container.querySelectorAll("article[data-role]")
+    expect(messages).toHaveLength(3)
+    for (const message of messages) {
+      expect(message).toHaveClass("group/message")
+      expect(message.querySelector("time")).toHaveClass(
+        "opacity-0",
+        "group-hover/message:opacity-100",
+        "group-focus-within/message:opacity-100",
+      )
+    }
+    expect(screen.getAllByRole("button", { name: "Copy response" })).toHaveLength(1)
+
+    await user.click(screen.getByRole("button", { name: "Copy response" }))
+
+    expect(writeText).toHaveBeenCalledOnce()
+    expect(writeText).toHaveBeenCalledWith("The workflow is valid.")
+  })
+
+  it("keeps active Activity Groups compact and collapsed by default", () => {
+    renderWithProviders(
+      <ConversationTranscript
+        view={{
+          ...planView,
+          transcript: [
+            {
+              type: "activity_group",
+              id: "activity-run-1",
+              runId: "run-1",
+              createdAt: "2026-08-16T08:00:00.000Z",
+              executionMode: "parallel",
+              activities: [
+                {
+                  id: "activity-read",
+                  callId: "call-read",
+                  name: "read",
+                  displayName: "read",
+                  category: "read",
+                  summary: "Read workflow.nf",
+                  status: "running",
+                  input: { path: "workflow.nf" },
+                  output: null,
+                  error: null,
+                  startedAt: "2026-08-16T08:00:00.000Z",
+                  completedAt: null,
+                },
+              ],
+            },
+          ],
+          activeWork: {
+            runId: "run-1",
+            status: "running",
+            phase: "tools",
+            startedAt: "2026-08-16T08:00:00.000Z",
+          },
+        }}
+      />,
+    )
+
+    const group = screen.getByTestId("agent-activity-group")
+    const disclosure = group.querySelector("button")
+    expect(disclosure).toHaveAttribute("aria-expanded", "false")
+    expect(disclosure).toHaveClass("min-h-8", "py-1")
+    expect(screen.queryByTestId("agent-tool-card")).not.toBeInTheDocument()
   })
 })

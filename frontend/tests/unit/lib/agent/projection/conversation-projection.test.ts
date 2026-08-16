@@ -163,6 +163,43 @@ describe("Conversation projection", () => {
     ])
   })
 
+  it("projects one terminal outcome per stable Run identity using the latest revision", () => {
+    const result = createConversationProjection({
+      ...completedSnapshotFixture,
+      runs: [
+        {
+          ...completedSnapshotFixture.runs[0],
+          revision: 2,
+          status: "failed",
+          termination_reason: "runtime_failed",
+          error: {
+            code: "runtime_failed",
+            message: "The Agent runtime stopped unexpectedly.",
+          },
+        },
+        {
+          ...completedSnapshotFixture.runs[0],
+          revision: 3,
+          status: "completed",
+          termination_reason: "completed",
+          error: null,
+        },
+      ],
+    })
+    if (!result.ok) throw new Error(result.diagnostic.message)
+
+    const outcomes = result.view.transcript.filter(
+      (block) => block.type === "outcome" && block.runId === "run-1",
+    )
+    expect(outcomes).toEqual([
+      expect.objectContaining({
+        id: "run:run-1:outcome",
+        status: "completed",
+      }),
+    ])
+    expect(result.view.runs.filter((run) => run.id === "run-1")).toHaveLength(1)
+  })
+
   it("projects live draft and tool progress through the same Transcript Block model", () => {
     const result = createConversationProjection(activeSnapshotFixture)
     if (!result.ok) throw new Error(result.diagnostic.message)
