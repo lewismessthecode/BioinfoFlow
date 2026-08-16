@@ -1,24 +1,13 @@
 "use client"
 
-import { useTranslations } from "next-intl"
-
 import { AgentActivityGroup, AgentToolCard } from "@/components/bioinfoflow/agent/agent-activity"
-import { AgentArtifactReference } from "@/components/bioinfoflow/agent/agent-artifact"
-import { AgentThinking } from "@/components/bioinfoflow/agent/agent-thinking"
-import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
-import { Badge } from "@/components/ui/badge"
+import { AgentMessagePart } from "@/components/bioinfoflow/agent/message-part-registry"
 import type {
-  AttachmentRefPart,
-  DirectoryRefPart,
-  FileRefPart,
   MessagePart,
-  RunRefPart,
   ToolCallPart,
   ToolProgressView,
   ToolResultPart,
-  WorkflowRefPart,
 } from "@/lib/agent/contracts"
-import { ChevronRight } from "@/lib/icons"
 
 type AgentMessagePartsProps = {
   parts: MessagePart[]
@@ -26,13 +15,6 @@ type AgentMessagePartsProps = {
   liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
   onOpenRun?: (runId: string) => void
 }
-
-type ReferencePart =
-  | AttachmentRefPart
-  | FileRefPart
-  | DirectoryRefPart
-  | WorkflowRefPart
-  | RunRefPart
 
 type MessageRenderBlock =
   | { kind: "part"; part: Exclude<MessagePart, ToolCallPart> }
@@ -47,7 +29,6 @@ export function AgentMessageParts({
   liveToolsByCallId = EMPTY_LIVE_TOOLS,
   onOpenRun,
 }: AgentMessagePartsProps) {
-  const t = useTranslations("agentHistory")
   const blocks = groupContiguousToolCalls(parts)
   const messageToolCallIds = new Set(
     parts.flatMap((part) => (part.type === "tool_call" ? [part.call_id] : [])),
@@ -82,132 +63,22 @@ export function AgentMessageParts({
         }
 
         const part = block.part
-        if (part.type === "text") {
-          return <MarkdownRenderer key={part.id} content={part.text} />
+        if (part.type === "tool_result" && messageToolCallIds.has(part.call_id)) {
+          return null
         }
-
-        if (part.type === "reasoning_summary") {
-          return (
-            <AgentThinking
-              key={part.id}
-              label={t("reasoning.title")}
-              part={part}
-            />
-          )
-        }
-
-        if (part.type === "tool_result") {
-          if (messageToolCallIds.has(part.call_id)) return null
-          return <UnpairedToolResult key={part.id} result={part} onOpenRun={onOpenRun} />
-        }
-
-        if (part.type === "artifact_ref") {
-          return <AgentArtifactReference key={part.id} part={part} />
-        }
-
-        if (isReferencePart(part)) {
-          return <ReferenceRow key={part.id} part={part} onOpenRun={onOpenRun} />
-        }
-
         return (
-          <div
+          <AgentMessagePart
             key={part.id}
-            className="grid gap-1 rounded-[10px] border border-border/60 bg-muted/25 px-3 py-2"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium text-foreground/80">
-                {t("unknown.title")}
-              </span>
-              <Badge
-                variant="outline"
-                className="font-mono text-[10px]"
-                translate="no"
-              >
-                {part.original_type}
-              </Badge>
-            </div>
-            <p className="text-xs leading-5 text-muted-foreground">
-              {part.display_text}
-            </p>
-          </div>
+            part={part}
+            onOpenRun={onOpenRun}
+            nestedContent={
+              part.type === "tool_result" ? (
+                <ToolOutputContentParts results={[part]} onOpenRun={onOpenRun} />
+              ) : undefined
+            }
+          />
         )
       })}
-    </div>
-  )
-}
-
-function ReferenceRow({
-  part,
-  onOpenRun,
-}: {
-  part: ReferencePart
-  onOpenRun?: (runId: string) => void
-}) {
-  const t = useTranslations("agentHistory")
-  const reference = referenceView(part)
-  const className =
-    "flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[8px] px-2.5 py-2 text-left text-xs"
-  const content = (
-    <>
-      <Badge variant="outline">{t(`reference.${reference.kind}`)}</Badge>
-      <span className="min-w-0 flex-1 truncate font-medium text-foreground/80">
-        {reference.label}
-      </span>
-      {reference.detail ? (
-        <span
-          className="max-w-[50%] truncate font-mono text-[11px] text-muted-foreground"
-          translate="no"
-        >
-          {reference.detail}
-        </span>
-      ) : null}
-      {part.type === "run_ref" && onOpenRun ? (
-        <ChevronRight
-          aria-hidden="true"
-          className="size-4 shrink-0 text-muted-foreground"
-        />
-      ) : null}
-    </>
-  )
-
-  if (part.type === "run_ref" && onOpenRun) {
-    return (
-      <button
-        type="button"
-        className={`${className} transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none`}
-        aria-label={t("reference.openRun", { name: reference.label })}
-        onClick={() => onOpenRun(part.run_id)}
-      >
-        {content}
-      </button>
-    )
-  }
-
-  return <div className={className}>{content}</div>
-}
-
-function UnpairedToolResult({
-  result,
-  onOpenRun,
-}: {
-  result: ToolResultPart
-  onOpenRun?: (runId: string) => void
-}) {
-  const t = useTranslations("agentActivity")
-  const publicContent =
-    result.summary ?? result.error
-
-  return (
-    <div className="grid min-w-0 gap-2">
-      <div className="flex min-w-0 items-start gap-2 rounded-[8px] border border-border/60 bg-muted/20 px-3 py-2 text-xs">
-        <Badge variant="outline">{t(`status.${result.status}`)}</Badge>
-        {publicContent ? (
-          <p className="min-w-0 flex-1 whitespace-pre-wrap break-words leading-5 text-foreground/75">
-            {publicContent}
-          </p>
-        ) : null}
-      </div>
-      <ToolOutputContentParts results={[result]} onOpenRun={onOpenRun} />
     </div>
   )
 }
@@ -301,38 +172,4 @@ function groupContiguousToolCalls(parts: MessagePart[]): MessageRenderBlock[] {
   }
 
   return blocks
-}
-
-function isReferencePart(part: MessagePart): part is ReferencePart {
-  return [
-    "attachment_ref",
-    "file_ref",
-    "directory_ref",
-    "workflow_ref",
-    "run_ref",
-  ].includes(part.type)
-}
-
-function referenceView(part: ReferencePart) {
-  if (part.type === "attachment_ref") {
-    return {
-      kind: "attachment" as const,
-      label: part.filename,
-      detail: part.mime_type,
-    }
-  }
-  if (part.type === "file_ref") {
-    return { kind: "file" as const, label: part.label, detail: part.path }
-  }
-  if (part.type === "directory_ref") {
-    return { kind: "directory" as const, label: part.label, detail: part.path }
-  }
-  if (part.type === "workflow_ref") {
-    return {
-      kind: "workflow" as const,
-      label: part.label,
-      detail: part.workflow_id,
-    }
-  }
-  return { kind: "run" as const, label: part.label, detail: part.run_id }
 }
