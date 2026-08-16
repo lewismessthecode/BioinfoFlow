@@ -325,10 +325,10 @@ export function AgentComposer({
         <div
           data-testid="agent-composer-surface"
           className={cn(
-            "flex flex-col border border-border bg-card p-2 transition-[border-color,box-shadow,background-color] focus-within:border-foreground/25 focus-within:shadow-[0_12px_28px_-24px_color-mix(in_oklab,var(--foreground)_22%,transparent)] motion-reduce:transition-none",
+            "flex flex-col border border-border bg-card p-2 shadow-[var(--composer-shadow)] transition-[border-color,box-shadow,background-color] focus-within:border-foreground/25 motion-reduce:transition-none",
             placement === "draft"
-              ? "rounded-[24px] shadow-[0_1px_2px_rgba(15,15,15,0.035)]"
-              : "rounded-[18px] shadow-[0_12px_34px_-28px_color-mix(in_oklab,var(--foreground)_24%,transparent)]",
+              ? "rounded-[24px]"
+              : "rounded-[18px]",
           )}
         >
           {contextInputs.length > 0 && onRemoveContextInput ? (
@@ -474,6 +474,8 @@ export function AgentComposer({
             <Button
               type="submit"
               size="icon-sm"
+              data-testid="agent-composer-send"
+              className="rounded-full border border-foreground/10 bg-foreground text-background shadow-[0_1px_2px_rgba(15,15,15,0.04)] hover:bg-foreground/90 hover:shadow-[0_2px_5px_rgba(15,15,15,0.05)] focus-visible:border-foreground/20 focus-visible:ring-2 focus-visible:ring-foreground/25 focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-safe:active:scale-[0.96] disabled:border-border/70 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100 dark:border-foreground/15 dark:shadow-[0_1px_2px_rgba(0,0,0,0.24)] dark:disabled:bg-muted dark:disabled:text-muted-foreground"
               disabled={!hasContent || controlsDisabled}
               aria-label={t(
                 submitting === "message"

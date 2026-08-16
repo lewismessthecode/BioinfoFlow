@@ -6,7 +6,10 @@ import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, Protocol, TypeAlias
 
-from app.services.agent_harness.starter_prompts import StarterPromptGenerationRequest
+from app.services.agent_harness.starter_prompts import (
+    StarterPromptGenerationRequest,
+    project_prompt_generation_context,
+)
 from app.services.agent_harness.model_resolver import AgentModelResolver
 from app.services.agent_harness.model_target import model_target_from_resolved
 from app.repositories.llm_repo import (
@@ -35,9 +38,10 @@ class StarterPromptGateway(Protocol):
 
 
 _INSTRUCTIONS = """Generate concise starter prompts for a project assistant.
-Return only a JSON array containing exactly three strings. Each string must be
-an actionable user request grounded in the supplied project context. Do not use
-Markdown, disclose hidden reasoning, or invent unavailable project facts."""
+Return only a JSON array containing exactly three strings in the supplied locale.
+Each string must be a natural, actionable user request grounded in the public
+project context and no longer than 80 characters. Do not use Markdown, expose
+internal identifiers or paths, disclose hidden reasoning, or invent facts."""
 
 
 class StarterPromptModelGenerator:
@@ -70,7 +74,9 @@ class StarterPromptModelGenerator:
                         text=json.dumps(
                             {
                                 "locale": request.locale,
-                                "project": request.project,
+                                "project": project_prompt_generation_context(
+                                    request.project
+                                ),
                             },
                             ensure_ascii=False,
                             separators=(",", ":"),

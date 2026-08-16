@@ -2504,7 +2504,7 @@
     "newConversation": "New conversation",
     "untitled": "Untitled conversation",
     "defaultModel": "Default model",
-    "emptyTitle": "What would you like to work on?",
+    "emptyTitle": "Ready when you are.",
     "emptyDescription": "Ask a question, attach data, or reference a workflow. Bioinfoflow will show its plan, progress, tool activity, and any approval it needs.",
     "starterPrompts": {
       "reviewRun": "Review the latest run and highlight anything unusual",
@@ -2590,19 +2590,19 @@
       "retry": "Retry voice dictation"
     },
     "permission": {
-      "label": "Permissions",
-      "title": "Permissions",
+      "label": "Approval",
+      "title": "Approval policy",
       "ask_changes": {
-        "name": "Ask",
-        "description": "Ask before making changes."
+        "name": "Confirm changes",
+        "description": "Read-only actions run directly; confirm every workspace change."
       },
       "ask_dangerous": {
-        "name": "Auto",
-        "description": "Only ask before higher-risk actions."
+        "name": "Confirm risks",
+        "description": "Routine changes run directly; confirm risky or gated actions."
       },
       "full_access": {
-        "name": "Full access",
-        "description": "Run within workspace safety limits."
+        "name": "No approval",
+        "description": "Allowed actions run directly within workspace and hard safety limits."
       },
       "activeRun": "Approval mode cannot change while a run is active.",
       "nextRun": "Changes apply to the next run.",
@@ -2616,6 +2616,7 @@
       "title": "Choose visible environments",
       "auto": {
         "name": "Auto",
+        "summary": "All environments",
         "description": "Let the agent use any available environment."
       },
       "manual": {

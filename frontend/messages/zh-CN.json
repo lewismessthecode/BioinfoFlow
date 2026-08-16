@@ -2504,7 +2504,7 @@
     "newConversation": "新对话",
     "untitled": "未命名对话",
     "defaultModel": "默认模型",
-    "emptyTitle": "你想先做什么？",
+    "emptyTitle": "准备好了，随时开始",
     "emptyDescription": "可以直接提问、添加数据，或引用工作流。Bioinfoflow 会展示计划、进度、工具执行，以及需要你确认的操作。",
     "starterPrompts": {
       "reviewRun": "检查最近一次运行，并指出值得注意的问题",
@@ -2590,19 +2590,19 @@
       "retry": "重试语音输入"
     },
     "permission": {
-      "label": "权限",
-      "title": "操作权限",
+      "label": "审批",
+      "title": "审批方式",
       "ask_changes": {
-        "name": "询问",
-        "description": "执行更改前先询问。"
+        "name": "更改确认",
+        "description": "只读操作直接执行；每次工作区更改都需要确认。"
       },
       "ask_dangerous": {
-        "name": "自动",
-        "description": "只在较高风险操作前询问。"
+        "name": "风险确认",
+        "description": "常规更改直接执行；风险或受控操作需要确认。"
       },
       "full_access": {
-        "name": "完全访问",
-        "description": "在工作区安全边界内自动执行。"
+        "name": "免审批",
+        "description": "允许的操作直接执行，仍受工作区和硬性安全边界限制。"
       },
       "activeRun": "当前有任务运行时不能修改审批方式。",
       "nextRun": "更改将在下一次运行时生效。",
@@ -2616,6 +2616,7 @@
       "title": "选择智能助手可见的环境",
       "auto": {
         "name": "自动",
+        "summary": "全部环境",
         "description": "允许智能助手按需使用所有可用环境。"
       },
       "manual": {

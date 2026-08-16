@@ -34,17 +34,17 @@ vi.mock("next-intl", () => ({
       "agentComposer.submitError":
         "The message could not be submitted. Try again.",
       "agentComposer.stopError": "The run could not be stopped. Try again.",
-      "agentComposer.permission.label": "Approval mode",
-      "agentComposer.permission.title": "How should agent actions be approved?",
-      "agentComposer.permission.ask_changes.name": "Ask before changes",
+      "agentComposer.permission.label": "Approval",
+      "agentComposer.permission.title": "Approval policy",
+      "agentComposer.permission.ask_changes.name": "Confirm changes",
       "agentComposer.permission.ask_changes.description":
-        "Ask before files, network, or other side effects change.",
-      "agentComposer.permission.ask_dangerous.name": "Approve safe actions",
+        "Read-only actions run directly; confirm every workspace change.",
+      "agentComposer.permission.ask_dangerous.name": "Confirm risks",
       "agentComposer.permission.ask_dangerous.description":
-        "Only ask for dangerous or critical actions.",
-      "agentComposer.permission.full_access.name": "Full access",
+        "Routine changes run directly; confirm risky or gated actions.",
+      "agentComposer.permission.full_access.name": "No approval",
       "agentComposer.permission.full_access.description":
-        "Run automatically inside hard workspace and safety limits.",
+        "Allowed actions run directly within workspace and hard safety limits.",
       "agentComposer.permission.activeRun":
         "Approval mode cannot change while a run is active.",
       "agentComposer.permission.nextRun": "Changes apply to the next run.",
@@ -57,6 +57,7 @@ vi.mock("next-intl", () => ({
       "agentComposer.environment.label": "Execution environments",
       "agentComposer.environment.title": "Choose visible environments",
       "agentComposer.environment.auto.name": "Auto",
+      "agentComposer.environment.auto.summary": "All environments",
       "agentComposer.environment.auto.description":
         "Let the agent use any available environment.",
       "agentComposer.environment.manual.name": "Manual",
@@ -225,6 +226,7 @@ describe("AgentComposer", () => {
       "border-border",
       "bg-card",
       "p-2",
+      "shadow-[var(--composer-shadow)]",
     )
     expect(screen.getByTestId("agent-composer-surface")).not.toHaveClass(
       "min-h-[160px]",
@@ -282,6 +284,30 @@ describe("AgentComposer", () => {
     )
   })
 
+  it("keeps the send action circular, touch-sized, and visibly focusable", () => {
+    renderComposer({ placement: "draft" })
+
+    const send = screen.getByRole("button", { name: "Send message" })
+    expect(send).toHaveAttribute("data-testid", "agent-composer-send")
+    expect(send).toHaveClass(
+      "size-11",
+      "lg:size-8",
+      "rounded-full",
+      "focus-visible:ring-2",
+      "focus-visible:ring-offset-2",
+      "motion-safe:active:scale-[0.96]",
+      "disabled:opacity-100",
+      "dark:disabled:bg-muted",
+    )
+    expect(send).toBeDisabled()
+
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+      { target: { value: "Review this workflow" } },
+    )
+    expect(send).toBeEnabled()
+  })
+
   it("keeps steady composer selectors in one fixed-height field without empty feedback", () => {
     const view = renderComposer({
       placement: "draft",
@@ -308,7 +334,7 @@ describe("AgentComposer", () => {
 
     expect(
       screen.getByRole("button", {
-        name: "Approval mode: Approve safe actions",
+        name: "Approval: Confirm risks",
       }),
     ).not.toHaveAttribute("aria-describedby")
   })
@@ -320,7 +346,7 @@ describe("AgentComposer", () => {
 
     await user.click(
       screen.getByRole("button", {
-        name: "Approval mode: Approve safe actions",
+        name: "Approval: Confirm risks",
       }),
     )
 
@@ -334,7 +360,7 @@ describe("AgentComposer", () => {
       "compact",
     )
     expect(
-      screen.getByRole("menuitemradio", { name: /Ask before changes/i }),
+      screen.getByRole("menuitemradio", { name: /Confirm changes/i }),
     ).toHaveClass("min-h-11", "lg:min-h-8", "py-2", "text-xs", "leading-4")
   })
 
@@ -366,12 +392,14 @@ describe("AgentComposer", () => {
       [screen.getByRole("combobox", { name: "GPT-5.6" }), 2],
       [
         screen.getByRole("button", {
-          name: "Approval mode: Approve safe actions",
+          name: "Approval: Confirm risks",
         }),
         3,
       ],
       [
-        screen.getByRole("button", { name: "Execution environments: Auto" }),
+        screen.getByRole("button", {
+          name: "Execution environments: Auto, All environments",
+        }),
         2,
       ],
     ] as const
@@ -570,9 +598,9 @@ describe("AgentComposer", () => {
     const view = renderWithProviders(<EnvironmentComposer />)
 
     const autoTrigger = screen.getByRole("button", {
-      name: "Execution environments: Auto",
+      name: "Execution environments: Auto, All environments",
     })
-    expect(autoTrigger).toHaveTextContent(/^Auto$/)
+    expect(autoTrigger).toHaveTextContent(/^All environments$/)
     await user.click(autoTrigger)
     await user.click(screen.getByRole("menuitemradio", { name: /Manual/i }))
     expect(onEnvironmentSelectionChange).toHaveBeenCalledWith({
@@ -747,17 +775,17 @@ describe("AgentComposer", () => {
 
     await user.click(
       screen.getByRole("button", {
-        name: "Approval mode: Approve safe actions",
+        name: "Approval: Confirm risks",
       }),
     )
     await user.click(
-      screen.getByRole("menuitemradio", { name: /Full access/i }),
+      screen.getByRole("menuitemradio", { name: /No approval/i }),
     )
 
     expect(onPermissionModeChange).toHaveBeenCalledWith("full_access")
     expect(
       screen.getByRole("button", {
-        name: "Approval mode: Full access",
+        name: "Approval: No approval",
       }),
     ).toBeDisabled()
     expect(screen.getByText("Updating approval mode…")).toBeInTheDocument()
@@ -776,7 +804,7 @@ describe("AgentComposer", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Approval mode: Full access" }),
+        screen.getByRole("button", { name: "Approval: No approval" }),
       ).toBeInTheDocument(),
     )
     expect(
@@ -791,24 +819,24 @@ describe("AgentComposer", () => {
     renderComposer({ onPermissionModeChange })
 
     const trigger = screen.getByRole("button", {
-      name: "Approval mode: Approve safe actions",
+      name: "Approval: Confirm risks",
     })
     await user.click(trigger)
 
     let sheet = await screen.findByRole("dialog")
-    expect(sheet).toHaveAccessibleName("How should agent actions be approved?")
+    expect(sheet).toHaveAccessibleName("Approval policy")
     expect(sheet).toHaveAccessibleDescription(
-      "Only ask for dangerous or critical actions.",
+      "Routine changes run directly; confirm risky or gated actions.",
     )
     expect(screen.queryByRole("menuitemradio")).not.toBeInTheDocument()
 
     const options = within(sheet).getByRole("group", {
-      name: "How should agent actions be approved?",
+      name: "Approval policy",
     })
     expect(options).toHaveClass("overscroll-contain")
     expect(options).toHaveClass("pb-[max(1rem,env(safe-area-inset-bottom))]")
     expect(
-      within(options).getByRole("button", { name: /Approve safe actions/i }),
+      within(options).getByRole("button", { name: /Confirm risks/i }),
     ).toHaveAttribute("aria-pressed", "true")
 
     await user.keyboard("{Escape}")
@@ -818,7 +846,7 @@ describe("AgentComposer", () => {
     await user.click(trigger)
     sheet = await screen.findByRole("dialog")
     const nextMode = within(sheet).getByRole("button", {
-      name: /Ask before changes/i,
+      name: /Confirm changes/i,
     })
     nextMode.focus()
     await user.keyboard("{Enter}")
@@ -827,7 +855,7 @@ describe("AgentComposer", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     expect(
       screen.getByRole("button", {
-        name: "Approval mode: Ask before changes",
+        name: "Approval: Confirm changes",
       }),
     ).toBeDisabled()
   })
@@ -848,7 +876,7 @@ describe("AgentComposer", () => {
       ),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole("button", { name: "Approval mode: Full access" }),
+      screen.getByRole("button", { name: "Approval: No approval" }),
     ).toBeDisabled()
 
     view.rerender(
@@ -864,7 +892,7 @@ describe("AgentComposer", () => {
     )
 
     const activeTrigger = screen.getByRole("button", {
-      name: "Approval mode: Approve safe actions",
+      name: "Approval: Confirm risks",
     })
     expect(activeTrigger).toBeEnabled()
     expect(
@@ -872,7 +900,7 @@ describe("AgentComposer", () => {
     ).not.toBeInTheDocument()
     await user.click(activeTrigger)
     await user.click(
-      screen.getByRole("menuitemradio", { name: /Full access/i }),
+      screen.getByRole("menuitemradio", { name: /No approval/i }),
     )
     expect(onPermissionModeChange).toHaveBeenCalledWith("full_access")
   })
@@ -885,7 +913,7 @@ describe("AgentComposer", () => {
     ).toBeDisabled()
     expect(
       screen.getByRole("button", {
-        name: "Approval mode: Approve safe actions",
+        name: "Approval: Confirm risks",
       }),
     ).toBeDisabled()
   })
@@ -900,11 +928,11 @@ describe("AgentComposer", () => {
 
     await user.click(
       screen.getByRole("button", {
-        name: "Approval mode: Approve safe actions",
+        name: "Approval: Confirm risks",
       }),
     )
     await user.click(
-      screen.getByRole("menuitemradio", { name: /Ask before changes/i }),
+      screen.getByRole("menuitemradio", { name: /Confirm changes/i }),
     )
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -943,17 +971,17 @@ describe("AgentComposer", () => {
     renderWithProviders(<DraftComposer />)
     await user.click(
       screen.getByRole("button", {
-        name: "Approval mode: Approve safe actions",
+        name: "Approval: Confirm risks",
       }),
     )
     await user.click(
-      screen.getByRole("menuitemradio", { name: /Ask before changes/i }),
+      screen.getByRole("menuitemradio", { name: /Confirm changes/i }),
     )
 
     expect(onDraftModeChange).toHaveBeenCalledWith("ask_changes")
     expect(
       await screen.findByRole("button", {
-        name: "Approval mode: Ask before changes",
+        name: "Approval: Confirm changes",
       }),
     ).toBeInTheDocument()
   })

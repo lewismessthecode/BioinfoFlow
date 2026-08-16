@@ -377,9 +377,11 @@ protocol surface:
 - the three Composer selectors share the same field wrapper in addition to the
   same trigger primitive. Their trigger row is top-aligned even while one setting
   shows pending or error feedback;
-- permission trigger labels are deliberately short: Ask / Auto / Full access and
-  询问 / 自动 / 完全访问. The menu title and descriptions are concise and use the
-  same compact menu-row grammar as model and environment selection;
+- the permission control is named Approval / 审批 because Harness
+  `permission_mode` governs when approval is requested, not the workspace access
+  boundary. Its three concise choices are Confirm changes / 更改确认, Confirm
+  risks / 风险确认, and No approval / 免审批; the copy must state that workspace
+  access and hard safety limits remain authoritative;
 - Approval receives a public, sanitized action summary and input preview from the
   server presentation adapter. The card foregrounds the exact command or action,
   execution environment, and user-visible effects, while raw policy codes such as
@@ -409,3 +411,34 @@ protocol surface:
    overwrite manual titles, and refreshes the existing sidebar summary seam;
 7. Draft DOM and Playwright geometry verify the restored welcome typography,
    starter icons, row density, Composer contrast, and Light/Dark parity.
+
+## Final micro-polish: native language, scope clarity, and elevation
+
+The final visual pass keeps the stable Presentation Contract unchanged and
+clarifies only user-facing composition controls:
+
+- generated starter prompts are short, imperative, and natural for the active
+  locale; internal identifiers such as `bioinfoflow.demo.quickstart.v1` are
+  excluded from generation context and cannot appear in the rendered fallback;
+- the environment selector communicates scope rather than implementation:
+  automatic scope is shown as All environments / 全部环境, while manual scope
+  shows the selected environment name or count; status labels never wrap into
+  vertical glyph columns at constrained menu widths;
+- the empty-state welcome line uses the warmer Ready when you are. / 准备好了，
+  随时开始 copy at a stronger but restrained display size;
+- the send action is a true circular icon button with consistent hover, active,
+  focus, disabled, touch-target, and Dark Mode states;
+- the Composer surface uses a visible one-pixel boundary plus a restrained,
+  background-tinted diffusion shadow. The shadow establishes elevation in both
+  themes without glow, gradients, or stock heavy-shadow utilities.
+
+### Final micro-polish TDD slices
+
+1. locale and generator tests reject internal demo markers and assert concise,
+   native-language starter prompts;
+2. approval copy tests encode the three real Harness approval semantics without
+   the ambiguous Auto / 自动 label;
+3. environment DOM tests cover automatic scope, multi-target manual scope,
+   truncated endpoints, and non-wrapping status badges;
+4. Composer DOM and browser checks cover welcome typography, circular send
+   geometry, border contrast, diffuse elevation, and Light/Dark parity.
