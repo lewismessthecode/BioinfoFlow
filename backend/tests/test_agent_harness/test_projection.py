@@ -85,6 +85,150 @@ def test_entry_projection_returns_typed_public_history() -> None:
     assert projected.payload.parts[0].text == "Finished"
 
 
+def test_entry_projection_upgrades_legacy_and_provider_reasoning_to_traces() -> None:
+    entry = AgentHarnessEntry(
+        id=UUID("30000000-0000-0000-0000-000000000002"),
+        session_id=SESSION_ID,
+        run_id=RUN_ID,
+        sequence=5,
+        type="message",
+        schema_version=2,
+        payload={
+            "role": "assistant",
+            "parts": [
+                {
+                    "id": "legacy-reasoning",
+                    "type": "reasoning_summary",
+                    "text": "Legacy summary",
+                },
+                {
+                    "id": "provider-reasoning",
+                    "type": "thinking",
+                    "thinking": "Provider trace",
+                    "provider": "deepseek",
+                    "model": "deepseek-reasoner",
+                    "truncated": True,
+                    "started_at": NOW,
+                    "completed_at": NOW,
+                    "signature": "private-signature",
+                },
+            ],
+        },
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    dumped = entry_contract(entry).model_dump(mode="json")
+
+    assert dumped["payload"]["parts"] == [
+        {
+            "id": "legacy-reasoning",
+            "type": "reasoning_trace",
+            "text": "Legacy summary",
+            "provider": "unknown",
+            "model": "unknown",
+            "source": "reasoning_summary",
+            "truncated": False,
+            "started_at": None,
+            "completed_at": None,
+        },
+        {
+            "id": "provider-reasoning",
+            "type": "reasoning_trace",
+            "text": "Provider trace",
+            "provider": "deepseek",
+            "model": "deepseek-reasoner",
+            "source": "thinking",
+            "truncated": True,
+            "started_at": "2026-08-15T00:00:00Z",
+            "completed_at": "2026-08-15T00:00:00Z",
+        },
+    ]
+    assert "private-signature" not in str(dumped)
+
+
+def test_entry_projection_safely_falls_back_for_unknown_parts_and_entries() -> None:
+    unknown_part_entry = AgentHarnessEntry(
+        id=UUID("30000000-0000-0000-0000-000000000003"),
+        session_id=SESSION_ID,
+        run_id=RUN_ID,
+        sequence=6,
+        type="message",
+        schema_version=3,
+        payload={
+            "role": "assistant",
+            "parts": [
+                {
+                    "id": "future-part",
+                    "type": "provider_future_part",
+                    "raw": {"secret": "must-not-publish"},
+                }
+            ],
+        },
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    unknown_entry = AgentHarnessEntry(
+        id=UUID("30000000-0000-0000-0000-000000000004"),
+        session_id=SESSION_ID,
+        run_id=RUN_ID,
+        sequence=7,
+        type="future_activity",
+        schema_version=9,
+        payload={"private": "must-not-publish"},
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    part_dump = entry_contract(unknown_part_entry).model_dump(mode="json")
+    entry_dump = entry_contract(unknown_entry).model_dump(mode="json")
+
+    assert part_dump["payload"]["parts"] == [
+        {
+            "id": "future-part",
+            "type": "unknown",
+            "original_type": "provider_future_part",
+            "display_text": "Unsupported conversation content",
+        }
+    ]
+    assert entry_dump["type"] == "unknown"
+    assert entry_dump["payload"] == {
+        "original_type": "future_activity",
+        "display_text": "Unsupported conversation activity",
+    }
+    assert "must-not-publish" not in str([part_dump, entry_dump])
+
+
+def test_reasoning_projection_never_publishes_opaque_provider_state() -> None:
+    entry = AgentHarnessEntry(
+        id=UUID("30000000-0000-0000-0000-000000000005"),
+        session_id=SESSION_ID,
+        run_id=RUN_ID,
+        sequence=8,
+        type="message",
+        schema_version=3,
+        payload={
+            "role": "assistant",
+            "parts": [
+                {
+                    "id": "opaque-reasoning",
+                    "type": "reasoning",
+                    "encrypted_content": "opaque-private-state",
+                    "signature": "private-signature",
+                }
+            ],
+        },
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    dumped = entry_contract(entry).model_dump(mode="json")
+
+    assert dumped["payload"]["parts"][0]["type"] == "unknown"
+    assert "opaque-private-state" not in str(dumped)
+    assert "private-signature" not in str(dumped)
+
+
 def test_tool_progress_projection_redacts_arguments_and_builds_safe_details() -> None:
     projected = project_tool_view(
         spec=BashTool.spec,

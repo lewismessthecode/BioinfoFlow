@@ -8,6 +8,7 @@ from app.api.v1.files import router as files_router
 from app.api.v1.first_run import router as first_run_router
 from app.api.v1.images import router as images_router
 from app.api.v1.agent import router as agent_router
+from app.api.v1.agent_starter_prompts import router as agent_starter_prompts_router
 from app.api.v1.llm import router as llm_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.project_workflows import router as project_workflows_router
@@ -37,6 +38,7 @@ api_router.include_router(runs_router)
 api_router.include_router(notifications_router)
 api_router.include_router(scheduler_router)
 api_router.include_router(speech_router)
+api_router.include_router(agent_starter_prompts_router)
 api_router.include_router(agent_router)
 api_router.include_router(llm_router)
 api_router.include_router(stats_router)

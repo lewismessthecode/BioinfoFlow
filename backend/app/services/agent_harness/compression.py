@@ -249,8 +249,7 @@ def _text(payload: Mapping[str, Any]) -> str:
             text = "\n".join(
                 part_text
                 for part in value
-                if isinstance(part, Mapping)
-                and (part_text := _message_part_text(part))
+                if isinstance(part, Mapping) and (part_text := _message_part_text(part))
             ).strip()
             if text:
                 return text
@@ -275,7 +274,7 @@ def _message_part_text(part: Mapping[str, Any]) -> str:
             str(item.get("text"))
             for item in output["parts"]
             if isinstance(item, Mapping)
-            and item.get("type") in {"text", "reasoning_summary"}
+            and item.get("type") in {"text", "reasoning_summary", "reasoning_trace"}
             and isinstance(item.get("text"), str)
         )
     return ""

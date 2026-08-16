@@ -57,10 +57,7 @@ def build_history_view(
     for entry in ordered:
         if _sequence(entry) <= covered_through:
             continue
-        if (
-            _entry_type(entry) == "plan"
-            and _sequence(entry) != latest_plan_sequence
-        ):
+        if _entry_type(entry) == "plan" and _sequence(entry) != latest_plan_sequence:
             continue
         if _entry_type(entry) != "message":
             input_items.extend(_non_message_parts(_entry_type(entry), _payload(entry)))
@@ -210,10 +207,11 @@ def _message_parts(
                 continue
             part_type = part.get("type")
             attachment_id = part.get("attachment_id")
-            if (
-                part_type in {"attachment_ref", "file_ref", "directory_ref"}
-                and isinstance(attachment_id, str)
-            ):
+            if part_type in {
+                "attachment_ref",
+                "file_ref",
+                "directory_ref",
+            } and isinstance(attachment_id, str):
                 result.extend(attachment_parts_by_id.get(attachment_id, ()))
                 continue
             reference = _reference_text(part)
@@ -238,7 +236,7 @@ def _tool_output_text(output: Any) -> str:
             str(part.get("text"))
             for part in parts
             if isinstance(part, Mapping)
-            and part.get("type") in {"text", "reasoning_summary"}
+            and part.get("type") in {"text", "reasoning_summary", "reasoning_trace"}
             and isinstance(part.get("text"), str)
         )
     return ""

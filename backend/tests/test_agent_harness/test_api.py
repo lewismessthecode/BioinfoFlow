@@ -116,7 +116,9 @@ async def test_session_create_and_summary_expose_permission_and_workspace_access
     listed = await async_client.get("/api/v1/agent/sessions")
 
     assert listed.status_code == 200
-    summary = next(item for item in listed.json()["data"] if item["id"] == session["id"])
+    summary = next(
+        item for item in listed.json()["data"] if item["id"] == session["id"]
+    )
     assert summary["permission_mode"] == "ask_changes"
     assert summary["workspace_access"] == "read_only"
     assert "history_revision" not in summary
@@ -209,9 +211,7 @@ async def test_session_snapshot_has_one_canonical_get_route(async_client) -> Non
     session_id = created.json()["data"]["session"]["id"]
 
     duplicate = await async_client.get(f"/api/v1/agent/sessions/{session_id}")
-    snapshot = await async_client.get(
-        f"/api/v1/agent/sessions/{session_id}/snapshot"
-    )
+    snapshot = await async_client.get(f"/api/v1/agent/sessions/{session_id}/snapshot")
 
     assert duplicate.status_code == 405
     assert snapshot.status_code == 200
@@ -225,7 +225,7 @@ async def test_session_snapshot_has_one_canonical_get_route(async_client) -> Non
         {"title": "After", "workspace_access": "read_only"},
     ],
 )
-async def test_session_patch_rejects_policy_changes_atomically_during_active_run(
+async def test_session_patch_updates_future_policy_during_active_run(
     async_client,
     payload: dict,
 ) -> None:
@@ -248,19 +248,19 @@ async def test_session_patch_rejects_policy_changes_atomically_during_active_run
         f"/api/v1/agent/sessions/{session_id}",
         json=payload,
     )
-    current = await async_client.get(
-        f"/api/v1/agent/sessions/{session_id}/snapshot"
-    )
+    current = await async_client.get(f"/api/v1/agent/sessions/{session_id}/snapshot")
 
-    assert response.status_code == 409
+    assert response.status_code == 200
     session = current.json()["data"]["session"]
-    assert session["title"] == "Before"
-    assert session["permission_mode"] == "ask_dangerous"
-    assert session["workspace_access"] == "read_write"
+    assert session["title"] == "After"
+    assert session["permission_mode"] == payload.get("permission_mode", "ask_dangerous")
+    assert session["workspace_access"] == payload.get("workspace_access", "read_write")
 
 
 @pytest.mark.asyncio
-async def test_session_patch_allows_title_change_during_active_run(async_client) -> None:
+async def test_session_patch_allows_title_change_during_active_run(
+    async_client,
+) -> None:
     from app.repositories.agent_harness_repo import AgentHarnessRepository
     import app.database as app_database
 
@@ -332,9 +332,7 @@ async def test_session_patch_rejects_archive_atomically_during_active_run(
         f"/api/v1/agent/sessions/{session_id}",
         json={"title": "After", "status": "archived"},
     )
-    current = await async_client.get(
-        f"/api/v1/agent/sessions/{session_id}/snapshot"
-    )
+    current = await async_client.get(f"/api/v1/agent/sessions/{session_id}/snapshot")
 
     assert response.status_code == 409
     assert current.json()["data"]["session"]["status"] == "active"
@@ -393,7 +391,9 @@ async def test_message_command_rejects_attachment_from_another_session(
     )
     attachment_id = uploaded.json()["data"][0]["id"]
 
-    with patch("app.api.v1.agent.agent_runtime.dispatch", return_value=None) as dispatch:
+    with patch(
+        "app.api.v1.agent.agent_runtime.dispatch", return_value=None
+    ) as dispatch:
         response = await async_client.post(
             f"/api/v1/agent/sessions/{target_id}/commands",
             json={
@@ -436,7 +436,9 @@ async def test_message_command_rejects_project_path_traversal(
         created = await async_client.post("/api/v1/agent/sessions", json={})
     session_id = created.json()["data"]["session"]["id"]
 
-    with patch("app.api.v1.agent.agent_runtime.dispatch", return_value=None) as dispatch:
+    with patch(
+        "app.api.v1.agent.agent_runtime.dispatch", return_value=None
+    ) as dispatch:
         response = await async_client.post(
             f"/api/v1/agent/sessions/{session_id}/commands",
             json={
@@ -462,7 +464,11 @@ async def test_message_command_accepts_run_ref_only_from_the_session_project(
     db_session,
 ) -> None:
     from app.models.run import Run, RunStatus
-    from tests.support.path_contract import bind_workflow, create_project, create_workflow
+    from tests.support.path_contract import (
+        bind_workflow,
+        create_project,
+        create_workflow,
+    )
 
     current_project = await create_project(
         db_session,
@@ -515,7 +521,9 @@ async def test_message_command_accepts_run_ref_only_from_the_session_project(
         )
     session_id = created.json()["data"]["session"]["id"]
 
-    with patch("app.api.v1.agent.agent_runtime.dispatch", return_value=None) as dispatch:
+    with patch(
+        "app.api.v1.agent.agent_runtime.dispatch", return_value=None
+    ) as dispatch:
         rejected = await async_client.post(
             f"/api/v1/agent/sessions/{session_id}/commands",
             json={
@@ -577,7 +585,9 @@ async def test_message_command_rejects_attachment_reference_kind_mismatch(
     )
     attachment_id = uploaded.json()["data"][0]["id"]
 
-    with patch("app.api.v1.agent.agent_runtime.dispatch", return_value=None) as dispatch:
+    with patch(
+        "app.api.v1.agent.agent_runtime.dispatch", return_value=None
+    ) as dispatch:
         response = await async_client.post(
             f"/api/v1/agent/sessions/{session_id}/commands",
             json={

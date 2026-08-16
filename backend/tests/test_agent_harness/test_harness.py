@@ -37,6 +37,7 @@ from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ImagePart,
     ModelEvent,
+    ReasoningDelta,
     ResponsesContinuation,
     TextPart,
     TextDelta,
@@ -222,6 +223,67 @@ class ScriptedModel:
         self.invocations.append(invocation)
         for event in self.responses.pop(0):
             yield event
+
+
+@pytest.mark.asyncio
+async def test_reasoning_deltas_preserve_public_trace_boundaries(
+    harness_db,
+    tmp_path,
+) -> None:
+    model = ScriptedModel(
+        (
+            ReasoningDelta(
+                text="Inspecting ",
+                provider="openai",
+                model="gpt-5",
+                source="reasoning_content",
+            ),
+            ReasoningDelta(
+                text="the inputs.",
+                provider="openai",
+                model="gpt-5",
+                source="reasoning_content",
+            ),
+            ReasoningDelta(
+                text="A separate summary.",
+                provider="openai",
+                model="gpt-5",
+                source="summary_text",
+                truncated=True,
+            ),
+            TextDelta(text="Done."),
+            CompletionMetadata(response_id="response-reasoning", finish_reason="stop"),
+        )
+    )
+    harness = AgentHarness.for_database(
+        harness_db,
+        model_gateway=model,
+        workspace_factory=lambda _session: _workspace(tmp_path),
+    )
+    opened = await harness.open_session(_open_request())
+
+    await harness.dispatch(
+        str(opened.session.id),
+        _message("reasoning-trace", "Explain your inspection."),
+    )
+    snapshot = await harness.snapshot(str(opened.session.id))
+
+    assistant = next(
+        entry
+        for entry in reversed(snapshot.entries)
+        if entry.type == "message" and entry.payload.role == "assistant"
+    )
+    traces = [
+        part for part in assistant.payload.parts if part.type == "reasoning_trace"
+    ]
+    assert [(trace.text, trace.source, trace.truncated) for trace in traces] == [
+        ("Inspecting the inputs.", "reasoning_content", False),
+        ("A separate summary.", "summary_text", True),
+    ]
+    assert all(trace.provider == "openai" for trace in traces)
+    assert all(trace.model == "gpt-5" for trace in traces)
+    assert all(trace.started_at is not None for trace in traces)
+    assert all(trace.completed_at is not None for trace in traces)
 
 
 @pytest.mark.asyncio

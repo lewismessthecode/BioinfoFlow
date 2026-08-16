@@ -42,10 +42,36 @@ ToolCategory = Literal[
     "interaction",
     "other",
 ]
+PRESENTATION_PROTOCOL = "bioinfoflow.agent.presentation"
+PRESENTATION_SCHEMA_VERSION = 1
 
 
 class StrictContract(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class PresentationEnvelope(StrictContract):
+    presentation_protocol: Literal["bioinfoflow.agent.presentation"] = (
+        PRESENTATION_PROTOCOL
+    )
+    presentation_schema_version: Literal[1] = PRESENTATION_SCHEMA_VERSION
+
+
+class EnvironmentScope(StrictContract):
+    mode: Literal["auto", "manual"] = "auto"
+    environment_ids: list[str] | None = None
+
+    @model_validator(mode="after")
+    def validate_environment_ids(self) -> EnvironmentScope:
+        if self.mode == "auto":
+            if self.environment_ids:
+                raise ValueError("auto environment scope cannot select environments")
+            self.environment_ids = None
+            return self
+        if not self.environment_ids:
+            raise ValueError("manual environment scope requires environment_ids")
+        self.environment_ids = list(dict.fromkeys(self.environment_ids))
+        return self
 
 
 class OpenSessionRequest(StrictContract):
@@ -57,6 +83,7 @@ class OpenSessionRequest(StrictContract):
     workspace: dict | None = None
     permission_mode: PermissionMode = "ask_dangerous"
     workspace_access: WorkspaceAccess = "read_write"
+    environment_scope: EnvironmentScope = Field(default_factory=EnvironmentScope)
     prompt_snapshot: dict
     metadata: dict | None = None
 
@@ -102,9 +129,7 @@ class InputDirectoryRefPart(StrictContract):
     def validate_source(self) -> InputDirectoryRefPart:
         if self.attachment_id is not None:
             if self.project_id is not None or self.path is not None:
-                raise ValueError(
-                    "directory_ref must use attachment_id or project path"
-                )
+                raise ValueError("directory_ref must use attachment_id or project path")
             return self
         if self.project_id is None or not self.path:
             raise ValueError(
@@ -208,6 +233,17 @@ class ReasoningSummaryPart(_MessagePart):
     text: str
 
 
+class ReasoningTracePart(_MessagePart):
+    type: Literal["reasoning_trace"] = "reasoning_trace"
+    text: str
+    provider: str
+    model: str
+    source: str
+    truncated: bool = False
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
 class AttachmentRefPart(_MessagePart):
     type: Literal["attachment_ref"] = "attachment_ref"
     attachment_id: UUID
@@ -295,6 +331,7 @@ class UnknownPart(_MessagePart):
 ToolOutputContentPart = Annotated[
     TextPart
     | ReasoningSummaryPart
+    | ReasoningTracePart
     | AttachmentRefPart
     | FileRefPart
     | DirectoryRefPart
@@ -342,6 +379,7 @@ class ToolResultPart(_MessagePart):
 MessagePart = Annotated[
     TextPart
     | ReasoningSummaryPart
+    | ReasoningTracePart
     | AttachmentRefPart
     | FileRefPart
     | DirectoryRefPart
@@ -358,7 +396,6 @@ MessagePart = Annotated[
 class MessagePayload(StrictContract):
     role: Literal["user", "assistant", "tool"]
     parts: list[MessagePart]
-
 
 
 class InteractionOption(StrictContract):
@@ -482,12 +519,23 @@ class PlanEntry(_Entry):
     payload: PlanPayload
 
 
+class UnknownEntryPayload(StrictContract):
+    original_type: str
+    display_text: str
+
+
+class UnknownEntry(_Entry):
+    type: Literal["unknown"] = "unknown"
+    payload: UnknownEntryPayload
+
+
 HistoryEntry = Annotated[
     MessageEntry
     | InteractionRequestEntry
     | InteractionResponseEntry
     | NoticeEntry
-    | PlanEntry,
+    | PlanEntry
+    | UnknownEntry,
     Field(discriminator="type"),
 ]
 
@@ -520,6 +568,8 @@ class SessionView(StrictContract):
     model: ModelSummary
     permission_mode: PermissionMode
     workspace_access: WorkspaceAccess
+    settings_revision: int = Field(default=1, ge=1)
+    environment_scope: EnvironmentScope = Field(default_factory=EnvironmentScope)
     status: SessionStatus
     created_at: datetime
     updated_at: datetime
@@ -554,16 +604,21 @@ class RunView(StrictContract):
 
 class AssistantDraftPartView(StrictContract):
     id: str
-    type: Literal["text", "reasoning_summary"]
+    type: Literal["text", "reasoning_summary", "reasoning_trace"]
     text: str = ""
     end_offset: int = Field(default=0, ge=0)
+    provider: str | None = None
+    model: str | None = None
+    source: str | None = None
+    truncated: bool = False
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
 
 
 class AssistantDraftView(StrictContract):
     id: str
     run_id: UUID
     parts: list[AssistantDraftPartView]
-
 
 
 class ToolProgressView(StrictContract):
@@ -599,49 +654,53 @@ class ActiveRunView(StrictContract):
     pending_interaction: PendingInteractionView | None = None
 
 
-class SessionSnapshot(StrictContract):
+class SessionSnapshot(PresentationEnvelope):
     session: SessionView
     runs: list[RunView]
     entries: list[HistoryEntry]
     active_run: ActiveRunView | None = None
 
 
-
-class SnapshotEvent(StrictContract):
+class SnapshotEvent(PresentationEnvelope):
     type: Literal["snapshot"] = "snapshot"
     snapshot: SessionSnapshot
 
 
-class RunUpdatedEvent(StrictContract):
+class RunUpdatedEvent(PresentationEnvelope):
     type: Literal["run.updated"] = "run.updated"
     run: RunView
 
 
-
-class AssistantDeltaEvent(StrictContract):
+class AssistantDeltaEvent(PresentationEnvelope):
     type: Literal["assistant.delta"] = "assistant.delta"
     run_id: UUID
     draft_id: str
     part_id: str
-    part_type: Literal["text", "reasoning_summary"]
+    part_type: Literal["text", "reasoning_summary", "reasoning_trace"]
     delta: str
     start_offset: int = Field(ge=0)
     end_offset: int = Field(ge=0)
+    provider: str | None = None
+    model: str | None = None
+    source: str | None = None
+    truncated: bool = False
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
 
 
-class ToolUpdatedEvent(StrictContract):
+class ToolUpdatedEvent(PresentationEnvelope):
     type: Literal["tool.updated"] = "tool.updated"
     run_id: UUID
     tool: ToolProgressView
 
 
-class InteractionRequestedEvent(StrictContract):
+class InteractionRequestedEvent(PresentationEnvelope):
     type: Literal["interaction.requested"] = "interaction.requested"
     run_id: UUID
     interaction: PendingInteractionView
 
 
-class EntryCommittedEvent(StrictContract):
+class EntryCommittedEvent(PresentationEnvelope):
     type: Literal["entry.committed"] = "entry.committed"
     entry: HistoryEntry
 
@@ -672,6 +731,7 @@ __all__ = [
     "AttachmentRefPart",
     "CancelCommand",
     "DirectoryRefPart",
+    "EnvironmentScope",
     "EntryCommittedEvent",
     "FileRefPart",
     "HistoryEntry",
@@ -697,11 +757,14 @@ __all__ = [
     "NoticeEntry",
     "NoticePayload",
     "OpenSessionRequest",
+    "PRESENTATION_PROTOCOL",
+    "PRESENTATION_SCHEMA_VERSION",
     "PendingInteractionView",
     "PlanEntry",
     "PlanItem",
     "PlanPayload",
     "ReasoningSummaryPart",
+    "ReasoningTracePart",
     "RecoveryInteractionRequest",
     "RecoveryInteractionResponse",
     "RespondCommand",
@@ -730,5 +793,6 @@ __all__ = [
     "ToolTextOutput",
     "ToolUpdatedEvent",
     "UnknownPart",
+    "UnknownEntry",
     "WorkflowRefPart",
 ]

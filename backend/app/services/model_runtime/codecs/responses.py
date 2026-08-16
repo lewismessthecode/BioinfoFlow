@@ -124,6 +124,14 @@ class ResponsesCodec:
         request: dict[str, Any],
         event: ModelEvent,
     ) -> ModelEvent:
+        if isinstance(event, ReasoningDelta):
+            return ReasoningDelta(
+                text=event.text,
+                provider=invocation.target.provider_kind,
+                model=invocation.target.model_name,
+                source=event.source,
+                truncated=event.truncated,
+            )
         if not isinstance(event, CompletionMetadata) or event.continuation is None:
             return event
         replay_input = _merge_replay_input(
@@ -249,7 +257,15 @@ class ResponsesCodec:
                     delta = _text(_get(chunk, "delta"))
                     if delta:
                         output_yielded = True
-                        yield ReasoningDelta(text=delta)
+                        yield ReasoningDelta(
+                            text=delta,
+                            source=(
+                                "reasoning_summary"
+                                if event_type == "response.reasoning_summary_text.delta"
+                                else "reasoning_text"
+                            ),
+                            truncated=bool(_get(chunk, "truncated")),
+                        )
                     continue
                 if event_type == "response.refusal.delta":
                     refusal = _text(_get(chunk, "delta"))
@@ -326,7 +342,26 @@ def _decode_output_item(item: Any, *, index: int) -> list[ModelEvent]:
         for summary in _sequence(_get(item, "summary")):
             text = _text(_get(summary, "text"))
             if text:
-                events.append(ReasoningDelta(text=text))
+                events.append(
+                    ReasoningDelta(
+                        text=text,
+                        source="reasoning_summary",
+                        truncated=bool(_get(summary, "truncated")),
+                    )
+                )
+        for content in _sequence(_get(item, "content")):
+            content_type = _string_or_none(_get(content, "type"))
+            if content_type not in {"reasoning_text", "thinking", "thinking_content"}:
+                continue
+            text = _text(_get(content, "text") or _get(content, "content"))
+            if text:
+                events.append(
+                    ReasoningDelta(
+                        text=text,
+                        source=content_type,
+                        truncated=bool(_get(content, "truncated")),
+                    )
+                )
         return events
     if item_type == "message":
         phase = _phase(_get(item, "phase"))

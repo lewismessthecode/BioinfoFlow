@@ -10,10 +10,15 @@ from app.services.agent_harness.contracts import (
     AgentCommand,
     AgentEvent,
     ApprovalInteractionRequest,
+    AssistantDeltaEvent,
+    AssistantDraftPartView,
     HistoryEntry,
     MessageEntry,
     OpenSessionRequest,
+    PRESENTATION_PROTOCOL,
+    PRESENTATION_SCHEMA_VERSION,
     PlanEntry,
+    ReasoningTracePart,
     RunView,
     SessionSnapshot,
     ToolResultPart,
@@ -92,9 +97,7 @@ def test_approval_request_requires_explicit_supported_responses() -> None:
     with pytest.raises(ValidationError):
         ApprovalInteractionRequest.model_validate(request)
     with pytest.raises(ValidationError):
-        ApprovalInteractionRequest.model_validate(
-            {**request, "allowed_responses": []}
-        )
+        ApprovalInteractionRequest.model_validate({**request, "allowed_responses": []})
     with pytest.raises(ValidationError):
         ApprovalInteractionRequest.model_validate(
             {**request, "allowed_responses": ["retry"]}
@@ -147,11 +150,85 @@ def test_snapshot_contains_renderable_history_without_checkpoint() -> None:
     )
 
     dumped = snapshot.model_dump(mode="json")
+    assert dumped["presentation_protocol"] == PRESENTATION_PROTOCOL
+    assert dumped["presentation_schema_version"] == PRESENTATION_SCHEMA_VERSION
     assert dumped["entries"][0]["type"] == "message"
     assert dumped["runs"] == []
     assert dumped["active_run"] is None
     assert "history_revision" not in dumped
     assert "checkpoint" not in str(dumped)
+
+
+def test_reasoning_trace_is_durable_public_text_with_explicit_provenance() -> None:
+    started_at = datetime(2026, 8, 16, 8, 0, tzinfo=timezone.utc)
+    completed_at = datetime(2026, 8, 16, 8, 0, 2, tzinfo=timezone.utc)
+    trace = ReasoningTracePart(
+        id="reasoning-1",
+        text="Inspect the workflow inputs first.",
+        provider="openai",
+        model="gpt-5.6",
+        source="reasoning_content",
+        truncated=True,
+        started_at=started_at,
+        completed_at=completed_at,
+    )
+
+    assert trace.model_dump(mode="json") == {
+        "id": "reasoning-1",
+        "type": "reasoning_trace",
+        "text": "Inspect the workflow inputs first.",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "source": "reasoning_content",
+        "truncated": True,
+        "started_at": "2026-08-16T08:00:00Z",
+        "completed_at": "2026-08-16T08:00:02Z",
+    }
+    with pytest.raises(ValidationError):
+        ReasoningTracePart.model_validate(
+            {
+                **trace.model_dump(),
+                "encrypted_content": "opaque-private-state",
+            }
+        )
+
+
+def test_live_reasoning_parts_and_deltas_keep_trace_metadata() -> None:
+    started_at = datetime(2026, 8, 16, 8, 0, tzinfo=timezone.utc)
+    completed_at = datetime(2026, 8, 16, 8, 0, 2, tzinfo=timezone.utc)
+    part = AssistantDraftPartView(
+        id="reasoning-1",
+        type="reasoning_trace",
+        text="Inspecting inputs",
+        end_offset=17,
+        provider="openai",
+        model="gpt-5.6",
+        source="reasoning_content",
+        truncated=True,
+        started_at=started_at,
+        completed_at=completed_at,
+    )
+    event = AssistantDeltaEvent(
+        run_id=RUN_ID,
+        draft_id="draft-1",
+        part_id="reasoning-1",
+        part_type="reasoning_trace",
+        delta="Inspecting inputs",
+        start_offset=0,
+        end_offset=17,
+        provider="openai",
+        model="gpt-5.6",
+        source="reasoning_content",
+        truncated=True,
+        started_at=started_at,
+        completed_at=completed_at,
+    )
+
+    assert part.provider == event.provider == "openai"
+    assert part.model == event.model == "gpt-5.6"
+    assert part.source == event.source == "reasoning_content"
+    assert part.truncated is event.truncated is True
+    assert event.model_dump(mode="json")["completed_at"] == ("2026-08-16T08:00:02Z")
 
 
 def test_public_history_rejects_harness_private_compaction_entries() -> None:
@@ -376,9 +453,9 @@ def test_public_event_union_covers_the_six_product_events() -> None:
             "run_id": RUN_ID,
             "tool": {
                 "call_id": "call-1",
-                    "group_id": "group-1",
-                    "name": "read",
-                    "display_name": "read",
+                "group_id": "group-1",
+                "name": "read",
+                "display_name": "read",
                 "category": "read",
                 "summary": "Read README.md",
                 "arguments": {"path": "README.md"},
@@ -427,7 +504,8 @@ def test_public_event_union_covers_the_six_product_events() -> None:
     with pytest.raises(ValidationError):
         adapter.validate_python({"type": "entry.committed", "entry": None})
 
-    assert [adapter.validate_python(payload).type for payload in payloads] == [
+    events = [adapter.validate_python(payload) for payload in payloads]
+    assert [event.type for event in events] == [
         "snapshot",
         "run.updated",
         "assistant.delta",
@@ -435,3 +513,9 @@ def test_public_event_union_covers_the_six_product_events() -> None:
         "interaction.requested",
         "entry.committed",
     ]
+    assert {
+        event.model_dump(mode="json")["presentation_schema_version"] for event in events
+    } == {PRESENTATION_SCHEMA_VERSION}
+    assert {
+        event.model_dump(mode="json")["presentation_protocol"] for event in events
+    } == {PRESENTATION_PROTOCOL}
