@@ -90,6 +90,8 @@ def test_common_provider_templates_are_key_first_and_provider_neutral() -> None:
         "model_id",
     ]
     assert compatible_fields[0]["required"] is True
+    assert "default" not in compatible_fields[0]
+    assert templates["openai-compatible"].default_base_url is None
     assert compatible_fields[1]["required"] is False
 
     assert templates["kimi-code"].env_api_key_vars == (
@@ -142,6 +144,13 @@ def test_anthropic_base_url_normalizes_to_messages_api_root(
     expected,
 ) -> None:
     assert normalize_provider_base_url("anthropic", base_url) == expected
+
+
+def test_compatibility_normalizer_never_appends_api_version() -> None:
+    assert normalize_provider_base_url(
+        "openai_compatible",
+        "https://relay.example/custom-api",
+    ) == "https://relay.example/custom-api"
 
 
 @pytest.mark.parametrize(

@@ -214,7 +214,7 @@ class LlmCatalogService:
         )
         base_url = data.get("base_url")
         existing_base_url = provider.base_url if provider is not None else None
-        if template.base_url_required and not str(
+        if provider_requires_explicit_endpoint(template.kind) and not str(
             base_url or existing_base_url or ""
         ).strip():
             raise ValueError("Provider endpoint is required")

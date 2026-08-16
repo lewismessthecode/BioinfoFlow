@@ -112,7 +112,12 @@ class AgentRuntime:
         async def snapshot() -> SessionSnapshot:
             return await self.snapshot(session_id)
 
-        return self.event_hub.stream(session_id, snapshot)
+        async def exists() -> bool:
+            async with self._session_factory() as db:
+                repository = AgentHarnessRepository(db)
+                return await repository.get_session(session_id) is not None
+
+        return self.event_hub.stream(session_id, snapshot, exists)
 
     async def recover(self) -> int:
         self._shutting_down = False
