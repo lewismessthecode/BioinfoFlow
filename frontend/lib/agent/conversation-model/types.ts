@@ -60,6 +60,9 @@ export type ReasoningTranscriptBlock = {
   model: string | null
   sourceField: string
   truncated: boolean
+  startedAt: string | null
+  completedAt: string | null
+  durationMs: number | null
 }
 
 export type PlanTranscriptBlock = {
@@ -118,8 +121,76 @@ export type InteractionTranscriptBlock = {
   createdAt: string | null
   interactionId: string
   status: "pending" | "resolved"
-  request: unknown
-  response: unknown | null
+  request: ConversationInteractionRequest | null
+  response: ConversationInteractionResponse | null
+}
+
+export type ConversationInteractionTarget = {
+  environmentId: string
+  displayName: string
+  kind: "local" | "ssh"
+  host: string | null
+}
+
+export type ConversationAskUserOption = {
+  id: string
+  label: string
+  description: string
+  recommended: boolean
+}
+
+export type ConversationAskUserQuestion = {
+  id: string
+  header: string
+  question: string
+  multiSelect: boolean
+  options: ConversationAskUserOption[]
+}
+
+export type ConversationInteractionRequest =
+  | {
+      type: "approval"
+      callId: string
+      toolName: string
+      summary: string
+      inputPreview: string | null
+      allowedResponses: readonly ("approve" | "reject")[]
+      risk: {
+        level: string
+        effects: string[]
+        reasons: string[]
+        affectedResources: string[]
+      }
+      target: ConversationInteractionTarget | null
+    }
+  | {
+      type: "ask_user"
+      callId: string
+      questions: ConversationAskUserQuestion[]
+    }
+  | {
+      type: "recovery"
+      callId: string
+      toolName: string
+      message: string
+      options: ConversationAskUserOption[]
+    }
+
+export type ConversationInteractionResponse =
+  | { type: "approval"; approved: boolean }
+  | { type: "ask_user"; answers: ConversationJsonObject }
+  | { type: "recovery"; choice: "inspect" | "retry" | "cancel" }
+
+type ConversationJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | ConversationJsonValue[]
+  | ConversationJsonObject
+
+type ConversationJsonObject = {
+  [key: string]: ConversationJsonValue
 }
 
 export type ArtifactTranscriptBlock = {
@@ -158,8 +229,8 @@ export type UnknownTranscriptBlock = {
   runId: string | null
   createdAt: string | null
   originalType: string
-  message: string
   diagnosticCode: string
+  diagnosticParams: Record<string, string | number>
 }
 
 export type TranscriptBlock =

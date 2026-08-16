@@ -99,7 +99,10 @@ describe("subscribeAgentEvents", () => {
       expect.objectContaining({ type: "assistant.delta", delta: "Hi" }),
     )
     expect(onDiagnostic).toHaveBeenCalledWith(
-      expect.objectContaining({ code: "invalid_payload" }),
+      expect.objectContaining({
+        code: "invalid_payload",
+        params: { originalType: "assistant.delta" },
+      }),
     )
 
     unsubscribe()
@@ -126,6 +129,7 @@ describe("subscribeAgentEvents", () => {
       message:
         "Unsupported Agent presentation event: harness.checkpoint.rotated",
       originalType: "harness.checkpoint.rotated",
+      params: { originalType: "harness.checkpoint.rotated" },
     })
     unsubscribe()
   })

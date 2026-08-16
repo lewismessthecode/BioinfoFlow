@@ -18,18 +18,24 @@ describe("Presentation Contract transport", () => {
     })
   })
 
-  it("rejects an unsupported snapshot version without throwing", () => {
+  it("keeps a structurally known snapshot readable when its version is newer", () => {
     expect(
       parsePresentationSnapshot({
-        protocol_version: 99,
-        snapshot: emptySnapshotFixture,
+        ...emptySnapshotFixture,
+        presentation_schema_version: 99,
       }),
-    ).toEqual({
-      ok: false,
-      diagnostic: {
-        code: "unsupported_protocol_version",
-        message: "Unsupported Agent presentation protocol version: 99",
-        originalType: "snapshot",
+    ).toMatchObject({
+      ok: true,
+      value: {
+        protocolVersion: 99,
+        snapshot: emptySnapshotFixture,
+        diagnostics: [
+          {
+            code: "unsupported_protocol_version",
+            originalType: "snapshot",
+            params: { version: "99" },
+          },
+        ],
       },
     })
   })
@@ -47,6 +53,7 @@ describe("Presentation Contract transport", () => {
         code: "unknown_event_type",
         message: "Unsupported Agent presentation event: harness.checkpoint.rotated",
         originalType: "harness.checkpoint.rotated",
+        params: { originalType: "harness.checkpoint.rotated" },
       },
     })
   })

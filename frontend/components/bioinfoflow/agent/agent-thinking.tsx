@@ -7,24 +7,31 @@ import { useActivityDisclosure } from "@/components/bioinfoflow/agent/activity-d
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { ChevronDown, ChevronRight, Loader2, Sparkles } from "@/lib/icons"
 import type { AssistantDraftPartView } from "@/lib/agent/contracts"
+import type { ReasoningTranscriptBlock } from "@/lib/agent/conversation-model/types"
 
 type AgentThinkingProps = {
-  part: Pick<AssistantDraftPartView, "id" | "type" | "text">
+  part?: Pick<AssistantDraftPartView, "id" | "type" | "text">
+  reasoning?: ReasoningTranscriptBlock
   active?: boolean
   label?: string
 }
 
 export function AgentThinking({
   part,
+  reasoning,
   active = false,
   label,
 }: AgentThinkingProps) {
   const t = useTranslations("agentThinking")
   const detailsId = useId()
   const [expanded, setExpanded] = useActivityDisclosure(
-    `thinking:${part.id}`,
+    `thinking:${reasoning?.id ?? part?.id ?? "unknown"}`,
   )
-  const text = part.text.trim()
+  const text = (reasoning?.text ?? part?.text ?? "").trim()
+  const resolvedActive = reasoning?.streaming ?? active
+  const duration = reasoning && !resolvedActive
+    ? formatThinkingDuration(reasoning.durationMs)
+    : null
 
   if (!text) {
     return (
@@ -38,7 +45,7 @@ export function AgentThinking({
           aria-hidden="true"
           className="size-4 shrink-0 animate-spin motion-reduce:animate-none"
         />
-        <span>{active ? t("running") : t("title")}</span>
+        <span>{resolvedActive ? t("running") : t("title")}</span>
       </div>
     )
   }
@@ -62,6 +69,15 @@ export function AgentThinking({
         <span className="min-w-0 flex-1 truncate text-foreground/65">
           {firstLine(text)}
         </span>
+        {duration ? (
+          <span
+            className="shrink-0 tabular-nums text-muted-foreground/75"
+            data-testid="agent-thinking-duration"
+            translate="no"
+          >
+            {t("duration", { duration })}
+          </span>
+        ) : null}
         {expanded ? (
           <ChevronDown aria-hidden="true" className="size-3.5 opacity-60 transition-opacity group-hover/summary:opacity-100" />
         ) : (
@@ -80,4 +96,14 @@ export function AgentThinking({
 
 function firstLine(text: string) {
   return text.split(/\r?\n/, 1)[0]
+}
+
+function formatThinkingDuration(durationMs: number | null) {
+  if (durationMs === null || !Number.isFinite(durationMs) || durationMs < 0) {
+    return null
+  }
+  const seconds = durationMs / 1000
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: seconds < 10 ? 1 : 0,
+  }).format(seconds)
 }

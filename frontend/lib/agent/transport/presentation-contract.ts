@@ -13,6 +13,7 @@ export type PresentationDiagnostic = {
   code: PresentationDiagnosticCode
   message: string
   originalType: string
+  params: Record<string, string | number>
 }
 
 export type TransportParseResult<T> =
@@ -20,8 +21,9 @@ export type TransportParseResult<T> =
   | { ok: false; diagnostic: PresentationDiagnostic }
 
 export type ValidatedSnapshot = {
-  protocolVersion: typeof PRESENTATION_PROTOCOL_VERSION
+  protocolVersion: number
   snapshot: SessionSnapshot
+  diagnostics: PresentationDiagnostic[]
 }
 
 export type ValidatedEvent = {
@@ -60,18 +62,24 @@ export function parsePresentationSnapshot(
   const envelope = isRecord(input) && "snapshot" in input ? input : null
   const contract = readProtocolEnvelope(envelope ?? input)
   if (!contract.ok) return contract
-  const version = contract.version
-  if (version !== PRESENTATION_PROTOCOL_VERSION) {
-    return unsupportedVersion(version, "snapshot")
-  }
-
   const snapshot = envelope ? envelope.snapshot : input
   if (!isSessionSnapshot(snapshot)) {
     return invalidPayload("snapshot")
   }
+  const version = contract.version
+  const diagnostics =
+    version === PRESENTATION_PROTOCOL_VERSION
+      ? []
+      : [unsupportedVersionDiagnostic(version, "snapshot")]
   return {
     ok: true,
-    value: { protocolVersion: PRESENTATION_PROTOCOL_VERSION, snapshot },
+    value: {
+      protocolVersion: isNonNegativeInteger(version)
+        ? version
+        : PRESENTATION_PROTOCOL_VERSION,
+      snapshot,
+      diagnostics,
+    },
   }
 }
 
@@ -93,6 +101,7 @@ export function parsePresentationEvent(
         code: "unknown_event_type",
         message: `Unsupported Agent presentation event: ${originalType}`,
         originalType,
+        params: { originalType },
       },
     }
   }
@@ -290,6 +299,7 @@ function readProtocolEnvelope(
         code: "unsupported_protocol_version",
         message: `Unsupported Agent presentation protocol: ${String(value.presentation_protocol)}`,
         originalType: typeof value.type === "string" ? value.type : "snapshot",
+        params: { version: String(value.presentation_protocol) },
       },
     }
   }
@@ -320,6 +330,7 @@ function invalidPayload<T>(originalType: string): TransportParseResult<T> {
       code: "invalid_payload",
       message: `Invalid Agent presentation payload: ${originalType}`,
       originalType,
+      params: { originalType },
     },
   }
 }
@@ -330,10 +341,18 @@ function unsupportedVersion<T>(
 ): TransportParseResult<T> {
   return {
     ok: false,
-    diagnostic: {
-      code: "unsupported_protocol_version",
-      message: `Unsupported Agent presentation protocol version: ${String(version)}`,
-      originalType,
-    },
+    diagnostic: unsupportedVersionDiagnostic(version, originalType),
+  }
+}
+
+function unsupportedVersionDiagnostic(
+  version: unknown,
+  originalType: string,
+): PresentationDiagnostic {
+  return {
+    code: "unsupported_protocol_version",
+    message: `Unsupported Agent presentation protocol version: ${String(version)}`,
+    originalType,
+    params: { version: String(version) },
   }
 }

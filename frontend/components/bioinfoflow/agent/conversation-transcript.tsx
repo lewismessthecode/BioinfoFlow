@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
 } from "react"
-import type { ComponentProps } from "react"
 import { useLocale, useTranslations } from "next-intl"
 
 import { ActivityDisclosureProvider } from "@/components/bioinfoflow/agent/activity-disclosure"
@@ -19,10 +18,8 @@ import { AgentPlanEntry } from "@/components/bioinfoflow/agent/plan-entry"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { Button } from "@/components/ui/button"
 import type {
-  ActivityGroupTranscriptBlock,
-  ArtifactTranscriptBlock,
+  ConversationInteractionResponse,
   ConversationViewModel,
-  InteractionTranscriptBlock,
   MessageTranscriptBlock,
   TranscriptBlock,
 } from "@/lib/agent/conversation-model/types"
@@ -43,11 +40,10 @@ import { cn } from "@/lib/utils"
 
 type ConversationTranscriptProps = {
   view: ConversationViewModel
-  onRespond?: NonNullable<
-    ComponentProps<typeof AgentInteractionCard>["onRespond"]
-  > extends (response: infer Response) => unknown
-    ? (interactionId: string, response: Response) => void | Promise<void>
-    : never
+  onRespond?: (
+    interactionId: string,
+    response: ConversationInteractionResponse,
+  ) => void | Promise<void>
   onOpenRun?: (runId: string) => void
   className?: string
 }
@@ -77,6 +73,7 @@ export function ConversationTranscript({
   const readAnchorRef = useRef<TranscriptReadAnchor | null>(null)
   const [followingBottom, setFollowingBottom] = useState(true)
   const [hasNewContent, setHasNewContent] = useState(false)
+  const activeInteractionBlockId = currentActiveInteractionBlockId(view)
 
   useLayoutEffect(() => {
     const scrollElement = scrollRef.current
@@ -157,6 +154,7 @@ export function ConversationTranscript({
                   block={block}
                   onRespond={onRespond}
                   onOpenRun={onOpenRun}
+                  activeInteractionBlockId={activeInteractionBlockId}
                 />
               </div>
             ))}
@@ -190,10 +188,12 @@ function TranscriptBlockView({
   block,
   onRespond,
   onOpenRun,
+  activeInteractionBlockId,
 }: {
   block: TranscriptBlock
   onRespond: ConversationTranscriptProps["onRespond"]
   onOpenRun?: (runId: string) => void
+  activeInteractionBlockId: string | null
 }) {
   const tHistory = useTranslations("agentHistory")
   const tRun = useTranslations("agentRun")
@@ -204,32 +204,33 @@ function TranscriptBlockView({
     case "reasoning":
       return (
         <AgentThinking
-          part={{ id: block.id, type: "reasoning_summary", text: block.text }}
-          active={block.streaming}
+          reasoning={block}
         />
       )
     case "plan":
       return (
-        <AgentPlanEntry
-          entry={{
-            payload: {
-              plan_id: block.planId,
-              revision: block.revision,
-              title: block.title,
-              items: block.items,
-              updated_at: block.updatedAt,
-            },
-          }}
-        />
+        <AgentPlanEntry plan={block} />
       )
     case "activity_group":
-      return <ConversationActivityGroup block={block} />
+      return <AgentActivityGroup activityGroup={block} />
     case "interaction":
       return (
-        <ConversationInteraction block={block} onRespond={onRespond} />
+        <AgentInteractionCard
+          interaction={block}
+          actionable={block.id === activeInteractionBlockId}
+          expired={
+            block.status === "pending" &&
+            block.id !== activeInteractionBlockId
+          }
+          onRespond={
+            block.id === activeInteractionBlockId && onRespond
+              ? (response) => onRespond(block.interactionId, response)
+              : undefined
+          }
+        />
       )
     case "artifact":
-      return <ConversationArtifact block={block} />
+      return <AgentArtifactReference artifact={block} />
     case "notice":
       return (
         <section
@@ -271,7 +272,13 @@ function TranscriptBlockView({
         >
           <h2 className="text-sm font-medium">{tHistory("unknown.title")}</h2>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            {block.message}
+            {tHistory(
+              `unknown.diagnostic.${knownDiagnosticCode(block.diagnosticCode)}`,
+              {
+                originalType: block.originalType,
+                ...block.diagnosticParams,
+              },
+            )}
           </p>
         </section>
       )
@@ -398,83 +405,6 @@ function ConversationMessage({
   )
 }
 
-function ConversationActivityGroup({
-  block,
-}: {
-  block: ActivityGroupTranscriptBlock
-}) {
-  type Tool = ComponentProps<typeof AgentActivityGroup>["tools"][number]
-  const tools: Tool[] = block.activities.map((activity) => ({
-    call_id: activity.callId,
-    group_id: block.id,
-    execution_mode: block.executionMode,
-    name: activity.name,
-    display_name: activity.displayName,
-    category: activityCategory(activity.category),
-    summary: activity.summary,
-    arguments: jsonObject(activity.input),
-    status: activity.status,
-    revision: 0,
-    started_at: activity.startedAt,
-    completed_at: activity.completedAt,
-    input_summary: null,
-    output_summary: stringValue(activity.output),
-    error: activity.error,
-    public_details: activityDetails(activity),
-  }))
-  return (
-    <AgentActivityGroup
-      tools={tools}
-      executionMode={block.executionMode}
-    />
-  )
-}
-
-function ConversationInteraction({
-  block,
-  onRespond,
-}: {
-  block: InteractionTranscriptBlock
-  onRespond: ConversationTranscriptProps["onRespond"]
-}) {
-  type InteractionProps = ComponentProps<typeof AgentInteractionCard>
-  if (!isInteractionRequest(block.request)) {
-    return (
-      <section
-        role="note"
-        className="rounded-[10px] border border-border/60 bg-muted/20 px-3.5 py-3 text-sm text-muted-foreground"
-        data-testid="agent-unknown-transcript-block"
-      >
-        Unsupported interaction content
-      </section>
-    )
-  }
-  return (
-    <AgentInteractionCard
-      interactionId={block.interactionId}
-      request={block.request as InteractionProps["request"]}
-      response={block.response as InteractionProps["response"]}
-      onRespond={
-        block.status === "pending" && onRespond
-          ? (response) => onRespond(block.interactionId, response)
-          : undefined
-      }
-    />
-  )
-}
-
-function ConversationArtifact({ block }: { block: ArtifactTranscriptBlock }) {
-  type ArtifactPart = ComponentProps<typeof AgentArtifactReference>["part"]
-  const part: ArtifactPart = {
-    id: block.id,
-    type: "artifact_ref",
-    artifact_id: block.artifactId,
-    title: block.title,
-    media_type: block.mediaType,
-  }
-  return <AgentArtifactReference part={part} />
-}
-
 function ActiveWorkIndicator({ view }: { view: ConversationViewModel }) {
   const t = useTranslations("agentRun")
   const activeWork = view.activeWork
@@ -498,86 +428,34 @@ function ActiveWorkIndicator({ view }: { view: ConversationViewModel }) {
   )
 }
 
-function activityDetails(
-  activity: ActivityGroupTranscriptBlock["activities"][number],
-) {
-  return [
-    activity.input === null || activity.input === undefined
-      ? null
-      : {
-          id: `${activity.id}:input`,
-          kind: "input" as const,
-          label: null,
-          value: stringValue(activity.input) ?? "",
-          format: "json" as const,
-          copyable: true,
-          truncated: false,
-          redacted: false,
-        },
-    activity.output === null || activity.output === undefined
-      ? null
-      : {
-          id: `${activity.id}:output`,
-          kind: "output" as const,
-          label: null,
-          value: stringValue(activity.output) ?? "",
-          format: "text" as const,
-          copyable: true,
-          truncated: false,
-          redacted: false,
-        },
-    activity.error
-      ? {
-          id: `${activity.id}:error`,
-          kind: "error" as const,
-          label: null,
-          value: activity.error,
-          format: "text" as const,
-          copyable: true,
-          truncated: false,
-          redacted: false,
-        }
-      : null,
-  ].filter((detail) => detail !== null)
-}
-
-function activityCategory(value: string) {
-  const categories = new Set([
-    "read",
-    "search",
-    "command",
-    "edit",
-    "write",
-    "workflow",
-    "plan",
-    "interaction",
-    "other",
-  ])
-  return (categories.has(value) ? value : "other") as ComponentProps<
-    typeof AgentActivityGroup
-  >["tools"][number]["category"]
-}
-
-function jsonObject(value: unknown) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, never>)
-    : {}
-}
-
-function stringValue(value: unknown) {
-  if (value === null || value === undefined) return null
-  if (typeof value === "string") return value
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
+function currentActiveInteractionBlockId(view: ConversationViewModel) {
+  if (!view.activeWork || view.activeWork.status !== "waiting_user") return null
+  for (let index = view.transcript.length - 1; index >= 0; index -= 1) {
+    const block = view.transcript[index]
+    if (
+      block.type === "interaction" &&
+      block.status === "pending" &&
+      block.runId === view.activeWork.runId
+    ) {
+      return block.id
+    }
   }
+  return null
 }
 
-function isInteractionRequest(value: unknown): value is { type: string } {
-  if (!value || typeof value !== "object") return false
-  const type = (value as { type?: unknown }).type
-  return type === "approval" || type === "ask_user" || type === "recovery"
+function knownDiagnosticCode(code: string) {
+  return [
+    "event_gap",
+    "invalid_payload",
+    "unknown_event_type",
+    "unsupported_protocol_version",
+    "unknown_message_part",
+    "orphan_tool_result",
+    "unsupported_entry_version",
+    "unknown_history_entry",
+  ].includes(code)
+    ? code
+    : "fallback"
 }
 
 function isNearBottom(element: HTMLElement) {

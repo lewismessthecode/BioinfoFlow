@@ -2711,7 +2711,8 @@
     "title": "思考",
     "running": "正在思考…",
     "show": "展开思考内容",
-    "hide": "收起思考内容"
+    "hide": "收起思考内容",
+    "duration": "{seconds} 秒"
   },
   "agentTranscript": {
     "title": "对话",
@@ -2748,7 +2749,18 @@
       "previewTooLarge": "这个产物太大，无法直接预览。请下载后查看完整文件。"
     },
     "unknown": {
-      "title": "暂不支持的内容"
+      "title": "暂不支持的内容",
+      "diagnostic": {
+        "fallback": "此对话包含暂不支持的内容（{originalType}）。",
+        "event_gap": "{originalType} 之后的实时更新发生中断，刷新对话可能恢复内容。",
+        "invalid_payload": "已忽略一条无效的对话更新（{originalType}）。",
+        "unknown_event_type": "已忽略一条暂不支持的对话更新（{originalType}）。",
+        "unsupported_protocol_version": "此对话使用了较新的呈现协议版本（{version}），已继续展示能够识别的内容。",
+        "unknown_message_part": "此消息包含暂不支持的内容（{originalType}）。",
+        "orphan_tool_result": "一条工具结果无法匹配到对应的工具调用（{callId}）。",
+        "unsupported_entry_version": "这条 {originalType} 记录使用了暂不支持的版本（{version}）。",
+        "unknown_history_entry": "此对话包含一条暂不支持的记录（{originalType}）。"
+      }
     },
     "plan": {
       "title": "计划",
@@ -2769,7 +2781,8 @@
       "approved": "已批准",
       "rejected": "已拒绝",
       "answered": "已回答",
-      "resolved": "已处理"
+      "resolved": "已处理",
+      "expired": "已过期"
     },
     "approval": {
       "title": "请求审批",
@@ -2777,6 +2790,7 @@
       "approve": "批准",
       "reject": "拒绝",
       "input": "命令预览",
+      "target": "执行目标",
       "effects": "可能产生的影响",
       "reasons": "原因",
       "resources": "受影响资源"

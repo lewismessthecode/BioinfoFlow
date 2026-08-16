@@ -2711,7 +2711,8 @@
     "title": "Thinking",
     "running": "Thinking…",
     "show": "Show thinking",
-    "hide": "Hide thinking"
+    "hide": "Hide thinking",
+    "duration": "{seconds}s"
   },
   "agentTranscript": {
     "title": "Conversation",
@@ -2748,7 +2749,18 @@
       "previewTooLarge": "This artifact is too large to preview. Download it to inspect the full file."
     },
     "unknown": {
-      "title": "Unsupported content"
+      "title": "Unsupported content",
+      "diagnostic": {
+        "fallback": "This conversation contains unsupported content ({originalType}).",
+        "event_gap": "Live updates were interrupted after {originalType}. Refreshing the conversation may restore them.",
+        "invalid_payload": "An invalid conversation update was ignored ({originalType}).",
+        "unknown_event_type": "An unsupported conversation update was ignored ({originalType}).",
+        "unsupported_protocol_version": "This conversation uses a newer presentation version ({version}). Known content is still shown.",
+        "unknown_message_part": "This message contains unsupported content ({originalType}).",
+        "orphan_tool_result": "A tool result could not be matched to its tool call ({callId}).",
+        "unsupported_entry_version": "This {originalType} entry uses an unsupported version ({version}).",
+        "unknown_history_entry": "This conversation contains an unsupported entry ({originalType})."
+      }
     },
     "plan": {
       "title": "Plan",
@@ -2769,7 +2781,8 @@
       "approved": "Approved",
       "rejected": "Rejected",
       "answered": "Answered",
-      "resolved": "Resolved"
+      "resolved": "Resolved",
+      "expired": "Expired"
     },
     "approval": {
       "title": "Approval requested",
@@ -2777,6 +2790,7 @@
       "approve": "Approve",
       "reject": "Reject",
       "input": "Command preview",
+      "target": "Execution target",
       "effects": "Effects",
       "reasons": "Reasons",
       "resources": "Affected resources"
