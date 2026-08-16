@@ -414,7 +414,7 @@ _LEGACY_PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         kind="openai_compatible",
         docs_url="https://platform.openai.com/docs/api-reference",
         discovery="openai_models",
-        default_base_url="https://api.example.com/v1",
+        default_base_url=None,
         env_api_key_vars=("OPENAI_COMPATIBLE_API_KEY",),
         env_base_url_vars=("OPENAI_COMPATIBLE_BASE_URL",),
         env_model_vars=("OPENAI_COMPATIBLE_MODEL",),
@@ -602,22 +602,6 @@ def _provider_uses_kimi_china_endpoint(provider) -> bool:
     return host.lower() == "api.moonshot.cn"
 
 
-def normalize_openai_compatible_base_url(
-    base_url: str,
-    *,
-    prefer_loopback_ip: bool = False,
-) -> str:
-    normalized = (base_url or "").strip().rstrip("/")
-    if not normalized:
-        return normalized
-    if prefer_loopback_ip:
-        normalized = normalized.replace("http://localhost:", "http://127.0.0.1:", 1)
-        normalized = normalized.replace("https://localhost:", "https://127.0.0.1:", 1)
-    if not normalized.endswith("/v1"):
-        normalized = f"{normalized}/v1"
-    return normalized
-
-
 def normalize_ollama_base_url(base_url: str) -> str:
     normalized = (base_url or "").strip().rstrip("/")
     if not normalized:
@@ -650,13 +634,7 @@ def normalize_provider_base_url(kind: str, base_url: str | None) -> str | None:
         # These providers use native list endpoints (/v1/models, /v1beta/models)
         # appended at discovery time, so keep the host root intact.
         return base_url.strip().rstrip("/")
-    template = provider_template_for_kind(kind)
-    if template and template.metadata.get("preserveOpenAIBaseUrl") is True:
-        return base_url.strip().rstrip("/")
-    return normalize_openai_compatible_base_url(
-        base_url,
-        prefer_loopback_ip=kind == "vllm",
-    )
+    return base_url.strip().rstrip("/")
 
 
 def litellm_model_name(

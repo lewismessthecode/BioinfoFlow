@@ -43,6 +43,7 @@ class AgentEventHub:
         self,
         session_id: str | UUID,
         snapshot: Callable[[], Awaitable[SessionSnapshot]],
+        exists: Callable[[], Awaitable[bool]] | None = None,
     ) -> AsyncIterator[AgentEvent]:
         key = str(session_id)
         queue: asyncio.Queue[AgentEvent | _StreamClosed] = asyncio.Queue(
@@ -59,9 +60,7 @@ class AgentEventHub:
                         timeout=self._liveness_interval_seconds,
                     )
                 except TimeoutError:
-                    try:
-                        await snapshot()
-                    except LookupError:
+                    if exists is not None and not await exists():
                         return
                     continue
                 if isinstance(event, _StreamClosed):

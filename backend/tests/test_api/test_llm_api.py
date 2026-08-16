@@ -216,6 +216,24 @@ async def test_llm_provider_setup_creates_vllm_provider_key_and_manual_model(
 
 
 @pytest.mark.asyncio
+async def test_vllm_setup_uses_authoritative_default_endpoint(async_client) -> None:
+    response = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "vllm",
+            "name": "Local vLLM",
+            "model_ids": ["served-model"],
+            "scope": "user",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["provider"]["base_url"] == (
+        "http://localhost:8000/v1"
+    )
+
+
+@pytest.mark.asyncio
 async def test_llm_provider_setup_creates_kimi_provider_from_key_only(
     async_client,
 ):

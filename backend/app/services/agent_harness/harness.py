@@ -254,9 +254,13 @@ class AgentHarness:
             raise LookupError(f"agent session not found: {session_id}")
 
     def events(self, session_id: str) -> AsyncIterator[AgentEvent]:
+        async def exists() -> bool:
+            return await self.repository.get_session(session_id) is not None
+
         return self.event_hub.stream(
             session_id,
             lambda: self.repository.snapshot(session_id),
+            exists,
         )
 
     async def recover(self) -> int:

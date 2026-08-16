@@ -163,10 +163,10 @@ describe("LlmCatalogPanel", () => {
       field("model_id", "Model ID", false, false),
     ], "http://localhost:8000/v1"),
     providerTemplate("openai-compatible", "OpenAI Compatible", "openai_compatible", "openai_models", [
-      field("base_url", "Endpoint", false, true, "https://api.example.com/v1"),
+      field("base_url", "Endpoint", false, true),
       field("api_key", "API key", true, false),
       field("model_id", "Model ID", false, false),
-    ], "https://api.example.com/v1"),
+    ]),
   ]
 
   beforeEach(() => {
@@ -329,6 +329,30 @@ describe("LlmCatalogPanel", () => {
     expect(
       within(anthropicCard).queryByLabelText("Anthropic protocol"),
     ).not.toBeInTheDocument()
+  })
+
+  it("keeps the custom endpoint blank until the user enters one", () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI Compatible" })
+    const endpoint = within(card).getByLabelText("OpenAI Compatible endpoint")
+    expect(endpoint).toHaveValue("")
+    fireEvent.change(within(card).getByLabelText("OpenAI Compatible API key"), {
+      target: { value: "custom-key" },
+    })
+    expect(within(card).getByRole("button", { name: "Save" })).toBeDisabled()
   })
 
   it("keeps hosted providers key-first without endpoint or model fields", () => {
