@@ -1,19 +1,18 @@
 "use client"
 
-import { Fragment, memo, useMemo, useState } from "react"
+import { Fragment, memo, useMemo } from "react"
 import type { ReactNode } from "react"
 import { useTranslations } from "next-intl"
 
 import { AgentInteractionCard } from "@/components/bioinfoflow/agent/interaction-card"
 import { AgentMessageParts } from "@/components/bioinfoflow/agent/message-parts"
 import { AgentPlanEntry } from "@/components/bioinfoflow/agent/plan-entry"
+import { MessageActions } from "@/components/bioinfoflow/agent/message-actions"
 import {
   AgentRunOutcome,
   isTerminalRun,
 } from "@/components/bioinfoflow/agent/agent-run-outcome"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Button } from "@/components/ui/button"
-import { Check, Copy } from "@/lib/icons"
 import type {
   HistoryEntry,
   InteractionResponse,
@@ -32,6 +31,8 @@ type AgentHistoryEntriesProps = {
   runs?: RunView[]
   liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
   onOpenRun?: (runId: string) => void
+  onRetryMessage?: (entry: MessageEntry) => void | Promise<void>
+  onEditMessage?: (entry: MessageEntry) => void
 }
 
 const EMPTY_LIVE_TOOLS = new Map<string, ToolProgressView>()
@@ -41,6 +42,8 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
   runs = [],
   liveToolsByCallId = EMPTY_LIVE_TOOLS,
   onOpenRun,
+  onRetryMessage,
+  onEditMessage,
 }: AgentHistoryEntriesProps) {
   const prepared = useMemo(() => prepareHistory(entries), [entries])
   const runsById = useMemo(
@@ -108,6 +111,8 @@ export const AgentHistoryEntries = memo(function AgentHistoryEntries({
                   liveToolsByEntryId.get(entry.id) ?? EMPTY_LIVE_TOOLS
                 }
                 onOpenRun={onOpenRun}
+                onRetryMessage={onRetryMessage}
+                onEditMessage={onEditMessage}
               />
             </div>
           )
@@ -152,6 +157,8 @@ const AgentHistoryEntry = memo(function AgentHistoryEntry({
   liveToolsByCallId,
   interactionResponse,
   onOpenRun,
+  onRetryMessage,
+  onEditMessage,
 }: {
   entry: Exclude<HistoryEntry, InteractionResponseEntry>
   messageParts?: MessagePart[]
@@ -159,6 +166,8 @@ const AgentHistoryEntry = memo(function AgentHistoryEntry({
   liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
   interactionResponse?: InteractionResponse
   onOpenRun?: (runId: string) => void
+  onRetryMessage?: (entry: MessageEntry) => void | Promise<void>
+  onEditMessage?: (entry: MessageEntry) => void
 }) {
   const t = useTranslations("agentHistory")
 
@@ -170,6 +179,8 @@ const AgentHistoryEntry = memo(function AgentHistoryEntry({
         toolResultsByCallId={toolResultsByCallId}
         liveToolsByCallId={liveToolsByCallId}
         onOpenRun={onOpenRun}
+        onRetryMessage={onRetryMessage}
+        onEditMessage={onEditMessage}
       />
     )
   }
@@ -205,37 +216,24 @@ function MessageHistoryEntry({
   toolResultsByCallId,
   liveToolsByCallId,
   onOpenRun,
+  onRetryMessage,
+  onEditMessage,
 }: {
   entry: MessageEntry
   parts: MessagePart[]
   toolResultsByCallId?: ReadonlyMap<string, ToolResultPart>
   liveToolsByCallId?: ReadonlyMap<string, ToolProgressView>
   onOpenRun?: (runId: string) => void
+  onRetryMessage?: (entry: MessageEntry) => void | Promise<void>
+  onEditMessage?: (entry: MessageEntry) => void
 }) {
   const isUser = entry.payload.role === "user"
-  const t = useTranslations("agentTranscript")
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
-    "idle",
-  )
   const copyText = messageCopyText(entry)
-  const canCopy =
-    (entry.payload.role === "user" || entry.payload.role === "assistant") &&
-    copyText.length > 0
-
-  async function copyMessage() {
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable")
-      await navigator.clipboard.writeText(copyText)
-      setCopyState("copied")
-    } catch {
-      setCopyState("failed")
-    }
-  }
 
   return (
     <article
       className={cn(
-        "min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_96px]",
+        "group/message min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_96px]",
         isUser && "ml-auto w-fit max-w-[min(92%,46rem)] sm:max-w-[min(85%,46rem)]",
       )}
       data-role={entry.payload.role}
@@ -254,41 +252,15 @@ function MessageHistoryEntry({
           onOpenRun={onOpenRun}
         />
       </div>
-      {canCopy ? (
-        <footer
-          className={cn(
-            "mt-1.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground",
-            isUser ? "justify-end" : "justify-start",
-          )}
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t(copyState === "copied" ? "copied" : "copy")}
-            className="text-muted-foreground hover:text-foreground"
-            onClick={() => void copyMessage()}
-          >
-            {copyState === "copied" ? (
-              <Check data-icon="inline-start" aria-hidden="true" />
-            ) : (
-              <Copy data-icon="inline-start" aria-hidden="true" />
-            )}
-          </Button>
-        </footer>
-      ) : null}
-      {copyState === "failed" ? (
-        <p
-          role="alert"
-          aria-live="polite"
-          className={cn(
-            "mt-1 text-xs leading-5 text-error-foreground",
-            isUser && "text-right",
-          )}
-        >
-          {t("copy_failed")}
-        </p>
-      ) : null}
+      <MessageActions
+        createdAt={entry.created_at}
+        align={isUser ? "end" : "start"}
+        copyText={copyText}
+        onRetry={
+          !isUser && onRetryMessage ? () => onRetryMessage(entry) : undefined
+        }
+        onEdit={isUser && onEditMessage ? () => onEditMessage(entry) : undefined}
+      />
     </article>
   )
 }

@@ -15,6 +15,7 @@ import type {
   HistoryEntry,
   InteractionResponse,
   RunView,
+  MessageEntry,
 } from "@/lib/agent/contracts"
 import { cn } from "@/lib/utils"
 
@@ -27,6 +28,8 @@ type AgentTranscriptProps = {
     response: InteractionResponse,
   ) => void | Promise<void>
   onOpenRun?: (runId: string) => void
+  onRetryMessage?: (entry: MessageEntry) => void | Promise<void>
+  onEditMessage?: (entry: MessageEntry) => void
   className?: string
 }
 
@@ -44,6 +47,8 @@ export function AgentTranscript({
   activeRun,
   onRespond,
   onOpenRun,
+  onRetryMessage,
+  onEditMessage,
   className,
 }: AgentTranscriptProps) {
   const t = useTranslations("agentTranscript")
@@ -153,6 +158,8 @@ export function AgentTranscript({
               runs={runs}
               liveToolsByCallId={liveToolsByCallId}
               onOpenRun={onOpenRun}
+              onRetryMessage={onRetryMessage}
+              onEditMessage={onEditMessage}
             />
             {activeRun ? (
               <ActiveRun

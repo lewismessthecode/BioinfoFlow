@@ -2690,6 +2690,10 @@
     "copy": "Copy message",
     "copied": "Copied",
     "copy_failed": "Could not copy. Select the message and copy it manually.",
+    "retry": "Retry response",
+    "edit": "Edit message",
+    "timestamp": "Sent {time}",
+    "action_failed": "Could not complete this action. Please try again.",
     "scroll_to_bottom": "Jump to latest",
     "run_ended": "Ended {time}",
     "run_duration": "{duration}"

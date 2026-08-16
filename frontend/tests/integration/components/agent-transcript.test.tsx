@@ -29,6 +29,9 @@ vi.mock("next-intl", () => ({
         "agentTranscript.copy": "Copy message",
         "agentTranscript.copied": "Copied",
         "agentTranscript.copy_failed": "Could not copy. Select the message and copy it manually.",
+        "agentTranscript.retry": "Retry response",
+        "agentTranscript.edit": "Edit message",
+        "agentTranscript.timestamp": `Sent ${values?.time ?? ""}`,
         "agentTranscript.scroll_to_bottom": "Jump to latest",
         "agentTranscript.run_ended": `Ended ${values?.time ?? ""}`,
         "agentTranscript.run_duration": `${values?.duration ?? ""}`,
@@ -240,6 +243,33 @@ describe("AgentTranscript", () => {
       type: "approval",
       approved: true,
     })
+  })
+
+  it("exposes semantic timestamps and routes Retry/Edit to their canonical messages", async () => {
+    const user = userEvent.setup()
+    const onRetryMessage = vi.fn().mockResolvedValue(undefined)
+    const onEditMessage = vi.fn()
+
+    renderWithProviders(
+      <AgentTranscript
+        entries={entries.slice(0, 2)}
+        runs={[completedRun]}
+        activeRun={null}
+        onRetryMessage={onRetryMessage}
+        onEditMessage={onEditMessage}
+      />,
+    )
+
+    const timestamps = screen.getAllByText(/Sent/)
+    expect(timestamps).toHaveLength(2)
+    expect(timestamps[0]).toHaveAttribute("datetime", entries[0].created_at)
+    expect(timestamps[1]).toHaveAttribute("datetime", entries[1].created_at)
+
+    await user.click(screen.getByRole("button", { name: "Edit message" }))
+    expect(onEditMessage).toHaveBeenCalledWith(entries[0])
+
+    await user.click(screen.getByRole("button", { name: "Retry response" }))
+    expect(onRetryMessage).toHaveBeenCalledWith(entries[1])
   })
 
   it("renders a durable tool call once while applying its live progress in place", () => {

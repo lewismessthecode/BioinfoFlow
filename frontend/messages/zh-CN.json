@@ -2690,6 +2690,10 @@
     "copy": "复制消息",
     "copied": "已复制",
     "copy_failed": "复制失败，请选中消息后手动复制。",
+    "retry": "重新生成回复",
+    "edit": "编辑消息",
+    "timestamp": "发送于 {time}",
+    "action_failed": "操作失败，请重试。",
     "scroll_to_bottom": "回到最新内容",
     "run_ended": "结束于 {time}",
     "run_duration": "{duration}"

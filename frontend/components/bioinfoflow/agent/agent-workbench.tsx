@@ -43,6 +43,7 @@ import type {
   AgentPermissionMode,
   AgentWorkspaceAccess,
   InputPart,
+  MessageEntry,
   SessionView,
 } from "@/lib/agent/contracts"
 import type {
@@ -54,6 +55,10 @@ import {
   publishAgentSessionSummary,
   sessionSummaryFromView,
 } from "@/lib/agent/session-preferences"
+import {
+  editDraftFromUserMessage,
+  retryInputPartsForAssistant,
+} from "@/lib/agent/transcript"
 import { ApiError } from "@/lib/api"
 import {
   Bot,
@@ -470,6 +475,7 @@ function SessionWorkbench({
   const [executionScope, setExecutionScope] = useState<AgentExecutionScope>(
     state.session?.execution_scope ?? { mode: "auto", target_ids: [] },
   )
+  const [editDraft, setEditDraft] = useState({ key: 0, text: "" })
   const setCancelHandler = shared.setCancelHandler
 
   useEffect(() => {
@@ -511,6 +517,17 @@ function SessionWorkbench({
     await runSessionCommand(() => state.steer(parts))
     shared.setContextInputs([])
   }
+  const retryMessage = async (entry: MessageEntry) => {
+    const parts = retryInputPartsForAssistant(state.entries, entry)
+    if (parts.length === 0) return
+    await sendMessage(parts)
+  }
+  const editMessage = (entry: MessageEntry) => {
+    const draft = editDraftFromUserMessage(entry)
+    shared.setContextInputs(draft.contextInputs)
+    setEditDraft((current) => ({ key: current.key + 1, text: draft.text }))
+    window.requestAnimationFrame(() => shared.textareaRef.current?.focus())
+  }
 
   if (state.isLoading && !state.session) return <WorkbenchSkeleton />
   if (!state.session) {
@@ -550,6 +567,14 @@ function SessionWorkbench({
           activeRun={state.activeRun}
           onRespond={interactive ? state.respond : undefined}
           onOpenRun={shared.onOpenRun}
+          onRetryMessage={
+            interactive && bootstrap?.capabilities.retry ? retryMessage : undefined
+          }
+          onEditMessage={
+            interactive && bootstrap?.capabilities.editAndResend
+              ? editMessage
+              : undefined
+          }
         />
       )}
       {state.session.status !== "active" ? (
@@ -561,7 +586,9 @@ function SessionWorkbench({
         </p>
       ) : null}
       <AgentComposer
+        key={`session-composer-${editDraft.key}`}
         placement="dock"
+        initialValue={editDraft.text}
         permissionMode={state.session.permission_mode}
         workspaceAccess={state.session.workspace_access}
         activeRun={state.activeRun}

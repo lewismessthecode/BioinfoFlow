@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentWorkbench } from "@/components/bioinfoflow/agent/agent-workbench"
 import type { AgentSessionState } from "@/hooks/use-agent-session"
-import type { SessionSnapshot } from "@/lib/agent/contracts"
+import type { HistoryEntry, MessageEntry, SessionSnapshot } from "@/lib/agent/contracts"
 import { ApiError } from "@/lib/api"
 import { renderWithProviders } from "@/tests/test-utils"
 
@@ -83,8 +83,29 @@ vi.mock("@/components/bioinfoflow/agent/agent-context-picker", () => ({
 }))
 
 vi.mock("@/components/bioinfoflow/agent/agent-transcript", () => ({
-  AgentTranscript: ({ entries }: { entries: unknown[] }) => (
-    <div data-testid="transcript">entries:{entries.length}</div>
+  AgentTranscript: ({
+    entries,
+    onRetryMessage,
+    onEditMessage,
+  }: {
+    entries: HistoryEntry[]
+    onRetryMessage?: (entry: MessageEntry) => void | Promise<void>
+    onEditMessage?: (entry: MessageEntry) => void
+  }) => (
+    <div data-testid="transcript">
+      entries:{entries.length}
+      {entries.map((entry) =>
+        entry.type === "message" && entry.payload.role === "assistant" ? (
+          <button key={entry.id} type="button" onClick={() => void onRetryMessage?.(entry)}>
+            Retry transcript message
+          </button>
+        ) : entry.type === "message" && entry.payload.role === "user" ? (
+          <button key={entry.id} type="button" onClick={() => onEditMessage?.(entry)}>
+            Edit transcript message
+          </button>
+        ) : null,
+      )}
+    </div>
   ),
 }))
 
@@ -106,6 +127,8 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
     disabled,
     placement,
     modelControls,
+    initialValue,
+    contextInputs = [],
   }: {
     onSendMessage: (parts: [{ type: "text"; text: string }]) => Promise<void>
     onSteer: (parts: [{ type: "text"; text: string }]) => Promise<void>
@@ -116,11 +139,14 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
     disabled?: boolean
     placement?: "draft" | "dock"
     modelControls?: ReactNode
+    initialValue?: string
+    contextInputs?: Array<{ label: string }>
   }) => (
     <div data-testid="mock-composer" data-placement={placement}>
       {contextControls}
       {modelControls}
-      <input aria-label="Draft message" defaultValue="Keep this draft" />
+      <input aria-label="Draft message" defaultValue={initialValue || "Keep this draft"} />
+      <span data-testid="composer-context-count">{contextInputs.length}</span>
       <span>Permission: {permissionMode}</span>
       <button
         type="button"
@@ -500,6 +526,53 @@ describe("AgentWorkbench v2", () => {
     expect(screen.queryByLabelText("connection.connected")).not.toBeInTheDocument()
   })
 
+  it("retries the canonical user input as a normal message with current Run settings", async () => {
+    const user = userEvent.setup()
+    const state = sessionState({
+      entries: conversationEntries(),
+    })
+    mocks.useSession.mockReturnValue(state)
+
+    renderWithProviders(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    await user.click(
+      screen.getByRole("button", { name: "Retry transcript message" }),
+    )
+
+    expect(state.sendMessage).toHaveBeenCalledWith(
+      [
+        { type: "file_ref", project_id: "project-1", path: "results/counts.tsv" },
+        { type: "text", text: "Compare these files" },
+      ],
+      {
+        permission_mode: "ask_dangerous",
+        execution_scope: { mode: "auto", target_ids: [] },
+      },
+    )
+  })
+
+  it("edits canonical user text and references in the Composer without dispatching", async () => {
+    const user = userEvent.setup()
+    const state = sessionState({ entries: conversationEntries() })
+    mocks.useSession.mockReturnValue(state)
+
+    renderWithProviders(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    await user.click(
+      screen.getByRole("button", { name: "Edit transcript message" }),
+    )
+
+    expect(screen.getByRole("textbox", { name: "Draft message" })).toHaveValue(
+      "Compare these files",
+    )
+    expect(screen.getByTestId("composer-context-count")).toHaveTextContent("1")
+    expect(state.sendMessage).not.toHaveBeenCalled()
+  })
+
   it.each(["archived", "closing", "deleted"] as const)(
     "explains why a %s conversation is read-only and disables permission changes",
     (status) => {
@@ -539,3 +612,43 @@ describe("AgentWorkbench v2", () => {
     await waitFor(() => expect(state.cancel).toHaveBeenCalledTimes(1))
   })
 })
+
+function conversationEntries(): HistoryEntry[] {
+  return [
+    {
+      id: "message-user",
+      session_id: "session-1",
+      run_id: "run-1",
+      sequence: 1,
+      schema_version: 2,
+      created_at: timestamp,
+      type: "message",
+      payload: {
+        role: "user",
+        parts: [
+          {
+            id: "file-ref",
+            type: "file_ref",
+            label: "counts.tsv",
+            project_id: "project-1",
+            path: "results/counts.tsv",
+          },
+          { id: "user-text", type: "text", text: "Compare these files" },
+        ],
+      },
+    },
+    {
+      id: "message-assistant",
+      session_id: "session-1",
+      run_id: "run-1",
+      sequence: 2,
+      schema_version: 2,
+      created_at: timestamp,
+      type: "message",
+      payload: {
+        role: "assistant",
+        parts: [{ id: "assistant-text", type: "text", text: "They match." }],
+      },
+    },
+  ]
+}
