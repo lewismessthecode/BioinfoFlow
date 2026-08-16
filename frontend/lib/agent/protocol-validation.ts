@@ -155,27 +155,37 @@ function isModel(value: unknown): boolean {
 }
 
 function isExecutionScope(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    isOneOf(value.mode, EXECUTION_SCOPE_MODES) &&
-    Array.isArray(value.target_ids) &&
-    value.target_ids.every(isNonEmptyString)
-  )
+  if (
+    !isRecord(value) ||
+    !isOneOf(value.mode, EXECUTION_SCOPE_MODES) ||
+    !Array.isArray(value.target_ids) ||
+    !value.target_ids.every(isNonEmptyString)
+  ) {
+    return false
+  }
+  return value.mode !== "manual" || value.target_ids.length > 0
 }
 
 function isRun(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    hasStrings(value, "id", "session_id", "created_at", "updated_at") &&
-    isOneOf(value.status, RUN_STATUSES) &&
-    (value.phase === null || isOneOf(value.phase, RUN_PHASES)) &&
-    isNonNegativeInteger(value.revision) &&
-    isNullableString(value.started_at) &&
-    isNullableString(value.completed_at) &&
-    isNullableString(value.termination_reason) &&
-    (value.error === null || isRunError(value.error)) &&
-    (value.settings === undefined || value.settings === null || isRunSettings(value.settings))
-  )
+  if (
+    !isRecord(value) ||
+    !hasStrings(value, "id", "session_id", "created_at", "updated_at") ||
+    !isOneOf(value.status, RUN_STATUSES) ||
+    !(value.phase === null || isOneOf(value.phase, RUN_PHASES)) ||
+    !isNonNegativeInteger(value.revision) ||
+    !isNullableString(value.started_at) ||
+    !isNullableString(value.completed_at) ||
+    !isNullableString(value.termination_reason) ||
+    !(value.error === null || isRunError(value.error)) ||
+    !(
+      value.settings === undefined ||
+      value.settings === null ||
+      isRunSettings(value.settings)
+    )
+  ) {
+    return false
+  }
+  return value.status === "failed" ? value.error !== null : value.error === null
 }
 
 function isRunError(value: unknown): boolean {
@@ -484,7 +494,7 @@ function isPlanPayload(value: unknown): boolean {
   return (
     isRecord(value) &&
     hasStrings(value, "plan_id", "updated_at") &&
-    isNonNegativeInteger(value.revision) &&
+    isPositiveInteger(value.revision) &&
     isOptionalNullableString(value.title) &&
     Array.isArray(value.items) &&
     value.items.every(

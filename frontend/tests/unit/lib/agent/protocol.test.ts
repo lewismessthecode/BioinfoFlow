@@ -31,6 +31,22 @@ function validSnapshot() {
   }
 }
 
+function validRun() {
+  return {
+    id: "run-1",
+    session_id: "session-1",
+    status: "running",
+    phase: "model",
+    revision: 1,
+    started_at: "2026-08-16T00:00:00Z",
+    completed_at: null,
+    termination_reason: null,
+    error: null,
+    created_at: "2026-08-16T00:00:00Z",
+    updated_at: "2026-08-16T00:00:00Z",
+  }
+}
+
 describe("decodeAgentEvent", () => {
   it("accepts a versioned event with the expected discriminator and ids", () => {
     expect(
@@ -130,6 +146,64 @@ describe("decodeAgentSnapshot", () => {
           created_at: "2026-08-16T00:00:00Z",
           type: "message",
           payload: { role: "assistant", parts: [{ type: "text" }] },
+        },
+      }),
+    ).toEqual({ ok: false, reason: "malformed" })
+  })
+
+  it("rejects a manual execution scope without an authorized target", () => {
+    const snapshot = validSnapshot()
+    snapshot.session.execution_scope = { mode: "manual", target_ids: [] }
+
+    expect(decodeAgentSnapshot(snapshot)).toEqual({
+      ok: false,
+      reason: "malformed",
+    })
+  })
+
+  it("rejects failed runs without a public error", () => {
+    expect(
+      decodeAgentSnapshot({
+        ...validSnapshot(),
+        runs: [{ ...validRun(), status: "failed" }],
+      }),
+    ).toEqual({ ok: false, reason: "malformed" })
+  })
+
+  it("rejects non-failed runs that expose an error", () => {
+    expect(
+      decodeAgentSnapshot({
+        ...validSnapshot(),
+        runs: [
+          {
+            ...validRun(),
+            error: { code: "unexpected", message: "Should not be public" },
+          },
+        ],
+      }),
+    ).toEqual({ ok: false, reason: "malformed" })
+  })
+
+  it("rejects plan revision zero", () => {
+    expect(
+      decodeAgentEvent({
+        type: "entry.committed",
+        protocol_version: 1,
+        entry: {
+          id: "entry-plan",
+          session_id: "session-1",
+          run_id: "run-1",
+          sequence: 1,
+          schema_version: 2,
+          created_at: "2026-08-16T00:00:00Z",
+          type: "plan",
+          payload: {
+            plan_id: "plan-1",
+            revision: 0,
+            title: null,
+            items: [],
+            updated_at: "2026-08-16T00:00:00Z",
+          },
         },
       }),
     ).toEqual({ ok: false, reason: "malformed" })
