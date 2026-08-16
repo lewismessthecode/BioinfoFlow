@@ -459,7 +459,7 @@ function SessionWorkbench({
     )
   }
 
-  const conversationView = state.conversationView
+  const conversationView = state.conversationView ?? null
 
   const effectiveEnvironmentSelection = environmentSelectionFromSession(
     state.session,

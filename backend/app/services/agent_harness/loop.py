@@ -485,9 +485,7 @@ class AgentLoop:
                         run_id,
                         role="tool",
                         content=json.dumps(
-                            result.output
-                            if result.status == "completed"
-                            else {"error": result.error},
+                            _tool_result_history_output(result),
                             ensure_ascii=False,
                             default=str,
                         ),
@@ -693,9 +691,7 @@ class AgentLoop:
             run_id,
             role="tool",
             content=json.dumps(
-                result.output
-                if result.status == "completed"
-                else {"error": result.error},
+                _tool_result_history_output(result),
                 ensure_ascii=False,
                 default=str,
             ),
@@ -899,11 +895,7 @@ class AgentLoop:
             )
             if result.status == "interaction_required":
                 raise ValueError("recovery retry did not resolve tool approval")
-            output = (
-                result.output
-                if result.status == "completed"
-                else {"error": result.error}
-            )
+            output = _tool_result_history_output(result)
         else:
             output = {
                 "recovery": f"unknown {call.name} effect was not replayed",
@@ -1014,9 +1006,7 @@ class AgentLoop:
                 run_id,
                 role="tool",
                 content=json.dumps(
-                    result.output
-                    if result.status == "completed"
-                    else {"error": result.error},
+                    _tool_result_history_output(result),
                     ensure_ascii=False,
                     default=str,
                 ),
@@ -1888,6 +1878,13 @@ def _find_call(calls: tuple[ToolCall, ...], call_id: str) -> ToolCall:
         if call.call_id == call_id:
             return call
     raise LookupError(f"tool call not found: {call_id}")
+
+
+def _tool_result_history_output(result: ToolResult) -> dict[str, Any]:
+    output = dict(result.output)
+    if result.status != "completed":
+        output.setdefault("error", result.error)
+    return output
 
 
 def _tool_call_dict(call: ToolCall) -> dict[str, Any]:

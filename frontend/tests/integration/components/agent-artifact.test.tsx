@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentArtifactReference } from "@/components/bioinfoflow/agent/agent-artifact"
-import type { ArtifactRefPart } from "@/lib/agent/contracts"
+import type { ArtifactTranscriptBlock } from "@/lib/agent/conversation-model/types"
 import { apiRequest, buildApiUrl } from "@/lib/api"
 import { renderWithProviders } from "@/tests/test-utils"
 
@@ -33,12 +33,14 @@ vi.mock("@/lib/api", () => ({
   buildApiUrl: vi.fn(),
 }))
 
-const part: ArtifactRefPart = {
+const artifactBlock: ArtifactTranscriptBlock = {
   id: "artifact-part-1",
-  type: "artifact_ref",
-  artifact_id: "artifact-1",
+  type: "artifact",
+  runId: "run-1",
+  createdAt: "2026-08-15T08:00:00Z",
+  artifactId: "artifact-1",
   title: "qc-report.html",
-  media_type: "text/html",
+  mediaType: "text/html",
 }
 
 const artifact = {
@@ -67,7 +69,7 @@ describe("AgentArtifactReference", () => {
   })
 
   it("renders a theme-safe artifact card before loading the preview", () => {
-    renderWithProviders(<AgentArtifactReference part={part} />)
+    renderWithProviders(<AgentArtifactReference artifact={artifactBlock} />)
 
     const card = screen.getByTestId("agent-artifact-card")
     expect(card).toHaveAttribute("data-artifact-id", "artifact-1")
@@ -88,7 +90,7 @@ describe("AgentArtifactReference", () => {
       ),
     )
 
-    renderWithProviders(<AgentArtifactReference part={part} />)
+    renderWithProviders(<AgentArtifactReference artifact={artifactBlock} />)
     await user.click(screen.getByRole("button", { name: "Open qc-report.html" }))
 
     expect(await screen.findByText("Quality-control report")).toBeInTheDocument()
@@ -118,7 +120,7 @@ describe("AgentArtifactReference", () => {
     vi.stubGlobal("URL", { createObjectURL, revokeObjectURL })
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
 
-    renderWithProviders(<AgentArtifactReference part={part} />)
+    renderWithProviders(<AgentArtifactReference artifact={artifactBlock} />)
     await user.click(screen.getByRole("button", { name: "Open qc-report.html" }))
     await screen.findByText(/<h1>QC report/)
     await user.click(screen.getByRole("button", { name: "Download" }))
@@ -151,7 +153,7 @@ describe("AgentArtifactReference", () => {
 
     renderWithProviders(
       <AgentArtifactReference
-        part={{ ...part, title: "alignment.bam", media_type: null }}
+        artifact={{ ...artifactBlock, title: "alignment.bam", mediaType: null }}
       />,
     )
     await user.click(screen.getByRole("button", { name: "Open alignment.bam" }))
@@ -178,7 +180,7 @@ describe("AgentArtifactReference", () => {
       ),
     )
 
-    renderWithProviders(<AgentArtifactReference part={part} />)
+    renderWithProviders(<AgentArtifactReference artifact={artifactBlock} />)
     await user.click(screen.getByRole("button", { name: "Open qc-report.html" }))
 
     expect(await screen.findByText("Could not load this artifact.")).toBeInTheDocument()

@@ -21,6 +21,7 @@ import type {
 import {
   activityFromToolProgress,
   activityGroupFromToolProgress,
+  artifactFromLegacy,
   reasoningFromDraftPart,
 } from "@/lib/agent/projection/legacy-transcript-adapter"
 import { ChevronRight } from "@/lib/icons"
@@ -109,7 +110,12 @@ export function AgentMessageParts({
         }
 
         if (part.type === "artifact_ref") {
-          return <AgentArtifactReference key={part.id} part={part} />
+          return (
+            <AgentArtifactReference
+              key={part.id}
+              artifact={artifactFromLegacy(part)}
+            />
+          )
         }
 
         if (isReferencePart(part)) {
