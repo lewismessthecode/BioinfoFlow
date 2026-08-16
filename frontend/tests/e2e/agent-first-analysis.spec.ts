@@ -33,21 +33,72 @@ test.describe("Agent workbench live run journey", () => {
       if (!workbench || !composer || !surface || !textarea) return null
       const workbenchBox = workbench.getBoundingClientRect()
       const composerBox = composer.getBoundingClientRect()
+      const starterList = document.querySelector<HTMLElement>(
+        '[data-testid="agent-starter-prompt-list"]',
+      )
       return {
         centerDelta: Math.abs(
           workbenchBox.left + workbenchBox.width / 2 -
             (composerBox.left + composerBox.width / 2),
         ),
         composerWidth: composerBox.width,
+        composerHeight: surface.getBoundingClientRect().height,
+        chipHeights: Array.from(
+          composer.querySelectorAll<HTMLElement>('[data-composer-chip="true"]'),
+        ).map((chip) => chip.getBoundingClientRect().height),
+        starterBorderTop: starterList
+          ? getComputedStyle(starterList).borderTopWidth
+          : null,
+        starterBorderBottom: starterList
+          ? getComputedStyle(starterList).borderBottomWidth
+          : null,
         surfaceBackground: getComputedStyle(surface).backgroundColor,
         textareaBackground: getComputedStyle(textarea).backgroundColor,
       }
     })
     expect(desktopGeometry).not.toBeNull()
     expect(desktopGeometry?.centerDelta).toBeLessThan(2)
-    expect(desktopGeometry?.composerWidth).toBeLessThanOrEqual(768)
+    expect(desktopGeometry?.composerWidth).toBeLessThanOrEqual(672)
+    expect(desktopGeometry?.composerHeight).toBeGreaterThanOrEqual(160)
+    expect(desktopGeometry?.chipHeights.length).toBeGreaterThanOrEqual(3)
+    expect(new Set(desktopGeometry?.chipHeights).size).toBe(1)
+    expect(desktopGeometry?.starterBorderTop).toBe("0px")
+    expect(desktopGeometry?.starterBorderBottom).toBe("0px")
     expect(desktopGeometry?.surfaceBackground).not.toBe("rgb(0, 0, 0)")
     expect(desktopGeometry?.textareaBackground).toBe("rgba(0, 0, 0, 0)")
+    await expect(
+      page.getByRole("heading", {
+        name: "What would you like to work on?",
+      }),
+    ).toBeVisible()
+    await expect(
+      page.getByText("Ask a question, attach data, or reference a workflow."),
+    ).toHaveCount(0)
+    await expect(page.getByTestId("agent-capability-hint")).toHaveCount(0)
+    await expect(
+      page.getByRole("button", { name: /^Execution environments: Auto$/ }),
+    ).toBeVisible()
+
+    const workspaceButton = page.getByRole("button", {
+      name: "Open workspace panel",
+    })
+    await expect(workspaceButton).toBeVisible()
+    const workspacePosition = await workspaceButton.evaluate((button) => {
+      const box = button.getBoundingClientRect()
+      const shell = document
+        .querySelector<HTMLElement>('[data-testid="agent-page-shell"]')!
+        .getBoundingClientRect()
+      return {
+        rightInset: shell.right - box.right,
+        topInset: box.top - shell.top,
+      }
+    })
+    expect(workspacePosition.rightInset).toBeLessThanOrEqual(16)
+    expect(workspacePosition.topInset).toBeLessThanOrEqual(12)
+    await workspaceButton.click()
+    await expect(page.getByRole("tab", { name: "Files" })).toBeVisible()
+    await expect(page.getByRole("tab", { name: "Workflow" })).toBeVisible()
+    await expect(page.getByRole("tab", { name: "Monitor" })).toHaveCount(0)
 
     await page.setViewportSize({ width: 390, height: 844 })
     await page.reload()

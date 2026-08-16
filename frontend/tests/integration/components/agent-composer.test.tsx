@@ -119,7 +119,6 @@ function renderComposer({
   environmentSelectionPending = false,
   onEnvironmentSelectionChange = vi.fn().mockResolvedValue(undefined),
   starterPrompts,
-  capabilityHint,
 }: {
   permissionMode?: AgentPermissionMode
   workspaceAccess?: AgentWorkspaceAccess
@@ -142,7 +141,6 @@ function renderComposer({
     selection: AgentEnvironmentSelection,
   ) => Promise<void>
   starterPrompts?: readonly string[]
-  capabilityHint?: string
 } = {}) {
   return {
     ...renderWithProviders(
@@ -166,7 +164,6 @@ function renderComposer({
         environmentSelectionPending={environmentSelectionPending}
         onEnvironmentSelectionChange={onEnvironmentSelectionChange}
         starterPrompts={starterPrompts}
-        capabilityHint={capabilityHint}
       />,
     ),
     onSendMessage,
@@ -182,7 +179,11 @@ describe("AgentComposer", () => {
   it("uses a centered draft surface and a compact docked surface without changing behavior", () => {
     const view = renderComposer({
       placement: "draft",
-      modelControls: <button type="button">GPT-5.6</button>,
+      modelControls: (
+        <button type="button" data-composer-chip="true" className="min-h-7">
+          GPT-5.6
+        </button>
+      ),
     })
 
     expect(screen.getByTestId("agent-composer")).toHaveAttribute(
@@ -196,6 +197,20 @@ describe("AgentComposer", () => {
     expect(screen.getByTestId("agent-composer")).not.toHaveClass(
       "bg-gradient-to-t",
     )
+    expect(screen.getByTestId("agent-composer")).toHaveClass("max-w-[42rem]")
+    expect(screen.getByTestId("agent-composer-surface")).toHaveClass(
+      "min-h-[160px]",
+    )
+    expect(screen.getByTestId("agent-composer-controls")).toHaveClass(
+      "items-center",
+    )
+    const selectors = view.container.querySelectorAll(
+      '[data-composer-chip="true"]',
+    )
+    expect(selectors).toHaveLength(3)
+    for (const selector of selectors) {
+      expect(selector).toHaveClass("min-h-7")
+    }
     expect(screen.getByTestId("agent-composer-surface")).not.toHaveClass(
       "shadow-md",
     )
@@ -232,12 +247,25 @@ describe("AgentComposer", () => {
     const user = userEvent.setup()
     const view = renderComposer({
       placement: "draft",
-      starterPrompts: ["Review the latest run", "Explain the workflow inputs"],
+      starterPrompts: [
+        "Review the latest run",
+        "Explain the workflow inputs",
+        "Check the workflow before I run it",
+        "This fourth prompt stays hidden",
+      ],
     })
 
     expect(
       screen.getByText("Try one of these project-aware prompts"),
     ).toBeInTheDocument()
+    expect(screen.getByTestId("agent-starter-prompt-list")).not.toHaveClass(
+      "border-y",
+    )
+    expect(
+      within(screen.getByTestId("agent-starter-prompt-list")).getAllByRole(
+        "button",
+      ),
+    ).toHaveLength(3)
     await user.click(
       screen.getByRole("button", { name: "Review the latest run" }),
     )
@@ -262,36 +290,6 @@ describe("AgentComposer", () => {
     expect(
       screen.queryByText("Try one of these project-aware prompts"),
     ).not.toBeInTheDocument()
-  })
-
-  it("shows a distinct, honest capability hint only in the draft", () => {
-    const capabilityHint =
-      "The agent can work in this project and the environments you authorize. Actions that require approval will pause and ask first."
-    const view = renderComposer({ placement: "draft", capabilityHint })
-
-    expect(screen.getByTestId("agent-capability-hint")).toHaveTextContent(
-      capabilityHint,
-    )
-    expect(screen.getByTestId("agent-capability-hint")).not.toHaveAttribute(
-      "aria-label",
-      "Try one of these project-aware prompts",
-    )
-
-    view.rerender(
-      <AgentComposer
-        permissionMode="ask_dangerous"
-        workspaceAccess="read_write"
-        activeRun={null}
-        onSendMessage={view.onSendMessage}
-        onSteer={view.onSteer}
-        onCancel={view.onCancel}
-        onPermissionModeChange={view.onPermissionModeChange}
-        placement="dock"
-        capabilityHint={capabilityHint}
-      />,
-    )
-
-    expect(screen.queryByTestId("agent-capability-hint")).not.toBeInTheDocument()
   })
 
   it("offers Auto or multi-environment Manual selection without exposing transport types", async () => {
@@ -333,9 +331,11 @@ describe("AgentComposer", () => {
     }
     const view = renderWithProviders(<EnvironmentComposer />)
 
-    await user.click(
-      screen.getByRole("button", { name: /Execution environments: Auto/i }),
-    )
+    const autoTrigger = screen.getByRole("button", {
+      name: "Execution environments: Auto",
+    })
+    expect(autoTrigger).toHaveTextContent(/^Auto$/)
+    await user.click(autoTrigger)
     await user.click(screen.getByRole("menuitemradio", { name: /Manual/i }))
     expect(onEnvironmentSelectionChange).toHaveBeenCalledWith({
       mode: "manual",

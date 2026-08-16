@@ -276,8 +276,7 @@
     "liveDeck": {
       "label": "工作区实时信息",
       "files": "文件",
-      "pipeline": "工作流",
-      "monitor": "监控"
+      "pipeline": "工作流"
     }
   },
   "chat": {
@@ -1371,19 +1370,6 @@
     "demoHint": {
       "title": "任务地图",
       "body": "选择一次运行以解锁实时 DAG 更新。演示节点会脉冲显示任务路径。"
-    }
-  },
-  "monitor": {
-    "title": "运行监控",
-    "live": "实时",
-    "currentTask": "当前任务",
-    "progressSummary": "已完成 {completed}/{total} 个任务",
-    "taskStatus": "任务状态",
-    "labels": {
-      "status": "状态",
-      "tasksDone": "已完成",
-      "remaining": "剩余",
-      "run": "运行"
     }
   },
   "agentDebug": {
@@ -2520,7 +2506,6 @@
     "defaultModel": "默认模型",
     "emptyTitle": "你想先做什么？",
     "emptyDescription": "可以直接提问、添加数据，或引用工作流。Bioinfoflow 会展示计划、进度、工具执行，以及需要你确认的操作。",
-    "capabilityHint": "Agent 可在当前项目和你授权的环境中工作；需要审批的操作会暂停并先征求确认。",
     "starterPrompts": {
       "reviewRun": "检查最近一次运行，并指出值得注意的问题",
       "explainInputs": "解释当前项目中可以使用的输入",
@@ -2542,7 +2527,7 @@
     },
     "workspacePanel": {
       "title": "工作区面板",
-      "description": "查看工作区文件、工作流进度和资源监控。",
+      "description": "查看工作区文件和工作流。",
       "action": "工作区",
       "open": "打开工作区面板",
       "close": "关闭工作区面板"

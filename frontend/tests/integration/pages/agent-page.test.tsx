@@ -136,6 +136,11 @@ describe("Agent pages", () => {
     expect(
       screen.getByRole("button", { name: "Open workspace panel" }),
     ).toHaveTextContent("Workspace")
+    expect(
+      screen.getByTestId("agent-workbench"),
+    ).not.toContainElement(
+      screen.getByRole("button", { name: "Open workspace panel" }),
+    )
     fireEvent.click(
       screen.getByRole("button", { name: "Open workspace panel" }),
     )

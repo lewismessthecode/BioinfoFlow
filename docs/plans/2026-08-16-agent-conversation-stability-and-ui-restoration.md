@@ -139,6 +139,29 @@ fails, or the cache is cold, three deterministic localized fallbacks are used.
 
 ## Visual restoration
 
+### Final screenshot acceptance
+
+The final UI pass uses the supplied pre-refactor screenshots as the acceptance
+reference and keeps the same Presentation Contract boundary:
+
+- the Workspace action lives in the conversation header's top-right corner;
+- the Workspace panel contains Files and Workflows only; Run Monitor and its
+  dedicated panel code are removed;
+- the draft canvas shows one quiet welcome sentence above a unified Composer,
+  with no hero icon, explanatory paragraph, or capability-hint row;
+- model, permission, and Auto/Manual environment controls share one compact
+  height and baseline, and Auto is expressed once;
+- three starter prompts render as flat hairline-separated rows without an outer
+  card or section heading;
+- timestamps are progressive disclosure on message hover/focus, and Copy appears
+  once at the bottom of the final completed assistant response;
+- completed activity groups and tool calls are compact and collapsed by default;
+- one Run outcome produces one visible outcome row, and fenced code remains
+  readable without breaking the Transcript width.
+
+These are DOM and browser acceptance requirements, not additions to the Harness
+transport contract.
+
 ### Draft state
 
 - approximately 42rem centered reading/composer column;

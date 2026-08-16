@@ -276,8 +276,7 @@
     "liveDeck": {
       "label": "Live workspace information",
       "files": "Files",
-      "pipeline": "Workflow",
-      "monitor": "Monitor"
+      "pipeline": "Workflow"
     }
   },
   "chat": {
@@ -1371,19 +1370,6 @@
     "demoHint": {
       "title": "Mission Map",
       "body": "Pick a run to unlock live DAG updates. Demo nodes pulse to show the quest path."
-    }
-  },
-  "monitor": {
-    "title": "Run Monitor",
-    "live": "Live",
-    "currentTask": "Current Task",
-    "progressSummary": "{completed} of {total} tasks complete",
-    "taskStatus": "Task Status",
-    "labels": {
-      "status": "Status",
-      "tasksDone": "Tasks Done",
-      "remaining": "Remaining",
-      "run": "Run"
     }
   },
   "agentDebug": {
@@ -2520,7 +2506,6 @@
     "defaultModel": "Default model",
     "emptyTitle": "What would you like to work on?",
     "emptyDescription": "Ask a question, attach data, or reference a workflow. Bioinfoflow will show its plan, progress, tool activity, and any approval it needs.",
-    "capabilityHint": "The agent can work in this project and the environments you authorize. Actions that require approval will pause and ask first.",
     "starterPrompts": {
       "reviewRun": "Review the latest run and highlight anything unusual",
       "explainInputs": "Explain the inputs available in this project",
@@ -2542,7 +2527,7 @@
     },
     "workspacePanel": {
       "title": "Workspace panel",
-      "description": "Inspect workspace files, workflow progress, and resource monitoring.",
+      "description": "Inspect workspace files and workflows.",
       "action": "Workspace",
       "open": "Open workspace panel",
       "close": "Close workspace panel"

@@ -173,17 +173,6 @@ const CHECKS = [
     ],
   },
   {
-    file: "frontend/components/bioinfoflow/monitor-panel.tsx",
-    forbidden: [
-      /Run Monitor/,
-      /\bLive\b/,
-      /Current Task/,
-      /Task Status/,
-      /Tasks Done/,
-      /Remaining/,
-    ],
-  },
-  {
     file: "frontend/components/bioinfoflow/dag/dag-panel.tsx",
     forbidden: [
       /\bExperience\b/,

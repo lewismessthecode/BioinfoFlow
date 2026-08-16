@@ -5,6 +5,11 @@ import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
 import {
+  composerSelectorChevronClassName,
+  composerSelectorChipClassName,
+  composerSelectorIconClassName,
+} from "@/components/bioinfoflow/composer-selector-chip"
+import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
@@ -67,6 +72,10 @@ export function EnvironmentSelector({
   )
   const modeLabel = t(`${requestedSelection.mode}.name`)
   const targetSummary = summaryLabel(requestedSelection, targetById, t)
+  const triggerLabel =
+    requestedSelection.mode === "auto"
+      ? modeLabel
+      : `${modeLabel}, ${targetSummary}`
 
   const requestChange = async (selection: AgentEnvironmentSelection) => {
     if (controlsDisabled) return
@@ -114,8 +123,9 @@ export function EnvironmentSelector({
             variant="ghost"
             size="sm"
             disabled={controlsDisabled}
-            aria-label={`${t("label")}: ${modeLabel}, ${targetSummary}`}
-            className="h-8 max-w-[12rem] gap-1.5 rounded-lg px-2 text-xs font-medium text-muted-foreground shadow-none hover:bg-muted/70 hover:text-foreground"
+            aria-label={`${t("label")}: ${triggerLabel}`}
+            data-composer-chip="true"
+            className={cn(composerSelectorChipClassName, "max-w-[12rem]")}
           >
             {isPending ? (
               <Loader2
@@ -126,15 +136,26 @@ export function EnvironmentSelector({
               requestedSelection.targetIds.every(
                 (targetId) => targetById.get(targetId)?.kind === "local",
               ) ? (
-              <Monitor className="size-3.5" aria-hidden="true" />
+              <Monitor
+                className={composerSelectorIconClassName}
+                aria-hidden="true"
+              />
             ) : (
-              <Server className="size-3.5" aria-hidden="true" />
+              <Server
+                className={composerSelectorIconClassName}
+                aria-hidden="true"
+              />
             )}
             <span className="shrink-0">{modeLabel}</span>
-            <span className="truncate text-foreground/65">
-              · {targetSummary}
-            </span>
-            <ChevronDown className="size-3 opacity-55" aria-hidden="true" />
+            {requestedSelection.mode === "manual" ? (
+              <span className="truncate text-foreground/65">
+                · {targetSummary}
+              </span>
+            ) : null}
+            <ChevronDown
+              className={composerSelectorChevronClassName}
+              aria-hidden="true"
+            />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
