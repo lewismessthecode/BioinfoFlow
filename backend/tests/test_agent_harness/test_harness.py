@@ -24,10 +24,14 @@ from app.services.agent_harness.contracts import (
 )
 from app.services.agent_harness.contracts import RespondCommand
 from app.services.agent_harness.harness import AgentHarness
-from app.services.agent_harness.loop import HARNESS_VERSION, LoopLimits
+from app.services.agent_harness.loop import (
+    HARNESS_VERSION,
+    LoopLimits,
+    _tool_result_history_output,
+)
 from app.services.agent_harness.model_target import model_target_from_snapshot
 from app.services.agent_harness.recovery import create_checkpoint
-from app.services.agent_harness.tools import ToolCall, ToolSpec
+from app.services.agent_harness.tools import ToolCall, ToolResult, ToolSpec
 from app.services.agent_harness.workspace_runtime import (
     LocalWorkspaceBackend,
     WorkspaceRuntime,
@@ -138,6 +142,22 @@ def _history_text(role: str, text: str) -> dict:
     return {
         "role": role,
         "parts": [{"id": "text:0", "type": "text", "text": text}],
+    }
+
+
+def test_terminal_tool_history_keeps_resolved_environment() -> None:
+    result = ToolResult(
+        call_id="call-1",
+        tool_name="bash",
+        status="failed",
+        replay_policy="verify",
+        output={"environment_id": "ssh:gpu"},
+        error="command failed",
+    )
+
+    assert _tool_result_history_output(result) == {
+        "environment_id": "ssh:gpu",
+        "error": "command failed",
     }
 
 

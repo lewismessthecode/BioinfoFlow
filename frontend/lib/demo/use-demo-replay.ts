@@ -4,24 +4,28 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import type { AgentSessionState } from "@/hooks/use-agent-session"
 import {
-  applyAgentEvent,
-  initialAgentStoreState,
-  type AgentStoreState,
-} from "@/lib/agent/store"
+  applyConversationProjectionEvent,
+  createConversationProjection,
+} from "@/lib/agent/projection/conversation-projection"
+import type { ConversationViewModel } from "@/lib/agent/conversation-model/types"
+import type { ConversationProjectionState } from "@/lib/agent/projection/conversation-projection"
 import type { DagData, RunStatus } from "@/lib/types"
 import { parseNDJSON, scheduleReplay } from "./replay-engine"
 import type { DemoTimelineItem, ReplayStatus } from "./types"
 
 export function useDemoReplay(recording: string, autoPlay = true) {
   const timeline = useMemo(() => parseNDJSON(recording), [recording])
-  const initialStore = useMemo(() => storeFromTimeline(timeline), [timeline])
-  const [store, setStore] = useState(initialStore)
+  const initialProjection = useMemo(
+    () => projectionFromTimeline(timeline),
+    [timeline],
+  )
+  const [projection, setProjection] = useState(initialProjection)
   const [dag, setDag] = useState<DagData | null>(null)
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null)
   const [currentTask, setCurrentTask] = useState<string | null>(null)
   const [status, setStatus] = useState<ReplayStatus>("idle")
   const [progress, setProgress] = useState(0)
-  const storeRef = useRef(initialStore)
+  const projectionRef = useRef(initialProjection)
   const cancelRef = useRef<(() => void) | null>(null)
 
   const applyTimelineItem = useCallback((item: DemoTimelineItem) => {
@@ -32,10 +36,14 @@ export function useDemoReplay(recording: string, autoPlay = true) {
       return
     }
 
-    const application = applyAgentEvent(storeRef.current, item.event)
+    const application = applyConversationProjectionEvent(
+      projectionRef.current.state,
+      item.event,
+    )
     if (application.outcome !== "applied") return
-    storeRef.current = application.state
-    setStore(application.state)
+    const next = { state: application.state, view: application.view }
+    projectionRef.current = next
+    setProjection(next)
   }, [])
 
   const handleEvent = useCallback(
@@ -48,8 +56,8 @@ export function useDemoReplay(recording: string, autoPlay = true) {
 
   const play = useCallback(() => {
     cancelRef.current?.()
-    storeRef.current = initialStore
-    setStore(initialStore)
+    projectionRef.current = initialProjection
+    setProjection(initialProjection)
     setDag(null)
     setRunStatus(null)
     setCurrentTask(null)
@@ -59,7 +67,7 @@ export function useDemoReplay(recording: string, autoPlay = true) {
       onEvent: handleEvent,
       onFinish: () => setStatus("finished"),
     })
-  }, [handleEvent, initialStore, timeline])
+  }, [handleEvent, initialProjection, timeline])
 
   const pause = useCallback(() => {
     cancelRef.current?.()
@@ -77,7 +85,8 @@ export function useDemoReplay(recording: string, autoPlay = true) {
 
   const sessionState = useMemo<AgentSessionState>(
     () => ({
-      ...store,
+      ...projection.state.transportState,
+      conversationView: projection.view,
       connectionStatus: "connected",
       error: null,
       isLoading: false,
@@ -86,9 +95,11 @@ export function useDemoReplay(recording: string, autoPlay = true) {
       respond: async () => {},
       cancel: async () => {},
       updatePermissionMode: async () => {},
+      updateModel: async () => {},
+      updateEnvironmentScope: async () => {},
       retry: play,
     }),
-    [play, store],
+    [play, projection],
   )
 
   return {
@@ -103,7 +114,9 @@ export function useDemoReplay(recording: string, autoPlay = true) {
   }
 }
 
-function storeFromTimeline(timeline: DemoTimelineItem[]): AgentStoreState {
+function projectionFromTimeline(
+  timeline: DemoTimelineItem[],
+): DemoProjection {
   const snapshotItem = timeline[0]
   if (!snapshotItem || snapshotItem.kind !== "agent") {
     throw new Error("Demo timeline must begin with an Agent snapshot")
@@ -111,7 +124,16 @@ function storeFromTimeline(timeline: DemoTimelineItem[]): AgentStoreState {
   if (snapshotItem.event.type !== "snapshot") {
     throw new Error("Demo timeline snapshot is invalid")
   }
-  return applyAgentEvent(initialAgentStoreState, snapshotItem.event).state
+  const projection = createConversationProjection(snapshotItem.event.snapshot)
+  if (!projection.ok) {
+    throw new Error(projection.diagnostic.message)
+  }
+  return { state: projection.state, view: projection.view }
+}
+
+type DemoProjection = {
+  state: ConversationProjectionState
+  view: ConversationViewModel
 }
 
 function prefersReducedMotion() {

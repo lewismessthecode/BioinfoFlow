@@ -1,18 +1,32 @@
 import type {
   ActivityGroupTranscriptBlock,
   ActivityItem,
+  ArtifactTranscriptBlock,
   InteractionTranscriptBlock,
   PlanTranscriptBlock,
   ReasoningTranscriptBlock,
 } from "@/lib/agent/conversation-model/types"
 import type {
   AssistantDraftPartView,
+  ArtifactRefPart,
   InteractionRequest,
   InteractionResponse,
   PlanEntry,
   ToolExecutionMode,
   ToolProgressView,
 } from "@/lib/agent/contracts"
+
+export function artifactFromLegacy(part: ArtifactRefPart): ArtifactTranscriptBlock {
+  return {
+    type: "artifact",
+    id: part.id,
+    runId: null,
+    createdAt: null,
+    artifactId: part.artifact_id,
+    title: part.title,
+    mediaType: part.media_type,
+  }
+}
 
 export function activityFromToolProgress(tool: ToolProgressView): ActivityItem {
   return {

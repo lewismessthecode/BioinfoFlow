@@ -21,7 +21,6 @@ import {
   type AgentArtifact,
   type AgentArtifactContent,
 } from "@/lib/agent/client"
-import type { ArtifactRefPart } from "@/lib/agent/contracts"
 import type { ArtifactTranscriptBlock } from "@/lib/agent/conversation-model/types"
 import { AlertCircle, Download, Loader2, RefreshCw } from "@/lib/icons"
 
@@ -52,12 +51,7 @@ type ArtifactPreview =
   | { kind: "unavailable"; reason: "type" | "size" }
   | { kind: "error" }
 
-type AgentArtifactReferenceProps = {
-  part?: ArtifactRefPart
-  artifact?: ArtifactTranscriptBlock
-}
-
-export function AgentArtifactReference({ part, artifact: block }: AgentArtifactReferenceProps) {
+export function AgentArtifactReference({ artifact: block }: { artifact: ArtifactTranscriptBlock }) {
   const locale = useLocale()
   const t = useTranslations("agentHistory")
   const [open, setOpen] = useState(false)
@@ -69,9 +63,9 @@ export function AgentArtifactReference({ part, artifact: block }: AgentArtifactR
   const requestRef = useRef(0)
   const contentRef = useRef<AgentArtifactContent | null>(null)
   const imageUrlRef = useRef<string | null>(null)
-  const artifactId = block?.artifactId ?? part?.artifact_id ?? ""
-  const title = block?.title ?? part?.title ?? null
-  const mediaType = block?.mediaType ?? part?.media_type ?? null
+  const artifactId = block.artifactId
+  const title = block.title
+  const mediaType = block.mediaType
   const label = title ?? artifactId
 
   useEffect(
