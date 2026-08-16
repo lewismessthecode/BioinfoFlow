@@ -1,20 +1,25 @@
 "use client"
 
-import { useId, useMemo, useState } from "react"
+import { useId, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 
 import { useActivityDisclosure } from "@/components/bioinfoflow/agent/activity-disclosure"
 import { Button } from "@/components/ui/button"
 import {
-  AlertTriangle,
+  Activity as ActivityGlyph,
   Check,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Circle,
   CircleDashed,
-  Clock3,
   Copy,
+  FileText,
+  ListChecks,
   Loader2,
+  MessageSquare,
+  Pencil,
+  Play,
+  Search,
   TerminalSquare,
 } from "@/lib/icons"
 import type {
@@ -51,19 +56,39 @@ export function AgentToolCard({
     defaultExpanded ?? false,
   )
   const duration = activityDuration(activity, locale)
+  const description = activityDescription(activity)
+  const visibleDescription =
+    activity.status === "failed" && activity.error
+      ? activity.error
+      : description
   const summary = (
     <>
-      <ToolStatusIcon status={activity.status} />
+      <ToolActivityIcon activity={activity} />
       <span
-        className="min-w-0 max-w-[34%] truncate rounded-[5px] bg-muted/70 px-1.5 py-0.5 font-mono text-[11px] text-foreground/72 sm:max-w-[40%]"
+        className="min-w-0 max-w-[34%] shrink-0 truncate font-medium text-foreground/76 sm:max-w-[40%]"
+        data-activity-label=""
         title={activity.displayName}
         translate="no"
       >
         {activity.displayName}
       </span>
-      <span className="line-clamp-2 min-w-0 flex-1 text-foreground/78 sm:truncate">
-        {activity.summary}
-      </span>
+      {visibleDescription ? (
+        <>
+          <span aria-hidden="true" className="shrink-0 text-muted-foreground/45">
+            ·
+          </span>
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-foreground/68",
+              activity.status === "failed" && "text-error-foreground",
+            )}
+          >
+            {visibleDescription}
+          </span>
+        </>
+      ) : (
+        <span className="min-w-0 flex-1" />
+      )}
       {duration ? (
         <span
           className="hidden shrink-0 tabular-nums text-[11px] text-muted-foreground sm:inline"
@@ -72,14 +97,20 @@ export function AgentToolCard({
           {duration}
         </span>
       ) : null}
-      <span className="sr-only shrink-0 text-[11px] text-muted-foreground sm:not-sr-only">
+      <span className="sr-only">
         {t(`status.${activity.status}`)}
       </span>
       {hasDetails ? (
         expanded ? (
-          <ChevronDown aria-hidden="true" />
+          <ChevronDown
+            aria-hidden="true"
+            className="size-3.5 shrink-0 opacity-45 transition-opacity group-hover/activity:opacity-75 group-focus-within/activity:opacity-75"
+          />
         ) : (
-          <ChevronRight aria-hidden="true" />
+          <ChevronRight
+            aria-hidden="true"
+            className="size-3.5 shrink-0 opacity-45 transition-opacity group-hover/activity:opacity-75 group-focus-within/activity:opacity-75"
+          />
         )
       ) : null}
     </>
@@ -88,14 +119,13 @@ export function AgentToolCard({
   return (
     <article
       className={cn(
-        "min-w-0",
-        !grouped && "rounded-[10px] border border-border/60 bg-background",
+        "group/activity min-w-0",
         grouped && "bg-transparent",
-        activity.status === "failed" && !grouped && "border-error-border bg-error-muted/25",
-        activity.status === "interaction_required" &&
-          !grouped &&
-          "border-warning-border bg-warning-muted/25",
       )}
+      data-activity-category={activity.category}
+      data-activity-status={activity.status}
+      data-agent-activity-row=""
+      data-call-id={activity.callId}
       data-grouped={grouped ? "true" : undefined}
       data-testid="agent-tool-card"
     >
@@ -103,12 +133,11 @@ export function AgentToolCard({
         <button
           type="button"
           className={cn(
-            "flex h-9 w-full min-w-0 items-center gap-2 rounded-[10px] px-3 py-1 text-left text-xs transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none",
-            grouped && "rounded-[6px] px-1.5",
+            "flex min-h-8 w-full min-w-0 items-center gap-1.5 rounded-[6px] px-1 py-1 text-left text-[13px] leading-5 transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none",
           )}
           aria-expanded={expanded}
           aria-controls={detailsId}
-          aria-label={`${activity.displayName}: ${activity.summary}. ${t(expanded ? "details.hide" : "details.show")}`}
+          aria-label={`${activity.displayName}${visibleDescription ? `: ${visibleDescription}` : ""}. ${t(expanded ? "details.hide" : "details.show")}`}
           onClick={() => setExpanded((value) => !value)}
         >
           {summary}
@@ -116,8 +145,7 @@ export function AgentToolCard({
       ) : (
         <div
           className={cn(
-            "flex h-9 min-w-0 items-center gap-2 px-3 py-1 text-xs",
-            grouped && "px-1.5",
+            "flex min-h-8 min-w-0 items-center gap-1.5 px-1 py-1 text-[13px] leading-5",
           )}
         >
           {summary}
@@ -127,11 +155,8 @@ export function AgentToolCard({
       {hasDetails && expanded ? (
         <div
           id={detailsId}
-          className={cn(
-            "grid gap-3 border-l border-border/50 py-2 pl-4 pr-3",
-            grouped && "ml-4 pr-2",
-            !grouped && "mx-3 mb-3",
-          )}
+          className="ml-5 grid gap-3 border-l border-border/50 py-2 pl-3 pr-2"
+          data-activity-detail=""
         >
           {details.map((detail) => (
             <ToolDetail
@@ -160,71 +185,21 @@ export function AgentActivityGroup({
   defaultExpanded,
 }: AgentActivityGroupProps) {
   const activities = activityGroup.activities
-  const t = useTranslations("agentActivity")
-  const detailsId = useId()
-  const disclosureKey = useMemo(
-    () => `tool-group:${activities.map((activity) => activity.callId).join("|")}`,
-    [activities],
-  )
-  const [expanded, setExpanded] = useActivityDisclosure(
-    disclosureKey,
-    defaultExpanded ?? false,
-  )
-  const summaryKey = `group.${activityGroup.executionMode}`
-  const groupedActivities = useMemo(
-    () => groupContiguousActivitiesByCategory(activities),
-    [activities],
-  )
 
   return (
     <section
-      className="min-w-0"
+      className="grid min-w-0 gap-1"
+      data-execution-mode={activityGroup.executionMode}
       data-testid="agent-activity-group"
     >
-      <button
-        type="button"
-        className="group/summary flex h-9 w-full min-w-0 items-center gap-1.5 rounded-[6px] px-1 py-1 text-left text-xs transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
-        aria-expanded={expanded}
-        aria-controls={detailsId}
-        aria-label={t(summaryKey, { count: activities.length })}
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <GroupStatusIcon activities={activities} />
-        <span className="min-w-0 flex-1 truncate text-foreground/78">
-          {t(summaryKey, { count: activities.length })}
-        </span>
-        <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
-          {groupStatusLabel(t, activities)}
-        </span>
-        {expanded ? (
-          <ChevronDown aria-hidden="true" className="size-3.5 opacity-60 transition-opacity group-hover/summary:opacity-100" />
-        ) : (
-          <ChevronRight aria-hidden="true" className="size-3.5 opacity-60 transition-opacity group-hover/summary:opacity-100" />
-        )}
-      </button>
-
-      {expanded ? (
-        <div
-          id={detailsId}
-          className="ml-3 grid gap-2 border-l border-border/55 py-1.5 pl-3"
-        >
-          {groupedActivities.map(([category, categoryActivities]) => (
-            <div
-              key={`${category}:${categoryActivities[0]?.callId}`}
-              className="grid gap-2"
-            >
-              {groupedActivities.length > 1 ? (
-                <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                  {t(`category.${category}`)}
-                </h3>
-              ) : null}
-              {categoryActivities.map((activity) => (
-                <AgentToolCard key={activity.callId} activity={activity} grouped />
-              ))}
-            </div>
-          ))}
-        </div>
-      ) : null}
+      {activities.map((activity) => (
+        <AgentToolCard
+          key={activity.callId}
+          activity={activity}
+          defaultExpanded={defaultExpanded}
+          grouped
+        />
+      ))}
     </section>
   )
 }
@@ -308,73 +283,110 @@ function ToolDetail({
   )
 }
 
-function ToolStatusIcon({ status }: { status: ActivityStatus }) {
-  const className = "size-4 shrink-0 text-muted-foreground"
-  if (status === "running") {
-    return <Loader2 aria-hidden="true" className={cn(className, "animate-spin motion-reduce:animate-none")} />
+function ToolActivityIcon({ activity }: { activity: ActivityItem }) {
+  const className = "size-4 shrink-0 text-muted-foreground/72"
+  if (activity.status === "running") {
+    return (
+      <Loader2
+        aria-hidden="true"
+        className={cn(className, "animate-spin motion-reduce:animate-none")}
+      />
+    )
   }
-  if (status === "completed") {
-    return <CheckCircle2 aria-hidden="true" className={className} />
+  if (activity.status === "failed") {
+    return (
+      <span className="flex size-4 shrink-0 items-center justify-center">
+        <Circle
+          aria-hidden="true"
+          className="size-2.5 fill-current text-error-foreground"
+        />
+      </span>
+    )
   }
-  if (status === "failed") {
-    return <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-error-foreground" />
+  if (
+    activity.status === "blocked" ||
+    activity.status === "interaction_required" ||
+    activity.status === "cancelled"
+  ) {
+    return (
+      <CircleDashed
+        aria-hidden="true"
+        className={cn(
+          className,
+          activity.status !== "cancelled" && "text-warning-foreground",
+        )}
+      />
+    )
   }
-  if (status === "blocked" || status === "interaction_required") {
-    return <CircleDashed aria-hidden="true" className="size-4 shrink-0 text-warning-foreground" />
-  }
-  if (status === "cancelled") {
+
+  return (
+    <ActivityCategoryIcon
+      category={activity.category}
+      className={className}
+    />
+  )
+}
+
+function ActivityCategoryIcon({
+  category,
+  className,
+}: {
+  category: string
+  className: string
+}) {
+  if (category === "command") {
     return <TerminalSquare aria-hidden="true" className={className} />
   }
-  return <Clock3 aria-hidden="true" className={className} />
+  if (category === "read") {
+    return <FileText aria-hidden="true" className={className} />
+  }
+  if (category === "search") {
+    return <Search aria-hidden="true" className={className} />
+  }
+  if (category === "edit" || category === "write") {
+    return <Pencil aria-hidden="true" className={className} />
+  }
+  if (category === "workflow") {
+    return <Play aria-hidden="true" className={className} />
+  }
+  if (category === "plan") {
+    return <ListChecks aria-hidden="true" className={className} />
+  }
+  if (category === "interaction") {
+    return <MessageSquare aria-hidden="true" className={className} />
+  }
+  return <ActivityGlyph aria-hidden="true" className={className} />
 }
 
-function GroupStatusIcon({ activities }: { activities: ActivityItem[] }) {
-  if (activities.some((activity) => activity.status === "failed")) {
-    return <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-error-foreground" />
+function activityDescription(activity: ActivityItem) {
+  const summary = activity.summary.trim()
+  const labels = [activity.displayName, activity.name]
+    .map((label) => label.trim())
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length)
+
+  let description = summary
+  for (const label of labels) {
+    const prefix = new RegExp(
+      `^${escapeRegExp(label)}(?:\\s*[:·—–-]\\s*|\\s+)`,
+      "i",
+    )
+    if (!prefix.test(description)) continue
+    description = description.replace(prefix, "").trim()
+    break
   }
-  if (activities.some((activity) => activity.status === "interaction_required" || activity.status === "blocked")) {
-    return <CircleDashed aria-hidden="true" className="size-4 shrink-0 text-warning-foreground" />
+  if (description && !labels.some((label) => label.toLowerCase() === description.toLowerCase())) {
+    return description
   }
-  if (activities.some((activity) => activity.status === "running")) {
-    return <Loader2 aria-hidden="true" className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
-  }
-  if (activities.every((activity) => activity.status === "completed")) {
-    return <CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-  }
-  return <CircleDashed aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+
+  const primaryDetail = activity.details?.find((detail) =>
+    ["command", "path", "working_directory"].includes(detail.kind),
+  )
+  return primaryDetail?.value.trim() || null
 }
 
-function groupStatusLabel(
-  t: (key: string) => string,
-  activities: ActivityItem[],
-) {
-  if (activities.some((activity) => activity.status === "failed")) return t("status.failed")
-  if (activities.some((activity) => activity.status === "interaction_required")) {
-    return t("status.interaction_required")
-  }
-  if (activities.some((activity) => activity.status === "blocked")) return t("status.blocked")
-  if (activities.some((activity) => activity.status === "running")) return t("status.running")
-  if (activities.every((activity) => activity.status === "completed")) {
-    return t("status.completed")
-  }
-  if (activities.every((activity) => activity.status === "cancelled")) {
-    return t("status.cancelled")
-  }
-  return t("status.pending")
-}
-
-function groupContiguousActivitiesByCategory(activities: ActivityItem[]) {
-  const categories: Array<[string, ActivityItem[]]> = []
-  for (const activity of activities) {
-    const category = activityCategory(activity.category)
-    const current = categories.at(-1)
-    if (current?.[0] === category) {
-      current[1].push(activity)
-    } else {
-      categories.push([category, [activity]])
-    }
-  }
-  return categories
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 function activityDuration(activity: ActivityItem, locale: string) {
@@ -399,22 +411,6 @@ function durationNumberFormatter(locale: string) {
   const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 })
   durationNumberFormatters.set(locale, formatter)
   return formatter
-}
-
-function activityCategory(value: string) {
-  return [
-    "read",
-    "search",
-    "command",
-    "edit",
-    "write",
-    "workflow",
-    "plan",
-    "interaction",
-    "other",
-  ].includes(value)
-    ? value
-    : "other"
 }
 
 function publicActivityDetails(activity: ActivityItem) {

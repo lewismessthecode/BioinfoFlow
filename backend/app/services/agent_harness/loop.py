@@ -1819,6 +1819,8 @@ def _interaction_dict(result: ToolResult) -> dict[str, Any]:
         "call_id": interaction.call_id,
         "kind": interaction.kind,
         "tool_name": result.tool_name,
+        "summary": interaction.summary,
+        "input_preview": interaction.input_preview,
         "questions": list(interaction.questions),
         "risk": interaction.risk,
         "target": interaction.target,

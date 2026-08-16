@@ -39,7 +39,7 @@ export class AgentPage {
   }
 
   get activeRun(): Locator {
-    return this.page.getByTestId("agent-active-run")
+    return this.page.getByTestId("agent-live-status")
   }
 
   get activityGroups(): Locator {

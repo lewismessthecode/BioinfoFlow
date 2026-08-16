@@ -37,11 +37,11 @@ test.describe("Agent interaction journey", () => {
         exact: true,
       }),
     ).toBeVisible({ timeout: 20_000 })
-    await expect(
-      agent.transcript.getByText("Run command: Submit the workflow through bif", {
-        exact: true,
-      }),
-    ).toBeVisible()
+    const workflowActivity = agent.transcript
+      .locator("[data-agent-activity-row]")
+      .filter({ hasText: "Submit the workflow through bif" })
+    await expect(workflowActivity).toBeVisible()
+    await expect(workflowActivity).toContainText("Bash")
 
     await expect
       .poll(async () => JSON.stringify((await getKeylessAgentSnapshot(
@@ -89,8 +89,10 @@ test.describe("Agent interaction journey", () => {
     await agent.sendMessage("Create the keyless approval marker.")
 
     await expect(agent.approvalCard).toBeVisible({ timeout: 20_000 })
-    await expect(agent.approvalCard).toContainText("Allow this tool to run?")
-    await expect(agent.approvalCard).toContainText("e2e-approved.txt")
+    await expect(agent.approvalCard).toContainText("Run command")
+    await expect(agent.approvalCard).toContainText("touch e2e-approved.txt")
+    await expect(agent.approvalCard).toContainText("Local")
+    await expect(agent.approvalCard).not.toContainText(/act_high/i)
     await expect(
       agent.approvalCard.getByRole("button", { name: "Approve", exact: true }),
     ).toBeVisible()
@@ -155,11 +157,13 @@ test.describe("Agent interaction journey", () => {
     await agent.expectComposerReady()
     await agent.sendMessage("Start the long keyless task so I can stop it.")
 
-    await expect(
-      agent.activeRun.getByText("Run command", { exact: true }),
-    ).toBeVisible({
+    const runningTool = agent.transcript
+      .locator('[data-agent-activity-row][data-activity-status="running"]')
+      .filter({ hasText: "sleep 30" })
+    await expect(runningTool).toBeVisible({
       timeout: 20_000,
     })
+    await expect(agent.activeRun).toBeVisible()
     await expect(agent.stopButton).toBeVisible()
     await agent.stopButton.click()
 
@@ -186,9 +190,7 @@ test.describe("Agent interaction journey", () => {
 
     await agent.gotoSession(opened.session.id)
     await agent.expectComposerReady()
-    await expect(
-      page.getByLabel("Connected", { exact: true }),
-    ).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByLabel("Connected", { exact: true })).toHaveCount(0)
 
     await context.setOffline(true)
     await expect(
@@ -200,8 +202,11 @@ test.describe("Agent interaction journey", () => {
 
     await context.setOffline(false)
     await expect(
-      page.getByLabel("Connected", { exact: true }),
-    ).toBeVisible({ timeout: 20_000 })
+      page.getByText(
+        "You are offline. The conversation will resume when the connection returns.",
+        { exact: true },
+      ),
+    ).toHaveCount(0, { timeout: 20_000 })
   })
 
   test("recovers an interrupted tool after a backend restart", async ({
@@ -218,11 +223,13 @@ test.describe("Agent interaction journey", () => {
     await agent.gotoSession(opened.session.id)
     await agent.expectComposerReady()
     await agent.sendMessage("Start the restart recovery scenario.")
-    await expect(
-      agent.activeRun.getByText("Run command", { exact: true }),
-    ).toBeVisible({
+    const runningTool = agent.transcript
+      .locator('[data-agent-activity-row][data-activity-status="running"]')
+      .filter({ hasText: "sleep 30" })
+    await expect(runningTool).toBeVisible({
       timeout: 20_000,
     })
+    await expect(agent.activeRun).toBeVisible()
 
     await restartKeylessBackend(request)
 

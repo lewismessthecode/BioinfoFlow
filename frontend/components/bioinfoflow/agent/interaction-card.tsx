@@ -178,19 +178,26 @@ function ApprovalInteraction({
 }) {
   const t = useTranslations("agentInteraction")
   const submitting = pendingAction !== null
+  const action = approvalAction(request.toolName, t)
+  const summary = request.summary.trim()
 
   return (
     <div className="grid gap-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <p className="min-w-0 flex-1 text-sm leading-6 text-foreground/85">
-          {request.summary}
-        </p>
-        <span
-          className="shrink-0 rounded-[5px] border border-border/60 bg-background/70 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground"
-          translate="no"
-        >
-          {request.risk.level}
-        </span>
+      <div className="grid min-w-0 gap-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="text-sm font-medium leading-5 text-foreground">
+            {action}
+          </p>
+          <span
+            className="rounded-[4px] border border-border/60 bg-background/55 px-1.5 py-0.5 font-mono text-[10px] leading-4 text-muted-foreground"
+            translate="no"
+          >
+            {request.toolName}
+          </span>
+        </div>
+        {summary && summary !== action ? (
+          <p className="text-xs leading-5 text-muted-foreground">{summary}</p>
+        ) : null}
       </div>
 
       {request.target ? (
@@ -217,7 +224,7 @@ function ApprovalInteraction({
             {t("approval.input")}
           </h3>
           <pre
-            className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-[8px] bg-background/75 px-3 py-2 font-mono text-xs leading-5 text-foreground/75"
+            className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-[7px] border border-border/55 bg-background/55 px-3 py-2 font-mono text-xs leading-5 text-foreground/80"
             translate="no"
           >
             {request.inputPreview}
@@ -267,37 +274,83 @@ function ApprovalInteraction({
   )
 }
 
+type Translate = ReturnType<typeof useTranslations>
+
+function approvalAction(toolName: string, t: Translate) {
+  switch (toolName) {
+    case "bash":
+      return t("approval.action.command")
+    case "write":
+      return t("approval.action.write")
+    case "edit":
+      return t("approval.action.edit")
+    case "read":
+      return t("approval.action.read")
+    default:
+      return t("approval.action.tool", { toolName })
+  }
+}
+
+type ApprovalEffectCode =
+  | "read"
+  | "write"
+  | "delete"
+  | "network"
+  | "process_control"
+  | "privilege"
+  | "execute"
+
+function approvalEffectCode(effect: string): ApprovalEffectCode | null {
+  switch (effect) {
+    case "read":
+    case "write":
+    case "delete":
+    case "network":
+    case "process_control":
+    case "privilege":
+    case "execute":
+      return effect
+    default:
+      return null
+  }
+}
+
 function RiskDetails({
   request,
 }: {
   request: Extract<ConversationInteractionRequest, { type: "approval" }>
 }) {
   const t = useTranslations("agentInteraction")
+  const effects = request.risk.effects.map((effect) => {
+    const code = approvalEffectCode(effect)
+    return code ? t(`approval.effect.${code}`) : effect
+  })
   const sections = [
-    ["approval.effects", request.risk.effects],
-    ["approval.reasons", request.risk.reasons],
+    ["approval.effects", effects],
     ["approval.resources", request.risk.affectedResources],
   ] as const
 
   return (
-    <div className="grid gap-2 sm:grid-cols-3">
+    <dl className="grid gap-x-5 gap-y-2 sm:grid-cols-2">
       {sections.map(([label, values]) =>
         values.length > 0 ? (
           <div key={label} className="grid content-start gap-1">
-            <h3 className="text-[11px] font-medium text-muted-foreground">
+            <dt className="text-[11px] font-medium text-muted-foreground">
               {t(label)}
-            </h3>
-            <ul className="grid gap-1 text-xs leading-5 text-foreground/72">
-              {values.map((value, index) => (
-                <li key={`${index}:${value}`} className="break-words">
-                  {value}
-                </li>
-              ))}
-            </ul>
+            </dt>
+            <dd>
+              <ul className="flex flex-wrap gap-x-2 gap-y-1 text-xs leading-5 text-foreground/72">
+                {values.map((value, index) => (
+                  <li key={`${index}:${value}`} className="break-words">
+                    {value}
+                  </li>
+                ))}
+              </ul>
+            </dd>
           </div>
         ) : null,
       )}
-    </div>
+    </dl>
   )
 }
 

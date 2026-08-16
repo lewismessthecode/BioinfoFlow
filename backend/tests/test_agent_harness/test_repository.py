@@ -551,6 +551,78 @@ async def test_message_submission_atomically_creates_run_and_user_history(
 
 
 @pytest.mark.asyncio
+async def test_first_user_message_sets_a_concise_conversation_title(
+    harness_db: AsyncSession,
+) -> None:
+    repository = AgentHarnessRepository(harness_db)
+    session = await repository.open_session(_request())
+    prompt = "Summarize this very long workflow request with many details"
+
+    await repository.submit_user_command(
+        str(session.id),
+        _message("message-title", prompt),
+    )
+
+    snapshot = await repository.snapshot(str(session.id))
+    assert snapshot.session.title == "Summarize this very long"
+    assert snapshot.entries[0].payload.parts[0].text == prompt
+
+
+@pytest.mark.asyncio
+async def test_message_submission_preserves_an_existing_conversation_title(
+    harness_db: AsyncSession,
+) -> None:
+    repository = AgentHarnessRepository(harness_db)
+    session = await repository.open_session(
+        _request().model_copy(update={"title": "Manual title"})
+    )
+
+    await repository.submit_user_command(
+        str(session.id),
+        _message("message-title", "Generate a different title"),
+    )
+
+    snapshot = await repository.snapshot(str(session.id))
+    assert snapshot.session.title == "Manual title"
+
+
+@pytest.mark.asyncio
+async def test_first_user_message_sets_title_after_setting_changes(
+    harness_db: AsyncSession,
+) -> None:
+    repository = AgentHarnessRepository(harness_db)
+    session = await repository.open_session(_request())
+    await repository.update_session_settings(
+        str(session.id),
+        permission_mode="full_access",
+    )
+
+    await repository.submit_user_command(
+        str(session.id),
+        _message("message-title", "Review the configured workflow"),
+    )
+
+    snapshot = await repository.snapshot(str(session.id))
+    assert snapshot.session.title == "Review the configured workflow"
+
+
+@pytest.mark.asyncio
+async def test_empty_user_text_does_not_create_a_conversation_title(
+    harness_db: AsyncSession,
+) -> None:
+    repository = AgentHarnessRepository(harness_db)
+    session = await repository.open_session(_request())
+
+    await repository.submit_user_command(
+        str(session.id),
+        _message("message-title", "  \n  "),
+    )
+
+    snapshot = await repository.snapshot(str(session.id))
+    assert snapshot.session.title is None
+
+
+@pytest.mark.asyncio
 async def test_message_submission_rolls_back_command_run_and_history_together(
     harness_db: AsyncSession,
     monkeypatch,

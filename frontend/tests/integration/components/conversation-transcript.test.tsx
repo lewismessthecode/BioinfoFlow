@@ -23,10 +23,16 @@ vi.mock("next-intl", () => ({
         "agentHistory.notice.title": "Agent notice",
         "agentHistory.notice.message.run_timeout_exceeded": `The run reached its ${values?.limitSeconds ?? ""}-second time limit.`,
         "agentRun.error.runtime_failed": "The Agent runtime stopped unexpectedly.",
+        "agentRun.spinner.announcement": "Agent is working",
+        "agentRun.spinner.tracing_clues": "Tracing clues…",
         "agentThinking.title": "Thinking",
         "agentThinking.show": "Show thinking",
         "agentThinking.hide": "Hide thinking",
-        "agentThinking.duration": `${values?.duration ?? 0}s`,
+        "agentThinking.duration": `${values?.seconds ?? 0}s`,
+        "agentActivity.details.show": "Show details",
+        "agentActivity.details.hide": "Hide details",
+        "agentActivity.status.running": "Running",
+        "agentActivity.status.completed": "Completed",
         "agentInteraction.approval.title": "Approval required",
         "agentInteraction.approval.announcement": "Approval required",
         "agentInteraction.approval.input": "Input",
@@ -85,6 +91,7 @@ const planView: ConversationViewModel = {
       updatedAt: "2026-08-16T08:00:01.000Z",
     },
   ],
+  runs: [],
   activeWork: null,
 }
 
@@ -203,6 +210,38 @@ describe("ConversationTranscript", () => {
     expect(screen.getByText("Provider request failed safely.")).toBeInTheDocument()
   })
 
+  it("does not render successful Run outcomes as transcript content", () => {
+    renderWithProviders(
+      <ConversationTranscript
+        view={{
+          ...planView,
+          transcript: [
+            {
+              type: "outcome",
+              id: "run:run-1:outcome",
+              runId: "run-1",
+              createdAt: "2026-08-16T08:00:03.000Z",
+              status: "completed",
+              reason: "completed",
+              error: null,
+            },
+          ],
+          runs: [
+            {
+              id: "run-1",
+              status: "completed",
+              startedAt: "2026-08-16T08:00:00.000Z",
+              completedAt: "2026-08-16T08:00:03.000Z",
+              executionConfig: null,
+            },
+          ],
+        }}
+      />,
+    )
+
+    expect(screen.queryByTestId("agent-run-outcome")).not.toBeInTheDocument()
+  })
+
   it("only enables the current run interaction and marks historical approvals expired", async () => {
     const user = userEvent.setup()
     const onRespond = vi.fn()
@@ -230,6 +269,15 @@ describe("ConversationTranscript", () => {
       <ConversationTranscript
         view={{
           ...planView,
+          runs: [
+            {
+              id: "run-1",
+              status: "completed",
+              startedAt: "2026-08-16T08:00:00.000Z",
+              completedAt: "2026-08-16T08:00:03.000Z",
+              executionConfig: null,
+            },
+          ],
           transcript: [
             {
               type: "interaction",
@@ -332,14 +380,14 @@ describe("ConversationTranscript", () => {
               references: [],
               streaming: false,
             },
+          ],
+          runs: [
             {
-              type: "outcome",
-              id: "run-1-outcome",
-              runId: "run-1",
-              createdAt: "2026-08-16T08:00:03.000Z",
+              id: "run-1",
               status: "completed",
-              reason: null,
-              error: null,
+              startedAt: "2026-08-16T08:00:00.000Z",
+              completedAt: "2026-08-16T08:00:02.000Z",
+              executionConfig: null,
             },
           ],
         }}
@@ -376,7 +424,7 @@ describe("ConversationTranscript", () => {
     )
   })
 
-  it("keeps active Activity Groups compact and collapsed by default", () => {
+  it("renders every activity as a visible single-line row with collapsed details", () => {
     renderWithProviders(
       <ConversationTranscript
         view={{
@@ -393,7 +441,7 @@ describe("ConversationTranscript", () => {
                   id: "activity-read",
                   callId: "call-read",
                   name: "read",
-                  displayName: "read",
+                  displayName: "Read",
                   category: "read",
                   summary: "Read workflow.nf",
                   status: "running",
@@ -402,6 +450,32 @@ describe("ConversationTranscript", () => {
                   error: null,
                   startedAt: "2026-08-16T08:00:00.000Z",
                   completedAt: null,
+                  details: [
+                    {
+                      id: "path",
+                      kind: "path",
+                      label: null,
+                      value: "workflow.nf",
+                      format: "path",
+                      copyable: false,
+                      truncated: false,
+                      redacted: false,
+                    },
+                  ],
+                },
+                {
+                  id: "activity-command",
+                  callId: "call-command",
+                  name: "bash",
+                  displayName: "Bash",
+                  category: "command",
+                  summary: "Bash: Check the workflow",
+                  status: "completed",
+                  input: {},
+                  output: null,
+                  error: null,
+                  startedAt: "2026-08-16T08:00:00.000Z",
+                  completedAt: "2026-08-16T08:00:01.000Z",
                 },
               ],
             },
@@ -417,9 +491,21 @@ describe("ConversationTranscript", () => {
     )
 
     const group = screen.getByTestId("agent-activity-group")
-    const disclosure = group.querySelector("button")
-    expect(disclosure).toHaveAttribute("aria-expanded", "false")
-    expect(disclosure).toHaveClass("h-9", "py-1")
-    expect(screen.queryByTestId("agent-tool-card")).not.toBeInTheDocument()
+    const rows = group.querySelectorAll("[data-agent-activity-row]")
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toHaveTextContent("Read")
+    expect(rows[0]).toHaveTextContent("workflow.nf")
+    expect(rows[1]).toHaveTextContent("Bash")
+    expect(rows[1]).toHaveTextContent("Check the workflow")
+    expect(group).not.toHaveTextContent(/tools running|tool activities/i)
+    expect(
+      screen.queryByText("workflow.nf", { selector: "[data-activity-detail]" }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: /Read.*Show details/i }),
+    ).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getByTestId("agent-live-status")).toHaveTextContent(
+      "Tracing clues…",
+    )
   })
 })
