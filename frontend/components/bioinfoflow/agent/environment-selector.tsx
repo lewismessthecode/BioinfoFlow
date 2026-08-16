@@ -6,10 +6,14 @@ import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import {
   composerSelectorChevronClassName,
-  composerSelectorIconClassName,
+  composerSelectorMenuHeaderClassName,
+  composerSelectorMenuItemClassName,
 } from "@/components/bioinfoflow/composer-selector-chip"
 import {
+  ComposerSelectorChevronSlot,
+  ComposerSelectorIconSlot,
   ComposerSelectorMenuSurface,
+  ComposerSelectorText,
   ComposerSelectorTrigger,
 } from "@/components/bioinfoflow/composer-selector"
 import {
@@ -128,35 +132,35 @@ export function EnvironmentSelector({
             aria-label={`${t("label")}: ${triggerLabel}`}
             className="max-w-[12rem]"
           >
-            {isPending ? (
-              <Loader2
-                className="size-3.5 animate-spin motion-reduce:animate-none"
+            <ComposerSelectorIconSlot>
+              {isPending ? (
+                <Loader2
+                  className="animate-spin motion-reduce:animate-none"
+                  aria-hidden="true"
+                />
+              ) : requestedSelection.mode === "manual" &&
+                requestedSelection.targetIds.every(
+                  (targetId) => targetById.get(targetId)?.kind === "local",
+                ) ? (
+                <Monitor aria-hidden="true" />
+              ) : (
+                <Server aria-hidden="true" />
+              )}
+            </ComposerSelectorIconSlot>
+            <ComposerSelectorText>
+              <span className="shrink-0">{modeLabel}</span>
+              {requestedSelection.mode === "manual" ? (
+                <span className="truncate text-foreground/65">
+                  · {targetSummary}
+                </span>
+              ) : null}
+            </ComposerSelectorText>
+            <ComposerSelectorChevronSlot>
+              <ChevronDown
+                className={composerSelectorChevronClassName}
                 aria-hidden="true"
               />
-            ) : requestedSelection.mode === "manual" &&
-              requestedSelection.targetIds.every(
-                (targetId) => targetById.get(targetId)?.kind === "local",
-              ) ? (
-              <Monitor
-                className={composerSelectorIconClassName}
-                aria-hidden="true"
-              />
-            ) : (
-              <Server
-                className={composerSelectorIconClassName}
-                aria-hidden="true"
-              />
-            )}
-            <span className="shrink-0">{modeLabel}</span>
-            {requestedSelection.mode === "manual" ? (
-              <span className="truncate text-foreground/65">
-                · {targetSummary}
-              </span>
-            ) : null}
-            <ChevronDown
-              className={composerSelectorChevronClassName}
-              aria-hidden="true"
-            />
+            </ComposerSelectorChevronSlot>
           </ComposerSelectorTrigger>
         </DropdownMenuTrigger>
         <ComposerSelectorMenuSurface
@@ -165,7 +169,7 @@ export function EnvironmentSelector({
           side="top"
           className="w-[19rem]"
         >
-          <div className="px-2 pb-1.5 pt-1 text-xs font-medium text-muted-foreground">
+          <div className={composerSelectorMenuHeaderClassName}>
             {t("title")}
           </div>
           <DropdownMenuRadioGroup
@@ -180,7 +184,10 @@ export function EnvironmentSelector({
                 value={mode}
                 disabled={controlsDisabled}
                 onSelect={(event) => event.preventDefault()}
-                className="items-start rounded-lg py-2 pl-8 pr-2 text-xs"
+                className={cn(
+                  composerSelectorMenuItemClassName,
+                  "items-start pl-8 pr-2",
+                )}
               >
                 <span className="grid gap-0.5">
                   <span className="font-medium text-foreground">
@@ -205,7 +212,10 @@ export function EnvironmentSelector({
                     toggleTarget(target.id, Boolean(checked))
                   }
                   onSelect={(event) => event.preventDefault()}
-                  className="items-start gap-2 rounded-lg py-2 pl-8 pr-2 text-xs"
+                  className={cn(
+                    composerSelectorMenuItemClassName,
+                    "items-start gap-2 pl-8 pr-2",
+                  )}
                 >
                   <span
                     aria-hidden="true"

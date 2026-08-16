@@ -122,10 +122,15 @@ describe("ModelSelector", () => {
       "data-variant",
       "composer",
     )
+    expect(screen.getByRole("combobox", { name: "GPT-4o mini" })).toHaveStyle({
+      fontSize: "11px",
+      lineHeight: "16px",
+    })
     expect(screen.getByRole("combobox", { name: "GPT-4o mini" })).toHaveClass(
-      "h-8",
-      "min-h-8",
-      "leading-4",
+      "h-11",
+      "min-h-11",
+      "lg:h-8",
+      "lg:min-h-8",
     )
     expect(
       screen.getByRole("combobox", { name: "GPT-4o mini" }),
@@ -134,6 +139,26 @@ describe("ModelSelector", () => {
       "h-[26px]",
       "leading-none",
     )
+  })
+
+  it("keeps the shared icon slot when the composer uses automatic model selection", () => {
+    render(
+      <ModelSelector
+        models={models}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        allowAuto
+        variant="composer"
+      />,
+    )
+
+    const trigger = screen.getByRole("combobox", { name: "auto" })
+    expect(
+      trigger.querySelector('[data-composer-selector-slot="icon"]'),
+    ).toHaveStyle({ width: "16px", height: "16px" })
+    expect(
+      trigger.querySelector('[data-composer-selector-slot="text"]'),
+    ).toHaveTextContent("auto")
   })
 
   it("uses endpoint identity for same-kind providers and kind identity for icons", () => {

@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useVoiceDictation } from "@/hooks/use-voice-dictation"
 import {
+  ArrowUpRight,
   Check,
   History,
   Loader2,
@@ -279,9 +280,9 @@ export function AgentComposer({
       <div
         data-testid="agent-composer-surface"
         className={cn(
-          "flex flex-col border border-border/60 bg-card/96 p-2 transition-[border-color,box-shadow,background-color] focus-within:border-foreground/20 focus-within:shadow-[0_18px_48px_-28px_color-mix(in_oklab,var(--foreground)_24%,transparent)] motion-reduce:transition-none",
+          "flex flex-col border border-border/85 bg-card p-2 transition-[border-color,box-shadow,background-color] focus-within:border-foreground/25 focus-within:shadow-[0_12px_28px_-24px_color-mix(in_oklab,var(--foreground)_22%,transparent)] motion-reduce:transition-none",
           placement === "draft"
-            ? "min-h-[160px] rounded-[24px] p-3 shadow-[0_24px_70px_-42px_color-mix(in_oklab,var(--foreground)_30%,transparent)]"
+            ? "min-h-[160px] rounded-[24px] p-3 shadow-[0_10px_24px_-22px_color-mix(in_oklab,var(--foreground)_24%,transparent)]"
             : "rounded-[18px] shadow-[0_12px_34px_-28px_color-mix(in_oklab,var(--foreground)_24%,transparent)]",
         )}
       >
@@ -325,7 +326,6 @@ export function AgentComposer({
           <PermissionMenu
             permissionMode={permissionMode}
             workspaceAccess={workspaceAccess}
-            activeRun={activeRun !== null}
             disabled={disabled}
             onPermissionModeChange={onPermissionModeChange}
           />
@@ -388,9 +388,13 @@ export function AgentComposer({
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
+                  size="icon-sm"
                   disabled={!hasContent || controlsDisabled}
                   onClick={() => void submit("steer")}
+                  aria-label={t(
+                    submitting === "steer" ? "steering" : "steer",
+                  )}
+                  data-agent-action="steer"
                 >
                   {submitting === "steer" ? (
                     <Loader2
@@ -398,8 +402,9 @@ export function AgentComposer({
                       aria-hidden="true"
                       className="animate-spin motion-reduce:animate-none"
                     />
-                  ) : null}
-                  {t(submitting === "steer" ? "steering" : "steer")}
+                  ) : (
+                    <ArrowUpRight aria-hidden="true" />
+                  )}
                 </Button>
                 <Button
                   type="button"
@@ -487,7 +492,7 @@ export function AgentComposer({
       {placement === "draft" && !value.trim() ? (
         <div
           data-testid="agent-command-discovery-hint"
-          className="pointer-events-none absolute inset-x-4 bottom-5 flex justify-center"
+          className="pointer-events-none absolute inset-x-4 bottom-10 flex justify-center"
         >
           {(() => {
             const hint = commandHints[commandHintIndex] ?? commandHints[0]
