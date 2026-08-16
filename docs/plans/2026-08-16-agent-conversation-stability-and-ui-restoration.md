@@ -311,3 +311,42 @@ The latest screenshot comparison adds these concrete acceptance criteria:
   canvas;
 - DOM/browser acceptance tests measure the three selector trigger heights and
   verify Navbar ownership, menu density, starter simplification, and both hints.
+
+## Final screenshot acceptance: editorial transcript and decision UI
+
+The DeepSeek and Codex reference screenshots refine the visual implementation
+without changing the Presentation Contract or Conversation View Model:
+
+- the main Agent canvas does not render a conversation title/model header card;
+  generated titles continue to update only the left conversation sidebar;
+- the Transcript reads as one continuous editorial document in a narrow column,
+  with assistant prose unboxed and operational blocks expressed as compact rows;
+- completed Thinking and tool/activity disclosures use a 34-40px summary row,
+  concise one-line previews, muted metadata, and tight 10-14px rhythm rather than
+  large nested cards or empty containers;
+- the dock Composer does not show the visible labels “Adjust current task” or
+  “Changes apply on the next run”; equivalent actions remain accessible through
+  icon controls and accessible names where the capability still exists;
+- Draft and dock Composer surfaces have a clearly distinguishable neutral
+  surface, a visible one-pixel boundary, and no glow, gradient, or heavy shadow;
+- model, permission, and environment selector text uses the same font size,
+  line-height, icon box, text wrapper, chevron box, and baseline in addition to
+  sharing the same outer trigger height;
+- the Draft rotating slash/mention hint remains associated with the Composer but
+  sits above the viewport edge with intentional breathing room;
+- Ask User renders as one focused decision surface: a quiet category label,
+  strong question, vertically stacked numbered option rows separated by
+  hairlines, small recommendation metadata, optional free text where supported,
+  and a compact navigation/action footer;
+- Ask User does not create a grid of nested option cards, and its Light/Dark
+  contrast remains semantic and keyboard/screen-reader accessible.
+
+### TDD tracer slices
+
+1. main-canvas header absence plus sidebar title refresh;
+2. compact Thinking/tool/activity row behavior and Transcript rhythm;
+3. Composer helper-label removal, surface contrast, hint position, and selector
+   glyph/baseline geometry;
+4. Ask User option selection, completion, keyboard semantics, and responsive
+   single-surface layout;
+5. Playwright geometry checks in Light/Dark desktop and a narrow viewport.
