@@ -17,6 +17,7 @@ from app.services.llm.provider_templates import (
     normalize_provider_base_url,
     provider_template_for_provider,
 )
+from app.services.llm.target_resolution import resolve_provider_endpoint
 from app.utils.exceptions import PermissionDeniedError
 
 
@@ -139,6 +140,65 @@ def test_anthropic_base_url_normalizes_to_messages_api_root(
     assert normalize_provider_base_url("anthropic", base_url) == expected
 
 
+@pytest.mark.parametrize(
+    ("kind", "base_url", "metadata", "expected"),
+    [
+        (
+            "deepseek",
+            None,
+            None,
+            "https://api.deepseek.com/v1",
+        ),
+        (
+            "anthropic",
+            None,
+            None,
+            "https://api.anthropic.com",
+        ),
+        (
+            "gemini",
+            None,
+            None,
+            "https://generativelanguage.googleapis.com",
+        ),
+        (
+            "openrouter",
+            None,
+            None,
+            "https://openrouter.ai/api/v1",
+        ),
+        (
+            "openai_compatible",
+            None,
+            None,
+            None,
+        ),
+        ("zai", None, None, "https://api.z.ai/api/paas/v4"),
+        ("kimi_code", None, None, "https://api.kimi.com/coding/v1"),
+        (
+            "deepseek",
+            "https://relay.example/deepseek",
+            None,
+            "https://relay.example/deepseek",
+        ),
+    ],
+)
+def test_resolve_provider_endpoint_uses_exact_registry_defaults_and_preserves_overrides(
+    kind,
+    base_url,
+    metadata,
+    expected,
+) -> None:
+    assert (
+        resolve_provider_endpoint(
+            kind,
+            base_url,
+            provider_metadata=metadata,
+        )
+        == expected
+    )
+
+
 def test_custom_provider_template_can_declare_responses_support() -> None:
     template = ProviderTemplate(
         id="custom-vllm",
@@ -177,7 +237,10 @@ async def test_openai_compatible_environment_bootstrap_persists_explicit_protoco
     db_session,
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("OPENAI_COMPATIBLE_BASE_URL", "https://relay.example/v1")
+    monkeypatch.setenv(
+        "OPENAI_COMPATIBLE_BASE_URL",
+        "https://relay.example/custom-api",
+    )
     monkeypatch.setenv("OPENAI_COMPATIBLE_MODEL", "gpt-test")
     monkeypatch.setenv("OPENAI_COMPATIBLE_WIRE_PROTOCOL", "responses")
     monkeypatch.setattr(
@@ -199,6 +262,7 @@ async def test_openai_compatible_environment_bootstrap_persists_explicit_protoco
         .one()
     )
     assert provider["wire_protocol"] == "responses"
+    assert provider["base_url"] == "https://relay.example/custom-api"
 
 
 @pytest.mark.asyncio

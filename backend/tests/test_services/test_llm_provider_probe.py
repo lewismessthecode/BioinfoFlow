@@ -7,11 +7,11 @@ from typing import Any
 
 import pytest
 
-from app.services.llm.credentials import CredentialMaterial
 from app.services.llm.probe import LlmProviderProbe
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ModelInvocation,
+    ModelTarget,
     ResponseStarted,
     TextDelta,
     TextPart,
@@ -49,6 +49,27 @@ def _clock(*values: float):
     return lambda: next(iterator)
 
 
+def _target(
+    *,
+    provider_kind: str = "openai_compatible",
+    wire_protocol: str = "chat_completions",
+    base_url: str | None = None,
+    api_key: str | None = None,
+) -> ModelTarget:
+    model_name = "gpt-test"
+    prefix = "openai/" if provider_kind == "openai_compatible" else ""
+    return ModelTarget(
+        endpoint_id="provider-1",
+        provider_kind=provider_kind,
+        model_name=model_name,
+        routed_model_name=f"{prefix}{model_name}",
+        wire_protocol=wire_protocol,
+        base_url=base_url,
+        network_access="public_only",
+        api_key=api_key,
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("wire_protocol", ["chat_completions", "responses"])
 async def test_probe_uses_selected_protocol_with_minimal_canonical_invocation(
@@ -63,13 +84,16 @@ async def test_probe_uses_selected_protocol_with_minimal_canonical_invocation(
     probe = LlmProviderProbe(gateway=gateway, clock=_clock(10.0, 10.042))
 
     result = await probe.probe(
-        endpoint_id="provider-1",
-        provider_kind="openai_compatible",
-        model_id="gpt-test",
-        wire_protocol=wire_protocol,
-        base_url="https://relay.example/v1",
-        network_access="public_only",
-        credential=CredentialMaterial(api_key=secret, source="stored"),
+        target=ModelTarget(
+            endpoint_id="provider-1",
+            provider_kind="openai_compatible",
+            model_name="gpt-test",
+            routed_model_name="openai/gpt-test",
+            wire_protocol=wire_protocol,
+            base_url="https://relay.example/v1",
+            network_access="public_only",
+            api_key=secret,
+        ),
         credential_required=True,
     )
 
@@ -102,13 +126,7 @@ async def test_probe_reports_missing_required_credential_without_calling_gateway
     gateway = FakeGateway()
 
     result = await LlmProviderProbe(gateway=gateway).probe(
-        endpoint_id="provider-1",
-        provider_kind="openai",
-        model_id="gpt-test",
-        wire_protocol="responses",
-        base_url=None,
-        network_access="public_only",
-        credential=CredentialMaterial(api_key=None, source="env"),
+        target=_target(provider_kind="openai", wire_protocol="responses"),
         credential_required=True,
     )
 
@@ -177,13 +195,7 @@ async def test_probe_returns_safe_structured_provider_failures(
         gateway=gateway,
         clock=_clock(5.0, 5.125),
     ).probe(
-        endpoint_id="provider-1",
-        provider_kind="openai_compatible",
-        model_id="gpt-test",
-        wire_protocol="responses",
-        base_url=None,
-        network_access="public_only",
-        credential=CredentialMaterial(api_key="secret", source="stored"),
+        target=_target(wire_protocol="responses", api_key="secret"),
         credential_required=True,
     )
 
@@ -208,13 +220,7 @@ async def test_probe_sanitizes_unexpected_failures_without_logging_or_chaining(
         gateway=gateway,
         clock=_clock(1.0, 1.005),
     ).probe(
-        endpoint_id="provider-1",
-        provider_kind="openai_compatible",
-        model_id="gpt-test",
-        wire_protocol="chat_completions",
-        base_url=None,
-        network_access="public_only",
-        credential=CredentialMaterial(api_key=secret, source="stored"),
+        target=_target(api_key=secret),
         credential_required=True,
     )
 
@@ -238,13 +244,11 @@ async def test_probe_deadline_returns_safe_retryable_timeout_for_hanging_gateway
 
     result = await asyncio.wait_for(
         probe.probe(
-            endpoint_id="provider-1",
-            provider_kind="openai_compatible",
-            model_id="gpt-test",
-            wire_protocol="responses",
-            base_url="https://relay.example/v1",
-            network_access="public_only",
-            credential=CredentialMaterial(api_key=secret, source="stored"),
+            target=_target(
+                wire_protocol="responses",
+                base_url="https://relay.example/v1",
+                api_key=secret,
+            ),
             credential_required=True,
         ),
         timeout=0.5,

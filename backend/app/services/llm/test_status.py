@@ -11,7 +11,7 @@ from app.services.llm.credentials import (
     credential_hmac_digest,
     resolve_credential_material,
 )
-from app.services.llm.provider_templates import normalize_provider_base_url
+from app.services.llm.target_resolution import resolve_provider_endpoint
 
 
 _FINGERPRINT_DOMAIN = "llm-provider-test-status.v1"
@@ -50,9 +50,10 @@ def compute_provider_test_fingerprint(
     payload = {
         "provider": {
             "kind": str(provider.kind),
-            "base_url": normalize_provider_base_url(
+            "base_url": resolve_provider_endpoint(
                 str(provider.kind),
                 provider.base_url,
+                provider_metadata=provider.provider_metadata,
             ),
             "wire_protocol": str(provider.wire_protocol),
             "template_id": str(template_id) if template_id is not None else None,

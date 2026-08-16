@@ -18,8 +18,8 @@ from app.services.llm.provider_templates import (
     ModelTemplate,
     ProviderTemplate,
     list_bootstrap_provider_templates,
-    normalize_provider_base_url,
 )
+from app.services.llm.target_resolution import resolve_provider_endpoint
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,11 @@ async def sync_environment_llm_catalog(
             base_url = os.getenv(env_base_url_var)
         if not base_url:
             base_url = template.default_base_url
-        base_url = normalize_provider_base_url(template.kind, base_url)
+        base_url = resolve_provider_endpoint(
+            template.kind,
+            base_url,
+            provider_metadata={"providerTemplate": template.id},
+        )
 
         provider = await _get_env_managed_provider(provider_repo, template)
         metadata = {
