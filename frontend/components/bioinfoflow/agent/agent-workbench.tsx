@@ -11,7 +11,10 @@ import type { RefObject } from "react"
 import type { ReactNode } from "react"
 import { useLocale, useTranslations } from "next-intl"
 
-import { AgentComposer } from "@/components/bioinfoflow/agent/agent-composer"
+import {
+  AgentCommandDiscoveryHint,
+  AgentComposer,
+} from "@/components/bioinfoflow/agent/agent-composer"
 import type {
   AgentEnvironmentSelection,
   AgentEnvironmentTarget,
@@ -233,6 +236,7 @@ function DraftWorkbench({
   const t = useTranslations("agentWorkbench")
   const locale = useLocale()
   const [error, setError] = useState<string | null>(null)
+  const [draftEmpty, setDraftEmpty] = useState(true)
   const { models, selectedModel, setSelectedModel, isLoading } =
     useLlmSettings()
   const generatedStarterPrompts = useAgentStarterPrompts(
@@ -301,58 +305,62 @@ function DraftWorkbench({
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         data-testid="agent-draft-entry"
-        className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-2 py-12 sm:px-6"
+        className="agent-halo-surface relative flex min-h-0 flex-1 items-center justify-center px-4 py-8"
       >
         <div
-          aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-1/2 h-80 w-[min(90vw,54rem)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/[0.025] blur-3xl dark:bg-foreground/[0.018]"
-        />
-        <AgentEmptyState compact />
-        {error ? <WorkbenchError message={error} embedded /> : null}
-        <AgentComposer
-          placement="draft"
-          permissionMode={permissionMode}
-          workspaceAccess={workspaceAccess}
-          activeRun={null}
-          onSendMessage={send}
-          onSteer={send}
-          onCancel={async () => {}}
-          onPermissionModeChange={onPermissionModeChange}
-          contextInputs={shared.contextInputs}
-          onRemoveContextInput={shared.removeContextInput}
-          onContextSubmitted={() => shared.setContextInputs([])}
-          textareaRef={shared.textareaRef}
-          contextControls={
-            <AgentContextPicker
-              projectId={shared.projectId}
-              sessionId={draftSessionId}
-              ensureSession={ensureDraftSession}
-              onAdd={shared.addContextInput}
-            />
-          }
-          modelControls={
-            <ModelSelector
-              models={models}
-              selectedModel={selectedModel}
-              onSelectModel={(selection) =>
-                void updateDraftModelSelection(selection)
-              }
-              disabled={isLoading}
-              variant="composer"
-            />
-          }
-          environmentTargets={shared.environmentTargets}
-          environmentSelection={shared.environmentSelection}
-          effectiveEnvironmentSelection={shared.effectiveEnvironmentSelection}
-          environmentSelectionPending={shared.environmentSelectionPending}
-          onEnvironmentSelectionChange={shared.onEnvironmentSelectionChange}
-          starterPrompts={
-            starterPrompts ??
-            (generatedStarterPrompts.prompts.length > 0
-              ? generatedStarterPrompts.prompts
-              : fallbackStarterPrompts)
-          }
-        />
+          data-testid="agent-draft-stage"
+          className="agent-center-stage relative w-full max-w-[42rem] -translate-y-8"
+        >
+          <AgentEmptyState compact />
+          {error ? <WorkbenchError message={error} embedded /> : null}
+          <AgentComposer
+            placement="draft"
+            permissionMode={permissionMode}
+            workspaceAccess={workspaceAccess}
+            activeRun={null}
+            onSendMessage={send}
+            onSteer={send}
+            onCancel={async () => {}}
+            onPermissionModeChange={onPermissionModeChange}
+            contextInputs={shared.contextInputs}
+            onRemoveContextInput={shared.removeContextInput}
+            onContextSubmitted={() => shared.setContextInputs([])}
+            textareaRef={shared.textareaRef}
+            contextControls={
+              <AgentContextPicker
+                projectId={shared.projectId}
+                sessionId={draftSessionId}
+                ensureSession={ensureDraftSession}
+                onAdd={shared.addContextInput}
+              />
+            }
+            modelControls={
+              <ModelSelector
+                models={models}
+                selectedModel={selectedModel}
+                onSelectModel={(selection) =>
+                  void updateDraftModelSelection(selection)
+                }
+                disabled={isLoading}
+                variant="composer"
+              />
+            }
+            environmentTargets={shared.environmentTargets}
+            environmentSelection={shared.environmentSelection}
+            effectiveEnvironmentSelection={shared.effectiveEnvironmentSelection}
+            environmentSelectionPending={shared.environmentSelectionPending}
+            onEnvironmentSelectionChange={shared.onEnvironmentSelectionChange}
+            starterPrompts={
+              starterPrompts ??
+              (generatedStarterPrompts.prompts.length > 0
+                ? generatedStarterPrompts.prompts
+                : fallbackStarterPrompts)
+            }
+            renderCommandDiscoveryHint={false}
+            onDraftEmptyChange={setDraftEmpty}
+          />
+        </div>
+        <AgentCommandDiscoveryHint visible={draftEmpty} />
       </div>
     </div>
   )
@@ -612,33 +620,29 @@ function ConversationConnectionStatus({
 
 function AgentEmptyState({ compact = false }: { compact?: boolean }) {
   const t = useTranslations("agentWorkbench")
+  if (compact) {
+    return (
+      <h1 className="mb-4 text-center text-[15px] font-medium tracking-normal text-muted-foreground">
+        {t("emptyTitle")}
+      </h1>
+    )
+  }
+
   return (
     <div
-      className={cn(
-        "relative grid place-items-center px-6 text-center",
-        compact ? "pb-5" : "min-h-0 flex-1 py-10",
-      )}
+      className="relative grid min-h-0 flex-1 place-items-center px-6 py-10 text-center"
     >
       <div className="max-w-xl">
-        {!compact ? (
-          <Bot
-            aria-hidden="true"
-            className="mx-auto mb-4 size-6 text-muted-foreground/65"
-          />
-        ) : null}
-        <h2
-          className={cn(
-            "text-balance font-semibold tracking-[-0.025em]",
-            compact ? "text-xl font-medium sm:text-[1.35rem]" : "text-base",
-          )}
-        >
+        <Bot
+          aria-hidden="true"
+          className="mx-auto mb-4 size-6 text-muted-foreground/65"
+        />
+        <h2 className="text-balance text-base font-semibold tracking-[-0.025em]">
           {t("emptyTitle")}
         </h2>
-        {!compact ? (
-          <p className="mt-2 text-pretty text-sm leading-6 text-muted-foreground">
-            {t("emptyDescription")}
-          </p>
-        ) : null}
+        <p className="mt-2 text-pretty text-sm leading-6 text-muted-foreground">
+          {t("emptyDescription")}
+        </p>
       </div>
     </div>
   )

@@ -53,6 +53,43 @@ export function ComposerSelectorTrigger({
   )
 }
 
+type ComposerSelectorFieldProps = ComponentProps<"div"> & {
+  feedback?: ReactNode
+  feedbackId?: string
+  feedbackClassName?: string
+}
+
+export function ComposerSelectorField({
+  children,
+  feedback,
+  feedbackId,
+  feedbackClassName,
+  className,
+  ...props
+}: ComposerSelectorFieldProps) {
+  return (
+    <div
+      {...props}
+      data-composer-selector-field="true"
+      className={cn("relative min-w-0 shrink-0", className)}
+    >
+      {children}
+      {feedback ? (
+        <div
+          id={feedbackId}
+          data-composer-selector-feedback="true"
+          className={cn(
+            "absolute bottom-full left-2 z-20 mb-1.5 max-w-[18rem] rounded-lg border border-border/70 bg-popover px-2 py-1.5 text-[11px] leading-4 text-muted-foreground shadow-[0_8px_24px_rgba(15,15,15,0.06)]",
+            feedbackClassName,
+          )}
+        >
+          {feedback}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 type ComposerSelectorSlotProps = {
   presentation?: "default" | "composer"
   children: ReactNode
@@ -144,6 +181,75 @@ export function ComposerSelectorChevronSlot({
       }
     >
       {children}
+    </span>
+  )
+}
+
+type ComposerSelectorOptionContentProps = {
+  icon: ReactNode
+  title: ReactNode
+  description?: ReactNode
+  trailing?: ReactNode
+  className?: string
+  iconClassName?: string
+  titleClassName?: string
+  descriptionClassName?: string
+  trailingClassName?: string
+}
+
+export function ComposerSelectorOptionContent({
+  icon,
+  title,
+  description,
+  trailing,
+  className,
+  iconClassName,
+  titleClassName,
+  descriptionClassName,
+  trailingClassName,
+}: ComposerSelectorOptionContentProps) {
+  return (
+    <span
+      data-composer-selector-option-content="true"
+      className={cn(
+        "grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)_auto] gap-2",
+        description ? "items-start" : "items-center",
+        className,
+      )}
+    >
+      <span
+        className={cn(
+          "inline-flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5",
+          iconClassName,
+        )}
+      >
+        {icon}
+      </span>
+      <span className="grid min-w-0 gap-0.5">
+        <span className={cn("truncate font-medium leading-4", titleClassName)}>
+          {title}
+        </span>
+        {description ? (
+          <span
+            className={cn(
+              "whitespace-normal text-[11px] leading-4 text-muted-foreground",
+              descriptionClassName,
+            )}
+          >
+            {description}
+          </span>
+        ) : null}
+      </span>
+      {trailing ? (
+        <span
+          className={cn(
+            "inline-flex size-4 shrink-0 items-center justify-center",
+            trailingClassName,
+          )}
+        >
+          {trailing}
+        </span>
+      ) : null}
     </span>
   )
 }

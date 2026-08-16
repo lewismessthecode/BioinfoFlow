@@ -95,6 +95,7 @@ const composerModels: ProviderModels[] = [
         id: "gpt-5.6",
         name: "GPT-5.6",
         context_window: 128000,
+        supports_vision: false,
       },
     ],
   },
@@ -212,11 +213,22 @@ describe("AgentComposer", () => {
     expect(screen.getByTestId("agent-composer")).not.toHaveClass(
       "bg-gradient-to-t",
     )
-    expect(screen.getByTestId("agent-composer")).toHaveClass("max-w-[42rem]")
+    expect(screen.getByTestId("agent-composer")).toHaveClass(
+      "max-w-[42rem]",
+      "px-0",
+    )
+    expect(screen.getByTestId("agent-composer-draft-shell")).toHaveClass(
+      "relative",
+    )
     expect(screen.getByTestId("agent-composer-surface")).toHaveClass(
-      "min-h-[160px]",
-      "border-border/85",
+      "rounded-[24px]",
+      "border-border",
       "bg-card",
+      "p-2",
+    )
+    expect(screen.getByTestId("agent-composer-surface")).not.toHaveClass(
+      "min-h-[160px]",
+      "p-3",
     )
     expect(screen.getByTestId("agent-composer-controls")).toHaveClass(
       "items-center",
@@ -270,6 +282,37 @@ describe("AgentComposer", () => {
     )
   })
 
+  it("keeps steady composer selectors in one fixed-height field without empty feedback", () => {
+    const view = renderComposer({
+      placement: "draft",
+      modelControls: (
+        <ModelSelector
+          models={composerModels}
+          selectedModel={{ provider: "provider-openai", model: "gpt-5.6" }}
+          onSelectModel={vi.fn()}
+          variant="composer"
+        />
+      ),
+    })
+
+    const fields = view.container.querySelectorAll(
+      '[data-composer-selector-field="true"]',
+    )
+    expect(fields).toHaveLength(3)
+    for (const field of fields) {
+      expect(field).toHaveClass("relative", "shrink-0")
+      expect(
+        field.querySelector('[data-composer-selector-feedback="true"]'),
+      ).not.toBeInTheDocument()
+    }
+
+    expect(
+      screen.getByRole("button", {
+        name: "Approval mode: Approve safe actions",
+      }),
+    ).not.toHaveAttribute("aria-describedby")
+  })
+
   it("uses the shared selector menu surface for the permission card", async () => {
     stubMatchMedia(false)
     const user = userEvent.setup()
@@ -295,6 +338,61 @@ describe("AgentComposer", () => {
     ).toHaveClass("min-h-11", "lg:min-h-8", "py-2", "text-xs", "leading-4")
   })
 
+  it("uses one option presentation across model, permission, and environment menus", async () => {
+    stubMatchMedia(false)
+    vi.stubGlobal(
+      "ResizeObserver",
+      class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
+    Element.prototype.scrollIntoView = vi.fn()
+    const user = userEvent.setup()
+    renderComposer({
+      placement: "draft",
+      modelControls: (
+        <ModelSelector
+          models={composerModels}
+          selectedModel={{ provider: "provider-openai", model: "gpt-5.6" }}
+          onSelectModel={vi.fn()}
+          variant="composer"
+        />
+      ),
+    })
+
+    const cases = [
+      [screen.getByRole("combobox", { name: "GPT-5.6" }), 2],
+      [
+        screen.getByRole("button", {
+          name: "Approval mode: Approve safe actions",
+        }),
+        3,
+      ],
+      [
+        screen.getByRole("button", { name: "Execution environments: Auto" }),
+        2,
+      ],
+    ] as const
+
+    for (const [trigger, minimumOptions] of cases) {
+      await user.click(trigger)
+      const menu = await screen.findByTestId("composer-selector-menu")
+      expect(
+        menu.querySelectorAll(
+          '[data-composer-selector-option-content="true"]',
+        ).length,
+      ).toBeGreaterThanOrEqual(minimumOptions)
+      await user.keyboard("{Escape}")
+      await waitFor(() =>
+        expect(
+          screen.queryByTestId("composer-selector-menu"),
+        ).not.toBeInTheDocument(),
+      )
+    }
+  })
+
   it("shows starter prompts only in the draft and moves a selected prompt into the editor", async () => {
     const user = userEvent.setup()
     const view = renderComposer({
@@ -313,6 +411,12 @@ describe("AgentComposer", () => {
     expect(screen.getByTestId("agent-starter-prompt-list")).not.toHaveClass(
       "border-y",
     )
+    expect(screen.getByTestId("agent-starter-prompt-list")).toHaveClass(
+      "absolute",
+      "inset-x-0",
+      "top-full",
+      "mt-5",
+    )
     expect(
       within(screen.getByTestId("agent-starter-prompt-list")).getAllByRole(
         "button",
@@ -320,34 +424,44 @@ describe("AgentComposer", () => {
     ).toHaveLength(3)
     expect(
       screen.getByTestId("agent-starter-prompt-list").querySelectorAll(
-        '[data-starter-slot-icon="check"]',
+        '[data-starter-slot-icon="circle-check"]',
       ),
     ).toHaveLength(1)
     expect(
       screen
         .getByTestId("agent-starter-prompt-list")
-        .querySelector('[data-starter-slot-icon="check"]'),
-    ).toHaveClass("lucide-check")
+        .querySelector('[data-starter-slot-icon="circle-check"]'),
+    ).toHaveClass("lucide-circle-check")
     expect(
       screen.getByTestId("agent-starter-prompt-list").querySelectorAll(
-        '[data-starter-slot-icon="message-square"]',
+        '[data-starter-slot-icon="message-circle"]',
       ),
     ).toHaveLength(1)
     expect(
       screen
         .getByTestId("agent-starter-prompt-list")
-        .querySelector('[data-starter-slot-icon="message-square"]'),
-    ).toHaveClass("lucide-message-square")
+        .querySelector('[data-starter-slot-icon="message-circle"]'),
+    ).toHaveClass("lucide-message-circle")
     expect(
       screen.getByTestId("agent-starter-prompt-list").querySelectorAll(
-        '[data-starter-slot-icon="history"]',
+        '[data-starter-slot-icon="rotate-ccw"]',
       ),
     ).toHaveLength(1)
     expect(
       screen
         .getByTestId("agent-starter-prompt-list")
-        .querySelector('[data-starter-slot-icon="history"]'),
-    ).toHaveClass("lucide-history")
+        .querySelector('[data-starter-slot-icon="rotate-ccw"]'),
+    ).toHaveClass("lucide-rotate-ccw")
+    const starterRows = within(
+      screen.getByTestId("agent-starter-prompt-list"),
+    ).getAllByRole("button")
+    expect(starterRows[0]).toHaveClass(
+      "min-h-[32px]",
+      "sm:min-h-[35px]",
+      "px-4",
+    )
+    expect(starterRows[0]).not.toHaveClass("border-t")
+    expect(starterRows[1]).toHaveClass("border-t", "border-border/75")
     await user.click(
       screen.getByRole("button", { name: "Review the latest run" }),
     )
@@ -383,7 +497,8 @@ describe("AgentComposer", () => {
       "Type/to choose a skill",
     )
     expect(screen.getByTestId("agent-command-discovery-hint")).toHaveClass(
-      "bottom-10",
+      "bottom-24",
+      "sm:bottom-12",
     )
     fireEvent.change(
       screen.getByRole("textbox", { name: "Message the agent" }),
@@ -778,7 +893,7 @@ describe("AgentComposer", () => {
   it("offers a retry when an approval mode update fails", async () => {
     const user = userEvent.setup()
     const onPermissionModeChange = vi
-      .fn<(mode: AgentPermissionMode) => Promise<void>>()
+      .fn<(mode: ConversationPermissionMode) => Promise<void>>()
       .mockRejectedValueOnce(new Error("conflict"))
       .mockResolvedValueOnce(undefined)
     renderComposer({ onPermissionModeChange })
@@ -807,7 +922,8 @@ describe("AgentComposer", () => {
     const onDraftModeChange = vi.fn()
 
     function DraftComposer() {
-      const [mode, setMode] = useState<AgentPermissionMode>("ask_dangerous")
+      const [mode, setMode] =
+        useState<ConversationPermissionMode>("ask_dangerous")
       return (
         <AgentComposer
           permissionMode={mode}

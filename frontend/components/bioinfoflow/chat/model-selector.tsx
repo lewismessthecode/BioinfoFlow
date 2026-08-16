@@ -15,8 +15,10 @@ import {
 } from "@/components/bioinfoflow/composer-selector-chip"
 import {
   ComposerSelectorChevronSlot,
+  ComposerSelectorField,
   ComposerSelectorIconSlot,
   ComposerSelectorMenuSurface,
+  ComposerSelectorOptionContent,
   ComposerSelectorText,
   ComposerSelectorTrigger,
 } from "@/components/bioinfoflow/composer-selector"
@@ -87,7 +89,7 @@ export function ModelSelector({
   const displayLabel = currentModel?.name ?? (allowAuto ? t("auto") : t("noProviders"))
 
   if (models.length === 0) {
-    return (
+    const configureTrigger = (
       <ComposerSelectorTrigger
         presentation={variant}
         variant="ghost"
@@ -112,9 +114,14 @@ export function ModelSelector({
         </Link>
       </ComposerSelectorTrigger>
     )
+    return isComposer ? (
+      <ComposerSelectorField>{configureTrigger}</ComposerSelectorField>
+    ) : (
+      configureTrigger
+    )
   }
 
-  return (
+  const selector = (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <ComposerSelectorTrigger
@@ -192,13 +199,27 @@ export function ModelSelector({
                       isComposer ? composerSelectorMenuItemClassName : "px-3 py-2",
                     )}
                   >
-                    <div className={cn("flex items-center", isComposer ? "gap-2" : "gap-2.5")}>
-                      <SettingsIcon className={cn(isComposer ? "h-3 w-3" : "h-3.5 w-3.5", "opacity-60")} />
-                      <span className={isComposer ? "text-xs" : "text-sm"}>{t("auto")}</span>
-                    </div>
-                    {selectedModel === null ? (
-                      <Check className={cn(isComposer ? "h-3 w-3" : "h-3.5 w-3.5", "text-primary")} />
-                    ) : null}
+                    {isComposer ? (
+                      <ComposerSelectorOptionContent
+                        icon={<SettingsIcon className="opacity-60" />}
+                        title={t("auto")}
+                        trailing={
+                          selectedModel === null ? (
+                            <Check className="text-primary" />
+                          ) : null
+                        }
+                      />
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2.5">
+                          <SettingsIcon className="h-3.5 w-3.5 opacity-60" />
+                          <span className="text-sm">{t("auto")}</span>
+                        </div>
+                        {selectedModel === null ? (
+                          <Check className="h-3.5 w-3.5 text-primary" />
+                        ) : null}
+                      </>
+                    )}
                   </CommandItem>
                 </CommandGroup>
                 <CommandSeparator />
@@ -232,20 +253,44 @@ export function ModelSelector({
                         isComposer ? composerSelectorMenuItemClassName : "px-3 py-2",
                       )}
                     >
-                      <div className={cn("flex items-center", isComposer ? "gap-2" : "gap-2.5")}>
-                        <ProviderIcon
-                          provider={providerGroup.provider_kind}
-                          providerLabel={providerGroup.label}
-                          baseUrl={providerGroup.base_url}
-                          modelId={model.id}
-                          modelName={model.name}
-                          size={isComposer ? 13 : 14}
+                      {isComposer ? (
+                        <ComposerSelectorOptionContent
+                          icon={
+                            <ProviderIcon
+                              provider={providerGroup.provider_kind}
+                              providerLabel={providerGroup.label}
+                              baseUrl={providerGroup.base_url}
+                              modelId={model.id}
+                              modelName={model.name}
+                              size={13}
+                            />
+                          }
+                          title={model.name}
+                          trailing={
+                            selectedModel?.provider === providerGroup.provider &&
+                            selectedModel?.model === model.id ? (
+                              <Check className="text-primary" />
+                            ) : null
+                          }
                         />
-                        <span className={isComposer ? "text-xs" : "text-sm"}>{model.name}</span>
-                      </div>
-                      {selectedModel?.provider === providerGroup.provider &&
-                      selectedModel?.model === model.id && (
-                        <Check className={cn(isComposer ? "h-3 w-3" : "h-3.5 w-3.5", "text-primary")} />
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2.5">
+                            <ProviderIcon
+                              provider={providerGroup.provider_kind}
+                              providerLabel={providerGroup.label}
+                              baseUrl={providerGroup.base_url}
+                              modelId={model.id}
+                              modelName={model.name}
+                              size={14}
+                            />
+                            <span className="text-sm">{model.name}</span>
+                          </div>
+                          {selectedModel?.provider === providerGroup.provider &&
+                          selectedModel?.model === model.id ? (
+                            <Check className="h-3.5 w-3.5 text-primary" />
+                          ) : null}
+                        </>
                       )}
                     </CommandItem>
                   ))}
@@ -262,10 +307,20 @@ export function ModelSelector({
                 )}
               >
                 <Link href="/settings?section=providers" onClick={() => setOpen(false)}>
-                  <SettingsIcon className={cn(isComposer ? "h-3 w-3" : "h-3.5 w-3.5", "mr-2 opacity-50")} />
-                  <span className="text-xs text-muted-foreground">
-                    {t("configure")}
-                  </span>
+                  {isComposer ? (
+                    <ComposerSelectorOptionContent
+                      icon={<SettingsIcon className="opacity-50" />}
+                      title={t("configure")}
+                      titleClassName="text-muted-foreground"
+                    />
+                  ) : (
+                    <>
+                      <SettingsIcon className="mr-2 h-3.5 w-3.5 opacity-50" />
+                      <span className="text-xs text-muted-foreground">
+                        {t("configure")}
+                      </span>
+                    </>
+                  )}
                 </Link>
               </CommandItem>
             </CommandGroup>
@@ -273,5 +328,10 @@ export function ModelSelector({
         </Command>
       </ComposerSelectorMenuSurface>
     </Popover>
+  )
+  return isComposer ? (
+    <ComposerSelectorField>{selector}</ComposerSelectorField>
+  ) : (
+    selector
   )
 }

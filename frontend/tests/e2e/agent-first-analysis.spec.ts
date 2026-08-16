@@ -101,7 +101,7 @@ test.describe("Agent workbench live run journey", () => {
     expect(desktopGeometry).not.toBeNull()
     expect(desktopGeometry?.centerDelta).toBeLessThan(2)
     expect(desktopGeometry?.composerWidth).toBeLessThanOrEqual(672)
-    expect(desktopGeometry?.composerHeight).toBeGreaterThanOrEqual(160)
+    expect(desktopGeometry?.composerHeight).toBe(138)
     expect(desktopGeometry?.selectorMetrics).toHaveLength(3)
     expect(
       new Set(desktopGeometry?.selectorMetrics.map(({ height }) => height)).size,
@@ -176,7 +176,7 @@ test.describe("Agent workbench live run journey", () => {
     ).toBeVisible()
 
     const permissionButton = page.getByRole("button", {
-      name: "Approval mode: Approve safe actions",
+      name: "Permissions: Auto",
     })
     await permissionButton.click()
     const permissionMenu = page.getByTestId("composer-selector-menu")
@@ -369,10 +369,7 @@ test.describe("Agent workbench live run journey", () => {
       }),
     ).toBeVisible({ timeout: 20_000 })
     await expect(agent.activeRun).toHaveCount(0)
-    const outcome = agent.transcript
-      .getByTestId("agent-run-outcome")
-      .filter({ hasText: "Completed" })
-    await expect(outcome).toBeVisible()
+    await expect(agent.transcript.getByTestId("agent-run-outcome")).toHaveCount(0)
   })
 
   test("renders a structured plan without a duplicate tool card", async ({
@@ -423,11 +420,12 @@ test.describe("Agent workbench live run journey", () => {
       }),
     ).toBeVisible({ timeout: 20_000 })
     await expect(agent.activityGroups).toHaveCount(1)
-    const disclosure = agent.activityGroups.getByRole("button", {
-      name: "2 tools running in parallel",
-    })
-    await expect(disclosure).toBeVisible()
-    expect(await disclosure.evaluate((button) => button.getBoundingClientRect().height)).toBe(36)
+    const rows = agent.activityGroups.locator("[data-agent-activity-row]")
+    await expect(rows).toHaveCount(2)
+    await expect(agent.activityGroups).not.toContainText(/tools running/i)
+    expect(
+      await rows.first().evaluate((row) => row.getBoundingClientRect().height),
+    ).toBeLessThanOrEqual(36)
   })
 
   test("labels an ordered tool batch as sequential activity", async ({
@@ -448,10 +446,10 @@ test.describe("Agent workbench live run journey", () => {
     await expect(
       agent.transcript.getByText("Both serial tools completed.", { exact: true }),
     ).toBeVisible({ timeout: 20_000 })
+    await expect(agent.activityGroups).toHaveCount(1)
     await expect(
-      agent.activityGroups.getByRole("button", {
-        name: "2 tools running in sequence",
-      }),
-    ).toBeVisible()
+      agent.activityGroups.locator("[data-agent-activity-row]"),
+    ).toHaveCount(2)
+    await expect(agent.activityGroups).not.toContainText(/tools running/i)
   })
 })
