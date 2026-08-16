@@ -194,11 +194,12 @@ describe("ActiveRun", () => {
     const toolGroup = screen.getByRole("button", {
       name: "2 tools running in parallel",
     })
-    expect(toolGroup).toHaveAttribute("aria-expanded", "true")
-    expect(screen.getAllByTestId("agent-tool-card")).toHaveLength(3)
+    expect(toolGroup).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getAllByTestId("agent-tool-card")).toHaveLength(1)
 
     await user.click(toolGroup)
-    expect(toolGroup).toHaveAttribute("aria-expanded", "false")
+    expect(toolGroup).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getAllByTestId("agent-tool-card")).toHaveLength(3)
   })
 
   it("keeps failed live tool details private until the user expands them", async () => {
