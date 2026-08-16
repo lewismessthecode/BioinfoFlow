@@ -300,7 +300,7 @@ function environmentSelectionFromSession(
 ): AgentEnvironmentSelection {
   const scope = session.environment_scope
   return scope?.mode === "manual"
-    ? { mode: "manual", targetIds: scope.selected_environment_ids }
+    ? { mode: "manual", targetIds: scope.environment_ids }
     : { mode: "auto" }
 }
 

@@ -1,8 +1,8 @@
 import type {
   ActiveRunView,
   HistoryEntry,
+  PresentationSnapshot,
   RunView,
-  SessionSnapshot,
 } from "@/lib/agent/contracts"
 
 const now = "2026-08-16T08:00:00.000Z"
@@ -74,7 +74,9 @@ function activeRunFixture(
   }
 }
 
-export const emptySnapshotFixture: SessionSnapshot = {
+export const emptySnapshotFixture: PresentationSnapshot = {
+  presentation_protocol: "bioinfoflow.agent.presentation",
+  presentation_schema_version: 1,
   session: {
     id: "session-1",
     user_id: "user-1",
@@ -91,6 +93,8 @@ export const emptySnapshotFixture: SessionSnapshot = {
     },
     permission_mode: "ask_dangerous",
     workspace_access: "read_write",
+    settings_revision: 1,
+    environment_scope: { mode: "auto", environment_ids: null },
     status: "active",
     created_at: now,
     updated_at: now,
@@ -100,7 +104,7 @@ export const emptySnapshotFixture: SessionSnapshot = {
   active_run: null,
 }
 
-export const completedSnapshotFixture: SessionSnapshot = {
+export const completedSnapshotFixture: PresentationSnapshot = {
   ...emptySnapshotFixture,
   runs: [
     runFixture({
@@ -175,7 +179,7 @@ export const completedSnapshotFixture: SessionSnapshot = {
   active_run: null,
 }
 
-export const activeSnapshotFixture: SessionSnapshot = {
+export const activeSnapshotFixture: PresentationSnapshot = {
   ...emptySnapshotFixture,
   runs: [runFixture()],
   active_run: activeRunFixture({
@@ -220,7 +224,7 @@ export const activeSnapshotFixture: SessionSnapshot = {
   }),
 }
 
-export const interactionSnapshotFixture: SessionSnapshot = {
+export const interactionSnapshotFixture: PresentationSnapshot = {
   ...emptySnapshotFixture,
   runs: [runFixture({ status: "waiting_user", phase: "interaction" })],
   active_run: activeRunFixture({
@@ -247,7 +251,7 @@ export const interactionSnapshotFixture: SessionSnapshot = {
   }),
 }
 
-export const failedSnapshotFixture: SessionSnapshot = {
+export const failedSnapshotFixture: PresentationSnapshot = {
   ...emptySnapshotFixture,
   runs: [
     runFixture({

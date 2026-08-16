@@ -9,7 +9,6 @@ import {
   listAgentSessions,
   updateAgentSession,
 } from "@/lib/agent/client"
-import type { SessionSnapshot } from "@/lib/agent/contracts"
 import { apiRequest, buildApiUrl } from "@/lib/api"
 
 import { emptySnapshotFixture } from "./fixtures/presentation-contract"
@@ -81,7 +80,7 @@ describe("agent client", () => {
   })
 
   it("creates a session and returns its authoritative snapshot", async () => {
-    const snapshot = { session: { id: "session-1" } } as SessionSnapshot
+    const snapshot = emptySnapshotFixture
     mockedApiRequest.mockResolvedValueOnce({ data: snapshot })
 
     await expect(
@@ -115,7 +114,7 @@ describe("agent client", () => {
   })
 
   it("creates a session from a provider and model when no catalog id exists", async () => {
-    const snapshot = { session: { id: "session-2" } } as SessionSnapshot
+    const snapshot = emptySnapshotFixture
     mockedApiRequest.mockResolvedValueOnce({ data: snapshot })
 
     await createAgentSession({
@@ -173,8 +172,33 @@ describe("agent client", () => {
     })
   })
 
+  it("validates snapshots returned by every session mutation endpoint", async () => {
+    const malformed = { session: { id: "session-1" } }
+    const mutations = [
+      () => createAgentSession({ projectId: "project-1" }),
+      () => updateAgentSession("session-1", { title: "Analysis" }),
+      () =>
+        dispatchAgentCommand("session-1", {
+          type: "message",
+          command_id: "command-1",
+          parts: [{ type: "text", text: "Inspect this" }],
+        }),
+    ]
+
+    for (const mutate of mutations) {
+      mockedApiRequest.mockResolvedValueOnce({ data: malformed })
+      await expect(mutate()).rejects.toMatchObject({
+        name: "PresentationContractError",
+        diagnostic: {
+          code: "invalid_payload",
+          originalType: "snapshot",
+        },
+      })
+    }
+  })
+
   it("sends one of the four public commands without choosing prompt or follow-up", async () => {
-    const snapshot = { session: { id: "session-1" } } as SessionSnapshot
+    const snapshot = emptySnapshotFixture
     mockedApiRequest.mockResolvedValueOnce({ data: snapshot })
     const command = {
       type: "message" as const,
@@ -192,7 +216,7 @@ describe("agent client", () => {
   })
 
   it("preserves the exact public context-reference command shapes", async () => {
-    const snapshot = { session: { id: "session-1" } } as SessionSnapshot
+    const snapshot = emptySnapshotFixture
     mockedApiRequest.mockResolvedValueOnce({ data: snapshot })
     const command = {
       type: "message" as const,
@@ -230,7 +254,7 @@ describe("agent client", () => {
   })
 
   it("patches only editable session metadata", async () => {
-    const snapshot = { session: { id: "session-1" } } as SessionSnapshot
+    const snapshot = emptySnapshotFixture
     mockedApiRequest.mockResolvedValueOnce({ data: snapshot })
 
     await expect(

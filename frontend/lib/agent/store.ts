@@ -2,6 +2,7 @@ import type {
   ActiveRunView,
   AgentEvent,
   AssistantDeltaEvent,
+  AssistantDraftPartView,
   HistoryEntry,
   RunView,
   SessionSnapshot,
@@ -103,14 +104,7 @@ function applyAssistantDelta(
         assistant_draft: {
           id: event.draft_id,
           run_id: event.run_id,
-          parts: [
-            {
-              id: event.part_id,
-              type: event.part_type,
-              text: event.delta,
-              end_offset: event.end_offset,
-            },
-          ],
+          parts: [assistantDraftPartFromDelta(event)],
         },
       },
     })
@@ -132,12 +126,7 @@ function applyAssistantDelta(
           ...draft,
           parts: [
             ...draft.parts,
-            {
-              id: event.part_id,
-              type: event.part_type,
-              text: event.delta,
-              end_offset: event.end_offset,
-            },
+            assistantDraftPartFromDelta(event),
           ],
         },
       },
@@ -164,6 +153,31 @@ function applyAssistantDelta(
       assistant_draft: { ...draft, parts },
     },
   })
+}
+
+function assistantDraftPartFromDelta(
+  event: AssistantDeltaEvent,
+): AssistantDraftPartView {
+  const base = {
+    id: event.part_id,
+    text: event.delta,
+    end_offset: event.end_offset,
+  }
+
+  if (event.part_type !== "reasoning_trace") {
+    return { ...base, type: event.part_type }
+  }
+
+  return {
+    ...base,
+    type: "reasoning_trace",
+    provider: event.provider,
+    model: event.model,
+    source: event.source,
+    truncated: event.truncated,
+    started_at: event.started_at,
+    completed_at: event.completed_at,
+  }
 }
 
 function applyToolUpdate(

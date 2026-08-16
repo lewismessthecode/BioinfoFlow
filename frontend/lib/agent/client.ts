@@ -7,7 +7,6 @@ import type {
   AgentSessionStatus,
   AgentWorkspaceAccess,
   JsonObject,
-  SessionSnapshot,
 } from "./contracts"
 import { requirePresentationSnapshot } from "./transport/presentation-contract"
 
@@ -81,7 +80,7 @@ export async function createAgentSession(input: {
   model?: string
   environmentScope?: AgentEnvironmentScope
 }) {
-  const response = await apiRequest<SessionSnapshot>("/agent/sessions", {
+  const response = await apiRequest<unknown>("/agent/sessions", {
     method: "POST",
     body: JSON.stringify({
       project_id: input.projectId ?? null,
@@ -94,11 +93,11 @@ export async function createAgentSession(input: {
       environment_scope: input.environmentScope,
     }),
   })
-  return response.data
+  return requirePresentationSnapshot(response.data)
 }
 
 export async function getAgentSnapshot(sessionId: string) {
-  const response = await apiRequest<SessionSnapshot>(
+  const response = await apiRequest<unknown>(
     `/agent/sessions/${sessionId}/snapshot`,
   )
   return requirePresentationSnapshot(response.data)
@@ -144,7 +143,7 @@ export async function updateAgentSession(
   sessionId: string,
   updates: AgentSessionUpdates,
 ) {
-  const response = await apiRequest<SessionSnapshot>(
+  const response = await apiRequest<unknown>(
     `/agent/sessions/${sessionId}`,
     {
       method: "PATCH",
@@ -160,18 +159,18 @@ export async function updateAgentSession(
       }),
     },
   )
-  return response.data
+  return requirePresentationSnapshot(response.data)
 }
 
 export async function dispatchAgentCommand(
   sessionId: string,
   command: AgentCommand,
 ) {
-  const response = await apiRequest<SessionSnapshot>(
+  const response = await apiRequest<unknown>(
     `/agent/sessions/${sessionId}/commands`,
     { method: "POST", body: JSON.stringify(command) },
   )
-  return response.data
+  return requirePresentationSnapshot(response.data)
 }
 
 export async function deleteAgentSession(sessionId: string) {

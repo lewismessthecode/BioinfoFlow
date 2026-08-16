@@ -191,6 +191,48 @@ describe("applyAgentEvent", () => {
     })
   })
 
+  it("preserves reasoning provenance when a live trace starts", () => {
+    const state = {
+      ...snapshotState(),
+      activeRun: {
+        run: run(),
+        assistant_draft: null,
+        tool_progress: [],
+        pending_interaction: null,
+      },
+    }
+
+    const result = apply(state, {
+      type: "assistant.delta",
+      run_id: "run-1",
+      draft_id: "draft-reasoning",
+      part_id: "trace-1",
+      part_type: "reasoning_trace",
+      start_offset: 0,
+      end_offset: 12,
+      delta: "Trace clues",
+      provider: "openai",
+      model: "gpt-5.6",
+      source: "reasoning_content",
+      truncated: false,
+      started_at: timestamp,
+      completed_at: null,
+    })
+
+    expect(result.state.activeRun?.assistant_draft?.parts[0]).toEqual({
+      id: "trace-1",
+      type: "reasoning_trace",
+      text: "Trace clues",
+      end_offset: 12,
+      provider: "openai",
+      model: "gpt-5.6",
+      source: "reasoning_content",
+      truncated: false,
+      started_at: timestamp,
+      completed_at: null,
+    })
+  })
+
   it("appends a contiguous assistant delta to the identified draft part", () => {
     const result = apply(snapshotState(), {
       type: "assistant.delta",

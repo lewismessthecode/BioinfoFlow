@@ -1,7 +1,105 @@
-import type { AgentEvent, SessionSnapshot } from "../contracts"
+import type {
+  AgentEvent,
+  HistoryEntry,
+  MessagePart,
+  PresentationEvent,
+  PresentationSnapshot,
+  SessionSnapshot,
+} from "../contracts"
+
+type ToolOutputContentMessagePart = Exclude<
+  MessagePart,
+  { type: "tool_call" } | { type: "tool_result" }
+>
 
 const PRESENTATION_PROTOCOL_VERSION = 1 as const
 const PRESENTATION_PROTOCOL = "bioinfoflow.agent.presentation" as const
+
+const TOOL_EXECUTION_MODES = new Set(["parallel", "serial", "mixed"])
+const TOOL_CATEGORIES = new Set([
+  "read",
+  "search",
+  "command",
+  "edit",
+  "write",
+  "workflow",
+  "plan",
+  "interaction",
+  "other",
+])
+const TOOL_PROGRESS_STATUSES = new Set([
+  "pending",
+  "running",
+  "completed",
+  "failed",
+  "blocked",
+  "cancelled",
+  "interaction_required",
+])
+const PUBLIC_DETAIL_KINDS = new Set([
+  "command",
+  "working_directory",
+  "path",
+  "input",
+  "output",
+  "changes",
+  "error",
+  "metadata",
+])
+const PUBLIC_DETAIL_FORMATS = new Set([
+  "text",
+  "code",
+  "path",
+  "json",
+  "diff",
+])
+const PERMISSION_MODES = new Set([
+  "ask_changes",
+  "ask_dangerous",
+  "full_access",
+])
+const WORKSPACE_ACCESS_MODES = new Set(["read_only", "read_write"])
+const SESSION_STATUSES = new Set([
+  "active",
+  "archived",
+  "closing",
+  "deleted",
+])
+const RUN_STATUSES = new Set([
+  "queued",
+  "running",
+  "waiting_user",
+  "completed",
+  "failed",
+  "cancelled",
+])
+const RUN_PHASES = new Set(["model", "tools", "interaction"])
+const ENVIRONMENT_SCOPE_MODES = new Set(["auto", "manual"])
+const ENVIRONMENT_KINDS = new Set(["local", "ssh"])
+const MESSAGE_ROLES = new Set(["user", "assistant", "tool"])
+const PLAN_ITEM_STATUSES = new Set(["pending", "in_progress", "completed"])
+const KNOWN_HISTORY_ENTRY_TYPES = new Set([
+  "message",
+  "interaction_request",
+  "interaction_response",
+  "notice",
+  "plan",
+  "unknown",
+])
+const KNOWN_MESSAGE_PART_TYPES = new Set([
+  "text",
+  "reasoning_summary",
+  "reasoning_trace",
+  "attachment_ref",
+  "file_ref",
+  "directory_ref",
+  "workflow_ref",
+  "run_ref",
+  "artifact_ref",
+  "tool_call",
+  "tool_result",
+  "unknown",
+])
 
 export type PresentationDiagnosticCode =
   | "event_gap"
@@ -22,13 +120,13 @@ export type TransportParseResult<T> =
 
 export type ValidatedSnapshot = {
   protocolVersion: number
-  snapshot: SessionSnapshot
+  snapshot: PresentationSnapshot
   diagnostics: PresentationDiagnostic[]
 }
 
 export type ValidatedEvent = {
   protocolVersion: typeof PRESENTATION_PROTOCOL_VERSION
-  event: AgentEvent
+  event: PresentationEvent
 }
 
 class PresentationContractError extends Error {
@@ -41,7 +139,7 @@ class PresentationContractError extends Error {
   }
 }
 
-export function requirePresentationSnapshot(input: unknown): SessionSnapshot {
+export function requirePresentationSnapshot(input: unknown): PresentationSnapshot {
   const parsed = parsePresentationSnapshot(input)
   if (!parsed.ok) throw new PresentationContractError(parsed.diagnostic)
   return parsed.value.snapshot
@@ -62,11 +160,14 @@ export function parsePresentationSnapshot(
   const envelope = isRecord(input) && "snapshot" in input ? input : null
   const contract = readProtocolEnvelope(envelope ?? input)
   if (!contract.ok) return contract
-  const snapshot = envelope ? envelope.snapshot : input
-  if (!isSessionSnapshot(snapshot)) {
+  const snapshotInput = envelope ? envelope.snapshot : input
+  if (!isSessionSnapshot(snapshotInput)) {
     return invalidPayload("snapshot")
   }
   const version = contract.version
+  const protocolVersion = isNonNegativeInteger(version)
+    ? version
+    : PRESENTATION_PROTOCOL_VERSION
   const diagnostics =
     version === PRESENTATION_PROTOCOL_VERSION
       ? []
@@ -74,10 +175,8 @@ export function parsePresentationSnapshot(
   return {
     ok: true,
     value: {
-      protocolVersion: isNonNegativeInteger(version)
-        ? version
-        : PRESENTATION_PROTOCOL_VERSION,
-      snapshot,
+      protocolVersion,
+      snapshot: normalizePresentationSnapshot(snapshotInput, protocolVersion),
       diagnostics,
     },
   }
@@ -110,26 +209,36 @@ export function parsePresentationEvent(
     ok: true,
     value: {
       protocolVersion: PRESENTATION_PROTOCOL_VERSION,
-      event: input,
+      event: normalizePresentationEvent(input),
     },
   }
 }
 
-function isAgentEvent(value: Record<string, unknown>, type: string): value is AgentEvent {
+function isAgentEvent(
+  value: Record<string, unknown>,
+  type: string,
+): value is AgentEvent {
   switch (type) {
     case "snapshot":
       return isSessionSnapshot(value.snapshot)
     case "run.updated":
       return isRun(value.run)
     case "assistant.delta":
-      return (
-        hasStrings(value, ["run_id", "draft_id", "part_id", "delta"]) &&
-        (value.part_type === "text" ||
-          value.part_type === "reasoning_summary" ||
-          value.part_type === "reasoning_trace") &&
-        isNonNegativeInteger(value.start_offset) &&
-        isNonNegativeInteger(value.end_offset)
-      )
+      if (
+        !(
+          hasStrings(value, ["run_id", "draft_id", "part_id", "delta"]) &&
+          (value.part_type === "text" ||
+            value.part_type === "reasoning_summary" ||
+            value.part_type === "reasoning_trace") &&
+          isNonNegativeInteger(value.start_offset) &&
+          isNonNegativeInteger(value.end_offset)
+        )
+      ) {
+        return false
+      }
+      return value.part_type === "reasoning_trace"
+        ? isRequiredReasoningMetadata(value)
+        : isOptionalReasoningMetadata(value)
     case "tool.updated":
       return typeof value.run_id === "string" && isToolProgress(value.tool)
     case "interaction.requested":
@@ -144,20 +253,9 @@ function isAgentEvent(value: Record<string, unknown>, type: string): value is Ag
 }
 
 function isSessionSnapshot(value: unknown): value is SessionSnapshot {
-  if (!isRecord(value) || !isRecord(value.session)) return false
   return (
-    hasStrings(value.session, [
-      "id",
-      "user_id",
-      "workspace_id",
-      "status",
-      "created_at",
-      "updated_at",
-    ]) &&
-    isRecord(value.session.model) &&
-    hasStrings(value.session.model, ["provider", "model", "display_name"]) &&
-    typeof value.session.permission_mode === "string" &&
-    typeof value.session.workspace_access === "string" &&
+    isRecord(value) &&
+    isSessionView(value.session) &&
     Array.isArray(value.runs) &&
     value.runs.every(isRun) &&
     Array.isArray(value.entries) &&
@@ -166,34 +264,78 @@ function isSessionSnapshot(value: unknown): value is SessionSnapshot {
   )
 }
 
-function isRun(value: unknown): boolean {
+function isSessionView(value: unknown): boolean {
   return (
     isRecord(value) &&
     hasStrings(value, [
       "id",
-      "session_id",
-      "status",
+      "user_id",
+      "workspace_id",
       "created_at",
       "updated_at",
     ]) &&
+    isNullableString(value.project_id) &&
+    isNullableString(value.title) &&
+    isModelSummary(value.model) &&
+    isKnownString(value.permission_mode, PERMISSION_MODES) &&
+    isKnownString(value.workspace_access, WORKSPACE_ACCESS_MODES) &&
+    (value.settings_revision === undefined ||
+      isPositiveInteger(value.settings_revision)) &&
+    (value.environment_scope === undefined ||
+      isConversationEnvironmentScope(value.environment_scope)) &&
+    isKnownString(value.status, SESSION_STATUSES)
+  )
+}
+
+function isRun(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasStrings(value, ["id", "session_id", "created_at", "updated_at"]) &&
+    isKnownString(value.status, RUN_STATUSES) &&
+    (value.phase === null || isKnownString(value.phase, RUN_PHASES)) &&
     isNonNegativeInteger(value.revision) &&
+    isNullableString(value.started_at) &&
+    isNullableString(value.completed_at) &&
+    isNullableString(value.termination_reason) &&
+    (value.error === null || isRunError(value.error)) &&
     (value.execution_config === null ||
       value.execution_config === undefined ||
       isRunExecutionConfig(value.execution_config))
   )
 }
 
+function isModelSummary(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasStrings(value, ["provider", "model", "display_name"]) &&
+    typeof value.supports_vision === "boolean" &&
+    typeof value.supports_reasoning === "boolean" &&
+    typeof value.supports_tools === "boolean"
+  )
+}
+
+function isRunError(value: unknown): boolean {
+  return isRecord(value) && hasStrings(value, ["code", "message"])
+}
+
+function isConversationEnvironmentScope(value: unknown): boolean {
+  if (!isRecord(value) || !isKnownString(value.mode, ENVIRONMENT_SCOPE_MODES)) {
+    return false
+  }
+  return value.mode === "auto"
+    ? value.environment_ids === null
+    : isStringArray(value.environment_ids) && value.environment_ids.length > 0
+}
+
 function isRunExecutionConfig(value: unknown): boolean {
   return (
     isRecord(value) &&
-    isNonNegativeInteger(value.settings_revision) &&
-    isRecord(value.model) &&
-    hasStrings(value.model, ["provider", "model", "display_name"]) &&
-    typeof value.permission_mode === "string" &&
-    typeof value.workspace_access === "string" &&
+    isPositiveInteger(value.settings_revision) &&
+    isModelSummary(value.model) &&
+    isKnownString(value.permission_mode, PERMISSION_MODES) &&
+    isKnownString(value.workspace_access, WORKSPACE_ACCESS_MODES) &&
     isRecord(value.environment_scope) &&
-    (value.environment_scope.mode === "auto" ||
-      value.environment_scope.mode === "manual") &&
+    isKnownString(value.environment_scope.mode, ENVIRONMENT_SCOPE_MODES) &&
     Array.isArray(value.environment_scope.environment_ids) &&
     value.environment_scope.environment_ids.every(
       (environmentId) => typeof environmentId === "string",
@@ -202,8 +344,9 @@ function isRunExecutionConfig(value: unknown): boolean {
     value.environment_targets.every(
       (target) =>
         isRecord(target) &&
-        hasStrings(target, ["environment_id", "display_name", "kind"]) &&
-        (target.host === null || typeof target.host === "string"),
+        hasStrings(target, ["environment_id", "display_name"]) &&
+        isKnownString(target.kind, ENVIRONMENT_KINDS) &&
+        isNullableString(target.host),
     )
   )
 }
@@ -212,8 +355,9 @@ function isHistoryEntry(value: unknown): boolean {
   if (
     !isRecord(value) ||
     !hasStrings(value, ["id", "session_id", "type", "created_at"]) ||
-    !isNonNegativeInteger(value.sequence) ||
-    !isNonNegativeInteger(value.schema_version) ||
+    !isNullableString(value.run_id) ||
+    !isPositiveInteger(value.sequence) ||
+    !isPositiveInteger(value.schema_version) ||
     !isRecord(value.payload)
   ) {
     return false
@@ -221,35 +365,288 @@ function isHistoryEntry(value: unknown): boolean {
   switch (value.type) {
     case "message":
       return (
-        ["user", "assistant", "tool"].includes(String(value.payload.role)) &&
+        isKnownString(value.payload.role, MESSAGE_ROLES) &&
         Array.isArray(value.payload.parts) &&
-        value.payload.parts.every(
-          (part) => isRecord(part) && hasStrings(part, ["id", "type"]),
-        )
+        value.payload.parts.every(isMessagePart)
       )
     case "interaction_request":
       return (
         typeof value.payload.interaction_id === "string" &&
-        isRecord(value.payload.request) &&
-        typeof value.payload.request.type === "string"
+        isInteractionRequest(value.payload.request)
       )
     case "interaction_response":
       return (
         typeof value.payload.interaction_id === "string" &&
-        isRecord(value.payload.response) &&
-        typeof value.payload.response.type === "string"
+        isInteractionResponse(value.payload.response)
       )
     case "notice":
-      return hasStrings(value.payload, ["code", "message"])
+      return (
+        hasStrings(value.payload, ["code", "message"]) &&
+        (value.payload.params === undefined || isRecord(value.payload.params)) &&
+        (value.payload.details === null || isRecord(value.payload.details))
+      )
     case "plan":
       return (
         typeof value.payload.plan_id === "string" &&
-        isNonNegativeInteger(value.payload.revision) &&
-        Array.isArray(value.payload.items)
+        isPositiveInteger(value.payload.revision) &&
+        isOptionalNullableString(value.payload.title) &&
+        Array.isArray(value.payload.items) &&
+        value.payload.items.every(isPlanItem) &&
+        typeof value.payload.updated_at === "string"
       )
+    case "unknown":
+      return hasStrings(value.payload, ["original_type", "display_text"])
     default:
       return true
   }
+}
+
+function isPlanItem(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasStrings(value, ["id", "text"]) &&
+    isKnownString(value.status, PLAN_ITEM_STATUSES)
+  )
+}
+
+function isMessagePart(value: unknown): boolean {
+  if (!isRecord(value) || !hasStrings(value, ["id", "type"])) return false
+  switch (value.type) {
+    case "text":
+    case "reasoning_summary":
+      return typeof value.text === "string"
+    case "reasoning_trace":
+      return (
+        typeof value.text === "string" && isRequiredReasoningMetadata(value)
+      )
+    case "attachment_ref":
+      return (
+        hasStrings(value, ["attachment_id", "filename", "kind"]) &&
+        isNullableString(value.mime_type) &&
+        isNonNegativeInteger(value.size_bytes)
+      )
+    case "file_ref":
+    case "directory_ref":
+      return (
+        typeof value.label === "string" &&
+        isOptionalNullableString(value.project_id) &&
+        isOptionalNullableString(value.attachment_id) &&
+        isOptionalNullableString(value.path)
+      )
+    case "workflow_ref":
+      return (
+        hasStrings(value, ["workflow_id", "label"]) &&
+        isOptionalNullableString(value.project_id)
+      )
+    case "run_ref":
+      return hasStrings(value, ["run_id", "label"])
+    case "artifact_ref":
+      return (
+        typeof value.artifact_id === "string" &&
+        isNullableString(value.title) &&
+        isNullableString(value.media_type)
+      )
+    case "tool_call":
+      return (
+        hasStrings(value, [
+          "call_id",
+          "group_id",
+          "execution_mode",
+          "name",
+          "display_name",
+          "category",
+          "summary",
+        ]) &&
+        isKnownString(value.execution_mode, TOOL_EXECUTION_MODES) &&
+        isKnownString(value.category, TOOL_CATEGORIES) &&
+        isRecord(value.arguments) &&
+        isOptionalPublicDetails(value.public_details)
+      )
+    case "tool_result":
+      return (
+        hasStrings(value, ["call_id", "status"]) &&
+        isKnownString(value.status, TOOL_PROGRESS_STATUSES) &&
+        isNullableString(value.summary) &&
+        (value.output === null || isToolOutput(value.output)) &&
+        isNullableString(value.started_at) &&
+        isNullableString(value.completed_at) &&
+        isNullableString(value.error) &&
+        isOptionalPublicDetails(value.public_details)
+      )
+    case "unknown":
+      return hasStrings(value, ["original_type", "display_text"])
+    default:
+      return true
+  }
+}
+
+function isOptionalPublicDetails(value: unknown): boolean {
+  return value === undefined || (Array.isArray(value) && value.every(isPublicDetail))
+}
+
+function isPublicDetail(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasStrings(value, ["id", "kind", "value", "format"]) &&
+    isKnownString(value.kind, PUBLIC_DETAIL_KINDS) &&
+    isKnownString(value.format, PUBLIC_DETAIL_FORMATS) &&
+    isNullableString(value.label) &&
+    typeof value.copyable === "boolean" &&
+    typeof value.truncated === "boolean" &&
+    typeof value.redacted === "boolean"
+  )
+}
+
+function isToolOutput(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.type !== "string") return false
+  switch (value.type) {
+    case "text":
+      return typeof value.text === "string"
+    case "json":
+      return "value" in value && isJsonValue(value.value)
+    case "content_parts":
+      return (
+        Array.isArray(value.parts) &&
+        value.parts.every(
+          (part) =>
+            isMessagePart(part) &&
+            isRecord(part) &&
+            part.type !== "tool_call" &&
+            part.type !== "tool_result",
+        )
+      )
+    default:
+      return false
+  }
+}
+
+function isInteractionRequest(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.type !== "string") return false
+  switch (value.type) {
+    case "approval":
+      return (
+        hasStrings(value, ["call_id", "tool_name", "summary"]) &&
+        isNullableString(value.input_preview) &&
+        Array.isArray(value.allowed_responses) &&
+        value.allowed_responses.length > 0 &&
+        value.allowed_responses.every(
+          (response) => response === "approve" || response === "reject",
+        ) &&
+        (value.target === undefined || isApprovalTarget(value.target)) &&
+        isApprovalRisk(value.risk)
+      )
+    case "ask_user":
+      return (
+        typeof value.call_id === "string" &&
+        Array.isArray(value.questions) &&
+        value.questions.length > 0 &&
+        value.questions.every(isAskUserQuestion)
+      )
+    case "recovery":
+      return (
+        hasStrings(value, ["call_id", "tool_name", "message"]) &&
+        isOptionalNullableString(value.message_code) &&
+        (value.message_params === undefined || isRecord(value.message_params)) &&
+        Array.isArray(value.options) &&
+        value.options.every(isInteractionOption)
+      )
+    default:
+      return false
+  }
+}
+
+function isInteractionResponse(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.type !== "string") return false
+  switch (value.type) {
+    case "approval":
+      return typeof value.approved === "boolean"
+    case "ask_user":
+      return isRecord(value.answers) && Object.values(value.answers).every(isJsonValue)
+    case "recovery":
+      return (
+        value.choice === "inspect" ||
+        value.choice === "retry" ||
+        value.choice === "cancel"
+      )
+    default:
+      return false
+  }
+}
+
+function isApprovalTarget(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasStrings(value, ["environment_id", "display_name", "kind"]) &&
+    (value.kind === "local" || value.kind === "ssh") &&
+    isOptionalNullableString(value.host)
+  )
+}
+
+function isApprovalRisk(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.level === "string" &&
+    isStringArray(value.effects) &&
+    isStringArray(value.reasons) &&
+    isStringArray(value.affected_resources)
+  )
+}
+
+function isAskUserQuestion(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasStrings(value, ["id", "header", "question"]) &&
+    typeof value.multi_select === "boolean" &&
+    Array.isArray(value.options) &&
+    value.options.length >= 2 &&
+    value.options.length <= 3 &&
+    value.options.every(isInteractionOption)
+  )
+}
+
+function isInteractionOption(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasStrings(value, ["id", "label", "description"]) &&
+    typeof value.recommended === "boolean"
+  )
+}
+
+function isJsonValue(value: unknown): boolean {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  ) {
+    return true
+  }
+  if (Array.isArray(value)) return value.every(isJsonValue)
+  return isRecord(value) && Object.values(value).every(isJsonValue)
+}
+
+function isRequiredReasoningMetadata(
+  value: Record<string, unknown>,
+): boolean {
+  return (
+    hasStrings(value, ["provider", "model", "source"]) &&
+    typeof value.truncated === "boolean" &&
+    isNullableString(value.started_at) &&
+    isNullableString(value.completed_at)
+  )
+}
+
+function isOptionalReasoningMetadata(
+  value: Record<string, unknown>,
+): boolean {
+  return (
+    isOptionalNullableString(value.provider) &&
+    isOptionalNullableString(value.model) &&
+    isOptionalNullableString(value.source) &&
+    (value.truncated === undefined || typeof value.truncated === "boolean") &&
+    isOptionalNullableString(value.started_at) &&
+    isOptionalNullableString(value.completed_at)
+  )
 }
 
 function isActiveRun(value: unknown): boolean {
@@ -269,13 +666,24 @@ function isAssistantDraft(value: unknown): boolean {
     isRecord(value) &&
     hasStrings(value, ["id", "run_id"]) &&
     Array.isArray(value.parts) &&
-    value.parts.every(
-      (part) =>
-        isRecord(part) &&
-        hasStrings(part, ["id", "type", "text"]) &&
-        isNonNegativeInteger(part.end_offset),
-    )
+    value.parts.every(isAssistantDraftPart)
   )
+}
+
+function isAssistantDraftPart(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !hasStrings(value, ["id", "type", "text"]) ||
+    (value.type !== "text" &&
+      value.type !== "reasoning_summary" &&
+      value.type !== "reasoning_trace") ||
+    !isNonNegativeInteger(value.end_offset)
+  ) {
+    return false
+  }
+  return value.type === "reasoning_trace"
+    ? isRequiredReasoningMetadata(value)
+    : isOptionalReasoningMetadata(value)
 }
 
 function isToolProgress(value: unknown): boolean {
@@ -284,14 +692,21 @@ function isToolProgress(value: unknown): boolean {
     hasStrings(value, [
       "call_id",
       "group_id",
-      "execution_mode",
       "name",
       "display_name",
-      "category",
       "summary",
-      "status",
     ]) &&
-    isNonNegativeInteger(value.revision)
+    isKnownString(value.execution_mode, TOOL_EXECUTION_MODES) &&
+    isKnownString(value.category, TOOL_CATEGORIES) &&
+    isRecord(value.arguments) &&
+    isKnownString(value.status, TOOL_PROGRESS_STATUSES) &&
+    isNonNegativeInteger(value.revision) &&
+    isNullableString(value.started_at) &&
+    isNullableString(value.completed_at) &&
+    isNullableString(value.input_summary) &&
+    isNullableString(value.output_summary) &&
+    isNullableString(value.error) &&
+    isOptionalPublicDetails(value.public_details)
   )
 }
 
@@ -299,14 +714,154 @@ function isPendingInteraction(value: unknown): boolean {
   return (
     isRecord(value) &&
     hasStrings(value, ["interaction_id", "run_id"]) &&
-    isNonNegativeInteger(value.revision) &&
-    isRecord(value.request) &&
-    typeof value.request.type === "string"
+    isPositiveInteger(value.revision) &&
+    isInteractionRequest(value.request)
   )
+}
+
+function normalizePresentationSnapshot(
+  snapshot: SessionSnapshot,
+  protocolVersion: number,
+): PresentationSnapshot {
+  const entries = snapshot.entries.map(normalizeHistoryEntry)
+  const envelope = snapshot as unknown as Record<string, unknown>
+  if (
+    envelope.presentation_protocol === PRESENTATION_PROTOCOL &&
+    envelope.presentation_schema_version === protocolVersion &&
+    entries.every((entry, index) => entry === snapshot.entries[index])
+  ) {
+    return snapshot as PresentationSnapshot
+  }
+  return {
+    ...snapshot,
+    entries,
+    presentation_protocol: PRESENTATION_PROTOCOL,
+    presentation_schema_version: protocolVersion,
+  }
+}
+
+function normalizePresentationEvent(event: AgentEvent): PresentationEvent {
+  const normalized = (() => {
+    switch (event.type) {
+      case "snapshot":
+        return {
+          ...event,
+          snapshot: normalizePresentationSnapshot(
+            event.snapshot,
+            PRESENTATION_PROTOCOL_VERSION,
+          ),
+        }
+      case "entry.committed":
+        return { ...event, entry: normalizeHistoryEntry(event.entry) }
+      default:
+        return event
+    }
+  })()
+  return {
+    ...normalized,
+    presentation_protocol: PRESENTATION_PROTOCOL,
+    presentation_schema_version: PRESENTATION_PROTOCOL_VERSION,
+  } as PresentationEvent
+}
+
+function normalizeHistoryEntry(entry: HistoryEntry): HistoryEntry {
+  const value = entry as unknown as Record<string, unknown>
+  const payload = value.payload as Record<string, unknown>
+  if (!KNOWN_HISTORY_ENTRY_TYPES.has(String(value.type)) || value.type === "unknown") {
+    const originalType =
+      value.type === "unknown" && typeof payload.original_type === "string"
+        ? payload.original_type
+        : String(value.type)
+    const displayText =
+      value.type === "unknown" && typeof payload.display_text === "string"
+        ? payload.display_text
+        : "Unsupported conversation activity"
+    return {
+      id: value.id as string,
+      session_id: value.session_id as string,
+      run_id: value.run_id as string | null,
+      sequence: value.sequence as number,
+      schema_version: value.schema_version as number,
+      created_at: value.created_at as string,
+      type: "unknown",
+      payload: {
+        original_type: originalType,
+        display_text: displayText,
+      },
+    }
+  }
+  if (entry.type !== "message") return entry
+  const parts = entry.payload.parts.map(normalizeMessagePart)
+  if (parts.every((part, index) => part === entry.payload.parts[index])) {
+    return entry
+  }
+  return {
+    ...entry,
+    payload: {
+      ...entry.payload,
+      parts,
+    },
+  }
+}
+
+function normalizeMessagePart(part: MessagePart): MessagePart {
+  const value = part as unknown as Record<string, unknown>
+  if (!KNOWN_MESSAGE_PART_TYPES.has(String(value.type)) || value.type === "unknown") {
+    const originalType =
+      value.type === "unknown" && typeof value.original_type === "string"
+        ? value.original_type
+        : String(value.type)
+    const displayText =
+      value.type === "unknown" && typeof value.display_text === "string"
+        ? value.display_text
+        : "Unsupported conversation content"
+    return {
+      id: value.id as string,
+      type: "unknown",
+      original_type: originalType,
+      display_text: displayText,
+    }
+  }
+  if (part.type !== "tool_result" || part.output?.type !== "content_parts") {
+    return part
+  }
+  return {
+    ...part,
+    output: {
+      ...part.output,
+      parts: part.output.parts.map(normalizeToolOutputContentPart),
+    },
+  }
+}
+
+function normalizeToolOutputContentPart(
+  part: ToolOutputContentMessagePart,
+): ToolOutputContentMessagePart {
+  return normalizeMessagePart(part) as ToolOutputContentMessagePart
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isOptionalNullableString(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === "string"
+}
+
+function isNullableString(value: unknown): boolean {
+  return value === null || typeof value === "string"
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string")
+}
+
+function isKnownString(value: unknown, values: ReadonlySet<string>): boolean {
+  return typeof value === "string" && values.has(value)
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return isNonNegativeInteger(value) && value > 0
 }
 
 function readProtocolEnvelope(

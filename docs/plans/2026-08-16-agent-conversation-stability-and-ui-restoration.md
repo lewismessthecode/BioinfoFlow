@@ -350,3 +350,62 @@ without changing the Presentation Contract or Conversation View Model:
 4. Ask User option selection, completion, keyboard semantics, and responsive
    single-surface layout;
 5. Playwright geometry checks in Light/Dark desktop and a narrow viewport.
+
+## Final screenshot acceptance: continuous activity and durable titles
+
+The last comparison against the DeepSeek transcript and the earlier BioinfoFlow
+draft state adds the following acceptance criteria without expanding the Harness
+protocol surface:
+
+- successful completion remains available in the stable Run audit data but does
+  not become a visible Transcript row; failed or cancelled outcomes are inserted
+  immediately after the final Transcript Block owned by that Run, so terminal
+  rows from older Runs are never collected into an indistinguishable stack;
+- one stable Run identity still projects at most one visible failure/cancellation
+  outcome, using its latest revision;
+- an activity group renders as a continuous sequence of individual compact tool
+  disclosure rows (`Bash`, `Read`, `Edit`, errors, and similar operations), not as
+  a visible “run N tools” summary card;
+- each tool row owns its category icon, concise action summary, lifecycle state,
+  duration, and collapsed public details; grouping remains a projection concern
+  and never leaks Harness wording into the UI;
+- active work ends the visible Transcript with a localized rotating spinner verb.
+  Chinese and English use matching quiet verbs such as tracing clues, diving
+  deeper, checking details, connecting context, and moving the task forward;
+  reduced-motion users see a stable verb and assistive technology receives one
+  non-rotating status announcement;
+- the three Composer selectors share the same field wrapper in addition to the
+  same trigger primitive. Their trigger row is top-aligned even while one setting
+  shows pending or error feedback;
+- permission trigger labels are deliberately short: Ask / Auto / Full access and
+  询问 / 自动 / 完全访问. The menu title and descriptions are concise and use the
+  same compact menu-row grammar as model and environment selection;
+- Approval receives a public, sanitized action summary and input preview from the
+  server presentation adapter. The card foregrounds the exact command or action,
+  execution environment, and user-visible effects, while raw policy codes such as
+  `ACT_HIGH` remain hidden implementation metadata;
+- the Draft welcome line, centered Composer geometry, starter-row spacing, and
+  CircleCheck / MessageCircle / RotateCcw icon language follow the pre-refactor
+  implementation at `34010661` while keeping the current stable Composer API;
+- the first meaningful user message assigns a compact automatic Conversation
+  title only when no title already exists. Title derivation is a deterministic,
+  Harness-independent session concern: it updates `SessionView.title` and the
+  sidebar event path, but never enters canonical transcript history or prompt
+  assembly, so the prompt-prefix cache identity is unchanged.
+
+### Additional TDD tracer slices
+
+1. two completed Runs remain available in `view.runs` without producing visible
+   success rows, while failed/cancelled outcomes stay next to their owning Run;
+2. grouped serial and parallel tools render as individual collapsed activity rows
+   without group-count copy;
+3. the running indicator rotates localized verbs with fake timers, stays fixed
+   for reduced motion, and exposes one stable accessible status;
+4. all three selector fields expose identical trigger/slot metrics and concise
+   permission copy;
+5. Approval fixtures prove exact command, target, and effects survive both live
+   progress and refreshed durable history;
+6. first-message title generation preserves Chinese and English text, does not
+   overwrite manual titles, and refreshes the existing sidebar summary seam;
+7. Draft DOM and Playwright geometry verify the restored welcome typography,
+   starter icons, row density, Composer contrast, and Light/Dark parity.
