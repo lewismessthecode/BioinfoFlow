@@ -889,7 +889,7 @@ class AgentLoop:
                 cancellation=cancellation,
                 interaction_response=(
                     {
-                        "request_id": f"tool:{call.call_id}",
+                        "request_id": f"tool:{run.id}:{call.call_id}",
                         "approved": True,
                         "assessment_fingerprint": retry_fingerprint,
                     }
@@ -1285,6 +1285,7 @@ class AgentLoop:
             prompt_snapshot=session.prompt_snapshot,
             entries=mappings,
             attachment_parts_by_id=attachment_parts_by_id,
+            settings_revision=session.settings_revision,
         )
 
     async def _append_message(
@@ -1819,6 +1820,7 @@ def _interaction_dict(result: ToolResult) -> dict[str, Any]:
         "tool_name": result.tool_name,
         "questions": list(interaction.questions),
         "risk": interaction.risk,
+        "target": interaction.target,
     }
     if interaction.kind == "confirmation":
         payload["allowed_responses"] = list(

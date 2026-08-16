@@ -97,6 +97,10 @@ class AgentHarness:
             else:
                 workspace = original_workspace_factory(session)
 
+            bind_interaction_scope = getattr(workspace, "with_interaction_scope", None)
+            if callable(bind_interaction_scope):
+                bind_interaction_scope(run_id)
+
             async def fresh_bash_environment() -> dict[str, str]:
                 await self._ensure_run_token(session, run_id, replace=True)
                 token = self._run_tokens.pop(run_id)
@@ -692,28 +696,31 @@ class AgentHarness:
             "pending_calls": pending_calls,
             "interaction": private_interaction,
         }
-        await self.repository.update_run(
-            run_id,
-            status="waiting_user",
-            phase="interaction",
+        tool_progress = [
+            _tool_progress_item(
+                call_id=str(item.get("call_id") or ""),
+                name=str(item.get("name") or "unknown"),
+                arguments=dict(item.get("arguments") or {}),
+                spec=workspace.tool_spec(str(item.get("name") or "unknown")),
+                status=(
+                    "interaction_required"
+                    if item.get("call_id") == call_id
+                    else "pending"
+                ),
+                group_id=str(item.get("group_id") or _missing_group_id(item)),
+                execution_mode=str(item.get("execution_mode") or "serial"),
+            )
+            for item in [waiting_call, *pending_calls]
+        ]
+        await self.repository.commit_waiting_interaction(
+            session_id,
+            run_id=run_id,
+            request_payload={
+                "interaction_id": str(private_interaction["request_id"]),
+                "request": private_interaction,
+            },
             checkpoint=checkpoint,
-            draft=None,
-            tool_progress=[
-                _tool_progress_item(
-                    call_id=str(item.get("call_id") or ""),
-                    name=str(item.get("name") or "unknown"),
-                    arguments=dict(item.get("arguments") or {}),
-                    spec=workspace.tool_spec(str(item.get("name") or "unknown")),
-                    status=(
-                        "interaction_required"
-                        if item.get("call_id") == call_id
-                        else "pending"
-                    ),
-                    group_id=str(item.get("group_id") or _missing_group_id(item)),
-                    execution_mode=str(item.get("execution_mode") or "serial"),
-                )
-                for item in [waiting_call, *pending_calls]
-            ],
+            tool_progress=tool_progress,
         )
         return True
 
@@ -757,7 +764,11 @@ class AgentHarness:
             ],
         )
         for item in plan.tools:
-            interaction_id = f"tool:{item.call_id}"
+            interaction_id = (
+                f"tool:{item.call_id}"
+                if item.name == "ask_user"
+                else f"tool:{run.id}:{item.call_id}"
+            )
             persisted_response = await self.repository.get_interaction_response(
                 str(session.id),
                 run_id=str(run.id),
@@ -828,6 +839,7 @@ class AgentHarness:
                 assert interaction is not None
                 checkpoint = dict(run.checkpoint or {})
                 recovery_request = _verification_recovery_request(result)
+                recovery_interaction_id = f"recovery:{item.call_id}"
                 checkpoint.update(
                     {
                         "phase": "interaction",
@@ -844,7 +856,7 @@ class AgentHarness:
                     str(session.id),
                     run_id=str(run.id),
                     request_payload={
-                        "interaction_id": interaction.request_id,
+                        "interaction_id": recovery_interaction_id,
                         "request": recovery_request,
                     },
                     checkpoint=checkpoint,
@@ -1297,6 +1309,7 @@ def _tool_interaction_dict(result) -> dict[str, Any]:
         "kind": interaction.kind,
         "questions": list(interaction.questions),
         "risk": interaction.risk,
+        "target": interaction.target,
     }
 
 

@@ -40,6 +40,7 @@ class RoutedWorkspaceRuntime:
         self._tools = (*routed, self._list_environments.spec)
         self._tool_by_name = {spec.name: spec for spec in self._tools}
         self._bash_environment: dict[str, str] = {}
+        self._interaction_scope: str | None = None
         self._bash_environment_provider: (
             Callable[[], Awaitable[dict[str, str]]] | None
         ) = None
@@ -47,6 +48,11 @@ class RoutedWorkspaceRuntime:
     def with_bash_environment(self, environment: dict[str, str]):
         self._bash_environment = dict(environment)
         self.control_runtime.with_bash_environment(environment)
+        return self
+
+    def with_interaction_scope(self, scope: str):
+        self._interaction_scope = scope
+        self.control_runtime.with_interaction_scope(scope)
         return self
 
     def with_bash_environment_provider(
@@ -105,6 +111,8 @@ class RoutedWorkspaceRuntime:
         )
 
     def _configure_runtime(self, workspace: Any) -> None:
+        if self._interaction_scope:
+            workspace.with_interaction_scope(self._interaction_scope)
         if self._bash_environment:
             workspace.with_bash_environment(self._bash_environment)
         if self._bash_environment_provider is not None:

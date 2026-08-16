@@ -701,6 +701,12 @@ def test_interaction_request_projection_normalizes_approval_risk() -> None:
             "summary": "Run command",
             "input_preview": "rm output.txt",
             "allowed_responses": ["reject"],
+            "target": {
+                "environment_id": "ssh:gpu",
+                "display_name": "GPU server",
+                "kind": "ssh",
+                "host": "gpu.example.test",
+            },
             "risk": {
                 "level": "high",
                 "effects": ["delete"],
@@ -718,6 +724,12 @@ def test_interaction_request_projection_normalizes_approval_risk() -> None:
         "summary": "Run command",
         "input_preview": "rm output.txt",
         "allowed_responses": ["reject"],
+        "target": {
+            "environment_id": "ssh:gpu",
+            "display_name": "GPU server",
+            "kind": "ssh",
+            "host": "gpu.example.test",
+        },
         "risk": {
             "level": "high",
             "effects": ["delete"],

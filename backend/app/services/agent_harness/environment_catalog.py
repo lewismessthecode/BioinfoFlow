@@ -30,6 +30,7 @@ class EnvironmentCatalog:
         self,
         *,
         workspace_id: str,
+        allow_remote: bool = True,
     ) -> tuple[EnvironmentDescriptor, ...]:
         environments = [
             EnvironmentDescriptor(
@@ -40,6 +41,8 @@ class EnvironmentCatalog:
                 status="online",
             )
         ]
+        if not allow_remote:
+            return tuple(environments)
         cursor: str | None = None
         while True:
             connections, pagination = await self.repository.list_for_workspace(
@@ -69,9 +72,12 @@ class EnvironmentCatalog:
         environment_id: str,
         *,
         workspace_id: str,
+        allow_remote: bool = True,
     ) -> bool:
         if environment_id == "local":
             return True
+        if not allow_remote:
+            return False
         connection = await self.repository.get_for_workspace(
             environment_id,
             workspace_id=workspace_id,

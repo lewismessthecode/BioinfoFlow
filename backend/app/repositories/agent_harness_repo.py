@@ -16,6 +16,7 @@ from app.models.agent_harness import (
 )
 from app.repositories.base import BaseRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
+from app.config import settings
 from app.services.agent_harness.contracts import (
     ENTRY_PAYLOAD_TYPES,
     ActiveRunView,
@@ -41,6 +42,9 @@ from app.services.agent_harness.environment_scope import (
     EnvironmentScopeRequest,
     resolve_environment_scope,
 )
+from app.services.agent_harness.environment_target import (
+    remote_environment_target_snapshot,
+)
 from app.services.agent_harness.tool_projection import (
     public_error_message,
     public_result_details,
@@ -54,6 +58,28 @@ TERMINAL_RUN_STATUSES = ("completed", "failed", "cancelled")
 _SESSION_SETTING_UNSET = object()
 
 
+def _context_setting_changes(values: dict[str, object]) -> dict[str, Any]:
+    changes: dict[str, Any] = {}
+    if "model_snapshot" in values:
+        snapshot = values["model_snapshot"]
+        target = snapshot.get("target") if isinstance(snapshot, dict) else None
+        changes["model"] = (
+            {
+                "provider": str(target.get("provider_kind") or "unknown"),
+                "model": str(target.get("model_name") or "unknown"),
+            }
+            if isinstance(target, dict)
+            else None
+        )
+    for field in ("permission_mode", "workspace_access"):
+        if field in values:
+            changes[field] = str(values[field])
+    if "environment_scope" in values:
+        scope = values["environment_scope"]
+        changes["environment_scope"] = dict(scope) if isinstance(scope, dict) else scope
+    return changes
+
+
 async def _turn_execution_config(
     db: AsyncSession,
     session: AgentHarnessSession,
@@ -61,9 +87,18 @@ async def _turn_execution_config(
     model_snapshot: dict | None = None,
 ) -> dict[str, Any]:
     requested_scope = session.environment_scope or {"mode": "auto"}
-    authorized = await EnvironmentCatalog(
-        RemoteConnectionRepository(db)
-    ).list_authorized(workspace_id=str(session.workspace_id))
+    metadata = session.session_metadata or {}
+    stored_allow_remote = metadata.get("_allow_remote_environments")
+    allow_remote = (
+        stored_allow_remote
+        if isinstance(stored_allow_remote, bool)
+        else not settings.auth_is_team
+    )
+    connection_repository = RemoteConnectionRepository(db)
+    authorized = await EnvironmentCatalog(connection_repository).list_authorized(
+        workspace_id=str(session.workspace_id),
+        allow_remote=allow_remote,
+    )
     resolved_scope = resolve_environment_scope(
         EnvironmentScopeRequest(
             mode=("manual" if requested_scope.get("mode") == "manual" else "auto"),
@@ -75,6 +110,21 @@ async def _turn_execution_config(
         ),
         authorized,
     )
+    environment_targets: dict[str, dict[str, Any]] = {}
+    for environment in resolved_scope.environments.values():
+        if environment.kind != "ssh":
+            continue
+        connection = await connection_repository.get_for_workspace(
+            environment.environment_id,
+            workspace_id=str(session.workspace_id),
+        )
+        if connection is not None:
+            environment_targets[
+                environment.environment_id
+            ] = await remote_environment_target_snapshot(
+                connection_repository,
+                connection,
+            )
     return {
         "settings_revision": int(session.settings_revision or 1),
         "model": model_snapshot or session.model_snapshot,
@@ -84,6 +134,7 @@ async def _turn_execution_config(
             "mode": resolved_scope.mode,
             "environment_ids": list(resolved_scope.environment_ids),
         },
+        "environment_targets": environment_targets,
     }
 
 
@@ -531,7 +582,10 @@ class AgentHarnessRepository:
             "workspace_access",
             "environment_scope",
         }
-        if settings_fields & values.keys():
+        context_setting_values = {
+            key: value for key, value in values.items() if key in settings_fields
+        }
+        if context_setting_values:
             values["settings_revision"] = AgentHarnessSession.settings_revision + 1
         requires_idle_run = values.get("status") == "archived"
         stmt = update(AgentHarnessSession).where(
@@ -561,9 +615,29 @@ class AgentHarnessRepository:
                 raise ValueError("archive status cannot change during an active run")
             raise ValueError("agent session settings were not updated")
 
-        await self.db.commit()
         session = await self.get_session(session_id)
         assert session is not None
+        await self.db.refresh(session)
+        if context_setting_values:
+            payload = ENTRY_PAYLOAD_TYPES["context_update"].model_validate(
+                {
+                    "settings_revision": session.settings_revision,
+                    "changes": _context_setting_changes(context_setting_values),
+                }
+            )
+            sequence = int(session.history_revision) + 1
+            self.db.add(
+                AgentHarnessEntry(
+                    session_id=session_id,
+                    run_id=None,
+                    sequence=sequence,
+                    type="context_update",
+                    schema_version=2,
+                    payload=payload.model_dump(mode="json"),
+                )
+            )
+            session.history_revision = sequence
+        await self.db.commit()
         await self.db.refresh(session)
         return session
 
@@ -2284,7 +2358,9 @@ class AgentHarnessRepository:
             ),
             runs=[run_view(item) for item in runs],
             entries=[
-                entry_contract(entry) for entry in entries if entry.type != "compaction"
+                entry_contract(entry)
+                for entry in entries
+                if entry.type not in {"compaction", "context_update"}
             ],
             active_run=active_run,
         )

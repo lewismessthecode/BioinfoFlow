@@ -63,6 +63,7 @@ async def test_routed_tool_call_selects_runtime_and_strips_routing_argument() ->
     )
 
     assert result.status == "completed"
+    assert result.output == {"ok": True, "environment_id": "ssh:gpu"}
     assert observed == [
         (
             "gpu-runtime",

@@ -37,6 +37,7 @@ def build_history_view(
     entries: Iterable[HistoryEntry | Mapping[str, Any]],
     *,
     attachment_parts_by_id: Mapping[str, tuple[InputPart, ...]] | None = None,
+    settings_revision: int | None = None,
 ) -> HistoryView:
     ordered = sorted(entries, key=_sequence)
     compaction = _latest_valid_compaction(ordered)
@@ -55,12 +56,17 @@ def build_history_view(
             )
         )
     for entry in ordered:
-        if _sequence(entry) <= covered_through:
+        entry_type = _entry_type(entry)
+        if _sequence(entry) <= covered_through and entry_type != "context_update":
             continue
-        if _entry_type(entry) == "plan" and _sequence(entry) != latest_plan_sequence:
+        if entry_type == "context_update" and not _context_update_applies(
+            _payload(entry), settings_revision=settings_revision
+        ):
             continue
-        if _entry_type(entry) != "message":
-            input_items.extend(_non_message_parts(_entry_type(entry), _payload(entry)))
+        if entry_type == "plan" and _sequence(entry) != latest_plan_sequence:
+            continue
+        if entry_type != "message":
+            input_items.extend(_non_message_parts(entry_type, _payload(entry)))
         else:
             input_items.extend(
                 _message_parts(
@@ -97,6 +103,23 @@ def _latest_valid_compaction(
 
 
 def _non_message_parts(entry_type: str, payload: Mapping[str, Any]) -> list[InputPart]:
+    if entry_type == "context_update":
+        revision = payload.get("settings_revision")
+        changes = payload.get("changes")
+        if isinstance(revision, int) and isinstance(changes, Mapping):
+            return [
+                TextPart(
+                    "Conversation settings update for subsequent Runs "
+                    f"(revision {revision}): "
+                    + json.dumps(
+                        dict(changes),
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                        default=str,
+                    )
+                )
+            ]
     if entry_type == "interaction_response":
         response = payload.get("response")
         if response is not None:
@@ -130,6 +153,19 @@ def _non_message_parts(entry_type: str, payload: Mapping[str, Any]) -> list[Inpu
                 )
             ]
     return []
+
+
+def _context_update_applies(
+    payload: Mapping[str, Any], *, settings_revision: int | None
+) -> bool:
+    if settings_revision is None:
+        return True
+    revision = payload.get("settings_revision")
+    return (
+        isinstance(revision, int)
+        and not isinstance(revision, bool)
+        and revision <= settings_revision
+    )
 
 
 def _message_parts(

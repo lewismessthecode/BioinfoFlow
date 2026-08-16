@@ -42,10 +42,12 @@ class ContextBuilder:
         entries: Iterable[HistoryEntry | Mapping[str, Any]],
         attachment_parts: Iterable[InputPart] = (),
         attachment_parts_by_id: Mapping[str, tuple[InputPart, ...]] | None = None,
+        settings_revision: int | None = None,
     ) -> ModelContext:
         history = build_history_view(
             entries,
             attachment_parts_by_id=attachment_parts_by_id,
+            settings_revision=settings_revision,
         )
         return ModelContext(
             instructions=_prompt_content(prompt_snapshot),

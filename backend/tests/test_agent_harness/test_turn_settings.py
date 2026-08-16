@@ -116,6 +116,7 @@ async def test_active_run_keeps_its_turn_config_when_thread_settings_change(
             "mode": "auto",
             "environment_ids": ["local"],
         },
+        "environment_targets": {},
     }
 
 
@@ -175,6 +176,7 @@ async def test_queued_message_uses_latest_thread_settings_when_its_run_starts(
             "mode": "auto",
             "environment_ids": ["local"],
         },
+        "environment_targets": {},
     }
 
 
