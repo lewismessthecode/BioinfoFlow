@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.auth.session import validate_user
 from app.path_layout import agent_user_workspace_root, project_home
 from app.repositories.llm_repo import (
     LlmModelProfileRepository,
@@ -27,6 +28,9 @@ from app.services.agent_harness.sandbox import SandboxRunner
 from app.services.agent_harness.harness import AgentHarness
 from app.services.agent_harness.model_target import private_model_snapshot
 from app.services.agent_harness.environment_catalog import EnvironmentCatalog
+from app.services.agent_harness.environment_target import (
+    remote_environment_target_snapshot,
+)
 from app.services.agent_harness.environment_scope import (
     EnvironmentDescriptor,
     ResolvedEnvironmentScope,
@@ -45,7 +49,7 @@ from app.services.remote_execution import (
     RemoteExecutor,
     SshRemoteExecutor,
 )
-from app.utils.authorization import can_access_project
+from app.utils.authorization import can_access_project, can_manage_external_roots
 from app.utils.exceptions import AgentModelRequiredError, NotFoundError
 
 
@@ -264,7 +268,8 @@ def routed_workspace_runtime_for_session(
     remote_executor: RemoteExecutor | None = None,
     artifact_writer=None,
 ) -> RoutedWorkspaceRuntime:
-    catalog = EnvironmentCatalog(RemoteConnectionRepository(db))
+    connection_repository = RemoteConnectionRepository(db)
+    catalog = EnvironmentCatalog(connection_repository)
     scope_data = getattr(session, "environment_scope", None) or {"mode": "auto"}
     mode = "manual" if scope_data.get("mode") == "manual" else "auto"
     selected_ids = tuple(
@@ -272,11 +277,26 @@ def routed_workspace_runtime_for_session(
         for item in (scope_data.get("environment_ids") or ())
         if isinstance(item, str) and item
     )
+    environment_targets = getattr(session, "environment_targets", None) or {}
     scope_environments = {
         environment_id: EnvironmentDescriptor(
             environment_id,
             "local" if environment_id == "local" else "ssh",
-            "Local" if environment_id == "local" else environment_id,
+            (
+                "Local"
+                if environment_id == "local"
+                else str(
+                    environment_targets.get(environment_id, {}).get("display_name")
+                    or environment_id
+                )
+            ),
+            (
+                None
+                if environment_id == "local"
+                else _environment_target_description(
+                    environment_targets.get(environment_id)
+                )
+            ),
         )
         for environment_id in (selected_ids or ("local",))
     }
@@ -288,11 +308,13 @@ def routed_workspace_runtime_for_session(
         session,
         artifact_writer=artifact_writer,
     )
+    allow_remote = _remote_environment_access_is_current(session)
 
     async def authorize(environment_id: str) -> bool:
         return await catalog.is_authorized(
             environment_id,
             workspace_id=str(session.workspace_id),
+            allow_remote=allow_remote,
         )
 
     async def resolve(environment_id: str) -> WorkspaceRuntime | None:
@@ -308,7 +330,8 @@ def routed_workspace_runtime_for_session(
 
     async def visible_environments() -> tuple[EnvironmentDescriptor, ...]:
         environments = await catalog.list_authorized(
-            workspace_id=str(session.workspace_id)
+            workspace_id=str(session.workspace_id),
+            allow_remote=allow_remote,
         )
         selected = set(selected_ids)
         if not selected:
@@ -328,6 +351,29 @@ def routed_workspace_runtime_for_session(
         control_runtime=local_runtime,
         environments=visible_environments,
     )
+
+
+def _remote_environment_access_is_current(session: Any) -> bool:
+    if not settings.auth_is_team:
+        return True
+    metadata = getattr(session, "session_metadata", None) or {}
+    if metadata.get("_allow_remote_environments") is not True:
+        return False
+    user = validate_user(str(session.user_id))
+    return user is not None and can_manage_external_roots(user.role)
+
+
+def _environment_target_description(target: Any) -> str | None:
+    if not isinstance(target, dict):
+        return None
+    host = target.get("host")
+    port = target.get("port")
+    username = target.get("username")
+    if not isinstance(host, str) or not isinstance(username, str):
+        return None
+    if not isinstance(port, int):
+        return None
+    return f"{username}@{host}:{port}"
 
 
 def _local_workspace_runtime_for_session(
@@ -374,6 +420,7 @@ async def _remote_environment_runtime(
     remote_executor: RemoteExecutor | None,
     artifact_writer=None,
 ) -> WorkspaceRuntime | None:
+    connection_repository = RemoteConnectionRepository(db)
     service = RemoteConnectionService(db)
     model = await service.get_connection(
         environment_id,
@@ -381,6 +428,20 @@ async def _remote_environment_runtime(
     )
     if model is None:
         return None
+    expected_targets = getattr(session, "environment_targets", None)
+    if expected_targets is not None:
+        expected_target = expected_targets.get(environment_id)
+        if expected_target is None:
+            return None
+        current_target = await remote_environment_target_snapshot(
+            connection_repository,
+            model,
+        )
+        if current_target != expected_target:
+            return None
+        expected_revision = str(expected_target["configuration_revision"])
+    else:
+        expected_revision = None
     connection = await service.resolve_connection_config(model)
     executor = remote_executor or SshRemoteExecutor()
     snapshot = session.workspace_snapshot or {}
@@ -411,6 +472,7 @@ async def _remote_environment_runtime(
             workspace_id=str(session.workspace_id),
             connection_id=environment_id,
             executor=executor,
+            expected_configuration_revision=expected_revision,
         ),
         working_directory=root,
         read_roots=(root,),
@@ -758,11 +820,13 @@ class _DatabaseRemoteExecutor:
         workspace_id: str,
         connection_id: str,
         executor: RemoteExecutor,
+        expected_configuration_revision: str | None = None,
     ) -> None:
         self.db = db
         self.workspace_id = workspace_id
         self.connection_id = connection_id
         self.executor = executor
+        self.expected_configuration_revision = expected_configuration_revision
         self._credential_resolution_lock = asyncio.Lock()
 
     async def run(
@@ -815,6 +879,19 @@ class _DatabaseRemoteExecutor:
                 raise NotFoundError(
                     f"Remote connection not found: {self.connection_id}"
                 )
+            if self.expected_configuration_revision is not None:
+                current_target = await remote_environment_target_snapshot(
+                    service.repo,
+                    model,
+                )
+                if (
+                    current_target["configuration_revision"]
+                    != self.expected_configuration_revision
+                ):
+                    raise ValueError(
+                        "remote connection configuration changed after the Run "
+                        "was created"
+                    )
             resolved = await service.resolve_connection_config(model)
             if (
                 resolved.host != connection.host

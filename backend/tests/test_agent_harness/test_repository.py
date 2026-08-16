@@ -85,6 +85,43 @@ async def test_repository_opens_session_and_appends_strictly_ordered_history(
 
 
 @pytest.mark.asyncio
+async def test_session_setting_update_appends_private_public_safe_context_diff(
+    harness_db: AsyncSession,
+) -> None:
+    repository = AgentHarnessRepository(harness_db)
+    session = await repository.open_session(_request())
+
+    updated = await repository.update_session_settings(
+        str(session.id),
+        model_snapshot={
+            "target": {
+                "provider_kind": "openai",
+                "model_name": "gpt-5.6",
+                "base_url": "https://private.example/v1",
+                "target_revision": "secret-revision",
+            }
+        },
+        permission_mode="full_access",
+    )
+
+    entries = await repository.list_entries(str(session.id))
+    assert updated.settings_revision == 2
+    assert len(entries) == 1
+    assert entries[0].type == "context_update"
+    assert entries[0].run_id is None
+    assert entries[0].payload == {
+        "settings_revision": 2,
+        "changes": {
+            "model": {"provider": "openai", "model": "gpt-5.6"},
+            "permission_mode": "full_access",
+        },
+    }
+    assert "private.example" not in str(entries[0].payload)
+    assert "secret-revision" not in str(entries[0].payload)
+    assert (await repository.snapshot(str(session.id))).entries == []
+
+
+@pytest.mark.asyncio
 async def test_snapshot_projects_failed_run_error_without_private_diagnostics(
     harness_db: AsyncSession,
 ) -> None:

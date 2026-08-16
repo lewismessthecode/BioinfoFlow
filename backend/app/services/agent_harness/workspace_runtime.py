@@ -1118,6 +1118,7 @@ class WorkspaceRuntime:
         bash_environment_provider: Callable[[], Awaitable[dict[str, str]]]
         | None = None,
         extra_tools: Iterable[HarnessTool] = (),
+        interaction_scope: str | None = None,
     ) -> None:
         self._executor = ToolExecutor(
             backend,
@@ -1127,7 +1128,12 @@ class WorkspaceRuntime:
             bash_environment=bash_environment,
             bash_environment_provider=bash_environment_provider,
             extra_tools=extra_tools,
+            interaction_scope=interaction_scope,
         )
+
+    def with_interaction_scope(self, scope: str) -> WorkspaceRuntime:
+        self._executor.interaction_scope = scope
+        return self
 
     def with_bash_environment(self, environment: dict[str, str]) -> WorkspaceRuntime:
         self._executor.bash_environment = dict(environment)

@@ -420,6 +420,13 @@ class ApprovalRiskView(StrictContract):
     affected_resources: list[str] = Field(default_factory=list)
 
 
+class ApprovalTargetView(StrictContract):
+    environment_id: str
+    display_name: str
+    kind: Literal["local", "ssh"]
+    host: str | None = None
+
+
 class AskUserInteractionRequest(StrictContract):
     type: Literal["ask_user"] = "ask_user"
     call_id: str
@@ -433,6 +440,13 @@ class ApprovalInteractionRequest(StrictContract):
     summary: str
     input_preview: str | None = None
     allowed_responses: list[ApprovalAllowedResponse] = Field(min_length=1)
+    target: ApprovalTargetView = Field(
+        default_factory=lambda: ApprovalTargetView(
+            environment_id="local",
+            display_name="Local",
+            kind="local",
+        )
+    )
     risk: ApprovalRiskView
 
 
@@ -463,6 +477,25 @@ class InteractionResponsePayload(StrictContract):
 class CompactionPayload(StrictContract):
     summary: str
     through_sequence: int = Field(ge=0)
+
+
+class ContextUpdatePayload(StrictContract):
+    settings_revision: int = Field(ge=2)
+    changes: dict[str, JsonValue]
+
+    @model_validator(mode="after")
+    def validate_changes(self) -> ContextUpdatePayload:
+        allowed = {
+            "model",
+            "permission_mode",
+            "workspace_access",
+            "environment_scope",
+        }
+        if not self.changes:
+            raise ValueError("context update requires at least one change")
+        if unknown := self.changes.keys() - allowed:
+            raise ValueError(f"unsupported context update fields: {sorted(unknown)}")
+        return self
 
 
 class NoticePayload(StrictContract):
@@ -545,6 +578,7 @@ ENTRY_PAYLOAD_TYPES: dict[str, type[StrictContract]] = {
     "interaction_request": InteractionRequestPayload,
     "interaction_response": InteractionResponsePayload,
     "compaction": CompactionPayload,
+    "context_update": ContextUpdatePayload,
     "notice": NoticePayload,
     "plan": PlanPayload,
 }

@@ -73,7 +73,7 @@ from app.utils.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
-from app.utils.authorization import can_access_project
+from app.utils.authorization import can_access_project, can_manage_external_roots
 from app.utils.responses import success_response
 
 
@@ -291,10 +291,11 @@ async def _environment_scope(
     *,
     workspace_id: str,
     requested: EnvironmentScope,
+    allow_remote: bool,
 ) -> dict[str, object]:
     authorized = await EnvironmentCatalog(
         RemoteConnectionRepository(db)
-    ).list_authorized(workspace_id=workspace_id)
+    ).list_authorized(workspace_id=workspace_id, allow_remote=allow_remote)
     try:
         resolved = resolve_environment_scope(
             EnvironmentScopeRequest(
@@ -559,7 +560,10 @@ async def list_agent_environments(
 ):
     environments = await EnvironmentCatalog(
         RemoteConnectionRepository(db)
-    ).list_authorized(workspace_id=user.workspace_id)
+    ).list_authorized(
+        workspace_id=user.workspace_id,
+        allow_remote=can_manage_external_roots(user.role),
+    )
     return success_response(
         [
             {
@@ -610,6 +614,7 @@ async def create_session(
         db,
         workspace_id=user.workspace_id,
         requested=payload.environment_scope,
+        allow_remote=can_manage_external_roots(user.role),
     )
     snapshot = await agent_runtime.open_session(
         OpenSessionRequest(
@@ -628,7 +633,10 @@ async def create_session(
                 ).as_dict(),
                 workspace={**workspace, "project": project_id},
             ),
-            metadata=payload.metadata,
+            metadata={
+                **(payload.metadata or {}),
+                "_allow_remote_environments": can_manage_external_roots(user.role),
+            },
         )
     )
     return success_response(_dump(snapshot), request=request, status_code=201)
@@ -795,6 +803,7 @@ async def update_session(
                 db,
                 workspace_id=user.workspace_id,
                 requested=payload.environment_scope,
+                allow_remote=can_manage_external_roots(user.role),
             )
         selector_fields = {"model_id", "profile_id", "provider", "model"}
         if selector_fields & payload.model_fields_set:

@@ -1386,6 +1386,36 @@ async def test_ask_changes_requires_approval_for_workspace_writes(
 
 
 @pytest.mark.asyncio
+async def test_approval_response_is_bound_to_the_owning_run(tmp_path: Path) -> None:
+    call = ToolCall("shared-call", "write", {"path": "x.txt", "content": "x"})
+    run_a = _runtime(tmp_path, permission_mode="ask_changes").with_interaction_scope(
+        "run-a"
+    )
+    run_b = _runtime(tmp_path, permission_mode="ask_changes").with_interaction_scope(
+        "run-b"
+    )
+
+    pending_a = await run_a.execute(call)
+    pending_b = await run_b.execute(call)
+    assert pending_a.interaction is not None
+    assert pending_b.interaction is not None
+
+    stale_response = await run_b.execute(
+        call,
+        interaction_response={
+            "request_id": pending_a.interaction.request_id,
+            "approved": True,
+        },
+    )
+
+    assert pending_a.interaction.request_id == "tool:run-a:shared-call"
+    assert pending_b.interaction.request_id == "tool:run-b:shared-call"
+    assert stale_response.status == "blocked"
+    assert "does not match" in (stale_response.error or "")
+    assert not (tmp_path / "x.txt").exists()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "command",
     [

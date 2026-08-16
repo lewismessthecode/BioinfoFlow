@@ -13,6 +13,7 @@ class EffectiveTurnSession:
     permission_mode: str
     workspace_access: str
     environment_scope: dict
+    environment_targets: dict[str, dict[str, Any]]
     settings_revision: int
 
     def __getattr__(self, name: str) -> Any:
@@ -33,6 +34,7 @@ def effective_turn_session(session: Any, run: Any) -> EffectiveTurnSession:
             or getattr(session, "environment_scope", None)
             or {"mode": "auto"}
         ),
+        environment_targets=dict(config.get("environment_targets") or {}),
         settings_revision=int(
             config.get("settings_revision") or getattr(session, "settings_revision", 1)
         ),

@@ -2163,7 +2163,7 @@ async def test_approved_bash_rejects_changed_cwd_assessment_before_execution(
             session_id,
             RespondCommand(
                 command_id="approve-dangerous-bash",
-                interaction_id="tool:bash-1",
+                interaction_id=_active(waiting).pending_interaction.interaction_id,
                 response={"type": "approval", "approved": True},
             ),
         )
@@ -2247,13 +2247,14 @@ async def test_approval_response_must_be_allowed_by_pending_request(
     waiting = await harness.snapshot(session_id)
     assert _active(waiting).pending_interaction is not None
     assert _active(waiting).pending_interaction.request.allowed_responses == ["reject"]
+    interaction_id = _active(waiting).pending_interaction.interaction_id
 
     with pytest.raises(ValueError, match="approval response is not allowed"):
         await harness.dispatch(
             session_id,
             RespondCommand(
                 command_id="disallowed-approve",
-                interaction_id="tool:bash-1",
+                interaction_id=interaction_id,
                 response={"type": "approval", "approved": True},
             ),
         )
@@ -2261,6 +2262,77 @@ async def test_approval_response_must_be_allowed_by_pending_request(
     still_waiting = await harness.snapshot(session_id)
     assert _active(still_waiting).run.status == "waiting_user"
     assert backend.executed is False
+
+
+@pytest.mark.asyncio
+async def test_cancelled_run_approval_cannot_approve_reused_call_id(
+    harness_db, tmp_path
+) -> None:
+    model = ScriptedModel(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="shared-bash",
+                name="bash",
+                arguments_delta='{"command":"rm -f first.txt"}',
+            ),
+            CompletionMetadata(response_id="response-1", finish_reason="tool_calls"),
+        ),
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="shared-bash",
+                name="bash",
+                arguments_delta='{"command":"rm -f second.txt"}',
+            ),
+            CompletionMetadata(response_id="response-2", finish_reason="tool_calls"),
+        ),
+    )
+    harness = AgentHarness.for_database(
+        harness_db,
+        model_gateway=model,
+        workspace_factory=lambda _session: _workspace(tmp_path),
+    )
+    opened = await harness.open_session(_open_request())
+    session_id = str(opened.session.id)
+
+    await harness.dispatch(session_id, _message("run-a", "Delete the first file."))
+    first = await harness.snapshot(session_id)
+    first_interaction = _active(first).pending_interaction
+    assert first_interaction is not None
+    first_run_id = str(_active(first).run.id)
+
+    await harness.dispatch(
+        session_id,
+        CancelCommand(command_id="cancel-run-a", reason="user_cancelled"),
+    )
+    await harness.dispatch(session_id, _message("run-b", "Delete the second file."))
+    second = await harness.snapshot(session_id)
+    second_interaction = _active(second).pending_interaction
+    assert second_interaction is not None
+    second_run_id = str(_active(second).run.id)
+
+    assert first_interaction.interaction_id == (f"tool:{first_run_id}:shared-bash")
+    assert second_interaction.interaction_id == (f"tool:{second_run_id}:shared-bash")
+    assert first_interaction.interaction_id != second_interaction.interaction_id
+
+    with pytest.raises(ValueError, match="interaction.*does not match"):
+        await harness.dispatch(
+            session_id,
+            RespondCommand(
+                command_id="stale-run-a-approval",
+                interaction_id=first_interaction.interaction_id,
+                response={"type": "approval", "approved": True},
+            ),
+        )
+
+    still_waiting = await harness.snapshot(session_id)
+    assert _active(still_waiting).run.status == "waiting_user"
+    assert _active(still_waiting).pending_interaction is not None
+    assert (
+        _active(still_waiting).pending_interaction.interaction_id
+        == second_interaction.interaction_id
+    )
 
 
 @pytest.mark.asyncio
@@ -2347,11 +2419,13 @@ async def test_corrupt_checkpoint_restores_pending_bash_approval_fence(
     )
 
     assert await harness.recover() == 1
+    restored = await harness.snapshot(session_id)
+    assert _active(restored).pending_interaction is not None
     await harness.dispatch(
         session_id,
         RespondCommand(
             command_id="approve-restored-bash",
-            interaction_id="tool:bash-1",
+            interaction_id=_active(restored).pending_interaction.interaction_id,
             response={"type": "approval", "approved": True},
         ),
     )

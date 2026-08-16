@@ -121,7 +121,7 @@ async def test_routed_runtime_executes_and_discovers_environments() -> None:
     )
     listed = await runtime.execute(ToolCall("call-2", "list_environments", {}))
 
-    assert result.output == {"runtime": "gpu"}
+    assert result.output == {"runtime": "gpu", "environment_id": "ssh:gpu"}
     assert runtimes["ssh:gpu"].calls == [
         ToolCall("call-1", "read", {"path": "README.md"})
     ]
@@ -130,6 +130,38 @@ async def test_routed_runtime_executes_and_discovers_environments() -> None:
         "local",
         "ssh:gpu",
     ]
+
+
+@pytest.mark.asyncio
+async def test_routed_runtime_attaches_execution_target_to_approval() -> None:
+    runtime, runtimes, _ = _routed_runtime()
+
+    async def require_approval(call: ToolCall, **_kwargs) -> ToolResult:
+        return ToolResult.interaction_required(
+            call_id=call.call_id,
+            tool_name=call.name,
+            replay_policy="never",
+            request_id="tool:run-1:call-approval",
+            kind="confirmation",
+            risk={"level": "destructive"},
+        )
+
+    runtimes["ssh:gpu"].execute = require_approval  # type: ignore[method-assign]
+
+    result = await runtime.execute(
+        ToolCall(
+            "call-approval",
+            "bash",
+            {"environment_id": "ssh:gpu", "command": "rm output.txt"},
+        )
+    )
+
+    assert result.interaction is not None
+    assert result.interaction.target == {
+        "environment_id": "ssh:gpu",
+        "display_name": "GPU",
+        "kind": "ssh",
+    }
 
 
 @pytest.mark.asyncio

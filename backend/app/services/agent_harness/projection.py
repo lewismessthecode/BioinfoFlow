@@ -98,6 +98,7 @@ def public_interaction_request(value: dict[str, Any]) -> dict[str, Any]:
         return {"type": "ask_user", "call_id": call_id, "questions": questions}
     if kind == "confirmation":
         risk = value.get("risk") if isinstance(value.get("risk"), dict) else {}
+        target = value.get("target") if isinstance(value.get("target"), dict) else {}
         resources = risk.get("affected_resources") or risk.get("referenced_paths") or []
         allowed_responses = value.get("allowed_responses")
         if allowed_responses is None:
@@ -109,6 +110,16 @@ def public_interaction_request(value: dict[str, Any]) -> dict[str, Any]:
             "summary": str(value.get("summary") or "Allow this tool to run?"),
             "input_preview": value.get("input_preview"),
             "allowed_responses": allowed_responses,
+            "target": {
+                "environment_id": str(target.get("environment_id") or "local"),
+                "display_name": str(target.get("display_name") or "Local"),
+                "kind": "ssh" if target.get("kind") == "ssh" else "local",
+                **(
+                    {"host": str(target["host"])}
+                    if isinstance(target.get("host"), str) and target["host"]
+                    else {}
+                ),
+            },
             "risk": {
                 "level": str(risk.get("level") or "unknown"),
                 "effects": [str(item) for item in risk.get("effects") or []],

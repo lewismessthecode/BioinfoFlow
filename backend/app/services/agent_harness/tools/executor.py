@@ -40,6 +40,7 @@ class ToolExecutor:
         bash_environment_provider: Callable[[], Awaitable[dict[str, str]]]
         | None = None,
         extra_tools: Iterable[HarnessTool] = (),
+        interaction_scope: str | None = None,
     ) -> None:
         if permission_mode not in {"ask_changes", "ask_dangerous", "full_access"}:
             raise ValueError(f"unknown permission mode: {permission_mode}")
@@ -63,6 +64,7 @@ class ToolExecutor:
         self.bash_environment_provider = bash_environment_provider
         self._path_locks: dict[str, asyncio.Lock] = {}
         self._recovery_approval_fingerprints: dict[str, str] = {}
+        self.interaction_scope = interaction_scope
 
     @property
     def tools(self):
@@ -181,7 +183,11 @@ class ToolExecutor:
         approved_cwd_binding = None
         if requires_confirmation:
             if interaction_response is not None:
-                if not _response_matches(call, interaction_response):
+                if not _response_matches(
+                    call,
+                    interaction_response,
+                    interaction_scope=self.interaction_scope,
+                ):
                     return ToolResult(
                         call_id=call.call_id,
                         tool_name=call.name,
@@ -251,7 +257,10 @@ class ToolExecutor:
                     call_id=call.call_id,
                     tool_name=call.name,
                     replay_policy=tool.spec.replay_policy,
-                    request_id=f"tool:{call.call_id}",
+                    request_id=_tool_interaction_id(
+                        call.call_id,
+                        interaction_scope=self.interaction_scope,
+                    ),
                     kind="confirmation",
                     questions=(
                         {
@@ -376,9 +385,7 @@ class ToolExecutor:
                     break
             return ToolBatchResult(tuple(results), tuple(pending))
 
-        results = await asyncio.gather(
-            *(execute_one(call) for call in active)
-        )
+        results = await asyncio.gather(*(execute_one(call) for call in active))
         return ToolBatchResult(tuple(results), tuple(pending))
 
     def batch_execution_mode(
@@ -642,8 +649,26 @@ def _normalize_questions(arguments: dict[str, Any]) -> tuple[dict[str, Any], ...
     return tuple(normalized)
 
 
-def _response_matches(call: ToolCall, response: dict[str, Any]) -> bool:
-    return response.get("request_id") == f"tool:{call.call_id}"
+def _response_matches(
+    call: ToolCall,
+    response: dict[str, Any],
+    *,
+    interaction_scope: str | None = None,
+) -> bool:
+    return response.get("request_id") == _tool_interaction_id(
+        call.call_id,
+        interaction_scope=interaction_scope,
+    )
+
+
+def _tool_interaction_id(
+    call_id: str,
+    *,
+    interaction_scope: str | None,
+) -> str:
+    if interaction_scope:
+        return f"tool:{interaction_scope}:{call_id}"
+    return f"tool:{call_id}"
 
 
 async def _run_interruptibly(awaitable, cancellation: Any | None):
