@@ -53,14 +53,21 @@ export function AgentThinking({
     >
       <button
         type="button"
-        className="group/summary flex min-h-9 w-full min-w-0 items-center gap-2 rounded-[6px] px-1 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none"
+        className="group/summary flex h-9 w-full min-w-0 items-center gap-1.5 rounded-[6px] px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none"
         aria-expanded={expanded}
         aria-controls={detailsId}
         aria-label={`${label ?? t("title")}: ${firstLine(text)}. ${t(expanded ? "hide" : "show")}`}
         onClick={() => setExpanded((value) => !value)}
       >
-        <Sparkles aria-hidden="true" className="size-4 shrink-0" />
+        <Sparkles aria-hidden="true" className="size-3.5 shrink-0" />
         <span className="shrink-0 font-medium">{label ?? t("title")}</span>
+        <span
+          aria-hidden="true"
+          className="shrink-0 text-muted-foreground/45"
+          data-testid="agent-thinking-separator"
+        >
+          ·
+        </span>
         <span className="min-w-0 flex-1 truncate text-foreground/65">
           {firstLine(text)}
         </span>
@@ -81,7 +88,7 @@ export function AgentThinking({
       </button>
 
       {expanded ? (
-        <div id={detailsId} className="ml-4 border-l border-border/50 pb-2 pl-3 pr-3 pt-1 text-foreground/72">
+        <div id={detailsId} className="ml-4 border-l border-border/50 pb-2 pl-3 pr-3 pt-1 text-sm leading-6 text-foreground/72">
           <MarkdownRenderer content={text} variant="agent-transcript" />
         </div>
       ) : null}

@@ -355,31 +355,46 @@ function AskUserInteraction({
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-0">
       {request.questions.map((question) => (
         <fieldset
           key={question.id}
-          className="grid gap-2 border-0 p-0"
+          className="grid min-w-0 gap-3 border-0 border-t border-border/60 py-5 first:border-t-0 first:pt-0 last:pb-0"
+          data-testid="agent-ask-question"
           disabled={completed || pendingAction !== null}
         >
-          <legend className="grid gap-0.5 text-sm font-medium text-foreground">
-            <span>{question.header}</span>
-            <span className="text-xs font-normal leading-5 text-muted-foreground">
-              {question.question}
+          <legend className="w-full p-0 text-left">
+            <span className="grid gap-1.5">
+              <span className="min-w-0 [overflow-wrap:anywhere] text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                {question.header}
+              </span>
+              <span className="min-w-0 [overflow-wrap:anywhere] text-base font-semibold leading-6 tracking-[-0.01em] text-foreground">
+                {question.question}
+              </span>
             </span>
           </legend>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {question.options.map((option) => {
+          <div
+            className="divide-y divide-border/60 border-y border-border/60"
+            data-testid="agent-ask-options"
+          >
+            {question.options.map((option, optionIndex) => {
               const selected = selectedAnswers[question.id]?.includes(option.id) ?? false
               return (
                 <label
                   key={option.id}
                   className={cn(
-                    "flex min-w-0 cursor-pointer items-start gap-2.5 rounded-[8px] border border-border/60 bg-background/70 px-3 py-2.5 transition-colors hover:border-foreground/20 hover:bg-background focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/35",
-                    selected && "border-foreground/25 bg-background",
+                    "grid min-w-0 cursor-pointer grid-cols-[2rem_1.25rem_minmax(0,1fr)] items-start gap-x-2 px-1 py-3 transition-colors hover:bg-muted/20 focus-within:bg-muted/20 focus-within:outline-none focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring/40",
+                    selected && "bg-muted/30 dark:bg-muted/20",
                     completed && "cursor-default",
                   )}
+                  data-testid="agent-ask-option"
                 >
+                  <span
+                    aria-hidden="true"
+                    className="pt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground/70"
+                  >
+                    {String(optionIndex + 1).padStart(2, "0")}
+                  </span>
                   <input
                     type={question.multiSelect ? "checkbox" : "radio"}
                     name={`${interactionId}:${question.id}`}
@@ -388,18 +403,25 @@ function AskUserInteraction({
                     className="mt-0.5 size-4 shrink-0 accent-primary"
                     onChange={() => updateAnswer(question, option.id)}
                   />
-                  <span className="grid min-w-0 flex-1 gap-0.5">
-                    <span className="flex flex-wrap items-center gap-2 text-xs font-medium text-foreground">
-                      {option.label}
+                  <span className="grid min-w-0 gap-1 overflow-hidden">
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-foreground">
+                      <span className="min-w-0 [overflow-wrap:anywhere] text-sm font-medium">
+                        {option.label}
+                      </span>
                       {option.recommended ? (
-                        <StatusBadge variant="neutral" className="px-1.5 py-0 text-[10px]">
+                        <StatusBadge
+                          variant="neutral"
+                          className="px-1.5 py-0 text-[9px] uppercase tracking-[0.08em]"
+                        >
                           {t("ask_user.recommended")}
                         </StatusBadge>
                       ) : null}
                     </span>
-                    <span className="text-xs leading-5 text-muted-foreground">
-                      {option.description}
-                    </span>
+                    {option.description ? (
+                      <span className="min-w-0 [overflow-wrap:anywhere] text-xs leading-5 text-muted-foreground">
+                        {option.description}
+                      </span>
+                    ) : null}
                   </span>
                 </label>
               )
@@ -409,7 +431,7 @@ function AskUserInteraction({
       ))}
 
       {!completed ? (
-        <div className="flex justify-end">
+        <div className="flex justify-end pt-4">
           <Button
             type="button"
             disabled={!ready || pendingAction !== null || !canRespond}

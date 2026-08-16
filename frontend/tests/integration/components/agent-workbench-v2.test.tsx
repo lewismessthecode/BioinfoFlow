@@ -420,6 +420,7 @@ describe("AgentWorkbench v2", () => {
     )
 
     expect(screen.getByTestId("agent-draft-entry")).toBeInTheDocument()
+    expect(screen.queryByRole("banner")).not.toBeInTheDocument()
     expect(screen.getByTestId("mock-composer")).toHaveAttribute(
       "data-placement",
       "draft",
@@ -618,7 +619,7 @@ describe("AgentWorkbench v2", () => {
     })
   })
 
-  it("renders the authoritative session and keeps stream interruptions visible but non-destructive", () => {
+  it("keeps stream interruptions visible without rendering a conversation title header", () => {
     mocks.useSession.mockReturnValue(
       sessionState({
         connectionStatus: "reconnecting",
@@ -630,12 +631,39 @@ describe("AgentWorkbench v2", () => {
       <AgentWorkbench sessionId="session-1" projectId="project-1" />,
     )
 
-    expect(screen.getByText("Variant review")).toBeInTheDocument()
-    expect(screen.getByTestId("agent-header-model")).toHaveTextContent(
-      "GPT-5.6",
-    )
+    expect(screen.queryByRole("heading", { name: "Variant review" })).not.toBeInTheDocument()
+    expect(screen.queryByTestId("agent-header-model")).not.toBeInTheDocument()
+    expect(screen.queryByRole("banner")).not.toBeInTheDocument()
     expect(screen.getByText("emptyTitle")).toBeInTheDocument()
     expect(screen.getByText("connection.reconnecting")).toBeInTheDocument()
+    const status = screen.getByRole("status", {
+      name: "connection.reconnecting",
+    })
+    expect(status).not.toHaveClass("absolute")
+    expect(status.parentElement).toHaveClass("shrink-0", "justify-end")
+  })
+
+  it("does not show next-run helper copy while an active run is using earlier settings", () => {
+    mocks.useSession.mockReturnValue(
+      sessionState({
+        conversationView: conversationView([], {
+          runId: "run-active",
+          status: "running",
+          phase: "model",
+          startedAt: timestamp,
+        }),
+      }),
+    )
+
+    renderWithProviders(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    expect(screen.queryByText("permission.nextRun")).not.toBeInTheDocument()
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute(
+      "data-placement",
+      "dock",
+    )
   })
 
   it("does not rebuild an injected session from legacy transport state when its stable view is unavailable", () => {
@@ -736,16 +764,49 @@ describe("AgentWorkbench v2", () => {
     expect(screen.queryByTestId("transcript")).not.toBeInTheDocument()
   })
 
-  it("keeps the model visible and removes healthy connection noise", () => {
+  it("keeps model controls in the composer instead of a duplicate canvas header", () => {
     renderWithProviders(
       <AgentWorkbench sessionId="session-1" projectId="project-1" />,
     )
 
-    expect(screen.getByTestId("agent-header-model")).toHaveTextContent(
-      "GPT-5.6",
-    )
+    expect(screen.queryByTestId("agent-header-model")).not.toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "gpt-5.6 model selector" }),
+    ).toBeInTheDocument()
     expect(
       screen.queryByLabelText("connection.connected"),
+    ).not.toBeInTheDocument()
+  })
+
+  it("publishes refreshed session titles for the sidebar without rendering them in the canvas", () => {
+    const initial = sessionState()
+    mocks.useSession.mockReturnValue(initial)
+    const view = renderWithProviders(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    expect(mocks.publishSummary).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Variant review" }),
+    )
+    mocks.publishSummary.mockClear()
+
+    const refreshedSession = {
+      ...snapshot().session,
+      title: "RNA-seq QC Plan",
+      updated_at: "2026-08-15T00:00:03Z",
+    }
+    mocks.useSession.mockReturnValue(
+      sessionState({ session: refreshedSession }),
+    )
+    view.rerender(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    expect(mocks.publishSummary).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "RNA-seq QC Plan" }),
+    )
+    expect(
+      screen.queryByRole("heading", { name: "RNA-seq QC Plan" }),
     ).not.toBeInTheDocument()
   })
 

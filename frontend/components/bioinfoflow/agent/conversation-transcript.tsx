@@ -146,7 +146,7 @@ export function ConversationTranscript({
       >
         <ActivityDisclosureProvider>
           <div
-            className="mx-auto grid w-full max-w-[46rem] min-w-0 content-start gap-5"
+            className="mx-auto grid w-full max-w-[46rem] min-w-0 content-start gap-3"
             data-testid="agent-transcript-content"
           >
             {view.transcript.map((block) => (

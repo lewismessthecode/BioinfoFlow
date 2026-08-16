@@ -220,6 +220,11 @@ describe("AgentActivityGroup", () => {
       "aria-expanded",
       "false",
     )
+    expect(disclosure).toHaveClass("h-9", "py-1")
+    expect(screen.getByTestId("agent-activity-group")).not.toHaveClass(
+      "border",
+      "bg-background",
+    )
     expect(screen.queryByText("Read workflow.nf")).not.toBeInTheDocument()
     expect(screen.queryByText("Read params.json")).not.toBeInTheDocument()
 
@@ -227,6 +232,9 @@ describe("AgentActivityGroup", () => {
 
     expect(screen.getByText("Read workflow.nf")).toBeInTheDocument()
     expect(screen.getByText("Read params.json")).toBeInTheDocument()
+    for (const card of screen.getAllByTestId("agent-tool-card")) {
+      expect(card.querySelector("button")).toHaveClass("h-9", "py-1")
+    }
   })
 
   it("localizes public tool categories instead of rendering protocol values", async () => {
