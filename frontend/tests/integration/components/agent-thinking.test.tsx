@@ -7,13 +7,14 @@ import type { ReasoningTranscriptBlock } from "@/lib/agent/conversation-model/ty
 import { renderWithProviders } from "@/tests/test-utils"
 
 vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string) => {
+  useTranslations: () => (key: string, values?: Record<string, string>) => {
     const copy: Record<string, string> = {
       title: "Thinking",
       running: "Thinking…",
       show: "Show thinking",
       hide: "Hide thinking",
     }
+    if (key === "duration") return `${values?.duration ?? "0"}s`
     return copy[key] ?? key
   },
 }))
@@ -54,28 +55,40 @@ describe("AgentThinking", () => {
 
   it("keeps completed thinking compact until the whole row is expanded", async () => {
     const user = userEvent.setup()
+    const completed = {
+      ...reasoning(
+        "thinking-complete",
+        "Inspect the workflow first.\nThen validate the parameters.",
+        false,
+      ),
+      durationMs: 1200,
+    }
     renderWithProviders(
-      <AgentThinking
-        reasoning={reasoning(
-          "thinking-complete",
-          "Inspect the workflow first.\nThen validate the parameters.",
-          false,
-        )}
-      />,
+      <AgentThinking reasoning={completed} />,
     )
 
     expect(screen.getByText("Inspect the workflow first.")).toBeInTheDocument()
-    expect(
-      screen.getByRole("button", { name: /Show thinking/i }),
-    ).toHaveClass("min-h-9")
+    const disclosure = screen.getByRole("button", { name: /Show thinking/i })
+    expect(disclosure).toHaveClass(
+      "h-9",
+      "hover:bg-muted/25",
+      "focus-visible:ring-2",
+    )
+    expect(screen.getByTestId("agent-thinking-separator")).toHaveTextContent("·")
+    expect(screen.getByTestId("agent-thinking-duration")).toHaveTextContent("1.2s")
     expect(screen.getByTestId("agent-thinking")).not.toHaveTextContent(
       "Then validate the parameters.",
     )
 
-    await user.click(screen.getByRole("button", { name: /Show thinking/i }))
+    await user.click(disclosure)
 
-    expect(screen.getByTestId("agent-thinking")).toHaveTextContent(
+    const thinking = screen.getByTestId("agent-thinking")
+    expect(thinking).toHaveTextContent(
       "Then validate the parameters.",
+    )
+    expect(thinking.querySelector(`#${disclosure.getAttribute("aria-controls")}`)).toHaveClass(
+      "text-sm",
+      "leading-6",
     )
   })
 

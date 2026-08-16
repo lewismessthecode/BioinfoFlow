@@ -92,6 +92,8 @@ describe("ConversationTranscript", () => {
   it("renders a stable plan block with the existing Agent plan presentation", () => {
     renderWithProviders(<ConversationTranscript view={planView} />)
 
+    expect(screen.getByTestId("agent-transcript-content")).toHaveClass("gap-3")
+    expect(screen.getByTestId("agent-transcript-content")).not.toHaveClass("gap-5")
     expect(screen.getByText("Investigate the workflow")).toBeInTheDocument()
     expect(screen.getByText("1/2 complete")).toBeInTheDocument()
     expect(screen.getByText("Inspect logs")).toBeInTheDocument()
@@ -417,7 +419,7 @@ describe("ConversationTranscript", () => {
     const group = screen.getByTestId("agent-activity-group")
     const disclosure = group.querySelector("button")
     expect(disclosure).toHaveAttribute("aria-expanded", "false")
-    expect(disclosure).toHaveClass("min-h-8", "py-1")
+    expect(disclosure).toHaveClass("h-9", "py-1")
     expect(screen.queryByTestId("agent-tool-card")).not.toBeInTheDocument()
   })
 })

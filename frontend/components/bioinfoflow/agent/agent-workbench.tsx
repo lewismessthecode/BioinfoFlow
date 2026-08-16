@@ -70,7 +70,6 @@ type AgentWorkbenchProps = {
   onActiveSessionIdChange?: (sessionId: string) => void
   onSessionResolved?: (session: ConversationSummary) => void
   onOpenRun?: (runId: string) => void
-  headerActions?: ReactNode
   conversationModelControls?: ReactNode
   environmentTargets?: readonly AgentEnvironmentTarget[]
   requestedEnvironmentSelection?: AgentEnvironmentSelection
@@ -95,7 +94,6 @@ export const AgentWorkbench = forwardRef<
     onActiveSessionIdChange,
     onSessionResolved,
     onOpenRun,
-    headerActions,
     conversationModelControls,
     environmentTargets,
     requestedEnvironmentSelection,
@@ -153,7 +151,7 @@ export const AgentWorkbench = forwardRef<
   return (
     <main
       className={cn(
-        "flex h-full min-h-0 min-w-0 flex-col bg-background",
+        "relative flex h-full min-h-0 min-w-0 flex-col bg-background",
         className,
       )}
       data-testid="agent-workbench"
@@ -166,7 +164,6 @@ export const AgentWorkbench = forwardRef<
             state={sessionState}
             interactive={interactive}
             onSessionResolved={onSessionResolved}
-            headerActions={headerActions}
             {...common}
           />
         ) : (
@@ -175,7 +172,6 @@ export const AgentWorkbench = forwardRef<
             sessionId={controller.effectiveSessionId}
             interactive={interactive}
             onSessionResolved={onSessionResolved}
-            headerActions={headerActions}
             {...common}
           />
         )
@@ -185,7 +181,6 @@ export const AgentWorkbench = forwardRef<
           workspaceAccess={controller.draftWorkspaceAccess}
           draftSessionId={controller.draftSessionId}
           onPermissionModeChange={controller.updateDraftPermissionMode}
-          headerActions={headerActions}
           starterPrompts={starterPrompts}
           {...common}
         />
@@ -226,7 +221,6 @@ function DraftWorkbench({
   workspaceAccess,
   draftSessionId,
   onPermissionModeChange,
-  headerActions,
   starterPrompts,
   ...shared
 }: SharedWorkbenchProps & {
@@ -234,7 +228,6 @@ function DraftWorkbench({
   workspaceAccess: ConversationWorkspaceAccess
   draftSessionId: string | null
   onPermissionModeChange: (mode: ConversationPermissionMode) => Promise<void>
-  headerActions?: ReactNode
   starterPrompts?: readonly string[]
 }) {
   const t = useTranslations("agentWorkbench")
@@ -306,9 +299,6 @@ function DraftWorkbench({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {headerActions ? (
-        <div className="absolute right-3 top-3 z-10">{headerActions}</div>
-      ) : null}
       <div
         data-testid="agent-draft-entry"
         className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-2 py-12 sm:px-6"
@@ -375,7 +365,6 @@ function LiveSessionWorkbench({
   sessionId: string
   interactive: boolean
   onSessionResolved?: (session: ConversationSummary) => void
-  headerActions?: ReactNode
 }) {
   const state = useAgentSession(sessionId)
   return <SessionWorkbench sessionId={sessionId} state={state} {...props} />
@@ -386,14 +375,12 @@ function SessionWorkbench({
   state,
   interactive,
   onSessionResolved,
-  headerActions,
   ...shared
 }: SharedWorkbenchProps & {
   sessionId: string
   state: AgentSessionState
   interactive: boolean
   onSessionResolved?: (session: ConversationSummary) => void
-  headerActions?: ReactNode
 }) {
   const t = useTranslations("agentWorkbench")
   const setCancelHandler = shared.setCancelHandler
@@ -503,12 +490,7 @@ function SessionWorkbench({
     conversationView.activeWork === null
   return (
     <>
-      <ConversationHeader
-        title={conversationView?.conversation.title || t("untitled")}
-        model={conversationView?.composer.settings.model.displayName ?? ""}
-        connectionStatus={state.connectionStatus}
-        actions={headerActions}
-      />
+      <ConversationConnectionStatus connectionStatus={state.connectionStatus} />
       {isEmpty ? (
         <AgentEmptyState />
       ) : conversationView ? (
@@ -558,7 +540,6 @@ function SessionWorkbench({
           shared.conversationModelControls ?? (
             <SessionModelSelector
               model={conversationView?.composer.settings.model ?? null}
-              activeRun={conversationView?.activeWork !== null}
               disabled={!interactive || conversationView?.conversation.status !== "active"}
               onChange={state.updateModel}
             />
@@ -593,56 +574,39 @@ function ConversationViewUnavailable({ onRetry }: { onRetry: () => void }) {
   )
 }
 
-function ConversationHeader({
-  title,
-  model,
+function ConversationConnectionStatus({
   connectionStatus,
-  actions,
 }: {
-  title: string
-  model: string
   connectionStatus?:
     "connecting" | "connected" | "reconnecting" | "disconnected"
-  actions?: ReactNode
 }) {
   const t = useTranslations("agentWorkbench")
   const showConnection = connectionStatus && connectionStatus !== "connected"
+  if (!showConnection) return null
   const ConnectionIcon =
     connectionStatus === "reconnecting" || connectionStatus === "disconnected"
       ? WifiOff
       : Loader2
   return (
-    <header className="flex min-h-12 min-w-0 items-center gap-3 border-b border-border/70 px-4 py-1.5">
-      <Bot aria-hidden="true" className="shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <h1 className="truncate text-sm font-medium leading-5">{title}</h1>
-        <p
-          data-testid="agent-header-model"
-          className="truncate text-[11px] leading-4 text-muted-foreground"
-        >
-          {model}
-        </p>
-      </div>
-      {showConnection ? (
-        <span
-          className="flex items-center gap-1.5 text-xs text-muted-foreground"
-          title={t(`connection.${connectionStatus}`)}
-          aria-label={t(`connection.${connectionStatus}`)}
-        >
-          <ConnectionIcon
-            aria-hidden="true"
-            className={cn(
-              connectionStatus === "connecting" &&
-                "animate-spin motion-reduce:animate-none",
-            )}
-          />
-          <span className="hidden sm:inline">
-            {t(`connection.${connectionStatus}`)}
-          </span>
+    <div className="flex shrink-0 justify-end px-3 pt-3">
+      <div
+        role="status"
+        className="pointer-events-none flex items-center gap-1.5 rounded-full border border-border/60 bg-background/90 px-2.5 py-1 text-xs text-muted-foreground backdrop-blur-sm"
+        title={t(`connection.${connectionStatus}`)}
+        aria-label={t(`connection.${connectionStatus}`)}
+      >
+        <ConnectionIcon
+          aria-hidden="true"
+          className={cn(
+            connectionStatus === "connecting" &&
+              "animate-spin motion-reduce:animate-none",
+          )}
+        />
+        <span className="hidden sm:inline">
+          {t(`connection.${connectionStatus}`)}
         </span>
-      ) : null}
-      {actions}
-    </header>
+      </div>
+    </div>
   )
 }
 
@@ -699,12 +663,10 @@ function WorkbenchError({
 
 function SessionModelSelector({
   model,
-  activeRun,
   disabled,
   onChange,
 }: {
   model: ConversationSettings["model"] | null
-  activeRun: boolean
   disabled: boolean
   onChange: AgentSessionState["updateModel"]
 }) {
@@ -751,10 +713,6 @@ function SessionModelSelector({
       {pending ? (
         <p role="status" className="px-2 text-[11px] text-muted-foreground">
           {t("model.updating")}
-        </p>
-      ) : activeRun ? (
-        <p className="px-2 text-[11px] text-muted-foreground">
-          {t("permission.nextRun")}
         </p>
       ) : null}
       {visibleUpdate?.state === "error" ? (

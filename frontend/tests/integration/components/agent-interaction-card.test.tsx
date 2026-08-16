@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react"
+import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
@@ -408,6 +408,151 @@ describe("AgentInteractionCard", () => {
         delivery: ["email", "artifact"],
       },
     })
+  })
+
+  it("supports keyboard selection for radio and checkbox answers", async () => {
+    const user = userEvent.setup()
+    const onRespond = vi.fn()
+    renderWithProviders(
+      <AgentInteractionCard
+        interactionId="interaction-ask-keyboard"
+        request={askUserRequest}
+        onRespond={onRespond}
+      />,
+    )
+
+    const fast = screen.getByRole("radio", { name: /Fast mode/i })
+    const safe = screen.getByRole("radio", { name: /Safe mode/i })
+    const email = screen.getByRole("checkbox", { name: /Email/i })
+    const artifact = screen.getByRole("checkbox", { name: /Artifact/i })
+
+    fast.focus()
+    await user.keyboard("{ArrowRight}")
+    expect(safe).toHaveFocus()
+    expect(safe).toBeChecked()
+
+    email.focus()
+    await user.keyboard(" ")
+    artifact.focus()
+    await user.keyboard(" ")
+    expect(email).toBeChecked()
+    expect(artifact).toBeChecked()
+    expect(email.closest("label")).toHaveClass(
+      "focus-within:ring-2",
+      "focus-within:ring-ring/40",
+    )
+
+    await user.click(screen.getByRole("button", { name: "Submit answers" }))
+    expect(onRespond).toHaveBeenCalledWith({
+      type: "ask_user",
+      answers: {
+        mode: "safe",
+        delivery: ["email", "artifact"],
+      },
+    })
+  })
+
+  it("presents Ask User as one editorial decision surface with numbered option rows", async () => {
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AgentInteractionCard
+        interactionId="interaction-ask-layout"
+        request={askUserRequest}
+        onRespond={vi.fn()}
+      />,
+    )
+
+    const card = screen.getByTestId("agent-interaction-card")
+    const questions = screen.getAllByTestId("agent-ask-question")
+    const firstQuestion = questions[0]
+    const optionList = within(firstQuestion).getByTestId("agent-ask-options")
+    const optionRows = within(firstQuestion).getAllByTestId("agent-ask-option")
+
+    expect(card).not.toHaveClass("shadow-md", "shadow-lg", "shadow-xl")
+    expect(questions).toHaveLength(2)
+    expect(firstQuestion).toHaveClass("border-t", "first:border-t-0")
+    expect(within(firstQuestion).getByText("Execution mode")).toHaveClass(
+      "text-[10px]",
+      "uppercase",
+      "tracking-[0.12em]",
+    )
+    expect(
+      within(firstQuestion).getByText("Which mode should the agent use?"),
+    ).toHaveClass(
+      "[overflow-wrap:anywhere]",
+      "text-base",
+      "font-semibold",
+      "tracking-[-0.01em]",
+    )
+    expect(optionList).toHaveClass("divide-y")
+    expect(optionList).not.toHaveClass("grid-cols-2", "sm:grid-cols-2")
+    expect(optionRows).toHaveLength(2)
+    expect(optionRows[0]).not.toHaveClass("rounded-[8px]", "border")
+    expect(within(optionRows[0]).getByText("01")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    )
+    expect(within(optionRows[1]).getByText("02")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    )
+    expect(within(optionRows[0]).getByText("Fast mode")).toHaveClass(
+      "text-sm",
+      "font-medium",
+    )
+    expect(
+      within(optionRows[0]).getByText("Runs the shortest analysis."),
+    ).toHaveClass("text-xs", "leading-5")
+
+    const recommended = within(optionRows[1]).getByText("Recommended")
+    expect(recommended).toHaveClass("text-[9px]", "tracking-[0.08em]")
+
+    const safe = within(optionRows[1]).getByRole("radio", {
+      name: /Safe mode/i,
+    })
+    await user.click(safe)
+    expect(safe).toBeChecked()
+    expect(optionRows[1]).toHaveClass(
+      "bg-muted/30",
+      "dark:bg-muted/20",
+    )
+  })
+
+  it("keeps long agent-generated question and option text inside the decision surface", () => {
+    const longToken = "UnbrokenAgentIdentifier".repeat(12)
+    renderWithProviders(
+      <AgentInteractionCard
+        interactionId="interaction-ask-long-copy"
+        request={{
+          ...askUserRequest,
+          questions: [
+            {
+              ...askUserRequest.questions[0],
+              header: longToken,
+              question: longToken,
+              options: [
+                {
+                  ...askUserRequest.questions[0].options[0],
+                  label: longToken,
+                  description: longToken,
+                },
+              ],
+            },
+          ],
+        }}
+        onRespond={vi.fn()}
+      />,
+    )
+
+    const matches = screen.getAllByText(longToken)
+    expect(matches).toHaveLength(4)
+    for (const text of matches) {
+      expect(text).toHaveClass("[overflow-wrap:anywhere]")
+    }
+    expect(screen.getByTestId("agent-ask-option").lastElementChild).toHaveClass(
+      "min-w-0",
+      "overflow-hidden",
+    )
   })
 
   it("resets draft answers when the interaction changes", async () => {

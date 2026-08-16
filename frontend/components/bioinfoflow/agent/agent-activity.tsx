@@ -103,8 +103,8 @@ export function AgentToolCard({
         <button
           type="button"
           className={cn(
-            "flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[10px] px-3 py-2 text-left text-xs transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none",
-            grouped && "rounded-[6px] px-2",
+            "flex h-9 w-full min-w-0 items-center gap-2 rounded-[10px] px-3 py-1 text-left text-xs transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none",
+            grouped && "rounded-[6px] px-1.5",
           )}
           aria-expanded={expanded}
           aria-controls={detailsId}
@@ -116,8 +116,8 @@ export function AgentToolCard({
       ) : (
         <div
           className={cn(
-            "flex min-h-11 min-w-0 items-center gap-2 px-3 py-2 text-xs",
-            grouped && "px-2",
+            "flex h-9 min-w-0 items-center gap-2 px-3 py-1 text-xs",
+            grouped && "px-1.5",
           )}
         >
           {summary}
@@ -183,7 +183,7 @@ export function AgentActivityGroup({
     >
       <button
         type="button"
-        className="group/summary flex min-h-8 w-full min-w-0 items-center gap-1.5 rounded-[6px] px-1 py-1 text-left text-xs transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
+        className="group/summary flex h-9 w-full min-w-0 items-center gap-1.5 rounded-[6px] px-1 py-1 text-left text-xs transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
         aria-expanded={expanded}
         aria-controls={detailsId}
         aria-label={t(summaryKey, { count: activities.length })}
@@ -206,7 +206,7 @@ export function AgentActivityGroup({
       {expanded ? (
         <div
           id={detailsId}
-          className="ml-3 grid gap-3 border-l border-border/55 py-2 pl-3"
+          className="ml-3 grid gap-2 border-l border-border/55 py-1.5 pl-3"
         >
           {groupedActivities.map(([category, categoryActivities]) => (
             <div
