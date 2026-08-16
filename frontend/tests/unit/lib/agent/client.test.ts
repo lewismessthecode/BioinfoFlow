@@ -12,6 +12,8 @@ import {
 import type { SessionSnapshot } from "@/lib/agent/contracts"
 import { apiRequest, buildApiUrl } from "@/lib/api"
 
+import { emptySnapshotFixture } from "./fixtures/presentation-contract"
+
 vi.mock("@/lib/api", () => ({
   apiRequest: vi.fn(),
   buildApiUrl: vi.fn(),
@@ -88,6 +90,10 @@ describe("agent client", () => {
         permissionMode: "ask_dangerous",
         workspaceAccess: "read_write",
         modelId: "model-1",
+        environmentScope: {
+          mode: "manual",
+          selected_environment_ids: ["local", "gpu-01"],
+        },
       }),
     ).resolves.toBe(snapshot)
     expect(mockedApiRequest).toHaveBeenCalledWith("/agent/sessions", {
@@ -100,6 +106,10 @@ describe("agent client", () => {
         model_id: "model-1",
         provider: undefined,
         model: undefined,
+        environment_scope: {
+          mode: "manual",
+          selected_environment_ids: ["local", "gpu-01"],
+        },
       }),
     })
   })
@@ -123,13 +133,14 @@ describe("agent client", () => {
         model_id: undefined,
         provider: "openai-compatible",
         model: "local-model",
+        environment_scope: undefined,
       }),
     })
   })
 
   it("loads summaries and the explicit snapshot endpoint", async () => {
     const summaries = [{ id: "session-1" }]
-    const snapshot = { session: { id: "session-1" } } as SessionSnapshot
+    const snapshot = emptySnapshotFixture
     mockedApiRequest
       .mockResolvedValueOnce({ data: summaries })
       .mockResolvedValueOnce({ data: snapshot })
@@ -146,6 +157,20 @@ describe("agent client", () => {
       2,
       "/agent/sessions/session-1/snapshot",
     )
+  })
+
+  it("rejects a malformed snapshot response at the HTTP boundary", async () => {
+    mockedApiRequest.mockResolvedValueOnce({
+      data: { session: { id: "session-1" } },
+    })
+
+    await expect(getAgentSnapshot("session-1")).rejects.toMatchObject({
+      name: "PresentationContractError",
+      diagnostic: {
+        code: "invalid_payload",
+        originalType: "snapshot",
+      },
+    })
   })
 
   it("sends one of the four public commands without choosing prompt or follow-up", async () => {
@@ -213,6 +238,11 @@ describe("agent client", () => {
         title: "RNA-seq review",
         permissionMode: "full_access",
         workspaceAccess: "read_only",
+        model: { provider: "provider-2", model: "claude-sonnet" },
+        environmentScope: {
+          mode: "manual",
+          selected_environment_ids: ["local", "gpu-01"],
+        },
         status: "archived",
       }),
     ).resolves.toBe(snapshot)
@@ -222,6 +252,12 @@ describe("agent client", () => {
         title: "RNA-seq review",
         permission_mode: "full_access",
         workspace_access: "read_only",
+        provider: "provider-2",
+        model: "claude-sonnet",
+        environment_scope: {
+          mode: "manual",
+          selected_environment_ids: ["local", "gpu-01"],
+        },
         status: "archived",
       }),
     })

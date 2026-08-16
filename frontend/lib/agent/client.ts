@@ -2,12 +2,27 @@ import { apiRequest, buildApiUrl } from "@/lib/api"
 
 import type {
   AgentCommand,
+  AgentEnvironmentScope,
   AgentPermissionMode,
   AgentSessionStatus,
   AgentWorkspaceAccess,
   JsonObject,
   SessionSnapshot,
 } from "./contracts"
+import { requirePresentationSnapshot } from "./transport/presentation-contract"
+
+export type AgentModelSelection =
+  | { modelId: string; provider?: never; model?: never }
+  | { modelId?: never; provider: string; model: string }
+
+export type AgentSessionUpdates = {
+  title?: string | null
+  permissionMode?: AgentPermissionMode
+  workspaceAccess?: AgentWorkspaceAccess
+  model?: AgentModelSelection
+  environmentScope?: AgentEnvironmentScope
+  status?: Extract<AgentSessionStatus, "active" | "archived">
+}
 
 export type AgentSessionSummary = {
   id: string
@@ -64,6 +79,7 @@ export async function createAgentSession(input: {
   modelId?: string
   provider?: string
   model?: string
+  environmentScope?: AgentEnvironmentScope
 }) {
   const response = await apiRequest<SessionSnapshot>("/agent/sessions", {
     method: "POST",
@@ -75,6 +91,7 @@ export async function createAgentSession(input: {
       model_id: input.modelId,
       provider: input.provider,
       model: input.model,
+      environment_scope: input.environmentScope,
     }),
   })
   return response.data
@@ -84,7 +101,7 @@ export async function getAgentSnapshot(sessionId: string) {
   const response = await apiRequest<SessionSnapshot>(
     `/agent/sessions/${sessionId}/snapshot`,
   )
-  return response.data
+  return requirePresentationSnapshot(response.data)
 }
 
 export async function getAgentArtifact(
@@ -125,12 +142,7 @@ export async function fetchAgentArtifactContent(
 
 export async function updateAgentSession(
   sessionId: string,
-  updates: {
-    title?: string | null
-    permissionMode?: AgentPermissionMode
-    workspaceAccess?: AgentWorkspaceAccess
-    status?: Extract<AgentSessionStatus, "active" | "archived">
-  },
+  updates: AgentSessionUpdates,
 ) {
   const response = await apiRequest<SessionSnapshot>(
     `/agent/sessions/${sessionId}`,
@@ -140,6 +152,10 @@ export async function updateAgentSession(
         title: updates.title,
         permission_mode: updates.permissionMode,
         workspace_access: updates.workspaceAccess,
+        model_id: updates.model?.modelId,
+        provider: updates.model?.provider,
+        model: updates.model?.model,
+        environment_scope: updates.environmentScope,
         status: updates.status,
       }),
     },

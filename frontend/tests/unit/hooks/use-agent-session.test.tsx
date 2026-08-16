@@ -48,6 +48,8 @@ function snapshot(title = "Analysis"): SessionSnapshot {
       },
       permission_mode: "ask_dangerous",
       workspace_access: "read_write",
+      settings_revision: 1,
+      environment_scope: { mode: "auto" },
       status: "active",
       created_at: timestamp,
       updated_at: timestamp,
@@ -118,6 +120,7 @@ describe("useAgentSession", () => {
     expect(mocks.subscribeAgentEvents).toHaveBeenCalledWith({
       sessionId: "session-1",
       onEvent: expect.any(Function),
+      onDiagnostic: expect.any(Function),
       onConnectionChange: expect.any(Function),
       onError: expect.any(Function),
     })
@@ -133,6 +136,34 @@ describe("useAgentSession", () => {
     expect(result.current.isLoading).toBe(false)
     expect(result.current.connectionStatus).toBe("connected")
     expect(result.current.error).toBeNull()
+    expect(result.current.conversationView).toMatchObject({
+      conversation: { id: "session-1" },
+      composer: { placement: "centered" },
+      transcript: [],
+    })
+  })
+
+  it("projects an unknown Harness event into a safe transcript diagnostic", () => {
+    const { result } = renderHook(() => useAgentSession("session-1"))
+    const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
+
+    act(() => {
+      subscription.onEvent({ type: "snapshot", snapshot: snapshot() })
+      subscription.onDiagnostic({
+        code: "unknown_event_type",
+        message: "Unsupported Agent presentation event: harness.private",
+        originalType: "harness.private",
+      })
+    })
+
+    expect(result.current.session?.id).toBe("session-1")
+    expect(result.current.conversationView?.transcript).toEqual([
+      expect.objectContaining({
+        type: "unknown",
+        originalType: "harness.private",
+        diagnosticCode: "unknown_event_type",
+      }),
+    ])
   })
 
   it("does not subscribe when the session snapshot is not found", async () => {
@@ -496,6 +527,61 @@ describe("useAgentSession", () => {
       subscription.onEvent({ type: "snapshot", snapshot: authoritative })
     })
     expect(result.current.session?.permission_mode).toBe("full_access")
+  })
+
+  it("patches sticky model and environment settings while retaining SSE as authority", async () => {
+    const patchResponse = snapshot("PATCH response")
+    patchResponse.session.model = {
+      ...patchResponse.session.model,
+      provider: "provider-2",
+      model: "claude-sonnet",
+      display_name: "Claude Sonnet",
+    }
+    patchResponse.session.environment_scope = {
+      mode: "manual",
+      selected_environment_ids: ["local", "gpu-01"],
+    }
+    mocks.updateAgentSession
+      .mockResolvedValueOnce(patchResponse)
+      .mockResolvedValueOnce(patchResponse)
+
+    const { result } = renderHook(() => useAgentSession("session-1"))
+    const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
+    act(() => {
+      subscription.onEvent({ type: "snapshot", snapshot: snapshot() })
+    })
+
+    await act(async () => {
+      await result.current.updateModel({
+        provider: "provider-2",
+        model: "claude-sonnet",
+      })
+      await result.current.updateEnvironmentScope({
+        mode: "manual",
+        selected_environment_ids: ["local", "gpu-01"],
+      })
+    })
+
+    expect(mocks.updateAgentSession).toHaveBeenNthCalledWith(1, "session-1", {
+      model: { provider: "provider-2", model: "claude-sonnet" },
+    })
+    expect(mocks.updateAgentSession).toHaveBeenNthCalledWith(2, "session-1", {
+      environmentScope: {
+        mode: "manual",
+        selected_environment_ids: ["local", "gpu-01"],
+      },
+    })
+    expect(result.current.session?.model.model).toBe("gpt-5.6")
+    expect(result.current.session?.environment_scope).toEqual({ mode: "auto" })
+
+    act(() => {
+      subscription.onEvent({ type: "snapshot", snapshot: patchResponse })
+    })
+    expect(result.current.session?.model.model).toBe("claude-sonnet")
+    expect(result.current.session?.environment_scope).toEqual({
+      mode: "manual",
+      selected_environment_ids: ["local", "gpu-01"],
+    })
   })
 
   it("ignores a stale snapshot refetch after the session changes", async () => {

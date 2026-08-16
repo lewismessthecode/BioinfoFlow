@@ -65,10 +65,12 @@ describe("subscribeAgentEvents", () => {
 
   it("connects to the snapshot-first event stream without a replay cursor", () => {
     const onEvent = vi.fn()
+    const onDiagnostic = vi.fn()
     const onConnectionChange = vi.fn()
     const unsubscribe = subscribeAgentEvents({
       sessionId: "session/id",
       onEvent,
+      onDiagnostic,
       onConnectionChange,
     })
     const source = MockEventSource.instances[0]
@@ -96,9 +98,36 @@ describe("subscribeAgentEvents", () => {
     expect(onEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: "assistant.delta", delta: "Hi" }),
     )
+    expect(onDiagnostic).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "invalid_payload" }),
+    )
 
     unsubscribe()
     expect(source.closed).toBe(true)
+  })
+
+  it("reports an unknown Harness event as a diagnostic instead of forwarding it", () => {
+    const onEvent = vi.fn()
+    const onDiagnostic = vi.fn()
+    const unsubscribe = subscribeAgentEvents({
+      sessionId: "session-1",
+      onEvent,
+      onDiagnostic,
+    })
+
+    MockEventSource.instances[0].emit("run.updated", {
+      type: "harness.checkpoint.rotated",
+      opaque: true,
+    })
+
+    expect(onEvent).not.toHaveBeenCalled()
+    expect(onDiagnostic).toHaveBeenCalledWith({
+      code: "unknown_event_type",
+      message:
+        "Unsupported Agent presentation event: harness.checkpoint.rotated",
+      originalType: "harness.checkpoint.rotated",
+    })
+    unsubscribe()
   })
 
   it("reconnects after an error and never adds a cursor to the next URL", () => {
