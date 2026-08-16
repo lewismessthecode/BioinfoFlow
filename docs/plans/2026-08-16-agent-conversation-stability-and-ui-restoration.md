@@ -284,10 +284,30 @@ Browser:
 
 - commit each phase separately;
 - run Standards and Spec reviews against `origin/main` in parallel;
-- run focused security/authorization review for environment routing and public
-  reasoning projection;
+- use ordinary code review only; do not start Codex Security scans;
 - fix all actionable findings and rerun affected checks;
 - rebase on current `origin/main` before publishing;
 - push `codex/stabilize-agent-conversation-ui`;
 - open one Conventional Commit titled PR;
 - do not merge or enable auto-merge.
+
+## Final screenshot acceptance: selector and shell restoration
+
+The latest screenshot comparison adds these concrete acceptance criteria:
+
+- model, permission, and environment controls reuse one Composer selector trigger
+  primitive with the same fixed height, icon sizing, text metrics, chevron, focus
+  treatment, and vertical alignment;
+- their dropdowns reuse the same menu surface and compact row density; permission
+  descriptions must not create a visually larger card system;
+- the Draft view contains no starter section heading such as
+  “从与当前项目相关的建议开始”;
+- starter rows use plain check, message, and history icons without enclosing
+  circles, bordered tiles, or filled icon backgrounds;
+- a quiet bottom hint rotates between truthful `/` command and `@` mention
+  guidance, matching the pre-refactor Draft layout;
+- Workspace is an icon-only action registered in the application Navbar action
+  group beside Terminal, never an absolutely positioned pill inside the Agent
+  canvas;
+- DOM/browser acceptance tests measure the three selector trigger heights and
+  verify Navbar ownership, menu density, starter simplification, and both hints.
