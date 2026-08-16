@@ -53,7 +53,6 @@ type AgentComposerProps = {
     selection: AgentEnvironmentSelection,
   ) => Promise<void>
   starterPrompts?: readonly string[]
-  capabilityHint?: string
   placement?: "draft" | "dock"
   textareaRef?: Ref<HTMLTextAreaElement>
   disabled?: boolean
@@ -80,7 +79,6 @@ export function AgentComposer({
   environmentSelectionPending = false,
   onEnvironmentSelectionChange,
   starterPrompts = [],
-  capabilityHint,
   placement = "dock",
   textareaRef,
   disabled = false,
@@ -216,19 +214,19 @@ export function AgentComposer({
       data-testid="agent-composer"
       data-placement={placement}
       className={cn(
-        "mx-auto flex w-full max-w-[48rem] flex-col gap-2 px-3 sm:px-4",
+        "mx-auto flex w-full flex-col gap-2 px-3 sm:px-4",
         placement === "draft"
-          ? "bg-transparent pb-4"
-          : "bg-background pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+          ? "max-w-[42rem] bg-transparent pb-4"
+          : "max-w-[48rem] bg-background pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
       )}
       onSubmit={handleSubmit}
     >
       <div
         data-testid="agent-composer-surface"
         className={cn(
-          "border border-border/60 bg-card/96 p-2 transition-[border-color,box-shadow,background-color] focus-within:border-foreground/20 focus-within:shadow-[0_18px_48px_-28px_color-mix(in_oklab,var(--foreground)_24%,transparent)] motion-reduce:transition-none",
+          "flex flex-col border border-border/60 bg-card/96 p-2 transition-[border-color,box-shadow,background-color] focus-within:border-foreground/20 focus-within:shadow-[0_18px_48px_-28px_color-mix(in_oklab,var(--foreground)_24%,transparent)] motion-reduce:transition-none",
           placement === "draft"
-            ? "rounded-[24px] p-3 shadow-[0_24px_70px_-42px_color-mix(in_oklab,var(--foreground)_30%,transparent)]"
+            ? "min-h-[160px] rounded-[24px] p-3 shadow-[0_24px_70px_-42px_color-mix(in_oklab,var(--foreground)_30%,transparent)]"
             : "rounded-[18px] shadow-[0_12px_34px_-28px_color-mix(in_oklab,var(--foreground)_24%,transparent)]",
         )}
       >
@@ -254,11 +252,19 @@ export function AgentComposer({
           disabled={disabled}
           className={cn(
             "max-h-40 resize-none border-0 bg-transparent shadow-none dark:bg-transparent focus-visible:border-transparent focus-visible:ring-0",
-            placement === "draft" ? "min-h-20 text-[15px]" : "min-h-11",
+            placement === "draft"
+              ? "min-h-20 flex-1 text-[15px]"
+              : "min-h-11",
           )}
         />
 
-        <div className="flex min-w-0 flex-wrap items-end gap-2 pt-2">
+        <div
+          data-testid="agent-composer-controls"
+          className={cn(
+            "flex min-w-0 flex-wrap gap-2 pt-2",
+            placement === "draft" ? "mt-auto items-center" : "items-end",
+          )}
+        >
           {contextControls}
           {modelControls}
           <PermissionMenu
@@ -386,24 +392,18 @@ export function AgentComposer({
         </div>
       </div>
 
-      {placement === "draft" && capabilityHint ? (
-        <p
-          data-testid="agent-capability-hint"
-          className="mx-auto w-full max-w-[44rem] px-1 pt-1 text-xs leading-5 text-muted-foreground/65"
-        >
-          {capabilityHint}
-        </p>
-      ) : null}
-
       {placement === "draft" && starterPrompts.length > 0 ? (
         <section
-          className="mx-auto mt-2 w-full max-w-[44rem]"
+          className="mx-auto mt-2 w-full"
           aria-label={t("starterHint")}
         >
           <p className="px-1 pb-1.5 text-xs text-muted-foreground/70">
             {t("starterHint")}
           </p>
-          <div className="divide-y divide-border/55 border-y border-border/55">
+          <div
+            data-testid="agent-starter-prompt-list"
+            className="divide-y divide-border/45"
+          >
             {starterPrompts.slice(0, 3).map((prompt) => (
               <button
                 key={prompt}

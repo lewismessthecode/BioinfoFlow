@@ -48,7 +48,7 @@ export function AgentPageContent({
     setActiveConversationId,
     setActiveConversationTitle,
   } = useProjectContext()
-  const [liveDeckTab, setLiveDeckTab] = useState<"workspace" | "dag" | "monitor">("workspace")
+  const [liveDeckTab, setLiveDeckTab] = useState<"workspace" | "dag">("workspace")
   const [rightSidebarWidth, setRightSidebarWidth] = useState(RIGHT_SIDEBAR_DEFAULT)
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(true)
   const [mobileLiveDeckOpen, setMobileLiveDeckOpen] = useState(false)
@@ -183,41 +183,41 @@ export function AgentPageContent({
       className="flex h-full min-h-0 min-w-0 overflow-hidden bg-background"
       data-testid="agent-page-shell"
     >
-      <AgentWorkbench
-        key={routeSessionId ?? "draft"}
-        ref={chatRef}
-        projectId={conversationProjectId || selectedProjectId || null}
-        sessionId={routeSessionId}
-        onActiveSessionIdChange={setActiveConversationId}
-        onSessionResolved={handleSessionResolved}
-        onOpenRun={openReferencedRun}
-        className="min-w-0 flex-1"
-        headerActions={
-          selectedProjectId ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="min-h-11 gap-2 px-3 lg:min-h-9"
-              aria-label={t(
-                !isMobile && !rightSidebarCollapsed
-                  ? "workspacePanel.close"
-                  : "workspacePanel.open",
-              )}
-              onClick={() => {
-                if (isMobile) setMobileLiveDeckOpen(true)
-                else toggleRightSidebar()
-              }}
-            >
-              <PanelRightClose
-                aria-hidden="true"
-                className={rightSidebarCollapsed || isMobile ? "rotate-180" : undefined}
-              />
-              <span>{t("workspacePanel.action")}</span>
-            </Button>
-          ) : null
-        }
-      />
+      <div className="relative min-h-0 min-w-0 flex-1">
+        <AgentWorkbench
+          key={routeSessionId ?? "draft"}
+          ref={chatRef}
+          projectId={conversationProjectId || selectedProjectId || null}
+          sessionId={routeSessionId}
+          onActiveSessionIdChange={setActiveConversationId}
+          onSessionResolved={handleSessionResolved}
+          onOpenRun={openReferencedRun}
+          className="h-full min-w-0"
+        />
+        {selectedProjectId ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="absolute right-3 top-2 z-20 min-h-11 gap-2 px-3 lg:min-h-9"
+            aria-label={t(
+              !isMobile && !rightSidebarCollapsed
+                ? "workspacePanel.close"
+                : "workspacePanel.open",
+            )}
+            onClick={() => {
+              if (isMobile) setMobileLiveDeckOpen(true)
+              else toggleRightSidebar()
+            }}
+          >
+            <PanelRightClose
+              aria-hidden="true"
+              className={rightSidebarCollapsed || isMobile ? "rotate-180" : undefined}
+            />
+            <span>{t("workspacePanel.action")}</span>
+          </Button>
+        ) : null}
+      </div>
       {showShortcuts && (
         <KeyboardShortcutsOverlay
           open={showShortcuts}

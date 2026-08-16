@@ -5,6 +5,11 @@ import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
 import {
+  composerSelectorChevronClassName,
+  composerSelectorChipClassName,
+  composerSelectorIconClassName,
+} from "@/components/bioinfoflow/composer-selector-chip"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuLabel,
@@ -104,7 +109,8 @@ export function PermissionMenu({
       disabled={controlsDisabled}
       aria-label={`${t("permission.label")}: ${t(`permission.${displayedMode}.name`)}`}
       aria-describedby={descriptionId}
-      className="h-8 max-w-[12rem] gap-1.5 rounded-lg px-2 text-xs font-medium text-muted-foreground shadow-none hover:bg-muted/70 hover:text-foreground"
+      data-composer-chip="true"
+      className={cn(composerSelectorChipClassName, "max-w-[12rem]")}
     >
       {isUpdating ? (
         <Loader2
@@ -112,10 +118,16 @@ export function PermissionMenu({
           className="animate-spin motion-reduce:animate-none"
         />
       ) : (
-        <CurrentIcon aria-hidden="true" />
+        <CurrentIcon
+          aria-hidden="true"
+          className={composerSelectorIconClassName}
+        />
       )}
       <span>{t(`permission.${displayedMode}.name`)}</span>
-      <ChevronDown aria-hidden="true" />
+      <ChevronDown
+        aria-hidden="true"
+        className={composerSelectorChevronClassName}
+      />
     </Button>
   )
 

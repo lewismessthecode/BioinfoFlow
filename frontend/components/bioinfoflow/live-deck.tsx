@@ -2,17 +2,16 @@
 
 import { useTranslations } from "next-intl"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { FolderOpen, GitBranch, Activity, PanelRightClose } from "@/lib/icons"
+import { FolderOpen, GitBranch, PanelRightClose } from "@/lib/icons"
 import { WorkspacePanel } from "./workspace-panel"
 import { DagPanel } from "./dag"
-import { MonitorPanel } from "./monitor-panel"
 import { ChatErrorBoundary } from "./chat/chat-error-boundary"
 import { Button } from "@/components/ui/button"
 import type { DagData, Run } from "@/lib/types"
 
 interface LiveDeckProps {
-  activeTab: "workspace" | "dag" | "monitor"
-  onTabChange: (tab: "workspace" | "dag" | "monitor") => void
+  activeTab: "workspace" | "dag"
+  onTabChange: (tab: "workspace" | "dag") => void
   onCollapse?: () => void
   projectId?: string | null
   runId?: string | null
@@ -38,7 +37,7 @@ export function LiveDeck({
     <aside className="flex h-full w-full flex-col border-l border-border/70 bg-background/95" role="complementary" aria-label={tWorkspace("liveDeck.label")}>
       <Tabs
         value={activeTab}
-        onValueChange={(v) => onTabChange(v as "workspace" | "dag" | "monitor")}
+        onValueChange={(v) => onTabChange(v as "workspace" | "dag")}
         className="flex flex-col h-full"
       >
         <div className="flex min-h-11 items-center gap-2 border-b border-border/60 px-2.5">
@@ -54,7 +53,7 @@ export function LiveDeck({
               <PanelRightClose aria-hidden="true" className="h-4 w-4" />
             </Button>
           )}
-          <TabsList className="grid h-8 flex-1 grid-cols-3 rounded-[8px] bg-muted/55 p-0.5">
+          <TabsList className="grid h-8 flex-1 grid-cols-2 rounded-[8px] bg-muted/55 p-0.5">
             <TabsTrigger
               value="workspace"
               className="min-h-11 gap-1.5 rounded-[6px] py-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-none lg:min-h-0"
@@ -68,13 +67,6 @@ export function LiveDeck({
             >
               <GitBranch aria-hidden="true" className="h-3.5 w-3.5" />
               {tWorkspace("liveDeck.pipeline")}
-            </TabsTrigger>
-            <TabsTrigger
-              value="monitor"
-              className="min-h-11 gap-1.5 rounded-[6px] py-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-none lg:min-h-0"
-            >
-              <Activity aria-hidden="true" className="h-3.5 w-3.5" />
-              {tWorkspace("liveDeck.monitor")}
             </TabsTrigger>
           </TabsList>
         </div>
@@ -93,9 +85,6 @@ export function LiveDeck({
               workflowName={workflowName}
             />
           </ChatErrorBoundary>
-        </TabsContent>
-        <TabsContent value="monitor" className="flex-1 m-0 overflow-hidden">
-          <MonitorPanel />
         </TabsContent>
       </Tabs>
     </aside>

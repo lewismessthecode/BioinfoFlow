@@ -7,8 +7,7 @@ vi.mock("next-intl", () => ({
     const copy: Record<string, Record<string, string>> = {
       workspace: {
         "liveDeck.files": "Files",
-        "liveDeck.pipeline": "Pipeline",
-        "liveDeck.monitor": "Monitor",
+        "liveDeck.pipeline": "Workflow",
       },
       accessibility: {
         hidePanel: "Hide panel",
@@ -20,10 +19,6 @@ vi.mock("next-intl", () => ({
 
 vi.mock("@/components/bioinfoflow/workspace-panel", () => ({
   WorkspacePanel: () => <div data-testid="workspace-panel">workspace panel</div>,
-}))
-
-vi.mock("@/components/bioinfoflow/monitor-panel", () => ({
-  MonitorPanel: () => <div data-testid="monitor-panel">monitor panel</div>,
 }))
 
 vi.mock("@/components/bioinfoflow/dag", () => ({
@@ -63,7 +58,7 @@ describe("LiveDeck", () => {
     )
 
     expect(screen.getByTestId("workspace-panel")).toBeInTheDocument()
-    await user.click(screen.getByRole("tab", { name: "Pipeline" }))
+    await user.click(screen.getByRole("tab", { name: "Workflow" }))
     expect(onTabChange).toHaveBeenCalledWith("dag")
   })
 
@@ -87,11 +82,14 @@ describe("LiveDeck", () => {
     expect(onCollapse).toHaveBeenCalledTimes(1)
   })
 
-  it("renders the monitor tab content", () => {
+  it("offers only Files and Workflow workspace tabs", () => {
     render(
-      <LiveDeck activeTab="monitor" onTabChange={vi.fn()} projectId="project-1" />,
+      <LiveDeck activeTab="workspace" onTabChange={vi.fn()} projectId="project-1" />,
     )
 
-    expect(screen.getByTestId("monitor-panel")).toBeInTheDocument()
+    expect(screen.getAllByRole("tab")).toHaveLength(2)
+    expect(screen.getByRole("tab", { name: "Files" })).toBeInTheDocument()
+    expect(screen.getByRole("tab", { name: "Workflow" })).toBeInTheDocument()
+    expect(screen.queryByRole("tab", { name: "Monitor" })).not.toBeInTheDocument()
   })
 })
