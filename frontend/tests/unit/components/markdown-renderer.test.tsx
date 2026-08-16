@@ -109,8 +109,40 @@ describe("MarkdownRenderer link sanitization", () => {
       <MarkdownRenderer content={"```python\nprint('hello')\n```"} />
     )
 
-    expect(screen.getByText("python")).toBeInTheDocument()
+    expect(screen.getByText("Python")).toBeInTheDocument()
     expect(screen.getByText("print('hello')")).toBeInTheDocument()
+  })
+
+  it("preserves fenced JSON whitespace inside a padded internal scroller", () => {
+    const code = [
+      "{",
+      '  "sample": {',
+      '    "path": "/very/long/path/that/should/scroll/instead/of/stretching/the/transcript.json"',
+      "  }",
+      "}",
+    ].join("\n")
+    render(<MarkdownRenderer content={`\`\`\`json\n${code}\n\`\`\``} />)
+
+    const block = screen.getByTestId("markdown-code-block")
+    const header = screen.getByTestId("markdown-code-header")
+    const scroller = screen.getByTestId("markdown-code-scroller")
+    const pre = block.querySelector("pre")
+    const codeElement = block.querySelector("code")
+
+    expect(block).toHaveAttribute("data-code-language", "json")
+    expect(header).toHaveTextContent("JSON")
+    expect(scroller).toHaveClass("max-w-full", "overflow-x-auto")
+    expect(scroller).not.toHaveClass("overflow-hidden")
+    expect(pre).toHaveClass(
+      "m-0",
+      "min-w-max",
+      "whitespace-pre",
+      "px-4",
+      "py-3",
+      "font-mono",
+    )
+    expect(codeElement).toHaveClass("block", "min-w-max", "whitespace-pre")
+    expect(codeElement?.textContent).toBe(code)
   })
 
   it("copies fenced code blocks without the fence or language label", () => {
@@ -125,7 +157,7 @@ describe("MarkdownRenderer link sanitization", () => {
     )
 
     expect(screen.getByTestId("markdown-code-block")).toBeInTheDocument()
-    expect(screen.getByText("bash")).toBeInTheDocument()
+    expect(screen.getByText("Shell")).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Copy code" }))
 

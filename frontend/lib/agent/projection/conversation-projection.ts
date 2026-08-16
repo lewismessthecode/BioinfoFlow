@@ -13,6 +13,7 @@ import type {
 import type {
   HistoryEntry,
   MessagePart,
+  RunView,
   ToolCallPart,
   ToolResultPart,
 } from "../contracts"
@@ -127,6 +128,11 @@ function projectConversationView(
   if (!session) {
     throw new Error("A Conversation projection requires an authoritative session")
   }
+  const runs = canonicalRuns(state.transportState.runs)
+  const transportState =
+    runs === state.transportState.runs
+      ? state.transportState
+      : { ...state.transportState, runs }
   return {
       protocolVersion,
       conversation: {
@@ -157,8 +163,8 @@ function projectConversationView(
         },
         capabilities: COMPOSER_CAPABILITIES,
       },
-      transcript: projectTranscript(state.transportState, state.diagnostics),
-      runs: state.transportState.runs.map((run) => ({
+      transcript: projectTranscript(transportState, state.diagnostics),
+      runs: runs.map((run) => ({
         id: run.id,
         status: run.status,
         startedAt: run.started_at,
@@ -174,6 +180,29 @@ function projectConversationView(
           }
         : null,
   }
+}
+
+function canonicalRuns(
+  runs: RunView[],
+): RunView[] {
+  const latestById = new Map<string, RunView>()
+  const orderedIds: string[] = []
+  for (const run of runs) {
+    const current = latestById.get(run.id)
+    if (!current) {
+      latestById.set(run.id, run)
+      orderedIds.push(run.id)
+      continue
+    }
+    if (
+      run.revision > current.revision ||
+      (run.revision === current.revision && run.updated_at > current.updated_at)
+    ) {
+      latestById.set(run.id, run)
+    }
+  }
+  if (orderedIds.length === runs.length) return runs
+  return orderedIds.map((id) => latestById.get(id)!)
 }
 
 function projectExecutionConfig(
