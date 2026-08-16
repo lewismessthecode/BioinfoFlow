@@ -253,6 +253,7 @@ class ToolExecutor:
                         error=("Bash approval assessment changed before execution"),
                     )
             if interaction_response is None:
+                approval_summary, input_preview = _approval_presentation(call, tool)
                 return ToolResult.interaction_required(
                     call_id=call.call_id,
                     tool_name=call.name,
@@ -262,6 +263,8 @@ class ToolExecutor:
                         interaction_scope=self.interaction_scope,
                     ),
                     kind="confirmation",
+                    summary=approval_summary,
+                    input_preview=input_preview,
                     questions=(
                         {
                             "question": "Allow this command to run?",
@@ -583,6 +586,24 @@ def _workspace_change_approval(
         "reasons": ["session requires approval for workspace changes"],
         "affected_resources": resources,
     }
+
+
+def _approval_presentation(
+    call: ToolCall,
+    tool: HarnessTool,
+) -> tuple[str, str | None]:
+    from app.services.agent_harness.tool_projection import public_tool_details
+
+    details = public_tool_details(call.name, call.arguments)
+    preview = next(
+        (
+            detail.value
+            for detail in details
+            if detail.kind in {"command", "path"}
+        ),
+        None,
+    )
+    return tool.spec.summary, preview
 
 
 def _is_read_only(tool: HarnessTool, risk: Any | None) -> bool:

@@ -2590,19 +2590,19 @@
       "retry": "重试语音输入"
     },
     "permission": {
-      "label": "审批方式",
-      "title": "智能助手的操作应如何审批？",
+      "label": "权限",
+      "title": "操作权限",
       "ask_changes": {
-        "name": "更改前询问",
-        "description": "修改文件、访问网络或产生其他副作用前先询问。"
+        "name": "询问",
+        "description": "执行更改前先询问。"
       },
       "ask_dangerous": {
-        "name": "安全操作自动完成",
-        "description": "只在检测到危险或关键操作时询问。"
+        "name": "自动",
+        "description": "只在较高风险操作前询问。"
       },
       "full_access": {
         "name": "完全访问",
-        "description": "在工作区和安全硬限制内自动执行。"
+        "description": "在工作区安全边界内自动执行。"
       },
       "activeRun": "当前有任务运行时不能修改审批方式。",
       "nextRun": "更改将在下一次运行时生效。",
@@ -2695,6 +2695,17 @@
       "model": "正在使用模型",
       "tools": "正在使用工具",
       "interaction": "等待输入"
+    },
+    "spinner": {
+      "announcement": "Agent 正在处理任务",
+      "tracing_clues": "梳理线索…",
+      "diving_deeper": "深挖细节…",
+      "connecting_context": "串联上下文…",
+      "checking_details": "核对细节…",
+      "following_evidence": "追踪关键证据…",
+      "untangling_problem": "拆解难题…",
+      "fitting_pieces": "把碎片拼起来…",
+      "moving_forward": "推进下一步…"
     },
     "error": {
       "agent_failed": "Agent 执行失败。",
@@ -2805,11 +2816,27 @@
       "announcement": "收到新的审批请求，正在等待你的回复。",
       "approve": "批准",
       "reject": "拒绝",
-      "input": "命令预览",
+      "input": "操作内容",
       "target": "执行目标",
       "effects": "可能产生的影响",
       "reasons": "原因",
-      "resources": "受影响资源"
+      "resources": "受影响资源",
+      "action": {
+        "command": "执行命令",
+        "write": "写入文件",
+        "edit": "编辑文件",
+        "read": "读取文件",
+        "tool": "运行 {toolName}"
+      },
+      "effect": {
+        "read": "读取数据",
+        "write": "修改文件",
+        "delete": "删除数据",
+        "network": "访问网络",
+        "process_control": "控制进程",
+        "privilege": "使用提升权限",
+        "execute": "执行命令"
+      }
     },
     "ask_user": {
       "title": "Agent 请求补充信息",

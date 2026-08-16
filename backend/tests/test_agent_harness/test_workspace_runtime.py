@@ -1375,6 +1375,8 @@ async def test_ask_changes_requires_approval_for_workspace_writes(
     assert pending.status == "interaction_required"
     assert pending.interaction is not None
     assert pending.interaction.kind == "confirmation"
+    assert pending.interaction.summary == "Write file"
+    assert pending.interaction.input_preview == "x.txt"
     assert pending.interaction.risk == {
         "level": "changes",
         "effects": ["write"],
@@ -1458,6 +1460,8 @@ async def test_bif_destructive_commands_require_confirmation(
 
     assert pending.status == "interaction_required"
     assert pending.interaction is not None
+    assert pending.interaction.summary == "Run command"
+    assert pending.interaction.input_preview == command
     assert pending.interaction.risk is not None
     assert pending.interaction.risk["level"] == "destructive"
     assert approved.status == "completed"

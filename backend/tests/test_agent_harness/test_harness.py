@@ -2166,12 +2166,22 @@ async def test_approved_bash_rejects_changed_cwd_assessment_before_execution(
     )
     waiting = await harness.snapshot(session_id)
     assert _active(waiting).pending_interaction is not None
-    risk = _active(waiting).pending_interaction.request.risk.model_dump()
+    request = _active(waiting).pending_interaction.request
+    assert request.summary == "Run command"
+    assert request.input_preview == (
+        "rm -f harmless && printf executed > executed.txt"
+    )
+    risk = request.risk.model_dump()
     assert "boundary" not in risk
     assert "assessment_fingerprint" not in risk
     stored_waiting = await harness.repository.get_run(str(_active(waiting).run.id))
     assert stored_waiting is not None
-    private_risk = stored_waiting.checkpoint["interaction"]["risk"]
+    private_interaction = stored_waiting.checkpoint["interaction"]
+    assert private_interaction["summary"] == "Run command"
+    assert private_interaction["input_preview"] == (
+        "rm -f harmless && printf executed > executed.txt"
+    )
+    private_risk = private_interaction["risk"]
     assert private_risk["boundary"]["working_directory"] == str(first.resolve())
     assert len(private_risk["assessment_fingerprint"]) == 64
 

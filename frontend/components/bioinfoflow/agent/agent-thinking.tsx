@@ -77,7 +77,7 @@ export function AgentThinking({
             data-testid="agent-thinking-duration"
             translate="no"
           >
-            {t("duration", { duration })}
+            {t("duration", { seconds: duration })}
           </span>
         ) : null}
         {expanded ? (

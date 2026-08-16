@@ -2590,19 +2590,19 @@
       "retry": "Retry voice dictation"
     },
     "permission": {
-      "label": "Approval mode",
-      "title": "How should agent actions be approved?",
+      "label": "Permissions",
+      "title": "Permissions",
       "ask_changes": {
-        "name": "Ask before changes",
-        "description": "Ask before files, network, or other side effects change."
+        "name": "Ask",
+        "description": "Ask before making changes."
       },
       "ask_dangerous": {
-        "name": "Approve safe actions",
-        "description": "Only ask for dangerous or critical actions."
+        "name": "Auto",
+        "description": "Only ask before higher-risk actions."
       },
       "full_access": {
         "name": "Full access",
-        "description": "Run automatically inside hard workspace and safety limits."
+        "description": "Run within workspace safety limits."
       },
       "activeRun": "Approval mode cannot change while a run is active.",
       "nextRun": "Changes apply to the next run.",
@@ -2695,6 +2695,17 @@
       "model": "Working with the model",
       "tools": "Using tools",
       "interaction": "Waiting for input"
+    },
+    "spinner": {
+      "announcement": "Agent is working",
+      "tracing_clues": "Tracing clues…",
+      "diving_deeper": "Diving deeper…",
+      "connecting_context": "Connecting context…",
+      "checking_details": "Checking details…",
+      "following_evidence": "Following the evidence…",
+      "untangling_problem": "Untangling the problem…",
+      "fitting_pieces": "Fitting the pieces together…",
+      "moving_forward": "Moving things forward…"
     },
     "error": {
       "agent_failed": "The Agent run failed.",
@@ -2805,11 +2816,27 @@
       "announcement": "Approval requested. Waiting for your response.",
       "approve": "Approve",
       "reject": "Reject",
-      "input": "Command preview",
+      "input": "Action preview",
       "target": "Execution target",
       "effects": "Effects",
       "reasons": "Reasons",
-      "resources": "Affected resources"
+      "resources": "Affected resources",
+      "action": {
+        "command": "Run command",
+        "write": "Write file",
+        "edit": "Edit file",
+        "read": "Read file",
+        "tool": "Run {toolName}"
+      },
+      "effect": {
+        "read": "Reads data",
+        "write": "Changes files",
+        "delete": "Deletes data",
+        "network": "Uses the network",
+        "process_control": "Controls processes",
+        "privilege": "Uses elevated access",
+        "execute": "Runs a command"
+      }
     },
     "ask_user": {
       "title": "The agent asked for input",

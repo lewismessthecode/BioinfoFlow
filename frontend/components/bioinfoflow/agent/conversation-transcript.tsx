@@ -13,6 +13,7 @@ import { useLocale, useTranslations } from "next-intl"
 import { ActivityDisclosureProvider } from "@/components/bioinfoflow/agent/activity-disclosure"
 import { AgentActivityGroup } from "@/components/bioinfoflow/agent/agent-activity"
 import { AgentArtifactReference } from "@/components/bioinfoflow/agent/agent-artifact"
+import { AgentLiveStatus } from "@/components/bioinfoflow/agent/agent-live-status"
 import { AgentThinking } from "@/components/bioinfoflow/agent/agent-thinking"
 import { AgentInteractionCard } from "@/components/bioinfoflow/agent/interaction-card"
 import { AgentPlanEntry } from "@/components/bioinfoflow/agent/plan-entry"
@@ -20,6 +21,7 @@ import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { Button } from "@/components/ui/button"
 import type {
   ConversationInteractionResponse,
+  ConversationRunAudit,
   ConversationViewModel,
   MessageTranscriptBlock,
   TranscriptBlock,
@@ -33,9 +35,7 @@ import {
   AlertTriangle,
   ArrowDown,
   Check,
-  CheckCircle2,
   Copy,
-  Loader2,
 } from "@/lib/icons"
 import { cn } from "@/lib/utils"
 
@@ -76,8 +76,8 @@ export function ConversationTranscript({
   const [hasNewContent, setHasNewContent] = useState(false)
   const activeInteractionBlockId = currentActiveInteractionBlockId(view)
   const copyableMessageIds = useMemo(
-    () => completedFinalAssistantMessageIds(view.transcript),
-    [view.transcript],
+    () => completedFinalAssistantMessageIds(view.transcript, view.runs),
+    [view.runs, view.transcript],
   )
 
   useLayoutEffect(() => {
@@ -164,8 +164,8 @@ export function ConversationTranscript({
                 />
               </div>
             ))}
-            {view.activeWork && view.transcript.length === 0 ? (
-              <ActiveWorkIndicator view={view} />
+            {view.activeWork && view.activeWork.status !== "waiting_user" ? (
+              <AgentLiveStatus />
             ) : null}
           </div>
         </ActivityDisclosureProvider>
@@ -264,16 +264,16 @@ function TranscriptBlockView({
         </section>
       )
     case "outcome":
+      if (block.status === "completed") return null
       return (
         <div
           className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground"
           data-testid="agent-run-outcome"
         >
-          {block.status === "completed" ? (
-            <CheckCircle2 aria-hidden="true" className="size-4 text-success-foreground" />
-          ) : (
-            <AlertTriangle aria-hidden="true" className="size-4 text-error-foreground" />
-          )}
+          <AlertTriangle
+            aria-hidden="true"
+            className="size-4 text-error-foreground"
+          />
           <span>{tRun(`status.${block.status}`)}</span>
           {block.error?.message ?? block.reason ? (
             <span className="min-w-0 truncate">
@@ -482,29 +482,6 @@ function ConversationMessage({
   )
 }
 
-function ActiveWorkIndicator({ view }: { view: ConversationViewModel }) {
-  const t = useTranslations("agentRun")
-  const activeWork = view.activeWork
-  if (!activeWork) return null
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground"
-    >
-      <Loader2
-        aria-hidden="true"
-        className="size-4 animate-spin motion-reduce:animate-none"
-      />
-      <span>
-        {activeWork.phase
-          ? t(`phase.${activeWork.phase}`)
-          : t(`status.${activeWork.status}`)}
-      </span>
-    </div>
-  )
-}
-
 function currentActiveInteractionBlockId(view: ConversationViewModel) {
   if (!view.activeWork || view.activeWork.status !== "waiting_user") return null
   for (let index = view.transcript.length - 1; index >= 0; index -= 1) {
@@ -522,13 +499,10 @@ function currentActiveInteractionBlockId(view: ConversationViewModel) {
 
 function completedFinalAssistantMessageIds(
   transcript: readonly TranscriptBlock[],
+  runs: readonly ConversationRunAudit[],
 ) {
   const completedRunIds = new Set(
-    transcript.flatMap((block) =>
-      block.type === "outcome" && block.status === "completed"
-        ? [block.runId]
-        : [],
-    ),
+    runs.filter((run) => run.status === "completed").map((run) => run.id),
   )
   const finalMessageByRun = new Map<string, string>()
   for (const block of transcript) {

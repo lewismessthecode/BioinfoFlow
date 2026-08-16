@@ -31,6 +31,19 @@ vi.mock("next-intl", () => ({
         "agentInteraction.approval.approve": "Approve",
         "agentInteraction.approval.reject": "Reject",
         "agentInteraction.approval.input": "Command preview",
+        "agentInteraction.approval.target": "Execution target",
+        "agentInteraction.approval.action.command": "Run command",
+        "agentInteraction.approval.action.write": "Write file",
+        "agentInteraction.approval.action.edit": "Edit file",
+        "agentInteraction.approval.action.read": "Read file",
+        "agentInteraction.approval.action.tool": `Run ${values?.toolName ?? "tool"}`,
+        "agentInteraction.approval.effect.read": "Reads data",
+        "agentInteraction.approval.effect.write": "Changes files",
+        "agentInteraction.approval.effect.delete": "Deletes data",
+        "agentInteraction.approval.effect.network": "Uses the network",
+        "agentInteraction.approval.effect.process_control": "Controls processes",
+        "agentInteraction.approval.effect.privilege": "Uses elevated access",
+        "agentInteraction.approval.effect.execute": "Runs a command",
         "agentInteraction.approval.effects": "Effects",
         "agentInteraction.approval.reasons": "Reasons",
         "agentInteraction.approval.resources": "Affected resources",
@@ -236,6 +249,56 @@ describe("AgentInteractionCard", () => {
     const reject = screen.getByRole("button", { name: "Reject" })
     expect(reject).toHaveClass("dark:bg-transparent")
     expect(reject).not.toHaveClass("dark:bg-input/30")
+  })
+
+  it("explains the approval action without exposing protocol risk details", () => {
+    renderWithProviders(
+      <AgentInteractionCard
+        interaction={{
+          type: "interaction",
+          id: "approval-details",
+          runId: "run-1",
+          createdAt: null,
+          interactionId: "interaction-details",
+          status: "pending",
+          request: {
+            type: "approval",
+            callId: "call-approval",
+            toolName: "bash",
+            summary: "Run command",
+            inputPreview: "touch e2e-approved.txt",
+            allowedResponses: ["approve", "reject"],
+            risk: {
+              level: "act_high",
+              effects: ["execute", "write"],
+              reasons: ["command semantics classified as act_high"],
+              affectedResources: ["e2e-approved.txt"],
+            },
+            target: {
+              environmentId: "local",
+              displayName: "Local",
+              kind: "local",
+              host: null,
+            },
+          },
+          response: null,
+        }}
+        onRespond={vi.fn()}
+      />,
+    )
+
+    const card = screen.getByTestId("agent-interaction-card")
+    expect(within(card).getByText("Run command")).toBeInTheDocument()
+    expect(within(card).getByText("bash")).toBeInTheDocument()
+    expect(within(card).getByText("touch e2e-approved.txt")).toBeInTheDocument()
+    expect(within(card).getByText("Local")).toBeInTheDocument()
+    expect(within(card).getByText("Runs a command")).toBeInTheDocument()
+    expect(within(card).getByText("Changes files")).toBeInTheDocument()
+    expect(within(card).getByText("e2e-approved.txt")).toBeInTheDocument()
+    expect(within(card).queryByText(/act_high/i)).not.toBeInTheDocument()
+    expect(
+      within(card).queryByText("command semantics classified as act_high"),
+    ).not.toBeInTheDocument()
   })
 
   it("announces a newly arrived pending interaction without interrupting the user", () => {

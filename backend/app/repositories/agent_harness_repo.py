@@ -697,9 +697,14 @@ class AgentHarnessRepository:
                 await self.db.commit()
                 return None, None, False
 
+            payload = await self._user_message_payload(session, command)
+            if session.title is None:
+                generated_title = _conversation_title(payload)
+                if generated_title is not None:
+                    session.title = generated_title
+
             current = await self.get_current_run(session_id)
             if current is not None:
-                await self._user_message_payload(session, command)
                 session.command_ids = [*command_ids, command.command_id]
                 session.command_queue = [
                     *(session.command_queue or []),
@@ -709,7 +714,6 @@ class AgentHarnessRepository:
                 await self.db.refresh(session)
                 return None, None, True
 
-            payload = await self._user_message_payload(session, command)
             run = AgentHarnessRun(
                 session_id=session_id,
                 status="queued",
@@ -2406,6 +2410,27 @@ class AgentHarnessRepository:
             return None
         request = max(pending.values(), key=lambda item: item.sequence)
         return pending_interaction_entry_view(request)
+
+
+def _conversation_title(payload: dict[str, Any]) -> str | None:
+    for part in payload.get("parts") or []:
+        if not isinstance(part, dict) or part.get("type") != "text":
+            continue
+        text = part.get("text")
+        if not isinstance(text, str):
+            continue
+        compact = " ".join(text.strip().split()).strip("'\"`*_#> ")
+        if not compact:
+            continue
+        if len(compact) <= 30:
+            return compact
+        candidate = compact[:30].rstrip(" ,.;:，。；：")
+        if " " in candidate:
+            boundary = candidate.rfind(" ")
+            if boundary >= 12:
+                candidate = candidate[:boundary]
+        return candidate or compact[:30]
+    return None
 
 
 __all__ = [

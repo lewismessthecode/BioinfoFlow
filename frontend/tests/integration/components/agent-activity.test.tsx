@@ -117,11 +117,11 @@ describe("AgentToolCard", () => {
     )
 
     expect(screen.getByText("read")).toBeInTheDocument()
-    expect(screen.getByText("Read workflow.nf")).toBeInTheDocument()
+    expect(screen.getByText("workflow.nf")).toBeInTheDocument()
     expect(screen.queryByText("nextflow run workflow.nf")).not.toBeInTheDocument()
 
     const summaryRow = screen.getByRole("button", { name: /Show details/i })
-    expect(summaryRow).toHaveTextContent("Read workflow.nf")
+    expect(summaryRow).toHaveTextContent("read·workflow.nf")
     await user.click(summaryRow)
 
     expect(screen.getByText("nextflow run workflow.nf")).toBeInTheDocument()
@@ -195,8 +195,7 @@ describe("AgentToolCard", () => {
 })
 
 describe("AgentActivityGroup", () => {
-  it("keeps an active parallel group collapsed until the user opens it", async () => {
-    const user = userEvent.setup()
+  it("renders every tool as a visible flat row without a group-count disclosure", () => {
     renderWithProviders(
       <AgentActivityGroup
         tools={[
@@ -213,122 +212,60 @@ describe("AgentActivityGroup", () => {
       />,
     )
 
-    const disclosure = screen.getByRole("button", {
-      name: /2 tools running in parallel/i,
-    })
-    expect(disclosure).toHaveAttribute(
+    const group = screen.getByTestId("agent-activity-group")
+    expect(group.querySelectorAll("[data-agent-activity-row]")).toHaveLength(2)
+    expect(screen.getByText("workflow.nf")).toBeInTheDocument()
+    expect(screen.getByText("params.json")).toBeInTheDocument()
+    expect(screen.queryByText(/tools running in parallel/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/tool activities/i)).not.toBeInTheDocument()
+    for (const row of group.querySelectorAll("[data-agent-activity-row]")) {
+      expect(row).not.toHaveClass("border", "bg-background")
+    }
+  })
+
+  it("preserves model-call order without inserting category headings", () => {
+    renderWithProviders(
+      <AgentActivityGroup
+        tools={[
+          runningTool,
+          {
+            ...runningTool,
+            call_id: "call-command-1",
+            name: "bash",
+            display_name: "bash",
+            category: "command",
+            summary: "Run workflow",
+          },
+        ]}
+      />,
+    )
+
+    expect(
+      Array.from(
+        screen
+          .getByTestId("agent-activity-group")
+          .querySelectorAll("[data-agent-activity-row]"),
+      ).map((row) => row.textContent),
+    ).toEqual([
+      expect.stringContaining("read·workflow.nf"),
+      expect.stringContaining("Run workflow"),
+    ])
+    expect(screen.queryAllByRole("heading", { level: 3 })).toHaveLength(0)
+  })
+
+  it("exposes stable activity identity and keeps each row's details collapsed", () => {
+    renderWithProviders(
+      <AgentActivityGroup tools={[runningTool]} executionMode="serial" />,
+    )
+
+    const row = screen.getByTestId("agent-tool-card")
+    expect(row).toHaveAttribute("data-call-id", "call-read-1")
+    expect(row).toHaveAttribute("data-activity-category", "read")
+    expect(row).toHaveAttribute("data-activity-status", "running")
+    expect(row).toHaveAttribute("data-agent-activity-row", "")
+    expect(screen.getByRole("button", { name: /Show details/i })).toHaveAttribute(
       "aria-expanded",
       "false",
     )
-    expect(disclosure).toHaveClass("h-9", "py-1")
-    expect(screen.getByTestId("agent-activity-group")).not.toHaveClass(
-      "border",
-      "bg-background",
-    )
-    expect(screen.queryByText("Read workflow.nf")).not.toBeInTheDocument()
-    expect(screen.queryByText("Read params.json")).not.toBeInTheDocument()
-
-    await user.click(disclosure)
-
-    expect(screen.getByText("Read workflow.nf")).toBeInTheDocument()
-    expect(screen.getByText("Read params.json")).toBeInTheDocument()
-    for (const card of screen.getAllByTestId("agent-tool-card")) {
-      expect(card.querySelector("button")).toHaveClass("h-9", "py-1")
-    }
-  })
-
-  it("localizes public tool categories instead of rendering protocol values", async () => {
-    const user = userEvent.setup()
-    renderWithProviders(
-      <AgentActivityGroup
-        tools={[
-          runningTool,
-          {
-            ...runningTool,
-            call_id: "call-command-1",
-            name: "bash",
-            display_name: "bash",
-            category: "command",
-            summary: "Run workflow",
-          },
-        ]}
-      />,
-    )
-
-    await user.click(screen.getByRole("button", { name: /2 tools running in parallel/i }))
-
-    expect(screen.getByText("Reading")).toBeInTheDocument()
-    expect(screen.getByText("Commands")).toBeInTheDocument()
-    expect(screen.queryByRole("heading", { name: "read" })).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole("heading", { name: "command" }),
-    ).not.toBeInTheDocument()
-  })
-
-  it("preserves interleaved model-call order while grouping contiguous categories", async () => {
-    const user = userEvent.setup()
-    renderWithProviders(
-      <AgentActivityGroup
-        tools={[
-          runningTool,
-          {
-            ...runningTool,
-            call_id: "call-command-1",
-            name: "bash",
-            display_name: "bash",
-            category: "command",
-            summary: "Run workflow",
-          },
-          {
-            ...runningTool,
-            call_id: "call-read-2",
-            summary: "Read results.json",
-            arguments: { path: "results.json" },
-          },
-        ]}
-      />,
-    )
-
-    await user.click(screen.getByRole("button", { name: /3 tools running in parallel/i }))
-
-    expect(
-      screen
-        .getAllByTestId("agent-tool-card")
-        .map((card) => card.textContent),
-    ).toEqual([
-      expect.stringContaining("Read workflow.nf"),
-      expect.stringContaining("Run workflow"),
-      expect.stringContaining("Read results.json"),
-    ])
-    expect(
-      screen
-        .getAllByRole("heading", { level: 3 })
-        .map((heading) => heading.textContent),
-    ).toEqual(["Reading", "Commands", "Reading"])
-  })
-
-  it("renders grouped tools as flat rows instead of nested bordered cards", async () => {
-    const user = userEvent.setup()
-    renderWithProviders(
-      <AgentActivityGroup
-        tools={[
-          runningTool,
-          {
-            ...runningTool,
-            call_id: "call-read-2",
-            summary: "Read params.json",
-          },
-        ]}
-      />,
-    )
-
-    const group = screen.getByTestId("agent-activity-group")
-    await user.click(screen.getByRole("button", { name: /2 tools running in parallel/i }))
-    const childRows = group.querySelectorAll('[data-testid="agent-tool-card"]')
-    expect(childRows).toHaveLength(2)
-    for (const row of childRows) {
-      expect(row).toHaveAttribute("data-grouped", "true")
-      expect(row).not.toHaveClass("border")
-    }
   })
 })

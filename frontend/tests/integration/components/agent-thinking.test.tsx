@@ -14,7 +14,7 @@ vi.mock("next-intl", () => ({
       show: "Show thinking",
       hide: "Hide thinking",
     }
-    if (key === "duration") return `${values?.duration ?? "0"}s`
+    if (key === "duration") return `${values?.seconds ?? "0"}s`
     return copy[key] ?? key
   },
 }))

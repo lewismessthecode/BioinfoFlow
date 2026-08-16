@@ -56,6 +56,8 @@ class ToolInteraction:
     request_id: str
     call_id: str
     kind: InteractionKind
+    summary: str | None = None
+    input_preview: str | None = None
     questions: tuple[dict[str, Any], ...] = ()
     risk: dict[str, Any] | None = None
     target: dict[str, str] | None = None
@@ -81,6 +83,8 @@ class ToolResult:
         replay_policy: ReplayPolicy,
         request_id: str,
         kind: InteractionKind,
+        summary: str | None = None,
+        input_preview: str | None = None,
         questions: tuple[dict[str, Any], ...] = (),
         risk: dict[str, Any] | None = None,
         target: dict[str, str] | None = None,
@@ -95,6 +99,8 @@ class ToolResult:
                 request_id=request_id,
                 call_id=call_id,
                 kind=kind,
+                summary=summary,
+                input_preview=input_preview,
                 questions=questions,
                 risk=risk,
                 target=target,
