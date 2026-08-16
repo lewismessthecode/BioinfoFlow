@@ -6,10 +6,14 @@ import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import {
   composerSelectorChevronClassName,
-  composerSelectorIconClassName,
+  composerSelectorMenuHeaderClassName,
+  composerSelectorMenuItemClassName,
 } from "@/components/bioinfoflow/composer-selector-chip"
 import {
+  ComposerSelectorChevronSlot,
+  ComposerSelectorIconSlot,
   ComposerSelectorMenuSurface,
+  ComposerSelectorText,
   ComposerSelectorTrigger,
 } from "@/components/bioinfoflow/composer-selector"
 import {
@@ -43,7 +47,6 @@ import { cn } from "@/lib/utils"
 type PermissionMenuProps = {
   permissionMode: ConversationPermissionMode
   workspaceAccess: ConversationWorkspaceAccess
-  activeRun: boolean
   disabled?: boolean
   onPermissionModeChange: (mode: ConversationPermissionMode) => Promise<void>
 }
@@ -64,7 +67,6 @@ const modeIcons = {
 export function PermissionMenu({
   permissionMode,
   workspaceAccess,
-  activeRun,
   disabled = false,
   onPermissionModeChange,
 }: PermissionMenuProps) {
@@ -112,22 +114,25 @@ export function PermissionMenu({
       aria-describedby={descriptionId}
       className="max-w-[12rem]"
     >
-      {isUpdating ? (
-        <Loader2
+      <ComposerSelectorIconSlot>
+        {isUpdating ? (
+          <Loader2
+            aria-hidden="true"
+            className="animate-spin motion-reduce:animate-none"
+          />
+        ) : (
+          <CurrentIcon aria-hidden="true" />
+        )}
+      </ComposerSelectorIconSlot>
+      <ComposerSelectorText>
+        {t(`permission.${displayedMode}.name`)}
+      </ComposerSelectorText>
+      <ComposerSelectorChevronSlot>
+        <ChevronDown
           aria-hidden="true"
-          className="animate-spin motion-reduce:animate-none"
+          className={composerSelectorChevronClassName}
         />
-      ) : (
-        <CurrentIcon
-          aria-hidden="true"
-          className={composerSelectorIconClassName}
-        />
-      )}
-      <span>{t(`permission.${displayedMode}.name`)}</span>
-      <ChevronDown
-        aria-hidden="true"
-        className={composerSelectorChevronClassName}
-      />
+      </ComposerSelectorChevronSlot>
     </ComposerSelectorTrigger>
   )
 
@@ -192,7 +197,7 @@ export function PermissionMenu({
             side="top"
             className="w-[244px]"
           >
-            <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+            <div className={composerSelectorMenuHeaderClassName}>
               {t("permission.title")}
             </div>
             <DropdownMenuRadioGroup
@@ -207,7 +212,8 @@ export function PermissionMenu({
                   value={mode}
                   disabled={controlsDisabled}
                   className={cn(
-                    "items-start rounded-lg py-2 pl-8 pr-2 text-xs",
+                    composerSelectorMenuItemClassName,
+                    "items-start pl-8 pr-2",
                     mode === "full_access" && "text-warning-foreground",
                   )}
                 >
@@ -223,7 +229,6 @@ export function PermissionMenu({
         id={descriptionId}
         className="px-2 text-[11px] leading-4 text-muted-foreground"
       >
-        {activeRun ? <p>{t("permission.nextRun")}</p> : null}
         {readOnlyWorkspace ? <p>{t("permission.readOnlyWorkspace")}</p> : null}
         {isUpdating ? <p role="status">{t("permission.updating")}</p> : null}
         {visibleUpdate?.state === "error" ? (

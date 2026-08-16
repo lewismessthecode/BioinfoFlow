@@ -2,14 +2,22 @@
 
 import { useState } from "react"
 import { useTranslations } from "next-intl"
-import { Check, ChevronDown, Settings as SettingsIcon } from "@/lib/icons"
+import {
+  Check,
+  ChevronDown,
+  Settings as SettingsIcon,
+  Sparkles,
+} from "@/lib/icons"
 import Link from "next/link"
 import {
   composerSelectorChevronClassName,
-  composerSelectorIconClassName,
+  composerSelectorMenuItemClassName,
 } from "@/components/bioinfoflow/composer-selector-chip"
 import {
+  ComposerSelectorChevronSlot,
+  ComposerSelectorIconSlot,
   ComposerSelectorMenuSurface,
+  ComposerSelectorText,
   ComposerSelectorTrigger,
 } from "@/components/bioinfoflow/composer-selector"
 import { Popover, PopoverTrigger } from "@/components/ui/popover"
@@ -92,10 +100,15 @@ export function ModelSelector({
         asChild
       >
         <Link href="/settings?section=providers">
-          <SettingsIcon
-            className={isComposer ? composerSelectorIconClassName : "h-3.5 w-3.5"}
-          />
-          <span className={cn(compact ? "sr-only" : "hidden sm:inline")}>{t("configure")}</span>
+          <ComposerSelectorIconSlot presentation={variant}>
+            <SettingsIcon className={isComposer ? undefined : "h-3.5 w-3.5"} />
+          </ComposerSelectorIconSlot>
+          <ComposerSelectorText
+            presentation={variant}
+            className={cn(compact ? "sr-only" : "hidden sm:inline")}
+          >
+            {t("configure")}
+          </ComposerSelectorText>
         </Link>
       </ComposerSelectorTrigger>
     )
@@ -116,27 +129,38 @@ export function ModelSelector({
           data-variant={variant}
           data-composer-chip={isComposer ? "true" : undefined}
         >
-          {currentModel && (
-            <ProviderIcon
-              provider={currentModel.providerKind}
-              providerLabel={currentModel.label}
-              baseUrl={currentModel.baseUrl}
-              modelId={currentModel.id}
-              modelName={currentModel.name}
-              size={13}
-            />
-          )}
-          <span className={cn("truncate", compact ? "sr-only" : "hidden sm:inline")}>
-            {displayLabel}
-          </span>
-          <ChevronDown
-            className={cn(
-              isComposer
-                ? composerSelectorChevronClassName
-                : "h-3 w-3 shrink-0 opacity-50",
-              compact && "hidden",
+          <ComposerSelectorIconSlot presentation={variant}>
+            {currentModel ? (
+              <ProviderIcon
+                provider={currentModel.providerKind}
+                providerLabel={currentModel.label}
+                baseUrl={currentModel.baseUrl}
+                modelId={currentModel.id}
+                modelName={currentModel.name}
+                size={13}
+              />
+            ) : (
+              <Sparkles aria-hidden="true" />
             )}
-          />
+          </ComposerSelectorIconSlot>
+          <ComposerSelectorText
+            presentation={variant}
+            className={cn(compact ? "sr-only" : "hidden sm:inline")}
+          >
+            {displayLabel}
+          </ComposerSelectorText>
+          <ComposerSelectorChevronSlot
+            presentation={variant}
+            className={cn(compact && "hidden")}
+          >
+            <ChevronDown
+              className={
+                isComposer
+                  ? composerSelectorChevronClassName
+                  : "h-3 w-3 shrink-0 opacity-50"
+              }
+            />
+          </ComposerSelectorChevronSlot>
         </ComposerSelectorTrigger>
       </PopoverTrigger>
       <ComposerSelectorMenuSurface
@@ -165,7 +189,7 @@ export function ModelSelector({
                     }}
                     className={cn(
                       "flex items-center justify-between",
-                      isComposer ? "min-h-7 px-2 py-1.5 text-xs" : "px-3 py-2",
+                      isComposer ? composerSelectorMenuItemClassName : "px-3 py-2",
                     )}
                   >
                     <div className={cn("flex items-center", isComposer ? "gap-2" : "gap-2.5")}>
@@ -205,7 +229,7 @@ export function ModelSelector({
                       }}
                       className={cn(
                         "flex items-center justify-between",
-                        isComposer ? "min-h-7 px-2 py-1.5 text-xs" : "px-3 py-2",
+                        isComposer ? composerSelectorMenuItemClassName : "px-3 py-2",
                       )}
                     >
                       <div className={cn("flex items-center", isComposer ? "gap-2" : "gap-2.5")}>
@@ -233,7 +257,9 @@ export function ModelSelector({
               <CommandItem
                 value={t("configure")}
                 asChild
-                className={cn(isComposer ? "px-2 py-1.5" : "px-3 py-2")}
+                className={cn(
+                  isComposer ? composerSelectorMenuItemClassName : "px-3 py-2",
+                )}
               >
                 <Link href="/settings?section=providers" onClick={() => setOpen(false)}>
                   <SettingsIcon className={cn(isComposer ? "h-3 w-3" : "h-3.5 w-3.5", "mr-2 opacity-50")} />

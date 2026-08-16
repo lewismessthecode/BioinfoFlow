@@ -215,6 +215,8 @@ describe("AgentComposer", () => {
     expect(screen.getByTestId("agent-composer")).toHaveClass("max-w-[42rem]")
     expect(screen.getByTestId("agent-composer-surface")).toHaveClass(
       "min-h-[160px]",
+      "border-border/85",
+      "bg-card",
     )
     expect(screen.getByTestId("agent-composer-controls")).toHaveClass(
       "items-center",
@@ -224,7 +226,17 @@ describe("AgentComposer", () => {
     )
     expect(selectors).toHaveLength(3)
     for (const selector of selectors) {
-      expect(selector).toHaveClass("h-8", "min-h-8")
+      expect(selector).toHaveStyle({
+        fontSize: "11px",
+        lineHeight: "16px",
+      })
+      expect(selector).toHaveClass("h-11", "min-h-11", "lg:h-8", "lg:min-h-8")
+      expect(
+        selector.querySelector('[data-composer-selector-slot="icon"]'),
+      ).toHaveStyle({ width: "16px", height: "16px" })
+      expect(
+        selector.querySelector('[data-composer-selector-slot="text"]'),
+      ).toHaveStyle({ height: "16px", lineHeight: "16px" })
     }
     expect(screen.getByTestId("agent-composer-surface")).not.toHaveClass(
       "shadow-md",
@@ -274,9 +286,13 @@ describe("AgentComposer", () => {
       "rounded-[10px]",
       "p-1",
     )
+    expect(screen.getByTestId("composer-selector-menu")).toHaveAttribute(
+      "data-composer-selector-menu-density",
+      "compact",
+    )
     expect(
       screen.getByRole("menuitemradio", { name: /Ask before changes/i }),
-    ).toHaveClass("py-2")
+    ).toHaveClass("min-h-11", "lg:min-h-8", "py-2", "text-xs", "leading-4")
   })
 
   it("shows starter prompts only in the draft and moves a selected prompt into the editor", async () => {
@@ -365,6 +381,9 @@ describe("AgentComposer", () => {
 
     expect(screen.getByTestId("agent-command-discovery-hint")).toHaveTextContent(
       "Type/to choose a skill",
+    )
+    expect(screen.getByTestId("agent-command-discovery-hint")).toHaveClass(
+      "bottom-10",
     )
     fireEvent.change(
       screen.getByRole("textbox", { name: "Message the agent" }),
@@ -477,6 +496,7 @@ describe("AgentComposer", () => {
   it("grows the textarea with its content up to the bounded composer height", () => {
     renderComposer({ placement: "draft" })
     const input = screen.getByRole("textbox", { name: "Message the agent" })
+
     Object.defineProperty(input, "scrollHeight", {
       configurable: true,
       value: 240,
@@ -552,6 +572,10 @@ describe("AgentComposer", () => {
     })
     const input = screen.getByRole("textbox", { name: "Message the agent" })
 
+    expect(
+      screen.queryByText("Changes apply to the next run."),
+    ).not.toBeInTheDocument()
+
     await user.type(input, "Do this next")
     await user.click(screen.getByRole("button", { name: "Queue message" }))
     expect(onSendMessage).toHaveBeenCalledWith([
@@ -560,7 +584,12 @@ describe("AgentComposer", () => {
     expect(onSteer).not.toHaveBeenCalled()
 
     await user.type(input, "Use the smaller sample")
-    await user.click(screen.getByRole("button", { name: "Steer active run" }))
+    const steerButton = screen.getByRole("button", {
+      name: "Steer active run",
+    })
+    expect(steerButton).toHaveAttribute("data-agent-action", "steer")
+    expect(steerButton).toHaveTextContent("")
+    await user.click(steerButton)
     expect(onSteer).toHaveBeenCalledWith([
       expect.objectContaining({ type: "text", text: "Use the smaller sample" }),
     ])
@@ -724,8 +753,8 @@ describe("AgentComposer", () => {
     })
     expect(activeTrigger).toBeEnabled()
     expect(
-      screen.getByText("Changes apply to the next run."),
-    ).toBeInTheDocument()
+      screen.queryByText("Changes apply to the next run."),
+    ).not.toBeInTheDocument()
     await user.click(activeTrigger)
     await user.click(
       screen.getByRole("menuitemradio", { name: /Full access/i }),
