@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
 import { AgentThinking } from "@/components/bioinfoflow/agent/agent-thinking"
+import type { ReasoningTranscriptBlock } from "@/lib/agent/conversation-model/types"
 import { renderWithProviders } from "@/tests/test-utils"
 
 vi.mock("next-intl", () => ({
@@ -17,17 +18,33 @@ vi.mock("next-intl", () => ({
   },
 }))
 
+function reasoning(
+  id: string,
+  text: string,
+  streaming: boolean,
+): ReasoningTranscriptBlock {
+  return {
+    type: "reasoning",
+    id,
+    runId: null,
+    createdAt: null,
+    text,
+    streaming,
+    provider: null,
+    model: null,
+    sourceField: "reasoning_summary",
+    truncated: false,
+    startedAt: null,
+    completedAt: null,
+    durationMs: null,
+  }
+}
+
 describe("AgentThinking", () => {
   it("shows a compact live state when reasoning content has not arrived", () => {
     renderWithProviders(
       <AgentThinking
-        active
-        part={{
-          id: "thinking-empty",
-          type: "reasoning_summary",
-          text: "",
-          end_offset: 0,
-        }}
+        reasoning={reasoning("thinking-empty", "", true)}
       />,
     )
 
@@ -39,12 +56,11 @@ describe("AgentThinking", () => {
     const user = userEvent.setup()
     renderWithProviders(
       <AgentThinking
-        part={{
-          id: "thinking-complete",
-          type: "reasoning_summary",
-          text: "Inspect the workflow first.\nThen validate the parameters.",
-          end_offset: 57,
-        }}
+        reasoning={reasoning(
+          "thinking-complete",
+          "Inspect the workflow first.\nThen validate the parameters.",
+          false,
+        )}
       />,
     )
 
@@ -67,26 +83,22 @@ describe("AgentThinking", () => {
     const user = userEvent.setup()
     const view = renderWithProviders(
       <AgentThinking
-        active
-        part={{
-          id: "thinking-stream",
-          type: "reasoning_summary",
-          text: "Inspect the workflow first.",
-          end_offset: 27,
-        }}
+        reasoning={reasoning(
+          "thinking-stream",
+          "Inspect the workflow first.",
+          true,
+        )}
       />,
     )
 
     await user.click(screen.getByRole("button", { name: /Show thinking/i }))
     view.rerender(
       <AgentThinking
-        active
-        part={{
-          id: "thinking-stream",
-          type: "reasoning_summary",
-          text: "Inspect the workflow first.\nNow validate the parameters.",
-          end_offset: 56,
-        }}
+        reasoning={reasoning(
+          "thinking-stream",
+          "Inspect the workflow first.\nNow validate the parameters.",
+          true,
+        )}
       />,
     )
 

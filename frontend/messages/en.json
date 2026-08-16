@@ -2520,6 +2520,7 @@
     "defaultModel": "Default model",
     "emptyTitle": "What would you like to work on?",
     "emptyDescription": "Ask a question, attach data, or reference a workflow. Bioinfoflow will show its plan, progress, tool activity, and any approval it needs.",
+    "capabilityHint": "The agent can work in this project and the environments you authorize. Actions that require approval will pause and ask first.",
     "starterPrompts": {
       "reviewRun": "Review the latest run and highlight anything unusual",
       "explainInputs": "Explain the inputs available in this project",
@@ -2700,6 +2701,17 @@
       "tools": "Using tools",
       "interaction": "Waiting for input"
     },
+    "error": {
+      "agent_failed": "The Agent run failed.",
+      "invalid_plan": "The Agent produced an invalid plan.",
+      "iteration_limit": "The Agent reached its iteration limit.",
+      "model_attempt_timeout": "The model did not respond before the attempt timed out.",
+      "model_vision_unsupported": "The selected model does not support image input.",
+      "no_progress": "The Agent stopped after repeating the same tool calls.",
+      "run_timeout_exceeded": "The Agent run reached its time limit.",
+      "runtime_failed": "The Agent runtime stopped unexpectedly.",
+      "token_budget_exceeded": "The Agent run reached its token limit."
+    },
     "progress": {
       "actions": "{completed} of {total} actions finished",
       "label": "Tool progress"
@@ -2772,7 +2784,16 @@
       }
     },
     "notice": {
-      "title": "Agent notice"
+      "title": "Agent notice",
+      "message": {
+        "model_stream_interrupted": "The previous model response was interrupted. Continuing from saved history.",
+        "model_vision_unsupported": "The selected model does not support image input.",
+        "recovery_state_ignored": "Invalid recovery state was ignored. Continuing from saved history.",
+        "run_timeout_exceeded": "The run reached its {limitSeconds}-second time limit.",
+        "token_budget_exceeded": "The run used {totalTokens} tokens and reached its {tokenBudget}-token limit.",
+        "unknown_tool_effect": "An interrupted tool may have changed its target. Choose how to continue.",
+        "user_cancelled": "The Agent run was cancelled."
+      }
     }
   },
   "agentInteraction": {
@@ -2807,7 +2828,24 @@
       "inspect": "Inspect",
       "retry": "Retry",
       "cancel": "Cancel",
-      "selected": "Selected action"
+      "selected": "Selected action",
+      "message": {
+        "unknown_tool_effect": "BioinfoFlow could not confirm whether {toolName} changed the target. Choose how to continue."
+      },
+      "option": {
+        "inspect": {
+          "label": "Inspect state",
+          "description": "Continue without replaying the operation."
+        },
+        "retry": {
+          "label": "Retry operation",
+          "description": "Explicitly allow the operation to run again."
+        },
+        "cancel": {
+          "label": "Cancel run",
+          "description": "Stop without replaying the operation."
+        }
+      }
     },
     "submitting": "Submitting…",
     "submit_failed": "Could not submit. Try again."

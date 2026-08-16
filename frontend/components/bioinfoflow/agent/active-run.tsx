@@ -11,6 +11,11 @@ import { AgentThinking } from "@/components/bioinfoflow/agent/agent-thinking"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { CircleDashed } from "@/lib/icons"
 import { buildActiveActivity } from "@/lib/agent/activity"
+import {
+  activityFromToolProgress,
+  activityGroupFromToolProgress,
+  reasoningFromDraftPart,
+} from "@/lib/agent/projection/legacy-transcript-adapter"
 import type {
   ActiveRunView,
   AssistantDraftPartView,
@@ -64,9 +69,8 @@ export function ActiveRun({
               return (
                 <AgentThinking
                   key={item.key}
-                  active
                   label={t("reasoning")}
-                  part={item.part}
+                  reasoning={reasoningFromDraftPart(item.part, true)}
                 />
               )
             }
@@ -89,13 +93,15 @@ export function ActiveRun({
             return item.tools.length === 1 ? (
               <AgentToolCard
                 key={item.key}
-                tool={item.tools[0]}
+                activity={activityFromToolProgress(item.tools[0])}
               />
             ) : (
               <AgentActivityGroup
                 key={item.key}
-                tools={item.tools}
-                executionMode={commonExecutionMode(item.tools)}
+                activityGroup={activityGroupFromToolProgress(
+                  item.tools,
+                  commonExecutionMode(item.tools),
+                )}
               />
             )
           })}

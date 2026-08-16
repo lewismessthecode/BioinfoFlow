@@ -2520,6 +2520,7 @@
     "defaultModel": "默认模型",
     "emptyTitle": "你想先做什么？",
     "emptyDescription": "可以直接提问、添加数据，或引用工作流。Bioinfoflow 会展示计划、进度、工具执行，以及需要你确认的操作。",
+    "capabilityHint": "Agent 可在当前项目和你授权的环境中工作；需要审批的操作会暂停并先征求确认。",
     "starterPrompts": {
       "reviewRun": "检查最近一次运行，并指出值得注意的问题",
       "explainInputs": "解释当前项目中可以使用的输入",
@@ -2700,6 +2701,17 @@
       "tools": "正在使用工具",
       "interaction": "等待输入"
     },
+    "error": {
+      "agent_failed": "Agent 执行失败。",
+      "invalid_plan": "Agent 生成的计划无效。",
+      "iteration_limit": "Agent 已达到最大迭代次数。",
+      "model_attempt_timeout": "模型未在本次请求的时限内响应。",
+      "model_vision_unsupported": "所选模型不支持图片输入。",
+      "no_progress": "Agent 因重复调用相同工具而停止。",
+      "run_timeout_exceeded": "Agent 执行已达到时间限制。",
+      "runtime_failed": "Agent 运行环境意外停止。",
+      "token_budget_exceeded": "Agent 执行已达到 token 限制。"
+    },
     "progress": {
       "actions": "{total} 项操作中已有 {completed} 项结束",
       "label": "工具进度"
@@ -2772,7 +2784,16 @@
       }
     },
     "notice": {
-      "title": "Agent 提示"
+      "title": "Agent 提示",
+      "message": {
+        "model_stream_interrupted": "上一次模型回复被中断，现已从保存的历史记录继续。",
+        "model_vision_unsupported": "所选模型不支持图片输入。",
+        "recovery_state_ignored": "已忽略无效的恢复状态，并从保存的历史记录继续。",
+        "run_timeout_exceeded": "本次执行已达到 {limitSeconds} 秒的时间限制。",
+        "token_budget_exceeded": "本次执行已使用 {totalTokens} 个 token，达到 {tokenBudget} 个 token 的限制。",
+        "unknown_tool_effect": "中断的工具可能已经修改目标，请选择后续处理方式。",
+        "user_cancelled": "Agent 执行已取消。"
+      }
     }
   },
   "agentInteraction": {
@@ -2807,7 +2828,24 @@
       "inspect": "检查当前状态",
       "retry": "重试",
       "cancel": "取消",
-      "selected": "已选操作"
+      "selected": "已选操作",
+      "message": {
+        "unknown_tool_effect": "BioinfoFlow 无法确认 {toolName} 是否已修改目标，请选择后续处理方式。"
+      },
+      "option": {
+        "inspect": {
+          "label": "检查状态",
+          "description": "继续处理，但不重复执行该操作。"
+        },
+        "retry": {
+          "label": "重试操作",
+          "description": "明确允许再次执行该操作。"
+        },
+        "cancel": {
+          "label": "取消执行",
+          "description": "停止执行，不重复该操作。"
+        }
+      }
     },
     "submitting": "提交中…",
     "submit_failed": "提交失败，请重试。"

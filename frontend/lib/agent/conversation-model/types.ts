@@ -31,6 +31,35 @@ export type ConversationSummary = {
   projectId: string | null
 }
 
+export type ConversationExecutionConfig = {
+  settingsRevision: number
+  model: {
+    provider: string
+    model: string
+    displayName: string
+  }
+  permissionMode: "ask_changes" | "ask_dangerous" | "full_access"
+  workspaceAccess: "read_only" | "read_write"
+  environmentScope: {
+    mode: "auto" | "manual"
+    environmentIds: string[]
+  }
+  environmentTargets: Array<{
+    environmentId: string
+    displayName: string
+    kind: "local" | "ssh"
+    host: string | null
+  }>
+}
+
+export type ConversationRunAudit = {
+  id: string
+  status: "queued" | "running" | "waiting_user" | "completed" | "failed" | "cancelled"
+  startedAt: string | null
+  completedAt: string | null
+  executionConfig: ConversationExecutionConfig | null
+}
+
 export type MessageReference = {
   kind: "attachment" | "file" | "directory" | "workflow" | "run"
   id: string
@@ -90,6 +119,26 @@ export type ActivityStatus =
   | "cancelled"
   | "interaction_required"
 
+export type ActivityDetail = {
+  id: string
+  kind:
+    | "arguments"
+    | "command"
+    | "working_directory"
+    | "path"
+    | "input"
+    | "output"
+    | "changes"
+    | "error"
+    | "metadata"
+  label: string | null
+  value: string
+  format: "text" | "path" | "code" | "json" | "diff"
+  copyable: boolean
+  truncated: boolean
+  redacted: boolean
+}
+
 export type ActivityItem = {
   id: string
   callId: string
@@ -103,6 +152,7 @@ export type ActivityItem = {
   error: string | null
   startedAt: string | null
   completedAt: string | null
+  details?: ActivityDetail[]
 }
 
 export type ActivityGroupTranscriptBlock = {
@@ -172,7 +222,9 @@ export type ConversationInteractionRequest =
       type: "recovery"
       callId: string
       toolName: string
-      message: string
+      messageCode: string | null
+      messageParams: Record<string, string | number>
+      messageFallback: string
       options: ConversationAskUserOption[]
     }
 
@@ -209,8 +261,8 @@ export type NoticeTranscriptBlock = {
   runId: string | null
   createdAt: string | null
   code: string
-  message: string
-  details: unknown
+  params: Record<string, string | number>
+  fallback: string
 }
 
 export type OutcomeTranscriptBlock = {
@@ -261,5 +313,6 @@ export type ConversationViewModel = {
     capabilities: ComposerCapabilities
   }
   transcript: TranscriptBlock[]
+  runs: ConversationRunAudit[]
   activeWork: ActiveWork | null
 }

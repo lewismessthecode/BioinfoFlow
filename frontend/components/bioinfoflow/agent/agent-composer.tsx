@@ -53,6 +53,7 @@ type AgentComposerProps = {
     selection: AgentEnvironmentSelection,
   ) => Promise<void>
   starterPrompts?: readonly string[]
+  capabilityHint?: string
   placement?: "draft" | "dock"
   textareaRef?: Ref<HTMLTextAreaElement>
   disabled?: boolean
@@ -79,6 +80,7 @@ export function AgentComposer({
   environmentSelectionPending = false,
   onEnvironmentSelectionChange,
   starterPrompts = [],
+  capabilityHint,
   placement = "dock",
   textareaRef,
   disabled = false,
@@ -383,6 +385,15 @@ export function AgentComposer({
           </div>
         </div>
       </div>
+
+      {placement === "draft" && capabilityHint ? (
+        <p
+          data-testid="agent-capability-hint"
+          className="mx-auto w-full max-w-[44rem] px-1 pt-1 text-xs leading-5 text-muted-foreground/65"
+        >
+          {capabilityHint}
+        </p>
+      ) : null}
 
       {placement === "draft" && starterPrompts.length > 0 ? (
         <section

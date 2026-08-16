@@ -3,10 +3,14 @@ import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
 import {
-  AgentActivityGroup,
-  AgentToolCard,
+  AgentActivityGroup as StableAgentActivityGroup,
+  AgentToolCard as StableAgentToolCard,
 } from "@/components/bioinfoflow/agent/agent-activity"
 import type { ToolProgressView } from "@/lib/agent/contracts"
+import {
+  activityFromToolProgress,
+  activityGroupFromToolProgress,
+} from "@/lib/agent/projection/legacy-transcript-adapter"
 import { renderWithProviders } from "@/tests/test-utils"
 
 const clipboardWriteText = vi.fn()
@@ -72,6 +76,24 @@ const runningTool: ToolProgressView = {
       redacted: false,
     },
   ],
+}
+
+function AgentToolCard({ tool }: { tool: ToolProgressView }) {
+  return <StableAgentToolCard activity={activityFromToolProgress(tool)} />
+}
+
+function AgentActivityGroup({
+  tools,
+  executionMode,
+}: {
+  tools: ToolProgressView[]
+  executionMode?: "parallel" | "serial" | "mixed"
+}) {
+  return (
+    <StableAgentActivityGroup
+      activityGroup={activityGroupFromToolProgress(tools, executionMode)}
+    />
+  )
 }
 
 describe("AgentToolCard", () => {

@@ -18,6 +18,9 @@ vi.mock("next-intl", () => ({
         "agentHistory.plan.status.in_progress": "In progress",
         "agentHistory.plan.status.completed": "Completed",
         "agentHistory.unknown.title": "Unsupported content",
+        "agentHistory.notice.title": "Agent notice",
+        "agentHistory.notice.message.run_timeout_exceeded": `The run reached its ${values?.limitSeconds ?? ""}-second time limit.`,
+        "agentRun.error.runtime_failed": "The Agent runtime stopped unexpectedly.",
         "agentThinking.title": "Thinking",
         "agentThinking.show": "Show thinking",
         "agentThinking.hide": "Hide thinking",
@@ -121,6 +124,79 @@ describe("ConversationTranscript", () => {
     )
 
     expect(screen.getByTestId("agent-thinking")).toHaveTextContent("1.5s")
+  })
+
+  it("localizes known notices and run errors from stable codes", () => {
+    renderWithProviders(
+      <ConversationTranscript
+        view={{
+          ...planView,
+          transcript: [
+            {
+              type: "notice",
+              id: "notice-timeout",
+              runId: "run-1",
+              createdAt: "2026-08-16T08:00:00.000Z",
+              code: "run_timeout_exceeded",
+              params: { limit_seconds: 300 },
+              fallback: "Backend-owned English timeout text",
+            },
+            {
+              type: "outcome",
+              id: "run:run-1:outcome",
+              runId: "run-1",
+              createdAt: "2026-08-16T08:05:00.000Z",
+              status: "failed",
+              reason: "runtime_failed",
+              error: {
+                code: "runtime_failed",
+                message: "Backend-owned English runtime text",
+              },
+            },
+          ],
+        }}
+      />,
+    )
+
+    expect(screen.getByText("The run reached its 300-second time limit.")).toBeInTheDocument()
+    expect(screen.getByText("The Agent runtime stopped unexpectedly.")).toBeInTheDocument()
+    expect(screen.queryByText(/Backend-owned English/)).not.toBeInTheDocument()
+  })
+
+  it("uses a safe raw fallback only for unknown notice and run error codes", () => {
+    renderWithProviders(
+      <ConversationTranscript
+        view={{
+          ...planView,
+          transcript: [
+            {
+              type: "notice",
+              id: "notice-provider",
+              runId: "run-1",
+              createdAt: null,
+              code: "provider_notice",
+              params: {},
+              fallback: "Provider maintenance is in progress.",
+            },
+            {
+              type: "outcome",
+              id: "run:run-1:outcome",
+              runId: "run-1",
+              createdAt: null,
+              status: "failed",
+              reason: "provider_failure",
+              error: {
+                code: "provider_failure",
+                message: "Provider request failed safely.",
+              },
+            },
+          ],
+        }}
+      />,
+    )
+
+    expect(screen.getByText("Provider maintenance is in progress.")).toBeInTheDocument()
+    expect(screen.getByText("Provider request failed safely.")).toBeInTheDocument()
   })
 
   it("only enables the current run interaction and marks historical approvals expired", async () => {

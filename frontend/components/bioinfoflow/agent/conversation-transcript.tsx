@@ -239,7 +239,13 @@ function TranscriptBlockView({
         >
           <h2 className="text-sm font-medium">{tHistory("notice.title")}</h2>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            {block.message}
+            {knownNoticeCode(block.code)
+              ? tHistory(`notice.message.${knownNoticeCode(block.code)}`, {
+                  limitSeconds: block.params.limit_seconds ?? "",
+                  totalTokens: block.params.total_tokens ?? "",
+                  tokenBudget: block.params.token_budget ?? "",
+                })
+              : block.fallback}
           </p>
         </section>
       )
@@ -257,7 +263,9 @@ function TranscriptBlockView({
           <span>{tRun(`status.${block.status}`)}</span>
           {block.error?.message ?? block.reason ? (
             <span className="min-w-0 truncate">
-              {block.error?.message ?? block.reason}
+              {knownRunErrorCode(block.error?.code ?? block.reason)
+                ? tRun(`error.${knownRunErrorCode(block.error?.code ?? block.reason)}`)
+                : block.error?.message ?? block.reason}
             </span>
           ) : null}
         </div>
@@ -283,6 +291,52 @@ function TranscriptBlockView({
         </section>
       )
   }
+}
+
+function knownNoticeCode(code: string) {
+  return [
+    "model_stream_interrupted",
+    "model_vision_unsupported",
+    "recovery_state_ignored",
+    "run_timeout_exceeded",
+    "token_budget_exceeded",
+    "unknown_tool_effect",
+    "user_cancelled",
+  ].includes(code)
+    ? (code as
+        | "model_stream_interrupted"
+        | "model_vision_unsupported"
+        | "recovery_state_ignored"
+        | "run_timeout_exceeded"
+        | "token_budget_exceeded"
+        | "unknown_tool_effect"
+        | "user_cancelled")
+    : null
+}
+
+function knownRunErrorCode(code: string | null | undefined) {
+  return [
+    "agent_failed",
+    "invalid_plan",
+    "iteration_limit",
+    "model_attempt_timeout",
+    "model_vision_unsupported",
+    "no_progress",
+    "run_timeout_exceeded",
+    "runtime_failed",
+    "token_budget_exceeded",
+  ].includes(code ?? "")
+    ? (code as
+        | "agent_failed"
+        | "invalid_plan"
+        | "iteration_limit"
+        | "model_attempt_timeout"
+        | "model_vision_unsupported"
+        | "no_progress"
+        | "run_timeout_exceeded"
+        | "runtime_failed"
+        | "token_budget_exceeded")
+    : null
 }
 
 function ConversationMessage({

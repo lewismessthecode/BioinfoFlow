@@ -10,6 +10,7 @@ import { AgentInteractionCard } from "@/components/bioinfoflow/agent/interaction
 import { Button } from "@/components/ui/button"
 import { ArrowDown } from "@/lib/icons"
 import { collectDurableToolCallIds } from "@/lib/agent/activity"
+import { interactionFromLegacy } from "@/lib/agent/projection/legacy-transcript-adapter"
 import type {
   ActiveRunView,
   HistoryEntry,
@@ -162,8 +163,10 @@ export function AgentTranscript({
             ) : null}
             {pendingInteraction ? (
               <AgentInteractionCard
-                interactionId={pendingInteraction.interaction_id}
-                request={pendingInteraction.request}
+                interaction={interactionFromLegacy(
+                  pendingInteraction.interaction_id,
+                  pendingInteraction.request,
+                )}
                 onRespond={
                   onRespond
                     ? (response) =>

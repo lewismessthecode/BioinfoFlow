@@ -6,30 +6,25 @@ import { useTranslations } from "next-intl"
 import { useActivityDisclosure } from "@/components/bioinfoflow/agent/activity-disclosure"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { ChevronDown, ChevronRight, Loader2, Sparkles } from "@/lib/icons"
-import type { AssistantDraftPartView } from "@/lib/agent/contracts"
 import type { ReasoningTranscriptBlock } from "@/lib/agent/conversation-model/types"
 
 type AgentThinkingProps = {
-  part?: Pick<AssistantDraftPartView, "id" | "type" | "text">
-  reasoning?: ReasoningTranscriptBlock
-  active?: boolean
+  reasoning: ReasoningTranscriptBlock
   label?: string
 }
 
 export function AgentThinking({
-  part,
   reasoning,
-  active = false,
   label,
 }: AgentThinkingProps) {
   const t = useTranslations("agentThinking")
   const detailsId = useId()
   const [expanded, setExpanded] = useActivityDisclosure(
-    `thinking:${reasoning?.id ?? part?.id ?? "unknown"}`,
+    `thinking:${reasoning.id}`,
   )
-  const text = (reasoning?.text ?? part?.text ?? "").trim()
-  const resolvedActive = reasoning?.streaming ?? active
-  const duration = reasoning && !resolvedActive
+  const text = reasoning.text.trim()
+  const resolvedActive = reasoning.streaming
+  const duration = !resolvedActive
     ? formatThinkingDuration(reasoning.durationMs)
     : null
 
