@@ -2,6 +2,10 @@ import { buildApiUrl } from "@/lib/api"
 import { connectEventSource } from "@/lib/runtime/event-source-connection"
 
 import type { AgentEvent } from "./contracts"
+import {
+  parsePresentationEvent,
+  type PresentationDiagnostic,
+} from "./transport/presentation-contract"
 
 const INITIAL_BACKOFF_MS = 1_000
 const MAX_BACKOFF_MS = 15_000
@@ -24,6 +28,7 @@ export type AgentConnectionStatus =
 export function subscribeAgentEvents(options: {
   sessionId: string
   onEvent: (event: AgentEvent) => void
+  onDiagnostic?: (diagnostic: PresentationDiagnostic) => void
   onConnectionChange?: (status: AgentConnectionStatus) => void
   onError?: (error: Event) => void
 }) {
@@ -53,8 +58,20 @@ export function subscribeAgentEvents(options: {
       bindSource: (source) => {
         for (const eventType of AGENT_EVENT_TYPES) {
           source.addEventListener(eventType, (message) => {
-            const event = parseAgentEvent(message as MessageEvent)
-            if (event?.type === eventType) options.onEvent(event)
+            const parsed = parseAgentEvent(message as MessageEvent, eventType)
+            if (!parsed.ok) {
+              options.onDiagnostic?.(parsed.diagnostic)
+              return
+            }
+            if (parsed.event.type === eventType) {
+              options.onEvent(parsed.event)
+              return
+            }
+            options.onDiagnostic?.({
+              code: "invalid_payload",
+              message: `Agent presentation SSE event mismatch: ${eventType}`,
+              originalType: eventType,
+            })
           })
         }
       },
@@ -89,12 +106,24 @@ export function subscribeAgentEvents(options: {
   }
 }
 
-function parseAgentEvent(message: MessageEvent): AgentEvent | null {
+function parseAgentEvent(
+  message: MessageEvent,
+  eventType: string,
+):
+  | { ok: true; event: AgentEvent }
+  | { ok: false; diagnostic: PresentationDiagnostic } {
   try {
-    const event = JSON.parse(message.data) as AgentEvent
-    if (!event || typeof event !== "object" || !("type" in event)) return null
-    return event
+    const parsed = parsePresentationEvent(JSON.parse(message.data))
+    if (!parsed.ok) return parsed
+    return { ok: true, event: parsed.value.event }
   } catch {
-    return null
+    return {
+      ok: false,
+      diagnostic: {
+        code: "invalid_payload",
+        message: `Invalid Agent presentation payload: ${eventType}`,
+        originalType: eventType,
+      },
+    }
   }
 }

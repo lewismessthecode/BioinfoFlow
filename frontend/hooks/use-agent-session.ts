@@ -6,25 +6,36 @@ import {
   dispatchAgentCommand,
   getAgentSnapshot,
   updateAgentSession,
+  type AgentModelSelection,
+  type AgentSessionUpdates,
 } from "@/lib/agent/client"
 import { ApiError } from "@/lib/api"
 import { subscribeAgentEvents } from "@/lib/agent/stream"
 import {
-  applyAgentEvent,
   initialAgentStoreState,
   type AgentStoreState,
 } from "@/lib/agent/store"
+import type { ConversationViewModel } from "@/lib/agent/conversation-model/types"
+import {
+  applyConversationProjectionDiagnostic,
+  applyConversationProjectionEvent,
+  createConversationProjection,
+  type ConversationProjectionState,
+} from "@/lib/agent/projection/conversation-projection"
 import type {
   AgentCommand,
   AgentEvent,
+  AgentEnvironmentScope,
   AgentPermissionMode,
   InputPart,
   InteractionResponse,
   SessionSnapshot,
 } from "@/lib/agent/contracts"
 import type { AgentConnectionStatus } from "@/lib/agent/stream"
+import type { PresentationDiagnostic } from "@/lib/agent/transport/presentation-contract"
 
 export type AgentSessionState = AgentStoreState & {
+  conversationView: ConversationViewModel | null
   connectionStatus: AgentConnectionStatus
   error: Error | null
   isLoading: boolean
@@ -36,12 +47,15 @@ export type AgentSessionState = AgentStoreState & {
   ) => Promise<void>
   cancel: () => Promise<void>
   updatePermissionMode: (mode: AgentPermissionMode) => Promise<void>
+  updateModel: (selection: AgentModelSelection) => Promise<void>
+  updateEnvironmentScope: (scope: AgentEnvironmentScope) => Promise<void>
   retry: () => void
 }
 
 type AgentSessionViewState = {
   sessionId: string
   store: AgentStoreState
+  conversationView: ConversationViewModel | null
   connectionStatus: AgentConnectionStatus
   error: Error | null
   isLoading: boolean
@@ -53,6 +67,8 @@ export function useAgentSession(sessionId: string): AgentSessionState {
     initialView(sessionId),
   )
   const storeRef = useRef(initialAgentStoreState)
+  const projectionRef = useRef<ConversationProjectionState | null>(null)
+  const conversationViewRef = useRef<ConversationViewModel | null>(null)
   const generationRef = useRef(0)
 
   const replaceSnapshot = useCallback(
@@ -62,16 +78,26 @@ export function useAgentSession(sessionId: string): AgentSessionState {
       snapshot: SessionSnapshot,
     ) => {
       if (generationRef.current !== expectedGeneration) return false
-      const next = applyAgentEvent(storeRef.current, {
-        type: "snapshot",
-        snapshot,
-      }).state
-      storeRef.current = next
+      const projection = createConversationProjection(snapshot)
+      if (!projection.ok) {
+        setView((current) => ({
+          ...(current.sessionId === expectedSessionId
+            ? current
+            : initialView(expectedSessionId)),
+          error: new Error(projection.diagnostic.message),
+          isLoading: false,
+        }))
+        return false
+      }
+      projectionRef.current = projection.state
+      conversationViewRef.current = projection.view
+      storeRef.current = projection.state.transportState
       setView((current) => ({
         ...(current.sessionId === expectedSessionId
           ? current
           : initialView(expectedSessionId)),
-        store: next,
+        store: projection.state.transportState,
+        conversationView: projection.view,
         error: null,
         isLoading: false,
       }))
@@ -91,6 +117,8 @@ export function useAgentSession(sessionId: string): AgentSessionState {
 
     generationRef.current = generation
     storeRef.current = initialAgentStoreState
+    projectionRef.current = null
+    conversationViewRef.current = null
 
     const cancelViewFrame = () => {
       if (viewFrame === null) return
@@ -101,12 +129,14 @@ export function useAgentSession(sessionId: string): AgentSessionState {
     const publishStore = (eventType?: AgentEvent["type"]) => {
       if (!active || generationRef.current !== generation) return
       const store = storeRef.current
+      const conversationView = conversationViewRef.current
       setView((current) => {
         const base =
           current.sessionId === sessionId ? current : initialView(sessionId)
         return {
           ...base,
           store,
+          conversationView,
           error: eventType === "snapshot" ? null : base.error,
           isLoading: eventType === "snapshot" ? false : base.isLoading,
         }
@@ -187,6 +217,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
       return subscribeAgentEvents({
         sessionId,
         onEvent,
+        onDiagnostic,
         onConnectionChange: (status) => {
           if (!active || sessionMissing) return
           setView((current) => ({
@@ -211,19 +242,46 @@ export function useAgentSession(sessionId: string): AgentSessionState {
 
     const onEvent = (event: AgentEvent) => {
       if (!active || sessionMissing) return
-      const application = applyAgentEvent(storeRef.current, event)
+      if (event.type === "snapshot") {
+        cancelViewFrame()
+        replaceSnapshot(generation, sessionId, event.snapshot)
+        return
+      }
+      const currentProjection = projectionRef.current
+      if (!currentProjection) {
+        void refreshSnapshot()
+        return
+      }
+      const application = applyConversationProjectionEvent(
+        currentProjection,
+        event,
+      )
       if (application.outcome === "needs_snapshot") {
         void refreshSnapshot()
         return
       }
       if (application.outcome === "ignored") return
-      storeRef.current = application.state
+      projectionRef.current = application.state
+      conversationViewRef.current = application.view
+      storeRef.current = application.state.transportState
       if (event.type === "assistant.delta") {
         scheduleStorePublish()
         return
       }
       cancelViewFrame()
       publishStore(event.type)
+    }
+
+    const onDiagnostic = (diagnostic: PresentationDiagnostic) => {
+      if (!active || sessionMissing || !projectionRef.current) return
+      const application = applyConversationProjectionDiagnostic(
+        projectionRef.current,
+        diagnostic,
+      )
+      projectionRef.current = application.state
+      conversationViewRef.current = application.view
+      cancelViewFrame()
+      publishStore()
     }
 
     void refreshSnapshot()
@@ -303,8 +361,8 @@ export function useAgentSession(sessionId: string): AgentSessionState {
     [runCommand],
   )
 
-  const updatePermissionMode = useCallback(
-    async (mode: AgentPermissionMode) => {
+  const updateSessionSettings = useCallback(
+    async (updates: AgentSessionUpdates) => {
       const generation = generationRef.current
       setView((current) => ({
         ...(current.sessionId === sessionId
@@ -313,7 +371,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
         error: null,
       }))
       try {
-        await updateAgentSession(sessionId, { permissionMode: mode })
+        await updateAgentSession(sessionId, updates)
       } catch (caught) {
         if (generationRef.current === generation) {
           setView((current) => ({
@@ -329,11 +387,30 @@ export function useAgentSession(sessionId: string): AgentSessionState {
     [sessionId],
   )
 
+  const updatePermissionMode = useCallback(
+    (mode: AgentPermissionMode) =>
+      updateSessionSettings({ permissionMode: mode }),
+    [updateSessionSettings],
+  )
+
+  const updateModel = useCallback(
+    (selection: AgentModelSelection) =>
+      updateSessionSettings({ model: selection }),
+    [updateSessionSettings],
+  )
+
+  const updateEnvironmentScope = useCallback(
+    (scope: AgentEnvironmentScope) =>
+      updateSessionSettings({ environmentScope: scope }),
+    [updateSessionSettings],
+  )
+
   const currentView =
     view.sessionId === sessionId ? view : initialView(sessionId)
 
   return {
     ...currentView.store,
+    conversationView: currentView.conversationView,
     connectionStatus: currentView.connectionStatus,
     error: currentView.error,
     isLoading: currentView.isLoading,
@@ -342,6 +419,8 @@ export function useAgentSession(sessionId: string): AgentSessionState {
     respond,
     cancel,
     updatePermissionMode,
+    updateModel,
+    updateEnvironmentScope,
     retry: () => setRetryRevision((revision) => revision + 1),
   }
 }
@@ -362,6 +441,7 @@ function initialView(sessionId: string): AgentSessionViewState {
   return {
     sessionId,
     store: initialAgentStoreState,
+    conversationView: null,
     connectionStatus: "connecting",
     error: null,
     isLoading: true,
