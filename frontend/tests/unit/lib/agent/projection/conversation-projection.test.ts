@@ -6,11 +6,70 @@ import {
   activeSnapshotFixture,
   completedSnapshotFixture,
   emptySnapshotFixture,
+  entryFixture,
   failedSnapshotFixture,
   interactionSnapshotFixture,
 } from "../fixtures/presentation-contract"
 
 describe("Conversation projection", () => {
+  it("projects notice and recovery localization metadata without coupling UI to raw copy", () => {
+    const result = createConversationProjection({
+      ...interactionSnapshotFixture,
+      entries: [
+        entryFixture({
+          id: "notice-timeout",
+          type: "notice",
+          payload: {
+            code: "run_timeout_exceeded",
+            message: "Backend-owned English timeout text",
+            params: { limit_seconds: 300 },
+            details: null,
+          },
+        }),
+      ],
+      active_run: interactionSnapshotFixture.active_run
+        ? {
+            ...interactionSnapshotFixture.active_run,
+            pending_interaction: {
+              ...interactionSnapshotFixture.active_run.pending_interaction!,
+              request: {
+                type: "recovery",
+                call_id: "call-recovery",
+                tool_name: "bash",
+                message: "Backend-owned English recovery text",
+                message_code: "unknown_tool_effect",
+                message_params: { tool_name: "bash" },
+                options: [
+                  { id: "inspect", label: "Inspect", description: "", recommended: false },
+                  { id: "retry", label: "Retry", description: "", recommended: false },
+                  { id: "cancel", label: "Cancel", description: "", recommended: false },
+                ],
+              },
+            },
+          }
+        : null,
+    })
+    if (!result.ok) throw new Error(result.diagnostic.message)
+
+    expect(result.view.transcript).toEqual([
+      expect.objectContaining({
+        type: "notice",
+        code: "run_timeout_exceeded",
+        params: { limit_seconds: 300 },
+        fallback: "Backend-owned English timeout text",
+      }),
+      expect.objectContaining({
+        type: "interaction",
+        request: expect.objectContaining({
+          type: "recovery",
+          messageCode: "unknown_tool_effect",
+          messageParams: { tool_name: "bash" },
+          messageFallback: "Backend-owned English recovery text",
+        }),
+      }),
+    ])
+  })
+
   it("projects an empty transport snapshot into a stable draft Conversation View", () => {
     const result = createConversationProjection(emptySnapshotFixture)
 
@@ -138,6 +197,88 @@ describe("Conversation projection", () => {
         ],
       }),
     ])
+  })
+
+  it("uses each Run's immutable model snapshot for reasoning and audit projection", () => {
+    const snapshot = {
+      ...activeSnapshotFixture,
+      session: {
+        ...activeSnapshotFixture.session,
+        model: {
+          ...activeSnapshotFixture.session.model,
+          provider: "anthropic",
+          model: "claude-next",
+          display_name: "Claude Next",
+        },
+      },
+      runs: activeSnapshotFixture.runs.map((run) => ({
+        ...run,
+        execution_config: {
+          ...run.execution_config!,
+          settings_revision: 4,
+          model: {
+            ...run.execution_config!.model,
+            provider: "openai",
+            model: "gpt-run-snapshot",
+            display_name: "GPT Run Snapshot",
+          },
+        },
+      })),
+      active_run: activeSnapshotFixture.active_run
+        ? {
+            ...activeSnapshotFixture.active_run,
+            run: {
+              ...activeSnapshotFixture.active_run.run,
+              execution_config: {
+                ...activeSnapshotFixture.active_run.run.execution_config!,
+                settings_revision: 4,
+                model: {
+                  ...activeSnapshotFixture.active_run.run.execution_config!.model,
+                  provider: "openai",
+                  model: "gpt-run-snapshot",
+                  display_name: "GPT Run Snapshot",
+                },
+              },
+            },
+          }
+        : null,
+    }
+
+    const result = createConversationProjection(snapshot)
+    if (!result.ok) throw new Error(result.diagnostic.message)
+
+    expect(result.view.runs).toEqual([
+      expect.objectContaining({
+        id: "run-1",
+        executionConfig: expect.objectContaining({
+          settingsRevision: 4,
+          model: expect.objectContaining({ model: "gpt-run-snapshot" }),
+        }),
+      }),
+    ])
+    expect(result.view.transcript[0]).toMatchObject({
+      type: "reasoning",
+      provider: "openai",
+      model: "gpt-run-snapshot",
+    })
+
+    const completedResult = createConversationProjection({
+      ...completedSnapshotFixture,
+      session: snapshot.session,
+      runs: completedSnapshotFixture.runs.map((run) => ({
+        ...run,
+        execution_config: snapshot.runs[0].execution_config,
+      })),
+    })
+    if (!completedResult.ok) {
+      throw new Error(completedResult.diagnostic.message)
+    }
+    expect(completedResult.view.transcript[1]).toMatchObject({
+      type: "reasoning",
+      streaming: false,
+      provider: "openai",
+      model: "gpt-run-snapshot",
+    })
   })
 
   it("projects a pending approval as a durable interaction block", () => {

@@ -18,54 +18,52 @@ import {
   TerminalSquare,
 } from "@/lib/icons"
 import type {
-  ToolExecutionMode,
-  ToolProgressView,
-} from "@/lib/agent/contracts"
-import type { ActivityGroupTranscriptBlock } from "@/lib/agent/conversation-model/types"
+  ActivityGroupTranscriptBlock,
+  ActivityItem,
+  ActivityStatus,
+} from "@/lib/agent/conversation-model/types"
 import { cn } from "@/lib/utils"
 
 type AgentToolCardProps = {
-  tool: ToolProgressView
+  activity: ActivityItem
   defaultExpanded?: boolean
   grouped?: boolean
 }
 
 type AgentActivityGroupProps = {
-  tools?: ToolProgressView[]
-  activityGroup?: ActivityGroupTranscriptBlock
-  executionMode?: ToolExecutionMode
+  activityGroup: ActivityGroupTranscriptBlock
   defaultExpanded?: boolean
 }
 
 const durationNumberFormatters = new Map<string, Intl.NumberFormat>()
 
 export function AgentToolCard({
-  tool,
+  activity,
   defaultExpanded,
   grouped = false,
 }: AgentToolCardProps) {
   const t = useTranslations("agentActivity")
   const locale = useLocale()
   const detailsId = useId()
-  const details = tool.public_details ?? []
+  const details = activity.details ?? publicActivityDetails(activity)
   const hasDetails = details.length > 0
   const [expanded, setExpanded] = useActivityDisclosure(
-    `tool:${tool.call_id}`,
+    `tool:${activity.callId}`,
     defaultExpanded ?? false,
   )
-  const duration = toolDuration(tool, locale)
+  const duration = activityDuration(activity, locale)
   const summary = (
     <>
-      <ToolStatusIcon status={tool.status} />
+      <ToolStatusIcon status={activity.status} />
       <span
         className="min-w-0 max-w-[34%] truncate rounded-[5px] bg-muted/70 px-1.5 py-0.5 font-mono text-[11px] text-foreground/72 sm:max-w-[40%]"
-        title={tool.display_name}
+        title={activity.displayName}
         translate="no"
       >
-        {tool.display_name}
+        {activity.displayName}
       </span>
       <span className="line-clamp-2 min-w-0 flex-1 text-foreground/78 sm:truncate">
-        {tool.summary}
+        {activity.summary}
       </span>
       {duration ? (
         <span
@@ -76,7 +74,7 @@ export function AgentToolCard({
         </span>
       ) : null}
       <span className="sr-only shrink-0 text-[11px] text-muted-foreground sm:not-sr-only">
-        {t(`status.${tool.status}`)}
+        {t(`status.${activity.status}`)}
       </span>
       {hasDetails ? (
         expanded ? (
@@ -94,8 +92,8 @@ export function AgentToolCard({
         "min-w-0",
         !grouped && "rounded-[10px] border border-border/60 bg-background",
         grouped && "bg-transparent",
-        tool.status === "failed" && !grouped && "border-error-border bg-error-muted/25",
-        tool.status === "interaction_required" &&
+        activity.status === "failed" && !grouped && "border-error-border bg-error-muted/25",
+        activity.status === "interaction_required" &&
           !grouped &&
           "border-warning-border bg-warning-muted/25",
       )}
@@ -111,7 +109,7 @@ export function AgentToolCard({
           )}
           aria-expanded={expanded}
           aria-controls={detailsId}
-          aria-label={`${tool.display_name}: ${tool.summary}. ${t(expanded ? "details.hide" : "details.show")}`}
+          aria-label={`${activity.displayName}: ${activity.summary}. ${t(expanded ? "details.hide" : "details.show")}`}
           onClick={() => setExpanded((value) => !value)}
         >
           {summary}
@@ -159,31 +157,24 @@ export function AgentToolCard({
 }
 
 export function AgentActivityGroup({
-  tools,
   activityGroup,
-  executionMode,
   defaultExpanded,
 }: AgentActivityGroupProps) {
-  const resolvedTools = useMemo(
-    () => tools ?? (activityGroup ? toolsFromActivityGroup(activityGroup) : []),
-    [activityGroup, tools],
-  )
+  const activities = activityGroup.activities
   const t = useTranslations("agentActivity")
   const detailsId = useId()
   const disclosureKey = useMemo(
-    () => `tool-group:${resolvedTools.map((tool) => tool.call_id).join("|")}`,
-    [resolvedTools],
+    () => `tool-group:${activities.map((activity) => activity.callId).join("|")}`,
+    [activities],
   )
   const [expanded, setExpanded] = useActivityDisclosure(
     disclosureKey,
-    defaultExpanded ?? resolvedTools.some((tool) => isActive(tool.status)),
+    defaultExpanded ?? activities.some((activity) => isActive(activity.status)),
   )
-  const resolvedExecutionMode =
-    executionMode ?? activityGroup?.executionMode ?? commonExecutionMode(resolvedTools) ?? "mixed"
-  const summaryKey = `group.${resolvedExecutionMode}`
-  const groupedTools = useMemo(
-    () => groupContiguousToolsByCategory(resolvedTools),
-    [resolvedTools],
+  const summaryKey = `group.${activityGroup.executionMode}`
+  const groupedActivities = useMemo(
+    () => groupContiguousActivitiesByCategory(activities),
+    [activities],
   )
 
   return (
@@ -196,15 +187,15 @@ export function AgentActivityGroup({
         className="group/summary flex min-h-9 w-full min-w-0 items-center gap-2 rounded-[6px] px-1 py-1.5 text-left text-xs transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
         aria-expanded={expanded}
         aria-controls={detailsId}
-        aria-label={t(summaryKey, { count: resolvedTools.length })}
+        aria-label={t(summaryKey, { count: activities.length })}
         onClick={() => setExpanded((value) => !value)}
       >
-        <GroupStatusIcon tools={resolvedTools} />
+        <GroupStatusIcon activities={activities} />
         <span className="min-w-0 flex-1 truncate text-foreground/78">
-          {t(summaryKey, { count: resolvedTools.length })}
+          {t(summaryKey, { count: activities.length })}
         </span>
         <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
-          {groupStatusLabel(t, resolvedTools)}
+          {groupStatusLabel(t, activities)}
         </span>
         {expanded ? (
           <ChevronDown aria-hidden="true" className="size-3.5 opacity-60 transition-opacity group-hover/summary:opacity-100" />
@@ -218,18 +209,18 @@ export function AgentActivityGroup({
           id={detailsId}
           className="ml-3 grid gap-3 border-l border-border/55 py-2 pl-3"
         >
-          {groupedTools.map(([category, categoryTools]) => (
+          {groupedActivities.map(([category, categoryActivities]) => (
             <div
-              key={`${category}:${categoryTools[0]?.call_id}`}
+              key={`${category}:${categoryActivities[0]?.callId}`}
               className="grid gap-2"
             >
-              {groupedTools.length > 1 ? (
+              {groupedActivities.length > 1 ? (
                 <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                   {t(`category.${category}`)}
                 </h3>
               ) : null}
-              {categoryTools.map((tool) => (
-                <AgentToolCard key={tool.call_id} tool={tool} grouped />
+              {categoryActivities.map((activity) => (
+                <AgentToolCard key={activity.callId} activity={activity} grouped />
               ))}
             </div>
           ))}
@@ -239,7 +230,7 @@ export function AgentActivityGroup({
   )
 }
 
-function isActive(status: ToolProgressView["status"]) {
+function isActive(status: ActivityStatus) {
   return ["pending", "running", "blocked", "interaction_required"].includes(
     status,
   )
@@ -324,7 +315,7 @@ function ToolDetail({
   )
 }
 
-function ToolStatusIcon({ status }: { status: ToolProgressView["status"] }) {
+function ToolStatusIcon({ status }: { status: ActivityStatus }) {
   const className = "size-4 shrink-0 text-muted-foreground"
   if (status === "running") {
     return <Loader2 aria-hidden="true" className={cn(className, "animate-spin motion-reduce:animate-none")} />
@@ -344,17 +335,17 @@ function ToolStatusIcon({ status }: { status: ToolProgressView["status"] }) {
   return <Clock3 aria-hidden="true" className={className} />
 }
 
-function GroupStatusIcon({ tools }: { tools: ToolProgressView[] }) {
-  if (tools.some((tool) => tool.status === "failed")) {
+function GroupStatusIcon({ activities }: { activities: ActivityItem[] }) {
+  if (activities.some((activity) => activity.status === "failed")) {
     return <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-error-foreground" />
   }
-  if (tools.some((tool) => tool.status === "interaction_required" || tool.status === "blocked")) {
+  if (activities.some((activity) => activity.status === "interaction_required" || activity.status === "blocked")) {
     return <CircleDashed aria-hidden="true" className="size-4 shrink-0 text-warning-foreground" />
   }
-  if (tools.some((tool) => tool.status === "running")) {
+  if (activities.some((activity) => activity.status === "running")) {
     return <Loader2 aria-hidden="true" className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
   }
-  if (tools.every((tool) => tool.status === "completed")) {
+  if (activities.every((activity) => activity.status === "completed")) {
     return <CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
   }
   return <CircleDashed aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
@@ -362,47 +353,41 @@ function GroupStatusIcon({ tools }: { tools: ToolProgressView[] }) {
 
 function groupStatusLabel(
   t: (key: string) => string,
-  tools: ToolProgressView[],
+  activities: ActivityItem[],
 ) {
-  if (tools.some((tool) => tool.status === "failed")) return t("status.failed")
-  if (tools.some((tool) => tool.status === "interaction_required")) {
+  if (activities.some((activity) => activity.status === "failed")) return t("status.failed")
+  if (activities.some((activity) => activity.status === "interaction_required")) {
     return t("status.interaction_required")
   }
-  if (tools.some((tool) => tool.status === "blocked")) return t("status.blocked")
-  if (tools.some((tool) => tool.status === "running")) return t("status.running")
-  if (tools.every((tool) => tool.status === "completed")) {
+  if (activities.some((activity) => activity.status === "blocked")) return t("status.blocked")
+  if (activities.some((activity) => activity.status === "running")) return t("status.running")
+  if (activities.every((activity) => activity.status === "completed")) {
     return t("status.completed")
   }
-  if (tools.every((tool) => tool.status === "cancelled")) {
+  if (activities.every((activity) => activity.status === "cancelled")) {
     return t("status.cancelled")
   }
   return t("status.pending")
 }
 
-function groupContiguousToolsByCategory(tools: ToolProgressView[]) {
-  const categories: Array<[ToolProgressView["category"], ToolProgressView[]]> = []
-  for (const tool of tools) {
+function groupContiguousActivitiesByCategory(activities: ActivityItem[]) {
+  const categories: Array<[string, ActivityItem[]]> = []
+  for (const activity of activities) {
+    const category = activityCategory(activity.category)
     const current = categories.at(-1)
-    if (current?.[0] === tool.category) {
-      current[1].push(tool)
+    if (current?.[0] === category) {
+      current[1].push(activity)
     } else {
-      categories.push([tool.category, [tool]])
+      categories.push([category, [activity]])
     }
   }
   return categories
 }
 
-function commonExecutionMode(tools: ToolProgressView[]) {
-  const first = tools[0]?.execution_mode
-  if (!first) return null
-  return tools.every((tool) => tool.execution_mode === first) ? first : null
-}
-
-
-function toolDuration(tool: ToolProgressView, locale: string) {
-  if (!tool.started_at || !tool.completed_at) return null
+function activityDuration(activity: ActivityItem, locale: string) {
+  if (!activity.startedAt || !activity.completedAt) return null
   const milliseconds =
-    new Date(tool.completed_at).getTime() - new Date(tool.started_at).getTime()
+    new Date(activity.completedAt).getTime() - new Date(activity.startedAt).getTime()
   if (!Number.isFinite(milliseconds) || milliseconds < 0) return null
   const number = durationNumberFormatter(locale)
   if (milliseconds < 1000) return `${number.format(milliseconds)} ms`
@@ -423,54 +408,7 @@ function durationNumberFormatter(locale: string) {
   return formatter
 }
 
-function toolsFromActivityGroup(
-  group: ActivityGroupTranscriptBlock,
-): ToolProgressView[] {
-  return group.activities.map((activity) => ({
-    call_id: activity.callId,
-    group_id: group.id,
-    execution_mode: group.executionMode,
-    name: activity.name,
-    display_name: activity.displayName,
-    category: activityCategory(activity.category),
-    summary: activity.summary,
-    arguments: jsonObject(activity.input),
-    status: activity.status,
-    revision: 0,
-    started_at: activity.startedAt,
-    completed_at: activity.completedAt,
-    input_summary: null,
-    output_summary: stringValue(activity.output),
-    error: activity.error,
-    public_details: [
-      detail(activity, "input", activity.input, "json"),
-      detail(activity, "output", activity.output, "text"),
-      detail(activity, "error", activity.error, "text"),
-    ].filter((item) => item !== null),
-  }))
-}
-
-function detail(
-  activity: ActivityGroupTranscriptBlock["activities"][number],
-  kind: "input" | "output" | "error",
-  value: unknown,
-  format: "json" | "text",
-) {
-  const text = stringValue(value)
-  if (text === null) return null
-  return {
-    id: `${activity.id}:${kind}`,
-    kind,
-    label: null,
-    value: text,
-    format,
-    copyable: true,
-    truncated: false,
-    redacted: false,
-  }
-}
-
-function activityCategory(value: string): ToolProgressView["category"] {
+function activityCategory(value: string) {
   return [
     "read",
     "search",
@@ -482,22 +420,43 @@ function activityCategory(value: string): ToolProgressView["category"] {
     "interaction",
     "other",
   ].includes(value)
-    ? (value as ToolProgressView["category"])
+    ? value
     : "other"
 }
 
-function jsonObject(value: unknown) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, never>)
-    : {}
+function publicActivityDetails(activity: ActivityItem) {
+  return [
+    publicActivityDetail(activity, "input", activity.input, "json"),
+    publicActivityDetail(activity, "output", activity.output, "text"),
+    publicActivityDetail(activity, "error", activity.error, "text"),
+  ].filter((detail) => detail !== null)
 }
 
-function stringValue(value: unknown) {
+function publicActivityDetail(
+  activity: ActivityItem,
+  kind: "input" | "output" | "error",
+  value: unknown,
+  format: "json" | "text",
+) {
   if (value === null || value === undefined) return null
-  if (typeof value === "string") return value
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
+  let text: string
+  if (typeof value === "string") {
+    text = value
+  } else {
+    try {
+      text = JSON.stringify(value, null, 2)
+    } catch {
+      text = String(value)
+    }
+  }
+  return {
+    id: `${activity.id}:${kind}`,
+    kind,
+    label: null,
+    value: text,
+    format,
+    copyable: true,
+    truncated: false,
+    redacted: false,
   }
 }

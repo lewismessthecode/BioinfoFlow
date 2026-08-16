@@ -18,6 +18,11 @@ import type {
   ToolResultPart,
   WorkflowRefPart,
 } from "@/lib/agent/contracts"
+import {
+  activityFromToolProgress,
+  activityGroupFromToolProgress,
+  reasoningFromDraftPart,
+} from "@/lib/agent/projection/legacy-transcript-adapter"
 import { ChevronRight } from "@/lib/icons"
 
 type AgentMessagePartsProps = {
@@ -72,9 +77,11 @@ export function AgentMessageParts({
           return (
             <div key={block.key} className="grid min-w-0 gap-2">
               {tools.length === 1 ? (
-                <AgentToolCard tool={tools[0]} />
+                <AgentToolCard activity={activityFromToolProgress(tools[0])} />
               ) : (
-                <AgentActivityGroup tools={tools} />
+                <AgentActivityGroup
+                  activityGroup={activityGroupFromToolProgress(tools)}
+                />
               )}
               <ToolOutputContentParts results={results} onOpenRun={onOpenRun} />
             </div>
@@ -91,7 +98,7 @@ export function AgentMessageParts({
             <AgentThinking
               key={part.id}
               label={t("reasoning.title")}
-              part={part}
+              reasoning={reasoningFromDraftPart(part, false)}
             />
           )
         }

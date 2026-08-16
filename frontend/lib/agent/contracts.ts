@@ -53,6 +53,23 @@ export type RunErrorView = {
   message: string
 }
 
+export type RunExecutionConfigView = {
+  settings_revision: number
+  model: AgentModelSummary
+  permission_mode: AgentPermissionMode
+  workspace_access: AgentWorkspaceAccess
+  environment_scope: {
+    mode: "auto" | "manual"
+    environment_ids: string[]
+  }
+  environment_targets: Array<{
+    environment_id: string
+    display_name: string
+    kind: "local" | "ssh"
+    host: string | null
+  }>
+}
+
 export type SessionView = {
   id: string
   user_id: string
@@ -79,6 +96,7 @@ export type RunView = {
   completed_at: string | null
   termination_reason: string | null
   error: RunErrorView | null
+  execution_config?: RunExecutionConfigView | null
   created_at: string
   updated_at: string
 }
@@ -189,6 +207,8 @@ export type RecoveryRequest = {
   call_id: string
   tool_name: string
   message: string
+  message_code?: string | null
+  message_params?: JsonObject
   options: AskUserOption[]
 }
 
@@ -444,7 +464,7 @@ type InteractionResponsePayload = {
   response: InteractionResponse
 }
 
-export type PlanItemStatus = "pending" | "in_progress" | "completed"
+type PlanItemStatus = "pending" | "in_progress" | "completed"
 
 type PlanItem = {
   id: string
@@ -463,6 +483,7 @@ export type PlanPayload = {
 type NoticePayload = {
   code: string
   message: string
+  params?: JsonObject
   details: JsonValue
 }
 

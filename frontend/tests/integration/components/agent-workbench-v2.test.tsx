@@ -175,6 +175,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
     environmentSelectionPending,
     onEnvironmentSelectionChange,
     starterPrompts,
+    capabilityHint,
   }: {
     onSendMessage: (parts: [{ type: "text"; text: string }]) => Promise<void>
     onSteer: (parts: [{ type: "text"; text: string }]) => Promise<void>
@@ -193,6 +194,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
       targetIds: string[]
     }) => Promise<void>
     starterPrompts?: readonly string[]
+    capabilityHint?: string
   }) => (
     <div data-testid="mock-composer" data-placement={placement}>
       {contextControls}
@@ -202,6 +204,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
       <span>Environment: {environmentSelection?.mode}</span>
       <span>Environment targets: {environmentTargets?.length ?? 0}</span>
       <span>Environment pending: {String(environmentSelectionPending)}</span>
+      {capabilityHint ? <p>{capabilityHint}</p> : null}
       {starterPrompts?.map((prompt) => (
         <span key={prompt}>{prompt}</span>
       ))}
@@ -427,6 +430,7 @@ describe("AgentWorkbench v2", () => {
       screen.getByRole("button", { name: "gpt-5.6 model selector" }),
     ).toBeEnabled()
     expect(screen.getByText("Environment: auto")).toBeInTheDocument()
+    expect(screen.getByText("capabilityHint")).toBeInTheDocument()
     expect(
       screen.getByText("Review the generated project fingerprint"),
     ).toBeInTheDocument()
@@ -634,7 +638,7 @@ describe("AgentWorkbench v2", () => {
     expect(screen.getByText("connection.reconnecting")).toBeInTheDocument()
   })
 
-  it("renders an injected session through the formal workbench without opening a live transport", () => {
+  it("does not rebuild an injected session from legacy transport state when its stable view is unavailable", () => {
     const injectedState = sessionState({
       conversationView: null,
       entries: [
@@ -664,9 +668,9 @@ describe("AgentWorkbench v2", () => {
     )
 
     expect(screen.getByTestId("agent-workbench")).toBeInTheDocument()
-    expect(screen.getByTestId("transcript")).toHaveTextContent(
-      "blocks:1:Demo replay",
-    )
+    expect(screen.queryByTestId("transcript")).not.toBeInTheDocument()
+    expect(screen.getByText("loadErrorTitle")).toBeInTheDocument()
+    expect(screen.getByText("loadErrorDescription")).toBeInTheDocument()
     expect(
       screen.getByRole("button", { name: "Change permission" }),
     ).toBeDisabled()

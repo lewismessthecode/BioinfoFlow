@@ -2,17 +2,24 @@ import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
-import { AgentInteractionCard } from "@/components/bioinfoflow/agent/interaction-card"
+import { AgentInteractionCard as StableAgentInteractionCard } from "@/components/bioinfoflow/agent/interaction-card"
+import type {
+  ConversationInteractionResponse,
+  InteractionTranscriptBlock,
+} from "@/lib/agent/conversation-model/types"
 import type {
   ApprovalRequest,
   AskUserRequest,
+  InteractionRequest,
+  InteractionResponse,
   RecoveryRequest,
 } from "@/lib/agent/contracts"
+import { interactionFromLegacy } from "@/lib/agent/projection/legacy-transcript-adapter"
 import { renderWithProviders } from "@/tests/test-utils"
 
 vi.mock("next-intl", () => ({
   useTranslations: (namespace: string) =>
-    (key: string) => {
+    (key: string, values?: Record<string, string | number>) => {
       const copy: Record<string, string> = {
         "agentInteraction.status.pending": "Waiting for response",
         "agentInteraction.status.approved": "Approved",
@@ -37,6 +44,13 @@ vi.mock("next-intl", () => ({
         "agentInteraction.recovery.retry": "Retry",
         "agentInteraction.recovery.cancel": "Cancel",
         "agentInteraction.recovery.selected": "Selected action",
+        "agentInteraction.recovery.message.unknown_tool_effect": `BioinfoFlow could not confirm whether ${values?.toolName ?? "the tool"} changed the target. Choose how to continue.`,
+        "agentInteraction.recovery.option.inspect.label": "Inspect state",
+        "agentInteraction.recovery.option.inspect.description": "Continue without replaying the operation.",
+        "agentInteraction.recovery.option.retry.label": "Retry operation",
+        "agentInteraction.recovery.option.retry.description": "Explicitly allow the operation to run again.",
+        "agentInteraction.recovery.option.cancel.label": "Cancel run",
+        "agentInteraction.recovery.option.cancel.description": "Stop without replaying the operation.",
         "agentInteraction.submitting": "Submitting…",
         "agentInteraction.submit_failed": "Could not submit. Try again.",
       }
@@ -133,7 +147,80 @@ const recoveryRequest: RecoveryRequest = {
   ],
 }
 
+function AgentInteractionCard({
+  interaction,
+  interactionId,
+  request,
+  response = null,
+  actionable,
+  expired,
+  onRespond,
+}: {
+  interaction?: InteractionTranscriptBlock
+  interactionId?: string
+  request?: InteractionRequest
+  response?: InteractionResponse | null
+  actionable?: boolean
+  expired?: boolean
+  onRespond?: (
+    response: ConversationInteractionResponse,
+  ) => void | Promise<void>
+}) {
+  const stableInteraction =
+    interaction ??
+    (interactionId && request
+      ? interactionFromLegacy(interactionId, request, response)
+      : null)
+  if (!stableInteraction) return null
+  return (
+    <StableAgentInteractionCard
+      interaction={stableInteraction}
+      actionable={actionable}
+      expired={expired}
+      onRespond={onRespond}
+    />
+  )
+}
+
 describe("AgentInteractionCard", () => {
+  it("localizes backend-owned recovery copy from stable codes and choice IDs", () => {
+    renderWithProviders(
+      <AgentInteractionCard
+        interaction={{
+          type: "interaction",
+          id: "recovery-card",
+          runId: "run-1",
+          createdAt: null,
+          interactionId: "run-1:call-recovery",
+          status: "pending",
+          request: {
+            type: "recovery",
+            callId: "call-recovery",
+            toolName: "bash",
+            messageCode: "unknown_tool_effect",
+            messageParams: { tool_name: "bash" },
+            messageFallback: "Backend-owned English recovery text",
+            options: recoveryRequest.options,
+          },
+          response: null,
+        }}
+        actionable
+        onRespond={vi.fn()}
+      />,
+    )
+
+    expect(
+      screen.getByText(
+        "BioinfoFlow could not confirm whether bash changed the target. Choose how to continue.",
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getAllByText("Inspect state").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Retry operation").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Cancel run").length).toBeGreaterThan(0)
+    expect(screen.queryByText("Backend-owned English recovery text")).not.toBeInTheDocument()
+    expect(screen.queryByText("Inspect current state")).not.toBeInTheDocument()
+  })
+
   it("renders approval as a theme-safe transcript card", () => {
     renderWithProviders(
       <AgentInteractionCard

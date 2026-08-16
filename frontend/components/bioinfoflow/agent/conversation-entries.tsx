@@ -30,6 +30,10 @@ import type {
   ToolProgressView,
   ToolResultPart,
 } from "@/lib/agent/contracts"
+import {
+  interactionFromLegacy,
+  planFromLegacy,
+} from "@/lib/agent/projection/legacy-transcript-adapter"
 import { cn } from "@/lib/utils"
 
 type AgentHistoryEntriesProps = {
@@ -180,15 +184,17 @@ const AgentHistoryEntry = memo(function AgentHistoryEntry({
   }
 
   if (entry.type === "plan") {
-    return <AgentPlanEntry entry={entry} />
+    return <AgentPlanEntry plan={planFromLegacy(entry)} />
   }
 
   if (entry.type === "interaction_request") {
     return (
       <AgentInteractionCard
-        interactionId={entry.payload.interaction_id}
-        request={entry.payload.request}
-        response={interactionResponse}
+        interaction={interactionFromLegacy(
+          entry.payload.interaction_id,
+          entry.payload.request,
+          interactionResponse ?? null,
+        )}
       />
     )
   }

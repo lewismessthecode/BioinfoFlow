@@ -5,6 +5,7 @@ import type {
   ActivityItem,
   ConversationInteractionRequest,
   ConversationInteractionResponse,
+  ConversationExecutionConfig,
   ConversationViewModel,
   MessageReference,
   TranscriptBlock,
@@ -157,6 +158,13 @@ function projectConversationView(
         capabilities: COMPOSER_CAPABILITIES,
       },
       transcript: projectTranscript(state.transportState, state.diagnostics),
+      runs: state.transportState.runs.map((run) => ({
+        id: run.id,
+        status: run.status,
+        startedAt: run.started_at,
+        completedAt: run.completed_at,
+        executionConfig: projectExecutionConfig(run.execution_config),
+      })),
       activeWork: state.transportState.activeRun
         ? {
             runId: state.transportState.activeRun.run.id,
@@ -166,6 +174,44 @@ function projectConversationView(
           }
         : null,
   }
+}
+
+function projectExecutionConfig(
+  config: import("../contracts").RunExecutionConfigView | null | undefined,
+): ConversationExecutionConfig | null {
+  if (!config) return null
+  return {
+    settingsRevision: config.settings_revision,
+    model: {
+      provider: config.model.provider,
+      model: config.model.model,
+      displayName: config.model.display_name,
+    },
+    permissionMode: config.permission_mode,
+    workspaceAccess: config.workspace_access,
+    environmentScope: {
+      mode: config.environment_scope.mode,
+      environmentIds: [...config.environment_scope.environment_ids],
+    },
+    environmentTargets: config.environment_targets.map((target) => ({
+      environmentId: target.environment_id,
+      displayName: target.display_name,
+      kind: target.kind,
+      host: target.host,
+    })),
+  }
+}
+
+function runModel(
+  state: AgentStoreState,
+  runId: string | null,
+): { provider: string; model: string } | null {
+  if (!runId) return null
+  const run =
+    (state.activeRun?.run.id === runId ? state.activeRun.run : null) ??
+    state.runs.find((candidate) => candidate.id === runId)
+  const model = run?.execution_config?.model
+  return model ? { provider: model.provider, model: model.model } : null
 }
 
 function normalizeEnvironmentScope(value: unknown): {
@@ -267,9 +313,21 @@ function projectInteractionRequest(
     type: "recovery",
     callId: request.call_id,
     toolName: request.tool_name,
-    message: request.message,
+    messageCode: request.message_code ?? null,
+    messageParams: localizationParams(request.message_params),
+    messageFallback: request.message,
     options: request.options,
   }
+}
+
+function localizationParams(value: unknown): Record<string, string | number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string | number] =>
+        typeof entry[1] === "string" || typeof entry[1] === "number",
+    ),
+  )
 }
 
 function projectInteractionResponse(
@@ -383,6 +441,7 @@ function appendActiveRun(
 ) {
   const activeRun = state.activeRun
   if (!activeRun) return
+  const effectiveModel = runModel(state, activeRun.run.id)
   const draft = activeRun.assistant_draft
   if (draft) {
     for (const part of draft.parts) {
@@ -395,8 +454,8 @@ function appendActiveRun(
           createdAt: activeRun.run.updated_at,
           text: part.text,
           streaming: true,
-          provider: state.session?.model.provider ?? null,
-          model: state.session?.model.model ?? null,
+          provider: effectiveModel?.provider ?? state.session?.model.provider ?? null,
+          model: effectiveModel?.model ?? state.session?.model.model ?? null,
           sourceField: partType,
           truncated: false,
           startedAt: null,
@@ -446,6 +505,20 @@ function appendActiveRun(
       error: tool.error,
       startedAt: tool.started_at,
       completedAt: tool.completed_at,
+      ...(tool.public_details?.length
+        ? {
+            details: tool.public_details.map((detail) => ({
+              id: detail.id,
+              kind: detail.kind,
+              label: detail.label,
+              value: detail.value,
+              format: detail.format,
+              copyable: detail.copyable,
+              truncated: detail.truncated,
+              redacted: detail.redacted,
+            })),
+          }
+        : {}),
     })
   }
   const interaction = activeRun.pending_interaction
@@ -482,8 +555,8 @@ function projectEntry(
           runId: entry.run_id,
           createdAt: entry.created_at,
           code: entry.payload.code,
-          message: entry.payload.message,
-          details: entry.payload.details,
+          params: localizationParams(entry.payload.params),
+          fallback: entry.payload.message,
         },
       ]
     case "interaction_request":
@@ -537,6 +610,7 @@ function projectMessageEntry(
   context: HistoryProjectionContext,
 ): TranscriptBlock[] {
   const blocks: TranscriptBlock[] = []
+  const effectiveModel = runModel(state, entry.run_id)
   for (const part of entry.payload.parts) {
     const currentPart = part as unknown as {
       id: string
@@ -595,8 +669,8 @@ function projectMessageEntry(
           createdAt: entry.created_at,
           text: part.text,
           streaming: false,
-          provider: state.session?.model.provider ?? null,
-          model: state.session?.model.model ?? null,
+          provider: effectiveModel?.provider ?? state.session?.model.provider ?? null,
+          model: effectiveModel?.model ?? state.session?.model.model ?? null,
           sourceField: "reasoning_summary",
           truncated: false,
           startedAt: null,

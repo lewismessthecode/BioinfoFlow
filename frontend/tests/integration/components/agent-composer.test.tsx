@@ -119,6 +119,7 @@ function renderComposer({
   environmentSelectionPending = false,
   onEnvironmentSelectionChange = vi.fn().mockResolvedValue(undefined),
   starterPrompts,
+  capabilityHint,
 }: {
   permissionMode?: AgentPermissionMode
   workspaceAccess?: AgentWorkspaceAccess
@@ -141,6 +142,7 @@ function renderComposer({
     selection: AgentEnvironmentSelection,
   ) => Promise<void>
   starterPrompts?: readonly string[]
+  capabilityHint?: string
 } = {}) {
   return {
     ...renderWithProviders(
@@ -164,6 +166,7 @@ function renderComposer({
         environmentSelectionPending={environmentSelectionPending}
         onEnvironmentSelectionChange={onEnvironmentSelectionChange}
         starterPrompts={starterPrompts}
+        capabilityHint={capabilityHint}
       />,
     ),
     onSendMessage,
@@ -259,6 +262,36 @@ describe("AgentComposer", () => {
     expect(
       screen.queryByText("Try one of these project-aware prompts"),
     ).not.toBeInTheDocument()
+  })
+
+  it("shows a distinct, honest capability hint only in the draft", () => {
+    const capabilityHint =
+      "The agent can work in this project and the environments you authorize. Actions that require approval will pause and ask first."
+    const view = renderComposer({ placement: "draft", capabilityHint })
+
+    expect(screen.getByTestId("agent-capability-hint")).toHaveTextContent(
+      capabilityHint,
+    )
+    expect(screen.getByTestId("agent-capability-hint")).not.toHaveAttribute(
+      "aria-label",
+      "Try one of these project-aware prompts",
+    )
+
+    view.rerender(
+      <AgentComposer
+        permissionMode="ask_dangerous"
+        workspaceAccess="read_write"
+        activeRun={null}
+        onSendMessage={view.onSendMessage}
+        onSteer={view.onSteer}
+        onCancel={view.onCancel}
+        onPermissionModeChange={view.onPermissionModeChange}
+        placement="dock"
+        capabilityHint={capabilityHint}
+      />,
+    )
+
+    expect(screen.queryByTestId("agent-capability-hint")).not.toBeInTheDocument()
   })
 
   it("offers Auto or multi-environment Manual selection without exposing transport types", async () => {

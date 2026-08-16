@@ -176,7 +176,35 @@ function isRun(value: unknown): boolean {
       "created_at",
       "updated_at",
     ]) &&
-    isNonNegativeInteger(value.revision)
+    isNonNegativeInteger(value.revision) &&
+    (value.execution_config === null ||
+      value.execution_config === undefined ||
+      isRunExecutionConfig(value.execution_config))
+  )
+}
+
+function isRunExecutionConfig(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNonNegativeInteger(value.settings_revision) &&
+    isRecord(value.model) &&
+    hasStrings(value.model, ["provider", "model", "display_name"]) &&
+    typeof value.permission_mode === "string" &&
+    typeof value.workspace_access === "string" &&
+    isRecord(value.environment_scope) &&
+    (value.environment_scope.mode === "auto" ||
+      value.environment_scope.mode === "manual") &&
+    Array.isArray(value.environment_scope.environment_ids) &&
+    value.environment_scope.environment_ids.every(
+      (environmentId) => typeof environmentId === "string",
+    ) &&
+    Array.isArray(value.environment_targets) &&
+    value.environment_targets.every(
+      (target) =>
+        isRecord(target) &&
+        hasStrings(target, ["environment_id", "display_name", "kind"]) &&
+        (target.host === null || typeof target.host === "string"),
+    )
   )
 }
 

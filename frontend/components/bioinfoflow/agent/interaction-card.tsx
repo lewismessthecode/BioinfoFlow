@@ -6,7 +6,6 @@ import { useTranslations } from "next-intl"
 import { Loader2 } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/ui/status-badge"
-import type { InteractionRequest, InteractionResponse, JsonObject } from "@/lib/agent/contracts"
 import type {
   ConversationAskUserQuestion,
   ConversationInteractionRequest,
@@ -16,10 +15,7 @@ import type {
 import { cn } from "@/lib/utils"
 
 type AgentInteractionCardProps = {
-  interaction?: InteractionTranscriptBlock
-  interactionId?: string
-  request?: InteractionRequest
-  response?: InteractionResponse | null
+  interaction: InteractionTranscriptBlock
   actionable?: boolean
   expired?: boolean
   onRespond?: (response: ConversationInteractionResponse) => void | Promise<void>
@@ -33,21 +29,21 @@ type PendingAction =
   | null
 
 export function AgentInteractionCard({
-  ...props
+  interaction,
+  actionable,
+  expired = false,
+  onRespond,
 }: AgentInteractionCardProps) {
-  const interactionId = props.interaction?.interactionId ?? props.interactionId
-  const request = props.interaction?.request ?? normalizeLegacyRequest(props.request)
-  const response = props.interaction?.response ?? props.response ?? null
-  if (!interactionId || !request) return null
+  if (!interaction.request) return null
   return (
     <AgentInteractionCardState
-      key={interactionId}
-      interactionId={interactionId}
-      request={request}
-      response={response}
-      actionable={props.actionable ?? Boolean(props.onRespond)}
-      expired={props.expired ?? false}
-      onRespond={props.onRespond}
+      key={interaction.interactionId}
+      interactionId={interaction.interactionId}
+      request={interaction.request}
+      response={interaction.response}
+      actionable={actionable ?? Boolean(onRespond)}
+      expired={expired}
+      onRespond={onRespond}
     />
   )
 }
@@ -347,7 +343,10 @@ function AskUserInteraction({
   }
 
   function submitAnswers() {
-    const values: JsonObject = {}
+    const values: Extract<
+      ConversationInteractionResponse,
+      { type: "ask_user" }
+    >["answers"] = {}
     for (const question of request.questions) {
       const selected = selectedAnswers[question.id] ?? []
       values[question.id] = question.multiSelect ? selected : selected[0] ?? null
@@ -442,31 +441,51 @@ function RecoveryInteraction({
   const t = useTranslations("agentInteraction")
   const optionById = new Map(request.options.map((option) => [option.id, option]))
   const choices = recoveryChoices(request.options.map((option) => option.id))
+  const messageCode = knownRecoveryMessageCode(request.messageCode)
+  const stableBackendCopy = messageCode !== null
+
+  function optionLabel(choice: (typeof choices)[number]) {
+    return stableBackendCopy
+      ? t(`recovery.option.${choice}.label`)
+      : optionById.get(choice)?.label ?? t(`recovery.${choice}`)
+  }
+
+  function optionDescription(choice: (typeof choices)[number]) {
+    return stableBackendCopy
+      ? t(`recovery.option.${choice}.description`)
+      : optionById.get(choice)?.description ?? ""
+  }
 
   return (
     <div className="grid gap-3">
-      <p className="text-sm leading-6 text-foreground/85">{request.message}</p>
+      <p className="text-sm leading-6 text-foreground/85">
+        {messageCode
+          ? t(`recovery.message.${messageCode}`, {
+              toolName: request.messageParams.tool_name ?? request.toolName,
+            })
+          : request.messageFallback}
+      </p>
 
       {completed && response ? (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span>{t("recovery.selected")}</span>
           <span className="font-medium text-foreground">
-            {optionById.get(response.choice)?.label ?? t(`recovery.${response.choice}`)}
+            {optionLabel(response.choice)}
           </span>
         </div>
       ) : (
         <>
           <dl className="grid gap-2 sm:grid-cols-3">
             {choices.map((choice) => {
-              const option = optionById.get(choice)
-              if (!option?.description) return null
+              const description = optionDescription(choice)
+              if (!description) return null
               return (
                 <div key={choice} className="grid content-start gap-0.5">
                   <dt className="text-xs font-medium text-foreground/80">
-                    {option.label}
+                    {optionLabel(choice)}
                   </dt>
                   <dd className="text-xs leading-5 text-muted-foreground">
-                    {option.description}
+                    {description}
                   </dd>
                 </div>
               )
@@ -474,7 +493,7 @@ function RecoveryInteraction({
           </dl>
           <div className="flex flex-wrap justify-end gap-2">
             {choices.map((choice) => {
-              const label = optionById.get(choice)?.label ?? t(`recovery.${choice}`)
+              const label = optionLabel(choice)
               return (
                 <Button
                   key={choice}
@@ -499,6 +518,10 @@ function RecoveryInteraction({
       )}
     </div>
   )
+}
+
+function knownRecoveryMessageCode(code: string | null) {
+  return code === "unknown_tool_effect" ? code : null
 }
 
 function recoveryChoices(optionIds: string[]) {
@@ -529,7 +552,10 @@ function SubmittingLabel() {
 
 function answersFromResponse(
   questions: ConversationAskUserQuestion[],
-  answers?: JsonObject,
+  answers?: Extract<
+    ConversationInteractionResponse,
+    { type: "ask_user" }
+  >["answers"],
 ) {
   const selected: Record<string, string[]> = {}
   for (const question of questions) {
@@ -561,81 +587,4 @@ function interactionTone(status: ReturnType<typeof interactionStatus> | "expired
   if (status === "pending" || status === "expired") return "warning" as const
   if (status === "rejected") return "destructive" as const
   return "success" as const
-}
-
-function normalizeLegacyRequest(
-  request?: InteractionRequest,
-): ConversationInteractionRequest | null {
-  if (!request) return null
-  if (request.type === "approval") {
-    const legacyTarget = request as typeof request & {
-      target?: {
-        environment_id?: string
-        display_name?: string
-        kind?: string
-        host?: string | null
-      } | null
-      environment?: {
-        id?: string
-        label?: string
-        kind?: string
-        host?: string | null
-      } | null
-    }
-    const target = legacyTarget.target ?? legacyTarget.environment
-    const targetRecord = target as Record<string, unknown> | null
-    return {
-      type: "approval",
-      callId: request.call_id,
-      toolName: request.tool_name,
-      summary: request.summary,
-      inputPreview: request.input_preview,
-      allowedResponses: request.allowed_responses,
-      risk: {
-        level: request.risk.level,
-        effects: request.risk.effects,
-        reasons: request.risk.reasons,
-        affectedResources: request.risk.affected_resources,
-      },
-      target: target
-        ? {
-            environmentId:
-              stringField(targetRecord, "environment_id") ??
-              stringField(targetRecord, "id") ??
-              "unknown",
-            displayName:
-              stringField(targetRecord, "display_name") ??
-              stringField(targetRecord, "label") ??
-              "Unknown",
-            kind: target.kind === "ssh" ? "ssh" : "local",
-            host: target.host ?? null,
-          }
-        : null,
-    }
-  }
-  if (request.type === "ask_user") {
-    return {
-      type: "ask_user",
-      callId: request.call_id,
-      questions: request.questions.map((question) => ({
-        id: question.id,
-        header: question.header,
-        question: question.question,
-        multiSelect: question.multi_select,
-        options: question.options,
-      })),
-    }
-  }
-  return {
-    type: "recovery",
-    callId: request.call_id,
-    toolName: request.tool_name,
-    message: request.message,
-    options: request.options,
-  }
-}
-
-function stringField(value: Record<string, unknown> | null, key: string) {
-  const field = value?.[key]
-  return typeof field === "string" ? field : null
 }

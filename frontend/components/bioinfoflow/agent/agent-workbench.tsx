@@ -52,7 +52,6 @@ import {
   publishAgentSessionSummary,
   sessionSummaryFromView,
 } from "@/lib/agent/session-preferences"
-import { projectLegacyConversationState } from "@/lib/agent/projection/legacy-conversation-adapter"
 import { ApiError } from "@/lib/api"
 import { Bot, CircleAlert, Loader2, RefreshCw, WifiOff } from "@/lib/icons"
 import { cn } from "@/lib/utils"
@@ -165,7 +164,6 @@ export const AgentWorkbench = forwardRef<
             key={controller.effectiveSessionId}
             sessionId={controller.effectiveSessionId}
             state={sessionState}
-            allowLegacyProjection
             interactive={interactive}
             onSessionResolved={onSessionResolved}
             headerActions={headerActions}
@@ -358,6 +356,7 @@ function DraftWorkbench({
           effectiveEnvironmentSelection={shared.effectiveEnvironmentSelection}
           environmentSelectionPending={shared.environmentSelectionPending}
           onEnvironmentSelectionChange={shared.onEnvironmentSelectionChange}
+          capabilityHint={t("capabilityHint")}
           starterPrompts={
             starterPrompts ??
             (generatedStarterPrompts.prompts.length > 0
@@ -389,7 +388,6 @@ function SessionWorkbench({
   interactive,
   onSessionResolved,
   headerActions,
-  allowLegacyProjection = false,
   ...shared
 }: SharedWorkbenchProps & {
   sessionId: string
@@ -397,7 +395,6 @@ function SessionWorkbench({
   interactive: boolean
   onSessionResolved?: (session: SessionView) => void
   headerActions?: ReactNode
-  allowLegacyProjection?: boolean
 }) {
   const t = useTranslations("agentWorkbench")
   const setCancelHandler = shared.setCancelHandler
@@ -462,9 +459,7 @@ function SessionWorkbench({
     )
   }
 
-  const conversationView =
-    state.conversationView ??
-    (allowLegacyProjection ? projectLegacyConversationState(state) : null)
+  const conversationView = state.conversationView
 
   const effectiveEnvironmentSelection = environmentSelectionFromSession(
     state.session,
@@ -524,8 +519,10 @@ function SessionWorkbench({
           onRespond={interactive ? state.respond : undefined}
           onOpenRun={shared.onOpenRun}
         />
-      ) : (
+      ) : state.isLoading ? (
         <WorkbenchSkeleton />
+      ) : (
+        <ConversationViewUnavailable onRetry={state.retry} />
       )}
       {state.session.status !== "active" ? (
         <p
@@ -575,6 +572,25 @@ function SessionWorkbench({
         onEnvironmentSelectionChange={updateLiveEnvironmentSelection}
       />
     </>
+  )
+}
+
+function ConversationViewUnavailable({ onRetry }: { onRetry: () => void }) {
+  const t = useTranslations("agentWorkbench")
+  return (
+    <div className="grid min-h-0 flex-1 place-items-center px-6 text-center">
+      <div className="flex max-w-sm flex-col items-center gap-3">
+        <CircleAlert aria-hidden="true" className="text-destructive" />
+        <h2 className="text-base font-medium">{t("loadErrorTitle")}</h2>
+        <p className="text-sm text-muted-foreground">
+          {t("loadErrorDescription")}
+        </p>
+        <Button type="button" variant="outline" onClick={onRetry}>
+          <RefreshCw data-icon="inline-start" aria-hidden="true" />
+          {t("retry")}
+        </Button>
+      </div>
+    </div>
   )
 }
 
