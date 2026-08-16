@@ -18,6 +18,7 @@ import type {
   AgentCommand,
   AgentEvent,
   AgentPermissionMode,
+  AgentExecutionScope,
   InputPart,
   InteractionResponse,
   SessionSnapshot,
@@ -28,7 +29,13 @@ export type AgentSessionState = AgentStoreState & {
   connectionStatus: AgentConnectionStatus
   error: Error | null
   isLoading: boolean
-  sendMessage: (parts: InputPart[]) => Promise<void>
+  sendMessage: (
+    parts: InputPart[],
+    runSettings?: {
+      permission_mode?: AgentPermissionMode
+      execution_scope?: AgentExecutionScope
+    },
+  ) => Promise<void>
   steer: (parts: InputPart[]) => Promise<void>
   respond: (
     interactionId: string,
@@ -267,11 +274,18 @@ export function useAgentSession(sessionId: string): AgentSessionState {
   )
 
   const sendMessage = useCallback(
-    (parts: InputPart[]) =>
+    (
+      parts: InputPart[],
+      runSettings?: {
+        permission_mode?: AgentPermissionMode
+        execution_scope?: AgentExecutionScope
+      },
+    ) =>
       runCommand({
         type: "message",
         command_id: createCommandId(),
         parts,
+        run_settings: runSettings,
       }),
     [runCommand],
   )

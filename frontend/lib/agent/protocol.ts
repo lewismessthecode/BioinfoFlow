@@ -1,6 +1,6 @@
 import type { Event as GeneratedAgentEvent } from "./protocol.generated"
 
-export const AGENT_UI_PROTOCOL_VERSION = 1 as const
+const AGENT_UI_PROTOCOL_VERSION = 1 as const
 
 export type AgentEvent = GeneratedAgentEvent
 export type ProtocolDecodeFailure = "malformed" | "unsupported_version"

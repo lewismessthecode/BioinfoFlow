@@ -37,7 +37,6 @@ import { cn } from "@/lib/utils"
 type PermissionMenuProps = {
   permissionMode: AgentPermissionMode
   workspaceAccess: AgentWorkspaceAccess
-  activeRun: boolean
   disabled?: boolean
   onPermissionModeChange: (mode: AgentPermissionMode) => Promise<void>
 }
@@ -58,7 +57,6 @@ const modeIcons = {
 export function PermissionMenu({
   permissionMode,
   workspaceAccess,
-  activeRun,
   disabled = false,
   onPermissionModeChange,
 }: PermissionMenuProps) {
@@ -76,7 +74,6 @@ export function PermissionMenu({
 
   const requestChange = async (mode: AgentPermissionMode) => {
     if (
-      activeRun ||
       disabled ||
       readOnlyWorkspace ||
       visibleUpdate?.state === "pending" ||
@@ -95,7 +92,7 @@ export function PermissionMenu({
   const CurrentIcon = modeIcons[permissionMode]
   const isUpdating = visibleUpdate?.state === "pending"
   const controlsDisabled =
-    disabled || activeRun || readOnlyWorkspace || isUpdating
+    disabled || readOnlyWorkspace || isUpdating
   const trigger = (
     <Button
       type="button"
@@ -201,7 +198,6 @@ export function PermissionMenu({
       )}
 
       <div id={descriptionId} className="text-xs leading-5 text-muted-foreground">
-        {activeRun ? <p>{t("permission.activeRun")}</p> : null}
         {readOnlyWorkspace ? (
           <p>{t("permission.readOnlyWorkspace")}</p>
         ) : null}

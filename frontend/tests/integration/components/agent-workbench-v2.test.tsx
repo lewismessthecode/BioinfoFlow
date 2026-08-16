@@ -156,6 +156,41 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
+  useLocale: () => "en",
+}))
+
+vi.mock("@/hooks/use-agent-ui-bootstrap", () => ({
+  useAgentUiBootstrap: () => ({
+    isLoading: false,
+    bootstrap: {
+      protocolVersion: 1,
+      capabilities: {
+        reasoning: true,
+        toolActivity: true,
+        approvals: true,
+        artifacts: true,
+        starterPrompts: true,
+        multiTargetExecution: false,
+        retry: true,
+        editAndResend: true,
+      },
+      executionTargets: [
+        {
+          id: "local",
+          handle: "local",
+          alias: "Local",
+          kind: "local",
+          status: "online",
+          primary: true,
+          disabledReason: null,
+        },
+      ],
+      executionScope: { mode: "auto", targetIds: [] },
+      starterPrompts: [],
+      composerHint: null,
+      degradedReason: null,
+    },
+  }),
 }))
 
 const timestamp = "2026-08-15T00:00:00Z"
@@ -244,12 +279,17 @@ describe("AgentWorkbench v2", () => {
       permissionMode: "ask_dangerous",
       workspaceAccess: "read_write",
       modelId: "model-record-1",
+      executionScope: { mode: "auto", target_ids: [] },
     })
     expect(mocks.dispatchCommand).toHaveBeenCalledWith(
       "session-1",
       expect.objectContaining({
         type: "message",
         parts: [{ type: "text", text: "Hello" }],
+        run_settings: {
+          permission_mode: "ask_dangerous",
+          execution_scope: { mode: "auto", target_ids: [] },
+        },
       }),
     )
     expect(mocks.publishSummary).toHaveBeenCalled()

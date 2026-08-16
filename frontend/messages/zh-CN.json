@@ -2604,6 +2604,13 @@
       "retry": "重试更新审批方式"
     }
   },
+  "agentExecution": {
+    "label": "执行范围",
+    "auto": "自动",
+    "manual": "手动选择节点",
+    "localOnly": "仅本地",
+    "active": "正在 {alias} 上执行"
+  },
   "agentActivity": {
     "status": {
       "pending": "等待中",

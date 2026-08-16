@@ -7,6 +7,7 @@ import type {
   AgentWorkspaceAccess,
   JsonObject,
   SessionSnapshot,
+  AgentExecutionScope,
 } from "./contracts"
 
 export type AgentSessionSummary = {
@@ -64,6 +65,7 @@ export async function createAgentSession(input: {
   modelId?: string
   provider?: string
   model?: string
+  executionScope?: AgentExecutionScope
 }) {
   const response = await apiRequest<SessionSnapshot>("/agent/sessions", {
     method: "POST",
@@ -75,6 +77,7 @@ export async function createAgentSession(input: {
       model_id: input.modelId,
       provider: input.provider,
       model: input.model,
+      execution_scope: input.executionScope,
     }),
   })
   return response.data

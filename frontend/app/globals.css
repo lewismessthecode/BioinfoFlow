@@ -93,6 +93,11 @@
   --accent-subtle: rgba(25, 25, 25, 0.03);
   --accent-hover: rgba(25, 25, 25, 0.08);
   --composer-shadow: 0 1px 2px rgba(15, 15, 15, 0.032), 0 10px 24px rgba(15, 15, 15, 0.028);
+  --agent-composer-surface: rgba(255, 255, 255, 0.96);
+  --agent-composer-inset: rgba(25, 25, 25, 0.025);
+  --agent-transcript-subtle: #fbfbfa;
+  --agent-activity-hover: rgba(25, 25, 25, 0.045);
+  --agent-halo: rgba(79, 120, 148, 0.10);
   --brand-accent: #4f7894;
   --brand-accent-muted: #e5edf1;
   --landing-product-stage: #f5f6f6;
@@ -218,6 +223,11 @@
   --announcement-bg: #09090b;
   --announcement-fg: #e4e4e7;
   --composer-shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 14px 38px rgba(0, 0, 0, 0.20);
+  --agent-composer-surface: #141416;
+  --agent-composer-inset: rgba(255, 255, 255, 0.025);
+  --agent-transcript-subtle: #101012;
+  --agent-activity-hover: rgba(255, 255, 255, 0.055);
+  --agent-halo: rgba(143, 185, 210, 0.08);
   --brand-accent: #8fb9d2;
   --brand-accent-muted: #1c2a32;
   --landing-product-stage: #111316;
@@ -283,6 +293,11 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-brand-accent: var(--brand-accent);
+  --color-agent-composer-surface: var(--agent-composer-surface);
+  --color-agent-composer-inset: var(--agent-composer-inset);
+  --color-agent-transcript-subtle: var(--agent-transcript-subtle);
+  --color-agent-activity-hover: var(--agent-activity-hover);
+  --color-agent-halo: var(--agent-halo);
   --color-brand-accent-muted: var(--brand-accent-muted);
   --color-landing-product-stage: var(--landing-product-stage);
   --ease-apple-ease: cubic-bezier(0.25, 0.1, 0.25, 1.0);

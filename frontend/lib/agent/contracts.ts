@@ -7,6 +7,10 @@ export type AgentPermissionMode =
   | "ask_dangerous"
   | "full_access"
 export type AgentWorkspaceAccess = "read_only" | "read_write"
+export type AgentExecutionScope = {
+  mode: "auto" | "manual"
+  target_ids: string[]
+}
 export type AgentSessionStatus = "active" | "archived" | "closing" | "deleted"
 export type AgentRunStatus =
   | "queued"
@@ -59,6 +63,7 @@ export type SessionView = {
   model: AgentModelSummary
   permission_mode: AgentPermissionMode
   workspace_access: AgentWorkspaceAccess
+  execution_scope?: AgentExecutionScope
   status: AgentSessionStatus
   created_at: string
   updated_at: string
@@ -129,6 +134,13 @@ export type ToolProgressView = {
   output_summary: string | null
   error: string | null
   public_details?: ToolPublicDetail[]
+  target?: {
+    id: string
+    handle: string
+    alias: string
+    kind: "local" | "remote_ssh"
+    root?: string | null
+  } | null
 }
 
 export type AskUserOption = {
@@ -355,6 +367,10 @@ type AgentCommandBase = {
 export type MessageCommand = AgentCommandBase & {
   type: "message"
   parts: InputPart[]
+  run_settings?: {
+    permission_mode?: AgentPermissionMode
+    execution_scope?: AgentExecutionScope
+  }
 }
 
 export type SteerCommand = AgentCommandBase & {

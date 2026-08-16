@@ -40,8 +40,11 @@ type AgentComposerProps = {
   onContextSubmitted?: () => void
   contextControls?: ReactNode
   modelControls?: ReactNode
+  executionControls?: ReactNode
+  hint?: string | null
   placement?: "draft" | "dock"
   textareaRef?: Ref<HTMLTextAreaElement>
+  initialValue?: string
   disabled?: boolean
 }
 
@@ -60,12 +63,15 @@ export function AgentComposer({
   onContextSubmitted,
   contextControls,
   modelControls,
+  executionControls,
+  hint,
   placement = "dock",
   textareaRef,
+  initialValue = "",
   disabled = false,
 }: AgentComposerProps) {
   const t = useTranslations("agentComposer")
-  const [value, setValue] = useState("")
+  const [value, setValue] = useState(initialValue)
   const [submitting, setSubmitting] = useState<SubmitAction | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [stopError, setStopError] = useState<string | null>(null)
@@ -223,6 +229,7 @@ export function AgentComposer({
           placeholder={t("placeholder")}
           name="agent-message"
           autoComplete="off"
+          autoFocus={initialValue.length > 0}
           rows={placement === "draft" ? 3 : 2}
           disabled={disabled}
           className={cn(
@@ -237,10 +244,10 @@ export function AgentComposer({
           <PermissionMenu
             permissionMode={permissionMode}
             workspaceAccess={workspaceAccess}
-            activeRun={activeRun !== null}
             disabled={disabled}
             onPermissionModeChange={onPermissionModeChange}
           />
+          {executionControls}
 
           <div className="ml-auto flex items-center gap-2">
             {voice.available ? (
@@ -348,6 +355,12 @@ export function AgentComposer({
           </div>
         </div>
       </div>
+
+      {hint ? (
+        <p className="px-3 text-center text-[11px] leading-5 text-muted-foreground/75">
+          {hint}
+        </p>
+      ) : null}
 
       {submitError ? <p role="alert" className="text-sm text-destructive">{submitError}</p> : null}
       {stopError ? <p role="alert" className="text-sm text-destructive">{stopError}</p> : null}

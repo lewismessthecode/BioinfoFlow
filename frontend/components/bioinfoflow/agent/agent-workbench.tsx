@@ -16,7 +16,9 @@ import { useTranslations } from "next-intl"
 import { AgentComposer } from "@/components/bioinfoflow/agent/agent-composer"
 import { AgentContextPicker } from "@/components/bioinfoflow/agent/agent-context-picker"
 import { AgentModelConnectionDialog } from "@/components/bioinfoflow/agent/agent-model-connection-dialog"
+import { AgentStarterPrompts } from "@/components/bioinfoflow/agent/agent-starter-prompts"
 import { AgentTranscript } from "@/components/bioinfoflow/agent/agent-transcript"
+import { ExecutionTargetSelector } from "@/components/bioinfoflow/agent/execution-target-selector"
 import { ModelSelector } from "@/components/bioinfoflow/chat/model-selector"
 import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -25,6 +27,7 @@ import {
   useAgentSession,
   type AgentSessionState,
 } from "@/hooks/use-agent-session"
+import { useAgentUiBootstrap } from "@/hooks/use-agent-ui-bootstrap"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
 import {
   createAgentSession,
@@ -36,11 +39,17 @@ import {
   type AgentContextInput,
 } from "@/lib/agent/context"
 import type {
+  AgentExecutionScope,
   AgentPermissionMode,
   AgentWorkspaceAccess,
   InputPart,
   SessionView,
 } from "@/lib/agent/contracts"
+import type {
+  AgentExecutionScope as UiExecutionScope,
+  AgentExecutionTarget,
+  AgentUiBootstrap,
+} from "@/lib/agent/bootstrap"
 import {
   publishAgentSessionSummary,
   sessionSummaryFromView,
@@ -103,6 +112,13 @@ export const AgentWorkbench = forwardRef<
     useState<AgentPermissionMode>("ask_dangerous")
   const [draftWorkspaceAccess] =
     useState<AgentWorkspaceAccess>("read_write")
+  const { bootstrap } = useAgentUiBootstrap(projectId)
+  const [draftExecutionScope, setDraftExecutionScope] =
+    useState<AgentExecutionScope>({ mode: "auto", target_ids: [] })
+  const [draftScopeTouched, setDraftScopeTouched] = useState(false)
+  const effectiveDraftExecutionScope = draftScopeTouched
+    ? draftExecutionScope
+    : toContractScope(bootstrap?.executionScope)
   const [contextInputs, setContextInputs] = useState<AgentContextInput[]>([])
   const [modelConnectionOpen, setModelConnectionOpen] = useState(false)
   const createPromiseRef = useRef<Promise<string> | null>(null)
@@ -127,6 +143,7 @@ export const AgentWorkbench = forwardRef<
       projectId,
       permissionMode: draftPermissionMode,
       workspaceAccess: draftWorkspaceAccess,
+      executionScope: effectiveDraftExecutionScope,
       ...modelSelector,
     })
       .then((snapshot) => {
@@ -143,6 +160,7 @@ export const AgentWorkbench = forwardRef<
   }, [
     draftPermissionMode,
     draftWorkspaceAccess,
+    effectiveDraftExecutionScope,
     draftSessionId,
     effectiveSessionId,
     projectId,
@@ -237,6 +255,7 @@ export const AgentWorkbench = forwardRef<
             interactive={interactive}
             onSessionResolved={onSessionResolved}
             headerActions={headerActions}
+            bootstrap={bootstrap}
             {...common}
           />
         ) : (
@@ -246,6 +265,7 @@ export const AgentWorkbench = forwardRef<
             interactive={interactive}
             onSessionResolved={onSessionResolved}
             headerActions={headerActions}
+            bootstrap={bootstrap}
             {...common}
           />
         )
@@ -255,6 +275,12 @@ export const AgentWorkbench = forwardRef<
           workspaceAccess={draftWorkspaceAccess}
           draftSessionId={draftSessionId}
           onPermissionModeChange={updateDraftPermissionMode}
+          bootstrap={bootstrap}
+          executionScope={effectiveDraftExecutionScope}
+          onExecutionScopeChange={(scope) => {
+            setDraftScopeTouched(true)
+            setDraftExecutionScope(scope)
+          }}
           headerActions={headerActions}
           {...common}
         />
@@ -286,6 +312,9 @@ function DraftWorkbench({
   workspaceAccess,
   draftSessionId,
   onPermissionModeChange,
+  bootstrap,
+  executionScope,
+  onExecutionScopeChange,
   headerActions,
   ...shared
 }: SharedWorkbenchProps & {
@@ -293,10 +322,14 @@ function DraftWorkbench({
   workspaceAccess: AgentWorkspaceAccess
   draftSessionId: string | null
   onPermissionModeChange: (mode: AgentPermissionMode) => Promise<void>
+  bootstrap: AgentUiBootstrap | null
+  executionScope: AgentExecutionScope
+  onExecutionScopeChange: (scope: AgentExecutionScope) => void
   headerActions?: ReactNode
 }) {
   const t = useTranslations("agentWorkbench")
   const [error, setError] = useState<string | null>(null)
+  const [starterDraft, setStarterDraft] = useState({ key: 0, text: "" })
   const { models, selectedModel, setSelectedModel, isLoading } = useLlmSettings()
   const ensureSession = shared.ensureSession
   const ensureDraftSession = useCallback(
@@ -322,6 +355,10 @@ function DraftWorkbench({
         type: "message",
         command_id: globalThis.crypto.randomUUID(),
         parts,
+        run_settings: {
+          permission_mode: permissionMode,
+          execution_scope: executionScope,
+        },
       })
       shared.setContextInputs([])
       shared.routeToSession(sessionId)
@@ -347,7 +384,9 @@ function DraftWorkbench({
         <AgentEmptyState compact />
         {error ? <WorkbenchError message={error} embedded /> : null}
         <AgentComposer
+          key={`draft-composer-${starterDraft.key}`}
           placement="draft"
+          initialValue={starterDraft.text}
           permissionMode={permissionMode}
           workspaceAccess={workspaceAccess}
           activeRun={null}
@@ -376,6 +415,21 @@ function DraftWorkbench({
               variant="composer"
             />
           }
+          executionControls={
+            <ExecutionTargetSelector
+              targets={bootstrap?.executionTargets ?? []}
+              scope={toUiScope(executionScope)}
+              disabled={!bootstrap}
+              onChange={(scope) => onExecutionScopeChange(toContractScope(scope))}
+            />
+          }
+          hint={bootstrap?.composerHint}
+        />
+        <AgentStarterPrompts
+          prompts={bootstrap?.starterPrompts ?? []}
+          onSelect={(prompt) =>
+            setStarterDraft((current) => ({ key: current.key + 1, text: prompt.prompt }))
+          }
         />
       </div>
     </div>
@@ -388,6 +442,7 @@ function LiveSessionWorkbench({
 }: SharedWorkbenchProps & {
   sessionId: string
   interactive: boolean
+  bootstrap: AgentUiBootstrap | null
   onSessionResolved?: (session: SessionView) => void
   headerActions?: ReactNode
 }) {
@@ -399,6 +454,7 @@ function SessionWorkbench({
   sessionId,
   state,
   interactive,
+  bootstrap,
   onSessionResolved,
   headerActions,
   ...shared
@@ -406,10 +462,14 @@ function SessionWorkbench({
   sessionId: string
   state: AgentSessionState
   interactive: boolean
+  bootstrap: AgentUiBootstrap | null
   onSessionResolved?: (session: SessionView) => void
   headerActions?: ReactNode
 }) {
   const t = useTranslations("agentWorkbench")
+  const [executionScope, setExecutionScope] = useState<AgentExecutionScope>(
+    state.session?.execution_scope ?? { mode: "auto", target_ids: [] },
+  )
   const setCancelHandler = shared.setCancelHandler
 
   useEffect(() => {
@@ -438,7 +498,12 @@ function SessionWorkbench({
   }
 
   const sendMessage = async (parts: InputPart[]) => {
-    await runSessionCommand(() => state.sendMessage(parts))
+    await runSessionCommand(() =>
+      state.sendMessage(parts, {
+        permission_mode: state.session?.permission_mode,
+        execution_scope: executionScope,
+      }),
+    )
     shared.setContextInputs([])
     shared.routeToSession(sessionId)
   }
@@ -519,6 +584,15 @@ function SessionWorkbench({
           />
         }
         modelControls={<ComposerModelLabel label={state.session.model.display_name} />}
+        executionControls={
+          <ExecutionTargetSelector
+            targets={bootstrap?.executionTargets ?? []}
+            scope={toUiScope(executionScope)}
+            activeTarget={activeExecutionTarget(state, bootstrap)}
+            disabled={!interactive || state.session.status !== "active" || !bootstrap}
+            onChange={(scope) => setExecutionScope(toContractScope(scope))}
+          />
+        }
       />
     </>
   )
@@ -618,6 +692,39 @@ function ComposerModelLabel({ label }: { label: string }) {
     >
       {label}
     </span>
+  )
+}
+
+function toContractScope(scope?: UiExecutionScope | null): AgentExecutionScope {
+  return scope
+    ? { mode: scope.mode, target_ids: scope.targetIds }
+    : { mode: "auto", target_ids: [] }
+}
+
+function toUiScope(scope: AgentExecutionScope): UiExecutionScope {
+  return { mode: scope.mode, targetIds: scope.target_ids }
+}
+
+function activeExecutionTarget(
+  state: AgentSessionState,
+  bootstrap: AgentUiBootstrap | null,
+): AgentExecutionTarget | null {
+  const target = state.activeRun?.tool_progress.find(
+    (tool) => tool.status === "running" && tool.target,
+  )?.target
+  if (!target) return null
+  return (
+    bootstrap?.executionTargets.find(
+      (candidate) => candidate.id === target.id || candidate.handle === target.handle,
+    ) ?? {
+      id: target.id,
+      handle: target.handle,
+      alias: target.alias,
+      kind: target.kind,
+      status: "unknown",
+      primary: false,
+      disabledReason: null,
+    }
   )
 }
 

@@ -88,5 +88,11 @@
     "tw-animate-css": "1.3.3",
     "typescript": "^5",
     "vitest": "^4.0.18"
+  },
+  "knip": {
+    "entry": [
+      "scripts/generate-agent-ui-types.mjs",
+      "lib/agent/protocol.generated.ts"
+    ]
   }
 }

@@ -2604,6 +2604,13 @@
       "retry": "Retry approval update"
     }
   },
+  "agentExecution": {
+    "label": "Execution scope",
+    "auto": "Auto",
+    "manual": "Manual targets",
+    "localOnly": "Local only",
+    "active": "Working on {alias}"
+  },
   "agentActivity": {
     "status": {
       "pending": "Pending",

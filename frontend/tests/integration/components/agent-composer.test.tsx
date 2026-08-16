@@ -101,6 +101,7 @@ function renderComposer({
   return {
     ...renderWithProviders(
       <AgentComposer
+        key="starter-1"
         permissionMode={permissionMode}
         workspaceAccess={workspaceAccess}
         activeRun={currentRun}
@@ -185,6 +186,28 @@ describe("AgentComposer", () => {
     fireEvent.input(input, { target: { value: "A long\nmultiline\nrequest" } })
 
     expect(input).toHaveStyle({ height: "160px" })
+  })
+
+  it("fills and focuses the draft when a starter prompt is selected", async () => {
+    const view = renderComposer({ placement: "draft" })
+
+    view.rerender(
+      <AgentComposer
+        permissionMode="ask_dangerous"
+        workspaceAccess="read_write"
+        activeRun={null}
+        onSendMessage={view.onSendMessage}
+        onSteer={view.onSteer}
+        onCancel={view.onCancel}
+        onPermissionModeChange={view.onPermissionModeChange}
+        placement="draft"
+        initialValue="Review the latest failed run"
+      />,
+    )
+
+    const input = screen.getByRole("textbox", { name: "Message the agent" })
+    await waitFor(() => expect(input).toHaveValue("Review the latest failed run"))
+    expect(input).toHaveFocus()
   })
 
   afterEach(() => {
@@ -387,9 +410,9 @@ describe("AgentComposer", () => {
     ).toBeDisabled()
   })
 
-  it("cannot use approval mode to bypass a read-only workspace or an active run", () => {
+  it("cannot use approval mode to bypass a read-only workspace", () => {
     const onPermissionModeChange = vi.fn()
-    const view = renderComposer({
+    renderComposer({
       permissionMode: "full_access",
       workspaceAccess: "read_only",
       onPermissionModeChange,
@@ -404,27 +427,25 @@ describe("AgentComposer", () => {
       screen.getByRole("button", { name: "Approval mode: Full access" }),
     ).toBeDisabled()
 
-    view.rerender(
-      <AgentComposer
-        permissionMode="ask_dangerous"
-        workspaceAccess="read_write"
-        activeRun={activeRun()}
-        onSendMessage={view.onSendMessage}
-        onSteer={view.onSteer}
-        onCancel={view.onCancel}
-        onPermissionModeChange={onPermissionModeChange}
-      />,
-    )
+    expect(onPermissionModeChange).not.toHaveBeenCalled()
+  })
 
-    expect(
+  it("allows changing the next-run approval default while a run is active", async () => {
+    const user = userEvent.setup()
+    const onPermissionModeChange = vi.fn().mockResolvedValue(undefined)
+    renderComposer({
+      currentRun: activeRun(),
+      onPermissionModeChange,
+    })
+
+    await user.click(
       screen.getByRole("button", {
         name: "Approval mode: Approve safe actions",
       }),
-    ).toBeDisabled()
-    expect(
-      screen.getByText("Approval mode cannot change while a run is active."),
-    ).toBeInTheDocument()
-    expect(onPermissionModeChange).not.toHaveBeenCalled()
+    )
+    await user.click(screen.getByRole("menuitemradio", { name: /Full access/i }))
+
+    expect(onPermissionModeChange).toHaveBeenCalledWith("full_access")
   })
 
   it("disables both message entry and permission changes in a read-only conversation", () => {

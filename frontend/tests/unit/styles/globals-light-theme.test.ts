@@ -15,6 +15,7 @@ describe("globals.css theme tokens", () => {
     expect(css).toContain(
       "--composer-shadow: 0 1px 2px rgba(15, 15, 15, 0.032), 0 10px 24px rgba(15, 15, 15, 0.028);",
     )
+    expect(css).toContain("--agent-halo: rgba(79, 120, 148, 0.10);")
     expect(css).toContain(
       '--font-sans: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", system-ui',
     )
@@ -22,7 +23,6 @@ describe("globals.css theme tokens", () => {
     expect(css).not.toContain("--background: #fbfbfa;")
     expect(css).not.toContain("--sidebar: #f1f0ed;")
     expect(css).not.toContain("--sidebar-accent: #e4e1dc;")
-    expect(css).not.toContain("--agent-halo")
     expect(css).not.toContain("agent-halo-surface")
   })
 
@@ -32,8 +32,9 @@ describe("globals.css theme tokens", () => {
     expect(css).toContain(
       "--composer-shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 14px 38px rgba(0, 0, 0, 0.20);",
     )
+    expect(css).toContain("--agent-halo: rgba(143, 185, 210, 0.08);")
     expect(css).toContain("color-scheme: dark;")
-    expect(css).not.toContain("--agent-halo")
+    expect(css).not.toContain("agent-halo-surface")
     expect(css).not.toContain(
       "--composer-shadow: 0 2px 10px rgba(0, 0, 0, 0.28), 0 18px 48px rgba(0, 0, 0, 0.30);",
     )
