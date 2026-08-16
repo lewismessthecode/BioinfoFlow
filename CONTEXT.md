@@ -44,3 +44,45 @@ vocabulary is maintained in
 - **Model resolution**: the ordered decision that turns turn/session model
   requests and catalog defaults into an executable model target, including
   credentials, transport policy, target revision, and fallback candidates.
+
+## Stable Agent Conversation
+
+**Presentation Contract / 呈现协议**:
+The versioned, Harness-independent product language used to present one Agent
+Conversation to clients. It contains only durable or explicitly public facts.
+_Avoid_: Harness event schema, provider transcript
+
+**Conversation View / 对话视图**:
+The client-facing projection of a Conversation, including its current settings,
+Transcript Blocks, and active work. It is derived from the Presentation Contract.
+_Avoid_: Harness snapshot, renderer state
+
+**Transcript Block / 对话记录块**:
+A stable, ordered unit in the Conversation View, such as a message, reasoning
+trace, activity group, interaction, artifact, notice, or run outcome.
+_Avoid_: raw event, provider item
+
+**Conversation Setting / 对话设置**:
+A user-selected default for future Runs in one Conversation, such as model,
+permission policy, or environment scope.
+_Avoid_: session constant, composer-only preference
+
+**Turn Execution Config / 执行配置快照**:
+The immutable effective settings used by one started Run. Later Conversation
+Setting changes do not alter it.
+_Avoid_: current composer settings, mutable run settings
+
+**Execution Environment / 执行环境**:
+One authorized local or remote place where Agent tools may operate.
+_Avoid_: host, node, workspace runtime
+
+**Environment Scope / 环境范围**:
+The set of Execution Environments visible to a Run. Auto resolves all authorized
+environments; Manual resolves the user-selected subset.
+_Avoid_: current machine, SSH selector value
+
+**Reasoning Trace / 推理轨迹**:
+Textual reasoning content explicitly returned by a model provider for display.
+It does not include encrypted continuation state or imply access to private model
+reasoning.
+_Avoid_: complete chain of thought, encrypted reasoning
