@@ -16,11 +16,11 @@ from app.models.remote_connection import RemoteConnection
 from app.models.workspace import Workspace
 from app.path_layout import bioinfoflow_home, state_root
 from app.services.agent_harness.context import build_session_prompt_snapshot
-from app.services.agent_harness.factory import (
+from app.services.agent_harness.environment_runtime import (
     _DatabaseRemoteExecutor,
-    open_session_request_workspace,
     workspace_runtime_for_session,
 )
+from app.services.agent_harness.factory import open_session_request_workspace
 from app.services.agent_harness.sandbox.process_sandbox import (
     SandboxAvailability,
     SandboxRunner,
@@ -1474,7 +1474,7 @@ async def test_database_remote_executor_serializes_only_credential_resolution(
             return await super().run_with_stdin(*args, **kwargs)
 
     monkeypatch.setattr(
-        "app.services.agent_harness.factory.RemoteConnectionService",
+        "app.services.agent_harness.environment_runtime.RemoteConnectionService",
         _ConcurrentRemoteConnectionService,
     )
     executor = _ParallelRemoteExecutor()
