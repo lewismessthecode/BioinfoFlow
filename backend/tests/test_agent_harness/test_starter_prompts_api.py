@@ -29,9 +29,9 @@ async def test_starter_prompts_endpoint_returns_fallback_without_a_provider(
     assert response.status_code == 200
     assert response.json()["data"] == {
         "prompts": [
-            "检查项目并建议下一步",
-            "解释项目中的工作流和输入",
-            "查看最近运行并总结结果",
+            "检查这个项目",
+            "了解可用的工作流",
+            "查看最近一次运行",
         ],
         "source": "fallback",
         "refresh_pending": True,

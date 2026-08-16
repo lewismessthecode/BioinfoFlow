@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.services.agent_harness.starter_prompt_generation import (
@@ -52,7 +54,14 @@ async def test_model_generator_uses_a_non_persisting_tool_free_invocation() -> N
         StarterPromptGenerationRequest(
             fingerprint="f" * 64,
             locale="en",
-            project={"name": "RNA demo", "description": "RNA-seq analysis"},
+            project={
+                "id": "internal-project-id",
+                "name": "RNA demo",
+                "description": (
+                    "RNA-seq analysis. Marker: bioinfoflow.demo.quickstart.v1"
+                ),
+                "project_root": "/internal/project/root",
+            },
         )
     )
 
@@ -63,6 +72,18 @@ async def test_model_generator_uses_a_non_persisting_tool_free_invocation() -> N
     assert invocation.stream is False
     assert invocation.reasoning.enabled is False
     assert invocation.max_output_tokens == 256
+    assert "supplied locale" in invocation.instructions
+    assert "80 characters" in invocation.instructions
+    provider_payload = json.loads(invocation.input_items[0].text)
+    assert provider_payload == {
+        "locale": "en",
+        "project": {
+            "description": "RNA-seq analysis.",
+            "name": "RNA demo",
+        },
+    }
+    assert "bioinfoflow.demo.quickstart.v1" not in invocation.input_items[0].text
+    assert "f" * 64 not in invocation.input_items[0].text
 
 
 @pytest.mark.asyncio

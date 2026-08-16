@@ -29,8 +29,11 @@ test.describe("Agent workbench live run journey", () => {
       const surface = document.querySelector<HTMLElement>(
         '[data-testid="agent-composer-surface"]',
       )
+      const send = document.querySelector<HTMLElement>(
+        '[data-testid="agent-composer-send"]',
+      )
       const textarea = composer?.querySelector("textarea")
-      if (!workbench || !composer || !surface || !textarea) return null
+      if (!workbench || !composer || !surface || !send || !textarea) return null
       const workbenchBox = workbench.getBoundingClientRect()
       const composerBox = composer.getBoundingClientRect()
       const starterList = document.querySelector<HTMLElement>(
@@ -40,6 +43,8 @@ test.describe("Agent workbench live run journey", () => {
         '[data-testid="agent-command-discovery-hint"]',
       )
       const surfaceStyle = getComputedStyle(surface)
+      const sendStyle = getComputedStyle(send)
+      const sendBox = send.getBoundingClientRect()
       const workbenchStyle = getComputedStyle(workbench)
       const selectorMetrics = Array.from(
         composer.querySelectorAll<HTMLElement>(
@@ -90,8 +95,11 @@ test.describe("Agent workbench live run journey", () => {
           ? getComputedStyle(starterList).borderBottomWidth
           : null,
         surfaceBackground: surfaceStyle.backgroundColor,
+        surfaceShadow: surfaceStyle.boxShadow,
         canvasBackground: workbenchStyle.backgroundColor,
         surfaceBorderWidth: surfaceStyle.borderTopWidth,
+        sendSize: [sendBox.width, sendBox.height],
+        sendRadius: Number.parseFloat(sendStyle.borderRadius),
         textareaBackground: getComputedStyle(textarea).backgroundColor,
         hintBottomInset: commandHint
           ? window.innerHeight - commandHint.getBoundingClientRect().bottom
@@ -133,11 +141,14 @@ test.describe("Agent workbench live run journey", () => {
       desktopGeometry?.canvasBackground,
     )
     expect(desktopGeometry?.surfaceBorderWidth).toBe("1px")
+    expect(desktopGeometry?.surfaceShadow).not.toBe("none")
+    expect(desktopGeometry?.sendSize).toEqual([32, 32])
+    expect(desktopGeometry?.sendRadius).toBeGreaterThanOrEqual(16)
     expect(desktopGeometry?.textareaBackground).toBe("rgba(0, 0, 0, 0)")
     expect(desktopGeometry?.hintBottomInset).toBeGreaterThanOrEqual(40)
     await expect(
       page.getByRole("heading", {
-        name: "What would you like to work on?",
+        name: "Ready when you are.",
       }),
     ).toBeVisible()
     await expect(
@@ -172,11 +183,13 @@ test.describe("Agent workbench live run journey", () => {
       .poll(async () => commandHint.textContent(), { timeout: 7_000 })
       .toContain("@")
     await expect(
-      page.getByRole("button", { name: /^Execution environments: Auto$/ }),
+      page.getByRole("button", {
+        name: /^Execution environments: Auto, All environments$/,
+      }),
     ).toBeVisible()
 
     const permissionButton = page.getByRole("button", {
-      name: "Permissions: Auto",
+      name: "Approval: Confirm risks",
     })
     await permissionButton.click()
     const permissionMenu = page.getByTestId("composer-selector-menu")
@@ -244,8 +257,12 @@ test.describe("Agent workbench live run journey", () => {
       const composer = document.querySelector<HTMLElement>(
         '[data-testid="agent-composer"]',
       )
-      if (!composer) return null
+      const send = composer?.querySelector<HTMLElement>(
+        '[data-testid="agent-composer-send"]',
+      )
+      if (!composer || !send) return null
       const box = composer.getBoundingClientRect()
+      const sendBox = send.getBoundingClientRect()
       return {
         left: box.left,
         right: box.right,
@@ -256,6 +273,8 @@ test.describe("Agent workbench live run journey", () => {
             '[data-composer-selector-trigger="true"]',
           ),
         ).map((selector) => selector.getBoundingClientRect().height),
+        sendSize: [sendBox.width, sendBox.height],
+        sendRadius: Number.parseFloat(getComputedStyle(send).borderRadius),
       }
     })
     expect(mobileGeometry).not.toBeNull()
@@ -269,6 +288,8 @@ test.describe("Agent workbench live run journey", () => {
     expect(mobileGeometry?.selectorHeights).toHaveLength(3)
     expect(new Set(mobileGeometry?.selectorHeights).size).toBe(1)
     expect(mobileGeometry?.selectorHeights[0]).toBeGreaterThanOrEqual(44)
+    expect(mobileGeometry?.sendSize).toEqual([44, 44])
+    expect(mobileGeometry?.sendRadius).toBeGreaterThanOrEqual(22)
   })
 
   test("opens inline model setup and preserves the draft when no model is available", async ({

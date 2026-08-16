@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -76,19 +77,19 @@ class StarterPromptResult:
 
 _FALLBACKS = {
     "en": (
-        "Review the project and suggest next steps",
-        "Explain the workflows and inputs in this project",
-        "Review recent runs and summarize the results",
+        "Review this project",
+        "Explore available workflows",
+        "Check the latest run",
     ),
     "zh-CN": (
-        "检查项目并建议下一步",
-        "解释项目中的工作流和输入",
-        "查看最近运行并总结结果",
+        "检查这个项目",
+        "了解可用的工作流",
+        "查看最近一次运行",
     ),
 }
 _MAX_PROMPTS = 3
 _MAX_PROMPT_INPUT_CHARS = 4_096
-_MAX_PROMPT_CHARS = 240
+_MAX_PROMPT_CHARS = 80
 _MAX_PROJECT_SCALAR_BYTES = 2_048
 _MAX_PROJECT_COLLECTION_ITEMS = 12
 _MAX_PROJECT_COLLECTION_ITEM_BYTES = 512
@@ -101,6 +102,16 @@ _PROJECT_SCALAR_FIELDS = (
     "instructions",
 )
 _PROJECT_COLLECTION_FIELDS = ("workflows", "recent_runs")
+_GENERATION_PROJECT_SCALAR_FIELDS = (
+    "name",
+    "description",
+    "storage_mode",
+    "instructions",
+)
+_INTERNAL_MARKER_PATTERN = re.compile(
+    r"(?:^|\s)Marker:\s*([A-Za-z0-9][A-Za-z0-9._:-]{2,})\s*$",
+    re.IGNORECASE,
+)
 
 
 class StarterPromptService:
@@ -117,7 +128,9 @@ class StarterPromptService:
         self, *, project: Mapping[str, Any], locale: str
     ) -> StarterPromptResult:
         normalized_locale = _normalize_locale(locale)
-        fingerprint = project_prompt_fingerprint(project)
+        bounded_project = _bounded_project_context(project)
+        fingerprint = _fingerprint_bounded_project(bounded_project)
+        blocked_terms = _project_internal_markers(bounded_project)
         try:
             cached = await self._cache.get(
                 fingerprint=fingerprint,
@@ -126,14 +139,25 @@ class StarterPromptService:
         except Exception:
             logger.warning("Starter prompt cache read failed", exc_info=True)
             cached = None
-        normalized_cached = _normalize_prompts(cached or ())
+        cached_prompts = tuple(cached or ())
+        normalized_cached = _normalize_prompts(
+            cached_prompts,
+            blocked_terms=blocked_terms,
+        )
         if normalized_cached:
             return StarterPromptResult(
                 prompts=normalized_cached,
                 fingerprint=fingerprint,
                 locale=normalized_locale,
                 source="cache",
-                refresh_required=False,
+                refresh_required=(
+                    self._generate is not None
+                    and any(
+                        isinstance(prompt, str)
+                        and _contains_blocked_term(prompt, blocked_terms)
+                        for prompt in cached_prompts
+                    )
+                ),
             )
         return StarterPromptResult(
             prompts=_FALLBACKS[normalized_locale],
@@ -149,6 +173,7 @@ class StarterPromptService:
         normalized_locale = _normalize_locale(locale)
         bounded_project = _bounded_project_context(project)
         fingerprint = _fingerprint_bounded_project(bounded_project)
+        blocked_terms = _project_internal_markers(bounded_project)
         fallback = StarterPromptResult(
             prompts=_FALLBACKS[normalized_locale],
             fingerprint=fingerprint,
@@ -163,12 +188,12 @@ class StarterPromptService:
                 StarterPromptGenerationRequest(
                     fingerprint=fingerprint,
                     locale=normalized_locale,
-                    project=bounded_project,
+                    project=project_prompt_generation_context(bounded_project),
                 )
             )
         except Exception:
             return fallback
-        prompts = _normalize_prompts(generated)
+        prompts = _normalize_prompts(generated, blocked_terms=blocked_terms)
         if not prompts:
             return fallback
         try:
@@ -190,6 +215,32 @@ class StarterPromptService:
 
 def project_prompt_fingerprint(project: Mapping[str, Any]) -> str:
     return _fingerprint_bounded_project(_bounded_project_context(project))
+
+
+def project_prompt_generation_context(project: Mapping[str, Any]) -> dict[str, Any]:
+    bounded_project = _bounded_project_context(project)
+    blocked_terms = _project_internal_markers(bounded_project)
+    public: dict[str, Any] = {}
+    for field in _GENERATION_PROJECT_SCALAR_FIELDS:
+        value = bounded_project.get(field)
+        if not isinstance(value, str):
+            continue
+        text = _strip_internal_markers(value, blocked_terms)
+        if text:
+            public[field] = text
+    for field in _PROJECT_COLLECTION_FIELDS:
+        value = bounded_project.get(field)
+        if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+            continue
+        items = tuple(
+            text
+            for item in value
+            if isinstance(item, str)
+            and (text := _strip_internal_markers(item, blocked_terms))
+        )
+        if items:
+            public[field] = items
+    return public
 
 
 def _fingerprint_bounded_project(project: Mapping[str, Any]) -> str:
@@ -251,7 +302,41 @@ def _normalize_locale(locale: str) -> str:
     return "zh-CN" if locale.lower().replace("_", "-").startswith("zh") else "en"
 
 
-def _normalize_prompts(prompts: Sequence[str]) -> tuple[str, ...]:
+def _project_internal_markers(project: Mapping[str, Any]) -> frozenset[str]:
+    markers: set[str] = set()
+    for value in project.values():
+        values = (
+            value
+            if isinstance(value, Sequence) and not isinstance(value, (str, bytes))
+            else (value,)
+        )
+        for item in values:
+            if not isinstance(item, str):
+                continue
+            match = _INTERNAL_MARKER_PATTERN.search(item)
+            if match is not None:
+                markers.add(match.group(1))
+    return frozenset(markers)
+
+
+def _strip_internal_markers(text: str, blocked_terms: frozenset[str]) -> str:
+    cleaned = text
+    for term in blocked_terms:
+        cleaned = re.sub(re.escape(term), "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"(?:^|\s)Marker:\s*$", "", cleaned, flags=re.IGNORECASE)
+    return " ".join(cleaned.split())
+
+
+def _contains_blocked_term(text: str, blocked_terms: frozenset[str]) -> bool:
+    folded = text.casefold()
+    return any(term.casefold() in folded for term in blocked_terms)
+
+
+def _normalize_prompts(
+    prompts: Sequence[str],
+    *,
+    blocked_terms: frozenset[str] = frozenset(),
+) -> tuple[str, ...]:
     normalized: list[str] = []
     seen: set[str] = set()
     for raw_prompt in prompts:
@@ -261,6 +346,8 @@ def _normalize_prompts(prompts: Sequence[str]) -> tuple[str, ...]:
         if not prompt:
             continue
         prompt = prompt[:_MAX_PROMPT_CHARS].rstrip()
+        if _contains_blocked_term(prompt, blocked_terms):
+            continue
         if prompt in seen:
             continue
         seen.add(prompt)

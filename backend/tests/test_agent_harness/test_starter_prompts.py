@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 
 import pytest
@@ -64,14 +65,23 @@ async def test_cold_resolve_returns_localized_fallback_without_waiting_for_gener
     )
 
     assert first.prompts == (
-        "检查项目并建议下一步",
-        "解释项目中的工作流和输入",
-        "查看最近运行并总结结果",
+        "检查这个项目",
+        "了解可用的工作流",
+        "查看最近一次运行",
     )
     assert second == first
     assert first.source == "fallback"
     assert first.refresh_required is True
     assert generation_started is False
+
+    english = await service.resolve(
+        project={"id": "project-1", "name": "RNA demo"}, locale="en-US"
+    )
+    assert english.prompts == (
+        "Review this project",
+        "Explore available workflows",
+        "Check the latest run",
+    )
 
 
 @pytest.mark.asyncio
@@ -114,7 +124,87 @@ async def test_refresh_normalizes_generated_prompts_and_populates_cache() -> Non
         refresh_required=False,
     )
     assert len(received) == 1
-    assert received[0].project == project
+    assert received[0].project == {
+        "name": "RNA demo",
+        "description": "Quality-control and quantify RNA-seq reads",
+    }
+
+
+@pytest.mark.asyncio
+async def test_refresh_keeps_internal_marker_in_cache_identity_but_never_exposes_it() -> (
+    None
+):
+    marker = "bioinfoflow.demo.quickstart.v1"
+    cache = _MemoryCache()
+    received: list[StarterPromptGenerationRequest] = []
+
+    async def generate(request: StarterPromptGenerationRequest) -> Sequence[str]:
+        received.append(request)
+        return (
+            f"Inspect {marker}",
+            "Review the quickstart workflow",
+            "Check the sample inputs",
+            "Summarize the latest run",
+        )
+
+    service = StarterPromptService(cache=cache, generate=generate)
+    project = {
+        "id": "project-1",
+        "name": "BioinfoFlow Demo",
+        "description": (
+            f"Managed quickstart assets for the first analysis. Marker: {marker}"
+        ),
+        "project_root": "/private/internal/demo-root",
+    }
+
+    refreshed = await service.refresh(project=project, locale="en")
+    resolved = await service.resolve(project=project, locale="en")
+
+    assert refreshed.prompts == (
+        "Review the quickstart workflow",
+        "Check the sample inputs",
+        "Summarize the latest run",
+    )
+    assert resolved.prompts == refreshed.prompts
+    assert all(marker not in prompt for prompt in refreshed.prompts)
+    assert received[0].fingerprint == project_prompt_fingerprint(project)
+    assert marker not in json.dumps(received[0].project)
+    assert received[0].project == {
+        "name": "BioinfoFlow Demo",
+        "description": "Managed quickstart assets for the first analysis.",
+    }
+
+
+@pytest.mark.asyncio
+async def test_resolve_filters_internal_marker_from_an_existing_cache_entry() -> None:
+    marker = "bioinfoflow.demo.quickstart.v1"
+    project = {
+        "id": "project-1",
+        "name": "BioinfoFlow Demo",
+        "description": f"Quickstart project. Marker: {marker}",
+    }
+    cache = _MemoryCache()
+    cache.values[(project_prompt_fingerprint(project), "en")] = (
+        f"Inspect {marker}",
+        "Review the demo workflow",
+        "Check the latest run",
+    )
+
+    async def generate(_request: StarterPromptGenerationRequest) -> Sequence[str]:
+        return ("Regenerate clean prompts",)
+
+    result = await StarterPromptService(cache=cache, generate=generate).resolve(
+        project=project,
+        locale="en",
+    )
+
+    assert result.prompts == (
+        "Review the demo workflow",
+        "Check the latest run",
+    )
+    assert result.source == "cache"
+    assert result.refresh_required is True
+    assert all(marker not in prompt for prompt in result.prompts)
 
 
 @pytest.mark.asyncio
@@ -137,7 +227,7 @@ async def test_refresh_bounds_project_context_and_prompt_sizes() -> None:
     result = await service.refresh(project=project, locale="en")
 
     assert len(result.prompts) == 3
-    assert len(result.prompts[0]) == 240
+    assert len(result.prompts[0]) == 80
     assert len(received) == 1
     assert len(str(received[0].project["description"]).encode()) <= 2_048
     assert len(received[0].project["workflows"]) <= 12

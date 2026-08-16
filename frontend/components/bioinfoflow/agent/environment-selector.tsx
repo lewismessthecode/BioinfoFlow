@@ -80,10 +80,7 @@ export function EnvironmentSelector({
   )
   const modeLabel = t(`${requestedSelection.mode}.name`)
   const targetSummary = summaryLabel(requestedSelection, targetById, t)
-  const triggerLabel =
-    requestedSelection.mode === "auto"
-      ? modeLabel
-      : `${modeLabel}, ${targetSummary}`
+  const triggerLabel = `${modeLabel}, ${targetSummary}`
 
   const requestChange = async (selection: AgentEnvironmentSelection) => {
     if (controlsDisabled) return
@@ -167,12 +164,7 @@ export function EnvironmentSelector({
               )}
             </ComposerSelectorIconSlot>
             <ComposerSelectorText>
-              <span className="shrink-0">{modeLabel}</span>
-              {requestedSelection.mode === "manual" ? (
-                <span className="truncate text-foreground/65">
-                  · {targetSummary}
-                </span>
-              ) : null}
+              <span className="truncate">{targetSummary}</span>
             </ComposerSelectorText>
             <ComposerSelectorChevronSlot>
               <ChevronDown
@@ -186,7 +178,7 @@ export function EnvironmentSelector({
           kind="dropdown"
           align="start"
           side="top"
-          className="w-[19rem]"
+          className="w-80 max-w-[calc(100vw-1.5rem)]"
         >
           <div className={composerSelectorMenuHeaderClassName}>
             {t("title")}
@@ -236,33 +228,10 @@ export function EnvironmentSelector({
                   onSelect={(event) => event.preventDefault()}
                   className={cn(
                     composerSelectorMenuItemClassName,
-                    "items-start gap-2 pl-8 pr-2",
+                    "items-stretch pl-8 pr-2",
                   )}
                 >
-                  <ComposerSelectorOptionContent
-                    icon={
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          "size-1.5 rounded-full bg-muted-foreground/45",
-                          target.status === "online" && "bg-emerald-500",
-                          target.status === "error" && "bg-destructive",
-                          target.status === "offline" &&
-                            "bg-muted-foreground/30",
-                        )}
-                      />
-                    }
-                    title={target.label}
-                    description={target.description}
-                    descriptionClassName="truncate font-mono"
-                    trailing={
-                      target.status ? (
-                        <span className="text-[10px] text-muted-foreground">
-                          {t(`status.${target.status}`)}
-                        </span>
-                      ) : null
-                    }
-                  />
+                  <EnvironmentTargetRow target={target} t={t} />
                 </DropdownMenuCheckboxItem>
               ))}
             </>
@@ -319,9 +288,79 @@ function summaryLabel(
   targetById: Map<string, AgentEnvironmentTarget>,
   t: ReturnType<typeof useTranslations>,
 ) {
-  if (selection.mode === "auto") return t("auto.name")
+  if (selection.mode === "auto") return t("auto.summary")
   if (selection.targetIds.length !== 1) {
     return t("targetCount", { count: selection.targetIds.length })
   }
   return targetById.get(selection.targetIds[0])?.label ?? t("local")
+}
+
+type EnvironmentStatus = NonNullable<AgentEnvironmentTarget["status"]>
+
+const environmentStatusClassNames: Record<EnvironmentStatus, string> = {
+  online:
+    "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-300",
+  offline: "border-border/70 bg-muted/80 text-muted-foreground",
+  error: "border-destructive/20 bg-destructive/10 text-destructive",
+  unknown:
+    "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-300",
+}
+
+const environmentStatusDotClassNames: Record<EnvironmentStatus, string> = {
+  online: "bg-emerald-500 dark:bg-emerald-400",
+  offline: "bg-muted-foreground/45",
+  error: "bg-destructive",
+  unknown: "bg-amber-500 dark:bg-amber-400",
+}
+
+function EnvironmentTargetRow({
+  target,
+  t,
+}: {
+  target: AgentEnvironmentTarget
+  t: ReturnType<typeof useTranslations>
+}) {
+  const status = target.status ?? "unknown"
+
+  return (
+    <span
+      data-environment-target-row="true"
+      className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-3"
+    >
+      <span className="grid min-w-0 grid-cols-[1rem_minmax(0,1fr)] items-start gap-2">
+        <span
+          aria-hidden="true"
+          className="inline-flex size-4 items-center justify-center text-muted-foreground [&_svg]:size-3.5"
+        >
+          {target.kind === "local" ? <Monitor /> : <Server />}
+        </span>
+        <span className="grid min-w-0 gap-0.5">
+          <span className="truncate font-medium leading-4 text-foreground">
+            {target.label}
+          </span>
+          {target.description ? (
+            <span className="truncate font-mono text-[10px] leading-4 text-muted-foreground/85">
+              {target.description}
+            </span>
+          ) : null}
+        </span>
+      </span>
+      <span
+        data-environment-status={status}
+        className={cn(
+          "inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-1.5 text-[10px] font-medium leading-none",
+          environmentStatusClassNames[status],
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            environmentStatusDotClassNames[status],
+          )}
+        />
+        {t(`status.${status}`)}
+      </span>
+    </span>
+  )
 }
