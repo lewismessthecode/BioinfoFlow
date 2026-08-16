@@ -76,6 +76,7 @@ class RemoteConnectionRepository(BaseRepository[RemoteConnection]):
                 last_status="unknown",
                 last_error=None,
                 last_checked_at=None,
+                verified_root_path=None,
             )
         )
         await self.session.execute(stmt)
@@ -87,10 +88,12 @@ class RemoteConnectionRepository(BaseRepository[RemoteConnection]):
         status: str,
         error: str | None,
         checked_at: datetime,
+        verified_root_path: str | None = None,
     ) -> RemoteConnection:
         return await self.update_all(
             connection,
             last_status=status,
             last_error=error,
             last_checked_at=checked_at,
+            verified_root_path=verified_root_path,
         )

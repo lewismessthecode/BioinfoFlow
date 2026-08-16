@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,7 +53,12 @@ async def execution_target_catalog(
         )
         if connection is None:
             raise NotFoundError(f"Remote connection not found: {connection_id}")
-        target = _remote_target(connection, primary=True, index=1)
+        target = _remote_target(
+            connection,
+            primary=True,
+            index=1,
+            has_safe_root=bool(str(project.remote_root_path or "").strip()),
+        )
         return [target], ExecutionScopeSelection(
             mode="manual",
             target_ids=[target.id],
@@ -72,7 +78,12 @@ async def execution_target_catalog(
             primary=True,
         ),
         *(
-            _remote_target(connection, primary=False, index=index)
+            _remote_target(
+                connection,
+                primary=False,
+                index=index,
+                has_safe_root=bool(str(connection.verified_root_path or "").strip()),
+            )
             for index, connection in enumerate(connections, start=1)
         ),
     ]
@@ -116,12 +127,79 @@ def selected_execution_targets(
 ) -> list[ExecutionTargetView]:
     target_list = [target for target in targets if target.disabled_reason is None]
     if selection.mode == "auto":
-        return target_list
-    selected_ids = set(selection.target_ids)
-    return [target for target in target_list if target.id in selected_ids]
+        selected = target_list
+    else:
+        selected_ids = set(selection.target_ids)
+        selected = [target for target in target_list if target.id in selected_ids]
+    if selected and not any(target.primary for target in selected):
+        selected[0] = selected[0].model_copy(update={"primary": True})
+    return selected
 
 
-def _remote_target(connection, *, primary: bool, index: int) -> ExecutionTargetView:
+async def execution_runtime_target_snapshots(
+    db: AsyncSession,
+    *,
+    workspace_id: str,
+    workspace_snapshot: dict[str, Any],
+    targets: Iterable[ExecutionTargetView],
+) -> list[dict[str, Any]]:
+    snapshots: list[dict[str, Any]] = []
+    session_runtime = str(workspace_snapshot.get("runtime") or "local")
+    for target in targets:
+        if target.kind == "local":
+            root = workspace_snapshot.get("root")
+            if session_runtime != "local" or not _safe_local_root(root):
+                raise ValueError("local execution target is missing its safe root")
+            snapshots.append(
+                {
+                    "handle": target.handle,
+                    "runtime": "local",
+                    "root": str(Path(root).expanduser().resolve()),
+                }
+            )
+            continue
+
+        connection = await RemoteConnectionRepository(db).get_for_workspace(
+            target.id,
+            workspace_id=workspace_id,
+        )
+        if connection is None:
+            raise NotFoundError(f"Remote connection not found: {target.id}")
+        if session_runtime == "remote_ssh":
+            raw_connection = workspace_snapshot.get("remote_connection")
+            root = workspace_snapshot.get("root")
+            if not isinstance(raw_connection, dict) or str(raw_connection.get("id")) != target.id:
+                raise ValueError("remote project target does not match its session snapshot")
+            connection_snapshot = dict(raw_connection)
+        else:
+            root = connection.verified_root_path
+            connection_snapshot = {
+                "id": str(connection.id),
+                "name": connection.name,
+                "host": connection.host,
+                "port": connection.port,
+                "username": connection.username,
+            }
+        if not _safe_remote_root(root):
+            raise ValueError("remote execution target is missing its verified root")
+        snapshots.append(
+            {
+                "handle": target.handle,
+                "runtime": "remote_ssh",
+                "root": root,
+                "remote_connection": connection_snapshot,
+            }
+        )
+    return snapshots
+
+
+def _remote_target(
+    connection,
+    *,
+    primary: bool,
+    index: int,
+    has_safe_root: bool,
+) -> ExecutionTargetView:
     alias = str(connection.name or "").strip() or str(connection.ssh_alias or "").strip()
     if not alias:
         alias = f"Remote {index}"
@@ -136,6 +214,11 @@ def _remote_target(connection, *, primary: bool, index: int) -> ExecutionTargetV
             else "unknown"
         ),
         primary=primary,
+        disabled_reason=(
+            None
+            if has_safe_root
+            else "Verify this SSH connection before Agent use"
+        ),
     )
 
 
@@ -145,10 +228,22 @@ def _target_handle(alias: str, connection_id: str) -> str:
     return f"ssh:{slug or 'remote'}-{suffix}"
 
 
+def _safe_local_root(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and Path(value).expanduser().is_absolute()
+
+
+def _safe_remote_root(value: object) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    path = PurePosixPath(value)
+    return path.is_absolute() and path != PurePosixPath("/") and ".." not in path.parts
+
+
 __all__ = [
     "LOCAL_TARGET_HANDLE",
     "LOCAL_TARGET_ID",
     "execution_target_catalog",
+    "execution_runtime_target_snapshots",
     "normalize_execution_scope",
     "selected_execution_targets",
 ]

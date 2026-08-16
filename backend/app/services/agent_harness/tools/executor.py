@@ -229,7 +229,11 @@ class ToolExecutor:
                     (
                         approval_snapshot,
                         approved_cwd_binding,
-                    ) = await self._approval_snapshot(call, risk)
+                    ) = await self._approval_snapshot(
+                        call,
+                        risk,
+                        execution_backend=execution_backend,
+                    )
                 except Exception as exc:
                     return _failed(call, tool, exc)
             if interaction_response is not None and risk is not None:
@@ -292,6 +296,7 @@ class ToolExecutor:
                         },
                     ),
                     risk=approval_snapshot,
+                    target=target_view,
                 )
         scoped_bif = False
         if call.name == "bash":
@@ -502,9 +507,11 @@ class ToolExecutor:
         self,
         call: ToolCall,
         risk: Any,
+        *,
+        execution_backend: Any,
     ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         snapshot = risk.audit_snapshot()
-        binder = getattr(self.backend, "command_cwd_binding", None)
+        binder = getattr(execution_backend, "command_cwd_binding", None)
         if not callable(binder):
             return snapshot, None
         binding = await binder(call.arguments.get("cwd"))

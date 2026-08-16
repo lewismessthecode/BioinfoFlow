@@ -46,6 +46,57 @@ async def test_agent_ui_bootstrap_exposes_versioned_stable_slots(async_client) -
 
 
 @pytest.mark.asyncio
+async def test_agent_ui_bootstrap_only_enables_verified_remote_roots(
+    async_client,
+    monkeypatch,
+) -> None:
+    created = await async_client.post(
+        "/api/v1/connections",
+        json={
+            "name": "Compute A",
+            "host": "compute-a.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "agent",
+        },
+    )
+    assert created.status_code == 201
+    connection_id = created.json()["data"]["id"]
+
+    before = await async_client.get("/api/v1/agent/ui/bootstrap")
+    remote_before = next(
+        target
+        for target in before.json()["data"]["execution_targets"]
+        if target["id"] == connection_id
+    )
+    assert remote_before["disabled_reason"] == "Verify this SSH connection before Agent use"
+
+    from app.services.remote_connection_service import RemoteConnectionTestResult
+
+    async def fake_test(self, connection):
+        del self, connection
+        return RemoteConnectionTestResult(
+            status="online",
+            verified_root_path="/home/alice",
+        )
+
+    monkeypatch.setattr(
+        "app.services.remote_connection_service.SshRemoteConnectionTester.test",
+        fake_test,
+    )
+    tested = await async_client.post(f"/api/v1/connections/{connection_id}/test")
+    assert tested.status_code == 200
+
+    after = await async_client.get("/api/v1/agent/ui/bootstrap")
+    remote_after = next(
+        target
+        for target in after.json()["data"]["execution_targets"]
+        if target["id"] == connection_id
+    )
+    assert remote_after["disabled_reason"] is None
+
+
+@pytest.mark.asyncio
 async def test_agent_snapshot_and_events_publish_ui_protocol_version(async_client) -> None:
     with patch(
         "app.api.v1.agent.resolve_model_snapshot",

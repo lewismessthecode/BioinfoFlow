@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
+from pathlib import PurePosixPath
+import shlex
 from typing import Protocol
 
 from sqlalchemy.exc import IntegrityError
@@ -37,6 +40,7 @@ REMOTE_CONNECTION_TARGET_FIELDS = frozenset(
 class RemoteConnectionTestResult:
     status: str
     error: str | None = None
+    verified_root_path: str | None = None
 
 
 class RemoteConnectionTester(Protocol):
@@ -56,7 +60,17 @@ class SshRemoteConnectionTester:
         try:
             result = await self.executor.run(
                 connection,
-                "printf bioinfoflow-ok",
+                shlex.join(
+                    (
+                        "python3",
+                        "-c",
+                        (
+                            "import json, os; "
+                            "print(json.dumps({'ok': 'bioinfoflow-ok', "
+                            "'root': os.path.realpath(os.path.expanduser('~'))}))"
+                        ),
+                    )
+                ),
                 timeout_seconds=10,
                 output_limit=2000,
             )
@@ -65,8 +79,17 @@ class SshRemoteConnectionTester:
                 status=RemoteConnectionStatus.ERROR,
                 error=_remote_test_error_message(exc),
             )
-        if result.exit_code == 0 and "bioinfoflow-ok" in result.stdout:
-            return RemoteConnectionTestResult(status=RemoteConnectionStatus.ONLINE)
+        if result.exit_code == 0:
+            try:
+                payload = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                payload = None
+            root = payload.get("root") if isinstance(payload, dict) else None
+            if payload and payload.get("ok") == "bioinfoflow-ok" and _safe_remote_root(root):
+                return RemoteConnectionTestResult(
+                    status=RemoteConnectionStatus.ONLINE,
+                    verified_root_path=root,
+                )
         return RemoteConnectionTestResult(
             status=RemoteConnectionStatus.ERROR,
             error=(
@@ -192,6 +215,7 @@ class RemoteConnectionService:
                 "last_status": RemoteConnectionStatus.UNKNOWN,
                 "last_error": None,
                 "last_checked_at": None,
+                "verified_root_path": None,
             }
         try:
             if target_changed:
@@ -274,6 +298,7 @@ class RemoteConnectionService:
             status=result.status,
             error=result.error,
             checked_at=checked_at,
+            verified_root_path=result.verified_root_path,
         )
         return updated, updated.last_checked_at or checked_at
 
@@ -434,6 +459,13 @@ def _validate_explicit_jump_fields(
 def _remote_test_error_message(exc: Exception) -> str:
     message = str(exc).strip() or exc.__class__.__name__
     return f"SSH connection test failed: {message}"
+
+
+def _safe_remote_root(value: object) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    path = PurePosixPath(value)
+    return path.is_absolute() and path != PurePosixPath("/") and ".." not in path.parts
 
 
 def _changes_remote_target(connection: RemoteConnection, data: dict) -> bool:

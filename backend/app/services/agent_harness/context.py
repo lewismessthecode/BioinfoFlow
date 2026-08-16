@@ -523,6 +523,15 @@ def _with_run_instructions(
         f"Mode: {mode}.",
         "Workspace tools accept an optional `target` handle. When omitted, use the primary target.",
     ]
+    raw_runtime_targets = run_settings.get("_runtime_targets")
+    roots_by_handle = {
+        item.get("handle"): item.get("root")
+        for item in raw_runtime_targets
+        if isinstance(item, Mapping)
+        and isinstance(item.get("handle"), str)
+        and isinstance(item.get("root"), str)
+        and item.get("root")
+    } if isinstance(raw_runtime_targets, list) else {}
     for raw in raw_targets:
         if not isinstance(raw, Mapping):
             continue
@@ -533,7 +542,9 @@ def _with_run_instructions(
             continue
         primary = " (primary)" if raw.get("primary") is True else ""
         label = "Local" if kind == "local" else "SSH"
-        lines.append(f"- {handle}: {alias} [{label}]{primary}")
+        root = roots_by_handle.get(handle)
+        root_suffix = f" root={root}" if isinstance(root, str) else ""
+        lines.append(f"- {handle}: {alias} [{label}]{primary}{root_suffix}")
     if len(lines) == 3:
         return stable_instructions
     return f"{stable_instructions}\n\n" + "\n".join(lines)

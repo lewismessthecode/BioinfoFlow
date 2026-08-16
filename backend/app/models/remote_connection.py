@@ -90,6 +90,10 @@ class RemoteConnection(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verified_root_path: Mapped[str | None] = mapped_column(
+        String(1000),
+        nullable=True,
+    )
     last_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

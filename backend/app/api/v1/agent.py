@@ -59,6 +59,7 @@ from app.services.agent_harness.system_prompt import default_system_prompt_snaps
 from app.services.agent_ui.bootstrap import build_agent_ui_bootstrap
 from app.services.agent_ui.contracts import AgentUiBootstrap
 from app.services.agent_ui.execution_targets import (
+    execution_runtime_target_snapshots,
     execution_target_catalog,
     normalize_execution_scope,
     selected_execution_targets,
@@ -293,6 +294,12 @@ async def _message_run_settings_snapshot(
         default=default_scope,
     )
     allowed_targets = selected_execution_targets(scope, targets)
+    runtime_targets = await execution_runtime_target_snapshots(
+        db,
+        workspace_id=user.workspace_id,
+        workspace_snapshot=session.workspace_snapshot or {},
+        targets=allowed_targets,
+    )
     permission_mode = (
         requested.permission_mode
         if requested and requested.permission_mode is not None
@@ -303,6 +310,7 @@ async def _message_run_settings_snapshot(
         "permission_mode": permission_mode,
         "execution_scope": scope.model_dump(mode="json"),
         "allowed_targets": [target.model_dump(mode="json") for target in allowed_targets],
+        "_runtime_targets": runtime_targets,
     }
 
 

@@ -781,6 +781,7 @@ async def test_remote_connection_routes_reject_malformed_ids(async_client):
 @pytest.mark.asyncio
 async def test_remote_connection_test_uses_mockable_tester_and_persists_status(
     async_client,
+    db_session,
     monkeypatch,
 ):
     create_resp = await async_client.post(
@@ -794,7 +795,11 @@ async def test_remote_connection_test_uses_mockable_tester_and_persists_status(
 
     async def fake_test(self, connection):
         assert connection.host == "login.example.org"
-        return RemoteConnectionTestResult(status="online", error=None)
+        return RemoteConnectionTestResult(
+            status="online",
+            error=None,
+            verified_root_path="/home/researcher",
+        )
 
     monkeypatch.setattr(
         "app.services.remote_connection_service.SshRemoteConnectionTester.test",
@@ -818,6 +823,15 @@ async def test_remote_connection_test_uses_mockable_tester_and_persists_status(
     assert persisted["last_error"] is None
     assert persisted["last_checked_at"] == test_data["checked_at"]
 
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    persisted_model = await RemoteConnectionService(db_session).get_connection(
+        connection_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    assert persisted_model is not None
+    assert persisted_model.verified_root_path == "/home/researcher"
+
     skill_resp = await async_client.patch(
         f"/api/v1/connections/{connection_id}",
         json={"skill_instructions": "Use /data/project for runs."},
@@ -838,6 +852,13 @@ async def test_remote_connection_test_uses_mockable_tester_and_persists_status(
     assert target_updated["last_status"] == "unknown"
     assert target_updated["last_error"] is None
     assert target_updated["last_checked_at"] is None
+
+    reset_model = await RemoteConnectionService(db_session).get_connection(
+        connection_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    assert reset_model is not None
+    assert reset_model.verified_root_path is None
 
 
 @pytest.mark.asyncio
@@ -867,7 +888,7 @@ async def test_remote_connection_test_uses_ssh_executor_by_default(
         )
         return RemoteCommandResult(
             exit_code=0,
-            stdout="bioinfoflow-ok",
+            stdout='{"ok":"bioinfoflow-ok","root":"/home/researcher"}',
             stderr="",
             timed_out=False,
             truncated=False,
@@ -884,14 +905,11 @@ async def test_remote_connection_test_uses_ssh_executor_by_default(
 
     assert test_resp.status_code == 200
     assert test_resp.json()["data"]["status"] == "online"
-    assert calls == [
-        {
-            "connection": calls[0]["connection"],
-            "command": "printf bioinfoflow-ok",
-            "timeout_seconds": 10,
-            "output_limit": 2000,
-        }
-    ]
+    assert len(calls) == 1
+    assert "bioinfoflow-ok" in calls[0]["command"]
+    assert "realpath" in calls[0]["command"]
+    assert calls[0]["timeout_seconds"] == 10
+    assert calls[0]["output_limit"] == 2000
     assert calls[0]["connection"].host == "login.example.org"
 
 

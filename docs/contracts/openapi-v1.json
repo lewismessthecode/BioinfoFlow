@@ -1,6 +1,46 @@
 {
   "components": {
     "schemas": {
+      "ActiveRunView": {
+        "additionalProperties": false,
+        "properties": {
+          "assistant_draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssistantDraftView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_interaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingInteractionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunView"
+          },
+          "tool_progress": {
+            "items": {
+              "$ref": "#/components/schemas/ToolProgressView"
+            },
+            "title": "Tool Progress",
+            "type": "array"
+          }
+        },
+        "required": [
+          "run"
+        ],
+        "title": "ActiveRunView",
+        "type": "object"
+      },
       "AgentArtifactView": {
         "additionalProperties": false,
         "properties": {
@@ -8,17 +48,6 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
-          },
-          "file_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "File Path"
           },
           "id": {
             "format": "uuid",
@@ -245,6 +274,16 @@
       "AgentSessionCreate": {
         "additionalProperties": false,
         "properties": {
+          "execution_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionScopeSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "metadata": {
             "anyOf": [
               {
@@ -285,7 +324,7 @@
           "permission_mode": {
             "default": "ask_dangerous",
             "enum": [
-              "read_only",
+              "ask_changes",
               "ask_dangerous",
               "full_access"
             ],
@@ -340,6 +379,15 @@
               }
             ],
             "title": "Title"
+          },
+          "workspace_access": {
+            "default": "read_write",
+            "enum": [
+              "read_only",
+              "read_write"
+            ],
+            "title": "Workspace Access",
+            "type": "string"
           }
         },
         "title": "AgentSessionCreate",
@@ -353,11 +401,6 @@
             "title": "Created At",
             "type": "string"
           },
-          "history_revision": {
-            "minimum": 0.0,
-            "title": "History Revision",
-            "type": "integer"
-          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -365,7 +408,7 @@
           },
           "permission_mode": {
             "enum": [
-              "read_only",
+              "ask_changes",
               "ask_dangerous",
               "full_access"
             ],
@@ -409,17 +452,90 @@
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
+          },
+          "workspace_access": {
+            "enum": [
+              "read_only",
+              "read_write"
+            ],
+            "title": "Workspace Access",
+            "type": "string"
           }
         },
         "required": [
           "id",
           "permission_mode",
+          "workspace_access",
           "status",
-          "history_revision",
           "created_at",
           "updated_at"
         ],
         "title": "AgentSessionSummary",
+        "type": "object"
+      },
+      "AgentSessionUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "permission_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ask_changes",
+                  "ask_dangerous",
+                  "full_access"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Mode"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "archived"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "workspace_access": {
+            "anyOf": [
+              {
+                "enum": [
+                  "read_only",
+                  "read_write"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Access"
+          }
+        },
+        "title": "AgentSessionUpdate",
         "type": "object"
       },
       "AgentSettingsRead": {
@@ -445,16 +561,13 @@
         "title": "AgentSettingsUpdate",
         "type": "object"
       },
-      "AssistantDraftView": {
+      "AgentUiBootstrap": {
         "additionalProperties": false,
         "properties": {
-          "end_offset": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "End Offset",
-            "type": "integer"
+          "capabilities": {
+            "$ref": "#/components/schemas/UiCapabilities"
           },
-          "reasoning_summary": {
+          "composer_hint": {
             "anyOf": [
               {
                 "type": "string"
@@ -463,15 +576,415 @@
                 "type": "null"
               }
             ],
-            "title": "Reasoning Summary"
+            "title": "Composer Hint"
+          },
+          "execution_scope": {
+            "$ref": "#/components/schemas/ExecutionScopeSelection"
+          },
+          "execution_targets": {
+            "items": {
+              "$ref": "#/components/schemas/ExecutionTargetView"
+            },
+            "title": "Execution Targets",
+            "type": "array"
+          },
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "starter_prompts": {
+            "items": {
+              "$ref": "#/components/schemas/StarterPromptView"
+            },
+            "title": "Starter Prompts",
+            "type": "array"
+          }
+        },
+        "title": "AgentUiBootstrap",
+        "type": "object"
+      },
+      "ApprovalInteractionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_responses": {
+            "items": {
+              "enum": [
+                "approve",
+                "reject"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Allowed Responses",
+            "type": "array"
+          },
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "input_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Preview"
+          },
+          "risk": {
+            "$ref": "#/components/schemas/ApprovalRiskView"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolTargetView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "approval",
+            "default": "approval",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "tool_name",
+          "summary",
+          "allowed_responses",
+          "risk"
+        ],
+        "title": "ApprovalInteractionRequest",
+        "type": "object"
+      },
+      "ApprovalInteractionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "approved": {
+            "title": "Approved",
+            "type": "boolean"
+          },
+          "type": {
+            "const": "approval",
+            "default": "approval",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "approved"
+        ],
+        "title": "ApprovalInteractionResponse",
+        "type": "object"
+      },
+      "ApprovalRiskView": {
+        "additionalProperties": false,
+        "properties": {
+          "affected_resources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Affected Resources",
+            "type": "array"
+          },
+          "effects": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Effects",
+            "type": "array"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "level"
+        ],
+        "title": "ApprovalRiskView",
+        "type": "object"
+      },
+      "ArtifactRefPart": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "media_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Type"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "type": {
+            "const": "artifact_ref",
+            "default": "artifact_ref",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "artifact_id"
+        ],
+        "title": "ArtifactRefPart",
+        "type": "object"
+      },
+      "AskUserInteractionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/AskUserQuestion"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Questions",
+            "type": "array"
+          },
+          "type": {
+            "const": "ask_user",
+            "default": "ask_user",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "questions"
+        ],
+        "title": "AskUserInteractionRequest",
+        "type": "object"
+      },
+      "AskUserInteractionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Answers",
+            "type": "object"
+          },
+          "type": {
+            "const": "ask_user",
+            "default": "ask_user",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answers"
+        ],
+        "title": "AskUserInteractionResponse",
+        "type": "object"
+      },
+      "AskUserQuestion": {
+        "additionalProperties": false,
+        "properties": {
+          "header": {
+            "title": "Header",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "multi_select": {
+            "default": false,
+            "title": "Multi Select",
+            "type": "boolean"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/InteractionOption"
+            },
+            "maxItems": 3,
+            "minItems": 2,
+            "title": "Options",
+            "type": "array"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "header",
+          "question",
+          "options"
+        ],
+        "title": "AskUserQuestion",
+        "type": "object"
+      },
+      "AssistantDraftPartView": {
+        "additionalProperties": false,
+        "properties": {
+          "end_offset": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "End Offset",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
           },
           "text": {
             "default": "",
             "title": "Text",
             "type": "string"
+          },
+          "type": {
+            "enum": [
+              "text",
+              "reasoning_summary"
+            ],
+            "title": "Type",
+            "type": "string"
           }
         },
+        "required": [
+          "id",
+          "type"
+        ],
+        "title": "AssistantDraftPartView",
+        "type": "object"
+      },
+      "AssistantDraftView": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantDraftPartView"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "parts"
+        ],
         "title": "AssistantDraftView",
+        "type": "object"
+      },
+      "AttachmentRefPart": {
+        "additionalProperties": false,
+        "properties": {
+          "attachment_id": {
+            "format": "uuid",
+            "title": "Attachment Id",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "size_bytes": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "type": {
+            "const": "attachment_ref",
+            "default": "attachment_ref",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "attachment_id",
+          "filename",
+          "kind"
+        ],
+        "title": "AttachmentRefPart",
         "type": "object"
       },
       "BatchCreate": {
@@ -851,87 +1364,6 @@
         "title": "CancelCommand",
         "type": "object"
       },
-      "CompactionEntry": {
-        "additionalProperties": false,
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "payload": {
-            "$ref": "#/components/schemas/CompactionPayload"
-          },
-          "run_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Id"
-          },
-          "schema_version": {
-            "default": 1,
-            "minimum": 1.0,
-            "title": "Schema Version",
-            "type": "integer"
-          },
-          "sequence": {
-            "minimum": 1.0,
-            "title": "Sequence",
-            "type": "integer"
-          },
-          "session_id": {
-            "format": "uuid",
-            "title": "Session Id",
-            "type": "string"
-          },
-          "type": {
-            "const": "compaction",
-            "default": "compaction",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "session_id",
-          "sequence",
-          "created_at",
-          "payload"
-        ],
-        "title": "CompactionEntry",
-        "type": "object"
-      },
-      "CompactionPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "summary": {
-            "title": "Summary",
-            "type": "string"
-          },
-          "through_sequence": {
-            "minimum": 0.0,
-            "title": "Through Sequence",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "summary",
-          "through_sequence"
-        ],
-        "title": "CompactionPayload",
-        "type": "object"
-      },
       "ContainerRegistryCreate": {
         "properties": {
           "credential_source": {
@@ -1222,6 +1654,213 @@
         "title": "DeletedResource",
         "type": "object"
       },
+      "DirectoryRefPart": {
+        "additionalProperties": false,
+        "properties": {
+          "attachment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment Id"
+          },
+          "id": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "type": {
+            "const": "directory_ref",
+            "default": "directory_ref",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "DirectoryRefPart",
+        "type": "object"
+      },
+      "ExecutionScopeSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "manual"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "target_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Target Ids",
+            "type": "array"
+          }
+        },
+        "title": "ExecutionScopeSelection",
+        "type": "object"
+      },
+      "ExecutionTargetView": {
+        "additionalProperties": false,
+        "properties": {
+          "alias": {
+            "title": "Alias",
+            "type": "string"
+          },
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          },
+          "handle": {
+            "title": "Handle",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "local",
+              "remote_ssh"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "primary": {
+            "default": false,
+            "title": "Primary",
+            "type": "boolean"
+          },
+          "status": {
+            "default": "unknown",
+            "enum": [
+              "online",
+              "offline",
+              "error",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "handle",
+          "alias",
+          "kind"
+        ],
+        "title": "ExecutionTargetView",
+        "type": "object"
+      },
+      "FileRefPart": {
+        "additionalProperties": false,
+        "properties": {
+          "attachment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment Id"
+          },
+          "id": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "type": {
+            "const": "file_ref",
+            "default": "file_ref",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "FileRefPart",
+        "type": "object"
+      },
       "FileScanRequest": {
         "properties": {
           "data_root": {
@@ -1286,41 +1925,6 @@
           "content"
         ],
         "title": "FileWriteRequest",
-        "type": "object"
-      },
-      "FollowUpCommand": {
-        "additionalProperties": false,
-        "properties": {
-          "attachment_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Attachment Ids",
-            "type": "array"
-          },
-          "command_id": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Command Id",
-            "type": "string"
-          },
-          "text": {
-            "title": "Text",
-            "type": "string"
-          },
-          "type": {
-            "const": "follow_up",
-            "default": "follow_up",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "command_id",
-          "text"
-        ],
-        "title": "FollowUpCommand",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1395,6 +1999,234 @@
         "title": "ImagePullRequest",
         "type": "object"
       },
+      "InputAttachmentRefPart": {
+        "additionalProperties": false,
+        "properties": {
+          "attachment_id": {
+            "format": "uuid",
+            "title": "Attachment Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "attachment_ref",
+            "default": "attachment_ref",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attachment_id"
+        ],
+        "title": "InputAttachmentRefPart",
+        "type": "object"
+      },
+      "InputDirectoryRefPart": {
+        "additionalProperties": false,
+        "properties": {
+          "attachment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment Id"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "type": {
+            "const": "directory_ref",
+            "default": "directory_ref",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "InputDirectoryRefPart",
+        "type": "object"
+      },
+      "InputFileRefPart": {
+        "additionalProperties": false,
+        "properties": {
+          "attachment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment Id"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "type": {
+            "const": "file_ref",
+            "default": "file_ref",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "InputFileRefPart",
+        "type": "object"
+      },
+      "InputRunRefPart": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "run_ref",
+            "default": "run_ref",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "InputRunRefPart",
+        "type": "object"
+      },
+      "InputTextPart": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "text",
+            "default": "text",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "InputTextPart",
+        "type": "object"
+      },
+      "InputWorkflowRefPart": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "scope": {
+            "default": "global",
+            "enum": [
+              "global",
+              "project"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "type": {
+            "const": "workflow_ref",
+            "default": "workflow_ref",
+            "title": "Type",
+            "type": "string"
+          },
+          "workflow_id": {
+            "format": "uuid",
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id"
+        ],
+        "title": "InputWorkflowRefPart",
+        "type": "object"
+      },
+      "InteractionOption": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "recommended": {
+            "default": false,
+            "title": "Recommended",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "InteractionOption",
+        "type": "object"
+      },
       "InteractionRequestEntry": {
         "additionalProperties": false,
         "properties": {
@@ -1424,7 +2256,7 @@
             "title": "Run Id"
           },
           "schema_version": {
-            "default": 1,
+            "default": 2,
             "minimum": 1.0,
             "title": "Schema Version",
             "type": "integer"
@@ -1464,9 +2296,26 @@
             "type": "string"
           },
           "request": {
-            "additionalProperties": true,
-            "title": "Request",
-            "type": "object"
+            "discriminator": {
+              "mapping": {
+                "approval": "#/components/schemas/ApprovalInteractionRequest",
+                "ask_user": "#/components/schemas/AskUserInteractionRequest",
+                "recovery": "#/components/schemas/RecoveryInteractionRequest"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AskUserInteractionRequest"
+              },
+              {
+                "$ref": "#/components/schemas/ApprovalInteractionRequest"
+              },
+              {
+                "$ref": "#/components/schemas/RecoveryInteractionRequest"
+              }
+            ],
+            "title": "Request"
           }
         },
         "required": [
@@ -1505,7 +2354,7 @@
             "title": "Run Id"
           },
           "schema_version": {
-            "default": 1,
+            "default": 2,
             "minimum": 1.0,
             "title": "Schema Version",
             "type": "integer"
@@ -1545,9 +2394,26 @@
             "type": "string"
           },
           "response": {
-            "additionalProperties": true,
-            "title": "Response",
-            "type": "object"
+            "discriminator": {
+              "mapping": {
+                "approval": "#/components/schemas/ApprovalInteractionResponse",
+                "ask_user": "#/components/schemas/AskUserInteractionResponse",
+                "recovery": "#/components/schemas/RecoveryInteractionResponse"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AskUserInteractionResponse"
+              },
+              {
+                "$ref": "#/components/schemas/ApprovalInteractionResponse"
+              },
+              {
+                "$ref": "#/components/schemas/RecoveryInteractionResponse"
+              }
+            ],
+            "title": "Response"
           }
         },
         "required": [
@@ -1557,6 +2423,7 @@
         "title": "InteractionResponsePayload",
         "type": "object"
       },
+      "JsonValue": {},
       "LlmModelCreate": {
         "properties": {
           "context_length": {
@@ -2507,6 +3374,77 @@
         "title": "LlmProviderUpdate",
         "type": "object"
       },
+      "MessageCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "parts": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "attachment_ref": "#/components/schemas/InputAttachmentRefPart",
+                  "directory_ref": "#/components/schemas/InputDirectoryRefPart",
+                  "file_ref": "#/components/schemas/InputFileRefPart",
+                  "run_ref": "#/components/schemas/InputRunRefPart",
+                  "text": "#/components/schemas/InputTextPart",
+                  "workflow_ref": "#/components/schemas/InputWorkflowRefPart"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/InputTextPart"
+                },
+                {
+                  "$ref": "#/components/schemas/InputAttachmentRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/InputFileRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/InputDirectoryRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/InputWorkflowRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/InputRunRefPart"
+                }
+              ]
+            },
+            "minItems": 1,
+            "title": "Parts",
+            "type": "array"
+          },
+          "run_settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunSettingsInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "const": "message",
+            "default": "message",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "parts"
+        ],
+        "title": "MessageCommand",
+        "type": "object"
+      },
       "MessageEntry": {
         "additionalProperties": false,
         "properties": {
@@ -2536,7 +3474,7 @@
             "title": "Run Id"
           },
           "schema_version": {
-            "default": 1,
+            "default": 2,
             "minimum": 1.0,
             "title": "Schema Version",
             "type": "integer"
@@ -2571,56 +3509,62 @@
       "MessagePayload": {
         "additionalProperties": false,
         "properties": {
-          "artifact_ids": {
+          "parts": {
             "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Artifact Ids",
-            "type": "array"
-          },
-          "attachment_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Attachment Ids",
-            "type": "array"
-          },
-          "call_id": {
-            "anyOf": [
-              {
-                "type": "string"
+              "discriminator": {
+                "mapping": {
+                  "artifact_ref": "#/components/schemas/ArtifactRefPart",
+                  "attachment_ref": "#/components/schemas/AttachmentRefPart",
+                  "directory_ref": "#/components/schemas/DirectoryRefPart",
+                  "file_ref": "#/components/schemas/FileRefPart",
+                  "reasoning_summary": "#/components/schemas/ReasoningSummaryPart",
+                  "run_ref": "#/components/schemas/RunRefPart",
+                  "text": "#/components/schemas/TextPart",
+                  "tool_call": "#/components/schemas/ToolCallPart",
+                  "tool_result": "#/components/schemas/ToolResultPart",
+                  "unknown": "#/components/schemas/UnknownPart",
+                  "workflow_ref": "#/components/schemas/WorkflowRefPart"
+                },
+                "propertyName": "type"
               },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Call Id"
-          },
-          "content": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextPart"
+                },
+                {
+                  "$ref": "#/components/schemas/ReasoningSummaryPart"
+                },
+                {
+                  "$ref": "#/components/schemas/AttachmentRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/FileRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/DirectoryRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/WorkflowRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/RunRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/ArtifactRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolCallPart"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolResultPart"
+                },
+                {
+                  "$ref": "#/components/schemas/UnknownPart"
+                }
+              ]
             },
-            "title": "Content",
+            "title": "Parts",
             "type": "array"
-          },
-          "is_error": {
-            "default": false,
-            "title": "Is Error",
-            "type": "boolean"
-          },
-          "reasoning_summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reasoning Summary"
           },
           "role": {
             "enum": [
@@ -2630,19 +3574,11 @@
             ],
             "title": "Role",
             "type": "string"
-          },
-          "tool_calls": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Tool Calls",
-            "type": "array"
           }
         },
         "required": [
           "role",
-          "content"
+          "parts"
         ],
         "title": "MessagePayload",
         "type": "object"
@@ -2687,6 +3623,102 @@
         "title": "Meta",
         "type": "object"
       },
+      "ModelSelectionInput": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "profile_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "title": "ModelSelectionInput",
+        "type": "object"
+      },
+      "ModelSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "supports_reasoning": {
+            "default": false,
+            "title": "Supports Reasoning",
+            "type": "boolean"
+          },
+          "supports_tools": {
+            "default": false,
+            "title": "Supports Tools",
+            "type": "boolean"
+          },
+          "supports_vision": {
+            "default": false,
+            "title": "Supports Vision",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "display_name"
+        ],
+        "title": "ModelSummary",
+        "type": "object"
+      },
       "NoticeEntry": {
         "additionalProperties": false,
         "properties": {
@@ -2716,7 +3748,7 @@
             "title": "Run Id"
           },
           "schema_version": {
-            "default": 1,
+            "default": 2,
             "minimum": 1.0,
             "title": "Schema Version",
             "type": "integer"
@@ -2876,16 +3908,180 @@
             "type": "string"
           },
           "request": {
-            "additionalProperties": true,
-            "title": "Request",
-            "type": "object"
+            "discriminator": {
+              "mapping": {
+                "approval": "#/components/schemas/ApprovalInteractionRequest",
+                "ask_user": "#/components/schemas/AskUserInteractionRequest",
+                "recovery": "#/components/schemas/RecoveryInteractionRequest"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AskUserInteractionRequest"
+              },
+              {
+                "$ref": "#/components/schemas/ApprovalInteractionRequest"
+              },
+              {
+                "$ref": "#/components/schemas/RecoveryInteractionRequest"
+              }
+            ],
+            "title": "Request"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
           }
         },
         "required": [
           "interaction_id",
+          "run_id",
+          "revision",
           "request"
         ],
         "title": "PendingInteractionView",
+        "type": "object"
+      },
+      "PlanEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/PlanPayload"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "schema_version": {
+            "default": 2,
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "sequence": {
+            "minimum": 1.0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "plan",
+            "default": "plan",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "sequence",
+          "created_at",
+          "payload"
+        ],
+        "title": "PlanEntry",
+        "type": "object"
+      },
+      "PlanItem": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "in_progress",
+              "completed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "status"
+        ],
+        "title": "PlanItem",
+        "type": "object"
+      },
+      "PlanPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlanItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "revision",
+          "items",
+          "updated_at"
+        ],
+        "title": "PlanPayload",
         "type": "object"
       },
       "ProjectCreate": {
@@ -3032,21 +4228,13 @@
         "title": "ProjectWorkflowPinRequest",
         "type": "object"
       },
-      "PromptCommand": {
+      "ReasoningSummaryPart": {
         "additionalProperties": false,
         "properties": {
-          "attachment_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Attachment Ids",
-            "type": "array"
-          },
-          "command_id": {
-            "maxLength": 200,
+          "id": {
+            "maxLength": 300,
             "minLength": 1,
-            "title": "Command Id",
+            "title": "Id",
             "type": "string"
           },
           "text": {
@@ -3054,17 +4242,80 @@
             "type": "string"
           },
           "type": {
-            "const": "prompt",
-            "default": "prompt",
+            "const": "reasoning_summary",
+            "default": "reasoning_summary",
             "title": "Type",
             "type": "string"
           }
         },
         "required": [
-          "command_id",
+          "id",
           "text"
         ],
-        "title": "PromptCommand",
+        "title": "ReasoningSummaryPart",
+        "type": "object"
+      },
+      "RecoveryInteractionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/InteractionOption"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "recovery",
+            "default": "recovery",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "tool_name",
+          "message",
+          "options"
+        ],
+        "title": "RecoveryInteractionRequest",
+        "type": "object"
+      },
+      "RecoveryInteractionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "choice": {
+            "enum": [
+              "inspect",
+              "retry",
+              "cancel"
+            ],
+            "title": "Choice",
+            "type": "string"
+          },
+          "type": {
+            "const": "recovery",
+            "default": "recovery",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "choice"
+        ],
+        "title": "RecoveryInteractionResponse",
         "type": "object"
       },
       "RemoteConnectionCreate": {
@@ -3377,9 +4628,26 @@
             "type": "string"
           },
           "response": {
-            "additionalProperties": true,
-            "title": "Response",
-            "type": "object"
+            "discriminator": {
+              "mapping": {
+                "approval": "#/components/schemas/ApprovalInteractionResponse",
+                "ask_user": "#/components/schemas/AskUserInteractionResponse",
+                "recovery": "#/components/schemas/RecoveryInteractionResponse"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AskUserInteractionResponse"
+              },
+              {
+                "$ref": "#/components/schemas/ApprovalInteractionResponse"
+              },
+              {
+                "$ref": "#/components/schemas/RecoveryInteractionResponse"
+              }
+            ],
+            "title": "Response"
           },
           "type": {
             "const": "respond",
@@ -3431,6 +4699,25 @@
           "workflow_id"
         ],
         "title": "RunCreate",
+        "type": "object"
+      },
+      "RunErrorView": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "RunErrorView",
         "type": "object"
       },
       "RunOptions": {
@@ -3487,6 +4774,38 @@
         "title": "RunOptions",
         "type": "object"
       },
+      "RunRefPart": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "run_ref",
+            "default": "run_ref",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "label"
+        ],
+        "title": "RunRefPart",
+        "type": "object"
+      },
       "RunResumeRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3537,6 +4856,83 @@
         "title": "RunRetryRequest",
         "type": "object"
       },
+      "RunSettingsInput": {
+        "additionalProperties": false,
+        "properties": {
+          "execution_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionScopeSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelSelectionInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "permission_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ask_changes",
+                  "ask_dangerous",
+                  "full_access"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Mode"
+          }
+        },
+        "title": "RunSettingsInput",
+        "type": "object"
+      },
+      "RunSettingsView": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_targets": {
+            "items": {
+              "$ref": "#/components/schemas/ExecutionTargetView"
+            },
+            "title": "Allowed Targets",
+            "type": "array"
+          },
+          "execution_scope": {
+            "$ref": "#/components/schemas/ExecutionScopeSelection"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelSummary"
+          },
+          "permission_mode": {
+            "enum": [
+              "ask_changes",
+              "ask_dangerous",
+              "full_access"
+            ],
+            "title": "Permission Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "permission_mode",
+          "execution_scope"
+        ],
+        "title": "RunSettingsView",
+        "type": "object"
+      },
       "RunView": {
         "additionalProperties": false,
         "properties": {
@@ -3560,14 +4956,12 @@
           "error": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/RunErrorView"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Error"
+            ]
           },
           "id": {
             "format": "uuid",
@@ -3590,10 +4984,26 @@
             ],
             "title": "Phase"
           },
+          "revision": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          },
           "session_id": {
             "format": "uuid",
             "title": "Session Id",
             "type": "string"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunSettingsView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "started_at": {
             "anyOf": [
@@ -3649,35 +5059,28 @@
       "SessionSnapshot": {
         "additionalProperties": false,
         "properties": {
-          "assistant_draft": {
+          "active_run": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/AssistantDraftView"
+                "$ref": "#/components/schemas/ActiveRunView"
               },
               {
                 "type": "null"
               }
             ]
           },
-          "current_run": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RunView"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "capabilities": {
+            "$ref": "#/components/schemas/UiCapabilities"
           },
           "entries": {
             "items": {
               "discriminator": {
                 "mapping": {
-                  "compaction": "#/components/schemas/CompactionEntry",
                   "interaction_request": "#/components/schemas/InteractionRequestEntry",
                   "interaction_response": "#/components/schemas/InteractionResponseEntry",
                   "message": "#/components/schemas/MessageEntry",
-                  "notice": "#/components/schemas/NoticeEntry"
+                  "notice": "#/components/schemas/NoticeEntry",
+                  "plan": "#/components/schemas/PlanEntry"
                 },
                 "propertyName": "type"
               },
@@ -3692,47 +5095,37 @@
                   "$ref": "#/components/schemas/InteractionResponseEntry"
                 },
                 {
-                  "$ref": "#/components/schemas/CompactionEntry"
+                  "$ref": "#/components/schemas/NoticeEntry"
                 },
                 {
-                  "$ref": "#/components/schemas/NoticeEntry"
+                  "$ref": "#/components/schemas/PlanEntry"
                 }
               ]
             },
             "title": "Entries",
             "type": "array"
           },
-          "pending_interaction": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PendingInteractionView"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "revision": {
-            "minimum": 0.0,
-            "title": "Revision",
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
             "type": "integer"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunView"
+            },
+            "title": "Runs",
+            "type": "array"
           },
           "session": {
             "$ref": "#/components/schemas/SessionView"
-          },
-          "tool_progress": {
-            "items": {
-              "$ref": "#/components/schemas/ToolProgressView"
-            },
-            "title": "Tool Progress",
-            "type": "array"
           }
         },
         "required": [
           "session",
-          "current_run",
-          "entries",
-          "revision"
+          "runs",
+          "entries"
         ],
         "title": "SessionSnapshot",
         "type": "object"
@@ -3745,14 +5138,20 @@
             "title": "Created At",
             "type": "string"
           },
+          "execution_scope": {
+            "$ref": "#/components/schemas/ExecutionScopeSelection"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
           },
+          "model": {
+            "$ref": "#/components/schemas/ModelSummary"
+          },
           "permission_mode": {
             "enum": [
-              "read_only",
+              "ask_changes",
               "ask_dangerous",
               "full_access"
             ],
@@ -3801,6 +5200,14 @@
             "title": "User Id",
             "type": "string"
           },
+          "workspace_access": {
+            "enum": [
+              "read_only",
+              "read_write"
+            ],
+            "title": "Workspace Access",
+            "type": "string"
+          },
           "workspace_id": {
             "format": "uuid",
             "title": "Workspace Id",
@@ -3811,12 +5218,55 @@
           "id",
           "user_id",
           "workspace_id",
+          "model",
           "permission_mode",
+          "workspace_access",
           "status",
           "created_at",
           "updated_at"
         ],
         "title": "SessionView",
+        "type": "object"
+      },
+      "StarterPromptView": {
+        "additionalProperties": false,
+        "properties": {
+          "icon": {
+            "default": "chat",
+            "enum": [
+              "check",
+              "explain",
+              "review",
+              "chat"
+            ],
+            "title": "Icon",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "prompt"
+        ],
+        "title": "StarterPromptView",
         "type": "object"
       },
       "SteerCommand": {
@@ -3828,9 +5278,43 @@
             "title": "Command Id",
             "type": "string"
           },
-          "text": {
-            "title": "Text",
-            "type": "string"
+          "parts": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "attachment_ref": "#/components/schemas/InputAttachmentRefPart",
+                  "directory_ref": "#/components/schemas/InputDirectoryRefPart",
+                  "file_ref": "#/components/schemas/InputFileRefPart",
+                  "run_ref": "#/components/schemas/InputRunRefPart",
+                  "text": "#/components/schemas/InputTextPart",
+                  "workflow_ref": "#/components/schemas/InputWorkflowRefPart"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/InputTextPart"
+                },
+                {
+                  "$ref": "#/components/schemas/InputAttachmentRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/InputFileRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/InputDirectoryRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/InputWorkflowRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/InputRunRefPart"
+                }
+              ]
+            },
+            "minItems": 1,
+            "title": "Parts",
+            "type": "array"
           },
           "type": {
             "const": "steer",
@@ -3841,7 +5325,7 @@
         },
         "required": [
           "command_id",
-          "text"
+          "parts"
         ],
         "title": "SteerCommand",
         "type": "object"
@@ -3925,6 +5409,28 @@
           "meta"
         ],
         "title": "SuccessEnvelope[AgentSettingsRead]",
+        "type": "object"
+      },
+      "SuccessEnvelope_AgentUiBootstrap_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AgentUiBootstrap"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "success": {
+            "const": true,
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data",
+          "meta"
+        ],
+        "title": "SuccessEnvelope[AgentUiBootstrap]",
         "type": "object"
       },
       "SuccessEnvelope_ContextSearchResult_": {
@@ -4084,16 +5590,333 @@
         "title": "TerminalSessionCreate",
         "type": "object"
       },
-      "ToolProgressView": {
+      "TextPart": {
         "additionalProperties": false,
         "properties": {
+          "id": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "text",
+            "default": "text",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "TextPart",
+        "type": "object"
+      },
+      "ToolCallPart": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Arguments",
+            "type": "object"
+          },
           "call_id": {
             "title": "Call Id",
+            "type": "string"
+          },
+          "category": {
+            "default": "other",
+            "enum": [
+              "read",
+              "search",
+              "command",
+              "edit",
+              "write",
+              "workflow",
+              "plan",
+              "interaction",
+              "other"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "execution_mode": {
+            "enum": [
+              "parallel",
+              "serial",
+              "mixed"
+            ],
+            "title": "Execution Mode",
+            "type": "string"
+          },
+          "group_id": {
+            "title": "Group Id",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Id",
             "type": "string"
           },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "public_details": {
+            "items": {
+              "$ref": "#/components/schemas/ToolPublicDetail"
+            },
+            "title": "Public Details",
+            "type": "array"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolTargetView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "const": "tool_call",
+            "default": "tool_call",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "call_id",
+          "group_id",
+          "execution_mode",
+          "name",
+          "display_name",
+          "summary"
+        ],
+        "title": "ToolCallPart",
+        "type": "object"
+      },
+      "ToolContentPartsOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "parts": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "artifact_ref": "#/components/schemas/ArtifactRefPart",
+                  "attachment_ref": "#/components/schemas/AttachmentRefPart",
+                  "directory_ref": "#/components/schemas/DirectoryRefPart",
+                  "file_ref": "#/components/schemas/FileRefPart",
+                  "reasoning_summary": "#/components/schemas/ReasoningSummaryPart",
+                  "run_ref": "#/components/schemas/RunRefPart",
+                  "text": "#/components/schemas/TextPart",
+                  "unknown": "#/components/schemas/UnknownPart",
+                  "workflow_ref": "#/components/schemas/WorkflowRefPart"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextPart"
+                },
+                {
+                  "$ref": "#/components/schemas/ReasoningSummaryPart"
+                },
+                {
+                  "$ref": "#/components/schemas/AttachmentRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/FileRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/DirectoryRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/WorkflowRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/RunRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/ArtifactRefPart"
+                },
+                {
+                  "$ref": "#/components/schemas/UnknownPart"
+                }
+              ]
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "type": {
+            "const": "content_parts",
+            "default": "content_parts",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parts"
+        ],
+        "title": "ToolContentPartsOutput",
+        "type": "object"
+      },
+      "ToolJsonOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "json",
+            "default": "json",
+            "title": "Type",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "ToolJsonOutput",
+        "type": "object"
+      },
+      "ToolProgressView": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Arguments",
+            "type": "object"
+          },
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "category": {
+            "enum": [
+              "read",
+              "search",
+              "command",
+              "edit",
+              "write",
+              "workflow",
+              "plan",
+              "interaction",
+              "other"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "execution_mode": {
+            "enum": [
+              "parallel",
+              "serial",
+              "mixed"
+            ],
+            "title": "Execution Mode",
+            "type": "string"
+          },
+          "group_id": {
+            "title": "Group Id",
+            "type": "string"
+          },
+          "input_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Summary"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "output_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Summary"
+          },
+          "public_details": {
+            "items": {
+              "$ref": "#/components/schemas/ToolPublicDetail"
+            },
+            "title": "Public Details",
+            "type": "array"
+          },
+          "revision": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
           },
           "status": {
             "enum": [
@@ -4107,14 +5930,381 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolTargetView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "call_id",
+          "group_id",
+          "execution_mode",
           "name",
+          "display_name",
+          "category",
+          "summary",
           "status"
         ],
         "title": "ToolProgressView",
+        "type": "object"
+      },
+      "ToolPublicDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "copyable": {
+            "default": false,
+            "title": "Copyable",
+            "type": "boolean"
+          },
+          "format": {
+            "default": "text",
+            "enum": [
+              "text",
+              "code",
+              "path",
+              "json",
+              "diff"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "command",
+              "working_directory",
+              "path",
+              "input",
+              "output",
+              "changes",
+              "error",
+              "metadata"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "redacted": {
+            "default": false,
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "value"
+        ],
+        "title": "ToolPublicDetail",
+        "type": "object"
+      },
+      "ToolResultPart": {
+        "additionalProperties": false,
+        "properties": {
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "content_parts": "#/components/schemas/ToolContentPartsOutput",
+                    "json": "#/components/schemas/ToolJsonOutput",
+                    "text": "#/components/schemas/ToolTextOutput"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ToolTextOutput"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ToolJsonOutput"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ToolContentPartsOutput"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          },
+          "public_details": {
+            "items": {
+              "$ref": "#/components/schemas/ToolPublicDetail"
+            },
+            "title": "Public Details",
+            "type": "array"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed",
+              "blocked",
+              "cancelled",
+              "interaction_required"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolTargetView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "const": "tool_result",
+            "default": "tool_result",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "call_id",
+          "status"
+        ],
+        "title": "ToolResultPart",
+        "type": "object"
+      },
+      "ToolTargetView": {
+        "additionalProperties": false,
+        "properties": {
+          "alias": {
+            "title": "Alias",
+            "type": "string"
+          },
+          "handle": {
+            "title": "Handle",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "local",
+              "remote_ssh"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root"
+          }
+        },
+        "required": [
+          "id",
+          "handle",
+          "alias",
+          "kind"
+        ],
+        "title": "ToolTargetView",
+        "type": "object"
+      },
+      "ToolTextOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "text",
+            "default": "text",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "ToolTextOutput",
+        "type": "object"
+      },
+      "UiCapabilities": {
+        "additionalProperties": false,
+        "properties": {
+          "approvals": {
+            "default": true,
+            "title": "Approvals",
+            "type": "boolean"
+          },
+          "artifacts": {
+            "default": true,
+            "title": "Artifacts",
+            "type": "boolean"
+          },
+          "edit_and_resend": {
+            "default": true,
+            "title": "Edit And Resend",
+            "type": "boolean"
+          },
+          "multi_target_execution": {
+            "default": true,
+            "title": "Multi Target Execution",
+            "type": "boolean"
+          },
+          "reasoning": {
+            "default": true,
+            "title": "Reasoning",
+            "type": "boolean"
+          },
+          "retry": {
+            "default": true,
+            "title": "Retry",
+            "type": "boolean"
+          },
+          "starter_prompts": {
+            "default": true,
+            "title": "Starter Prompts",
+            "type": "boolean"
+          },
+          "tool_activity": {
+            "default": true,
+            "title": "Tool Activity",
+            "type": "boolean"
+          }
+        },
+        "title": "UiCapabilities",
+        "type": "object"
+      },
+      "UnknownPart": {
+        "additionalProperties": false,
+        "properties": {
+          "display_text": {
+            "title": "Display Text",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "original_type": {
+            "title": "Original Type",
+            "type": "string"
+          },
+          "type": {
+            "const": "unknown",
+            "default": "unknown",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "original_type",
+          "display_text"
+        ],
+        "title": "UnknownPart",
         "type": "object"
       },
       "ValidationError": {
@@ -4291,6 +6481,51 @@
         ],
         "title": "WorkflowEngine",
         "type": "string"
+      },
+      "WorkflowRefPart": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "type": {
+            "const": "workflow_ref",
+            "default": "workflow_ref",
+            "title": "Type",
+            "type": "string"
+          },
+          "workflow_id": {
+            "format": "uuid",
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workflow_id",
+          "label"
+        ],
+        "title": "WorkflowRefPart",
+        "type": "object"
       },
       "WorkflowSource": {
         "enum": [
@@ -4737,8 +6972,8 @@
           "agent"
         ]
       },
-      "get": {
-        "operationId": "get_session_api_v1_agent_sessions__session_id__get",
+      "patch": {
+        "operationId": "update_session_api_v1_agent_sessions__session_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -4750,6 +6985,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSessionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -4772,7 +7017,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Session",
+        "summary": "Update Session",
         "tags": [
           "agent"
         ]
@@ -4893,8 +7138,7 @@
                 "discriminator": {
                   "mapping": {
                     "cancel": "#/components/schemas/CancelCommand",
-                    "follow_up": "#/components/schemas/FollowUpCommand",
-                    "prompt": "#/components/schemas/PromptCommand",
+                    "message": "#/components/schemas/MessageCommand",
                     "respond": "#/components/schemas/RespondCommand",
                     "steer": "#/components/schemas/SteerCommand"
                   },
@@ -4902,13 +7146,10 @@
                 },
                 "oneOf": [
                   {
-                    "$ref": "#/components/schemas/PromptCommand"
+                    "$ref": "#/components/schemas/MessageCommand"
                   },
                   {
                     "$ref": "#/components/schemas/SteerCommand"
-                  },
-                  {
-                    "$ref": "#/components/schemas/FollowUpCommand"
                   },
                   {
                     "$ref": "#/components/schemas/RespondCommand"
@@ -4974,6 +7215,311 @@
                   "type": "string",
                   "x-sse-data-schema": {
                     "$defs": {
+                      "ActiveRunView": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assistant_draft": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/AssistantDraftView"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "pending_interaction": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/PendingInteractionView"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "run": {
+                            "$ref": "#/$defs/RunView"
+                          },
+                          "tool_progress": {
+                            "items": {
+                              "$ref": "#/$defs/ToolProgressView"
+                            },
+                            "title": "Tool Progress",
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "run"
+                        ],
+                        "title": "ActiveRunView",
+                        "type": "object"
+                      },
+                      "ApprovalInteractionRequest": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "allowed_responses": {
+                            "items": {
+                              "enum": [
+                                "approve",
+                                "reject"
+                              ],
+                              "type": "string"
+                            },
+                            "minItems": 1,
+                            "title": "Allowed Responses",
+                            "type": "array"
+                          },
+                          "call_id": {
+                            "title": "Call Id",
+                            "type": "string"
+                          },
+                          "input_preview": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Input Preview"
+                          },
+                          "risk": {
+                            "$ref": "#/$defs/ApprovalRiskView"
+                          },
+                          "summary": {
+                            "title": "Summary",
+                            "type": "string"
+                          },
+                          "target": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/ToolTargetView"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "tool_name": {
+                            "title": "Tool Name",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "approval",
+                            "default": "approval",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "call_id",
+                          "tool_name",
+                          "summary",
+                          "allowed_responses",
+                          "risk"
+                        ],
+                        "title": "ApprovalInteractionRequest",
+                        "type": "object"
+                      },
+                      "ApprovalInteractionResponse": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "approved": {
+                            "title": "Approved",
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "const": "approval",
+                            "default": "approval",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "approved"
+                        ],
+                        "title": "ApprovalInteractionResponse",
+                        "type": "object"
+                      },
+                      "ApprovalRiskView": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affected_resources": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "title": "Affected Resources",
+                            "type": "array"
+                          },
+                          "effects": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "title": "Effects",
+                            "type": "array"
+                          },
+                          "level": {
+                            "title": "Level",
+                            "type": "string"
+                          },
+                          "reasons": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "title": "Reasons",
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "level"
+                        ],
+                        "title": "ApprovalRiskView",
+                        "type": "object"
+                      },
+                      "ArtifactRefPart": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "artifact_id": {
+                            "format": "uuid",
+                            "title": "Artifact Id",
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 300,
+                            "minLength": 1,
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "media_type": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Media Type"
+                          },
+                          "title": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Title"
+                          },
+                          "type": {
+                            "const": "artifact_ref",
+                            "default": "artifact_ref",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "artifact_id"
+                        ],
+                        "title": "ArtifactRefPart",
+                        "type": "object"
+                      },
+                      "AskUserInteractionRequest": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "call_id": {
+                            "title": "Call Id",
+                            "type": "string"
+                          },
+                          "questions": {
+                            "items": {
+                              "$ref": "#/$defs/AskUserQuestion"
+                            },
+                            "maxItems": 3,
+                            "minItems": 1,
+                            "title": "Questions",
+                            "type": "array"
+                          },
+                          "type": {
+                            "const": "ask_user",
+                            "default": "ask_user",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "call_id",
+                          "questions"
+                        ],
+                        "title": "AskUserInteractionRequest",
+                        "type": "object"
+                      },
+                      "AskUserInteractionResponse": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "answers": {
+                            "additionalProperties": {
+                              "$ref": "#/$defs/JsonValue"
+                            },
+                            "title": "Answers",
+                            "type": "object"
+                          },
+                          "type": {
+                            "const": "ask_user",
+                            "default": "ask_user",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "answers"
+                        ],
+                        "title": "AskUserInteractionResponse",
+                        "type": "object"
+                      },
+                      "AskUserQuestion": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "header": {
+                            "title": "Header",
+                            "type": "string"
+                          },
+                          "id": {
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "multi_select": {
+                            "default": false,
+                            "title": "Multi Select",
+                            "type": "boolean"
+                          },
+                          "options": {
+                            "items": {
+                              "$ref": "#/$defs/InteractionOption"
+                            },
+                            "maxItems": 3,
+                            "minItems": 2,
+                            "title": "Options",
+                            "type": "array"
+                          },
+                          "question": {
+                            "title": "Question",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "header",
+                          "question",
+                          "options"
+                        ],
+                        "title": "AskUserQuestion",
+                        "type": "object"
+                      },
                       "AssistantDeltaEvent": {
                         "additionalProperties": false,
                         "properties": {
@@ -4981,9 +7527,31 @@
                             "title": "Delta",
                             "type": "string"
                           },
+                          "draft_id": {
+                            "title": "Draft Id",
+                            "type": "string"
+                          },
                           "end_offset": {
                             "minimum": 0,
                             "title": "End Offset",
+                            "type": "integer"
+                          },
+                          "part_id": {
+                            "title": "Part Id",
+                            "type": "string"
+                          },
+                          "part_type": {
+                            "enum": [
+                              "text",
+                              "reasoning_summary"
+                            ],
+                            "title": "Part Type",
+                            "type": "string"
+                          },
+                          "protocol_version": {
+                            "const": 1,
+                            "default": 1,
+                            "title": "Protocol Version",
                             "type": "integer"
                           },
                           "run_id": {
@@ -5005,6 +7573,9 @@
                         },
                         "required": [
                           "run_id",
+                          "draft_id",
+                          "part_id",
+                          "part_type",
                           "delta",
                           "start_offset",
                           "end_offset"
@@ -5012,7 +7583,7 @@
                         "title": "AssistantDeltaEvent",
                         "type": "object"
                       },
-                      "AssistantDraftView": {
+                      "AssistantDraftPartView": {
                         "additionalProperties": false,
                         "properties": {
                           "end_offset": {
@@ -5021,7 +7592,82 @@
                             "title": "End Offset",
                             "type": "integer"
                           },
-                          "reasoning_summary": {
+                          "id": {
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "text": {
+                            "default": "",
+                            "title": "Text",
+                            "type": "string"
+                          },
+                          "type": {
+                            "enum": [
+                              "text",
+                              "reasoning_summary"
+                            ],
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "type"
+                        ],
+                        "title": "AssistantDraftPartView",
+                        "type": "object"
+                      },
+                      "AssistantDraftView": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "parts": {
+                            "items": {
+                              "$ref": "#/$defs/AssistantDraftPartView"
+                            },
+                            "title": "Parts",
+                            "type": "array"
+                          },
+                          "run_id": {
+                            "format": "uuid",
+                            "title": "Run Id",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "run_id",
+                          "parts"
+                        ],
+                        "title": "AssistantDraftView",
+                        "type": "object"
+                      },
+                      "AttachmentRefPart": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "attachment_id": {
+                            "format": "uuid",
+                            "title": "Attachment Id",
+                            "type": "string"
+                          },
+                          "filename": {
+                            "title": "Filename",
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 300,
+                            "minLength": 1,
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "title": "Kind",
+                            "type": "string"
+                          },
+                          "mime_type": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -5030,34 +7676,34 @@
                                 "type": "null"
                               }
                             ],
-                            "title": "Reasoning Summary"
+                            "title": "Mime Type"
                           },
-                          "text": {
-                            "default": "",
-                            "title": "Text",
+                          "size_bytes": {
+                            "default": 0,
+                            "minimum": 0,
+                            "title": "Size Bytes",
+                            "type": "integer"
+                          },
+                          "type": {
+                            "const": "attachment_ref",
+                            "default": "attachment_ref",
+                            "title": "Type",
                             "type": "string"
                           }
                         },
-                        "title": "AssistantDraftView",
+                        "required": [
+                          "id",
+                          "attachment_id",
+                          "filename",
+                          "kind"
+                        ],
+                        "title": "AttachmentRefPart",
                         "type": "object"
                       },
-                      "CompactionEntry": {
+                      "DirectoryRefPart": {
                         "additionalProperties": false,
                         "properties": {
-                          "created_at": {
-                            "format": "date-time",
-                            "title": "Created At",
-                            "type": "string"
-                          },
-                          "id": {
-                            "format": "uuid",
-                            "title": "Id",
-                            "type": "string"
-                          },
-                          "payload": {
-                            "$ref": "#/$defs/CompactionPayload"
-                          },
-                          "run_id": {
+                          "attachment_id": {
                             "anyOf": [
                               {
                                 "format": "uuid",
@@ -5067,100 +7713,93 @@
                                 "type": "null"
                               }
                             ],
-                            "title": "Run Id"
+                            "title": "Attachment Id"
                           },
-                          "schema_version": {
-                            "default": 1,
-                            "minimum": 1,
-                            "title": "Schema Version",
-                            "type": "integer"
-                          },
-                          "sequence": {
-                            "minimum": 1,
-                            "title": "Sequence",
-                            "type": "integer"
-                          },
-                          "session_id": {
-                            "format": "uuid",
-                            "title": "Session Id",
+                          "id": {
+                            "maxLength": 300,
+                            "minLength": 1,
+                            "title": "Id",
                             "type": "string"
                           },
+                          "label": {
+                            "title": "Label",
+                            "type": "string"
+                          },
+                          "path": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Path"
+                          },
+                          "project_id": {
+                            "anyOf": [
+                              {
+                                "format": "uuid",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Project Id"
+                          },
                           "type": {
-                            "const": "compaction",
-                            "default": "compaction",
+                            "const": "directory_ref",
+                            "default": "directory_ref",
                             "title": "Type",
                             "type": "string"
                           }
                         },
                         "required": [
                           "id",
-                          "session_id",
-                          "sequence",
-                          "created_at",
-                          "payload"
+                          "label"
                         ],
-                        "title": "CompactionEntry",
-                        "type": "object"
-                      },
-                      "CompactionPayload": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "summary": {
-                            "title": "Summary",
-                            "type": "string"
-                          },
-                          "through_sequence": {
-                            "minimum": 0,
-                            "title": "Through Sequence",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "summary",
-                          "through_sequence"
-                        ],
-                        "title": "CompactionPayload",
+                        "title": "DirectoryRefPart",
                         "type": "object"
                       },
                       "EntryCommittedEvent": {
                         "additionalProperties": false,
                         "properties": {
                           "entry": {
-                            "anyOf": [
+                            "discriminator": {
+                              "mapping": {
+                                "interaction_request": "#/$defs/InteractionRequestEntry",
+                                "interaction_response": "#/$defs/InteractionResponseEntry",
+                                "message": "#/$defs/MessageEntry",
+                                "notice": "#/$defs/NoticeEntry",
+                                "plan": "#/$defs/PlanEntry"
+                              },
+                              "propertyName": "type"
+                            },
+                            "oneOf": [
                               {
-                                "discriminator": {
-                                  "mapping": {
-                                    "compaction": "#/$defs/CompactionEntry",
-                                    "interaction_request": "#/$defs/InteractionRequestEntry",
-                                    "interaction_response": "#/$defs/InteractionResponseEntry",
-                                    "message": "#/$defs/MessageEntry",
-                                    "notice": "#/$defs/NoticeEntry"
-                                  },
-                                  "propertyName": "type"
-                                },
-                                "oneOf": [
-                                  {
-                                    "$ref": "#/$defs/MessageEntry"
-                                  },
-                                  {
-                                    "$ref": "#/$defs/InteractionRequestEntry"
-                                  },
-                                  {
-                                    "$ref": "#/$defs/InteractionResponseEntry"
-                                  },
-                                  {
-                                    "$ref": "#/$defs/CompactionEntry"
-                                  },
-                                  {
-                                    "$ref": "#/$defs/NoticeEntry"
-                                  }
-                                ]
+                                "$ref": "#/$defs/MessageEntry"
                               },
                               {
-                                "type": "null"
+                                "$ref": "#/$defs/InteractionRequestEntry"
+                              },
+                              {
+                                "$ref": "#/$defs/InteractionResponseEntry"
+                              },
+                              {
+                                "$ref": "#/$defs/NoticeEntry"
+                              },
+                              {
+                                "$ref": "#/$defs/PlanEntry"
                               }
                             ],
                             "title": "Entry"
+                          },
+                          "protocol_version": {
+                            "const": 1,
+                            "default": 1,
+                            "title": "Protocol Version",
+                            "type": "integer"
                           },
                           "type": {
                             "const": "entry.committed",
@@ -5173,6 +7812,180 @@
                           "entry"
                         ],
                         "title": "EntryCommittedEvent",
+                        "type": "object"
+                      },
+                      "ExecutionScopeSelection": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "mode": {
+                            "default": "auto",
+                            "enum": [
+                              "auto",
+                              "manual"
+                            ],
+                            "title": "Mode",
+                            "type": "string"
+                          },
+                          "target_ids": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "title": "Target Ids",
+                            "type": "array"
+                          }
+                        },
+                        "title": "ExecutionScopeSelection",
+                        "type": "object"
+                      },
+                      "ExecutionTargetView": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "alias": {
+                            "title": "Alias",
+                            "type": "string"
+                          },
+                          "disabled_reason": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Disabled Reason"
+                          },
+                          "handle": {
+                            "title": "Handle",
+                            "type": "string"
+                          },
+                          "id": {
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "local",
+                              "remote_ssh"
+                            ],
+                            "title": "Kind",
+                            "type": "string"
+                          },
+                          "primary": {
+                            "default": false,
+                            "title": "Primary",
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "default": "unknown",
+                            "enum": [
+                              "online",
+                              "offline",
+                              "error",
+                              "unknown"
+                            ],
+                            "title": "Status",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "handle",
+                          "alias",
+                          "kind"
+                        ],
+                        "title": "ExecutionTargetView",
+                        "type": "object"
+                      },
+                      "FileRefPart": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "attachment_id": {
+                            "anyOf": [
+                              {
+                                "format": "uuid",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Attachment Id"
+                          },
+                          "id": {
+                            "maxLength": 300,
+                            "minLength": 1,
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "label": {
+                            "title": "Label",
+                            "type": "string"
+                          },
+                          "path": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Path"
+                          },
+                          "project_id": {
+                            "anyOf": [
+                              {
+                                "format": "uuid",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Project Id"
+                          },
+                          "type": {
+                            "const": "file_ref",
+                            "default": "file_ref",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label"
+                        ],
+                        "title": "FileRefPart",
+                        "type": "object"
+                      },
+                      "InteractionOption": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "description": {
+                            "default": "",
+                            "title": "Description",
+                            "type": "string"
+                          },
+                          "id": {
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "label": {
+                            "title": "Label",
+                            "type": "string"
+                          },
+                          "recommended": {
+                            "default": false,
+                            "title": "Recommended",
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label"
+                        ],
+                        "title": "InteractionOption",
                         "type": "object"
                       },
                       "InteractionRequestEntry": {
@@ -5204,7 +8017,7 @@
                             "title": "Run Id"
                           },
                           "schema_version": {
-                            "default": 1,
+                            "default": 2,
                             "minimum": 1,
                             "title": "Schema Version",
                             "type": "integer"
@@ -5244,9 +8057,26 @@
                             "type": "string"
                           },
                           "request": {
-                            "additionalProperties": true,
-                            "title": "Request",
-                            "type": "object"
+                            "discriminator": {
+                              "mapping": {
+                                "approval": "#/$defs/ApprovalInteractionRequest",
+                                "ask_user": "#/$defs/AskUserInteractionRequest",
+                                "recovery": "#/$defs/RecoveryInteractionRequest"
+                              },
+                              "propertyName": "type"
+                            },
+                            "oneOf": [
+                              {
+                                "$ref": "#/$defs/AskUserInteractionRequest"
+                              },
+                              {
+                                "$ref": "#/$defs/ApprovalInteractionRequest"
+                              },
+                              {
+                                "$ref": "#/$defs/RecoveryInteractionRequest"
+                              }
+                            ],
+                            "title": "Request"
                           }
                         },
                         "required": [
@@ -5259,14 +8089,14 @@
                       "InteractionRequestedEvent": {
                         "additionalProperties": false,
                         "properties": {
-                          "interaction_id": {
-                            "title": "Interaction Id",
-                            "type": "string"
+                          "interaction": {
+                            "$ref": "#/$defs/PendingInteractionView"
                           },
-                          "request": {
-                            "additionalProperties": true,
-                            "title": "Request",
-                            "type": "object"
+                          "protocol_version": {
+                            "const": 1,
+                            "default": 1,
+                            "title": "Protocol Version",
+                            "type": "integer"
                           },
                           "run_id": {
                             "format": "uuid",
@@ -5282,8 +8112,7 @@
                         },
                         "required": [
                           "run_id",
-                          "interaction_id",
-                          "request"
+                          "interaction"
                         ],
                         "title": "InteractionRequestedEvent",
                         "type": "object"
@@ -5317,7 +8146,7 @@
                             "title": "Run Id"
                           },
                           "schema_version": {
-                            "default": 1,
+                            "default": 2,
                             "minimum": 1,
                             "title": "Schema Version",
                             "type": "integer"
@@ -5357,9 +8186,26 @@
                             "type": "string"
                           },
                           "response": {
-                            "additionalProperties": true,
-                            "title": "Response",
-                            "type": "object"
+                            "discriminator": {
+                              "mapping": {
+                                "approval": "#/$defs/ApprovalInteractionResponse",
+                                "ask_user": "#/$defs/AskUserInteractionResponse",
+                                "recovery": "#/$defs/RecoveryInteractionResponse"
+                              },
+                              "propertyName": "type"
+                            },
+                            "oneOf": [
+                              {
+                                "$ref": "#/$defs/AskUserInteractionResponse"
+                              },
+                              {
+                                "$ref": "#/$defs/ApprovalInteractionResponse"
+                              },
+                              {
+                                "$ref": "#/$defs/RecoveryInteractionResponse"
+                              }
+                            ],
+                            "title": "Response"
                           }
                         },
                         "required": [
@@ -5369,6 +8215,7 @@
                         "title": "InteractionResponsePayload",
                         "type": "object"
                       },
+                      "JsonValue": {},
                       "MessageEntry": {
                         "additionalProperties": false,
                         "properties": {
@@ -5398,7 +8245,7 @@
                             "title": "Run Id"
                           },
                           "schema_version": {
-                            "default": 1,
+                            "default": 2,
                             "minimum": 1,
                             "title": "Schema Version",
                             "type": "integer"
@@ -5433,56 +8280,62 @@
                       "MessagePayload": {
                         "additionalProperties": false,
                         "properties": {
-                          "artifact_ids": {
+                          "parts": {
                             "items": {
-                              "format": "uuid",
-                              "type": "string"
-                            },
-                            "title": "Artifact Ids",
-                            "type": "array"
-                          },
-                          "attachment_ids": {
-                            "items": {
-                              "format": "uuid",
-                              "type": "string"
-                            },
-                            "title": "Attachment Ids",
-                            "type": "array"
-                          },
-                          "call_id": {
-                            "anyOf": [
-                              {
-                                "type": "string"
+                              "discriminator": {
+                                "mapping": {
+                                  "artifact_ref": "#/$defs/ArtifactRefPart",
+                                  "attachment_ref": "#/$defs/AttachmentRefPart",
+                                  "directory_ref": "#/$defs/DirectoryRefPart",
+                                  "file_ref": "#/$defs/FileRefPart",
+                                  "reasoning_summary": "#/$defs/ReasoningSummaryPart",
+                                  "run_ref": "#/$defs/RunRefPart",
+                                  "text": "#/$defs/TextPart",
+                                  "tool_call": "#/$defs/ToolCallPart",
+                                  "tool_result": "#/$defs/ToolResultPart",
+                                  "unknown": "#/$defs/UnknownPart",
+                                  "workflow_ref": "#/$defs/WorkflowRefPart"
+                                },
+                                "propertyName": "type"
                               },
-                              {
-                                "type": "null"
-                              }
-                            ],
-                            "title": "Call Id"
-                          },
-                          "content": {
-                            "items": {
-                              "additionalProperties": true,
-                              "type": "object"
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TextPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/ReasoningSummaryPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/AttachmentRefPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/FileRefPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/DirectoryRefPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/WorkflowRefPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/RunRefPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/ArtifactRefPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/ToolCallPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/ToolResultPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/UnknownPart"
+                                }
+                              ]
                             },
-                            "title": "Content",
+                            "title": "Parts",
                             "type": "array"
-                          },
-                          "is_error": {
-                            "default": false,
-                            "title": "Is Error",
-                            "type": "boolean"
-                          },
-                          "reasoning_summary": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ],
-                            "title": "Reasoning Summary"
                           },
                           "role": {
                             "enum": [
@@ -5492,21 +8345,52 @@
                             ],
                             "title": "Role",
                             "type": "string"
-                          },
-                          "tool_calls": {
-                            "items": {
-                              "additionalProperties": true,
-                              "type": "object"
-                            },
-                            "title": "Tool Calls",
-                            "type": "array"
                           }
                         },
                         "required": [
                           "role",
-                          "content"
+                          "parts"
                         ],
                         "title": "MessagePayload",
+                        "type": "object"
+                      },
+                      "ModelSummary": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "display_name": {
+                            "title": "Display Name",
+                            "type": "string"
+                          },
+                          "model": {
+                            "title": "Model",
+                            "type": "string"
+                          },
+                          "provider": {
+                            "title": "Provider",
+                            "type": "string"
+                          },
+                          "supports_reasoning": {
+                            "default": false,
+                            "title": "Supports Reasoning",
+                            "type": "boolean"
+                          },
+                          "supports_tools": {
+                            "default": false,
+                            "title": "Supports Tools",
+                            "type": "boolean"
+                          },
+                          "supports_vision": {
+                            "default": false,
+                            "title": "Supports Vision",
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "provider",
+                          "model",
+                          "display_name"
+                        ],
+                        "title": "ModelSummary",
                         "type": "object"
                       },
                       "NoticeEntry": {
@@ -5538,7 +8422,7 @@
                             "title": "Run Id"
                           },
                           "schema_version": {
-                            "default": 1,
+                            "default": 2,
                             "minimum": 1,
                             "title": "Schema Version",
                             "type": "integer"
@@ -5609,53 +8493,368 @@
                             "type": "string"
                           },
                           "request": {
-                            "additionalProperties": true,
-                            "title": "Request",
-                            "type": "object"
+                            "discriminator": {
+                              "mapping": {
+                                "approval": "#/$defs/ApprovalInteractionRequest",
+                                "ask_user": "#/$defs/AskUserInteractionRequest",
+                                "recovery": "#/$defs/RecoveryInteractionRequest"
+                              },
+                              "propertyName": "type"
+                            },
+                            "oneOf": [
+                              {
+                                "$ref": "#/$defs/AskUserInteractionRequest"
+                              },
+                              {
+                                "$ref": "#/$defs/ApprovalInteractionRequest"
+                              },
+                              {
+                                "$ref": "#/$defs/RecoveryInteractionRequest"
+                              }
+                            ],
+                            "title": "Request"
+                          },
+                          "revision": {
+                            "minimum": 1,
+                            "title": "Revision",
+                            "type": "integer"
+                          },
+                          "run_id": {
+                            "format": "uuid",
+                            "title": "Run Id",
+                            "type": "string"
                           }
                         },
                         "required": [
                           "interaction_id",
+                          "run_id",
+                          "revision",
                           "request"
                         ],
                         "title": "PendingInteractionView",
                         "type": "object"
                       },
-                      "RunUpdatedEvent": {
+                      "PlanEntry": {
                         "additionalProperties": false,
                         "properties": {
-                          "phase": {
+                          "created_at": {
+                            "format": "date-time",
+                            "title": "Created At",
+                            "type": "string"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "payload": {
+                            "$ref": "#/$defs/PlanPayload"
+                          },
+                          "run_id": {
                             "anyOf": [
                               {
-                                "enum": [
-                                  "model",
-                                  "tools",
-                                  "interaction"
-                                ],
+                                "format": "uuid",
                                 "type": "string"
                               },
                               {
                                 "type": "null"
                               }
                             ],
-                            "title": "Phase"
+                            "title": "Run Id"
                           },
-                          "run_id": {
+                          "schema_version": {
+                            "default": 2,
+                            "minimum": 1,
+                            "title": "Schema Version",
+                            "type": "integer"
+                          },
+                          "sequence": {
+                            "minimum": 1,
+                            "title": "Sequence",
+                            "type": "integer"
+                          },
+                          "session_id": {
                             "format": "uuid",
-                            "title": "Run Id",
+                            "title": "Session Id",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "plan",
+                            "default": "plan",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "session_id",
+                          "sequence",
+                          "created_at",
+                          "payload"
+                        ],
+                        "title": "PlanEntry",
+                        "type": "object"
+                      },
+                      "PlanItem": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "title": "Id",
                             "type": "string"
                           },
                           "status": {
                             "enum": [
-                              "queued",
-                              "running",
-                              "waiting_user",
-                              "completed",
-                              "failed",
-                              "cancelled"
+                              "pending",
+                              "in_progress",
+                              "completed"
                             ],
                             "title": "Status",
                             "type": "string"
+                          },
+                          "text": {
+                            "title": "Text",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "text",
+                          "status"
+                        ],
+                        "title": "PlanItem",
+                        "type": "object"
+                      },
+                      "PlanPayload": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/$defs/PlanItem"
+                            },
+                            "title": "Items",
+                            "type": "array"
+                          },
+                          "plan_id": {
+                            "title": "Plan Id",
+                            "type": "string"
+                          },
+                          "revision": {
+                            "minimum": 1,
+                            "title": "Revision",
+                            "type": "integer"
+                          },
+                          "title": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Title"
+                          },
+                          "updated_at": {
+                            "format": "date-time",
+                            "title": "Updated At",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "plan_id",
+                          "revision",
+                          "items",
+                          "updated_at"
+                        ],
+                        "title": "PlanPayload",
+                        "type": "object"
+                      },
+                      "ReasoningSummaryPart": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "maxLength": 300,
+                            "minLength": 1,
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "text": {
+                            "title": "Text",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "reasoning_summary",
+                            "default": "reasoning_summary",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "text"
+                        ],
+                        "title": "ReasoningSummaryPart",
+                        "type": "object"
+                      },
+                      "RecoveryInteractionRequest": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "call_id": {
+                            "title": "Call Id",
+                            "type": "string"
+                          },
+                          "message": {
+                            "title": "Message",
+                            "type": "string"
+                          },
+                          "options": {
+                            "items": {
+                              "$ref": "#/$defs/InteractionOption"
+                            },
+                            "title": "Options",
+                            "type": "array"
+                          },
+                          "tool_name": {
+                            "title": "Tool Name",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "recovery",
+                            "default": "recovery",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "call_id",
+                          "tool_name",
+                          "message",
+                          "options"
+                        ],
+                        "title": "RecoveryInteractionRequest",
+                        "type": "object"
+                      },
+                      "RecoveryInteractionResponse": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "choice": {
+                            "enum": [
+                              "inspect",
+                              "retry",
+                              "cancel"
+                            ],
+                            "title": "Choice",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "recovery",
+                            "default": "recovery",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "choice"
+                        ],
+                        "title": "RecoveryInteractionResponse",
+                        "type": "object"
+                      },
+                      "RunErrorView": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "code": {
+                            "title": "Code",
+                            "type": "string"
+                          },
+                          "message": {
+                            "title": "Message",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "message"
+                        ],
+                        "title": "RunErrorView",
+                        "type": "object"
+                      },
+                      "RunRefPart": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "maxLength": 300,
+                            "minLength": 1,
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "label": {
+                            "title": "Label",
+                            "type": "string"
+                          },
+                          "run_id": {
+                            "title": "Run Id",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "run_ref",
+                            "default": "run_ref",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "run_id",
+                          "label"
+                        ],
+                        "title": "RunRefPart",
+                        "type": "object"
+                      },
+                      "RunSettingsView": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "allowed_targets": {
+                            "items": {
+                              "$ref": "#/$defs/ExecutionTargetView"
+                            },
+                            "title": "Allowed Targets",
+                            "type": "array"
+                          },
+                          "execution_scope": {
+                            "$ref": "#/$defs/ExecutionScopeSelection"
+                          },
+                          "model": {
+                            "$ref": "#/$defs/ModelSummary"
+                          },
+                          "permission_mode": {
+                            "enum": [
+                              "ask_changes",
+                              "ask_dangerous",
+                              "full_access"
+                            ],
+                            "title": "Permission Mode",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "model",
+                          "permission_mode",
+                          "execution_scope"
+                        ],
+                        "title": "RunSettingsView",
+                        "type": "object"
+                      },
+                      "RunUpdatedEvent": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "protocol_version": {
+                            "const": 1,
+                            "default": 1,
+                            "title": "Protocol Version",
+                            "type": "integer"
+                          },
+                          "run": {
+                            "$ref": "#/$defs/RunView"
                           },
                           "type": {
                             "const": "run.updated",
@@ -5665,8 +8864,7 @@
                           }
                         },
                         "required": [
-                          "run_id",
-                          "status"
+                          "run"
                         ],
                         "title": "RunUpdatedEvent",
                         "type": "object"
@@ -5694,14 +8892,12 @@
                           "error": {
                             "anyOf": [
                               {
-                                "additionalProperties": true,
-                                "type": "object"
+                                "$ref": "#/$defs/RunErrorView"
                               },
                               {
                                 "type": "null"
                               }
-                            ],
-                            "title": "Error"
+                            ]
                           },
                           "id": {
                             "format": "uuid",
@@ -5724,10 +8920,26 @@
                             ],
                             "title": "Phase"
                           },
+                          "revision": {
+                            "default": 0,
+                            "minimum": 0,
+                            "title": "Revision",
+                            "type": "integer"
+                          },
                           "session_id": {
                             "format": "uuid",
                             "title": "Session Id",
                             "type": "string"
+                          },
+                          "settings": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/RunSettingsView"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "started_at": {
                             "anyOf": [
@@ -5783,35 +8995,28 @@
                       "SessionSnapshot": {
                         "additionalProperties": false,
                         "properties": {
-                          "assistant_draft": {
+                          "active_run": {
                             "anyOf": [
                               {
-                                "$ref": "#/$defs/AssistantDraftView"
+                                "$ref": "#/$defs/ActiveRunView"
                               },
                               {
                                 "type": "null"
                               }
                             ]
                           },
-                          "current_run": {
-                            "anyOf": [
-                              {
-                                "$ref": "#/$defs/RunView"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
+                          "capabilities": {
+                            "$ref": "#/$defs/UiCapabilities"
                           },
                           "entries": {
                             "items": {
                               "discriminator": {
                                 "mapping": {
-                                  "compaction": "#/$defs/CompactionEntry",
                                   "interaction_request": "#/$defs/InteractionRequestEntry",
                                   "interaction_response": "#/$defs/InteractionResponseEntry",
                                   "message": "#/$defs/MessageEntry",
-                                  "notice": "#/$defs/NoticeEntry"
+                                  "notice": "#/$defs/NoticeEntry",
+                                  "plan": "#/$defs/PlanEntry"
                                 },
                                 "propertyName": "type"
                               },
@@ -5826,47 +9031,37 @@
                                   "$ref": "#/$defs/InteractionResponseEntry"
                                 },
                                 {
-                                  "$ref": "#/$defs/CompactionEntry"
+                                  "$ref": "#/$defs/NoticeEntry"
                                 },
                                 {
-                                  "$ref": "#/$defs/NoticeEntry"
+                                  "$ref": "#/$defs/PlanEntry"
                                 }
                               ]
                             },
                             "title": "Entries",
                             "type": "array"
                           },
-                          "pending_interaction": {
-                            "anyOf": [
-                              {
-                                "$ref": "#/$defs/PendingInteractionView"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "revision": {
-                            "minimum": 0,
-                            "title": "Revision",
+                          "protocol_version": {
+                            "const": 1,
+                            "default": 1,
+                            "title": "Protocol Version",
                             "type": "integer"
+                          },
+                          "runs": {
+                            "items": {
+                              "$ref": "#/$defs/RunView"
+                            },
+                            "title": "Runs",
+                            "type": "array"
                           },
                           "session": {
                             "$ref": "#/$defs/SessionView"
-                          },
-                          "tool_progress": {
-                            "items": {
-                              "$ref": "#/$defs/ToolProgressView"
-                            },
-                            "title": "Tool Progress",
-                            "type": "array"
                           }
                         },
                         "required": [
                           "session",
-                          "current_run",
-                          "entries",
-                          "revision"
+                          "runs",
+                          "entries"
                         ],
                         "title": "SessionSnapshot",
                         "type": "object"
@@ -5879,14 +9074,20 @@
                             "title": "Created At",
                             "type": "string"
                           },
+                          "execution_scope": {
+                            "$ref": "#/$defs/ExecutionScopeSelection"
+                          },
                           "id": {
                             "format": "uuid",
                             "title": "Id",
                             "type": "string"
                           },
+                          "model": {
+                            "$ref": "#/$defs/ModelSummary"
+                          },
                           "permission_mode": {
                             "enum": [
-                              "read_only",
+                              "ask_changes",
                               "ask_dangerous",
                               "full_access"
                             ],
@@ -5935,6 +9136,14 @@
                             "title": "User Id",
                             "type": "string"
                           },
+                          "workspace_access": {
+                            "enum": [
+                              "read_only",
+                              "read_write"
+                            ],
+                            "title": "Workspace Access",
+                            "type": "string"
+                          },
                           "workspace_id": {
                             "format": "uuid",
                             "title": "Workspace Id",
@@ -5945,7 +9154,9 @@
                           "id",
                           "user_id",
                           "workspace_id",
+                          "model",
                           "permission_mode",
+                          "workspace_access",
                           "status",
                           "created_at",
                           "updated_at"
@@ -5956,15 +9167,14 @@
                       "SnapshotEvent": {
                         "additionalProperties": false,
                         "properties": {
+                          "protocol_version": {
+                            "const": 1,
+                            "default": 1,
+                            "title": "Protocol Version",
+                            "type": "integer"
+                          },
                           "snapshot": {
-                            "anyOf": [
-                              {
-                                "$ref": "#/$defs/SessionSnapshot"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
+                            "$ref": "#/$defs/SessionSnapshot"
                           },
                           "type": {
                             "const": "snapshot",
@@ -5979,16 +9189,333 @@
                         "title": "SnapshotEvent",
                         "type": "object"
                       },
-                      "ToolProgressView": {
+                      "TextPart": {
                         "additionalProperties": false,
                         "properties": {
+                          "id": {
+                            "maxLength": 300,
+                            "minLength": 1,
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "text": {
+                            "title": "Text",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "text",
+                            "default": "text",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "text"
+                        ],
+                        "title": "TextPart",
+                        "type": "object"
+                      },
+                      "ToolCallPart": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "arguments": {
+                            "additionalProperties": {
+                              "$ref": "#/$defs/JsonValue"
+                            },
+                            "title": "Arguments",
+                            "type": "object"
+                          },
                           "call_id": {
                             "title": "Call Id",
+                            "type": "string"
+                          },
+                          "category": {
+                            "default": "other",
+                            "enum": [
+                              "read",
+                              "search",
+                              "command",
+                              "edit",
+                              "write",
+                              "workflow",
+                              "plan",
+                              "interaction",
+                              "other"
+                            ],
+                            "title": "Category",
+                            "type": "string"
+                          },
+                          "display_name": {
+                            "title": "Display Name",
+                            "type": "string"
+                          },
+                          "execution_mode": {
+                            "enum": [
+                              "parallel",
+                              "serial",
+                              "mixed"
+                            ],
+                            "title": "Execution Mode",
+                            "type": "string"
+                          },
+                          "group_id": {
+                            "title": "Group Id",
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 300,
+                            "minLength": 1,
+                            "title": "Id",
                             "type": "string"
                           },
                           "name": {
                             "title": "Name",
                             "type": "string"
+                          },
+                          "public_details": {
+                            "items": {
+                              "$ref": "#/$defs/ToolPublicDetail"
+                            },
+                            "title": "Public Details",
+                            "type": "array"
+                          },
+                          "summary": {
+                            "title": "Summary",
+                            "type": "string"
+                          },
+                          "target": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/ToolTargetView"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "const": "tool_call",
+                            "default": "tool_call",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "call_id",
+                          "group_id",
+                          "execution_mode",
+                          "name",
+                          "display_name",
+                          "summary"
+                        ],
+                        "title": "ToolCallPart",
+                        "type": "object"
+                      },
+                      "ToolContentPartsOutput": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "parts": {
+                            "items": {
+                              "discriminator": {
+                                "mapping": {
+                                  "artifact_ref": "#/$defs/ArtifactRefPart",
+                                  "attachment_ref": "#/$defs/AttachmentRefPart",
+                                  "directory_ref": "#/$defs/DirectoryRefPart",
+                                  "file_ref": "#/$defs/FileRefPart",
+                                  "reasoning_summary": "#/$defs/ReasoningSummaryPart",
+                                  "run_ref": "#/$defs/RunRefPart",
+                                  "text": "#/$defs/TextPart",
+                                  "unknown": "#/$defs/UnknownPart",
+                                  "workflow_ref": "#/$defs/WorkflowRefPart"
+                                },
+                                "propertyName": "type"
+                              },
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TextPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/ReasoningSummaryPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/AttachmentRefPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/FileRefPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/DirectoryRefPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/WorkflowRefPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/RunRefPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/ArtifactRefPart"
+                                },
+                                {
+                                  "$ref": "#/$defs/UnknownPart"
+                                }
+                              ]
+                            },
+                            "title": "Parts",
+                            "type": "array"
+                          },
+                          "type": {
+                            "const": "content_parts",
+                            "default": "content_parts",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "parts"
+                        ],
+                        "title": "ToolContentPartsOutput",
+                        "type": "object"
+                      },
+                      "ToolJsonOutput": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "type": {
+                            "const": "json",
+                            "default": "json",
+                            "title": "Type",
+                            "type": "string"
+                          },
+                          "value": {
+                            "$ref": "#/$defs/JsonValue"
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "title": "ToolJsonOutput",
+                        "type": "object"
+                      },
+                      "ToolProgressView": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "arguments": {
+                            "additionalProperties": {
+                              "$ref": "#/$defs/JsonValue"
+                            },
+                            "title": "Arguments",
+                            "type": "object"
+                          },
+                          "call_id": {
+                            "title": "Call Id",
+                            "type": "string"
+                          },
+                          "category": {
+                            "enum": [
+                              "read",
+                              "search",
+                              "command",
+                              "edit",
+                              "write",
+                              "workflow",
+                              "plan",
+                              "interaction",
+                              "other"
+                            ],
+                            "title": "Category",
+                            "type": "string"
+                          },
+                          "completed_at": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Completed At"
+                          },
+                          "display_name": {
+                            "title": "Display Name",
+                            "type": "string"
+                          },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Error"
+                          },
+                          "execution_mode": {
+                            "enum": [
+                              "parallel",
+                              "serial",
+                              "mixed"
+                            ],
+                            "title": "Execution Mode",
+                            "type": "string"
+                          },
+                          "group_id": {
+                            "title": "Group Id",
+                            "type": "string"
+                          },
+                          "input_summary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Input Summary"
+                          },
+                          "name": {
+                            "title": "Name",
+                            "type": "string"
+                          },
+                          "output_summary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Output Summary"
+                          },
+                          "public_details": {
+                            "items": {
+                              "$ref": "#/$defs/ToolPublicDetail"
+                            },
+                            "title": "Public Details",
+                            "type": "array"
+                          },
+                          "revision": {
+                            "default": 0,
+                            "minimum": 0,
+                            "title": "Revision",
+                            "type": "integer"
+                          },
+                          "started_at": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Started At"
                           },
                           "status": {
                             "enum": [
@@ -6002,57 +9529,457 @@
                             ],
                             "title": "Status",
                             "type": "string"
+                          },
+                          "summary": {
+                            "title": "Summary",
+                            "type": "string"
+                          },
+                          "target": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/ToolTargetView"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
                           "call_id",
+                          "group_id",
+                          "execution_mode",
                           "name",
+                          "display_name",
+                          "category",
+                          "summary",
                           "status"
                         ],
                         "title": "ToolProgressView",
                         "type": "object"
                       },
-                      "ToolUpdatedEvent": {
+                      "ToolPublicDetail": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "copyable": {
+                            "default": false,
+                            "title": "Copyable",
+                            "type": "boolean"
+                          },
+                          "format": {
+                            "default": "text",
+                            "enum": [
+                              "text",
+                              "code",
+                              "path",
+                              "json",
+                              "diff"
+                            ],
+                            "title": "Format",
+                            "type": "string"
+                          },
+                          "id": {
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "command",
+                              "working_directory",
+                              "path",
+                              "input",
+                              "output",
+                              "changes",
+                              "error",
+                              "metadata"
+                            ],
+                            "title": "Kind",
+                            "type": "string"
+                          },
+                          "label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Label"
+                          },
+                          "redacted": {
+                            "default": false,
+                            "title": "Redacted",
+                            "type": "boolean"
+                          },
+                          "truncated": {
+                            "default": false,
+                            "title": "Truncated",
+                            "type": "boolean"
+                          },
+                          "value": {
+                            "title": "Value",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "value"
+                        ],
+                        "title": "ToolPublicDetail",
+                        "type": "object"
+                      },
+                      "ToolResultPart": {
                         "additionalProperties": false,
                         "properties": {
                           "call_id": {
                             "title": "Call Id",
                             "type": "string"
                           },
+                          "completed_at": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Completed At"
+                          },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Error"
+                          },
+                          "id": {
+                            "maxLength": 300,
+                            "minLength": 1,
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "output": {
+                            "anyOf": [
+                              {
+                                "discriminator": {
+                                  "mapping": {
+                                    "content_parts": "#/$defs/ToolContentPartsOutput",
+                                    "json": "#/$defs/ToolJsonOutput",
+                                    "text": "#/$defs/ToolTextOutput"
+                                  },
+                                  "propertyName": "type"
+                                },
+                                "oneOf": [
+                                  {
+                                    "$ref": "#/$defs/ToolTextOutput"
+                                  },
+                                  {
+                                    "$ref": "#/$defs/ToolJsonOutput"
+                                  },
+                                  {
+                                    "$ref": "#/$defs/ToolContentPartsOutput"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Output"
+                          },
+                          "public_details": {
+                            "items": {
+                              "$ref": "#/$defs/ToolPublicDetail"
+                            },
+                            "title": "Public Details",
+                            "type": "array"
+                          },
+                          "started_at": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Started At"
+                          },
+                          "status": {
+                            "enum": [
+                              "pending",
+                              "running",
+                              "completed",
+                              "failed",
+                              "blocked",
+                              "cancelled",
+                              "interaction_required"
+                            ],
+                            "title": "Status",
+                            "type": "string"
+                          },
+                          "summary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Summary"
+                          },
+                          "target": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/ToolTargetView"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "const": "tool_result",
+                            "default": "tool_result",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "call_id",
+                          "status"
+                        ],
+                        "title": "ToolResultPart",
+                        "type": "object"
+                      },
+                      "ToolTargetView": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "alias": {
+                            "title": "Alias",
+                            "type": "string"
+                          },
+                          "handle": {
+                            "title": "Handle",
+                            "type": "string"
+                          },
+                          "id": {
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "local",
+                              "remote_ssh"
+                            ],
+                            "title": "Kind",
+                            "type": "string"
+                          },
+                          "root": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Root"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "handle",
+                          "alias",
+                          "kind"
+                        ],
+                        "title": "ToolTargetView",
+                        "type": "object"
+                      },
+                      "ToolTextOutput": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "text": {
+                            "title": "Text",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "text",
+                            "default": "text",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "text"
+                        ],
+                        "title": "ToolTextOutput",
+                        "type": "object"
+                      },
+                      "ToolUpdatedEvent": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "protocol_version": {
+                            "const": 1,
+                            "default": 1,
+                            "title": "Protocol Version",
+                            "type": "integer"
+                          },
                           "run_id": {
                             "format": "uuid",
                             "title": "Run Id",
                             "type": "string"
                           },
-                          "status": {
-                            "title": "Status",
-                            "type": "string"
+                          "tool": {
+                            "$ref": "#/$defs/ToolProgressView"
                           },
                           "type": {
                             "const": "tool.updated",
                             "default": "tool.updated",
                             "title": "Type",
                             "type": "string"
+                          }
+                        },
+                        "required": [
+                          "run_id",
+                          "tool"
+                        ],
+                        "title": "ToolUpdatedEvent",
+                        "type": "object"
+                      },
+                      "UiCapabilities": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "approvals": {
+                            "default": true,
+                            "title": "Approvals",
+                            "type": "boolean"
                           },
-                          "update": {
+                          "artifacts": {
+                            "default": true,
+                            "title": "Artifacts",
+                            "type": "boolean"
+                          },
+                          "edit_and_resend": {
+                            "default": true,
+                            "title": "Edit And Resend",
+                            "type": "boolean"
+                          },
+                          "multi_target_execution": {
+                            "default": true,
+                            "title": "Multi Target Execution",
+                            "type": "boolean"
+                          },
+                          "reasoning": {
+                            "default": true,
+                            "title": "Reasoning",
+                            "type": "boolean"
+                          },
+                          "retry": {
+                            "default": true,
+                            "title": "Retry",
+                            "type": "boolean"
+                          },
+                          "starter_prompts": {
+                            "default": true,
+                            "title": "Starter Prompts",
+                            "type": "boolean"
+                          },
+                          "tool_activity": {
+                            "default": true,
+                            "title": "Tool Activity",
+                            "type": "boolean"
+                          }
+                        },
+                        "title": "UiCapabilities",
+                        "type": "object"
+                      },
+                      "UnknownPart": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "display_text": {
+                            "title": "Display Text",
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 300,
+                            "minLength": 1,
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "original_type": {
+                            "title": "Original Type",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "unknown",
+                            "default": "unknown",
+                            "title": "Type",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "original_type",
+                          "display_text"
+                        ],
+                        "title": "UnknownPart",
+                        "type": "object"
+                      },
+                      "WorkflowRefPart": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "maxLength": 300,
+                            "minLength": 1,
+                            "title": "Id",
+                            "type": "string"
+                          },
+                          "label": {
+                            "title": "Label",
+                            "type": "string"
+                          },
+                          "project_id": {
                             "anyOf": [
                               {
-                                "additionalProperties": true,
-                                "type": "object"
+                                "format": "uuid",
+                                "type": "string"
                               },
                               {
                                 "type": "null"
                               }
                             ],
-                            "title": "Update"
+                            "title": "Project Id"
+                          },
+                          "type": {
+                            "const": "workflow_ref",
+                            "default": "workflow_ref",
+                            "title": "Type",
+                            "type": "string"
+                          },
+                          "workflow_id": {
+                            "format": "uuid",
+                            "title": "Workflow Id",
+                            "type": "string"
                           }
                         },
                         "required": [
-                          "run_id",
-                          "call_id",
-                          "status"
+                          "id",
+                          "workflow_id",
+                          "label"
                         ],
-                        "title": "ToolUpdatedEvent",
+                        "title": "WorkflowRefPart",
                         "type": "object"
                       }
                     },
@@ -6208,6 +10135,66 @@
           }
         },
         "summary": "Update Settings",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/agent/ui/bootstrap": {
+      "get": {
+        "operationId": "get_agent_ui_bootstrap_api_v1_agent_ui_bootstrap_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "locale",
+            "required": false,
+            "schema": {
+              "default": "en",
+              "maxLength": 32,
+              "title": "Locale",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope_AgentUiBootstrap_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Agent Ui Bootstrap",
         "tags": [
           "agent"
         ]

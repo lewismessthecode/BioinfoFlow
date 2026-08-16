@@ -21,6 +21,7 @@ from app.services.agent_harness.tools import (
 from app.services.agent_harness.workspace_runtime import (
     LocalWorkspaceBackend,
     RemoteWorkspaceBackend,
+    ScopedWorkspaceBackend,
     WorkspaceRuntime,
     _redact,
 )
@@ -763,6 +764,40 @@ async def test_confirmed_dangerous_bash_executes_once_without_reprompt(
     assert pending.status == "interaction_required"
     assert completed.status == "completed"
     assert executions == 1
+
+
+@pytest.mark.asyncio
+async def test_dangerous_bash_approval_keeps_its_frozen_target(tmp_path: Path) -> None:
+    target = {
+        "id": "remote-1",
+        "handle": "ssh:compute-a",
+        "alias": "Compute A",
+        "kind": "remote_ssh",
+        "root": str(tmp_path),
+    }
+    backend = LocalWorkspaceBackend(
+        working_directory=tmp_path,
+        read_roots=(tmp_path,),
+        write_roots=(tmp_path,),
+        sandbox_runner=None,
+    )
+    runtime = WorkspaceRuntime(
+        ScopedWorkspaceBackend(
+            {"ssh:compute-a": (backend, target)},
+            primary_handle="ssh:compute-a",
+        )
+    )
+
+    pending = await runtime.execute(
+        ToolCall(
+            "bash-targeted",
+            "bash",
+            {"target": "ssh:compute-a", "command": "rm -f harmless"},
+        )
+    )
+
+    assert pending.status == "interaction_required"
+    assert pending.target == target
 
 
 @pytest.mark.asyncio

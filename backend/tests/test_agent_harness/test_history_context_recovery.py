@@ -134,6 +134,45 @@ def test_context_is_derived_from_permanent_entries_in_canonical_order() -> None:
     )
 
 
+def test_run_execution_targets_only_append_safe_dynamic_context() -> None:
+    stable = "You are BioinfoFlow Agent.\n\n## Stable workspace"
+    settings = {
+        "execution_scope": {"mode": "manual", "target_ids": ["remote-1"]},
+        "allowed_targets": [
+            {
+                "id": "remote-1",
+                "handle": "ssh:compute-a",
+                "alias": "Compute A",
+                "kind": "remote_ssh",
+                "primary": True,
+            }
+        ],
+        "_runtime_targets": [
+            {
+                "handle": "ssh:compute-a",
+                "runtime": "remote_ssh",
+                "root": "/home/alice",
+                "remote_connection": {
+                    "host": "10.0.0.8",
+                    "username": "alice",
+                },
+            }
+        ],
+    }
+
+    context = ContextBuilder().build(
+        prompt_snapshot=stable,
+        entries=(),
+        run_settings=settings,
+    )
+
+    assert context.instructions.startswith(stable)
+    assert "## Execution targets for this turn" in context.instructions
+    assert "ssh:compute-a: Compute A [SSH] (primary) root=/home/alice" in context.instructions
+    assert "10.0.0.8" not in context.instructions
+    assert "alice@" not in context.instructions
+
+
 def test_context_preserves_tool_error_and_interaction_response() -> None:
     entries = [
         _entry(

@@ -29,6 +29,7 @@ from app.services.agent_harness.tools import ToolCall
 from app.services.agent_harness.workspace_runtime import (
     LocalWorkspaceBackend,
     RemoteWorkspaceBackend,
+    ScopedWorkspaceBackend,
 )
 from app.services.llm.credentials import encrypt_secret
 from app.services.remote_execution import RemoteCommandResult
@@ -1283,6 +1284,89 @@ async def test_remote_runtime_resolves_current_credentials_only_when_executing(
     assert path == "/srv/project/result.txt"
     assert content == b"hello"
     assert executor.connections[0].id == str(connection.id)
+
+
+@pytest.mark.asyncio
+async def test_local_runtime_routes_one_tool_call_to_a_frozen_remote_target(
+    db_session,
+    tmp_path,
+) -> None:
+    workspace = await _workspace(db_session)
+    connection = RemoteConnection(
+        workspace_id=str(workspace.id),
+        name="Compute A",
+        host="compute-a.example.org",
+        port=22,
+        username="alice",
+        auth_method="agent",
+        verified_root_path="/home/alice",
+    )
+    db_session.add(connection)
+    await db_session.commit()
+    executor = _RecordingRemoteExecutor()
+    local_root = tmp_path / "project"
+    local_root.mkdir()
+    target_view = {
+        "id": str(connection.id),
+        "handle": "ssh:compute-a",
+        "alias": "Compute A",
+        "kind": "remote_ssh",
+        "root": "/home/alice",
+    }
+    session = SimpleNamespace(
+        workspace_id=str(workspace.id),
+        project_id=str(uuid4()),
+        permission_mode="ask_dangerous",
+        workspace_access="read_write",
+        prompt_snapshot={},
+        workspace_snapshot={"runtime": "local", "root": str(local_root)},
+    )
+
+    runtime = workspace_runtime_for_session(
+        db_session,
+        session,
+        run_settings={
+            "permission_mode": "ask_dangerous",
+            "allowed_targets": [
+                {
+                    "id": "local",
+                    "handle": "local",
+                    "alias": "Local",
+                    "kind": "local",
+                    "primary": True,
+                },
+                {**target_view, "primary": False},
+            ],
+            "_runtime_targets": [
+                {"handle": "local", "runtime": "local", "root": str(local_root)},
+                {
+                    "handle": "ssh:compute-a",
+                    "runtime": "remote_ssh",
+                    "root": "/home/alice",
+                    "remote_connection": {
+                        "id": str(connection.id),
+                        "name": connection.name,
+                        "host": connection.host,
+                        "port": connection.port,
+                        "username": connection.username,
+                    },
+                },
+            ],
+        },
+        remote_executor=executor,
+    )
+    result = await runtime.execute(
+        ToolCall(
+            "read-remote",
+            "read",
+            {"target": "ssh:compute-a", "path": "result.txt"},
+        )
+    )
+
+    assert isinstance(runtime._executor.backend, ScopedWorkspaceBackend)
+    assert result.status == "completed"
+    assert result.target == target_view
+    assert executor.connections[-1].id == str(connection.id)
 
 
 @pytest.mark.asyncio

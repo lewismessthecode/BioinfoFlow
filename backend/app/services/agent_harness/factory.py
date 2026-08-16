@@ -29,6 +29,7 @@ from app.services.agent_harness.model_target import private_model_snapshot
 from app.services.agent_harness.workspace_runtime import (
     LocalWorkspaceBackend,
     RemoteWorkspaceBackend,
+    ScopedWorkspaceBackend,
     WorkspaceRuntime,
 )
 from app.services.authorization_service import AuthorizationService
@@ -247,6 +248,14 @@ def workspace_runtime_for_session(
         )
     else:
         raise ValueError(f"unknown workspace runtime: {runtime}")
+    backend = _scoped_backend_for_run(
+        db,
+        session,
+        primary_backend=backend,
+        run_settings=run_settings,
+        remote_executor=remote_executor,
+        artifact_writer=artifact_writer,
+    )
     return WorkspaceRuntime(
         backend,
         permission_mode=(
@@ -662,6 +671,10 @@ class _DatabaseRemoteExecutor:
 
 def _remote_connection_snapshot(snapshot: dict[str, Any]) -> RemoteConnectionConfig:
     raw = snapshot.get("remote_connection")
+    return _remote_connection_from_raw(raw)
+
+
+def _remote_connection_from_raw(raw: object) -> RemoteConnectionConfig:
     if not isinstance(raw, dict):
         raise ValueError("remote workspace is missing its connection snapshot")
     required = ("id", "name", "host", "username")
@@ -678,6 +691,101 @@ def _remote_connection_snapshot(snapshot: dict[str, Any]) -> RemoteConnectionCon
         host=raw["host"],
         username=raw["username"],
         port=port,
+    )
+
+
+def _scoped_backend_for_run(
+    db: AsyncSession,
+    session: Any,
+    *,
+    primary_backend: LocalWorkspaceBackend | RemoteWorkspaceBackend,
+    run_settings: dict[str, Any] | None,
+    remote_executor: RemoteExecutor | None,
+    artifact_writer,
+) -> LocalWorkspaceBackend | RemoteWorkspaceBackend | ScopedWorkspaceBackend:
+    if not isinstance(run_settings, dict):
+        return primary_backend
+    raw_runtime_targets = run_settings.get("_runtime_targets")
+    raw_allowed_targets = run_settings.get("allowed_targets")
+    if not isinstance(raw_runtime_targets, list) or not raw_runtime_targets:
+        return primary_backend
+    if not isinstance(raw_allowed_targets, list) or not raw_allowed_targets:
+        raise ValueError("Run execution targets are missing their public views")
+
+    views = {
+        item.get("handle"): item
+        for item in raw_allowed_targets
+        if isinstance(item, dict) and isinstance(item.get("handle"), str)
+    }
+    targets: dict[
+        str,
+        tuple[LocalWorkspaceBackend | RemoteWorkspaceBackend, dict[str, Any]],
+    ] = {}
+    primary_handle = None
+    session_runtime = str((session.workspace_snapshot or {}).get("runtime") or "local")
+    for raw in raw_runtime_targets:
+        if not isinstance(raw, dict):
+            raise ValueError("Run execution target snapshot is invalid")
+        handle = raw.get("handle")
+        root = raw.get("root")
+        target_runtime = raw.get("runtime")
+        view = views.get(handle)
+        if (
+            not isinstance(handle, str)
+            or not handle.strip()
+            or not isinstance(root, str)
+            or not root.strip()
+            or not isinstance(view, dict)
+        ):
+            raise ValueError("Run execution target snapshot is invalid")
+        if view.get("primary") is True:
+            primary_handle = handle
+        target_view = {
+            "id": view.get("id"),
+            "handle": handle,
+            "alias": view.get("alias"),
+            "kind": view.get("kind"),
+            "root": root,
+        }
+        if target_runtime == "local":
+            if session_runtime == "local" and str(primary_backend.working_directory) == str(
+                Path(root).expanduser().resolve()
+            ):
+                target_backend = primary_backend
+            else:
+                local_root = Path(root).expanduser().resolve()
+                target_backend = LocalWorkspaceBackend(
+                    working_directory=local_root,
+                    read_roots=(local_root,),
+                    write_roots=(local_root,),
+                    protected_roots=(),
+                    sandbox_runner=SandboxRunner.from_settings(),
+                    artifact_writer=artifact_writer,
+                )
+        elif target_runtime == "remote_ssh":
+            connection = _remote_connection_from_raw(raw.get("remote_connection"))
+            target_backend = RemoteWorkspaceBackend(
+                connection=connection,
+                executor=_DatabaseRemoteExecutor(
+                    db,
+                    workspace_id=str(session.workspace_id),
+                    connection_id=connection.id,
+                    executor=remote_executor or SshRemoteExecutor(),
+                ),
+                working_directory=root,
+                read_roots=(root,),
+                write_roots=(root,),
+                artifact_writer=artifact_writer,
+            )
+        else:
+            raise ValueError("Run execution target runtime is invalid")
+        targets[handle] = (target_backend, target_view)
+
+    if set(targets) != set(views):
+        raise ValueError("Run execution target snapshots do not match allowed targets")
+    return ScopedWorkspaceBackend(
+        targets,
+        primary_handle=primary_handle or next(iter(targets)),
     )
 
 
