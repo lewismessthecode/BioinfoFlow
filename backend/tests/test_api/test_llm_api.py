@@ -792,6 +792,23 @@ async def test_llm_provider_setup_persists_explicit_responses_protocol(
 
 
 @pytest.mark.asyncio
+async def test_custom_provider_setup_requires_explicit_endpoint(async_client) -> None:
+    response = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "name": "Missing endpoint relay",
+            "api_key": "relay-key",
+            "model_ids": ["custom-model"],
+            "scope": "user",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "endpoint is required" in response.text
+
+
+@pytest.mark.asyncio
 async def test_llm_provider_setup_can_switch_wire_protocol_in_both_directions(
     async_client,
 ):
@@ -1779,29 +1796,10 @@ async def test_llm_provider_test_selects_model_and_rejects_foreign_model(
 
 
 @pytest.mark.asyncio
-async def test_custom_provider_test_without_endpoint_fails_before_probe(
+async def test_custom_provider_create_without_endpoint_fails_before_probe(
     async_client,
     monkeypatch,
 ) -> None:
-    provider_response = await async_client.post(
-        "/api/v1/llm/providers",
-        json={
-            "name": "Missing endpoint provider",
-            "kind": "openai_compatible",
-        },
-    )
-    assert provider_response.status_code == 201
-    provider_id = provider_response.json()["data"]["id"]
-    model_response = await async_client.post(
-        "/api/v1/llm/models",
-        json={
-            "provider_id": provider_id,
-            "model_id": "custom-model",
-            "display_name": "Custom model",
-        },
-    )
-    assert model_response.status_code == 201
-
     async def unexpected_probe(*args, **kwargs):
         del args, kwargs
         raise AssertionError("provider probe must not run without an endpoint")
@@ -1810,11 +1808,15 @@ async def test_custom_provider_test_without_endpoint_fails_before_probe(
         "app.services.llm.catalog.LlmProviderProbe.probe",
         unexpected_probe,
     )
-
-    tested = await async_client.post(f"/api/v1/llm/providers/{provider_id}/test")
-
-    assert tested.status_code == 422
-    assert "endpoint is required" in tested.text
+    provider_response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Missing endpoint provider",
+            "kind": "openai_compatible",
+        },
+    )
+    assert provider_response.status_code == 422
+    assert "endpoint is required" in provider_response.text
 
 
 @pytest.mark.asyncio
@@ -2196,6 +2198,7 @@ async def test_create_provider_derives_tenant_fields_from_session(
             json={
                 "name": "Tenant forced provider",
                 "kind": "openai_compatible",
+                "base_url": "https://tenant-provider.example/v1",
                 "scope": "user",
                 "workspace_id": OTHER_WORKSPACE_ID,
                 "user_id": "other-user",
@@ -2277,6 +2280,7 @@ async def test_team_member_cannot_write_workspace_or_global_llm_scope(
             json={
                 "name": "Workspace provider",
                 "kind": "openai_compatible",
+                "base_url": "https://workspace-provider.example/v1",
                 "scope": "workspace",
             },
         )
@@ -2285,6 +2289,7 @@ async def test_team_member_cannot_write_workspace_or_global_llm_scope(
             json={
                 "name": "Global provider",
                 "kind": "openai_compatible",
+                "base_url": "https://global-provider.example/v1",
                 "scope": "global",
             },
         )

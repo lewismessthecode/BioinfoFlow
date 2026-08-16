@@ -19,9 +19,10 @@ _SUBSCRIBER_QUEUE_CAPACITY = 256
 class AgentEventHub:
     """Live event fan-out; durable truth always comes from the snapshot."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, liveness_interval_seconds: float = 15.0) -> None:
         self._subscribers: dict[str, set[asyncio.Queue[AgentEvent]]] = defaultdict(set)
         self._lock = asyncio.Lock()
+        self._liveness_interval_seconds = max(liveness_interval_seconds, 0.01)
 
     async def publish(self, session_id: str | UUID, event: AgentEvent) -> None:
         key = str(session_id)
@@ -52,7 +53,17 @@ class AgentEventHub:
         try:
             yield SnapshotEvent(snapshot=await snapshot())
             while True:
-                event = await queue.get()
+                try:
+                    event = await asyncio.wait_for(
+                        queue.get(),
+                        timeout=self._liveness_interval_seconds,
+                    )
+                except TimeoutError:
+                    try:
+                        await snapshot()
+                    except LookupError:
+                        return
+                    continue
                 if isinstance(event, _StreamClosed):
                     return
                 yield event
