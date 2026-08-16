@@ -6,6 +6,7 @@ import type {
   InteractionResponse,
   SessionSnapshot,
 } from "@/lib/agent/contracts"
+import { ApiError } from "@/lib/api"
 
 const mocks = vi.hoisted(() => ({
   dispatchAgentCommand: vi.fn(),
@@ -107,11 +108,13 @@ describe("useAgentSession", () => {
     mocks.subscribeAgentEvents.mockReturnValue(mocks.unsubscribe)
   })
 
-  it("loads an initial snapshot while subscribing immediately to live events", async () => {
+  it("loads the snapshot before subscribing to live events", async () => {
     const { result } = renderHook(() => useAgentSession("session-1"))
 
     expect(result.current.isLoading).toBe(true)
     expect(result.current.connectionStatus).toBe("connecting")
+    expect(mocks.subscribeAgentEvents).not.toHaveBeenCalled()
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
     expect(mocks.subscribeAgentEvents).toHaveBeenCalledWith({
       sessionId: "session-1",
       onEvent: expect.any(Function),
@@ -132,8 +135,62 @@ describe("useAgentSession", () => {
     expect(result.current.error).toBeNull()
   })
 
-  it("reports a stream interruption and clears it after a recovery snapshot", () => {
+  it("does not subscribe when the session snapshot is not found", async () => {
+    mocks.getAgentSnapshot.mockRejectedValueOnce(
+      new ApiError("Agent session not found", {
+        code: "NOT_FOUND",
+        status: 404,
+      }),
+    )
+
+    const { result } = renderHook(() => useAgentSession("missing-session"))
+
+    await waitFor(() =>
+      expect(result.current.error?.message).toBe("Agent session not found"),
+    )
+    expect(result.current.connectionStatus).toBe("disconnected")
+    expect(mocks.subscribeAgentEvents).not.toHaveBeenCalled()
+  })
+
+  it("recovers live updates after a transient initial snapshot failure", async () => {
+    mocks.getAgentSnapshot.mockRejectedValueOnce(new Error("Network unavailable"))
+
     const { result } = renderHook(() => useAgentSession("session-1"))
+
+    await waitFor(() =>
+      expect(result.current.error?.message).toBe("Network unavailable"),
+    )
+    expect(result.current.isLoading).toBe(false)
+    expect(result.current.connectionStatus).toBe("disconnected")
+    expect(mocks.subscribeAgentEvents).toHaveBeenCalledOnce()
+
+    const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
+    act(() => {
+      subscription.onEvent({
+        type: "snapshot",
+        snapshot: snapshot("Recovered live"),
+      })
+      subscription.onConnectionChange("connected")
+    })
+
+    await waitFor(() =>
+      expect(result.current.session?.title).toBe("Recovered live"),
+    )
+    expect(result.current.connectionStatus).toBe("connected")
+    expect(result.current.error).toBeNull()
+  })
+
+  it("reports a stream interruption and clears it after a recovery snapshot", async () => {
+    let resolveRecovery!: (value: SessionSnapshot) => void
+    mocks.getAgentSnapshot
+      .mockResolvedValueOnce(snapshot())
+      .mockReturnValueOnce(
+        new Promise<SessionSnapshot>((resolve) => {
+          resolveRecovery = resolve
+        }),
+      )
+    const { result } = renderHook(() => useAgentSession("session-1"))
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
     const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
 
     act(() => {
@@ -145,12 +202,50 @@ describe("useAgentSession", () => {
       "Agent event stream disconnected",
     )
 
-    act(() => {
+    await act(async () => {
+      resolveRecovery(snapshot())
+      await Promise.resolve()
+      await Promise.resolve()
       subscription.onEvent({ type: "snapshot", snapshot: snapshot() })
       subscription.onConnectionChange("connected")
     })
     expect(result.current.connectionStatus).toBe("connected")
     expect(result.current.error).toBeNull()
+  })
+
+  it("coalesces concurrent snapshot recovery requests", async () => {
+    let resolveRecovery!: (value: SessionSnapshot) => void
+    mocks.getAgentSnapshot
+      .mockResolvedValueOnce(snapshot("Initial"))
+      .mockReturnValueOnce(
+        new Promise<SessionSnapshot>((resolve) => {
+          resolveRecovery = resolve
+        }),
+      )
+      .mockResolvedValueOnce(snapshot("Coalesced recovery"))
+
+    const { result } = renderHook(() => useAgentSession("session-1"))
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
+    const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
+
+    act(() => {
+      subscription.onError(new Event("error"))
+      subscription.onError(new Event("error"))
+      subscription.onError(new Event("error"))
+    })
+
+    expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      resolveRecovery(snapshot("First recovery"))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(3))
+    await waitFor(() =>
+      expect(result.current.session?.title).toBe("Coalesced recovery"),
+    )
   })
 
   it("applies live events and refetches when a delta cannot be reconciled", async () => {
@@ -200,7 +295,7 @@ describe("useAgentSession", () => {
     await waitFor(() => expect(result.current.session?.title).toBe("Recovered"))
   })
 
-  it("publishes a burst of assistant deltas once on the next animation frame", () => {
+  it("publishes a burst of assistant deltas once on the next animation frame", async () => {
     const frames: FrameRequestCallback[] = []
     vi.stubGlobal(
       "requestAnimationFrame",
@@ -212,6 +307,7 @@ describe("useAgentSession", () => {
     vi.stubGlobal("cancelAnimationFrame", vi.fn())
 
     const { result } = renderHook(() => useAgentSession("session-1"))
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
     const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
     act(() => {
       subscription.onEvent({ type: "snapshot", snapshot: streamingSnapshot() })
@@ -260,44 +356,43 @@ describe("useAgentSession", () => {
     vi.unstubAllGlobals()
   })
 
-  it("coalesces snapshot recovery requests while a snapshot is already loading", async () => {
-    let resolveInitial!: (value: SessionSnapshot) => void
+  it("terminates the stream when a loaded session disappears", async () => {
     mocks.getAgentSnapshot
-      .mockReturnValueOnce(
-        new Promise<SessionSnapshot>((resolve) => {
-          resolveInitial = resolve
+      .mockResolvedValueOnce(snapshot("Initial"))
+      .mockRejectedValueOnce(
+        new ApiError("Agent session not found", {
+          code: "NOT_FOUND",
+          status: 404,
         }),
       )
-      .mockResolvedValue(snapshot("Recovered"))
 
-    renderHook(() => useAgentSession("session-1"))
+    const { result } = renderHook(() => useAgentSession("session-1"))
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
     const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
     act(() => {
-      subscription.onEvent({ type: "snapshot", snapshot: streamingSnapshot() })
-      for (const startOffset of [9, 10, 11]) {
-        subscription.onEvent({
-          type: "assistant.delta",
-          run_id: "run-1",
-          draft_id: "draft-1",
-          part_id: "part-1",
-          part_type: "text",
-          start_offset: startOffset,
-          end_offset: startOffset + 1,
-          delta: "?",
-        })
-      }
+      subscription.onError(new Event("error"))
     })
 
-    expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(result.current.error?.message).toBe("Agent session not found"),
+    )
+    expect(result.current.connectionStatus).toBe("disconnected")
+    expect(mocks.unsubscribe).toHaveBeenCalledOnce()
 
-    act(() => resolveInitial(snapshot("Initial request")))
-
-    await waitFor(() => expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(2))
+    act(() => {
+      subscription.onConnectionChange("reconnecting")
+      subscription.onError(new Event("error"))
+    })
     await act(async () => {
       await Promise.resolve()
       await Promise.resolve()
     })
+
+    expect(result.current.connectionStatus).toBe("disconnected")
+    expect(result.current.error?.message).toBe("Agent session not found")
     expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(2)
+    expect(mocks.subscribeAgentEvents).toHaveBeenCalledOnce()
+    expect(mocks.unsubscribe).toHaveBeenCalledOnce()
   })
 
   it("exposes stable actions for the four public commands", async () => {
@@ -317,6 +412,7 @@ describe("useAgentSession", () => {
     const { result, rerender } = renderHook(() =>
       useAgentSession("session-1"),
     )
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
     const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
     act(() => {
       subscription.onEvent({ type: "snapshot", snapshot: snapshot() })
@@ -379,6 +475,7 @@ describe("useAgentSession", () => {
     mocks.updateAgentSession.mockResolvedValueOnce(patchResponse)
 
     const { result } = renderHook(() => useAgentSession("session-1"))
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
     const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
     act(() => {
       subscription.onEvent({ type: "snapshot", snapshot: snapshot() })
@@ -403,22 +500,22 @@ describe("useAgentSession", () => {
 
   it("ignores a stale snapshot refetch after the session changes", async () => {
     let resolveSnapshot!: (value: SessionSnapshot) => void
-    mocks.getAgentSnapshot.mockReturnValueOnce(
+    mocks.getAgentSnapshot
+      .mockResolvedValueOnce(snapshot("Initial"))
+      .mockReturnValueOnce(
       new Promise<SessionSnapshot>((resolve) => {
         resolveSnapshot = resolve
       }),
-    )
+      )
 
     const { result, rerender } = renderHook(
       ({ sessionId }) => useAgentSession(sessionId),
       { initialProps: { sessionId: "session-1" } },
     )
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
     const firstSubscription = mocks.subscribeAgentEvents.mock.calls[0][0]
     act(() => {
-      firstSubscription.onEvent({
-        type: "snapshot",
-        snapshot: streamingSnapshot(),
-      })
+      firstSubscription.onEvent({ type: "snapshot", snapshot: streamingSnapshot() })
       firstSubscription.onEvent({
         type: "assistant.delta",
         run_id: "run-1",
@@ -433,6 +530,9 @@ describe("useAgentSession", () => {
     expect(mocks.getAgentSnapshot).toHaveBeenCalledWith("session-1")
 
     rerender({ sessionId: "session-2" })
+    await waitFor(() =>
+      expect(mocks.subscribeAgentEvents).toHaveBeenCalledTimes(2),
+    )
     const secondSubscription = mocks.subscribeAgentEvents.mock.calls[1][0]
     act(() => {
       secondSubscription.onEvent({
@@ -462,6 +562,7 @@ describe("useAgentSession", () => {
       ({ sessionId }) => useAgentSession(sessionId),
       { initialProps: { sessionId: "session-1" } },
     )
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
     act(() => {
       mocks.subscribeAgentEvents.mock.calls[0][0].onEvent({
         type: "snapshot",
@@ -474,6 +575,9 @@ describe("useAgentSession", () => {
     })
 
     rerender({ sessionId: "session-2" })
+    await waitFor(() =>
+      expect(mocks.subscribeAgentEvents).toHaveBeenCalledTimes(2),
+    )
     act(() => {
       mocks.subscribeAgentEvents.mock.calls[1][0].onEvent({
         type: "snapshot",
@@ -490,8 +594,9 @@ describe("useAgentSession", () => {
     expect(result.current.error).toBeNull()
   })
 
-  it("unsubscribes and ignores stream callbacks after unmount", () => {
+  it("unsubscribes and ignores stream callbacks after unmount", async () => {
     const { unmount } = renderHook(() => useAgentSession("session-1"))
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
     const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
 
     unmount()

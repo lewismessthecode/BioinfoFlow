@@ -7,6 +7,7 @@ import {
   getAgentSnapshot,
   updateAgentSession,
 } from "@/lib/agent/client"
+import { ApiError } from "@/lib/api"
 import { subscribeAgentEvents } from "@/lib/agent/stream"
 import {
   applyAgentEvent,
@@ -81,8 +82,10 @@ export function useAgentSession(sessionId: string): AgentSessionState {
 
   useEffect(() => {
     let active = true
+    let unsubscribe: (() => void) | null = null
     let snapshotRequest: Promise<boolean> | null = null
     let snapshotRefreshQueued = false
+    let sessionMissing = false
     let viewFrame: number | null = null
     const generation = generationRef.current + 1
 
@@ -118,43 +121,96 @@ export function useAgentSession(sessionId: string): AgentSessionState {
       })
     }
 
-    const refreshSnapshot = (options?: {
-      skipIfHydrated?: boolean
-    }): Promise<boolean> => {
+    const refreshSnapshot = (): Promise<boolean> => {
+      if (!active || sessionMissing) return Promise.resolve(false)
       if (snapshotRequest) {
-        if (options?.skipIfHydrated) return snapshotRequest
         snapshotRefreshQueued = true
         return snapshotRequest
       }
       snapshotRequest = getAgentSnapshot(sessionId)
         .then((snapshot) => {
           if (!active) return false
-          if (options?.skipIfHydrated && storeRef.current.session) return true
           cancelViewFrame()
-          return replaceSnapshot(generation, sessionId, snapshot)
+          const replaced = replaceSnapshot(generation, sessionId, snapshot)
+          if (replaced && unsubscribe === null) {
+            unsubscribe = subscribe()
+          }
+          return replaced
         })
         .catch((caught) => {
           if (!active) return false
+          if (isMissingSessionError(caught)) {
+            sessionMissing = true
+            snapshotRefreshQueued = false
+            unsubscribe?.()
+            unsubscribe = null
+            setView((current) => ({
+              ...(current.sessionId === sessionId
+                ? current
+                : initialView(sessionId)),
+              connectionStatus: "disconnected",
+              error: asError(caught, "Agent session not found"),
+              isLoading: false,
+            }))
+            return false
+          }
           setView((current) => ({
             ...(current.sessionId === sessionId
               ? current
               : initialView(sessionId)),
+            connectionStatus: "disconnected",
             error: asError(caught, "Unable to load agent session"),
             isLoading: false,
           }))
+          if (unsubscribe === null) {
+            unsubscribe = subscribe()
+          }
           return false
         })
         .finally(() => {
           snapshotRequest = null
-          if (!active || !snapshotRefreshQueued) return
+          if (!active || sessionMissing || !snapshotRefreshQueued) return
           snapshotRefreshQueued = false
           void refreshSnapshot()
         })
       return snapshotRequest
     }
 
+    const subscribe = () => {
+      if (
+        !active ||
+        sessionMissing ||
+        generationRef.current !== generation
+      ) {
+        return null
+      }
+      return subscribeAgentEvents({
+        sessionId,
+        onEvent,
+        onConnectionChange: (status) => {
+          if (!active || sessionMissing) return
+          setView((current) => ({
+            ...(current.sessionId === sessionId
+              ? current
+              : initialView(sessionId)),
+            connectionStatus: status,
+          }))
+        },
+        onError: () => {
+          if (!active || sessionMissing) return
+          setView((current) => ({
+            ...(current.sessionId === sessionId
+              ? current
+              : initialView(sessionId)),
+            error: new Error("Agent event stream disconnected"),
+          }))
+          void refreshSnapshot()
+        },
+      })
+    }
+
     const onEvent = (event: AgentEvent) => {
-      if (!active) return
+      if (!active || sessionMissing) return
       const application = applyAgentEvent(storeRef.current, event)
       if (application.outcome === "needs_snapshot") {
         void refreshSnapshot()
@@ -170,35 +226,14 @@ export function useAgentSession(sessionId: string): AgentSessionState {
       publishStore(event.type)
     }
 
-    const unsubscribe = subscribeAgentEvents({
-      sessionId,
-      onEvent,
-      onConnectionChange: (status) => {
-        if (!active) return
-        setView((current) => ({
-          ...(current.sessionId === sessionId
-            ? current
-            : initialView(sessionId)),
-          connectionStatus: status,
-        }))
-      },
-      onError: () => {
-        if (!active) return
-        setView((current) => ({
-          ...(current.sessionId === sessionId
-            ? current
-            : initialView(sessionId)),
-          error: new Error("Agent event stream disconnected"),
-        }))
-      },
-    })
-    void refreshSnapshot({ skipIfHydrated: true })
+    void refreshSnapshot()
 
     return () => {
       active = false
       cancelViewFrame()
       if (generationRef.current === generation) generationRef.current += 1
-      unsubscribe()
+      unsubscribe?.()
+      unsubscribe = null
     }
   }, [replaceSnapshot, retryRevision, sessionId])
 
@@ -313,6 +348,10 @@ export function useAgentSession(sessionId: string): AgentSessionState {
 
 function asError(value: unknown, fallback: string) {
   return value instanceof Error ? value : new Error(fallback)
+}
+
+function isMissingSessionError(value: unknown): value is ApiError {
+  return value instanceof ApiError && value.status === 404
 }
 
 function createCommandId() {
