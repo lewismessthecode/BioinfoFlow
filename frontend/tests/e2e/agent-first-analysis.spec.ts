@@ -8,6 +8,74 @@ import {
 } from "./support/keyless-agent"
 
 test.describe("Agent workbench live run journey", () => {
+  test("keeps the draft composer centered and theme-safe on desktop and mobile", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => window.localStorage.setItem("theme", "dark"))
+    await page.setViewportSize({ width: 1440, height: 900 })
+
+    const agent = new AgentPage(page)
+    await agent.goto()
+    await agent.expectComposerReady()
+
+    await expect(page.locator("html")).toHaveClass(/dark/)
+    const desktopGeometry = await page.evaluate(() => {
+      const workbench = document.querySelector<HTMLElement>(
+        '[data-testid="agent-workbench"]',
+      )
+      const composer = document.querySelector<HTMLElement>(
+        '[data-testid="agent-composer"]',
+      )
+      const surface = document.querySelector<HTMLElement>(
+        '[data-testid="agent-composer-surface"]',
+      )
+      const textarea = composer?.querySelector("textarea")
+      if (!workbench || !composer || !surface || !textarea) return null
+      const workbenchBox = workbench.getBoundingClientRect()
+      const composerBox = composer.getBoundingClientRect()
+      return {
+        centerDelta: Math.abs(
+          workbenchBox.left + workbenchBox.width / 2 -
+            (composerBox.left + composerBox.width / 2),
+        ),
+        composerWidth: composerBox.width,
+        surfaceBackground: getComputedStyle(surface).backgroundColor,
+        textareaBackground: getComputedStyle(textarea).backgroundColor,
+      }
+    })
+    expect(desktopGeometry).not.toBeNull()
+    expect(desktopGeometry?.centerDelta).toBeLessThan(2)
+    expect(desktopGeometry?.composerWidth).toBeLessThanOrEqual(768)
+    expect(desktopGeometry?.surfaceBackground).not.toBe("rgb(0, 0, 0)")
+    expect(desktopGeometry?.textareaBackground).toBe("rgba(0, 0, 0, 0)")
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.reload()
+    await agent.expectComposerReady()
+
+    const mobileGeometry = await page.evaluate(() => {
+      const composer = document.querySelector<HTMLElement>(
+        '[data-testid="agent-composer"]',
+      )
+      if (!composer) return null
+      const box = composer.getBoundingClientRect()
+      return {
+        left: box.left,
+        right: box.right,
+        viewportWidth: window.innerWidth,
+        documentWidth: document.documentElement.scrollWidth,
+      }
+    })
+    expect(mobileGeometry).not.toBeNull()
+    expect(mobileGeometry?.left).toBeGreaterThanOrEqual(0)
+    expect(mobileGeometry?.right).toBeLessThanOrEqual(
+      mobileGeometry?.viewportWidth ?? 0,
+    )
+    expect(mobileGeometry?.documentWidth).toBeLessThanOrEqual(
+      mobileGeometry?.viewportWidth ?? 0,
+    )
+  })
+
   test("opens inline model setup and preserves the draft when no model is available", async ({
     page,
     request,
@@ -71,7 +139,7 @@ test.describe("Agent workbench live run journey", () => {
       }),
     ).toBeVisible({ timeout: 20_000 })
     await expect(
-      agent.transcript.getByText("Thinking summary", { exact: true }),
+      agent.transcript.getByText("Thinking", { exact: true }),
     ).toBeVisible()
   })
 
@@ -91,16 +159,13 @@ test.describe("Agent workbench live run journey", () => {
     await expect(
       agent.transcript.getByText(prompt, { exact: true }),
     ).toBeVisible()
-    await expect(agent.activeRun.getByText("Thinking summary")).toBeVisible({
-      timeout: 20_000,
-    })
     await expect(
-      agent.activeRun.getByText("Checking the keyless request.", {
+      agent.transcript.getByText("Thinking", { exact: true }),
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(
+      agent.transcript.getByText("Checking the keyless request.", {
         exact: true,
       }),
-    ).toBeVisible()
-    await expect(
-      agent.activeRun.getByText("Keyless model", { exact: true }),
     ).toBeVisible()
     await expect(
       agent.transcript.getByText("Keyless model stream completed.", {
@@ -112,7 +177,6 @@ test.describe("Agent workbench live run journey", () => {
       .getByTestId("agent-run-outcome")
       .filter({ hasText: "Completed" })
     await expect(outcome).toBeVisible()
-    await expect(outcome.getByText(/^Ended /)).toBeVisible()
   })
 
   test("renders a structured plan without a duplicate tool card", async ({
@@ -155,7 +219,7 @@ test.describe("Agent workbench live run journey", () => {
 
     await agent.gotoSession(opened.session.id)
     await agent.expectComposerReady()
-    await agent.sendMessage("Read both keyless values in parallel.")
+    await agent.sendMessage("Inspect both environment views in parallel.")
 
     await expect(
       agent.transcript.getByText("Both keyless tools completed.", {

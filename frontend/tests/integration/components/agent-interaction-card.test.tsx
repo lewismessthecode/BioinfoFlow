@@ -134,6 +134,23 @@ const recoveryRequest: RecoveryRequest = {
 }
 
 describe("AgentInteractionCard", () => {
+  it("renders approval as a theme-safe transcript card", () => {
+    renderWithProviders(
+      <AgentInteractionCard
+        interactionId="interaction-theme"
+        request={approvalRequest}
+        onRespond={vi.fn()}
+      />,
+    )
+
+    const card = screen.getByTestId("agent-interaction-card")
+    expect(card).toHaveAttribute("data-interaction-type", "approval")
+    expect(card).toHaveClass("bg-warning-muted/25")
+    const reject = screen.getByRole("button", { name: "Reject" })
+    expect(reject).toHaveClass("dark:bg-transparent")
+    expect(reject).not.toHaveClass("dark:bg-input/30")
+  })
+
   it("announces a newly arrived pending interaction without interrupting the user", () => {
     renderWithProviders(
       <AgentInteractionCard

@@ -5,18 +5,23 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react"
 import type { RefObject } from "react"
 import type { ReactNode } from "react"
 import { useRouter } from "next/navigation"
-import { useTranslations } from "next-intl"
+import { useLocale, useTranslations } from "next-intl"
 
 import { AgentComposer } from "@/components/bioinfoflow/agent/agent-composer"
+import type {
+  AgentEnvironmentSelection,
+  AgentEnvironmentTarget,
+} from "@/components/bioinfoflow/agent/environment-selector"
 import { AgentContextPicker } from "@/components/bioinfoflow/agent/agent-context-picker"
 import { AgentModelConnectionDialog } from "@/components/bioinfoflow/agent/agent-model-connection-dialog"
-import { AgentTranscript } from "@/components/bioinfoflow/agent/agent-transcript"
+import { ConversationTranscript } from "@/components/bioinfoflow/agent/conversation-transcript"
 import { ModelSelector } from "@/components/bioinfoflow/chat/model-selector"
 import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -25,7 +30,9 @@ import {
   useAgentSession,
   type AgentSessionState,
 } from "@/hooks/use-agent-session"
+import { useAgentStarterPrompts } from "@/hooks/use-agent-starter-prompts"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
+import type { ModelSelection } from "@/hooks/use-llm-settings"
 import {
   createAgentSession,
   dispatchAgentCommand,
@@ -42,17 +49,16 @@ import type {
   SessionView,
 } from "@/lib/agent/contracts"
 import {
+  fetchRemoteConnections,
+  type RemoteConnection,
+} from "@/lib/demo-connections"
+import {
   publishAgentSessionSummary,
   sessionSummaryFromView,
 } from "@/lib/agent/session-preferences"
+import { projectLegacyConversationState } from "@/lib/agent/projection/legacy-conversation-adapter"
 import { ApiError } from "@/lib/api"
-import {
-  Bot,
-  CircleAlert,
-  Loader2,
-  RefreshCw,
-  WifiOff,
-} from "@/lib/icons"
+import { Bot, CircleAlert, Loader2, RefreshCw, WifiOff } from "@/lib/icons"
 import { cn } from "@/lib/utils"
 
 export type AgentWorkbenchHandle = {
@@ -70,6 +76,15 @@ type AgentWorkbenchProps = {
   onSessionResolved?: (session: SessionView) => void
   onOpenRun?: (runId: string) => void
   headerActions?: ReactNode
+  conversationModelControls?: ReactNode
+  environmentTargets?: readonly AgentEnvironmentTarget[]
+  requestedEnvironmentSelection?: AgentEnvironmentSelection
+  effectiveEnvironmentSelection?: AgentEnvironmentSelection
+  environmentSelectionPending?: boolean
+  onEnvironmentSelectionChange?: (
+    selection: AgentEnvironmentSelection,
+  ) => Promise<void>
+  starterPrompts?: readonly string[]
   className?: string
 }
 
@@ -92,23 +107,108 @@ export const AgentWorkbench = forwardRef<
     onSessionResolved,
     onOpenRun,
     headerActions,
+    conversationModelControls,
+    environmentTargets,
+    requestedEnvironmentSelection,
+    effectiveEnvironmentSelection,
+    environmentSelectionPending = false,
+    onEnvironmentSelectionChange,
+    starterPrompts,
     className,
   },
   ref,
 ) {
   const router = useRouter()
+  const tEnvironment = useTranslations("agentComposer.environment")
   const [localSessionId, setLocalSessionId] = useState<string | null>(null)
   const [draftSessionId, setDraftSessionId] = useState<string | null>(null)
   const [draftPermissionMode, setDraftPermissionMode] =
     useState<AgentPermissionMode>("ask_dangerous")
-  const [draftWorkspaceAccess] =
-    useState<AgentWorkspaceAccess>("read_write")
+  const [draftWorkspaceAccess] = useState<AgentWorkspaceAccess>("read_write")
   const [contextInputs, setContextInputs] = useState<AgentContextInput[]>([])
+  const [localEnvironmentSelection, setLocalEnvironmentSelection] =
+    useState<AgentEnvironmentSelection>({ mode: "auto" })
+  const [draftEffectiveEnvironmentSelection, setDraftEffectiveEnvironmentSelection] =
+    useState<AgentEnvironmentSelection>({ mode: "auto" })
+  const [draftEnvironmentSelectionPending, setDraftEnvironmentSelectionPending] =
+    useState(false)
+  const [remoteConnections, setRemoteConnections] = useState<
+    RemoteConnection[]
+  >([])
   const [modelConnectionOpen, setModelConnectionOpen] = useState(false)
   const createPromiseRef = useRef<Promise<string> | null>(null)
   const cancelRef = useRef<(() => Promise<void>) | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const needsRouteSyncRef = useRef(sessionId === null)
+  const visibleEnvironmentSelection =
+    requestedEnvironmentSelection ?? localEnvironmentSelection
+  const visibleEnvironmentTargets = useMemo<readonly AgentEnvironmentTarget[]>(
+    () =>
+      environmentTargets ?? [
+        {
+          id: "local",
+          label: tEnvironment("local"),
+          kind: "local",
+          status: "online",
+        },
+        ...remoteConnections.map(environmentTargetFromConnection),
+      ],
+    [environmentTargets, remoteConnections, tEnvironment],
+  )
+
+  useEffect(() => {
+    if (environmentTargets) return
+    let active = true
+    void fetchRemoteConnections()
+      .then((connections) => {
+        if (active) setRemoteConnections(connections)
+      })
+      .catch(() => {
+        if (active) setRemoteConnections([])
+      })
+    return () => {
+      active = false
+    }
+  }, [environmentTargets])
+
+  const updateEnvironmentSelection = useCallback(
+    async (selection: AgentEnvironmentSelection) => {
+      if (onEnvironmentSelectionChange) {
+        await onEnvironmentSelectionChange(selection)
+        return
+      }
+
+      const previousSelection = localEnvironmentSelection
+      setLocalEnvironmentSelection(selection)
+      if (!draftSessionId) {
+        setDraftEffectiveEnvironmentSelection(selection)
+        return
+      }
+
+      setDraftEnvironmentSelectionPending(true)
+      try {
+        const snapshot = await updateAgentSession(draftSessionId, {
+          environmentScope: environmentScopeFromSelection(selection),
+        })
+        publishAgentSessionSummary(sessionSummaryFromView(snapshot.session))
+        const effectiveSelection = environmentSelectionFromSession(
+          snapshot.session,
+        )
+        setLocalEnvironmentSelection(effectiveSelection)
+        setDraftEffectiveEnvironmentSelection(effectiveSelection)
+      } catch (error) {
+        setLocalEnvironmentSelection(previousSelection)
+        throw error
+      } finally {
+        setDraftEnvironmentSelectionPending(false)
+      }
+    },
+    [
+      draftSessionId,
+      localEnvironmentSelection,
+      onEnvironmentSelectionChange,
+    ],
+  )
 
   const effectiveSessionId = sessionId ?? localSessionId
   const setCancelHandler = useCallback(
@@ -118,35 +218,47 @@ export const AgentWorkbench = forwardRef<
     [],
   )
 
-  const ensureSession = useCallback((modelSelector?: DraftModelSelector) => {
-    if (effectiveSessionId) return Promise.resolve(effectiveSessionId)
-    if (draftSessionId) return Promise.resolve(draftSessionId)
-    if (createPromiseRef.current) return createPromiseRef.current
+  const ensureSession = useCallback(
+    (modelSelector?: DraftModelSelector) => {
+      if (effectiveSessionId) return Promise.resolve(effectiveSessionId)
+      if (draftSessionId) return Promise.resolve(draftSessionId)
+      if (createPromiseRef.current) return createPromiseRef.current
 
-    const request = createAgentSession({
+      const request = createAgentSession({
+        projectId,
+        permissionMode: draftPermissionMode,
+        workspaceAccess: draftWorkspaceAccess,
+        environmentScope: environmentScopeFromSelection(
+          visibleEnvironmentSelection,
+        ),
+        ...modelSelector,
+      })
+        .then((snapshot) => {
+          const id = snapshot.session.id
+          publishAgentSessionSummary(sessionSummaryFromView(snapshot.session))
+          const effectiveSelection = environmentSelectionFromSession(
+            snapshot.session,
+          )
+          setLocalEnvironmentSelection(effectiveSelection)
+          setDraftEffectiveEnvironmentSelection(effectiveSelection)
+          setDraftSessionId(id)
+          return id
+        })
+        .finally(() => {
+          createPromiseRef.current = null
+        })
+      createPromiseRef.current = request
+      return request
+    },
+    [
+      draftPermissionMode,
+      draftWorkspaceAccess,
+      draftSessionId,
+      effectiveSessionId,
       projectId,
-      permissionMode: draftPermissionMode,
-      workspaceAccess: draftWorkspaceAccess,
-      ...modelSelector,
-    })
-      .then((snapshot) => {
-        const id = snapshot.session.id
-        publishAgentSessionSummary(sessionSummaryFromView(snapshot.session))
-        setDraftSessionId(id)
-        return id
-      })
-      .finally(() => {
-        createPromiseRef.current = null
-      })
-    createPromiseRef.current = request
-    return request
-  }, [
-    draftPermissionMode,
-    draftWorkspaceAccess,
-    draftSessionId,
-    effectiveSessionId,
-    projectId,
-  ])
+      visibleEnvironmentSelection,
+    ],
+  )
 
   const routeToSession = useCallback(
     (id: string) => {
@@ -161,7 +273,9 @@ export const AgentWorkbench = forwardRef<
 
   const addContextInput = useCallback((input: AgentContextInput) => {
     setContextInputs((current) =>
-      current.some((item) => item.id === input.id) ? current : [...current, input],
+      current.some((item) => item.id === input.id)
+        ? current
+        : [...current, input],
     )
   }, [])
 
@@ -218,6 +332,21 @@ export const AgentWorkbench = forwardRef<
     setCancelHandler,
     setModelConnectionOpen,
     onOpenRun,
+    conversationModelControls,
+    environmentTargets: visibleEnvironmentTargets,
+    environmentSelection: visibleEnvironmentSelection,
+    effectiveEnvironmentSelection:
+      effectiveEnvironmentSelection ??
+      (requestedEnvironmentSelection
+        ? visibleEnvironmentSelection
+        : draftEffectiveEnvironmentSelection),
+    environmentSelectionPending:
+      environmentSelectionPending || draftEnvironmentSelectionPending,
+    onEnvironmentSelectionChange: updateEnvironmentSelection,
+    hasControlledEnvironmentSelection:
+      requestedEnvironmentSelection !== undefined ||
+      effectiveEnvironmentSelection !== undefined ||
+      onEnvironmentSelectionChange !== undefined,
   }
 
   return (
@@ -234,6 +363,7 @@ export const AgentWorkbench = forwardRef<
             key={effectiveSessionId}
             sessionId={effectiveSessionId}
             state={sessionState}
+            allowLegacyProjection
             interactive={interactive}
             onSessionResolved={onSessionResolved}
             headerActions={headerActions}
@@ -256,6 +386,7 @@ export const AgentWorkbench = forwardRef<
           draftSessionId={draftSessionId}
           onPermissionModeChange={updateDraftPermissionMode}
           headerActions={headerActions}
+          starterPrompts={starterPrompts}
           {...common}
         />
       )}
@@ -279,6 +410,15 @@ type SharedWorkbenchProps = {
   setCancelHandler: (handler: (() => Promise<void>) | null) => void
   setModelConnectionOpen: (open: boolean) => void
   onOpenRun?: (runId: string) => void
+  conversationModelControls?: ReactNode
+  environmentTargets: readonly AgentEnvironmentTarget[]
+  environmentSelection: AgentEnvironmentSelection
+  effectiveEnvironmentSelection: AgentEnvironmentSelection
+  environmentSelectionPending: boolean
+  onEnvironmentSelectionChange: (
+    selection: AgentEnvironmentSelection,
+  ) => Promise<void>
+  hasControlledEnvironmentSelection: boolean
 }
 
 function DraftWorkbench({
@@ -287,6 +427,7 @@ function DraftWorkbench({
   draftSessionId,
   onPermissionModeChange,
   headerActions,
+  starterPrompts,
   ...shared
 }: SharedWorkbenchProps & {
   permissionMode: AgentPermissionMode
@@ -294,23 +435,51 @@ function DraftWorkbench({
   draftSessionId: string | null
   onPermissionModeChange: (mode: AgentPermissionMode) => Promise<void>
   headerActions?: ReactNode
+  starterPrompts?: readonly string[]
 }) {
   const t = useTranslations("agentWorkbench")
+  const locale = useLocale()
   const [error, setError] = useState<string | null>(null)
-  const { models, selectedModel, setSelectedModel, isLoading } = useLlmSettings()
+  const { models, selectedModel, setSelectedModel, isLoading } =
+    useLlmSettings()
+  const generatedStarterPrompts = useAgentStarterPrompts(
+    shared.projectId,
+    locale,
+  )
+  const fallbackStarterPrompts = [
+    t("starterPrompts.reviewRun"),
+    t("starterPrompts.explainInputs"),
+    t("starterPrompts.checkWorkflow"),
+  ]
   const ensureSession = shared.ensureSession
-  const ensureDraftSession = useCallback(
-    () => {
-      const modelSelector: DraftModelSelector | undefined = selectedModel
-        ? selectedModel.model_id
-          ? { modelId: selectedModel.model_id }
-          : selectedModel.provider && selectedModel.model
-            ? { provider: selectedModel.provider, model: selectedModel.model }
-            : undefined
-        : undefined
-      return ensureSession(modelSelector)
+  const ensureDraftSession = useCallback(() => {
+    const modelSelector: DraftModelSelector | undefined = selectedModel
+      ? selectedModel.model_id
+        ? { modelId: selectedModel.model_id }
+        : selectedModel.provider && selectedModel.model
+          ? { provider: selectedModel.provider, model: selectedModel.model }
+          : undefined
+      : undefined
+    return ensureSession(modelSelector)
+  }, [ensureSession, selectedModel])
+
+  const updateDraftModelSelection = useCallback(
+    async (selection: ModelSelection | null) => {
+      await setSelectedModel(selection)
+      if (!draftSessionId || !selection) return
+      const model = selection.model_id
+        ? { modelId: selection.model_id }
+        : selection.provider && selection.model
+          ? { provider: selection.provider, model: selection.model }
+          : null
+      if (!model) return
+
+      const snapshot = await updateAgentSession(draftSessionId, {
+        model,
+      })
+      publishAgentSessionSummary(sessionSummaryFromView(snapshot.session))
     },
-    [ensureSession, selectedModel],
+    [draftSessionId, setSelectedModel],
   )
 
   const send = async (parts: InputPart[]) => {
@@ -342,8 +511,12 @@ function DraftWorkbench({
       ) : null}
       <div
         data-testid="agent-draft-entry"
-        className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-2 py-10 sm:px-6"
+        className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-2 py-12 sm:px-6"
       >
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-1/2 h-80 w-[min(90vw,54rem)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/[0.025] blur-3xl dark:bg-foreground/[0.018]"
+        />
         <AgentEmptyState compact />
         {error ? <WorkbenchError message={error} embedded /> : null}
         <AgentComposer
@@ -371,10 +544,23 @@ function DraftWorkbench({
             <ModelSelector
               models={models}
               selectedModel={selectedModel}
-              onSelectModel={(selection) => void setSelectedModel(selection)}
-              disabled={isLoading || draftSessionId !== null}
+              onSelectModel={(selection) =>
+                void updateDraftModelSelection(selection)
+              }
+              disabled={isLoading}
               variant="composer"
             />
+          }
+          environmentTargets={shared.environmentTargets}
+          environmentSelection={shared.environmentSelection}
+          effectiveEnvironmentSelection={shared.effectiveEnvironmentSelection}
+          environmentSelectionPending={shared.environmentSelectionPending}
+          onEnvironmentSelectionChange={shared.onEnvironmentSelectionChange}
+          starterPrompts={
+            starterPrompts ??
+            (generatedStarterPrompts.prompts.length > 0
+              ? generatedStarterPrompts.prompts
+              : fallbackStarterPrompts)
           }
         />
       </div>
@@ -401,6 +587,7 @@ function SessionWorkbench({
   interactive,
   onSessionResolved,
   headerActions,
+  allowLegacyProjection = false,
   ...shared
 }: SharedWorkbenchProps & {
   sessionId: string
@@ -408,9 +595,13 @@ function SessionWorkbench({
   interactive: boolean
   onSessionResolved?: (session: SessionView) => void
   headerActions?: ReactNode
+  allowLegacyProjection?: boolean
 }) {
   const t = useTranslations("agentWorkbench")
   const setCancelHandler = shared.setCancelHandler
+  const [environmentUpdate, setEnvironmentUpdate] = useState<{
+    selection: AgentEnvironmentSelection
+  } | null>(null)
 
   useEffect(() => {
     setCancelHandler(interactive ? state.cancel : null)
@@ -452,7 +643,10 @@ function SessionWorkbench({
     return (
       <div className="grid min-h-0 flex-1 place-items-center px-6 text-center">
         <div className="flex max-w-sm flex-col items-center gap-3">
-          <CircleAlert aria-hidden="true" className="mx-auto text-destructive" />
+          <CircleAlert
+            aria-hidden="true"
+            className="mx-auto text-destructive"
+          />
           <h1 className="text-base font-medium">{t("loadErrorTitle")}</h1>
           <p className="text-sm text-muted-foreground">
             {state.error?.message ?? t("loadErrorDescription")}
@@ -466,7 +660,51 @@ function SessionWorkbench({
     )
   }
 
-  const isEmpty = state.entries.length === 0 && !state.activeRun
+  const conversationView =
+    state.conversationView ??
+    (allowLegacyProjection ? projectLegacyConversationState(state) : null)
+
+  const effectiveEnvironmentSelection = environmentSelectionFromSession(
+    state.session,
+  )
+  const visibleEnvironmentUpdate =
+    environmentUpdate &&
+    !environmentSelectionEquals(
+      environmentUpdate.selection,
+      effectiveEnvironmentSelection,
+    )
+      ? environmentUpdate
+      : null
+  const requestedEnvironmentSelection = shared.hasControlledEnvironmentSelection
+    ? shared.environmentSelection
+    : (visibleEnvironmentUpdate?.selection ?? effectiveEnvironmentSelection)
+  const confirmedEnvironmentSelection = shared.hasControlledEnvironmentSelection
+    ? shared.effectiveEnvironmentSelection
+    : effectiveEnvironmentSelection
+  const environmentSelectionPending = shared.hasControlledEnvironmentSelection
+    ? shared.environmentSelectionPending
+    : visibleEnvironmentUpdate !== null
+
+  const updateLiveEnvironmentSelection = async (
+    selection: AgentEnvironmentSelection,
+  ) => {
+    if (shared.hasControlledEnvironmentSelection) {
+      await shared.onEnvironmentSelectionChange(selection)
+      return
+    }
+    setEnvironmentUpdate({ selection })
+    try {
+      await state.updateEnvironmentScope(environmentScopeFromSelection(selection))
+    } catch (error) {
+      setEnvironmentUpdate(null)
+      throw error
+    }
+  }
+
+  const isEmpty =
+    conversationView !== null &&
+    conversationView.transcript.length === 0 &&
+    conversationView.activeWork === null
   return (
     <>
       <ConversationHeader
@@ -477,15 +715,15 @@ function SessionWorkbench({
       />
       {isEmpty ? (
         <AgentEmptyState />
-      ) : (
-        <AgentTranscript
+      ) : conversationView ? (
+        <ConversationTranscript
           className="flex-1"
-          entries={state.entries}
-          runs={state.runs}
-          activeRun={state.activeRun}
+          view={conversationView}
           onRespond={interactive ? state.respond : undefined}
           onOpenRun={shared.onOpenRun}
         />
+      ) : (
+        <WorkbenchSkeleton />
       )}
       {state.session.status !== "active" ? (
         <p
@@ -518,7 +756,21 @@ function SessionWorkbench({
             disabled={!interactive || state.session.status !== "active"}
           />
         }
-        modelControls={<ComposerModelLabel label={state.session.model.display_name} />}
+        modelControls={
+          shared.conversationModelControls ?? (
+            <SessionModelSelector
+              session={state.session}
+              activeRun={state.activeRun !== null}
+              disabled={!interactive || state.session.status !== "active"}
+              onChange={state.updateModel}
+            />
+          )
+        }
+        environmentTargets={shared.environmentTargets}
+        environmentSelection={requestedEnvironmentSelection}
+        effectiveEnvironmentSelection={confirmedEnvironmentSelection}
+        environmentSelectionPending={environmentSelectionPending}
+        onEnvironmentSelectionChange={updateLiveEnvironmentSelection}
       />
     </>
   )
@@ -533,10 +785,7 @@ function ConversationHeader({
   title: string
   model: string
   connectionStatus?:
-    | "connecting"
-    | "connected"
-    | "reconnecting"
-    | "disconnected"
+    "connecting" | "connected" | "reconnecting" | "disconnected"
   actions?: ReactNode
 }) {
   const t = useTranslations("agentWorkbench")
@@ -570,7 +819,9 @@ function ConversationHeader({
                 "animate-spin motion-reduce:animate-none",
             )}
           />
-          <span className="hidden sm:inline">{t(`connection.${connectionStatus}`)}</span>
+          <span className="hidden sm:inline">
+            {t(`connection.${connectionStatus}`)}
+          </span>
         </span>
       ) : null}
       {actions}
@@ -581,10 +832,25 @@ function ConversationHeader({
 function AgentEmptyState({ compact = false }: { compact?: boolean }) {
   const t = useTranslations("agentWorkbench")
   return (
-    <div className={cn("grid place-items-center px-6 text-center", compact ? "pb-5" : "min-h-0 flex-1 py-10")}>
-      <div className="max-w-lg">
-        <Bot aria-hidden="true" className="mx-auto mb-4 size-7 text-muted-foreground" />
-        <h2 className={cn("text-balance font-medium tracking-tight", compact ? "text-xl sm:text-2xl" : "text-base")}>{t("emptyTitle")}</h2>
+    <div
+      className={cn(
+        "relative grid place-items-center px-6 text-center",
+        compact ? "pb-7" : "min-h-0 flex-1 py-10",
+      )}
+    >
+      <div className="max-w-xl">
+        <Bot
+          aria-hidden="true"
+          className="mx-auto mb-4 size-6 text-muted-foreground/65"
+        />
+        <h2
+          className={cn(
+            "text-balance font-semibold tracking-[-0.025em]",
+            compact ? "text-2xl sm:text-[1.75rem]" : "text-base",
+          )}
+        >
+          {t("emptyTitle")}
+        </h2>
         <p className="mt-2 text-pretty text-sm leading-6 text-muted-foreground">
           {t("emptyDescription")}
         </p>
@@ -610,15 +876,159 @@ function WorkbenchError({
   )
 }
 
-function ComposerModelLabel({ label }: { label: string }) {
+function SessionModelSelector({
+  session,
+  activeRun,
+  disabled,
+  onChange,
+}: {
+  session: SessionView
+  activeRun: boolean
+  disabled: boolean
+  onChange: AgentSessionState["updateModel"]
+}) {
+  const t = useTranslations("agentComposer")
+  const { models, isLoading } = useLlmSettings()
+  const effectiveSelection = modelSelectionFromSession(session, models)
+  const [update, setUpdate] = useState<{
+    selection: ModelSelection
+    state: "pending" | "error"
+  } | null>(null)
+  const visibleUpdate =
+    update && !modelSelectionEquals(update.selection, effectiveSelection)
+      ? update
+      : null
+  const selectedModel =
+    visibleUpdate?.state === "pending"
+      ? visibleUpdate.selection
+      : effectiveSelection
+  const pending = visibleUpdate?.state === "pending"
+
+  const requestChange = async (selection: ModelSelection | null) => {
+    if (!selection?.model_id && (!selection?.provider || !selection.model)) return
+    setUpdate({ selection, state: "pending" })
+    try {
+      await onChange(
+        selection.model_id
+          ? { modelId: selection.model_id }
+          : { provider: selection.provider!, model: selection.model! },
+      )
+    } catch {
+      setUpdate({ selection, state: "error" })
+    }
+  }
+
   return (
-    <span
-      className="inline-flex min-h-7 min-w-0 max-w-[168px] items-center truncate rounded-[8px] px-2 text-[11px] font-medium text-foreground/68"
-      title={label}
-    >
-      {label}
-    </span>
+    <div className="flex min-w-0 flex-col items-start gap-1.5">
+      <ModelSelector
+        models={models}
+        selectedModel={selectedModel}
+        onSelectModel={(selection) => void requestChange(selection)}
+        disabled={disabled || isLoading || pending}
+        variant="composer"
+      />
+      {pending ? (
+        <p role="status" className="px-2 text-[11px] text-muted-foreground">
+          {t("model.updating")}
+        </p>
+      ) : activeRun ? (
+        <p className="px-2 text-[11px] text-muted-foreground">
+          {t("permission.nextRun")}
+        </p>
+      ) : null}
+      {visibleUpdate?.state === "error" ? (
+        <div
+          role="alert"
+          className="flex items-center gap-1 px-2 text-[11px] text-destructive"
+        >
+          <span>{t("model.updateError")}</span>
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="h-auto px-1 text-[11px]"
+            onClick={() => void requestChange(visibleUpdate.selection)}
+          >
+            {t("model.retry")}
+          </Button>
+        </div>
+      ) : null}
+    </div>
   )
+}
+
+function modelSelectionFromSession(
+  session: SessionView,
+  models: ReturnType<typeof useLlmSettings>["models"],
+): ModelSelection {
+  const directProvider = models.find(
+    (group) =>
+      group.provider === session.model.provider &&
+      group.models.some((candidate) => candidate.id === session.model.model),
+  )
+  const compatibleProviders = models.filter(
+    (group) =>
+      group.provider_kind === session.model.provider &&
+      group.models.some((candidate) => candidate.id === session.model.model),
+  )
+  const provider =
+    directProvider ??
+    (compatibleProviders.length === 1 ? compatibleProviders[0] : undefined)
+  const model = provider?.models.find(
+    (candidate) => candidate.id === session.model.model,
+  )
+  return {
+    provider: provider?.provider ?? session.model.provider,
+    model: session.model.model,
+    model_id: model?.model_id ?? null,
+  }
+}
+
+function modelSelectionEquals(
+  left: ModelSelection,
+  right: ModelSelection,
+) {
+  if (left.model_id && right.model_id) return left.model_id === right.model_id
+  return left.provider === right.provider && left.model === right.model
+}
+
+function environmentSelectionFromSession(
+  session: SessionView,
+): AgentEnvironmentSelection {
+  const scope = session.environment_scope
+  return scope?.mode === "manual"
+    ? { mode: "manual", targetIds: scope.selected_environment_ids }
+    : { mode: "auto" }
+}
+
+function environmentScopeFromSelection(selection: AgentEnvironmentSelection) {
+  return selection.mode === "manual"
+    ? { mode: "manual" as const, selected_environment_ids: selection.targetIds }
+    : { mode: "auto" as const }
+}
+
+function environmentSelectionEquals(
+  left: AgentEnvironmentSelection,
+  right: AgentEnvironmentSelection,
+) {
+  if (left.mode !== right.mode) return false
+  if (left.mode === "auto" || right.mode === "auto") return true
+  return (
+    left.targetIds.length === right.targetIds.length &&
+    left.targetIds.every((targetId, index) => targetId === right.targetIds[index])
+  )
+}
+
+function environmentTargetFromConnection(
+  connection: RemoteConnection,
+): AgentEnvironmentTarget {
+  return {
+    id: connection.id,
+    label: connection.name.trim() || connection.host,
+    description: `${connection.username}@${connection.host}:${connection.port}`,
+    kind: "ssh",
+    status: connection.status,
+  }
 }
 
 function isModelConfigurationError(error: unknown) {

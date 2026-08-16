@@ -169,7 +169,7 @@ export function AgentActivityGroup({
   )
   const [expanded, setExpanded] = useActivityDisclosure(
     disclosureKey,
-    defaultExpanded ?? false,
+    defaultExpanded ?? tools.some((tool) => isActive(tool.status)),
   )
   const resolvedExecutionMode =
     executionMode ?? commonExecutionMode(tools) ?? "mixed"
@@ -186,7 +186,7 @@ export function AgentActivityGroup({
     >
       <button
         type="button"
-        className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[8px] px-2 py-2 text-left text-sm transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
+        className="group/summary flex min-h-9 w-full min-w-0 items-center gap-2 rounded-[6px] px-1 py-1.5 text-left text-xs transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
         aria-expanded={expanded}
         aria-controls={detailsId}
         aria-label={t(summaryKey, { count: tools.length })}
@@ -200,9 +200,9 @@ export function AgentActivityGroup({
           {groupStatusLabel(t, tools)}
         </span>
         {expanded ? (
-          <ChevronDown aria-hidden="true" />
+          <ChevronDown aria-hidden="true" className="size-3.5 opacity-60 transition-opacity group-hover/summary:opacity-100" />
         ) : (
-          <ChevronRight aria-hidden="true" />
+          <ChevronRight aria-hidden="true" className="size-3.5 opacity-60 transition-opacity group-hover/summary:opacity-100" />
         )}
       </button>
 
@@ -229,6 +229,12 @@ export function AgentActivityGroup({
         </div>
       ) : null}
     </section>
+  )
+}
+
+function isActive(status: ToolProgressView["status"]) {
+  return ["pending", "running", "blocked", "interaction_required"].includes(
+    status,
   )
 }
 

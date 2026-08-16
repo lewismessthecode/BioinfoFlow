@@ -182,7 +182,7 @@ export function AgentTranscript({
             type="button"
             variant="outline"
             size="sm"
-            className="pointer-events-auto border-border/70 bg-background text-muted-foreground shadow-sm hover:text-foreground motion-reduce:transition-none"
+            className="pointer-events-auto rounded-full border-border/60 bg-background/90 px-3 text-muted-foreground shadow-lg shadow-foreground/5 backdrop-blur-md hover:bg-background hover:text-foreground dark:bg-background/90 dark:hover:bg-background motion-reduce:transition-none"
             aria-label={t("scroll_to_bottom")}
             onClick={jumpToLatest}
           >

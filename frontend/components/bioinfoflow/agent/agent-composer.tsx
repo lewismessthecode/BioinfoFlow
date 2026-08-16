@@ -13,6 +13,11 @@ import {
 import { useTranslations } from "next-intl"
 
 import { PermissionMenu } from "@/components/bioinfoflow/agent/permission-menu"
+import {
+  EnvironmentSelector,
+  type AgentEnvironmentSelection,
+  type AgentEnvironmentTarget,
+} from "@/components/bioinfoflow/agent/environment-selector"
 import { AgentContextInputs } from "@/components/bioinfoflow/agent/context-inputs"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -40,6 +45,14 @@ type AgentComposerProps = {
   onContextSubmitted?: () => void
   contextControls?: ReactNode
   modelControls?: ReactNode
+  environmentTargets?: readonly AgentEnvironmentTarget[]
+  environmentSelection?: AgentEnvironmentSelection
+  effectiveEnvironmentSelection?: AgentEnvironmentSelection
+  environmentSelectionPending?: boolean
+  onEnvironmentSelectionChange?: (
+    selection: AgentEnvironmentSelection,
+  ) => Promise<void>
+  starterPrompts?: readonly string[]
   placement?: "draft" | "dock"
   textareaRef?: Ref<HTMLTextAreaElement>
   disabled?: boolean
@@ -60,6 +73,12 @@ export function AgentComposer({
   onContextSubmitted,
   contextControls,
   modelControls,
+  environmentTargets = [],
+  environmentSelection = { mode: "auto" },
+  effectiveEnvironmentSelection,
+  environmentSelectionPending = false,
+  onEnvironmentSelectionChange,
+  starterPrompts = [],
   placement = "dock",
   textareaRef,
   disabled = false,
@@ -69,7 +88,9 @@ export function AgentComposer({
   const [submitting, setSubmitting] = useState<SubmitAction | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [stopError, setStopError] = useState<string | null>(null)
-  const [cancelRequestedRunId, setCancelRequestedRunId] = useState<string | null>(null)
+  const [cancelRequestedRunId, setCancelRequestedRunId] = useState<
+    string | null
+  >(null)
   const localTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const appendTranscript = useCallback((transcript: string) => {
     const text = transcript.trim()
@@ -80,7 +101,9 @@ export function AgentComposer({
   }, [])
   const voice = useVoiceDictation({ onTranscript: appendTranscript })
   const activeRunId = activeRun?.run.id ?? null
-  const cancelling = Boolean(activeRunId && cancelRequestedRunId === activeRunId)
+  const cancelling = Boolean(
+    activeRunId && cancelRequestedRunId === activeRunId,
+  )
   const voiceBusy =
     voice.state === "recording" || voice.state === "transcribing"
   const hasText = value.trim().length > 0
@@ -191,7 +214,7 @@ export function AgentComposer({
       data-testid="agent-composer"
       data-placement={placement}
       className={cn(
-        "mx-auto flex w-full max-w-[46rem] flex-col gap-2 px-3 sm:px-4",
+        "mx-auto flex w-full max-w-[48rem] flex-col gap-2 px-3 sm:px-4",
         placement === "draft"
           ? "bg-transparent pb-4"
           : "bg-background pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
@@ -201,8 +224,10 @@ export function AgentComposer({
       <div
         data-testid="agent-composer-surface"
         className={cn(
-          "border border-border/65 bg-card p-2 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20 motion-reduce:transition-none",
-          placement === "draft" ? "rounded-[22px] p-3" : "rounded-2xl",
+          "border border-border/60 bg-card/96 p-2 transition-[border-color,box-shadow,background-color] focus-within:border-foreground/20 focus-within:shadow-[0_18px_48px_-28px_color-mix(in_oklab,var(--foreground)_24%,transparent)] motion-reduce:transition-none",
+          placement === "draft"
+            ? "rounded-[24px] p-3 shadow-[0_24px_70px_-42px_color-mix(in_oklab,var(--foreground)_30%,transparent)]"
+            : "rounded-[18px] shadow-[0_12px_34px_-28px_color-mix(in_oklab,var(--foreground)_24%,transparent)]",
         )}
       >
         {contextInputs.length > 0 && onRemoveContextInput ? (
@@ -226,7 +251,7 @@ export function AgentComposer({
           rows={placement === "draft" ? 3 : 2}
           disabled={disabled}
           className={cn(
-            "max-h-40 resize-none border-0 bg-transparent shadow-none focus-visible:border-transparent focus-visible:ring-0",
+            "max-h-40 resize-none border-0 bg-transparent shadow-none dark:bg-transparent focus-visible:border-transparent focus-visible:ring-0",
             placement === "draft" ? "min-h-20 text-[15px]" : "min-h-11",
           )}
         />
@@ -241,6 +266,16 @@ export function AgentComposer({
             disabled={disabled}
             onPermissionModeChange={onPermissionModeChange}
           />
+          {onEnvironmentSelectionChange ? (
+            <EnvironmentSelector
+              targets={environmentTargets}
+              requested={environmentSelection}
+              effective={effectiveEnvironmentSelection}
+              pending={environmentSelectionPending}
+              disabled={disabled}
+              onChange={onEnvironmentSelectionChange}
+            />
+          ) : null}
 
           <div className="ml-auto flex items-center gap-2">
             {voice.available ? (
@@ -349,8 +384,50 @@ export function AgentComposer({
         </div>
       </div>
 
-      {submitError ? <p role="alert" className="text-sm text-destructive">{submitError}</p> : null}
-      {stopError ? <p role="alert" className="text-sm text-destructive">{stopError}</p> : null}
+      {placement === "draft" && starterPrompts.length > 0 ? (
+        <section
+          className="mx-auto mt-2 w-full max-w-[44rem]"
+          aria-label={t("starterHint")}
+        >
+          <p className="px-1 pb-1.5 text-xs text-muted-foreground/70">
+            {t("starterHint")}
+          </p>
+          <div className="divide-y divide-border/55 border-y border-border/55">
+            {starterPrompts.slice(0, 3).map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                className="group flex min-h-11 w-full items-center px-1 py-2 text-left text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                onClick={() => {
+                  setValue(prompt)
+                  window.requestAnimationFrame(() =>
+                    localTextareaRef.current?.focus(),
+                  )
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  className="mr-3 text-muted-foreground/45 transition-transform group-hover:translate-x-0.5"
+                >
+                  ↳
+                </span>
+                <span>{prompt}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {submitError ? (
+        <p role="alert" className="text-sm text-destructive">
+          {submitError}
+        </p>
+      ) : null}
+      {stopError ? (
+        <p role="alert" className="text-sm text-destructive">
+          {stopError}
+        </p>
+      ) : null}
       {voice.state === "error" ? (
         <p role="alert" className="text-sm text-destructive">
           {t("voice.error")}

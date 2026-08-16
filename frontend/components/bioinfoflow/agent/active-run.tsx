@@ -9,8 +9,7 @@ import {
 } from "@/components/bioinfoflow/agent/agent-activity"
 import { AgentThinking } from "@/components/bioinfoflow/agent/agent-thinking"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
+import { CircleDashed } from "@/lib/icons"
 import { buildActiveActivity } from "@/lib/agent/activity"
 import type {
   ActiveRunView,
@@ -48,52 +47,15 @@ export function ActiveRun({
     isFinished(tool.status),
   ).length
   const toolCount = activeRun.tool_progress.length
-  const progressValue =
-    toolCount === 0 ? 0 : Math.round((finishedTools / toolCount) * 100)
-
   return (
     <section
       aria-labelledby={titleId}
-      className="grid min-w-0 gap-3 border-l border-border/60 py-1 pl-3 sm:pl-4"
+      className="grid min-w-0 gap-3 py-1 [content-visibility:auto] [contain-intrinsic-size:auto_144px]"
       data-testid="agent-active-run"
     >
-      <header className="grid min-w-0 gap-2 pr-1">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <h2 id={titleId} className="text-sm font-medium text-foreground/85">
-            {t("title")}
-          </h2>
-          <Badge variant="outline" role="status" aria-live="polite">
-            {t(`status.${activeRun.run.status}`)}
-          </Badge>
-          {activeRun.run.phase ? (
-            <span className="text-xs text-muted-foreground">
-              {t(`phase.${activeRun.run.phase}`)}
-            </span>
-          ) : null}
-        </div>
-
-        {toolCount > 0 ? (
-          <div className="grid gap-1.5">
-            <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
-              <span>
-                {t("progress.actions", {
-                  completed: finishedTools,
-                  total: toolCount,
-                })}
-              </span>
-            </div>
-            <Progress
-              value={progressValue}
-              aria-label={t("progress.label")}
-              aria-valuetext={t("progress.actions", {
-                completed: finishedTools,
-                total: toolCount,
-              })}
-              className="h-1 bg-border/60"
-            />
-          </div>
-        ) : null}
-      </header>
+      <h2 id={titleId} className="sr-only">
+        {t("title")}
+      </h2>
 
       {activity.length > 0 ? (
         <div className="grid min-w-0 gap-2">
@@ -139,6 +101,32 @@ export function ActiveRun({
           })}
         </div>
       ) : null}
+
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex min-h-7 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+        data-testid="agent-active-run-status"
+      >
+        <CircleDashed
+          aria-hidden="true"
+          className="size-3.5 shrink-0 animate-spin text-muted-foreground/70 motion-reduce:animate-none"
+        />
+        <span>{t(`status.${activeRun.run.status}`)}</span>
+        {activeRun.run.phase ? (
+          <span className="before:mr-2 before:text-border before:content-['·']">
+            {t(`phase.${activeRun.run.phase}`)}
+          </span>
+        ) : null}
+        {toolCount > 0 ? (
+          <span className="tabular-nums before:mr-2 before:text-border before:content-['·']">
+            {t("progress.actions", {
+              completed: finishedTools,
+              total: toolCount,
+            })}
+          </span>
+        ) : null}
+      </div>
     </section>
   )
 }

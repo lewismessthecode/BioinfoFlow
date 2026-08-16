@@ -73,6 +73,7 @@ function AgentInteractionCardState({
         tone === "destructive" && "border-error-border bg-error-muted/25",
       )}
       data-interaction-id={interactionId}
+      data-interaction-type={request.type}
       data-testid="agent-interaction-card"
     >
       {!completed ? (
@@ -192,6 +193,7 @@ function ApprovalInteraction({
             <Button
               type="button"
               variant="outline"
+              className="dark:bg-transparent dark:hover:bg-muted/35"
               disabled={submitting || !canRespond}
               onClick={() =>
                 void onSubmit({ type: "approval", approved: false }, "reject")
@@ -434,6 +436,10 @@ function RecoveryInteraction({
                   key={choice}
                   type="button"
                   variant={choice === "retry" ? "default" : "outline"}
+                  className={cn(
+                    choice !== "retry" &&
+                      "dark:bg-transparent dark:hover:bg-muted/35",
+                  )}
                   disabled={pendingAction !== null || !canRespond}
                   aria-label={pendingAction === choice ? t("submitting") : label}
                   onClick={() =>

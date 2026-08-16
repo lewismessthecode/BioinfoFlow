@@ -3,8 +3,12 @@ import type { ReactNode } from "react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { AgentWorkbench } from "@/components/bioinfoflow/agent/agent-workbench"
+import {
+  AgentWorkbench,
+  type AgentWorkbenchHandle,
+} from "@/components/bioinfoflow/agent/agent-workbench"
 import type { AgentSessionState } from "@/hooks/use-agent-session"
+import type { ConversationViewModel } from "@/lib/agent/conversation-model/types"
 import type { SessionSnapshot } from "@/lib/agent/contracts"
 import { ApiError } from "@/lib/api"
 import { renderWithProviders } from "@/tests/test-utils"
@@ -19,6 +23,8 @@ const mocks = vi.hoisted(() => ({
   useSession: vi.fn(),
   catalogPanel: vi.fn(),
   setSelectedModel: vi.fn(),
+  fetchRemoteConnections: vi.fn(),
+  useStarterPrompts: vi.fn(),
 }))
 
 vi.mock("next/navigation", () => ({
@@ -40,6 +46,11 @@ vi.mock("@/hooks/use-agent-session", () => ({
   useAgentSession: (...args: unknown[]) => mocks.useSession(...args),
 }))
 
+vi.mock("@/hooks/use-agent-starter-prompts", () => ({
+  useAgentStarterPrompts: (...args: unknown[]) =>
+    mocks.useStarterPrompts(...args),
+}))
+
 vi.mock("@/hooks/use-llm-settings", () => ({
   useLlmSettings: () => ({
     models: [
@@ -57,6 +68,20 @@ vi.mock("@/hooks/use-llm-settings", () => ({
           },
         ],
       },
+      {
+        provider: "provider-2",
+        provider_kind: "anthropic",
+        label: "Anthropic",
+        models: [
+          {
+            id: "claude-sonnet",
+            name: "Claude Sonnet",
+            model_id: "model-record-2",
+            context_window: 200000,
+            supports_vision: true,
+          },
+        ],
+      },
     ],
     selectedModel: {
       provider: "provider-1",
@@ -68,23 +93,62 @@ vi.mock("@/hooks/use-llm-settings", () => ({
   }),
 }))
 
+vi.mock("@/lib/demo-connections", () => ({
+  fetchRemoteConnections: (...args: unknown[]) =>
+    mocks.fetchRemoteConnections(...args),
+}))
+
 vi.mock("@/components/bioinfoflow/chat/model-selector", () => ({
-  ModelSelector: ({ disabled }: { disabled?: boolean }) => (
-    <button type="button" disabled={disabled}>GPT-5.6 model selector</button>
+  ModelSelector: ({
+    disabled,
+    selectedModel,
+    onSelectModel,
+  }: {
+    disabled?: boolean
+    selectedModel?: { model?: string | null } | null
+    onSelectModel: (selection: {
+      provider: string
+      model: string
+      model_id: string
+    }) => void
+  }) => (
+    <button
+      type="button"
+      disabled={disabled}
+      data-selected-provider={selectedModel?.provider ?? ""}
+      onClick={() =>
+        onSelectModel({
+          provider: "provider-2",
+          model: "claude-sonnet",
+          model_id: "model-record-2",
+        })
+      }
+    >
+      {selectedModel?.model ?? "GPT-5.6"} model selector
+    </button>
   ),
 }))
 
 vi.mock("@/components/bioinfoflow/agent/agent-context-picker", () => ({
-  AgentContextPicker: ({ ensureSession }: { ensureSession: () => Promise<string> }) => (
+  AgentContextPicker: ({
+    ensureSession,
+  }: {
+    ensureSession: () => Promise<string>
+  }) => (
     <button type="button" onClick={() => void ensureSession()}>
       Add context
     </button>
   ),
 }))
 
-vi.mock("@/components/bioinfoflow/agent/agent-transcript", () => ({
-  AgentTranscript: ({ entries }: { entries: unknown[] }) => (
-    <div data-testid="transcript">entries:{entries.length}</div>
+vi.mock("@/components/bioinfoflow/agent/conversation-transcript", () => ({
+  ConversationTranscript: ({ view }: { view: ConversationViewModel }) => (
+    <div data-testid="transcript">
+      blocks:{view.transcript.length}:
+      {view.transcript
+        .map((block) => (block.type === "message" ? block.text : block.type))
+        .join("|")}
+    </div>
   ),
 }))
 
@@ -106,6 +170,11 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
     disabled,
     placement,
     modelControls,
+    environmentSelection,
+    environmentTargets,
+    environmentSelectionPending,
+    onEnvironmentSelectionChange,
+    starterPrompts,
   }: {
     onSendMessage: (parts: [{ type: "text"; text: string }]) => Promise<void>
     onSteer: (parts: [{ type: "text"; text: string }]) => Promise<void>
@@ -116,12 +185,38 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
     disabled?: boolean
     placement?: "draft" | "dock"
     modelControls?: ReactNode
+    environmentSelection?: { mode: "auto" | "manual" }
+    environmentTargets?: readonly { id: string; label: string }[]
+    environmentSelectionPending?: boolean
+    onEnvironmentSelectionChange?: (selection: {
+      mode: "manual"
+      targetIds: string[]
+    }) => Promise<void>
+    starterPrompts?: readonly string[]
   }) => (
     <div data-testid="mock-composer" data-placement={placement}>
       {contextControls}
       {modelControls}
       <input aria-label="Draft message" defaultValue="Keep this draft" />
       <span>Permission: {permissionMode}</span>
+      <span>Environment: {environmentSelection?.mode}</span>
+      <span>Environment targets: {environmentTargets?.length ?? 0}</span>
+      <span>Environment pending: {String(environmentSelectionPending)}</span>
+      {starterPrompts?.map((prompt) => (
+        <span key={prompt}>{prompt}</span>
+      ))}
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() =>
+          void onEnvironmentSelectionChange?.({
+            mode: "manual",
+            targetIds: ["local", "gpu-01"],
+          }).catch(() => {})
+        }
+      >
+        Choose manual environments
+      </button>
       <button
         type="button"
         disabled={disabled}
@@ -132,9 +227,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
       <button
         type="button"
         onClick={() =>
-          void onSendMessage([{ type: "text", text: "Hello" }]).catch(
-            () => {},
-          )
+          void onSendMessage([{ type: "text", text: "Hello" }]).catch(() => {})
         }
       >
         Send message
@@ -156,6 +249,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-composer", () => ({
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
+  useLocale: () => "en",
 }))
 
 const timestamp = "2026-08-15T00:00:00Z"
@@ -178,6 +272,8 @@ function snapshot(): SessionSnapshot {
       },
       permission_mode: "ask_dangerous",
       workspace_access: "read_write",
+      settings_revision: 1,
+      environment_scope: { mode: "auto" },
       status: "active",
       created_at: timestamp,
       updated_at: timestamp,
@@ -196,6 +292,7 @@ function sessionState(
     runs: [],
     entries: [],
     activeRun: null,
+    conversationView: conversationView([]),
     connectionStatus: "connected",
     error: null,
     isLoading: false,
@@ -204,8 +301,49 @@ function sessionState(
     respond: vi.fn().mockResolvedValue(undefined),
     cancel: vi.fn().mockResolvedValue(undefined),
     updatePermissionMode: vi.fn().mockResolvedValue(undefined),
+    updateModel: vi.fn().mockResolvedValue(undefined),
+    updateEnvironmentScope: vi.fn().mockResolvedValue(undefined),
     retry: vi.fn(),
     ...overrides,
+  }
+}
+
+function conversationView(
+  transcript: ConversationViewModel["transcript"],
+  activeWork: ConversationViewModel["activeWork"] = null,
+): ConversationViewModel {
+  return {
+    protocolVersion: 1,
+    conversation: {
+      id: "session-1",
+      title: "Variant review",
+      status: "active",
+      workspaceId: "workspace-1",
+      projectId: "project-1",
+    },
+    composer: {
+      placement: transcript.length > 0 || activeWork ? "docked" : "centered",
+      canSend: true,
+      settings: {
+        model: {
+          provider: "openai",
+          model: "gpt-5.6",
+          displayName: "GPT-5.6",
+        },
+        permissionMode: "ask_dangerous",
+        workspaceAccess: "read_write",
+        revision: 1,
+        environmentScope: { mode: "auto", environmentIds: [] },
+      },
+      capabilities: {
+        modelSelection: true,
+        permissionSelection: true,
+        environmentSelection: { auto: true, manualMultiSelect: true },
+        planMode: false,
+      },
+    },
+    transcript,
+    activeWork,
   }
 }
 
@@ -220,6 +358,18 @@ describe("AgentWorkbench v2", () => {
     mocks.useSession.mockReset()
     mocks.catalogPanel.mockReset()
     mocks.setSelectedModel.mockReset()
+    mocks.fetchRemoteConnections.mockReset()
+    mocks.useStarterPrompts.mockReset()
+    mocks.useStarterPrompts.mockReturnValue({
+      prompts: ["Review the generated project fingerprint"],
+      source: "cache",
+      refreshPending: false,
+      isLoading: false,
+      error: null,
+    })
+    mocks.fetchRemoteConnections.mockImplementation(
+      () => new Promise(() => {}),
+    )
     mocks.useSession.mockReturnValue(sessionState())
   })
 
@@ -236,6 +386,9 @@ describe("AgentWorkbench v2", () => {
       />,
     )
 
+    await user.click(
+      screen.getByRole("button", { name: "Choose manual environments" }),
+    )
     await user.click(screen.getByRole("button", { name: "Send message" }))
 
     await waitFor(() => expect(mocks.createSession).toHaveBeenCalledTimes(1))
@@ -244,6 +397,10 @@ describe("AgentWorkbench v2", () => {
       permissionMode: "ask_dangerous",
       workspaceAccess: "read_write",
       modelId: "model-record-1",
+      environmentScope: {
+        mode: "manual",
+        selected_environment_ids: ["local", "gpu-01"],
+      },
     })
     expect(mocks.dispatchCommand).toHaveBeenCalledWith(
       "session-1",
@@ -266,8 +423,17 @@ describe("AgentWorkbench v2", () => {
       "data-placement",
       "draft",
     )
-    expect(screen.getByRole("button", { name: "GPT-5.6 model selector" })).toBeEnabled()
-    expect(screen.queryByRole("heading", { name: "newConversation" })).not.toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "gpt-5.6 model selector" }),
+    ).toBeEnabled()
+    expect(screen.getByText("Environment: auto")).toBeInTheDocument()
+    expect(
+      screen.getByText("Review the generated project fingerprint"),
+    ).toBeInTheDocument()
+    expect(mocks.useStarterPrompts).toHaveBeenCalledWith("project-1", "en")
+    expect(
+      screen.queryByRole("heading", { name: "newConversation" }),
+    ).not.toBeInTheDocument()
 
     view.rerender(
       <AgentWorkbench sessionId="session-1" projectId="project-1" />,
@@ -296,9 +462,7 @@ describe("AgentWorkbench v2", () => {
 
     const dialog = await screen.findByRole("dialog")
     expect(dialog).toHaveAccessibleName("modelConnection.title")
-    expect(dialog).toHaveTextContent(
-      "modelConnection.description",
-    )
+    expect(dialog).toHaveTextContent("modelConnection.description")
     expect(await screen.findByText("Model catalog panel")).toBeInTheDocument()
     await waitFor(() => expect(mocks.catalogPanel).toHaveBeenCalledTimes(1))
     expect(
@@ -364,9 +528,9 @@ describe("AgentWorkbench v2", () => {
         "modelConnection.title",
       )
       await user.keyboard("{Escape}")
-      expect(screen.getByRole("textbox", { name: "Draft message" })).toHaveValue(
-        "Keep this draft",
-      )
+      expect(
+        screen.getByRole("textbox", { name: "Draft message" }),
+      ).toHaveValue("Keep this draft")
     },
   )
 
@@ -385,9 +549,7 @@ describe("AgentWorkbench v2", () => {
     await user.click(screen.getByRole("button", { name: "Add context" }))
     await waitFor(() => expect(mocks.createSession).toHaveBeenCalledTimes(1))
 
-    await user.click(
-      screen.getByRole("button", { name: "Change permission" }),
-    )
+    await user.click(screen.getByRole("button", { name: "Change permission" }))
 
     await waitFor(() =>
       expect(mocks.updateSession).toHaveBeenCalledWith("session-1", {
@@ -395,6 +557,61 @@ describe("AgentWorkbench v2", () => {
       }),
     )
     expect(screen.getByText("Permission: full_access")).toBeInTheDocument()
+  })
+
+  it("keeps model and environment editable after context creates a draft session", async () => {
+    const user = userEvent.setup()
+    mocks.createSession.mockResolvedValue(snapshot())
+    mocks.updateSession.mockImplementation(
+      async (_sessionId: string, updates: Record<string, unknown>) => {
+        const updated = snapshot()
+        if (updates.model) {
+          updated.session.model = {
+            provider: "anthropic",
+            model: "claude-sonnet",
+            display_name: "Claude Sonnet",
+            supports_vision: true,
+            supports_reasoning: true,
+            supports_tools: true,
+          }
+        }
+        if (updates.environmentScope) {
+          updated.session.environment_scope = {
+            mode: "manual",
+            selected_environment_ids: ["local", "gpu-01"],
+          }
+        }
+        return updated
+      },
+    )
+
+    renderWithProviders(
+      <AgentWorkbench sessionId={null} projectId="project-1" />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Add context" }))
+    await waitFor(() => expect(mocks.createSession).toHaveBeenCalledTimes(1))
+
+    const modelSelector = screen.getByRole("button", {
+      name: "gpt-5.6 model selector",
+    })
+    expect(modelSelector).toBeEnabled()
+    await user.click(modelSelector)
+    await user.click(
+      screen.getByRole("button", { name: "Choose manual environments" }),
+    )
+
+    await waitFor(() =>
+      expect(mocks.updateSession).toHaveBeenCalledWith("session-1", {
+        model: { modelId: "model-record-2" },
+      }),
+    )
+    expect(mocks.updateSession).toHaveBeenCalledWith("session-1", {
+      environmentScope: {
+        mode: "manual",
+        selected_environment_ids: ["local", "gpu-01"],
+      },
+    })
   })
 
   it("renders the authoritative session and keeps stream interruptions visible but non-destructive", () => {
@@ -410,13 +627,16 @@ describe("AgentWorkbench v2", () => {
     )
 
     expect(screen.getByText("Variant review")).toBeInTheDocument()
-    expect(screen.getByTestId("agent-header-model")).toHaveTextContent("GPT-5.6")
+    expect(screen.getByTestId("agent-header-model")).toHaveTextContent(
+      "GPT-5.6",
+    )
     expect(screen.getByText("emptyTitle")).toBeInTheDocument()
     expect(screen.getByText("connection.reconnecting")).toBeInTheDocument()
   })
 
   it("renders an injected session through the formal workbench without opening a live transport", () => {
     const injectedState = sessionState({
+      conversationView: null,
       entries: [
         {
           id: "assistant-demo",
@@ -444,11 +664,72 @@ describe("AgentWorkbench v2", () => {
     )
 
     expect(screen.getByTestId("agent-workbench")).toBeInTheDocument()
-    expect(screen.getByTestId("transcript")).toHaveTextContent("entries:1")
+    expect(screen.getByTestId("transcript")).toHaveTextContent(
+      "blocks:1:Demo replay",
+    )
     expect(
       screen.getByRole("button", { name: "Change permission" }),
     ).toBeDisabled()
     expect(mocks.useSession).not.toHaveBeenCalled()
+  })
+
+  it("renders live transcript content only from the stable conversation view", () => {
+    mocks.useSession.mockReturnValue(
+      sessionState({
+        entries: [],
+        conversationView: conversationView([
+          {
+            type: "message",
+            id: "stable-message",
+            runId: "run-1",
+            createdAt: timestamp,
+            role: "assistant",
+            text: "Stable presentation text",
+            references: [],
+            streaming: false,
+          },
+        ]),
+      }),
+    )
+
+    renderWithProviders(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    expect(screen.getByTestId("transcript")).toHaveTextContent(
+      "blocks:1:Stable presentation text",
+    )
+    expect(screen.queryByText("emptyTitle")).not.toBeInTheDocument()
+  })
+
+  it("derives the empty state from the stable conversation view", () => {
+    mocks.useSession.mockReturnValue(
+      sessionState({
+        entries: [
+          {
+            id: "stale-entry",
+            session_id: "session-1",
+            run_id: null,
+            sequence: 1,
+            schema_version: 2,
+            created_at: timestamp,
+            type: "message",
+            payload: {
+              role: "assistant",
+              parts: [{ id: "text", type: "text", text: "Stale transport" }],
+            },
+          },
+        ],
+        conversationView: conversationView([]),
+      }),
+    )
+
+    renderWithProviders(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    expect(screen.getByText("emptyTitle")).toBeInTheDocument()
+    expect(screen.queryByTestId("transcript")).not.toBeInTheDocument()
   })
 
   it("keeps the model visible and removes healthy connection noise", () => {
@@ -456,8 +737,75 @@ describe("AgentWorkbench v2", () => {
       <AgentWorkbench sessionId="session-1" projectId="project-1" />,
     )
 
-    expect(screen.getByTestId("agent-header-model")).toHaveTextContent("GPT-5.6")
-    expect(screen.queryByLabelText("connection.connected")).not.toBeInTheDocument()
+    expect(screen.getByTestId("agent-header-model")).toHaveTextContent(
+      "GPT-5.6",
+    )
+    expect(
+      screen.queryByLabelText("connection.connected"),
+    ).not.toBeInTheDocument()
+  })
+
+  it("accepts an interactive conversation model control from the turn-settings adapter", () => {
+    renderWithProviders(
+      <AgentWorkbench
+        sessionId="session-1"
+        projectId="project-1"
+        conversationModelControls={
+          <button type="button">Change GPT-5.6 model</button>
+        }
+      />,
+    )
+
+    expect(
+      screen.getByRole("button", { name: "Change GPT-5.6 model" }),
+    ).toBeEnabled()
+  })
+
+  it("wires live model, permission, and environment changes to sticky session settings", async () => {
+    const user = userEvent.setup()
+    const state = sessionState()
+    mocks.useSession.mockReturnValue(state)
+    mocks.fetchRemoteConnections.mockResolvedValue([
+      {
+        id: "gpu-01",
+        name: "GPU 01",
+        host: "gpu-01.example.test",
+        port: 22,
+        username: "bio",
+        auth_method: "agent",
+        ssh_alias: "gpu-01",
+        key_path: "",
+        status: "online",
+        skill_instructions: "",
+      },
+    ])
+
+    renderWithProviders(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByText("Environment targets: 2")).toBeInTheDocument(),
+    )
+    const modelSelector = screen.getByRole("button", {
+      name: "gpt-5.6 model selector",
+    })
+    expect(modelSelector).toHaveAttribute("data-selected-provider", "provider-1")
+    await user.click(modelSelector)
+    await user.click(screen.getByRole("button", { name: "Change permission" }))
+    await user.click(
+      screen.getByRole("button", { name: "Choose manual environments" }),
+    )
+
+    expect(state.updateModel).toHaveBeenCalledWith({
+      modelId: "model-record-2",
+    })
+    expect(state.updatePermissionMode).toHaveBeenCalledWith("full_access")
+    expect(state.updateEnvironmentScope).toHaveBeenCalledWith({
+      mode: "manual",
+      selected_environment_ids: ["local", "gpu-01"],
+    })
+    expect(screen.getByText("Environment pending: true")).toBeInTheDocument()
   })
 
   it.each(["archived", "closing", "deleted"] as const)(
@@ -473,9 +821,7 @@ describe("AgentWorkbench v2", () => {
         <AgentWorkbench sessionId="session-1" projectId="project-1" />,
       )
 
-      expect(screen.getByRole("status")).toHaveTextContent(
-        `readOnly.${status}`,
-      )
+      expect(screen.getByRole("status")).toHaveTextContent(`readOnly.${status}`)
       expect(
         screen.getByRole("button", { name: "Change permission" }),
       ).toBeDisabled()
@@ -485,14 +831,10 @@ describe("AgentWorkbench v2", () => {
   it("exposes stop through the workbench imperative handle", async () => {
     const state = sessionState()
     mocks.useSession.mockReturnValue(state)
-    const ref = { current: null as null | { stop: () => void } }
+    const ref = { current: null as AgentWorkbenchHandle | null }
 
     renderWithProviders(
-      <AgentWorkbench
-        ref={ref}
-        sessionId="session-1"
-        projectId="project-1"
-      />,
+      <AgentWorkbench ref={ref} sessionId="session-1" projectId="project-1" />,
     )
 
     act(() => ref.current?.stop())

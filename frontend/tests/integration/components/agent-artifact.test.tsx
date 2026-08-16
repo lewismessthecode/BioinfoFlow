@@ -66,6 +66,15 @@ describe("AgentArtifactReference", () => {
     vi.unstubAllGlobals()
   })
 
+  it("renders a theme-safe artifact card before loading the preview", () => {
+    renderWithProviders(<AgentArtifactReference part={part} />)
+
+    const card = screen.getByTestId("agent-artifact-card")
+    expect(card).toHaveAttribute("data-artifact-id", "artifact-1")
+    expect(card).toHaveClass("dark:bg-transparent")
+    expect(card).not.toHaveClass("dark:bg-input/30")
+  })
+
   it("opens an artifact and renders HTML as inert text instead of executing it", async () => {
     const user = userEvent.setup()
     vi.mocked(apiRequest).mockResolvedValueOnce({ data: artifact })

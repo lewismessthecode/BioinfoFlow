@@ -102,13 +102,13 @@ async function streamCompletion(response, body) {
       streamToolCalls(response, model, [
         {
           id: "call-e2e-parallel-alpha",
-          name: "write",
-          arguments: { path: "e2e-alpha.txt", content: "alpha" },
+          name: "list_environments",
+          arguments: {},
         },
         {
           id: "call-e2e-parallel-beta",
-          name: "write",
-          arguments: { path: "e2e-beta.txt", content: "beta" },
+          name: "list_environments",
+          arguments: {},
         },
       ])
       return

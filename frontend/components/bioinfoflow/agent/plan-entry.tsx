@@ -7,7 +7,11 @@ import { Badge } from "@/components/ui/badge"
 import type { PlanEntry, PlanItemStatus } from "@/lib/agent/contracts"
 import { cn } from "@/lib/utils"
 
-export function AgentPlanEntry({ entry }: { entry: PlanEntry }) {
+export function AgentPlanEntry({
+  entry,
+}: {
+  entry: Pick<PlanEntry, "payload">
+}) {
   const t = useTranslations("agentHistory")
   const total = entry.payload.items.length
   const completed = entry.payload.items.filter(

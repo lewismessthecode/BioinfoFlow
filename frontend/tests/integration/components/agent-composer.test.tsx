@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { AgentComposer } from "@/components/bioinfoflow/agent/agent-composer"
 import type {
+  AgentEnvironmentSelection,
+  AgentEnvironmentTarget,
+} from "@/components/bioinfoflow/agent/environment-selector"
+import type {
   ActiveRunView,
   AgentPermissionMode,
   AgentWorkspaceAccess,
@@ -14,36 +18,62 @@ import type { AgentContextInput } from "@/lib/agent/context"
 import { renderWithProviders } from "@/tests/test-utils"
 
 vi.mock("next-intl", () => ({
-  useTranslations: (namespace: string) =>
-    (key: string) => {
-      const copy: Record<string, string> = {
-        "agentComposer.label": "Message the agent",
-        "agentComposer.placeholder": "Ask Bioinfoflow to do something…",
-        "agentComposer.send": "Send message",
-        "agentComposer.queue": "Queue message",
-        "agentComposer.steer": "Steer active run",
-        "agentComposer.stop": "Stop run",
-        "agentComposer.stopping": "Stopping…",
-        "agentComposer.sending": "Sending…",
-        "agentComposer.steering": "Steering…",
-        "agentComposer.submitError": "The message could not be submitted. Try again.",
-        "agentComposer.stopError": "The run could not be stopped. Try again.",
-        "agentComposer.permission.label": "Approval mode",
-        "agentComposer.permission.title": "How should agent actions be approved?",
-        "agentComposer.permission.ask_changes.name": "Ask before changes",
-        "agentComposer.permission.ask_changes.description": "Ask before files, network, or other side effects change.",
-        "agentComposer.permission.ask_dangerous.name": "Approve safe actions",
-        "agentComposer.permission.ask_dangerous.description": "Only ask for dangerous or critical actions.",
-        "agentComposer.permission.full_access.name": "Full access",
-        "agentComposer.permission.full_access.description": "Run automatically inside hard workspace and safety limits.",
-        "agentComposer.permission.activeRun": "Approval mode cannot change while a run is active.",
-        "agentComposer.permission.readOnlyWorkspace": "This workspace is read-only. Approval mode cannot grant write access.",
-        "agentComposer.permission.updating": "Updating approval mode…",
-        "agentComposer.permission.updateError": "Approval mode could not be updated.",
-        "agentComposer.permission.retry": "Retry approval update",
-      }
-      return copy[`${namespace}.${key}`] ?? `${namespace}.${key}`
-    },
+  useTranslations: (namespace: string) => (key: string) => {
+    const copy: Record<string, string> = {
+      "agentComposer.label": "Message the agent",
+      "agentComposer.placeholder": "Ask Bioinfoflow to do something…",
+      "agentComposer.send": "Send message",
+      "agentComposer.queue": "Queue message",
+      "agentComposer.steer": "Steer active run",
+      "agentComposer.stop": "Stop run",
+      "agentComposer.stopping": "Stopping…",
+      "agentComposer.sending": "Sending…",
+      "agentComposer.steering": "Steering…",
+      "agentComposer.submitError":
+        "The message could not be submitted. Try again.",
+      "agentComposer.stopError": "The run could not be stopped. Try again.",
+      "agentComposer.permission.label": "Approval mode",
+      "agentComposer.permission.title": "How should agent actions be approved?",
+      "agentComposer.permission.ask_changes.name": "Ask before changes",
+      "agentComposer.permission.ask_changes.description":
+        "Ask before files, network, or other side effects change.",
+      "agentComposer.permission.ask_dangerous.name": "Approve safe actions",
+      "agentComposer.permission.ask_dangerous.description":
+        "Only ask for dangerous or critical actions.",
+      "agentComposer.permission.full_access.name": "Full access",
+      "agentComposer.permission.full_access.description":
+        "Run automatically inside hard workspace and safety limits.",
+      "agentComposer.permission.activeRun":
+        "Approval mode cannot change while a run is active.",
+      "agentComposer.permission.nextRun": "Changes apply to the next run.",
+      "agentComposer.permission.readOnlyWorkspace":
+        "This workspace is read-only. Approval mode cannot grant write access.",
+      "agentComposer.permission.updating": "Updating approval mode…",
+      "agentComposer.permission.updateError":
+        "Approval mode could not be updated.",
+      "agentComposer.permission.retry": "Retry approval update",
+      "agentComposer.environment.label": "Execution environments",
+      "agentComposer.environment.title": "Choose visible environments",
+      "agentComposer.environment.auto.name": "Auto",
+      "agentComposer.environment.auto.description":
+        "Let the agent use any available environment.",
+      "agentComposer.environment.manual.name": "Manual",
+      "agentComposer.environment.manual.description":
+        "Limit the agent to selected environments.",
+      "agentComposer.environment.local": "Local",
+      "agentComposer.environment.targetCount": "{count} environments",
+      "agentComposer.environment.updating": "Updating environments…",
+      "agentComposer.environment.updateError":
+        "Environments could not be updated.",
+      "agentComposer.environment.retry": "Retry environment update",
+      "agentComposer.environment.status.online": "Online",
+      "agentComposer.environment.status.offline": "Offline",
+      "agentComposer.environment.status.error": "Error",
+      "agentComposer.environment.status.unknown": "Unknown",
+      "agentComposer.starterHint": "Try one of these project-aware prompts",
+    }
+    return copy[`${namespace}.${key}`] ?? `${namespace}.${key}`
+  },
 }))
 
 const timestamp = "2026-08-15T00:00:00Z"
@@ -83,6 +113,12 @@ function renderComposer({
   disabled = false,
   placement = "dock",
   modelControls,
+  environmentTargets,
+  environmentSelection,
+  effectiveEnvironmentSelection,
+  environmentSelectionPending = false,
+  onEnvironmentSelectionChange = vi.fn().mockResolvedValue(undefined),
+  starterPrompts,
 }: {
   permissionMode?: AgentPermissionMode
   workspaceAccess?: AgentWorkspaceAccess
@@ -97,6 +133,14 @@ function renderComposer({
   disabled?: boolean
   placement?: "draft" | "dock"
   modelControls?: ReactNode
+  environmentTargets?: AgentEnvironmentTarget[]
+  environmentSelection?: AgentEnvironmentSelection
+  effectiveEnvironmentSelection?: AgentEnvironmentSelection
+  environmentSelectionPending?: boolean
+  onEnvironmentSelectionChange?: (
+    selection: AgentEnvironmentSelection,
+  ) => Promise<void>
+  starterPrompts?: readonly string[]
 } = {}) {
   return {
     ...renderWithProviders(
@@ -114,6 +158,12 @@ function renderComposer({
         disabled={disabled}
         placement={placement}
         modelControls={modelControls}
+        environmentTargets={environmentTargets}
+        environmentSelection={environmentSelection}
+        effectiveEnvironmentSelection={effectiveEnvironmentSelection}
+        environmentSelectionPending={environmentSelectionPending}
+        onEnvironmentSelectionChange={onEnvironmentSelectionChange}
+        starterPrompts={starterPrompts}
       />,
     ),
     onSendMessage,
@@ -136,10 +186,9 @@ describe("AgentComposer", () => {
       "data-placement",
       "draft",
     )
-    expect(screen.getByRole("textbox", { name: "Message the agent" })).toHaveAttribute(
-      "rows",
-      "3",
-    )
+    expect(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+    ).toHaveAttribute("rows", "3")
     expect(screen.getByRole("button", { name: "GPT-5.6" })).toBeInTheDocument()
     expect(screen.getByTestId("agent-composer")).not.toHaveClass(
       "bg-gradient-to-t",
@@ -147,6 +196,9 @@ describe("AgentComposer", () => {
     expect(screen.getByTestId("agent-composer-surface")).not.toHaveClass(
       "shadow-md",
     )
+    expect(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+    ).toHaveClass("dark:bg-transparent")
 
     view.rerender(
       <AgentComposer
@@ -165,13 +217,124 @@ describe("AgentComposer", () => {
       "data-placement",
       "dock",
     )
-    expect(screen.getByRole("textbox", { name: "Message the agent" })).toHaveAttribute(
-      "rows",
-      "2",
-    )
+    expect(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+    ).toHaveAttribute("rows", "2")
     expect(screen.getByTestId("agent-composer")).not.toHaveClass(
       "bg-gradient-to-t",
     )
+  })
+
+  it("shows starter prompts only in the draft and moves a selected prompt into the editor", async () => {
+    const user = userEvent.setup()
+    const view = renderComposer({
+      placement: "draft",
+      starterPrompts: ["Review the latest run", "Explain the workflow inputs"],
+    })
+
+    expect(
+      screen.getByText("Try one of these project-aware prompts"),
+    ).toBeInTheDocument()
+    await user.click(
+      screen.getByRole("button", { name: "Review the latest run" }),
+    )
+    expect(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+    ).toHaveValue("Review the latest run")
+
+    view.rerender(
+      <AgentComposer
+        permissionMode="ask_dangerous"
+        workspaceAccess="read_write"
+        activeRun={null}
+        onSendMessage={view.onSendMessage}
+        onSteer={view.onSteer}
+        onCancel={view.onCancel}
+        onPermissionModeChange={view.onPermissionModeChange}
+        placement="dock"
+        starterPrompts={["Review the latest run"]}
+      />,
+    )
+
+    expect(
+      screen.queryByText("Try one of these project-aware prompts"),
+    ).not.toBeInTheDocument()
+  })
+
+  it("offers Auto or multi-environment Manual selection without exposing transport types", async () => {
+    stubMatchMedia(false)
+    const user = userEvent.setup()
+    const onEnvironmentSelectionChange = vi.fn().mockResolvedValue(undefined)
+    const targets: AgentEnvironmentTarget[] = [
+      { id: "local", label: "Local", kind: "local", status: "online" },
+      {
+        id: "gpu-01",
+        label: "GPU 01",
+        description: "bio@gpu-01",
+        kind: "ssh",
+        status: "online",
+      },
+    ]
+    function EnvironmentComposer() {
+      const [selection, setSelection] = useState<AgentEnvironmentSelection>({
+        mode: "auto",
+      })
+      return (
+        <AgentComposer
+          permissionMode="ask_dangerous"
+          workspaceAccess="read_write"
+          activeRun={null}
+          onSendMessage={vi.fn()}
+          onSteer={vi.fn()}
+          onCancel={vi.fn()}
+          onPermissionModeChange={vi.fn()}
+          environmentTargets={targets}
+          environmentSelection={selection}
+          effectiveEnvironmentSelection={selection}
+          onEnvironmentSelectionChange={async (nextSelection) => {
+            onEnvironmentSelectionChange(nextSelection)
+            setSelection(nextSelection)
+          }}
+        />
+      )
+    }
+    const view = renderWithProviders(<EnvironmentComposer />)
+
+    await user.click(
+      screen.getByRole("button", { name: /Execution environments: Auto/i }),
+    )
+    await user.click(screen.getByRole("menuitemradio", { name: /Manual/i }))
+    expect(onEnvironmentSelectionChange).toHaveBeenCalledWith({
+      mode: "manual",
+      targetIds: ["local"],
+    })
+
+    await user.click(screen.getByRole("menuitemcheckbox", { name: /GPU 01/i }))
+    expect(onEnvironmentSelectionChange).toHaveBeenLastCalledWith({
+      mode: "manual",
+      targetIds: ["local", "gpu-01"],
+    })
+
+    view.rerender(
+      <AgentComposer
+        permissionMode="ask_dangerous"
+        workspaceAccess="read_write"
+        activeRun={null}
+        onSendMessage={vi.fn()}
+        onSteer={vi.fn()}
+        onCancel={vi.fn()}
+        onPermissionModeChange={vi.fn()}
+        environmentTargets={targets}
+        environmentSelection={{
+          mode: "manual",
+          targetIds: ["local", "gpu-01"],
+        }}
+        effectiveEnvironmentSelection={{ mode: "auto" }}
+        environmentSelectionPending
+        onEnvironmentSelectionChange={onEnvironmentSelectionChange}
+      />,
+    )
+    expect(screen.getByText("Updating environments…")).toBeInTheDocument()
   })
 
   it("grows the textarea with its content up to the bounded composer height", () => {
@@ -294,7 +457,7 @@ describe("AgentComposer", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   })
 
-  it("patches approval mode only while idle and waits for authoritative session state", async () => {
+  it("shows a requested approval mode while waiting for authoritative session state", async () => {
     stubMatchMedia(false)
     const user = userEvent.setup()
     const onPermissionModeChange = vi.fn().mockResolvedValue(undefined)
@@ -305,12 +468,14 @@ describe("AgentComposer", () => {
         name: "Approval mode: Approve safe actions",
       }),
     )
-    await user.click(screen.getByRole("menuitemradio", { name: /Full access/i }))
+    await user.click(
+      screen.getByRole("menuitemradio", { name: /Full access/i }),
+    )
 
     expect(onPermissionModeChange).toHaveBeenCalledWith("full_access")
     expect(
       screen.getByRole("button", {
-        name: "Approval mode: Approve safe actions",
+        name: "Approval mode: Full access",
       }),
     ).toBeDisabled()
     expect(screen.getByText("Updating approval mode…")).toBeInTheDocument()
@@ -332,7 +497,9 @@ describe("AgentComposer", () => {
         screen.getByRole("button", { name: "Approval mode: Full access" }),
       ).toBeInTheDocument(),
     )
-    expect(screen.queryByText("Updating approval mode…")).not.toBeInTheDocument()
+    expect(
+      screen.queryByText("Updating approval mode…"),
+    ).not.toBeInTheDocument()
   })
 
   it("uses an accessible bottom sheet for approval mode on mobile", async () => {
@@ -347,9 +514,7 @@ describe("AgentComposer", () => {
     await user.click(trigger)
 
     let sheet = await screen.findByRole("dialog")
-    expect(sheet).toHaveAccessibleName(
-      "How should agent actions be approved?",
-    )
+    expect(sheet).toHaveAccessibleName("How should agent actions be approved?")
     expect(sheet).toHaveAccessibleDescription(
       "Only ask for dangerous or critical actions.",
     )
@@ -359,9 +524,7 @@ describe("AgentComposer", () => {
       name: "How should agent actions be approved?",
     })
     expect(options).toHaveClass("overscroll-contain")
-    expect(options).toHaveClass(
-      "pb-[max(1rem,env(safe-area-inset-bottom))]",
-    )
+    expect(options).toHaveClass("pb-[max(1rem,env(safe-area-inset-bottom))]")
     expect(
       within(options).getByRole("button", { name: /Approve safe actions/i }),
     ).toHaveAttribute("aria-pressed", "true")
@@ -382,12 +545,14 @@ describe("AgentComposer", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     expect(
       screen.getByRole("button", {
-        name: "Approval mode: Approve safe actions",
+        name: "Approval mode: Ask before changes",
       }),
     ).toBeDisabled()
   })
 
-  it("cannot use approval mode to bypass a read-only workspace or an active run", () => {
+  it("cannot bypass a read-only workspace but allows changing the next run while one is active", async () => {
+    stubMatchMedia(false)
+    const user = userEvent.setup()
     const onPermissionModeChange = vi.fn()
     const view = renderComposer({
       permissionMode: "full_access",
@@ -416,15 +581,18 @@ describe("AgentComposer", () => {
       />,
     )
 
+    const activeTrigger = screen.getByRole("button", {
+      name: "Approval mode: Approve safe actions",
+    })
+    expect(activeTrigger).toBeEnabled()
     expect(
-      screen.getByRole("button", {
-        name: "Approval mode: Approve safe actions",
-      }),
-    ).toBeDisabled()
-    expect(
-      screen.getByText("Approval mode cannot change while a run is active."),
+      screen.getByText("Changes apply to the next run."),
     ).toBeInTheDocument()
-    expect(onPermissionModeChange).not.toHaveBeenCalled()
+    await user.click(activeTrigger)
+    await user.click(
+      screen.getByRole("menuitemradio", { name: /Full access/i }),
+    )
+    expect(onPermissionModeChange).toHaveBeenCalledWith("full_access")
   })
 
   it("disables both message entry and permission changes in a read-only conversation", () => {
