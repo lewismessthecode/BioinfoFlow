@@ -207,7 +207,7 @@ export function AgentComposer({
       <div
         data-testid="agent-composer-surface"
         className={cn(
-          "border border-border/65 bg-card p-2 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20 motion-reduce:transition-none",
+          "border border-border/65 bg-agent-composer-surface p-2 shadow-[var(--composer-shadow)] transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20 motion-reduce:transition-none",
           placement === "draft" ? "rounded-[22px] p-3" : "rounded-2xl",
         )}
       >

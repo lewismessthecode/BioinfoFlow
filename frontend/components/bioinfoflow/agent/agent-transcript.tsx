@@ -144,7 +144,7 @@ export function AgentTranscript({
       <section
         ref={scrollRef}
         aria-label={t("title")}
-        className="h-full min-h-0 min-w-0 overflow-x-clip overflow-y-auto px-3 py-5 sm:px-5 sm:py-6"
+        className="h-full min-h-0 min-w-0 overflow-x-clip overflow-y-auto bg-agent-transcript-subtle px-3 py-5 sm:px-5 sm:py-6"
         data-testid="agent-transcript"
         onScroll={handleScroll}
       >

@@ -104,7 +104,7 @@ export function AgentToolCard({
         <button
           type="button"
           className={cn(
-            "flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[10px] px-3 py-2 text-left text-xs transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none",
+            "flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[10px] px-3 py-2 text-left text-xs transition-colors hover:bg-agent-activity-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none",
             grouped && "rounded-[6px] px-2",
           )}
           aria-expanded={expanded}
@@ -186,7 +186,7 @@ export function AgentActivityGroup({
     >
       <button
         type="button"
-        className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[8px] px-2 py-2 text-left text-sm transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
+        className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[8px] px-2 py-2 text-left text-sm transition-colors hover:bg-agent-activity-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
         aria-expanded={expanded}
         aria-controls={detailsId}
         aria-label={t(summaryKey, { count: tools.length })}

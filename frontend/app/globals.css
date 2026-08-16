@@ -97,6 +97,7 @@
   --agent-composer-inset: rgba(25, 25, 25, 0.025);
   --agent-transcript-subtle: #fbfbfa;
   --agent-activity-hover: rgba(25, 25, 25, 0.045);
+  --agent-approval-warning: rgba(251, 243, 219, 0.58);
   --agent-halo: rgba(79, 120, 148, 0.10);
   --brand-accent: #4f7894;
   --brand-accent-muted: #e5edf1;
@@ -227,6 +228,7 @@
   --agent-composer-inset: rgba(255, 255, 255, 0.025);
   --agent-transcript-subtle: #101012;
   --agent-activity-hover: rgba(255, 255, 255, 0.055);
+  --agent-approval-warning: rgba(86, 63, 25, 0.32);
   --agent-halo: rgba(143, 185, 210, 0.08);
   --brand-accent: #8fb9d2;
   --brand-accent-muted: #1c2a32;
@@ -297,6 +299,7 @@
   --color-agent-composer-inset: var(--agent-composer-inset);
   --color-agent-transcript-subtle: var(--agent-transcript-subtle);
   --color-agent-activity-hover: var(--agent-activity-hover);
+  --color-agent-approval-warning: var(--agent-approval-warning);
   --color-agent-halo: var(--agent-halo);
   --color-brand-accent-muted: var(--brand-accent-muted);
   --color-landing-product-stage: var(--landing-product-stage);

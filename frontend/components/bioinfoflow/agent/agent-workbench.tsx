@@ -385,8 +385,12 @@ function DraftWorkbench({
       ) : null}
       <div
         data-testid="agent-draft-entry"
-        className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-2 py-10 sm:px-6"
+        className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden overflow-y-auto px-2 py-10 sm:px-6"
       >
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-[46%] h-44 w-[min(42rem,90vw)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-agent-halo blur-3xl motion-reduce:transition-none"
+        />
         <AgentEmptyState compact />
         {error ? <WorkbenchError message={error} embedded /> : null}
         <AgentComposer

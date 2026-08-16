@@ -68,7 +68,7 @@ function AgentInteractionCardState({
     <section
       className={cn(
         "grid gap-4 rounded-[10px] border px-3.5 py-3 [content-visibility:auto] [contain-intrinsic-size:auto_160px]",
-        tone === "warning" && "border-warning-border bg-warning-muted/25",
+        tone === "warning" && "border-warning-border bg-agent-approval-warning",
         tone === "success" && "border-success-border bg-success-muted/25",
         tone === "destructive" && "border-error-border bg-error-muted/25",
       )}
