@@ -37,6 +37,7 @@ class AgentHarnessSession(Base, UUIDMixin, TimestampMixin):
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     model_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     workspace_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    execution_scope: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     permission_mode: Mapped[str] = mapped_column(
         String(30), nullable=False, default="ask_dangerous"
     )
@@ -83,6 +84,9 @@ class AgentHarnessRun(Base, UUIDMixin, TimestampMixin):
     phase: Mapped[str | None] = mapped_column(String(30), nullable=True)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     model_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    settings_snapshot: Mapped[dict | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True
+    )
     lease_owner: Mapped[str | None] = mapped_column(String(100), nullable=True)
     lease_generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     lease_expires_at: Mapped[datetime | None] = mapped_column(

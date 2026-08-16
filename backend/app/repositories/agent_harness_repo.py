@@ -420,6 +420,7 @@ class AgentHarnessRepository:
             title=request.title,
             model_snapshot=request.model,
             workspace_snapshot=request.workspace,
+            execution_scope=request.execution_scope.model_dump(mode="json"),
             permission_mode=request.permission_mode,
             workspace_access=request.workspace_access,
             prompt_snapshot=request.prompt_snapshot,
@@ -463,6 +464,8 @@ class AgentHarnessRepository:
         session_id: str,
         *,
         title: str | None | object = _SESSION_SETTING_UNSET,
+        model_snapshot: dict | None | object = _SESSION_SETTING_UNSET,
+        execution_scope: dict | None | object = _SESSION_SETTING_UNSET,
         permission_mode: str | object = _SESSION_SETTING_UNSET,
         workspace_access: str | object = _SESSION_SETTING_UNSET,
         status: str | object = _SESSION_SETTING_UNSET,
@@ -470,6 +473,10 @@ class AgentHarnessRepository:
         values: dict[str, object] = {}
         if title is not _SESSION_SETTING_UNSET:
             values["title"] = title
+        if model_snapshot is not _SESSION_SETTING_UNSET:
+            values["model_snapshot"] = model_snapshot
+        if execution_scope is not _SESSION_SETTING_UNSET:
+            values["execution_scope"] = execution_scope
         if permission_mode is not _SESSION_SETTING_UNSET:
             values["permission_mode"] = permission_mode
         if workspace_access is not _SESSION_SETTING_UNSET:
@@ -480,19 +487,24 @@ class AgentHarnessRepository:
             raise ValueError("at least one session setting is required")
 
         requires_idle_run = bool(
-            {"permission_mode", "workspace_access"} & values.keys()
-            or values.get("status") == "archived"
+            "workspace_access" in values or values.get("status") == "archived"
         )
+        requires_frozen_active_run = "permission_mode" in values
         stmt = update(AgentHarnessSession).where(
             AgentHarnessSession.id == session_id,
             AgentHarnessSession.status.in_(("active", "archived")),
         )
-        if requires_idle_run:
+        if requires_idle_run or requires_frozen_active_run:
             active_run_exists = (
                 select(AgentHarnessRun.id)
                 .where(
                     AgentHarnessRun.session_id == session_id,
                     AgentHarnessRun.status.in_(ACTIVE_RUN_STATUSES),
+                )
+                .where(
+                    True
+                    if requires_idle_run
+                    else AgentHarnessRun.settings_snapshot.is_(None)
                 )
                 .exists()
             )
@@ -519,7 +531,11 @@ class AgentHarnessRepository:
         return session
 
     async def create_run(
-        self, session_id: str, *, model_snapshot: dict | None = None
+        self,
+        session_id: str,
+        *,
+        model_snapshot: dict | None = None,
+        settings_snapshot: dict | None = None,
     ) -> AgentHarnessRun:
         session = await self.get_session(session_id)
         if session is None or session.status != "active":
@@ -530,6 +546,7 @@ class AgentHarnessRepository:
             session_id=session_id,
             status="queued",
             model_snapshot=model_snapshot,
+            settings_snapshot=settings_snapshot,
             command_queue=[],
             command_ids=[],
         )
@@ -544,6 +561,7 @@ class AgentHarnessRepository:
         command: MessageCommand,
         *,
         model_snapshot: dict | None = None,
+        settings_snapshot: dict | None = None,
     ) -> tuple[AgentHarnessRun | None, AgentHarnessEntry | None, bool]:
         """Durably submit one user command without exposing a partial Run."""
 
@@ -573,9 +591,12 @@ class AgentHarnessRepository:
             if current is not None:
                 await self._user_message_payload(session, command)
                 session.command_ids = [*command_ids, command.command_id]
+                queued_command = command.model_dump(mode="json", exclude={"run_settings"})
+                if settings_snapshot is not None:
+                    queued_command["_settings_snapshot"] = settings_snapshot
                 session.command_queue = [
                     *(session.command_queue or []),
-                    command.model_dump(mode="json"),
+                    queued_command,
                 ]
                 await self.db.commit()
                 await self.db.refresh(session)
@@ -586,6 +607,7 @@ class AgentHarnessRepository:
                 session_id=session_id,
                 status="queued",
                 model_snapshot=model_snapshot,
+                settings_snapshot=settings_snapshot,
                 command_queue=[],
                 command_ids=[],
             )
@@ -1524,12 +1546,22 @@ class AgentHarnessRepository:
                 await self.db.commit()
                 return None
             command = queue.pop(index)
+            settings_snapshot = command.pop("_settings_snapshot", None)
+            effective_model_snapshot = (
+                settings_snapshot.get("model_snapshot")
+                if isinstance(settings_snapshot, dict)
+                and isinstance(settings_snapshot.get("model_snapshot"), dict)
+                else model_snapshot
+            )
             payload = await self._user_message_payload(session, command)
             session.command_queue = queue
             run = AgentHarnessRun(
                 session_id=session_id,
                 status="queued",
-                model_snapshot=model_snapshot,
+                model_snapshot=effective_model_snapshot,
+                settings_snapshot=(
+                    settings_snapshot if isinstance(settings_snapshot, dict) else None
+                ),
                 command_queue=[],
                 command_ids=[],
             )

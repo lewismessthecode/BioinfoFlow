@@ -38,6 +38,7 @@ class ReadTool:
         summary="Read file",
         input_summary_fields=("path",),
         path_argument="path",
+        target_scoped=True,
     )
 
     async def run(

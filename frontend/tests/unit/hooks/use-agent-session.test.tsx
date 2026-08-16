@@ -120,6 +120,7 @@ describe("useAgentSession", () => {
       onEvent: expect.any(Function),
       onConnectionChange: expect.any(Function),
       onError: expect.any(Function),
+      onProtocolError: expect.any(Function),
     })
     expect(mocks.getAgentSnapshot).toHaveBeenCalledWith("session-1")
 

@@ -94,15 +94,40 @@ class ToolExecutor:
             )
         if _is_cancelled(cancellation):
             return _cancelled(call, tool)
+        raw_arguments = dict(call.arguments)
+        target_handle = None
+        if tool.spec.target_scoped:
+            raw_target = raw_arguments.pop("target", None)
+            if raw_target is not None and (
+                not isinstance(raw_target, str) or not raw_target.strip()
+            ):
+                return _failed(call, tool, ValueError("target must be non-empty text"))
+            target_handle = raw_target.strip() if isinstance(raw_target, str) else None
         try:
-            arguments = _validate_arguments(call.arguments, tool.spec.input_schema)
+            arguments = _validate_arguments(raw_arguments, tool.spec.input_schema)
         except (TypeError, ValueError) as exc:
             return _failed(call, tool, exc)
+        execution_backend = self.backend
+        target_view = None
+        if tool.spec.target_scoped:
+            resolver = getattr(self.backend, "resolve_target", None)
+            if callable(resolver):
+                try:
+                    execution_backend, target_view = resolver(target_handle)
+                except (TypeError, ValueError) as exc:
+                    return _failed(call, tool, exc)
+            elif target_handle is not None:
+                return _failed(
+                    call,
+                    tool,
+                    ValueError("this Run does not expose selectable execution targets"),
+                )
         call = ToolCall(call.call_id, call.name, arguments)
         context = ToolExecutionContext(
-            backend=self.backend,
+            backend=execution_backend,
             cancellation=cancellation,
             environment=dict(self.environment),
+            target=target_view,
         )
         if call.name == "ask_user":
             if interaction_response is not None:
@@ -271,7 +296,7 @@ class ToolExecutor:
         scoped_bif = False
         if call.name == "bash":
             command = call.arguments.get("command")
-            checker = getattr(self.backend, "allows_scoped_bif_token", None)
+            checker = getattr(execution_backend, "allows_scoped_bif_token", None)
             scoped_bif = (
                 bool(checker(command))
                 if callable(checker)
@@ -285,17 +310,24 @@ class ToolExecutor:
                 except Exception as exc:
                     return _failed(call, tool, exc)
             context = ToolExecutionContext(
-                backend=self.backend,
+                backend=execution_backend,
                 cancellation=cancellation,
                 environment={**self.environment, **bash_environment},
+                target=target_view,
             )
         if approved_cwd_binding is not None and interaction_response is not None:
             context = ToolExecutionContext(
-                backend=_CwdBoundBackend(self.backend, approved_cwd_binding),
+                backend=_CwdBoundBackend(execution_backend, approved_cwd_binding),
                 cancellation=context.cancellation,
                 environment=context.environment,
+                target=target_view,
             )
-        lock = self._lock_for(call, tool)
+        lock = self._lock_for(
+            call,
+            tool,
+            execution_backend=execution_backend,
+            target_handle=target_handle,
+        )
         try:
             if lock is None:
                 output = await _run_interruptibly(
@@ -320,6 +352,7 @@ class ToolExecutor:
             status="completed",
             replay_policy=tool.spec.replay_policy,
             output=output,
+            target=target_view,
         )
 
     async def execute_batch(
@@ -517,14 +550,22 @@ class ToolExecutor:
             seen_paths.add(path)
         return False
 
-    def _lock_for(self, call: ToolCall, tool: HarnessTool) -> asyncio.Lock | None:
+    def _lock_for(
+        self,
+        call: ToolCall,
+        tool: HarnessTool,
+        *,
+        execution_backend: Any,
+        target_handle: str | None,
+    ) -> asyncio.Lock | None:
         argument = tool.spec.path_argument
         if not tool.spec.mutates_workspace or argument is None:
             return None
         raw_path = call.arguments.get(argument)
         if not isinstance(raw_path, str) or not raw_path.strip():
             return None
-        key = str(self.backend.canonical_path(raw_path))
+        canonical_path = str(execution_backend.canonical_path(raw_path))
+        key = f"{target_handle or 'default'}:{canonical_path}"
         return self._path_locks.setdefault(key, asyncio.Lock())
 
 
@@ -595,23 +636,36 @@ def _is_cancelled(cancellation: Any | None) -> bool:
     return bool(callable(is_set) and is_set())
 
 
-def _cancelled(call: ToolCall, tool: HarnessTool) -> ToolResult:
+def _cancelled(
+    call: ToolCall,
+    tool: HarnessTool,
+    *,
+    target: dict[str, Any] | None = None,
+) -> ToolResult:
     return ToolResult(
         call_id=call.call_id,
         tool_name=call.name,
         status="cancelled",
         replay_policy=tool.spec.replay_policy,
         error="tool execution was cancelled",
+        target=target,
     )
 
 
-def _failed(call: ToolCall, tool: HarnessTool, exc: Exception) -> ToolResult:
+def _failed(
+    call: ToolCall,
+    tool: HarnessTool,
+    exc: Exception,
+    *,
+    target: dict[str, Any] | None = None,
+) -> ToolResult:
     return ToolResult(
         call_id=call.call_id,
         tool_name=call.name,
         status="failed",
         replay_policy=tool.spec.replay_policy,
         error=str(exc),
+        target=target,
     )
 
 

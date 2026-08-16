@@ -42,13 +42,15 @@ class ContextBuilder:
         entries: Iterable[HistoryEntry | Mapping[str, Any]],
         attachment_parts: Iterable[InputPart] = (),
         attachment_parts_by_id: Mapping[str, tuple[InputPart, ...]] | None = None,
+        run_settings: Mapping[str, Any] | None = None,
     ) -> ModelContext:
         history = build_history_view(
             entries,
             attachment_parts_by_id=attachment_parts_by_id,
         )
+        stable_instructions = _prompt_content(prompt_snapshot)
         return ModelContext(
-            instructions=_prompt_content(prompt_snapshot),
+            instructions=_with_run_instructions(stable_instructions, run_settings),
             input_items=(*history.input_items, *attachment_parts),
             history_revision=history.through_sequence,
             compacted=history.compaction_sequence is not None,
@@ -499,6 +501,42 @@ def _open_directory_without_symlinks(path: Path) -> int:
         os.close(descriptor)
         raise
     return descriptor
+
+
+def _with_run_instructions(
+    stable_instructions: str,
+    run_settings: Mapping[str, Any] | None,
+) -> str:
+    if not isinstance(run_settings, Mapping):
+        return stable_instructions
+    raw_targets = run_settings.get("allowed_targets")
+    if not isinstance(raw_targets, list) or not raw_targets:
+        return stable_instructions
+    scope = run_settings.get("execution_scope")
+    mode = (
+        str(scope.get("mode") or "auto")
+        if isinstance(scope, Mapping)
+        else "auto"
+    )
+    lines = [
+        "## Execution targets for this turn",
+        f"Mode: {mode}.",
+        "Workspace tools accept an optional `target` handle. When omitted, use the primary target.",
+    ]
+    for raw in raw_targets:
+        if not isinstance(raw, Mapping):
+            continue
+        handle = raw.get("handle")
+        alias = raw.get("alias")
+        kind = raw.get("kind")
+        if not all(isinstance(item, str) and item.strip() for item in (handle, alias, kind)):
+            continue
+        primary = " (primary)" if raw.get("primary") is True else ""
+        label = "Local" if kind == "local" else "SSH"
+        lines.append(f"- {handle}: {alias} [{label}]{primary}")
+    if len(lines) == 3:
+        return stable_instructions
+    return f"{stable_instructions}\n\n" + "\n".join(lines)
 
 
 def _prompt_content(snapshot: str | Mapping[str, Any]) -> str:

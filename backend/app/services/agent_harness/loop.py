@@ -101,9 +101,11 @@ class AgentLoop:
         repository: AgentHarnessRepository,
         *,
         model_gateway: Any,
-        workspace_factory: Callable[[Any, str], WorkspaceRuntime],
+        workspace_factory: Callable[
+            [Any, str, dict[str, Any] | None], WorkspaceRuntime
+        ],
         publish: Publish,
-        model_runtime_resolver: Callable[[Any], Awaitable[dict[str, Any]]]
+        model_runtime_resolver: Callable[[Any, dict[str, Any] | None], Awaitable[dict[str, Any]]]
         | None = None,
         limits: LoopLimits | None = None,
     ) -> None:
@@ -118,6 +120,15 @@ class AgentLoop:
             preserve_recent_entries=self.limits.preserve_recent_entries
         )
 
+    async def workspace(self, session: Any, run_id: str) -> WorkspaceRuntime:
+        run = await self.repository.get_run(run_id)
+        settings_snapshot = (
+            run.settings_snapshot
+            if run is not None and isinstance(run.settings_snapshot, dict)
+            else None
+        )
+        return self.workspace_factory(session, run_id, settings_snapshot)
+
     async def run(self, run_id: str, cancellation: asyncio.Event) -> None:
         run = await self.repository.get_run(run_id)
         if run is None:
@@ -125,7 +136,7 @@ class AgentLoop:
         session = await self.repository.get_session(str(run.session_id))
         if session is None:
             raise LookupError(f"agent session not found: {run.session_id}")
-        workspace = self.workspace_factory(session, run_id)
+        workspace = await self.workspace(session, run_id)
         await self._update(run_id, status="running", phase="model")
         try:
             for iteration in range(1, self.limits.max_iterations + 1):
@@ -138,7 +149,7 @@ class AgentLoop:
                     return
                 await self.apply_steers(run_id, str(session.id))
                 entries = await self.repository.list_entries(str(session.id))
-                context = await self._build_context(session, entries)
+                context = await self._build_context(session, entries, run_id=run_id)
 
                 async def invoke():
                     current = await self.repository.get_run(run_id)
@@ -205,7 +216,7 @@ class AgentLoop:
                         ),
                     )
                     entries = await self.repository.list_entries(str(session.id))
-                    context = await self._build_context(session, entries)
+                    context = await self._build_context(session, entries, run_id=run_id)
                     return True
 
                 response = await invoke_with_context_overflow_retry(
@@ -601,7 +612,7 @@ class AgentLoop:
         if not isinstance(call_data, dict):
             raise ValueError("waiting interaction has no tool call")
         call = _runtime_tool_call(call_data)
-        workspace = self.workspace_factory(session, run_id)
+        workspace = await self.workspace(session, run_id)
         replay_policy = _checkpoint_replay_policy(checkpoint, call.call_id)
         response_entry = None
         execution_response = response
@@ -839,7 +850,7 @@ class AgentLoop:
             raise ValueError("recovery interaction has no tool call")
         call = _runtime_tool_call(call_data)
         if choice == "retry":
-            workspace = self.workspace_factory(session, str(run.id))
+            workspace = await self.workspace(session, str(run.id))
             replay_policy = _replay_policy(workspace, call.name)
             retry_fingerprint = (
                 workspace.approval_assessment_fingerprint(call)
@@ -954,7 +965,7 @@ class AgentLoop:
         ]
         if not remaining:
             return False, history_revision
-        workspace = self.workspace_factory(session, run_id)
+        workspace = await self.workspace(session, run_id)
         for index, item in enumerate(remaining):
             call = ToolCall(
                 call_id=str(item["call_id"]),
@@ -1097,15 +1108,20 @@ class AgentLoop:
         )
 
     async def _invoke(self, *, run_id, session, context, workspace, cancellation):
+        current = await self.repository.get_run(run_id)
+        run_model_snapshot = (
+            current.model_snapshot
+            if current is not None and isinstance(current.model_snapshot, dict)
+            else session.model_snapshot
+        )
         if self.model_runtime_resolver is None:
-            target = model_target_from_snapshot(session.model_snapshot)
-            resolved = dict(session.model_snapshot or {})
+            target = model_target_from_snapshot(run_model_snapshot)
+            resolved = dict(run_model_snapshot or {})
         else:
-            resolved = await self.model_runtime_resolver(session)
+            resolved = await self.model_runtime_resolver(session, run_model_snapshot)
             target = model_target_from_resolved(resolved)
         capabilities = resolved_runtime_capabilities(resolved)
         strategy = resolved_runtime_strategy(resolved)
-        current = await self.repository.get_run(run_id)
         checkpoint = current.checkpoint if current is not None else None
         input_items = (
             *context.input_items,
@@ -1259,7 +1275,7 @@ class AgentLoop:
                 )
                 await asyncio.sleep(delay)
 
-    async def _build_context(self, session, entries) -> Any:
+    async def _build_context(self, session, entries, *, run_id: str) -> Any:
         mappings = tuple(_history_mapping(entry) for entry in entries)
         attachment_ids = _attachment_ids(mappings)
         attachment_parts_by_id = await AgentHarnessAttachmentService(
@@ -1270,10 +1286,16 @@ class AgentLoop:
             workspace_id=str(session.workspace_id),
             user_id=session.user_id,
         )
+        run = await self.repository.get_run(run_id)
         return self.context.build(
             prompt_snapshot=session.prompt_snapshot,
             entries=mappings,
             attachment_parts_by_id=attachment_parts_by_id,
+            run_settings=(
+                run.settings_snapshot
+                if run is not None and isinstance(run.settings_snapshot, dict)
+                else None
+            ),
         )
 
     async def _append_message(

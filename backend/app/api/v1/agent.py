@@ -32,6 +32,7 @@ from app.services.agent_harness.assets import (
 from app.services.agent_harness.contracts import (
     AgentCommand,
     AgentEvent,
+    ExecutionScopeSelection,
     InputAttachmentRefPart,
     InputDirectoryRefPart,
     InputFileRefPart,
@@ -55,6 +56,13 @@ from app.services.agent_harness.factory import (
 )
 from app.services.agent_harness.runtime import agent_runtime
 from app.services.agent_harness.system_prompt import default_system_prompt_snapshot
+from app.services.agent_ui.bootstrap import build_agent_ui_bootstrap
+from app.services.agent_ui.contracts import AgentUiBootstrap
+from app.services.agent_ui.execution_targets import (
+    execution_target_catalog,
+    normalize_execution_scope,
+    selected_execution_targets,
+)
 from app.services.file_service import FileService
 from app.services.run_service import RunService
 from app.services.workflow_service import WorkflowService
@@ -116,6 +124,7 @@ class AgentSessionCreate(BaseModel):
 
     project_id: UUID | None = None
     title: str | None = Field(default=None, max_length=200)
+    execution_scope: ExecutionScopeSelection | None = None
     permission_mode: PermissionMode = "ask_dangerous"
     workspace_access: WorkspaceAccess = "read_write"
     model_id: UUID | None = None
@@ -233,6 +242,68 @@ def _selection(payload: AgentSessionCreate) -> dict[str, str] | None:
     if payload.provider and payload.model:
         return {"provider": payload.provider, "model": payload.model}
     return None
+
+
+def _message_model_selection(command: MessageCommand) -> dict[str, str] | None:
+    selection = command.run_settings.model if command.run_settings else None
+    if selection is None:
+        return None
+    if selection.model_id:
+        return {"model_id": str(selection.model_id)}
+    if selection.profile_id:
+        return {"profile_id": str(selection.profile_id)}
+    if selection.provider and selection.model:
+        return {"provider": selection.provider, "model": selection.model}
+    return None
+
+
+async def _message_run_settings_snapshot(
+    db: AsyncSession,
+    *,
+    user: AuthUser,
+    session,
+    command: MessageCommand,
+) -> dict:
+    requested = command.run_settings
+    model_selection = _message_model_selection(command)
+    model_snapshot = (
+        await resolve_model_snapshot(
+            db,
+            workspace_id=user.workspace_id,
+            user_id=user.id,
+            selection=model_selection,
+        )
+        if model_selection is not None
+        else session.model_snapshot
+    )
+    if not isinstance(model_snapshot, dict):
+        raise BadRequestError("Agent model selection is unavailable")
+
+    project_id = str(session.project_id) if session.project_id else None
+    targets, default_scope = await execution_target_catalog(
+        db,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+        project_id=project_id,
+    )
+    current_scope = session.execution_scope or default_scope.model_dump(mode="json")
+    scope = normalize_execution_scope(
+        requested.execution_scope if requested else current_scope,
+        targets=targets,
+        default=default_scope,
+    )
+    allowed_targets = selected_execution_targets(scope, targets)
+    permission_mode = (
+        requested.permission_mode
+        if requested and requested.permission_mode is not None
+        else session.permission_mode
+    )
+    return {
+        "model_snapshot": model_snapshot,
+        "permission_mode": permission_mode,
+        "execution_scope": scope.model_dump(mode="json"),
+        "allowed_targets": [target.model_dump(mode="json") for target in allowed_targets],
+    }
 
 
 def _dump(model) -> dict:
@@ -445,6 +516,27 @@ async def update_settings(
 
 
 @router.get(
+    "/ui/bootstrap",
+    response_model=SuccessEnvelope[AgentUiBootstrap],
+)
+async def get_agent_ui_bootstrap(
+    request: Request,
+    project_id: str | None = Query(default=None),
+    locale: str = Query(default="en", max_length=32),
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    bootstrap = await build_agent_ui_bootstrap(
+        db,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+        project_id=project_id,
+        locale=locale,
+    )
+    return success_response(bootstrap.model_dump(mode="json"), request=request)
+
+
+@router.get(
     "/context/search",
     response_model=SuccessEnvelope[ContextSearchResult],
 )
@@ -488,6 +580,17 @@ async def create_session(
         workspace_id=user.workspace_id,
         user_id=user.id,
     )
+    execution_targets, default_execution_scope = await execution_target_catalog(
+        db,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+        project_id=project_id,
+    )
+    execution_scope = normalize_execution_scope(
+        payload.execution_scope,
+        targets=execution_targets,
+        default=default_execution_scope,
+    )
     model_snapshot = await resolve_model_snapshot(
         db,
         workspace_id=user.workspace_id,
@@ -509,6 +612,7 @@ async def create_session(
             title=payload.title,
             model=model_snapshot,
             workspace=workspace,
+            execution_scope=execution_scope,
             permission_mode=payload.permission_mode,
             workspace_access=payload.workspace_access,
             prompt_snapshot=build_session_prompt_snapshot(
@@ -733,8 +837,27 @@ async def dispatch_command(
             command=command,
             user=user,
         )
+        run_settings_snapshot = None
+        if isinstance(command, MessageCommand):
+            run_settings_snapshot = await _message_run_settings_snapshot(
+                db,
+                user=user,
+                session=agent_session,
+                command=command,
+            )
+            await repository.update_session_settings(
+                session_id,
+                model_snapshot=run_settings_snapshot["model_snapshot"],
+                permission_mode=run_settings_snapshot["permission_mode"],
+                execution_scope=run_settings_snapshot["execution_scope"],
+            )
+            command = command.model_copy(update={"run_settings": None})
         try:
-            await agent_runtime.dispatch(session_id, command)
+            await agent_runtime.dispatch(
+                session_id,
+                command,
+                run_settings_snapshot=run_settings_snapshot,
+            )
         except ValueError as exc:
             raise ConflictError(str(exc)) from exc
         return success_response(

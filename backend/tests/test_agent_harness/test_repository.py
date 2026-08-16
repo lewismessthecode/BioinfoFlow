@@ -600,6 +600,64 @@ async def test_concurrent_messages_start_one_run_and_queue_the_other(
 
 
 @pytest.mark.asyncio
+async def test_queued_message_keeps_its_submitted_run_settings_snapshot(
+    harness_db: AsyncSession,
+) -> None:
+    repository = AgentHarnessRepository(harness_db)
+    session = await repository.open_session(_request())
+    first_settings = {
+        "model_snapshot": {"model": "first"},
+        "permission_mode": "ask_dangerous",
+        "execution_scope": {"mode": "auto", "target_ids": []},
+        "allowed_targets": [],
+    }
+    queued_settings = {
+        "model_snapshot": {"model": "queued"},
+        "permission_mode": "full_access",
+        "execution_scope": {"mode": "manual", "target_ids": ["local"]},
+        "allowed_targets": [
+            {
+                "id": "local",
+                "handle": "local",
+                "alias": "Local",
+                "kind": "local",
+                "status": "online",
+                "primary": True,
+                "disabled_reason": None,
+            }
+        ],
+    }
+
+    active, _entry, _inserted = await repository.submit_user_command(
+        str(session.id),
+        _message("message-active", "first"),
+        settings_snapshot=first_settings,
+    )
+    assert active is not None
+    queued_run, queued_entry, inserted = await repository.submit_user_command(
+        str(session.id),
+        _message("message-queued", "second"),
+        settings_snapshot=queued_settings,
+    )
+    assert queued_run is None
+    assert queued_entry is None
+    assert inserted is True
+
+    await repository.update_run(str(active.id), status="completed")
+    created = await repository.create_run_from_next_session_command(
+        str(session.id),
+        kind="message",
+        model_snapshot={"model": "later-default"},
+    )
+
+    assert created is not None
+    run, entry = created
+    assert entry.payload["parts"][0]["text"] == "second"
+    assert run.model_snapshot == {"model": "queued"}
+    assert run.settings_snapshot == queued_settings
+
+
+@pytest.mark.asyncio
 async def test_repository_claims_run_atomically_and_transfers_session_commands(
     harness_db: AsyncSession,
 ) -> None:

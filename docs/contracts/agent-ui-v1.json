@@ -1,0 +1,2959 @@
+{
+  "$defs": {
+    "ActiveRunView": {
+      "additionalProperties": false,
+      "properties": {
+        "assistant_draft": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssistantDraftView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pending_interaction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PendingInteractionView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "run": {
+          "$ref": "#/$defs/RunView"
+        },
+        "tool_progress": {
+          "items": {
+            "$ref": "#/$defs/ToolProgressView"
+          },
+          "title": "Tool Progress",
+          "type": "array"
+        }
+      },
+      "required": [
+        "run"
+      ],
+      "title": "ActiveRunView",
+      "type": "object"
+    },
+    "AgentUiBootstrap": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "$ref": "#/$defs/UiCapabilities"
+        },
+        "composer_hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Composer Hint"
+        },
+        "execution_scope": {
+          "$ref": "#/$defs/ExecutionScopeSelection"
+        },
+        "execution_targets": {
+          "items": {
+            "$ref": "#/$defs/ExecutionTargetView"
+          },
+          "title": "Execution Targets",
+          "type": "array"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "starter_prompts": {
+          "items": {
+            "$ref": "#/$defs/StarterPromptView"
+          },
+          "title": "Starter Prompts",
+          "type": "array"
+        }
+      },
+      "title": "AgentUiBootstrap",
+      "type": "object"
+    },
+    "ApprovalInteractionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_responses": {
+          "items": {
+            "enum": [
+              "approve",
+              "reject"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Allowed Responses",
+          "type": "array"
+        },
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "input_preview": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Preview"
+        },
+        "risk": {
+          "$ref": "#/$defs/ApprovalRiskView"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolTargetView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "type": {
+          "const": "approval",
+          "default": "approval",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "tool_name",
+        "summary",
+        "allowed_responses",
+        "risk"
+      ],
+      "title": "ApprovalInteractionRequest",
+      "type": "object"
+    },
+    "ApprovalInteractionResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "approved": {
+          "title": "Approved",
+          "type": "boolean"
+        },
+        "type": {
+          "const": "approval",
+          "default": "approval",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "approved"
+      ],
+      "title": "ApprovalInteractionResponse",
+      "type": "object"
+    },
+    "ApprovalRiskView": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_resources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Affected Resources",
+          "type": "array"
+        },
+        "effects": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Effects",
+          "type": "array"
+        },
+        "level": {
+          "title": "Level",
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        }
+      },
+      "required": [
+        "level"
+      ],
+      "title": "ApprovalRiskView",
+      "type": "object"
+    },
+    "ArtifactRefPart": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "format": "uuid",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "media_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Media Type"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "type": {
+          "const": "artifact_ref",
+          "default": "artifact_ref",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "artifact_id"
+      ],
+      "title": "ArtifactRefPart",
+      "type": "object"
+    },
+    "AskUserInteractionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "$ref": "#/$defs/AskUserQuestion"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Questions",
+          "type": "array"
+        },
+        "type": {
+          "const": "ask_user",
+          "default": "ask_user",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "questions"
+      ],
+      "title": "AskUserInteractionRequest",
+      "type": "object"
+    },
+    "AskUserInteractionResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "answers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Answers",
+          "type": "object"
+        },
+        "type": {
+          "const": "ask_user",
+          "default": "ask_user",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "answers"
+      ],
+      "title": "AskUserInteractionResponse",
+      "type": "object"
+    },
+    "AskUserQuestion": {
+      "additionalProperties": false,
+      "properties": {
+        "header": {
+          "title": "Header",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "multi_select": {
+          "default": false,
+          "title": "Multi Select",
+          "type": "boolean"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/InteractionOption"
+          },
+          "maxItems": 3,
+          "minItems": 2,
+          "title": "Options",
+          "type": "array"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "header",
+        "question",
+        "options"
+      ],
+      "title": "AskUserQuestion",
+      "type": "object"
+    },
+    "AssistantDeltaEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "delta": {
+          "title": "Delta",
+          "type": "string"
+        },
+        "draft_id": {
+          "title": "Draft Id",
+          "type": "string"
+        },
+        "end_offset": {
+          "minimum": 0,
+          "title": "End Offset",
+          "type": "integer"
+        },
+        "part_id": {
+          "title": "Part Id",
+          "type": "string"
+        },
+        "part_type": {
+          "enum": [
+            "text",
+            "reasoning_summary"
+          ],
+          "title": "Part Type",
+          "type": "string"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "start_offset": {
+          "minimum": 0,
+          "title": "Start Offset",
+          "type": "integer"
+        },
+        "type": {
+          "const": "assistant.delta",
+          "default": "assistant.delta",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "draft_id",
+        "part_id",
+        "part_type",
+        "delta",
+        "start_offset",
+        "end_offset"
+      ],
+      "title": "AssistantDeltaEvent",
+      "type": "object"
+    },
+    "AssistantDraftPartView": {
+      "additionalProperties": false,
+      "properties": {
+        "end_offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "End Offset",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "text",
+            "reasoning_summary"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "AssistantDraftPartView",
+      "type": "object"
+    },
+    "AssistantDraftView": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "parts": {
+          "items": {
+            "$ref": "#/$defs/AssistantDraftPartView"
+          },
+          "title": "Parts",
+          "type": "array"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "run_id",
+        "parts"
+      ],
+      "title": "AssistantDraftView",
+      "type": "object"
+    },
+    "AttachmentRefPart": {
+      "additionalProperties": false,
+      "properties": {
+        "attachment_id": {
+          "format": "uuid",
+          "title": "Attachment Id",
+          "type": "string"
+        },
+        "filename": {
+          "title": "Filename",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "mime_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mime Type"
+        },
+        "size_bytes": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "type": {
+          "const": "attachment_ref",
+          "default": "attachment_ref",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "attachment_id",
+        "filename",
+        "kind"
+      ],
+      "title": "AttachmentRefPart",
+      "type": "object"
+    },
+    "DirectoryRefPart": {
+      "additionalProperties": false,
+      "properties": {
+        "attachment_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attachment Id"
+        },
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "type": {
+          "const": "directory_ref",
+          "default": "directory_ref",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ],
+      "title": "DirectoryRefPart",
+      "type": "object"
+    },
+    "EntryCommittedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "entry": {
+          "discriminator": {
+            "mapping": {
+              "interaction_request": "#/$defs/InteractionRequestEntry",
+              "interaction_response": "#/$defs/InteractionResponseEntry",
+              "message": "#/$defs/MessageEntry",
+              "notice": "#/$defs/NoticeEntry",
+              "plan": "#/$defs/PlanEntry"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/MessageEntry"
+            },
+            {
+              "$ref": "#/$defs/InteractionRequestEntry"
+            },
+            {
+              "$ref": "#/$defs/InteractionResponseEntry"
+            },
+            {
+              "$ref": "#/$defs/NoticeEntry"
+            },
+            {
+              "$ref": "#/$defs/PlanEntry"
+            }
+          ],
+          "title": "Entry"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "entry.committed",
+          "default": "entry.committed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entry"
+      ],
+      "title": "EntryCommittedEvent",
+      "type": "object"
+    },
+    "ExecutionScopeSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "manual"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "target_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Target Ids",
+          "type": "array"
+        }
+      },
+      "title": "ExecutionScopeSelection",
+      "type": "object"
+    },
+    "ExecutionTargetView": {
+      "additionalProperties": false,
+      "properties": {
+        "alias": {
+          "title": "Alias",
+          "type": "string"
+        },
+        "disabled_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Disabled Reason"
+        },
+        "handle": {
+          "title": "Handle",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "local",
+            "remote_ssh"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "primary": {
+          "default": false,
+          "title": "Primary",
+          "type": "boolean"
+        },
+        "status": {
+          "default": "unknown",
+          "enum": [
+            "online",
+            "offline",
+            "error",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "handle",
+        "alias",
+        "kind"
+      ],
+      "title": "ExecutionTargetView",
+      "type": "object"
+    },
+    "FileRefPart": {
+      "additionalProperties": false,
+      "properties": {
+        "attachment_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attachment Id"
+        },
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "type": {
+          "const": "file_ref",
+          "default": "file_ref",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ],
+      "title": "FileRefPart",
+      "type": "object"
+    },
+    "InteractionOption": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "recommended": {
+          "default": false,
+          "title": "Recommended",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ],
+      "title": "InteractionOption",
+      "type": "object"
+    },
+    "InteractionRequestEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/InteractionRequestPayload"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "schema_version": {
+          "default": 2,
+          "minimum": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "session_id": {
+          "format": "uuid",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "interaction_request",
+          "default": "interaction_request",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "sequence",
+        "created_at",
+        "payload"
+      ],
+      "title": "InteractionRequestEntry",
+      "type": "object"
+    },
+    "InteractionRequestPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "interaction_id": {
+          "title": "Interaction Id",
+          "type": "string"
+        },
+        "request": {
+          "discriminator": {
+            "mapping": {
+              "approval": "#/$defs/ApprovalInteractionRequest",
+              "ask_user": "#/$defs/AskUserInteractionRequest",
+              "recovery": "#/$defs/RecoveryInteractionRequest"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AskUserInteractionRequest"
+            },
+            {
+              "$ref": "#/$defs/ApprovalInteractionRequest"
+            },
+            {
+              "$ref": "#/$defs/RecoveryInteractionRequest"
+            }
+          ],
+          "title": "Request"
+        }
+      },
+      "required": [
+        "interaction_id",
+        "request"
+      ],
+      "title": "InteractionRequestPayload",
+      "type": "object"
+    },
+    "InteractionRequestedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "interaction": {
+          "$ref": "#/$defs/PendingInteractionView"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "interaction.requested",
+          "default": "interaction.requested",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "interaction"
+      ],
+      "title": "InteractionRequestedEvent",
+      "type": "object"
+    },
+    "InteractionResponseEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/InteractionResponsePayload"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "schema_version": {
+          "default": 2,
+          "minimum": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "session_id": {
+          "format": "uuid",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "interaction_response",
+          "default": "interaction_response",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "sequence",
+        "created_at",
+        "payload"
+      ],
+      "title": "InteractionResponseEntry",
+      "type": "object"
+    },
+    "InteractionResponsePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "interaction_id": {
+          "title": "Interaction Id",
+          "type": "string"
+        },
+        "response": {
+          "discriminator": {
+            "mapping": {
+              "approval": "#/$defs/ApprovalInteractionResponse",
+              "ask_user": "#/$defs/AskUserInteractionResponse",
+              "recovery": "#/$defs/RecoveryInteractionResponse"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AskUserInteractionResponse"
+            },
+            {
+              "$ref": "#/$defs/ApprovalInteractionResponse"
+            },
+            {
+              "$ref": "#/$defs/RecoveryInteractionResponse"
+            }
+          ],
+          "title": "Response"
+        }
+      },
+      "required": [
+        "interaction_id",
+        "response"
+      ],
+      "title": "InteractionResponsePayload",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "MessageEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/MessagePayload"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "schema_version": {
+          "default": 2,
+          "minimum": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "session_id": {
+          "format": "uuid",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "message",
+          "default": "message",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "sequence",
+        "created_at",
+        "payload"
+      ],
+      "title": "MessageEntry",
+      "type": "object"
+    },
+    "MessagePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "parts": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "artifact_ref": "#/$defs/ArtifactRefPart",
+                "attachment_ref": "#/$defs/AttachmentRefPart",
+                "directory_ref": "#/$defs/DirectoryRefPart",
+                "file_ref": "#/$defs/FileRefPart",
+                "reasoning_summary": "#/$defs/ReasoningSummaryPart",
+                "run_ref": "#/$defs/RunRefPart",
+                "text": "#/$defs/TextPart",
+                "tool_call": "#/$defs/ToolCallPart",
+                "tool_result": "#/$defs/ToolResultPart",
+                "unknown": "#/$defs/UnknownPart",
+                "workflow_ref": "#/$defs/WorkflowRefPart"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/TextPart"
+              },
+              {
+                "$ref": "#/$defs/ReasoningSummaryPart"
+              },
+              {
+                "$ref": "#/$defs/AttachmentRefPart"
+              },
+              {
+                "$ref": "#/$defs/FileRefPart"
+              },
+              {
+                "$ref": "#/$defs/DirectoryRefPart"
+              },
+              {
+                "$ref": "#/$defs/WorkflowRefPart"
+              },
+              {
+                "$ref": "#/$defs/RunRefPart"
+              },
+              {
+                "$ref": "#/$defs/ArtifactRefPart"
+              },
+              {
+                "$ref": "#/$defs/ToolCallPart"
+              },
+              {
+                "$ref": "#/$defs/ToolResultPart"
+              },
+              {
+                "$ref": "#/$defs/UnknownPart"
+              }
+            ]
+          },
+          "title": "Parts",
+          "type": "array"
+        },
+        "role": {
+          "enum": [
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "parts"
+      ],
+      "title": "MessagePayload",
+      "type": "object"
+    },
+    "ModelSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "title": "Display Name",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "supports_reasoning": {
+          "default": false,
+          "title": "Supports Reasoning",
+          "type": "boolean"
+        },
+        "supports_tools": {
+          "default": false,
+          "title": "Supports Tools",
+          "type": "boolean"
+        },
+        "supports_vision": {
+          "default": false,
+          "title": "Supports Vision",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "display_name"
+      ],
+      "title": "ModelSummary",
+      "type": "object"
+    },
+    "NoticeEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/NoticePayload"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "schema_version": {
+          "default": 2,
+          "minimum": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "session_id": {
+          "format": "uuid",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "notice",
+          "default": "notice",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "sequence",
+        "created_at",
+        "payload"
+      ],
+      "title": "NoticeEntry",
+      "type": "object"
+    },
+    "NoticePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "details": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Details"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "NoticePayload",
+      "type": "object"
+    },
+    "PendingInteractionView": {
+      "additionalProperties": false,
+      "properties": {
+        "interaction_id": {
+          "title": "Interaction Id",
+          "type": "string"
+        },
+        "request": {
+          "discriminator": {
+            "mapping": {
+              "approval": "#/$defs/ApprovalInteractionRequest",
+              "ask_user": "#/$defs/AskUserInteractionRequest",
+              "recovery": "#/$defs/RecoveryInteractionRequest"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AskUserInteractionRequest"
+            },
+            {
+              "$ref": "#/$defs/ApprovalInteractionRequest"
+            },
+            {
+              "$ref": "#/$defs/RecoveryInteractionRequest"
+            }
+          ],
+          "title": "Request"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "interaction_id",
+        "run_id",
+        "revision",
+        "request"
+      ],
+      "title": "PendingInteractionView",
+      "type": "object"
+    },
+    "PlanEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/PlanPayload"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "schema_version": {
+          "default": 2,
+          "minimum": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "session_id": {
+          "format": "uuid",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "plan",
+          "default": "plan",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "sequence",
+        "created_at",
+        "payload"
+      ],
+      "title": "PlanEntry",
+      "type": "object"
+    },
+    "PlanItem": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "in_progress",
+            "completed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "status"
+      ],
+      "title": "PlanItem",
+      "type": "object"
+    },
+    "PlanPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/PlanItem"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "plan_id": {
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_id",
+        "revision",
+        "items",
+        "updated_at"
+      ],
+      "title": "PlanPayload",
+      "type": "object"
+    },
+    "ReasoningSummaryPart": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "reasoning_summary",
+          "default": "reasoning_summary",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "ReasoningSummaryPart",
+      "type": "object"
+    },
+    "RecoveryInteractionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/InteractionOption"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "type": {
+          "const": "recovery",
+          "default": "recovery",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "tool_name",
+        "message",
+        "options"
+      ],
+      "title": "RecoveryInteractionRequest",
+      "type": "object"
+    },
+    "RecoveryInteractionResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "choice": {
+          "enum": [
+            "inspect",
+            "retry",
+            "cancel"
+          ],
+          "title": "Choice",
+          "type": "string"
+        },
+        "type": {
+          "const": "recovery",
+          "default": "recovery",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "choice"
+      ],
+      "title": "RecoveryInteractionResponse",
+      "type": "object"
+    },
+    "RunErrorView": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "RunErrorView",
+      "type": "object"
+    },
+    "RunRefPart": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "run_ref",
+          "default": "run_ref",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "run_id",
+        "label"
+      ],
+      "title": "RunRefPart",
+      "type": "object"
+    },
+    "RunSettingsView": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_targets": {
+          "items": {
+            "$ref": "#/$defs/ExecutionTargetView"
+          },
+          "title": "Allowed Targets",
+          "type": "array"
+        },
+        "execution_scope": {
+          "$ref": "#/$defs/ExecutionScopeSelection"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelSummary"
+        },
+        "permission_mode": {
+          "enum": [
+            "ask_changes",
+            "ask_dangerous",
+            "full_access"
+          ],
+          "title": "Permission Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "permission_mode",
+        "execution_scope"
+      ],
+      "title": "RunSettingsView",
+      "type": "object"
+    },
+    "RunUpdatedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "run": {
+          "$ref": "#/$defs/RunView"
+        },
+        "type": {
+          "const": "run.updated",
+          "default": "run.updated",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run"
+      ],
+      "title": "RunUpdatedEvent",
+      "type": "object"
+    },
+    "RunView": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed At"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunErrorView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "phase": {
+          "anyOf": [
+            {
+              "enum": [
+                "model",
+                "tools",
+                "interaction"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Phase"
+        },
+        "revision": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "session_id": {
+          "format": "uuid",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "settings": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunSettingsView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "running",
+            "waiting_user",
+            "completed",
+            "failed",
+            "cancelled"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "termination_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Termination Reason"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "status",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "RunView",
+      "type": "object"
+    },
+    "SessionSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "active_run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ActiveRunView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "capabilities": {
+          "$ref": "#/$defs/UiCapabilities"
+        },
+        "entries": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "interaction_request": "#/$defs/InteractionRequestEntry",
+                "interaction_response": "#/$defs/InteractionResponseEntry",
+                "message": "#/$defs/MessageEntry",
+                "notice": "#/$defs/NoticeEntry",
+                "plan": "#/$defs/PlanEntry"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/MessageEntry"
+              },
+              {
+                "$ref": "#/$defs/InteractionRequestEntry"
+              },
+              {
+                "$ref": "#/$defs/InteractionResponseEntry"
+              },
+              {
+                "$ref": "#/$defs/NoticeEntry"
+              },
+              {
+                "$ref": "#/$defs/PlanEntry"
+              }
+            ]
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "runs": {
+          "items": {
+            "$ref": "#/$defs/RunView"
+          },
+          "title": "Runs",
+          "type": "array"
+        },
+        "session": {
+          "$ref": "#/$defs/SessionView"
+        }
+      },
+      "required": [
+        "session",
+        "runs",
+        "entries"
+      ],
+      "title": "SessionSnapshot",
+      "type": "object"
+    },
+    "SessionView": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "execution_scope": {
+          "$ref": "#/$defs/ExecutionScopeSelection"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelSummary"
+        },
+        "permission_mode": {
+          "enum": [
+            "ask_changes",
+            "ask_dangerous",
+            "full_access"
+          ],
+          "title": "Permission Mode",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "archived",
+            "closing",
+            "deleted"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "user_id": {
+          "title": "User Id",
+          "type": "string"
+        },
+        "workspace_access": {
+          "enum": [
+            "read_only",
+            "read_write"
+          ],
+          "title": "Workspace Access",
+          "type": "string"
+        },
+        "workspace_id": {
+          "format": "uuid",
+          "title": "Workspace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "user_id",
+        "workspace_id",
+        "model",
+        "permission_mode",
+        "workspace_access",
+        "status",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "SessionView",
+      "type": "object"
+    },
+    "SnapshotEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/SessionSnapshot"
+        },
+        "type": {
+          "const": "snapshot",
+          "default": "snapshot",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "snapshot"
+      ],
+      "title": "SnapshotEvent",
+      "type": "object"
+    },
+    "StarterPromptView": {
+      "additionalProperties": false,
+      "properties": {
+        "icon": {
+          "default": "chat",
+          "enum": [
+            "check",
+            "explain",
+            "review",
+            "chat"
+          ],
+          "title": "Icon",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "prompt": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Prompt",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "prompt"
+      ],
+      "title": "StarterPromptView",
+      "type": "object"
+    },
+    "TextPart": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "text",
+          "default": "text",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "TextPart",
+      "type": "object"
+    },
+    "ToolCallPart": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Arguments",
+          "type": "object"
+        },
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "category": {
+          "default": "other",
+          "enum": [
+            "read",
+            "search",
+            "command",
+            "edit",
+            "write",
+            "workflow",
+            "plan",
+            "interaction",
+            "other"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "display_name": {
+          "title": "Display Name",
+          "type": "string"
+        },
+        "execution_mode": {
+          "enum": [
+            "parallel",
+            "serial",
+            "mixed"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "group_id": {
+          "title": "Group Id",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "public_details": {
+          "items": {
+            "$ref": "#/$defs/ToolPublicDetail"
+          },
+          "title": "Public Details",
+          "type": "array"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolTargetView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "tool_call",
+          "default": "tool_call",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "call_id",
+        "group_id",
+        "execution_mode",
+        "name",
+        "display_name",
+        "summary"
+      ],
+      "title": "ToolCallPart",
+      "type": "object"
+    },
+    "ToolContentPartsOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "parts": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "artifact_ref": "#/$defs/ArtifactRefPart",
+                "attachment_ref": "#/$defs/AttachmentRefPart",
+                "directory_ref": "#/$defs/DirectoryRefPart",
+                "file_ref": "#/$defs/FileRefPart",
+                "reasoning_summary": "#/$defs/ReasoningSummaryPart",
+                "run_ref": "#/$defs/RunRefPart",
+                "text": "#/$defs/TextPart",
+                "unknown": "#/$defs/UnknownPart",
+                "workflow_ref": "#/$defs/WorkflowRefPart"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/TextPart"
+              },
+              {
+                "$ref": "#/$defs/ReasoningSummaryPart"
+              },
+              {
+                "$ref": "#/$defs/AttachmentRefPart"
+              },
+              {
+                "$ref": "#/$defs/FileRefPart"
+              },
+              {
+                "$ref": "#/$defs/DirectoryRefPart"
+              },
+              {
+                "$ref": "#/$defs/WorkflowRefPart"
+              },
+              {
+                "$ref": "#/$defs/RunRefPart"
+              },
+              {
+                "$ref": "#/$defs/ArtifactRefPart"
+              },
+              {
+                "$ref": "#/$defs/UnknownPart"
+              }
+            ]
+          },
+          "title": "Parts",
+          "type": "array"
+        },
+        "type": {
+          "const": "content_parts",
+          "default": "content_parts",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "parts"
+      ],
+      "title": "ToolContentPartsOutput",
+      "type": "object"
+    },
+    "ToolJsonOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "json",
+          "default": "json",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "ToolJsonOutput",
+      "type": "object"
+    },
+    "ToolProgressView": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Arguments",
+          "type": "object"
+        },
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "category": {
+          "enum": [
+            "read",
+            "search",
+            "command",
+            "edit",
+            "write",
+            "workflow",
+            "plan",
+            "interaction",
+            "other"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed At"
+        },
+        "display_name": {
+          "title": "Display Name",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "execution_mode": {
+          "enum": [
+            "parallel",
+            "serial",
+            "mixed"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "group_id": {
+          "title": "Group Id",
+          "type": "string"
+        },
+        "input_summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Summary"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "output_summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Summary"
+        },
+        "public_details": {
+          "items": {
+            "$ref": "#/$defs/ToolPublicDetail"
+          },
+          "title": "Public Details",
+          "type": "array"
+        },
+        "revision": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "completed",
+            "failed",
+            "blocked",
+            "cancelled",
+            "interaction_required"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolTargetView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "call_id",
+        "group_id",
+        "execution_mode",
+        "name",
+        "display_name",
+        "category",
+        "summary",
+        "status"
+      ],
+      "title": "ToolProgressView",
+      "type": "object"
+    },
+    "ToolPublicDetail": {
+      "additionalProperties": false,
+      "properties": {
+        "copyable": {
+          "default": false,
+          "title": "Copyable",
+          "type": "boolean"
+        },
+        "format": {
+          "default": "text",
+          "enum": [
+            "text",
+            "code",
+            "path",
+            "json",
+            "diff"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "command",
+            "working_directory",
+            "path",
+            "input",
+            "output",
+            "changes",
+            "error",
+            "metadata"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "redacted": {
+          "default": false,
+          "title": "Redacted",
+          "type": "boolean"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "value"
+      ],
+      "title": "ToolPublicDetail",
+      "type": "object"
+    },
+    "ToolResultPart": {
+      "additionalProperties": false,
+      "properties": {
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed At"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "content_parts": "#/$defs/ToolContentPartsOutput",
+                  "json": "#/$defs/ToolJsonOutput",
+                  "text": "#/$defs/ToolTextOutput"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ToolTextOutput"
+                },
+                {
+                  "$ref": "#/$defs/ToolJsonOutput"
+                },
+                {
+                  "$ref": "#/$defs/ToolContentPartsOutput"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output"
+        },
+        "public_details": {
+          "items": {
+            "$ref": "#/$defs/ToolPublicDetail"
+          },
+          "title": "Public Details",
+          "type": "array"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "completed",
+            "failed",
+            "blocked",
+            "cancelled",
+            "interaction_required"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summary"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolTargetView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "tool_result",
+          "default": "tool_result",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "call_id",
+        "status"
+      ],
+      "title": "ToolResultPart",
+      "type": "object"
+    },
+    "ToolTargetView": {
+      "additionalProperties": false,
+      "properties": {
+        "alias": {
+          "title": "Alias",
+          "type": "string"
+        },
+        "handle": {
+          "title": "Handle",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "local",
+            "remote_ssh"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "root": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Root"
+        }
+      },
+      "required": [
+        "id",
+        "handle",
+        "alias",
+        "kind"
+      ],
+      "title": "ToolTargetView",
+      "type": "object"
+    },
+    "ToolTextOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "text",
+          "default": "text",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "ToolTextOutput",
+      "type": "object"
+    },
+    "ToolUpdatedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "tool": {
+          "$ref": "#/$defs/ToolProgressView"
+        },
+        "type": {
+          "const": "tool.updated",
+          "default": "tool.updated",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "tool"
+      ],
+      "title": "ToolUpdatedEvent",
+      "type": "object"
+    },
+    "UiCapabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "approvals": {
+          "default": true,
+          "title": "Approvals",
+          "type": "boolean"
+        },
+        "artifacts": {
+          "default": true,
+          "title": "Artifacts",
+          "type": "boolean"
+        },
+        "edit_and_resend": {
+          "default": true,
+          "title": "Edit And Resend",
+          "type": "boolean"
+        },
+        "multi_target_execution": {
+          "default": true,
+          "title": "Multi Target Execution",
+          "type": "boolean"
+        },
+        "reasoning": {
+          "default": true,
+          "title": "Reasoning",
+          "type": "boolean"
+        },
+        "retry": {
+          "default": true,
+          "title": "Retry",
+          "type": "boolean"
+        },
+        "starter_prompts": {
+          "default": true,
+          "title": "Starter Prompts",
+          "type": "boolean"
+        },
+        "tool_activity": {
+          "default": true,
+          "title": "Tool Activity",
+          "type": "boolean"
+        }
+      },
+      "title": "UiCapabilities",
+      "type": "object"
+    },
+    "UnknownPart": {
+      "additionalProperties": false,
+      "properties": {
+        "display_text": {
+          "title": "Display Text",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "original_type": {
+          "title": "Original Type",
+          "type": "string"
+        },
+        "type": {
+          "const": "unknown",
+          "default": "unknown",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "original_type",
+        "display_text"
+      ],
+      "title": "UnknownPart",
+      "type": "object"
+    },
+    "WorkflowRefPart": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "type": {
+          "const": "workflow_ref",
+          "default": "workflow_ref",
+          "title": "Type",
+          "type": "string"
+        },
+        "workflow_id": {
+          "format": "uuid",
+          "title": "Workflow Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "workflow_id",
+        "label"
+      ],
+      "title": "WorkflowRefPart",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "bootstrap": {
+      "$ref": "#/$defs/AgentUiBootstrap"
+    },
+    "event": {
+      "discriminator": {
+        "mapping": {
+          "assistant.delta": "#/$defs/AssistantDeltaEvent",
+          "entry.committed": "#/$defs/EntryCommittedEvent",
+          "interaction.requested": "#/$defs/InteractionRequestedEvent",
+          "run.updated": "#/$defs/RunUpdatedEvent",
+          "snapshot": "#/$defs/SnapshotEvent",
+          "tool.updated": "#/$defs/ToolUpdatedEvent"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SnapshotEvent"
+        },
+        {
+          "$ref": "#/$defs/RunUpdatedEvent"
+        },
+        {
+          "$ref": "#/$defs/AssistantDeltaEvent"
+        },
+        {
+          "$ref": "#/$defs/ToolUpdatedEvent"
+        },
+        {
+          "$ref": "#/$defs/InteractionRequestedEvent"
+        },
+        {
+          "$ref": "#/$defs/EntryCommittedEvent"
+        }
+      ],
+      "title": "Event"
+    },
+    "protocol_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Protocol Version",
+      "type": "integer"
+    },
+    "snapshot": {
+      "$ref": "#/$defs/SessionSnapshot"
+    }
+  },
+  "required": [
+    "bootstrap",
+    "snapshot",
+    "event"
+  ],
+  "title": "AgentUiContractBundle",
+  "type": "object"
+}

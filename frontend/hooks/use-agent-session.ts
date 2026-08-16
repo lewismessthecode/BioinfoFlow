@@ -206,6 +206,9 @@ export function useAgentSession(sessionId: string): AgentSessionState {
           }))
           void refreshSnapshot()
         },
+        onProtocolError: () => {
+          void refreshSnapshot()
+        },
       })
     }
 

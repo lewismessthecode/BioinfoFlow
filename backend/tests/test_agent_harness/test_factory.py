@@ -1543,6 +1543,33 @@ def test_local_runtime_respects_the_frozen_root_and_uses_the_default_tool_contra
 
 
 @pytest.mark.asyncio
+async def test_local_runtime_uses_the_frozen_run_permission_snapshot(
+    db_session, tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(settings, "bioinfoflow_public_api_base_url", "")
+    session = SimpleNamespace(
+        workspace_id="workspace-1",
+        user_id="user-1",
+        project_id=None,
+        permission_mode="ask_changes",
+        workspace_access="read_write",
+        workspace_snapshot={"runtime": "local", "root": str(tmp_path)},
+    )
+
+    runtime = workspace_runtime_for_session(
+        db_session,
+        session,
+        run_settings={"permission_mode": "full_access"},
+    )
+    result = await runtime.execute(
+        ToolCall("write-1", "write", {"path": "result.txt", "content": "ok"})
+    )
+
+    assert result.status == "completed"
+    assert (tmp_path / "result.txt").read_text() == "ok"
+
+
+@pytest.mark.asyncio
 async def test_local_factory_gives_bash_the_same_platform_path_protection(
     db_session, tmp_path, monkeypatch
 ) -> None:

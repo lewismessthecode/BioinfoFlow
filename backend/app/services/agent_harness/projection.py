@@ -169,6 +169,7 @@ def public_run_error(run: AgentHarnessRun) -> dict[str, str] | None:
 
 
 def run_view(run: AgentHarnessRun) -> RunView:
+    settings = run.settings_snapshot if isinstance(run.settings_snapshot, dict) else None
     return RunView.model_validate(
         {
             "id": run.id,
@@ -176,6 +177,7 @@ def run_view(run: AgentHarnessRun) -> RunView:
             "status": run.status,
             "phase": run.phase,
             "revision": run.revision,
+            "settings": _public_run_settings(settings),
             "started_at": run.started_at,
             "completed_at": run.completed_at,
             "termination_reason": run.termination_reason,
@@ -184,6 +186,26 @@ def run_view(run: AgentHarnessRun) -> RunView:
             "updated_at": run.updated_at,
         }
     )
+
+
+def _public_run_settings(settings: dict[str, Any] | None) -> dict[str, Any] | None:
+    if settings is None:
+        return None
+    scope = settings.get("execution_scope")
+    permission_mode = settings.get("permission_mode")
+    targets = settings.get("allowed_targets")
+    if (
+        not isinstance(scope, dict)
+        or permission_mode not in {"ask_changes", "ask_dangerous", "full_access"}
+        or not isinstance(targets, list)
+    ):
+        return None
+    return {
+        "model": public_model_summary(settings.get("model_snapshot")),
+        "permission_mode": permission_mode,
+        "execution_scope": scope,
+        "allowed_targets": [target for target in targets if isinstance(target, dict)],
+    }
 
 
 def entry_contract(entry: AgentHarnessEntry) -> HistoryEntry:

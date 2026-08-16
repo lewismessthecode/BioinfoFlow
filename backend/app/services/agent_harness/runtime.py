@@ -57,9 +57,19 @@ class AgentRuntime:
         async with self._session_factory() as db:
             return await self._harness(db).open_session(request)
 
-    async def dispatch(self, session_id: str, command: AgentCommand) -> None:
+    async def dispatch(
+        self,
+        session_id: str,
+        command: AgentCommand,
+        *,
+        run_settings_snapshot: dict[str, Any] | None = None,
+    ) -> None:
         async with self._session_factory() as db:
-            await self._harness(db).dispatch(session_id, command)
+            await self._harness(db).dispatch(
+                session_id,
+                command,
+                run_settings_snapshot=run_settings_snapshot,
+            )
 
     async def snapshot(self, session_id: str) -> SessionSnapshot:
         async with self._session_factory() as db:

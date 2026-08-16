@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from copy import deepcopy
 from typing import Any, Literal, Protocol, TypeAlias
 
 from app.services.agent_harness.contracts import (
@@ -35,12 +36,23 @@ class ToolSpec:
     mutates_workspace: bool = False
     path_argument: str | None = None
     serial: bool = False
+    target_scoped: bool = False
 
     def model_definition(self) -> ToolDefinition:
+        parameters = deepcopy(self.input_schema)
+        if self.target_scoped:
+            properties = parameters.setdefault("properties", {})
+            properties["target"] = {
+                "type": "string",
+                "description": (
+                    "Execution target handle from the current turn's allowed target list. "
+                    "Omit it to use the primary target."
+                ),
+            }
         return ToolDefinition(
             name=self.name,
             description=self.description,
-            parameters=self.input_schema,
+            parameters=parameters,
         )
 
 
@@ -70,6 +82,7 @@ class ToolResult:
     output: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
     interaction: ToolInteraction | None = None
+    target: dict[str, Any] | None = None
 
     @classmethod
     def interaction_required(
@@ -83,6 +96,7 @@ class ToolResult:
         questions: tuple[dict[str, Any], ...] = (),
         risk: dict[str, Any] | None = None,
         allowed_responses: tuple[Literal["approve", "reject"], ...] = (),
+        target: dict[str, Any] | None = None,
     ) -> ToolResult:
         return cls(
             call_id=call_id,
@@ -97,6 +111,7 @@ class ToolResult:
                 risk=risk,
                 allowed_responses=allowed_responses,
             ),
+            target=target,
         )
 
 
@@ -111,6 +126,7 @@ class ToolExecutionContext:
     backend: Any
     cancellation: Any | None = None
     environment: dict[str, str] = field(default_factory=dict)
+    target: dict[str, Any] | None = None
 
 
 class HarnessTool(Protocol):

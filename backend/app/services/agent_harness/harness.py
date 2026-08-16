@@ -60,7 +60,8 @@ class AgentHarness:
         *,
         model_gateway: Any,
         workspace_factory: Callable[[Any], Any],
-        model_runtime_resolver: Callable[[Any], Any] | None = None,
+        model_runtime_resolver: Callable[[Any, dict[str, Any] | None], Any]
+        | None = None,
         event_hub: AgentEventHub | None = None,
         limits: LoopLimits | None = None,
         token_service: AgentTokenService | None = None,
@@ -84,8 +85,19 @@ class AgentHarness:
             inspect.signature(original_workspace_factory).parameters
         )
 
-        def scoped_workspace_factory(session, run_id: str):
-            if workspace_factory_parameters >= 3:
+        def scoped_workspace_factory(
+            session,
+            run_id: str,
+            run_settings: dict[str, Any] | None = None,
+        ):
+            if workspace_factory_parameters >= 4:
+                workspace = original_workspace_factory(
+                    session,
+                    run_id,
+                    self.repository.run_fence(run_id),
+                    run_settings,
+                )
+            elif workspace_factory_parameters >= 3:
                 workspace = original_workspace_factory(
                     session,
                     run_id,
@@ -121,7 +133,8 @@ class AgentHarness:
         *,
         model_gateway: Any | None = None,
         workspace_factory: Callable[[Any], Any],
-        model_runtime_resolver: Callable[[Any], Any] | None = None,
+        model_runtime_resolver: Callable[[Any, dict[str, Any] | None], Any]
+        | None = None,
         event_hub: AgentEventHub | None = None,
         limits: LoopLimits | None = None,
         tasks: dict[str, asyncio.Task[None]] | None = None,
@@ -153,7 +166,13 @@ class AgentHarness:
         session = await self.repository.open_session(request)
         return await self.repository.snapshot(str(session.id))
 
-    async def dispatch(self, session_id: str, command: AgentCommand) -> None:
+    async def dispatch(
+        self,
+        session_id: str,
+        command: AgentCommand,
+        *,
+        run_settings_snapshot: dict[str, Any] | None = None,
+    ) -> None:
         session = await self.repository.get_session(session_id)
         if session is None or session.status == "deleted":
             raise LookupError(f"agent session not found: {session_id}")
@@ -164,7 +183,13 @@ class AgentHarness:
             run, entry, inserted = await self.repository.submit_user_command(
                 session_id,
                 command,
-                model_snapshot=session.model_snapshot,
+                model_snapshot=(
+                    run_settings_snapshot.get("model_snapshot")
+                    if isinstance(run_settings_snapshot, dict)
+                    and isinstance(run_settings_snapshot.get("model_snapshot"), dict)
+                    else session.model_snapshot
+                ),
+                settings_snapshot=run_settings_snapshot,
             )
             if not inserted:
                 return
@@ -548,7 +573,7 @@ class AgentHarness:
                 break
         if not unresolved:
             return False
-        workspace = self.loop.workspace_factory(session, run_id)
+        workspace = await self.loop.workspace(session, run_id)
         replay_policies = {spec.name: spec.replay_policy for spec in workspace.tools}
         checkpoint = {
             **create_checkpoint(
@@ -659,7 +684,7 @@ class AgentHarness:
         session = await self.repository.get_session(session_id)
         if session is None:
             return False
-        workspace = self.loop.workspace_factory(session, run_id)
+        workspace = await self.loop.workspace(session, run_id)
         replay_policies = {spec.name: spec.replay_policy for spec in workspace.tools}
         private_interaction = request
         refreshed = await workspace.execute(_runtime_tool_call(waiting_call))
@@ -731,7 +756,7 @@ class AgentHarness:
         return entry
 
     async def _recover_tools(self, session, run, plan) -> bool:
-        workspace = self.loop.workspace_factory(session, str(run.id))
+        workspace = await self.loop.workspace(session, str(run.id))
         committed_call_ids: set[str] = set()
         await self.repository.update_run(
             str(run.id),
@@ -947,7 +972,7 @@ class AgentHarness:
             }
         )
         waiting_call = checkpoint["waiting_call"]
-        workspace = self.loop.workspace_factory(session, str(run.id))
+        workspace = await self.loop.workspace(session, str(run.id))
         notice, request, waiting_run = await self.repository.commit_waiting_interaction(
             str(session.id),
             run_id=str(run.id),

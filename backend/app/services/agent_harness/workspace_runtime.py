@@ -1106,10 +1106,42 @@ class RemoteWorkspaceBackend:
             raise ValueError(f"path is outside remote workspace roots: {path}")
 
 
+class ScopedWorkspaceBackend:
+    """Route one tool call to an allowed immutable Run target."""
+
+    def __init__(
+        self,
+        targets: dict[str, tuple[LocalWorkspaceBackend | RemoteWorkspaceBackend, dict[str, Any]]],
+        *,
+        primary_handle: str,
+    ) -> None:
+        if primary_handle not in targets:
+            raise ValueError("primary execution target is unavailable")
+        self._targets = dict(targets)
+        self.primary_handle = primary_handle
+
+    def resolve_target(
+        self, handle: str | None
+    ) -> tuple[LocalWorkspaceBackend | RemoteWorkspaceBackend, dict[str, Any]]:
+        selected = handle or self.primary_handle
+        target = self._targets.get(selected)
+        if target is None:
+            raise ValueError("execution target is outside this Run's allowed scope")
+        return target
+
+    @property
+    def target_views(self) -> tuple[dict[str, Any], ...]:
+        return tuple(dict(target[1]) for target in self._targets.values())
+
+    def __getattr__(self, name: str) -> Any:
+        backend, _target = self.resolve_target(None)
+        return getattr(backend, name)
+
+
 class WorkspaceRuntime:
     def __init__(
         self,
-        backend: LocalWorkspaceBackend | RemoteWorkspaceBackend,
+        backend: LocalWorkspaceBackend | RemoteWorkspaceBackend | ScopedWorkspaceBackend,
         *,
         permission_mode: PermissionMode = "ask_dangerous",
         workspace_access: WorkspaceAccess = "read_write",

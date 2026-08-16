@@ -31,6 +31,7 @@ class EditTool:
         input_summary_fields=("path",),
         mutates_workspace=True,
         path_argument="path",
+        target_scoped=True,
     )
 
     async def run(

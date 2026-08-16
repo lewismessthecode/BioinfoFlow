@@ -1,7 +1,8 @@
 import { buildApiUrl } from "@/lib/api"
 import { connectEventSource } from "@/lib/runtime/event-source-connection"
 
-import type { AgentEvent } from "./contracts"
+import type { AgentEvent, ProtocolDecodeFailure } from "./protocol"
+import { decodeAgentEvent } from "./protocol"
 
 const INITIAL_BACKOFF_MS = 1_000
 const MAX_BACKOFF_MS = 15_000
@@ -26,6 +27,7 @@ export function subscribeAgentEvents(options: {
   onEvent: (event: AgentEvent) => void
   onConnectionChange?: (status: AgentConnectionStatus) => void
   onError?: (error: Event) => void
+  onProtocolError?: (reason: ProtocolDecodeFailure) => void
 }) {
   let disposed = false
   let browserOffline =
@@ -53,8 +55,12 @@ export function subscribeAgentEvents(options: {
       bindSource: (source) => {
         for (const eventType of AGENT_EVENT_TYPES) {
           source.addEventListener(eventType, (message) => {
-            const event = parseAgentEvent(message as MessageEvent)
-            if (event?.type === eventType) options.onEvent(event)
+            const decoded = parseAgentEvent(message as MessageEvent)
+            if (!decoded.ok) {
+              options.onProtocolError?.(decoded.reason)
+              return
+            }
+            if (decoded.value.type === eventType) options.onEvent(decoded.value)
           })
         }
       },
@@ -89,12 +95,10 @@ export function subscribeAgentEvents(options: {
   }
 }
 
-function parseAgentEvent(message: MessageEvent): AgentEvent | null {
+function parseAgentEvent(message: MessageEvent) {
   try {
-    const event = JSON.parse(message.data) as AgentEvent
-    if (!event || typeof event !== "object" || !("type" in event)) return null
-    return event
+    return decodeAgentEvent(JSON.parse(message.data))
   } catch {
-    return null
+    return { ok: false, reason: "malformed" } as const
   }
 }

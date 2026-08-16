@@ -150,9 +150,11 @@ async def resolve_model_snapshot(
 def harness_for_database(db: AsyncSession, **runtime: Any) -> AgentHarness:
     resolver = _model_resolver(db)
 
-    async def model_runtime_resolver(session) -> dict[str, Any]:
+    async def model_runtime_resolver(
+        session, model_snapshot: dict[str, Any] | None
+    ) -> dict[str, Any]:
         resolved = await resolver.resolve_snapshot(
-            session.model_snapshot,
+            model_snapshot,
             workspace_id=str(session.workspace_id),
             user_id=session.user_id,
         )
@@ -164,6 +166,7 @@ def harness_for_database(db: AsyncSession, **runtime: Any) -> AgentHarness:
         session,
         run_id: str,
         fence: RunFence | None,
+        run_settings: dict[str, Any] | None,
     ) -> WorkspaceRuntime:
         if fence is None:
             raise ValueError("Agent workspace requires a claimed Run fence")
@@ -175,6 +178,7 @@ def harness_for_database(db: AsyncSession, **runtime: Any) -> AgentHarness:
         return workspace_runtime_for_session(
             db,
             session,
+            run_settings=run_settings,
             artifact_writer=write_artifact,
         )
 
@@ -200,6 +204,7 @@ def workspace_runtime_for_session(
     db: AsyncSession,
     session: Any,
     *,
+    run_settings: dict[str, Any] | None = None,
     remote_executor: RemoteExecutor | None = None,
     artifact_writer=None,
 ) -> WorkspaceRuntime:
@@ -244,7 +249,13 @@ def workspace_runtime_for_session(
         raise ValueError(f"unknown workspace runtime: {runtime}")
     return WorkspaceRuntime(
         backend,
-        permission_mode=session.permission_mode,
+        permission_mode=(
+            run_settings["permission_mode"]
+            if isinstance(run_settings, dict)
+            and run_settings.get("permission_mode")
+            in {"ask_changes", "ask_dangerous", "full_access"}
+            else session.permission_mode
+        ),
         workspace_access=session.workspace_access,
         environment=environment,
     )

@@ -32,6 +32,7 @@ class BashTool:
         summary="Run command",
         input_summary_fields=("description",),
         mutates_workspace=True,
+        target_scoped=True,
     )
 
     def assess_risk(

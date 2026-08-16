@@ -65,10 +65,12 @@ describe("subscribeAgentEvents", () => {
 
   it("connects to the snapshot-first event stream without a replay cursor", () => {
     const onEvent = vi.fn()
+    const onProtocolError = vi.fn()
     const onConnectionChange = vi.fn()
     const unsubscribe = subscribeAgentEvents({
       sessionId: "session/id",
       onEvent,
+      onProtocolError,
       onConnectionChange,
     })
     const source = MockEventSource.instances[0]
@@ -81,6 +83,7 @@ describe("subscribeAgentEvents", () => {
     source.open()
     source.emit("assistant.delta", {
       type: "assistant.delta",
+      protocol_version: 1,
       run_id: "run-1",
       draft_id: "draft-1",
       part_id: "part-1",
@@ -96,6 +99,7 @@ describe("subscribeAgentEvents", () => {
     expect(onEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: "assistant.delta", delta: "Hi" }),
     )
+    expect(onProtocolError).toHaveBeenCalledWith("malformed")
 
     unsubscribe()
     expect(source.closed).toBe(true)

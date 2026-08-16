@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -23,5 +23,6 @@ class AgentUserSettings(Base, UUIDMixin, TimestampMixin):
     )
     user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     custom_instructions: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    composer_defaults: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     workspace = relationship("Workspace")

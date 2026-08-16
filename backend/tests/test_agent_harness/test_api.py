@@ -286,6 +286,46 @@ async def test_session_patch_allows_title_change_during_active_run(async_client)
 
 
 @pytest.mark.asyncio
+async def test_session_patch_allows_next_run_permission_when_active_run_is_frozen(
+    async_client,
+) -> None:
+    from app.repositories.agent_harness_repo import AgentHarnessRepository
+    import app.database as app_database
+
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post(
+            "/api/v1/agent/sessions",
+            json={"title": "Before"},
+        )
+    session_id = created.json()["data"]["session"]["id"]
+    async with app_database.async_session_maker() as db:
+        await AgentHarnessRepository(db).create_run(
+            session_id,
+            settings_snapshot={
+                "model_snapshot": {"target": {"model_name": "fake"}},
+                "permission_mode": "ask_dangerous",
+                "execution_scope": {"mode": "auto", "target_ids": []},
+                "allowed_targets": [],
+            },
+        )
+
+    response = await async_client.patch(
+        f"/api/v1/agent/sessions/{session_id}",
+        json={"permission_mode": "full_access"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["session"]["permission_mode"] == "full_access"
+    assert payload["active_run"]["run"]["settings"]["permission_mode"] == (
+        "ask_dangerous"
+    )
+
+
+@pytest.mark.asyncio
 async def test_session_patch_archives_and_unarchives_idle_session(async_client) -> None:
     with patch(
         "app.api.v1.agent.resolve_model_snapshot",
