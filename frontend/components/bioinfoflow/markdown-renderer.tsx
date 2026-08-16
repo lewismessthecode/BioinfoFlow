@@ -1,16 +1,15 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { Copy } from "@/lib/icons"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 interface MarkdownRendererProps {
   content: string
   className?: string
   allowOverflow?: boolean
+  variant?: "default" | "agent-transcript"
   renderSourceCitation?: (sourceId: string, children: ReactNode) => ReactNode
 }
 
@@ -33,35 +32,18 @@ function normalizeCodeLanguage(className?: string) {
   return match?.[1]?.toLowerCase() || "text"
 }
 
-function codeLanguageLabel(language: string) {
-  const labels: Record<string, string> = {
-    bash: "Shell",
-    javascript: "JavaScript",
-    js: "JavaScript",
-    json: "JSON",
-    jsx: "JSX",
-    python: "Python",
-    shell: "Shell",
-    text: "Plain text",
-    ts: "TypeScript",
-    tsx: "TSX",
-    typescript: "TypeScript",
-  }
-  return labels[language] ?? language.toUpperCase()
-}
-
 function CodeBlock({
   code,
   language,
+  variant,
 }: {
   code: string
   language: string
+  variant: NonNullable<MarkdownRendererProps["variant"]>
 }) {
   const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null)
   const cacheKey = useMemo(() => `${language}::${code}`, [code, language])
-  const copyCode = useCallback(() => {
-    void navigator.clipboard?.writeText(code)
-  }, [code])
+  const agentTranscript = variant === "agent-transcript"
 
   useEffect(() => {
     let cancelled = false
@@ -112,39 +94,45 @@ function CodeBlock({
 
   return (
     <div
-      className="markdown-code-highlight my-3 min-w-0 max-w-full overflow-hidden rounded-xl border border-border/60 bg-secondary/60"
+      className={cn(
+        "markdown-code-highlight min-w-0 max-w-full overflow-hidden rounded-xl border border-border/60 bg-secondary/60",
+        agentTranscript ? "my-3" : "mb-3",
+      )}
+      data-agent-code-surface={agentTranscript ? "true" : undefined}
       data-code-language={language}
       data-testid="markdown-code-block"
     >
       <div
-        className="flex min-h-9 items-center justify-between border-b border-border/50 bg-muted/20 px-3"
+        className={cn(
+          "flex items-center border-b border-border/50 px-3",
+          agentTranscript ? "min-h-9 bg-muted/20" : "py-1.5",
+        )}
         data-testid="markdown-code-header"
       >
-        <span className="font-mono text-[10px] font-medium tracking-[0.08em] text-muted-foreground">
-          {codeLanguageLabel(language)}
+        <span
+          className={cn(
+            "font-mono font-medium text-muted-foreground",
+            agentTranscript
+              ? "text-[10px] uppercase tracking-[0.08em]"
+              : "text-[11px] uppercase tracking-[0.12em]",
+          )}
+          translate="no"
+        >
+          {language}
         </span>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label="Copy code"
-              title="Copy code"
-              onClick={copyCode}
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="left">Copy code</TooltipContent>
-        </Tooltip>
       </div>
       {highlightedHtml ? (
         <div
-          className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain [tab-size:2] [&_.shiki]:m-0 [&_.shiki]:min-w-max [&_.shiki]:whitespace-pre [&_.shiki]:bg-transparent! [&_.shiki]:px-4 [&_.shiki]:py-3 [&_.shiki]:font-mono [&_.shiki]:text-[13px] [&_.shiki]:leading-5 [&_.shiki_code]:font-inherit"
+          className={cn(
+            "min-w-0 max-w-full",
+            agentTranscript
+              ? "overflow-x-auto overscroll-x-contain [tab-size:2] [&_.shiki]:m-0 [&_.shiki]:min-w-max [&_.shiki]:whitespace-pre [&_.shiki]:bg-transparent! [&_.shiki]:px-4 [&_.shiki]:py-3 [&_.shiki]:font-mono [&_.shiki]:text-[13px] [&_.shiki]:leading-5 [&_.shiki_code]:font-inherit"
+              : "overflow-hidden [&_.shiki]:m-0 [&_.shiki]:max-w-full [&_.shiki]:overflow-x-auto [&_.shiki]:bg-transparent! [&_.shiki]:p-3 [&_.shiki_pre]:m-0",
+          )}
           data-testid="markdown-code-scroller"
           dangerouslySetInnerHTML={{ __html: highlightedHtml }}
         />
-      ) : (
+      ) : agentTranscript ? (
         <div
           className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain [tab-size:2]"
           data-testid="markdown-code-scroller"
@@ -157,6 +145,13 @@ function CodeBlock({
             </code>
           </pre>
         </div>
+      ) : (
+        <pre
+          className="max-w-full overflow-x-auto p-3 text-sm-tight"
+          data-testid="markdown-code-scroller"
+        >
+          <code className={`font-mono language-${language}`}>{code}</code>
+        </pre>
       )}
     </div>
   )
@@ -166,6 +161,7 @@ export function MarkdownRenderer({
   content,
   className,
   allowOverflow = false,
+  variant = "default",
   renderSourceCitation,
 }: MarkdownRendererProps) {
   return (
@@ -230,7 +226,7 @@ export function MarkdownRenderer({
                 </code>
               )
             }
-            return <CodeBlock code={rawCode} language={language} />
+            return <CodeBlock code={rawCode} language={language} variant={variant} />
           },
 
           // Code blocks (pre)

@@ -123,9 +123,13 @@ describe("ModelSelector", () => {
       "composer",
     )
     expect(screen.getByRole("combobox", { name: "GPT-4o mini" })).toHaveClass(
-      "min-h-7",
+      "h-8",
+      "min-h-8",
       "leading-4",
     )
+    expect(
+      screen.getByRole("combobox", { name: "GPT-4o mini" }),
+    ).toHaveAttribute("data-composer-selector-trigger", "true")
     expect(screen.getByRole("combobox", { name: "GPT-4o mini" })).not.toHaveClass(
       "h-[26px]",
       "leading-none",

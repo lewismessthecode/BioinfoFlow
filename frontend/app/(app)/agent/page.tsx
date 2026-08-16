@@ -8,12 +8,13 @@ import {
 } from "@/components/bioinfoflow/agent/agent-workbench"
 import { LiveDeck } from "@/components/bioinfoflow/live-deck"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
+import { useWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useEvents } from "@/hooks/use-events"
 import type { DagData, Run } from "@/lib/types"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useIsMobile } from "@/hooks/use-media-query"
 import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard-shortcuts-overlay"
-import type { SessionView } from "@/lib/agent/contracts"
+import type { ConversationSummary } from "@/lib/agent/conversation-model/types"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -39,6 +40,7 @@ export function AgentPageContent({
 }) {
   const t = useTranslations("agentWorkbench")
   const isMobile = useIsMobile()
+  const { setNavbarActions } = useWorkspaceShell()
   const chatRef = useRef<AgentWorkbenchHandle>(null)
   const {
     selectedProjectId,
@@ -98,6 +100,46 @@ export function AgentPageContent({
   const toggleRightSidebar = useCallback(() => {
     setRightSidebarCollapsed((prev) => !prev)
   }, [])
+  const workspaceActionLabel = t(
+    !isMobile && !rightSidebarCollapsed
+      ? "workspacePanel.close"
+      : "workspacePanel.open",
+  )
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setNavbarActions(null)
+      return () => setNavbarActions(null)
+    }
+
+    setNavbarActions(
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
+        aria-label={workspaceActionLabel}
+        onClick={() => {
+          if (isMobile) setMobileLiveDeckOpen(true)
+          else toggleRightSidebar()
+        }}
+      >
+        <PanelRightClose
+          aria-hidden="true"
+          className={rightSidebarCollapsed || isMobile ? "rotate-180" : undefined}
+        />
+      </Button>,
+    )
+
+    return () => setNavbarActions(null)
+  }, [
+    isMobile,
+    rightSidebarCollapsed,
+    selectedProjectId,
+    setNavbarActions,
+    toggleRightSidebar,
+    workspaceActionLabel,
+  ])
 
   const handleRunSelect = useCallback((run: Run | null) => {
     setSelectedRun(run)
@@ -120,8 +162,8 @@ export function AgentPageContent({
   const [showShortcuts, setShowShortcuts] = useState(false)
 
   const handleSessionResolved = useCallback(
-    (session: SessionView) => {
-      const projectId = session.project_id ?? ""
+    (session: ConversationSummary) => {
+      const projectId = session.projectId ?? ""
       setActiveConversationId(session.id)
       setActiveConversationTitle(session.title ?? "")
       setConversationProjectId(projectId)
@@ -183,41 +225,16 @@ export function AgentPageContent({
       className="flex h-full min-h-0 min-w-0 overflow-hidden bg-background"
       data-testid="agent-page-shell"
     >
-      <div className="relative min-h-0 min-w-0 flex-1">
-        <AgentWorkbench
-          key={routeSessionId ?? "draft"}
-          ref={chatRef}
-          projectId={conversationProjectId || selectedProjectId || null}
-          sessionId={routeSessionId}
-          onActiveSessionIdChange={setActiveConversationId}
-          onSessionResolved={handleSessionResolved}
-          onOpenRun={openReferencedRun}
-          className="h-full min-w-0"
-        />
-        {selectedProjectId ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="absolute right-3 top-2 z-20 min-h-11 gap-2 px-3 lg:min-h-9"
-            aria-label={t(
-              !isMobile && !rightSidebarCollapsed
-                ? "workspacePanel.close"
-                : "workspacePanel.open",
-            )}
-            onClick={() => {
-              if (isMobile) setMobileLiveDeckOpen(true)
-              else toggleRightSidebar()
-            }}
-          >
-            <PanelRightClose
-              aria-hidden="true"
-              className={rightSidebarCollapsed || isMobile ? "rotate-180" : undefined}
-            />
-            <span>{t("workspacePanel.action")}</span>
-          </Button>
-        ) : null}
-      </div>
+      <AgentWorkbench
+        key={routeSessionId ?? "draft"}
+        ref={chatRef}
+        projectId={conversationProjectId || selectedProjectId || null}
+        sessionId={routeSessionId}
+        onActiveSessionIdChange={setActiveConversationId}
+        onSessionResolved={handleSessionResolved}
+        onOpenRun={openReferencedRun}
+        className="min-w-0 flex-1"
+      />
       {showShortcuts && (
         <KeyboardShortcutsOverlay
           open={showShortcuts}

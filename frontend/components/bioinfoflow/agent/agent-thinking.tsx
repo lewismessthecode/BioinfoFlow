@@ -82,7 +82,7 @@ export function AgentThinking({
 
       {expanded ? (
         <div id={detailsId} className="ml-4 border-l border-border/50 pb-2 pl-3 pr-3 pt-1 text-foreground/72">
-          <MarkdownRenderer content={text} />
+          <MarkdownRenderer content={text} variant="agent-transcript" />
         </div>
       ) : null}
     </section>

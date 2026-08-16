@@ -295,7 +295,7 @@ export function useAgentWorkbenchController({
   }
 }
 
-export function environmentSelectionFromSession(
+function environmentSelectionFromSession(
   session: SessionView,
 ): AgentEnvironmentSelection {
   const scope = session.environment_scope

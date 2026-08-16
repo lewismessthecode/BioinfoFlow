@@ -23,6 +23,25 @@ export type ConversationSettings = {
   }
 }
 
+export type ConversationPermissionMode = ConversationSettings["permissionMode"]
+export type ConversationWorkspaceAccess = ConversationSettings["workspaceAccess"]
+
+export type ComposerInputPart =
+  | { type: "text"; text: string }
+  | { type: "attachment_ref"; attachment_id: string }
+  | { type: "file_ref"; attachment_id: string }
+  | { type: "file_ref"; project_id: string; path: string }
+  | { type: "directory_ref"; attachment_id: string }
+  | { type: "directory_ref"; project_id: string; path: string }
+  | { type: "workflow_ref"; workflow_id: string; scope: "global" }
+  | {
+      type: "workflow_ref"
+      workflow_id: string
+      scope: "project"
+      project_id: string
+    }
+  | { type: "run_ref"; run_id: string }
+
 export type ConversationSummary = {
   id: string
   title: string | null

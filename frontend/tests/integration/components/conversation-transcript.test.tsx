@@ -326,7 +326,7 @@ describe("ConversationTranscript", () => {
               runId: "run-1",
               createdAt: "2026-08-16T08:00:02.000Z",
               role: "assistant",
-              text: "The workflow is valid.",
+              text: "The workflow is valid.\n\n```json\n{\"valid\": true}\n```",
               references: [],
               streaming: false,
             },
@@ -348,18 +348,30 @@ describe("ConversationTranscript", () => {
     expect(messages).toHaveLength(3)
     for (const message of messages) {
       expect(message).toHaveClass("group/message")
-      expect(message.querySelector("time")).toHaveClass(
+      const timestamp = message.querySelector("time")
+      expect(message).toHaveAttribute("aria-describedby", timestamp?.id)
+      expect(timestamp).toHaveClass(
         "opacity-0",
         "group-hover/message:opacity-100",
         "group-focus-within/message:opacity-100",
       )
     }
+    await user.tab()
+    expect(messages[0]).toHaveFocus()
+    expect(messages[0]).toHaveClass(
+      "focus-visible:ring-2",
+      "focus-visible:ring-ring/35",
+    )
     expect(screen.getAllByRole("button", { name: "Copy response" })).toHaveLength(1)
+    expect(screen.queryByRole("button", { name: "Copy code" })).toBeNull()
+    expect(screen.getAllByRole("button")).toHaveLength(1)
 
     await user.click(screen.getByRole("button", { name: "Copy response" }))
 
     expect(writeText).toHaveBeenCalledOnce()
-    expect(writeText).toHaveBeenCalledWith("The workflow is valid.")
+    expect(writeText).toHaveBeenCalledWith(
+      "The workflow is valid.\n\n```json\n{\"valid\": true}\n```",
+    )
   })
 
   it("keeps active Activity Groups compact and collapsed by default", () => {

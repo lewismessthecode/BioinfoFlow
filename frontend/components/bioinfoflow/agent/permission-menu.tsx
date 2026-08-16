@@ -6,13 +6,14 @@ import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import {
   composerSelectorChevronClassName,
-  composerSelectorChipClassName,
   composerSelectorIconClassName,
 } from "@/components/bioinfoflow/composer-selector-chip"
 import {
+  ComposerSelectorMenuSurface,
+  ComposerSelectorTrigger,
+} from "@/components/bioinfoflow/composer-selector"
+import {
   DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
@@ -34,21 +35,21 @@ import {
   ShieldQuestion,
 } from "@/lib/icons"
 import type {
-  AgentPermissionMode,
-  AgentWorkspaceAccess,
-} from "@/lib/agent/contracts"
+  ConversationPermissionMode,
+  ConversationWorkspaceAccess,
+} from "@/lib/agent/conversation-model/types"
 import { cn } from "@/lib/utils"
 
 type PermissionMenuProps = {
-  permissionMode: AgentPermissionMode
-  workspaceAccess: AgentWorkspaceAccess
+  permissionMode: ConversationPermissionMode
+  workspaceAccess: ConversationWorkspaceAccess
   activeRun: boolean
   disabled?: boolean
-  onPermissionModeChange: (mode: AgentPermissionMode) => Promise<void>
+  onPermissionModeChange: (mode: ConversationPermissionMode) => Promise<void>
 }
 
 type PermissionUpdate = {
-  mode: AgentPermissionMode
+  mode: ConversationPermissionMode
   state: "pending" | "error"
 } | null
 
@@ -58,7 +59,7 @@ const modeIcons = {
   ask_changes: ShieldQuestion,
   ask_dangerous: ShieldCheck,
   full_access: ShieldAlert,
-} satisfies Record<AgentPermissionMode, typeof ShieldQuestion>
+} satisfies Record<ConversationPermissionMode, typeof ShieldQuestion>
 
 export function PermissionMenu({
   permissionMode,
@@ -81,7 +82,7 @@ export function PermissionMenu({
   const displayedMode =
     visibleUpdate?.state === "pending" ? visibleUpdate.mode : permissionMode
 
-  const requestChange = async (mode: AgentPermissionMode) => {
+  const requestChange = async (mode: ConversationPermissionMode) => {
     if (
       disabled ||
       readOnlyWorkspace ||
@@ -102,15 +103,14 @@ export function PermissionMenu({
   const isUpdating = visibleUpdate?.state === "pending"
   const controlsDisabled = disabled || readOnlyWorkspace || isUpdating
   const trigger = (
-    <Button
+    <ComposerSelectorTrigger
       type="button"
       variant="ghost"
       size="sm"
       disabled={controlsDisabled}
       aria-label={`${t("permission.label")}: ${t(`permission.${displayedMode}.name`)}`}
       aria-describedby={descriptionId}
-      data-composer-chip="true"
-      className={cn(composerSelectorChipClassName, "max-w-[12rem]")}
+      className="max-w-[12rem]"
     >
       {isUpdating ? (
         <Loader2
@@ -128,10 +128,10 @@ export function PermissionMenu({
         aria-hidden="true"
         className={composerSelectorChevronClassName}
       />
-    </Button>
+    </ComposerSelectorTrigger>
   )
 
-  const selectMode = (mode: AgentPermissionMode) => {
+  const selectMode = (mode: ConversationPermissionMode) => {
     setMobileOpen(false)
     void requestChange(mode)
   }
@@ -186,12 +186,15 @@ export function PermissionMenu({
       ) : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-          <DropdownMenuContent
+          <ComposerSelectorMenuSurface
+            kind="dropdown"
             align="start"
             side="top"
-            className="w-[min(24rem,calc(100vw-2rem))]"
+            className="w-[244px]"
           >
-            <DropdownMenuLabel>{t("permission.title")}</DropdownMenuLabel>
+            <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+              {t("permission.title")}
+            </div>
             <DropdownMenuRadioGroup
               value={displayedMode}
               onValueChange={(value) => {
@@ -204,7 +207,7 @@ export function PermissionMenu({
                   value={mode}
                   disabled={controlsDisabled}
                   className={cn(
-                    "items-start py-2.5",
+                    "items-start rounded-lg py-2 pl-8 pr-2 text-xs",
                     mode === "full_access" && "text-warning-foreground",
                   )}
                 >
@@ -212,7 +215,7 @@ export function PermissionMenu({
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
+          </ComposerSelectorMenuSurface>
         </DropdownMenu>
       )}
 
@@ -241,7 +244,11 @@ export function PermissionMenu({
   )
 }
 
-function PermissionOptionContent({ mode }: { mode: AgentPermissionMode }) {
+function PermissionOptionContent({
+  mode,
+}: {
+  mode: ConversationPermissionMode
+}) {
   const t = useTranslations("agentComposer")
   const Icon = modeIcons[mode]
 
@@ -258,6 +265,6 @@ function PermissionOptionContent({ mode }: { mode: AgentPermissionMode }) {
   )
 }
 
-function isPermissionMode(value: string): value is AgentPermissionMode {
+function isPermissionMode(value: string): value is ConversationPermissionMode {
   return modes.some((mode) => mode === value)
 }

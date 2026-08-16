@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 
@@ -109,8 +109,11 @@ describe("MarkdownRenderer link sanitization", () => {
       <MarkdownRenderer content={"```python\nprint('hello')\n```"} />
     )
 
-    expect(screen.getByText("Python")).toBeInTheDocument()
+    expect(screen.getByText("python")).toBeInTheDocument()
     expect(screen.getByText("print('hello')")).toBeInTheDocument()
+    expect(screen.getByTestId("markdown-code-block")).not.toHaveAttribute(
+      "data-agent-code-surface",
+    )
   })
 
   it("preserves fenced JSON whitespace inside a padded internal scroller", () => {
@@ -121,7 +124,12 @@ describe("MarkdownRenderer link sanitization", () => {
       "  }",
       "}",
     ].join("\n")
-    render(<MarkdownRenderer content={`\`\`\`json\n${code}\n\`\`\``} />)
+    render(
+      <MarkdownRenderer
+        content={`\`\`\`json\n${code}\n\`\`\``}
+        variant="agent-transcript"
+      />,
+    )
 
     const block = screen.getByTestId("markdown-code-block")
     const header = screen.getByTestId("markdown-code-header")
@@ -129,8 +137,10 @@ describe("MarkdownRenderer link sanitization", () => {
     const pre = block.querySelector("pre")
     const codeElement = block.querySelector("code")
 
+    expect(block).toHaveAttribute("data-agent-code-surface", "true")
     expect(block).toHaveAttribute("data-code-language", "json")
-    expect(header).toHaveTextContent("JSON")
+    expect(header).toHaveTextContent("json")
+    expect(header.querySelector("span")).toHaveAttribute("translate", "no")
     expect(scroller).toHaveClass("max-w-full", "overflow-x-auto")
     expect(scroller).not.toHaveClass("overflow-hidden")
     expect(pre).toHaveClass(
@@ -145,7 +155,7 @@ describe("MarkdownRenderer link sanitization", () => {
     expect(codeElement?.textContent).toBe(code)
   })
 
-  it("copies fenced code blocks without the fence or language label", () => {
+  it("does not add a copy control to fenced code blocks", () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -157,11 +167,9 @@ describe("MarkdownRenderer link sanitization", () => {
     )
 
     expect(screen.getByTestId("markdown-code-block")).toBeInTheDocument()
-    expect(screen.getByText("Shell")).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: "Copy code" }))
-
-    expect(writeText).toHaveBeenCalledWith("ls -lah\n  pwd")
+    expect(screen.getByText("bash")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Copy code" })).toBeNull()
+    expect(writeText).not.toHaveBeenCalled()
   })
 
   it("allows long inline code paths to wrap inside transcript containers", () => {
