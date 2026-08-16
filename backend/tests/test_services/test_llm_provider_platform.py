@@ -301,6 +301,26 @@ async def test_openai_compatible_environment_bootstrap_persists_explicit_protoco
 
 
 @pytest.mark.asyncio
+async def test_openai_compatible_bootstrap_skips_missing_explicit_endpoint(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_COMPATIBLE_BASE_URL", raising=False)
+    monkeypatch.setenv("OPENAI_COMPATIBLE_MODEL", "custom-model")
+
+    await sync_environment_llm_catalog(db_session)
+
+    providers = (
+        await db_session.execute(
+            LlmProvider.__table__.select().where(
+                LlmProvider.kind == "openai_compatible"
+            )
+        )
+    ).mappings()
+    assert providers.all() == []
+
+
+@pytest.mark.asyncio
 async def test_environment_bootstrap_defaults_missing_protocol_to_chat(
     db_session,
     monkeypatch,

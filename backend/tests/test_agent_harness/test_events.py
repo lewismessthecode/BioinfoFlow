@@ -86,6 +86,24 @@ async def test_event_hub_close_session_ends_only_deleted_session_streams() -> No
 
 
 @pytest.mark.asyncio
+async def test_event_stream_detects_session_deleted_by_another_worker() -> None:
+    hub = AgentEventHub(liveness_interval_seconds=0.01)
+    deleted = False
+
+    async def snapshot():
+        if deleted:
+            raise LookupError("agent session not found")
+        return _snapshot()
+
+    events = hub.stream("session-1", snapshot)
+    assert (await anext(events)).type == "snapshot"
+    deleted = True
+
+    with pytest.raises(StopAsyncIteration):
+        await anext(events)
+
+
+@pytest.mark.asyncio
 async def test_slow_event_subscriber_is_dropped_without_blocking_fast_subscribers() -> (
     None
 ):

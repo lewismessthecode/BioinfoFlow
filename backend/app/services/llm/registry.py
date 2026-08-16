@@ -351,6 +351,15 @@ def provider_kind_for_template_id(template_id: str) -> str | None:
     return _COMPAT_TEMPLATE_KIND.get(template_id)
 
 
+def provider_requires_explicit_endpoint(kind: str) -> bool:
+    definition = provider_runtime_for_kind(kind)
+    return bool(
+        definition is not None
+        and definition.base_url_required
+        and definition.default_base_url is None
+    )
+
+
 def route_provider_model_name(
     provider_kind: str,
     model_name: str,

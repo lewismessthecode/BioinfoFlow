@@ -19,6 +19,7 @@ from app.services.llm.provider_templates import (
     ProviderTemplate,
     list_bootstrap_provider_templates,
 )
+from app.services.llm.registry import provider_requires_explicit_endpoint
 from app.services.llm.target_resolution import resolve_provider_endpoint
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,12 @@ async def sync_environment_llm_catalog(
         if template.id in {"vllm", "openai-compatible"}:
             should_sync = bool(env_base_url_var or env_model)
         if not should_sync:
+            continue
+        if provider_requires_explicit_endpoint(template.kind) and not env_base_url_var:
+            logger.warning(
+                "Skipping %s provider bootstrap because its endpoint is not configured",
+                template.id,
+            )
             continue
 
         wire_protocol = template.validate_wire_protocol(

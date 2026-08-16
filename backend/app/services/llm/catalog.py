@@ -46,7 +46,10 @@ from app.services.llm.provider_templates import (
 )
 from app.services.llm.probe import LlmProviderProbe
 from app.services.llm.profiles import ProviderConnection, profile_for
-from app.services.llm.registry import provider_spec_for_kind
+from app.services.llm.registry import (
+    provider_requires_explicit_endpoint,
+    provider_spec_for_kind,
+)
 from app.services.llm.target_resolution import (
     build_model_target,
     resolve_model_target,
@@ -124,6 +127,8 @@ class LlmCatalogService:
             str(data.get("wire_protocol", "chat_completions")),
         )
         base_url = _normalize_persisted_base_url(kind, data.get("base_url"))
+        if provider_requires_explicit_endpoint(kind) and not base_url:
+            raise ValueError("Provider endpoint is required")
         _validate_provider_base_url(
             base_url,
             allow_insecure_http=bool(data.get("allow_insecure_http", False)),
@@ -208,6 +213,11 @@ class LlmCatalogService:
             )
         )
         base_url = data.get("base_url")
+        existing_base_url = provider.base_url if provider is not None else None
+        if template.base_url_required and not str(
+            base_url or existing_base_url or ""
+        ).strip():
+            raise ValueError("Provider endpoint is required")
         if base_url:
             base_url = resolve_provider_endpoint(
                 template.kind,
@@ -218,6 +228,8 @@ class LlmCatalogService:
                 base_url,
                 allow_insecure_http=allow_insecure_http,
             )
+        elif existing_base_url:
+            base_url = existing_base_url
         elif template.default_base_url:
             base_url = resolve_provider_endpoint(
                 template.kind,
@@ -329,6 +341,8 @@ class LlmCatalogService:
             next_kind,
             updates["base_url"] if "base_url" in updates else provider.base_url,
         )
+        if provider_requires_explicit_endpoint(next_kind) and not base_url:
+            raise ValueError("Provider endpoint is required")
         if "base_url" in updates or next_kind != provider.kind:
             updates["base_url"] = base_url
         _validate_provider_base_url(
