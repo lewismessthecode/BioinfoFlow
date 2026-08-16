@@ -91,7 +91,13 @@ export function AgentMessageParts({
 
         const part = block.part
         if (part.type === "text") {
-          return <MarkdownRenderer key={part.id} content={part.text} />
+          return (
+            <MarkdownRenderer
+              key={part.id}
+              content={part.text}
+              variant="agent-transcript"
+            />
+          )
         }
 
         if (part.type === "reasoning_summary") {

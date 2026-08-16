@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -364,6 +365,7 @@ function ConversationMessage({
   const t = useTranslations("agentTranscript")
   const tHistory = useTranslations("agentHistory")
   const locale = useLocale()
+  const timestampId = useId()
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
   )
@@ -389,10 +391,12 @@ function ConversationMessage({
   return (
     <article
       className={cn(
-        "group/message min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_96px]",
+        "group/message min-w-0 rounded-[8px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 [content-visibility:auto] [contain-intrinsic-size:auto_96px]",
         isUser && "ml-auto w-fit max-w-[76%]",
       )}
+      aria-describedby={timestamp ? timestampId : undefined}
       data-role={block.role}
+      tabIndex={0}
     >
       <div
         className={cn(
@@ -401,7 +405,9 @@ function ConversationMessage({
             "rounded-[12px] border border-border/60 bg-muted/35 px-3.5 py-3",
         )}
       >
-        {block.text ? <MarkdownRenderer content={block.text} /> : null}
+        {block.text ? (
+          <MarkdownRenderer content={block.text} variant="agent-transcript" />
+        ) : null}
         {block.references.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {block.references.map((reference) =>
@@ -453,6 +459,7 @@ function ConversationMessage({
           ) : null}
           {timestamp ? (
             <time
+              id={timestampId}
               className="opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 group-focus-within/message:opacity-100 motion-reduce:transition-none"
               dateTime={dateTimeAttribute(block.createdAt)}
               title={absoluteTimestamp ?? timestamp}

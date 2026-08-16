@@ -22,24 +22,32 @@ import { AgentContextInputs } from "@/components/bioinfoflow/agent/context-input
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useVoiceDictation } from "@/hooks/use-voice-dictation"
-import { Loader2, Mic, RotateCcw, Send, Square } from "@/lib/icons"
+import {
+  CheckCircle2,
+  Loader2,
+  MessageSquare,
+  Mic,
+  RotateCcw,
+  Send,
+  Square,
+} from "@/lib/icons"
 import type {
-  ActiveRunView,
-  AgentPermissionMode,
-  InputPart,
-  AgentWorkspaceAccess,
-} from "@/lib/agent/contracts"
+  ActiveWork,
+  ComposerInputPart,
+  ConversationPermissionMode,
+  ConversationWorkspaceAccess,
+} from "@/lib/agent/conversation-model/types"
 import type { AgentContextInput } from "@/lib/agent/context"
 import { cn } from "@/lib/utils"
 
 type AgentComposerProps = {
-  permissionMode: AgentPermissionMode
-  workspaceAccess: AgentWorkspaceAccess
-  activeRun: ActiveRunView | null
-  onSendMessage: (parts: InputPart[]) => Promise<void>
-  onSteer: (parts: InputPart[]) => Promise<void>
+  permissionMode: ConversationPermissionMode
+  workspaceAccess: ConversationWorkspaceAccess
+  activeRun: ActiveWork | null
+  onSendMessage: (parts: ComposerInputPart[]) => Promise<void>
+  onSteer: (parts: ComposerInputPart[]) => Promise<void>
   onCancel: () => Promise<void>
-  onPermissionModeChange: (mode: AgentPermissionMode) => Promise<void>
+  onPermissionModeChange: (mode: ConversationPermissionMode) => Promise<void>
   contextInputs?: AgentContextInput[]
   onRemoveContextInput?: (inputId: string) => void
   onContextSubmitted?: () => void
@@ -59,6 +67,17 @@ type AgentComposerProps = {
 }
 
 type SubmitAction = "message" | "steer"
+
+const starterSlotIcons = [
+  { name: "check", icon: CheckCircle2 },
+  { name: "message", icon: MessageSquare },
+  { name: "rotate", icon: RotateCcw },
+] as const
+
+const commandHints = [
+  { key: "skills", token: "/" },
+  { key: "context", token: "@" },
+] as const
 
 export function AgentComposer({
   permissionMode,
@@ -88,6 +107,10 @@ export function AgentComposer({
   const [submitting, setSubmitting] = useState<SubmitAction | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [stopError, setStopError] = useState<string | null>(null)
+  const [commandHintIndex, setCommandHintIndex] = useState(0)
+  const [commandHintSwapState, setCommandHintSwapState] = useState<
+    "" | "is-exit" | "is-enter-start"
+  >("")
   const [cancelRequestedRunId, setCancelRequestedRunId] = useState<
     string | null
   >(null)
@@ -100,7 +123,7 @@ export function AgentComposer({
     )
   }, [])
   const voice = useVoiceDictation({ onTranscript: appendTranscript })
-  const activeRunId = activeRun?.run.id ?? null
+  const activeRunId = activeRun?.runId ?? null
   const cancelling = Boolean(
     activeRunId && cancelRequestedRunId === activeRunId,
   )
@@ -141,13 +164,44 @@ export function AgentComposer({
     }
   }, [activeRunId, cancelRequestedRunId])
 
+  useEffect(() => {
+    if (
+      placement !== "draft" ||
+      globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return
+    }
+
+    const timers = new Set<ReturnType<typeof setTimeout>>()
+    const addTimer = (callback: () => void, delay: number) => {
+      const timer = setTimeout(() => {
+        timers.delete(timer)
+        callback()
+      }, delay)
+      timers.add(timer)
+    }
+    const interval = setInterval(() => {
+      setCommandHintSwapState("is-exit")
+      addTimer(() => {
+        setCommandHintIndex((index) => (index + 1) % commandHints.length)
+        setCommandHintSwapState("is-enter-start")
+        addTimer(() => setCommandHintSwapState(""), 16)
+      }, 150)
+    }, 5200)
+
+    return () => {
+      clearInterval(interval)
+      timers.forEach((timer) => clearTimeout(timer))
+    }
+  }, [placement])
+
   const submit = async (action: SubmitAction) => {
     const text = value.trim()
     if (!hasContent || controlsDisabled) return
     setSubmitting(action)
     setSubmitError(null)
     try {
-      const parts: InputPart[] = [
+      const parts: ComposerInputPart[] = [
         ...contextInputs.map((input) => input.input_part),
         ...(text ? [{ type: "text" as const, text }] : []),
       ]
@@ -397,36 +451,61 @@ export function AgentComposer({
           className="mx-auto mt-2 w-full"
           aria-label={t("starterHint")}
         >
-          <p className="px-1 pb-1.5 text-xs text-muted-foreground/70">
-            {t("starterHint")}
-          </p>
           <div
             data-testid="agent-starter-prompt-list"
             className="divide-y divide-border/45"
           >
-            {starterPrompts.slice(0, 3).map((prompt) => (
-              <button
-                key={prompt}
-                type="button"
-                className="group flex min-h-11 w-full items-center px-1 py-2 text-left text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                onClick={() => {
-                  setValue(prompt)
-                  window.requestAnimationFrame(() =>
-                    localTextareaRef.current?.focus(),
-                  )
-                }}
-              >
-                <span
-                  aria-hidden="true"
-                  className="mr-3 text-muted-foreground/45 transition-transform group-hover:translate-x-0.5"
+            {starterPrompts.slice(0, 3).map((prompt, index) => {
+              const slot = starterSlotIcons[index]
+              const SlotIcon = slot.icon
+              return (
+                <button
+                  key={prompt}
+                  type="button"
+                  className="group grid min-h-10 w-full grid-cols-[0.875rem_minmax(0,1fr)] items-center gap-2 px-1 py-2 text-left text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  onClick={() => {
+                    setValue(prompt)
+                    window.requestAnimationFrame(() =>
+                      localTextareaRef.current?.focus(),
+                    )
+                  }}
                 >
-                  ↳
-                </span>
-                <span>{prompt}</span>
-              </button>
-            ))}
+                  <SlotIcon
+                    aria-hidden="true"
+                    data-starter-slot-icon={slot.name}
+                    className="size-3.5 text-muted-foreground/55 transition-colors group-hover:text-muted-foreground/85"
+                  />
+                  <span className="truncate">{prompt}</span>
+                </button>
+              )
+            })}
           </div>
         </section>
+      ) : null}
+
+      {placement === "draft" && !value.trim() ? (
+        <div
+          data-testid="agent-command-discovery-hint"
+          className="pointer-events-none absolute inset-x-4 bottom-5 flex justify-center"
+        >
+          {(() => {
+            const hint = commandHints[commandHintIndex] ?? commandHints[0]
+            return (
+              <p
+                className={cn(
+                  "t-text-swap inline-flex items-center gap-1.5 text-center text-xs text-muted-foreground/60",
+                  commandHintSwapState,
+                )}
+              >
+                <span>{t(`commandHints.${hint.key}.prefix`)}</span>
+                <kbd className="rounded-[5px] border border-border/35 bg-foreground/[0.05] px-1.5 py-px font-mono text-[11px] leading-none text-muted-foreground/80">
+                  {hint.token}
+                </kbd>
+                <span>{t(`commandHints.${hint.key}.suffix`)}</span>
+              </p>
+            )
+          })()}
+        </div>
       ) : null}
 
       {submitError ? (

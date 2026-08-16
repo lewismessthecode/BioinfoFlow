@@ -177,9 +177,7 @@ describe("AppLayout terminal integration", () => {
   it("keeps the right-side panel toggle as the far-right navbar action", async () => {
     pathnameState.value = "/agent"
     workspaceNavbarActions = (
-      <button type="button" aria-label="Open run panel">
-        drawer
-      </button>
+      <button type="button" className="h-8 w-8" aria-label="Open workspace panel" />
     )
 
     renderAppPage(
@@ -195,8 +193,10 @@ describe("AppLayout terminal integration", () => {
     const buttons = within(screen.getByTestId("navbar-actions")).getAllByRole("button")
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
       "accessibility.openTerminal",
-      "Open run panel",
+      "Open workspace panel",
     ])
+    expect(buttons[0]).toHaveClass("h-8", "w-8")
+    expect(buttons[1]).toHaveClass("h-8", "w-8")
   })
 
   it("does not mount the command palette until the shortcut is used", async () => {

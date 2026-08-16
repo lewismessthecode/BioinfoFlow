@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, type ReactNode } from "react"
-import { fireEvent, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import AgentSessionPage from "@/app/(app)/agent/[sessionId]/page"
@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   useEvents: vi.fn(),
   isMobile: vi.fn(() => false),
   workbench: vi.fn(),
+  setNavbarActions: vi.fn(),
 }))
 
 vi.mock("next/navigation", () => ({
@@ -36,6 +37,12 @@ vi.mock("@/hooks/use-events", () => ({
 
 vi.mock("@/hooks/use-media-query", () => ({
   useIsMobile: () => mocks.isMobile(),
+}))
+
+vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
+  useWorkspaceShell: () => ({
+    setNavbarActions: mocks.setNavbarActions,
+  }),
 }))
 
 vi.mock("@/components/bioinfoflow/agent/agent-workbench", () => ({
@@ -94,6 +101,7 @@ describe("Agent pages", () => {
     mocks.params.mockReturnValue({ sessionId: "session-9" })
     mocks.useEvents.mockReset()
     mocks.workbench.mockReset()
+    mocks.setNavbarActions.mockReset()
     mocks.isMobile.mockReturnValue(false)
   })
 
@@ -127,24 +135,28 @@ describe("Agent pages", () => {
     )
   })
 
-  it("keeps a discoverable desktop control for opening the LiveDeck", () => {
+  it("registers an icon-only desktop Workspace action in the global navbar", () => {
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
     })
 
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
-    expect(
-      screen.getByRole("button", { name: "Open workspace panel" }),
-    ).toHaveTextContent("Workspace")
-    expect(
-      screen.getByTestId("agent-workbench"),
-    ).not.toContainElement(
-      screen.getByRole("button", { name: "Open workspace panel" }),
-    )
+    expect(screen.queryByRole("button", { name: "Open workspace panel" })).not.toBeInTheDocument()
+    expect(mocks.setNavbarActions).toHaveBeenCalled()
+
+    const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
+    render(<>{navbarAction}</>)
+    const workspaceButton = screen.getByRole("button", {
+      name: "Open workspace panel",
+    })
+    expect(workspaceButton).toHaveTextContent("")
+    expect(workspaceButton).toHaveClass("h-8", "w-8")
     fireEvent.click(
-      screen.getByRole("button", { name: "Open workspace panel" }),
+      workspaceButton,
     )
     expect(screen.getByTestId("live-deck")).toBeInTheDocument()
+    fireEvent.click(workspaceButton)
+    expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
   })
 
   it("restores an open desktop LiveDeck after reload", () => {
@@ -164,14 +176,25 @@ describe("Agent pages", () => {
     })
 
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
-    fireEvent.click(
-      screen.getByRole("button", { name: "Open workspace panel" }),
-    )
+    const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
+    render(<>{navbarAction}</>)
+    fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
     expect(screen.getByTestId("live-deck")).toBeInTheDocument()
     expect(screen.getByRole("dialog")).toHaveClass("overscroll-contain")
     expect(screen.getByRole("dialog")).toHaveClass(
       "pb-[env(safe-area-inset-bottom)]",
     )
+  })
+
+  it("clears the global Workspace action when the Agent page unmounts", () => {
+    const view = renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    expect(mocks.setNavbarActions).toHaveBeenCalledWith(expect.anything())
+    view.unmount()
+
+    expect(mocks.setNavbarActions).toHaveBeenLastCalledWith(null)
   })
 
   it("opens a referenced run directly in the DAG workspace", () => {

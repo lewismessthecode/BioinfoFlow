@@ -6,13 +6,15 @@ import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import {
   composerSelectorChevronClassName,
-  composerSelectorChipClassName,
   composerSelectorIconClassName,
 } from "@/components/bioinfoflow/composer-selector-chip"
 import {
+  ComposerSelectorMenuSurface,
+  ComposerSelectorTrigger,
+} from "@/components/bioinfoflow/composer-selector"
+import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
-  DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -118,14 +120,13 @@ export function EnvironmentSelector({
     <div className="flex min-w-0 flex-col items-start gap-1.5">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button
+          <ComposerSelectorTrigger
             type="button"
             variant="ghost"
             size="sm"
             disabled={controlsDisabled}
             aria-label={`${t("label")}: ${triggerLabel}`}
-            data-composer-chip="true"
-            className={cn(composerSelectorChipClassName, "max-w-[12rem]")}
+            className="max-w-[12rem]"
           >
             {isPending ? (
               <Loader2
@@ -156,13 +157,13 @@ export function EnvironmentSelector({
               className={composerSelectorChevronClassName}
               aria-hidden="true"
             />
-          </Button>
+          </ComposerSelectorTrigger>
         </DropdownMenuTrigger>
-        <DropdownMenuContent
+        <ComposerSelectorMenuSurface
+          kind="dropdown"
           align="start"
           side="top"
-          sideOffset={10}
-          className="w-[19rem] rounded-xl border-border/70 bg-popover/96 p-1.5 shadow-xl backdrop-blur-xl"
+          className="w-[19rem]"
         >
           <div className="px-2 pb-1.5 pt-1 text-xs font-medium text-muted-foreground">
             {t("title")}
@@ -234,7 +235,7 @@ export function EnvironmentSelector({
               ))}
             </>
           ) : null}
-        </DropdownMenuContent>
+        </ComposerSelectorMenuSurface>
       </DropdownMenu>
       {isPending ? (
         <p role="status" className="px-2 text-[11px] text-muted-foreground">

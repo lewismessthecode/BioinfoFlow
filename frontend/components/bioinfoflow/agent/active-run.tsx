@@ -149,6 +149,7 @@ function DraftPart({
     >
       <MarkdownRenderer
         content={part.text}
+        variant="agent-transcript"
       />
     </div>
   )

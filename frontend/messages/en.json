@@ -2566,6 +2566,16 @@
     "submitError": "The message could not be submitted. Try again.",
     "stopError": "The run could not be stopped. Try again.",
     "starterHint": "Try a project-aware starting point",
+    "commandHints": {
+      "skills": {
+        "prefix": "Type",
+        "suffix": "to choose a skill"
+      },
+      "context": {
+        "prefix": "Type",
+        "suffix": "to add context or a workflow"
+      }
+    },
     "model": {
       "updating": "Updating model…",
       "updateError": "The model could not be updated.",

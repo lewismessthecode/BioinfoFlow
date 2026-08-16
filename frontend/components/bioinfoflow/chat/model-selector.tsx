@@ -6,12 +6,13 @@ import { Check, ChevronDown, Settings as SettingsIcon } from "@/lib/icons"
 import Link from "next/link"
 import {
   composerSelectorChevronClassName,
-  composerSelectorChipClassName,
   composerSelectorIconClassName,
-  composerSelectorMenuClassName,
 } from "@/components/bioinfoflow/composer-selector-chip"
-import { Button } from "@/components/ui/button"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import {
+  ComposerSelectorMenuSurface,
+  ComposerSelectorTrigger,
+} from "@/components/bioinfoflow/composer-selector"
+import { Popover, PopoverTrigger } from "@/components/ui/popover"
 import {
   Command,
   CommandEmpty,
@@ -48,10 +49,14 @@ export function ModelSelector({
   const [open, setOpen] = useState(false)
   const isComposer = variant === "composer"
   const triggerClassName = isComposer
-    ? cn(composerSelectorChipClassName, compact ? "max-w-9 px-2" : "max-w-[168px]")
+    ? compact
+      ? "max-w-9 px-2"
+      : "max-w-[168px]"
     : "h-9 max-w-[196px] gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-xs font-medium text-muted-foreground/80 shadow-lg shadow-foreground/5 backdrop-blur transition-colors hover:bg-background hover:text-foreground"
   const configureClassName = isComposer
-    ? cn(composerSelectorChipClassName, compact ? "max-w-9 px-2" : "max-w-[168px]")
+    ? compact
+      ? "max-w-9 px-2"
+      : "max-w-[168px]"
     : "h-9 gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-xs font-medium text-muted-foreground/80 shadow-lg shadow-foreground/5 backdrop-blur transition-colors hover:bg-background hover:text-foreground"
 
   // Find the display name for the current selection
@@ -75,7 +80,8 @@ export function ModelSelector({
 
   if (models.length === 0) {
     return (
-      <Button
+      <ComposerSelectorTrigger
+        composer={isComposer}
         variant="ghost"
         size="sm"
         className={configureClassName}
@@ -91,14 +97,15 @@ export function ModelSelector({
           />
           <span className={cn(compact ? "sr-only" : "hidden sm:inline")}>{t("configure")}</span>
         </Link>
-      </Button>
+      </ComposerSelectorTrigger>
     )
   }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
+        <ComposerSelectorTrigger
+          composer={isComposer}
           variant="ghost"
           size="sm"
           className={triggerClassName}
@@ -130,16 +137,17 @@ export function ModelSelector({
               compact && "hidden",
             )}
           />
-        </Button>
+        </ComposerSelectorTrigger>
       </PopoverTrigger>
-      <PopoverContent
+      <ComposerSelectorMenuSurface
+        kind="popover"
+        composer={isComposer}
         align="start"
         side="top"
         className={cn(
           isComposer ? "w-[244px] overflow-hidden" : "w-[280px] overflow-hidden p-0",
-          isComposer
-            ? composerSelectorMenuClassName
-            : "rounded-xl border border-border/70 bg-background/96 shadow-[0_14px_34px_rgba(15,15,15,0.06)]",
+          !isComposer &&
+            "rounded-xl border border-border/70 bg-background/96 shadow-[0_14px_34px_rgba(15,15,15,0.06)]",
         )}
       >
         <Command>
@@ -237,7 +245,7 @@ export function ModelSelector({
             </CommandGroup>
           </CommandList>
         </Command>
-      </PopoverContent>
+      </ComposerSelectorMenuSurface>
     </Popover>
   )
 }

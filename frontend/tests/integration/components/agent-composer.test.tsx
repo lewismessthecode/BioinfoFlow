@@ -1,20 +1,22 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState, type ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { AgentComposer } from "@/components/bioinfoflow/agent/agent-composer"
+import { ModelSelector } from "@/components/bioinfoflow/chat/model-selector"
 import type {
   AgentEnvironmentSelection,
   AgentEnvironmentTarget,
 } from "@/components/bioinfoflow/agent/environment-selector"
 import type {
-  ActiveRunView,
-  AgentPermissionMode,
-  AgentWorkspaceAccess,
-  InputPart,
-} from "@/lib/agent/contracts"
+  ActiveWork,
+  ComposerInputPart,
+  ConversationPermissionMode,
+  ConversationWorkspaceAccess,
+} from "@/lib/agent/conversation-model/types"
 import type { AgentContextInput } from "@/lib/agent/context"
+import type { ProviderModels } from "@/hooks/use-llm-settings"
 import { renderWithProviders } from "@/tests/test-utils"
 
 vi.mock("next-intl", () => ({
@@ -71,6 +73,11 @@ vi.mock("next-intl", () => ({
       "agentComposer.environment.status.error": "Error",
       "agentComposer.environment.status.unknown": "Unknown",
       "agentComposer.starterHint": "Try one of these project-aware prompts",
+      "agentComposer.commandHints.skills.prefix": "Type",
+      "agentComposer.commandHints.skills.suffix": "to choose a skill",
+      "agentComposer.commandHints.context.prefix": "Type",
+      "agentComposer.commandHints.context.suffix":
+        "to add context or a workflow",
     }
     return copy[`${namespace}.${key}`] ?? `${namespace}.${key}`
   },
@@ -78,24 +85,27 @@ vi.mock("next-intl", () => ({
 
 const timestamp = "2026-08-15T00:00:00Z"
 
-function activeRun(): ActiveRunView {
+const composerModels: ProviderModels[] = [
+  {
+    provider: "provider-openai",
+    provider_kind: "openai",
+    label: "OpenAI",
+    models: [
+      {
+        id: "gpt-5.6",
+        name: "GPT-5.6",
+        context_window: 128000,
+      },
+    ],
+  },
+]
+
+function activeRun(): ActiveWork {
   return {
-    run: {
-      id: "run-1",
-      session_id: "session-1",
-      status: "running",
-      phase: "model",
-      revision: 1,
-      started_at: timestamp,
-      completed_at: null,
-      termination_reason: null,
-      error: null,
-      created_at: timestamp,
-      updated_at: timestamp,
-    },
-    assistant_draft: null,
-    tool_progress: [],
-    pending_interaction: null,
+    runId: "run-1",
+    status: "running",
+    phase: "model",
+    startedAt: timestamp,
   }
 }
 
@@ -120,13 +130,13 @@ function renderComposer({
   onEnvironmentSelectionChange = vi.fn().mockResolvedValue(undefined),
   starterPrompts,
 }: {
-  permissionMode?: AgentPermissionMode
-  workspaceAccess?: AgentWorkspaceAccess
-  currentRun?: ActiveRunView | null
-  onSendMessage?: (parts: InputPart[]) => Promise<void>
-  onSteer?: (parts: InputPart[]) => Promise<void>
+  permissionMode?: ConversationPermissionMode
+  workspaceAccess?: ConversationWorkspaceAccess
+  currentRun?: ActiveWork | null
+  onSendMessage?: (parts: ComposerInputPart[]) => Promise<void>
+  onSteer?: (parts: ComposerInputPart[]) => Promise<void>
   onCancel?: () => Promise<void>
-  onPermissionModeChange?: (mode: AgentPermissionMode) => Promise<void>
+  onPermissionModeChange?: (mode: ConversationPermissionMode) => Promise<void>
   contextInputs?: AgentContextInput[]
   onRemoveContextInput?: (inputId: string) => void
   onContextSubmitted?: () => void
@@ -180,9 +190,12 @@ describe("AgentComposer", () => {
     const view = renderComposer({
       placement: "draft",
       modelControls: (
-        <button type="button" data-composer-chip="true" className="min-h-7">
-          GPT-5.6
-        </button>
+        <ModelSelector
+          models={composerModels}
+          selectedModel={{ provider: "provider-openai", model: "gpt-5.6" }}
+          onSelectModel={vi.fn()}
+          variant="composer"
+        />
       ),
     })
 
@@ -193,7 +206,9 @@ describe("AgentComposer", () => {
     expect(
       screen.getByRole("textbox", { name: "Message the agent" }),
     ).toHaveAttribute("rows", "3")
-    expect(screen.getByRole("button", { name: "GPT-5.6" })).toBeInTheDocument()
+    expect(
+      screen.getByRole("combobox", { name: "GPT-5.6" }),
+    ).toBeInTheDocument()
     expect(screen.getByTestId("agent-composer")).not.toHaveClass(
       "bg-gradient-to-t",
     )
@@ -205,11 +220,11 @@ describe("AgentComposer", () => {
       "items-center",
     )
     const selectors = view.container.querySelectorAll(
-      '[data-composer-chip="true"]',
+      '[data-composer-selector-trigger="true"]',
     )
     expect(selectors).toHaveLength(3)
     for (const selector of selectors) {
-      expect(selector).toHaveClass("min-h-7")
+      expect(selector).toHaveClass("h-8", "min-h-8")
     }
     expect(screen.getByTestId("agent-composer-surface")).not.toHaveClass(
       "shadow-md",
@@ -243,6 +258,27 @@ describe("AgentComposer", () => {
     )
   })
 
+  it("uses the shared selector menu surface for the permission card", async () => {
+    stubMatchMedia(false)
+    const user = userEvent.setup()
+    renderComposer({ placement: "draft" })
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Approval mode: Approve safe actions",
+      }),
+    )
+
+    expect(await screen.findByTestId("composer-selector-menu")).toHaveClass(
+      "w-[244px]",
+      "rounded-[10px]",
+      "p-1",
+    )
+    expect(
+      screen.getByRole("menuitemradio", { name: /Ask before changes/i }),
+    ).toHaveClass("py-2")
+  })
+
   it("shows starter prompts only in the draft and moves a selected prompt into the editor", async () => {
     const user = userEvent.setup()
     const view = renderComposer({
@@ -256,8 +292,8 @@ describe("AgentComposer", () => {
     })
 
     expect(
-      screen.getByText("Try one of these project-aware prompts"),
-    ).toBeInTheDocument()
+      screen.queryByText("Try one of these project-aware prompts"),
+    ).not.toBeInTheDocument()
     expect(screen.getByTestId("agent-starter-prompt-list")).not.toHaveClass(
       "border-y",
     )
@@ -266,6 +302,21 @@ describe("AgentComposer", () => {
         "button",
       ),
     ).toHaveLength(3)
+    expect(
+      screen.getByTestId("agent-starter-prompt-list").querySelectorAll(
+        '[data-starter-slot-icon="check"]',
+      ),
+    ).toHaveLength(1)
+    expect(
+      screen.getByTestId("agent-starter-prompt-list").querySelectorAll(
+        '[data-starter-slot-icon="message"]',
+      ),
+    ).toHaveLength(1)
+    expect(
+      screen.getByTestId("agent-starter-prompt-list").querySelectorAll(
+        '[data-starter-slot-icon="rotate"]',
+      ),
+    ).toHaveLength(1)
     await user.click(
       screen.getByRole("button", { name: "Review the latest run" }),
     )
@@ -290,6 +341,44 @@ describe("AgentComposer", () => {
     expect(
       screen.queryByText("Try one of these project-aware prompts"),
     ).not.toBeInTheDocument()
+  })
+
+  it("rotates low-priority draft command hints and stays still for reduced motion", () => {
+    vi.useFakeTimers()
+    stubMatchMedia(false)
+    const view = renderComposer({ placement: "draft" })
+
+    expect(screen.getByTestId("agent-command-discovery-hint")).toHaveTextContent(
+      "Type/to choose a skill",
+    )
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+      { target: { value: "Inspect this run" } },
+    )
+    expect(
+      screen.queryByTestId("agent-command-discovery-hint"),
+    ).not.toBeInTheDocument()
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+      { target: { value: "" } },
+    )
+    act(() => {
+      vi.advanceTimersByTime(5400)
+    })
+    expect(screen.getByTestId("agent-command-discovery-hint")).toHaveTextContent(
+      "Type@to add context or a workflow",
+    )
+
+    view.unmount()
+    stubMatchMedia(true)
+    renderComposer({ placement: "draft" })
+    act(() => {
+      vi.advanceTimersByTime(10800)
+    })
+    expect(screen.getByTestId("agent-command-discovery-hint")).toHaveTextContent(
+      "Type/to choose a skill",
+    )
+    vi.useRealTimers()
   })
 
   it("offers Auto or multi-environment Manual selection without exposing transport types", async () => {
@@ -384,6 +473,7 @@ describe("AgentComposer", () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 

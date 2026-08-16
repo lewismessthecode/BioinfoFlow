@@ -343,6 +343,7 @@ function conversationView(
       },
     },
     transcript,
+    runs: [],
     activeWork,
   }
 }
@@ -817,6 +818,10 @@ describe("AgentWorkbench v2", () => {
       mocks.useSession.mockReturnValue(
         sessionState({
           session: { ...snapshot().session, status },
+          conversationView: {
+            ...conversationView([]),
+            conversation: { ...conversationView([]).conversation, status },
+          },
         }),
       )
 

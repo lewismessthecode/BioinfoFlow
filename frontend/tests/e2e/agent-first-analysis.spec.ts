@@ -43,9 +43,11 @@ test.describe("Agent workbench live run journey", () => {
         ),
         composerWidth: composerBox.width,
         composerHeight: surface.getBoundingClientRect().height,
-        chipHeights: Array.from(
-          composer.querySelectorAll<HTMLElement>('[data-composer-chip="true"]'),
-        ).map((chip) => chip.getBoundingClientRect().height),
+        selectorHeights: Array.from(
+          composer.querySelectorAll<HTMLElement>(
+            '[data-composer-selector-trigger="true"]',
+          ),
+        ).map((selector) => selector.getBoundingClientRect().height),
         starterBorderTop: starterList
           ? getComputedStyle(starterList).borderTopWidth
           : null,
@@ -60,8 +62,9 @@ test.describe("Agent workbench live run journey", () => {
     expect(desktopGeometry?.centerDelta).toBeLessThan(2)
     expect(desktopGeometry?.composerWidth).toBeLessThanOrEqual(672)
     expect(desktopGeometry?.composerHeight).toBeGreaterThanOrEqual(160)
-    expect(desktopGeometry?.chipHeights.length).toBeGreaterThanOrEqual(3)
-    expect(new Set(desktopGeometry?.chipHeights).size).toBe(1)
+    expect(desktopGeometry?.selectorHeights).toHaveLength(3)
+    expect(new Set(desktopGeometry?.selectorHeights).size).toBe(1)
+    expect(desktopGeometry?.selectorHeights[0]).toBe(32)
     expect(desktopGeometry?.starterBorderTop).toBe("0px")
     expect(desktopGeometry?.starterBorderBottom).toBe("0px")
     expect(desktopGeometry?.surfaceBackground).not.toBe("rgb(0, 0, 0)")
@@ -76,25 +79,92 @@ test.describe("Agent workbench live run journey", () => {
     ).toHaveCount(0)
     await expect(page.getByTestId("agent-capability-hint")).toHaveCount(0)
     await expect(
+      page.getByText("Try a project-aware starting point"),
+    ).toHaveCount(0)
+    await expect(page.locator("[data-starter-slot-icon]")).toHaveCount(3)
+    const starterIconSurfaces = await page
+      .locator("[data-starter-slot-icon]")
+      .evaluateAll((icons) =>
+        icons.map((icon) => {
+          const style = getComputedStyle(icon)
+          return {
+            background: style.backgroundColor,
+            border: style.borderWidth,
+            radius: style.borderRadius,
+          }
+        }),
+      )
+    expect(starterIconSurfaces).toEqual([
+      { background: "rgba(0, 0, 0, 0)", border: "0px", radius: "0px" },
+      { background: "rgba(0, 0, 0, 0)", border: "0px", radius: "0px" },
+      { background: "rgba(0, 0, 0, 0)", border: "0px", radius: "0px" },
+    ])
+    const commandHint = page.getByTestId("agent-command-discovery-hint")
+    await expect(commandHint).toContainText("/")
+    await expect(commandHint).toContainText("skill")
+    await expect
+      .poll(async () => commandHint.textContent(), { timeout: 7_000 })
+      .toContain("@")
+    await expect(
       page.getByRole("button", { name: /^Execution environments: Auto$/ }),
     ).toBeVisible()
+
+    const permissionButton = page.getByRole("button", {
+      name: "Approval mode: Approve safe actions",
+    })
+    await permissionButton.click()
+    const permissionMenu = page.getByTestId("composer-selector-menu")
+    await expect(permissionMenu).toBeVisible()
+    await expect
+      .poll(() =>
+        permissionMenu.evaluate((menu) => getComputedStyle(menu).width),
+      )
+      .toBe("244px")
+    await page.keyboard.press("Escape")
 
     const workspaceButton = page.getByRole("button", {
       name: "Open workspace panel",
     })
+    const terminalButton = page.getByRole("button", { name: "Open terminal" })
     await expect(workspaceButton).toBeVisible()
-    const workspacePosition = await workspaceButton.evaluate((button) => {
-      const box = button.getBoundingClientRect()
-      const shell = document
-        .querySelector<HTMLElement>('[data-testid="agent-page-shell"]')!
-        .getBoundingClientRect()
+    await expect(terminalButton).toBeVisible()
+    const navbarActionGeometry = await page.evaluate(() => {
+      const row = document.querySelector<HTMLElement>(
+        '[data-testid="navbar-action-row"]',
+      )
+      const terminal = document.querySelector<HTMLElement>(
+        'button[aria-label="Open terminal"]',
+      )
+      const workspace = document.querySelector<HTMLElement>(
+        'button[aria-label="Open workspace panel"]',
+      )
+      const canvas = document.querySelector<HTMLElement>(
+        '[data-testid="agent-workbench"]',
+      )
+      if (!row || !terminal || !workspace || !canvas) return null
+      const terminalBox = terminal.getBoundingClientRect()
+      const workspaceBox = workspace.getBoundingClientRect()
       return {
-        rightInset: shell.right - box.right,
-        topInset: box.top - shell.top,
+        sameActionRow:
+          terminal.parentElement === row && workspace.parentElement === row,
+        terminalHeight: terminalBox.height,
+        workspaceHeight: workspaceBox.height,
+        verticalDelta: Math.abs(terminalBox.top - workspaceBox.top),
+        horizontalGap: workspaceBox.left - terminalBox.right,
+        workspaceAfterTerminal: workspaceBox.left > terminalBox.left,
+        workspaceInsideCanvas: canvas.contains(workspace),
       }
     })
-    expect(workspacePosition.rightInset).toBeLessThanOrEqual(16)
-    expect(workspacePosition.topInset).toBeLessThanOrEqual(12)
+    expect(navbarActionGeometry?.sameActionRow).toBe(true)
+    expect(navbarActionGeometry?.terminalHeight).toBe(
+      navbarActionGeometry?.workspaceHeight,
+    )
+    expect(navbarActionGeometry?.terminalHeight).toBeGreaterThanOrEqual(32)
+    expect(navbarActionGeometry?.terminalHeight).toBeLessThanOrEqual(36)
+    expect(navbarActionGeometry?.verticalDelta).toBe(0)
+    expect(navbarActionGeometry?.horizontalGap).toBe(6)
+    expect(navbarActionGeometry?.workspaceAfterTerminal).toBe(true)
+    expect(navbarActionGeometry?.workspaceInsideCanvas).toBe(false)
     await workspaceButton.click()
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible()
     await expect(page.getByRole("tab", { name: "Workflow" })).toBeVisible()

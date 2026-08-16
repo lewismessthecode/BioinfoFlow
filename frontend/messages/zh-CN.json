@@ -2566,6 +2566,16 @@
     "submitError": "消息未能提交，请重试。",
     "stopError": "未能停止当前运行，请重试。",
     "starterHint": "从与当前项目相关的建议开始",
+    "commandHints": {
+      "skills": {
+        "prefix": "输入",
+        "suffix": "选择一个 skill"
+      },
+      "context": {
+        "prefix": "输入",
+        "suffix": "添加上下文或工作流"
+      }
+    },
     "model": {
       "updating": "正在更新模型…",
       "updateError": "模型更新失败。",
