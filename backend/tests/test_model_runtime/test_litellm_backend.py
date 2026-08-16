@@ -18,8 +18,10 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 from yarl import URL
 
+from app.services.llm.credentials import CredentialMaterial
 from app.services.llm.profiles import profile_for
 from app.services.llm.registry import provider_spec_for_kind
+from app.services.llm.target_resolution import resolve_model_target
 from app.services.model_runtime.backend.litellm import LiteLLMBackend
 from app.services.model_runtime.backend.litellm_network import (
     PublicNetworkHTTPHandler,
@@ -39,6 +41,71 @@ from app.services.model_runtime.contracts import (
 from app.services.model_runtime.errors import ModelError
 from app.services.model_runtime.gateway import ModelGateway
 from app.utils.exceptions import PermissionDeniedError
+
+
+@pytest.mark.asyncio
+async def test_deepseek_exact_endpoint_reaches_litellm_completion(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    async def unrestricted_network_access(base_url, **kwargs):
+        del kwargs
+        assert base_url == "https://api.deepseek.com/v1"
+        return "unrestricted"
+
+    async def fake_acompletion(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    class EmptyCodec:
+        wire_protocol = "chat_completions"
+
+        def encode_request(self, invocation: ModelInvocation) -> dict[str, Any]:
+            return {
+                "model": invocation.target.resolved_model_name(),
+                "messages": [],
+                "stream": False,
+            }
+
+        async def decode_response(self, response: Any) -> AsyncIterator[object]:
+            del response
+            if False:  # pragma: no cover - keeps this an async generator
+                yield object()
+
+    monkeypatch.setattr(
+        "app.services.llm.target_resolution.resolve_provider_network_access",
+        unrestricted_network_access,
+    )
+    target = await resolve_model_target(
+        endpoint_id="deepseek-provider",
+        provider_kind="deepseek",
+        model_name="deepseek-chat",
+        wire_protocol="chat_completions",
+        base_url=None,
+        provider_metadata={"providerTemplate": "deepseek"},
+        credential=CredentialMaterial(api_key="deepseek-secret", source="stored"),
+        private_endpoint_authorized=False,
+        resolve_dns=True,
+    )
+    gateway = ModelGateway(
+        backend=LiteLLMBackend(acompletion_fn=fake_acompletion),
+        codecs=[EmptyCodec()],
+    )
+    invocation = ModelInvocation(
+        target=target,
+        instructions="",
+        input_items=(),
+        tools=(),
+        stream=False,
+        max_output_tokens=16,
+    )
+
+    assert [event async for event in gateway.invoke(invocation)] == [
+        ResponseStarted(streaming=False)
+    ]
+    assert captured["model"] == "deepseek/deepseek-chat"
+    assert captured["api_base"] == "https://api.deepseek.com/v1"
+    assert captured["api_key"] == "deepseek-secret"
+    assert captured["num_retries"] == 0
 
 
 @pytest.mark.parametrize(

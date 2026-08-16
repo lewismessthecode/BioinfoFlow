@@ -73,6 +73,7 @@ class AgentRuntime:
     async def delete_session(self, session_id: str) -> None:
         async with self._session_factory() as db:
             await self._harness(db).delete_session(session_id)
+        await self.event_hub.close_session(session_id)
 
     async def quiesce_session(self, session_id: str) -> None:
         """Stop and durably cancel active work before session files move."""

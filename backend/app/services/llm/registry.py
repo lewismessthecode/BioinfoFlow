@@ -74,6 +74,14 @@ class ProviderSpec:
     bundled_models: tuple[ModelSpec, ...] = ()
 
 
+@dataclass(frozen=True)
+class ProviderRuntimeDefinition:
+    kind: str
+    default_base_url: str | None
+    runtime: RuntimeSpec
+    base_url_required: bool = False
+
+
 _SPECS: tuple[ProviderSpec, ...] = (
     ProviderSpec(
         id="openai",
@@ -233,6 +241,70 @@ _SPECS: tuple[ProviderSpec, ...] = (
 _BY_ID = {spec.id: spec for spec in _SPECS}
 _BY_KIND = {spec.kind: spec for spec in _SPECS}
 
+_COMPAT_RUNTIME_DEFINITIONS: tuple[ProviderRuntimeDefinition, ...] = (
+    ProviderRuntimeDefinition(
+        kind="openai_compatible",
+        default_base_url=None,
+        runtime=RuntimeSpec(
+            "openai/",
+            supported_wire_protocols=LlmWireProtocol.ALL,
+            responses_litellm_model_prefix="openai/",
+        ),
+        base_url_required=True,
+    ),
+    ProviderRuntimeDefinition("grok", "https://api.x.ai/v1", RuntimeSpec("xai/")),
+    ProviderRuntimeDefinition(
+        "groq", "https://api.groq.com/openai/v1", RuntimeSpec("groq/")
+    ),
+    ProviderRuntimeDefinition(
+        "kimi", "https://api.moonshot.ai/v1", RuntimeSpec("openai/")
+    ),
+    ProviderRuntimeDefinition(
+        "kimi_cn", "https://api.moonshot.cn/v1", RuntimeSpec("openai/")
+    ),
+    ProviderRuntimeDefinition(
+        "mistral", "https://api.mistral.ai/v1", RuntimeSpec("openai/")
+    ),
+    ProviderRuntimeDefinition(
+        "cohere", "https://api.cohere.ai/compatibility/v1", RuntimeSpec("openai/")
+    ),
+    ProviderRuntimeDefinition(
+        "together", "https://api.together.ai/v1", RuntimeSpec("openai/")
+    ),
+    ProviderRuntimeDefinition(
+        "perplexity", "https://api.perplexity.ai", RuntimeSpec("perplexity/")
+    ),
+    ProviderRuntimeDefinition(
+        "ollama",
+        "http://localhost:11434",
+        RuntimeSpec("ollama_chat/"),
+        base_url_required=True,
+    ),
+    ProviderRuntimeDefinition(
+        "vllm",
+        "http://localhost:8000/v1",
+        RuntimeSpec("openai/"),
+        base_url_required=True,
+    ),
+    ProviderRuntimeDefinition("azure", None, RuntimeSpec("azure/"), True),
+)
+_COMPAT_RUNTIME_BY_KIND = {
+    definition.kind: definition for definition in _COMPAT_RUNTIME_DEFINITIONS
+}
+_COMPAT_TEMPLATE_KIND = {
+    "openai-compatible": "openai_compatible",
+    "grok": "grok",
+    "groq": "groq",
+    "kimi": "kimi",
+    "kimi-cn": "kimi_cn",
+    "mistral": "mistral",
+    "cohere": "cohere",
+    "together": "together",
+    "perplexity": "perplexity",
+    "ollama": "ollama",
+    "vllm": "vllm",
+}
+
 if len(_BY_ID) != len(_SPECS) or len(_BY_KIND) != len(_SPECS):
     raise RuntimeError("Duplicate provider id or kind in LLM provider registry")
 
@@ -259,6 +331,48 @@ def get_provider_spec(provider_id: str) -> ProviderSpec:
 def provider_spec_for_kind(kind: str) -> ProviderSpec | None:
     spec = _BY_KIND.get(kind)
     return get_provider_spec(spec.id) if spec is not None else None
+
+
+def provider_runtime_for_kind(kind: str) -> ProviderRuntimeDefinition | None:
+    spec = _BY_KIND.get(kind)
+    if spec is not None:
+        return ProviderRuntimeDefinition(
+            kind=spec.kind,
+            default_base_url=spec.endpoint.default_base_url,
+            runtime=spec.runtime,
+        )
+    return _COMPAT_RUNTIME_BY_KIND.get(kind)
+
+
+def provider_kind_for_template_id(template_id: str) -> str | None:
+    spec = _BY_ID.get(template_id)
+    if spec is not None:
+        return spec.kind
+    return _COMPAT_TEMPLATE_KIND.get(template_id)
+
+
+def route_provider_model_name(
+    provider_kind: str,
+    model_name: str,
+    wire_protocol: str = LlmWireProtocol.CHAT_COMPLETIONS,
+) -> str:
+    definition = provider_runtime_for_kind(provider_kind)
+    if definition is None:
+        raise ValueError(f"Unsupported LLM provider kind: {provider_kind!r}.")
+    if wire_protocol not in definition.runtime.supported_wire_protocols:
+        raise ValueError(
+            f"Provider kind {provider_kind!r} does not support wire protocol "
+            f"{wire_protocol!r}."
+        )
+    prefix = definition.runtime.litellm_model_prefix
+    if (
+        wire_protocol == LlmWireProtocol.RESPONSES
+        and definition.runtime.responses_litellm_model_prefix is not None
+    ):
+        prefix = definition.runtime.responses_litellm_model_prefix
+    if prefix and model_name.startswith(prefix):
+        return model_name
+    return f"{prefix}{model_name}"
 
 
 def load_catalog_snapshot() -> dict[str, tuple[ModelSpec, ...]]:
