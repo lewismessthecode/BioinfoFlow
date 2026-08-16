@@ -143,6 +143,11 @@ def public_model_summary(snapshot: dict[str, Any] | None) -> dict[str, Any]:
     model = str(target.get("model_name") or "unknown")
     display_name = str(private.get("display_name") or model)
     return {
+        "catalog_model_id": (
+            str(private["model_id"])
+            if isinstance(private.get("model_id"), str) and private["model_id"]
+            else None
+        ),
         "provider": provider,
         "model": model,
         "display_name": display_name,

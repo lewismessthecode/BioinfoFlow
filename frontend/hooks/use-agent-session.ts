@@ -18,6 +18,7 @@ import type {
   AgentCommand,
   AgentEvent,
   AgentPermissionMode,
+  AgentModelSelection,
   AgentExecutionScope,
   InputPart,
   InteractionResponse,
@@ -33,6 +34,7 @@ export type AgentSessionState = AgentStoreState & {
     parts: InputPart[],
     runSettings?: {
       permission_mode?: AgentPermissionMode
+      model?: AgentModelSelection
       execution_scope?: AgentExecutionScope
     },
   ) => Promise<void>
@@ -278,6 +280,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
       parts: InputPart[],
       runSettings?: {
         permission_mode?: AgentPermissionMode
+        model?: AgentModelSelection
         execution_scope?: AgentExecutionScope
       },
     ) =>

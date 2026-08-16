@@ -489,7 +489,9 @@ class AgentHarnessRepository:
         requires_idle_run = bool(
             "workspace_access" in values or values.get("status") == "archived"
         )
-        requires_frozen_active_run = "permission_mode" in values
+        requires_frozen_active_run = bool(
+            {"permission_mode", "model_snapshot"} & values.keys()
+        )
         stmt = update(AgentHarnessSession).where(
             AgentHarnessSession.id == session_id,
             AgentHarnessSession.status.in_(("active", "archived")),

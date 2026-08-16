@@ -55,6 +55,13 @@ vi.mock("@/hooks/use-llm-settings", () => ({
             context_window: 128000,
             supports_vision: true,
           },
+          {
+            id: "gpt-5.7",
+            name: "GPT-5.7",
+            model_id: "model-record-2",
+            context_window: 128000,
+            supports_vision: true,
+          },
         ],
       },
     ],
@@ -69,8 +76,30 @@ vi.mock("@/hooks/use-llm-settings", () => ({
 }))
 
 vi.mock("@/components/bioinfoflow/chat/model-selector", () => ({
-  ModelSelector: ({ disabled }: { disabled?: boolean }) => (
-    <button type="button" disabled={disabled}>GPT-5.6 model selector</button>
+  ModelSelector: ({
+    disabled,
+    onSelectModel,
+  }: {
+    disabled?: boolean
+    onSelectModel: (selection: {
+      provider: string
+      model: string
+      model_id: string
+    }) => void
+  }) => (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() =>
+        onSelectModel({
+          provider: "provider-1",
+          model: "gpt-5.7",
+          model_id: "model-record-2",
+        })
+      }
+    >
+      GPT-5.6 model selector
+    </button>
   ),
 }))
 
@@ -230,6 +259,7 @@ function snapshot(): SessionSnapshot {
       project_id: "project-1",
       title: "Variant review",
       model: {
+        catalog_model_id: "model-record-1",
         provider: "openai",
         model: "gpt-5.6",
         display_name: "GPT-5.6",
@@ -526,6 +556,37 @@ describe("AgentWorkbench v2", () => {
     expect(screen.queryByLabelText("connection.connected")).not.toBeInTheDocument()
   })
 
+  it("updates the live model default and freezes it into the next message", async () => {
+    const user = userEvent.setup()
+    const state = sessionState()
+    mocks.useSession.mockReturnValue(state)
+    mocks.updateSession.mockResolvedValue(snapshot())
+
+    renderWithProviders(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    await user.click(
+      screen.getByRole("button", { name: "GPT-5.6 model selector" }),
+    )
+    await waitFor(() =>
+      expect(mocks.updateSession).toHaveBeenCalledWith("session-1", {
+        modelId: "model-record-2",
+      }),
+    )
+
+    await user.click(screen.getByRole("button", { name: "Send message" }))
+
+    expect(state.sendMessage).toHaveBeenCalledWith(
+      [{ type: "text", text: "Hello" }],
+      {
+        model: { model_id: "model-record-2" },
+        permission_mode: "ask_dangerous",
+        execution_scope: { mode: "auto", target_ids: [] },
+      },
+    )
+  })
+
   it("retries the canonical user input as a normal message with current Run settings", async () => {
     const user = userEvent.setup()
     const state = sessionState({
@@ -547,6 +608,7 @@ describe("AgentWorkbench v2", () => {
         { type: "text", text: "Compare these files" },
       ],
       {
+        model: { model_id: "model-record-1" },
         permission_mode: "ask_dangerous",
         execution_scope: { mode: "auto", target_ids: [] },
       },

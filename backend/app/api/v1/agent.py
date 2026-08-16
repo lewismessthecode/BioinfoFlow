@@ -160,6 +160,10 @@ class AgentSessionUpdate(BaseModel):
     permission_mode: PermissionMode | None = None
     workspace_access: WorkspaceAccess | None = None
     status: Literal["active", "archived"] | None = None
+    model_id: UUID | None = None
+    profile_id: UUID | None = None
+    provider: str | None = Field(default=None, min_length=1, max_length=200)
+    model: str | None = Field(default=None, min_length=1, max_length=500)
 
     @model_validator(mode="after")
     def validate_update(self) -> AgentSessionUpdate:
@@ -168,6 +172,22 @@ class AgentSessionUpdate(BaseModel):
         for field_name in ("permission_mode", "workspace_access", "status"):
             if field_name in self.model_fields_set and getattr(self, field_name) is None:
                 raise ValueError(f"{field_name} cannot be null")
+        model_fields = {"model_id", "profile_id", "provider", "model"}
+        if self.model_fields_set & model_fields:
+            provider_selected = self.provider is not None or self.model is not None
+            if provider_selected and (self.provider is None or self.model is None):
+                raise ValueError("provider and model must be supplied together")
+            selector_count = sum(
+                (
+                    self.model_id is not None,
+                    self.profile_id is not None,
+                    provider_selected,
+                )
+            )
+            if selector_count != 1:
+                raise ValueError(
+                    "choose exactly one model selector: model_id, profile_id, or provider and model"
+                )
         return self
 
 
@@ -235,7 +255,9 @@ class DeletedResource(BaseModel):
     deleted: Literal[True]
 
 
-def _selection(payload: AgentSessionCreate) -> dict[str, str] | None:
+def _selection(
+    payload: AgentSessionCreate | AgentSessionUpdate,
+) -> dict[str, str] | None:
     if payload.model_id:
         return {"model_id": str(payload.model_id)}
     if payload.profile_id:
@@ -790,6 +812,16 @@ async def update_session(
             field_name: getattr(payload, field_name)
             for field_name in payload.model_fields_set
         }
+        model_fields = {"model_id", "profile_id", "provider", "model"}
+        if payload.model_fields_set & model_fields:
+            for field_name in model_fields:
+                values.pop(field_name, None)
+            values["model_snapshot"] = await resolve_model_snapshot(
+                db,
+                workspace_id=user.workspace_id,
+                user_id=user.id,
+                selection=_selection(payload),
+            )
         try:
             await repository.update_session_settings(session_id, **values)
         except ValueError as exc:

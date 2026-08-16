@@ -147,6 +147,7 @@ async def test_session_snapshot_exposes_only_safe_model_summary(async_client) ->
     assert created.status_code == 201
     session = created.json()["data"]["session"]
     assert session["model"] == {
+        "catalog_model_id": None,
         "provider": "openai",
         "model": "gpt-5.6",
         "display_name": "gpt-5.6",
@@ -323,6 +324,79 @@ async def test_session_patch_allows_next_run_permission_when_active_run_is_froze
     assert payload["active_run"]["run"]["settings"]["permission_mode"] == (
         "ask_dangerous"
     )
+
+
+@pytest.mark.asyncio
+async def test_session_patch_updates_next_run_model_without_rewriting_active_run(
+    async_client,
+) -> None:
+    from app.repositories.agent_harness_repo import AgentHarnessRepository
+    import app.database as app_database
+
+    initial_snapshot = {
+        "model_id": "00000000-0000-0000-0000-000000000001",
+        "target": {"provider_kind": "openai", "model_name": "gpt-old"},
+    }
+    next_snapshot = {
+        "model_id": "00000000-0000-0000-0000-000000000002",
+        "target": {"provider_kind": "openai", "model_name": "gpt-new"},
+    }
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value=initial_snapshot,
+    ):
+        created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["session"]["id"]
+    async with app_database.async_session_maker() as db:
+        await AgentHarnessRepository(db).create_run(
+            session_id,
+            settings_snapshot={
+                "model_snapshot": initial_snapshot,
+                "permission_mode": "ask_dangerous",
+                "execution_scope": {"mode": "auto", "target_ids": []},
+                "allowed_targets": [],
+            },
+        )
+
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value=next_snapshot,
+    ) as resolve:
+        response = await async_client.patch(
+            f"/api/v1/agent/sessions/{session_id}",
+            json={"model_id": next_snapshot["model_id"]},
+        )
+
+    assert response.status_code == 200
+    resolve.assert_awaited_once()
+    assert resolve.await_args.kwargs["selection"] == {
+        "model_id": next_snapshot["model_id"]
+    }
+    payload = response.json()["data"]
+    assert payload["session"]["model"]["model"] == "gpt-new"
+    assert payload["session"]["model"]["catalog_model_id"] == next_snapshot["model_id"]
+    assert payload["active_run"]["run"]["settings"]["model"]["model"] == "gpt-old"
+
+
+@pytest.mark.asyncio
+async def test_session_patch_rejects_ambiguous_model_selector(async_client) -> None:
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["session"]["id"]
+
+    response = await async_client.patch(
+        f"/api/v1/agent/sessions/{session_id}",
+        json={
+            "model_id": "00000000-0000-0000-0000-000000000002",
+            "provider": "openai",
+            "model": "gpt-new",
+        },
+    )
+
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

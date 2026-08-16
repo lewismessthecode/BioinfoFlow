@@ -29,6 +29,7 @@ import {
 } from "@/hooks/use-agent-session"
 import { useAgentUiBootstrap } from "@/hooks/use-agent-ui-bootstrap"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
+import type { ModelSelection, ProviderModels } from "@/hooks/use-llm-settings"
 import {
   createAgentSession,
   dispatchAgentCommand,
@@ -476,6 +477,11 @@ function SessionWorkbench({
     state.session?.execution_scope ?? { mode: "auto", target_ids: [] },
   )
   const [editDraft, setEditDraft] = useState({ key: 0, text: "" })
+  const { models, isLoading: modelsLoading } = useLlmSettings()
+  const [selectedModelId, setSelectedModelId] = useState(
+    state.session?.model.catalog_model_id ?? null,
+  )
+  const [modelUpdating, setModelUpdating] = useState(false)
   const setCancelHandler = shared.setCancelHandler
 
   useEffect(() => {
@@ -490,6 +496,10 @@ function SessionWorkbench({
     publishAgentSessionSummary(sessionSummaryFromView(state.session))
     onSessionResolved?.(state.session)
   }, [onSessionResolved, state.session])
+
+  useEffect(() => {
+    setSelectedModelId(state.session?.model.catalog_model_id ?? null)
+  }, [state.session?.model.catalog_model_id])
 
   const runSessionCommand = async (command: () => Promise<void>) => {
     shared.setModelConnectionOpen(false)
@@ -506,6 +516,7 @@ function SessionWorkbench({
   const sendMessage = async (parts: InputPart[]) => {
     await runSessionCommand(() =>
       state.sendMessage(parts, {
+        model: selectedModelId ? { model_id: selectedModelId } : undefined,
         permission_mode: state.session?.permission_mode,
         execution_scope: executionScope,
       }),
@@ -527,6 +538,23 @@ function SessionWorkbench({
     shared.setContextInputs(draft.contextInputs)
     setEditDraft((current) => ({ key: current.key + 1, text: draft.text }))
     window.requestAnimationFrame(() => shared.textareaRef.current?.focus())
+  }
+  const updateModel = async (selection: ModelSelection | null) => {
+    const modelId = selection?.model_id ?? null
+    if (!modelId || modelId === selectedModelId || modelUpdating) return
+    const previousModelId = selectedModelId
+    setSelectedModelId(modelId)
+    setModelUpdating(true)
+    shared.setModelConnectionOpen(false)
+    try {
+      const snapshot = await updateAgentSession(sessionId, { modelId })
+      publishAgentSessionSummary(sessionSummaryFromView(snapshot.session))
+    } catch (caught) {
+      setSelectedModelId(previousModelId)
+      if (isModelConfigurationError(caught)) shared.setModelConnectionOpen(true)
+    } finally {
+      setModelUpdating(false)
+    }
   }
 
   if (state.isLoading && !state.session) return <WorkbenchSkeleton />
@@ -610,7 +638,25 @@ function SessionWorkbench({
             disabled={!interactive || state.session.status !== "active"}
           />
         }
-        modelControls={<ComposerModelLabel label={state.session.model.display_name} />}
+        modelControls={
+          <ModelSelector
+            models={models}
+            selectedModel={modelSelectionForSession(
+              models,
+              selectedModelId,
+              state.session.model.provider,
+              state.session.model.model,
+            )}
+            onSelectModel={(selection) => void updateModel(selection)}
+            disabled={
+              modelsLoading ||
+              modelUpdating ||
+              !interactive ||
+              state.session.status !== "active"
+            }
+            variant="composer"
+          />
+        }
         executionControls={
           <ExecutionTargetSelector
             targets={bootstrap?.executionTargets ?? []}
@@ -711,21 +757,35 @@ function WorkbenchError({
   )
 }
 
-function ComposerModelLabel({ label }: { label: string }) {
-  return (
-    <span
-      className="inline-flex min-h-7 min-w-0 max-w-[168px] items-center truncate rounded-[8px] px-2 text-[11px] font-medium text-foreground/68"
-      title={label}
-    >
-      {label}
-    </span>
-  )
-}
-
 function toContractScope(scope?: UiExecutionScope | null): AgentExecutionScope {
   return scope
     ? { mode: scope.mode, target_ids: scope.targetIds }
     : { mode: "auto", target_ids: [] }
+}
+
+function modelSelectionForSession(
+  models: ProviderModels[],
+  catalogModelId: string | null,
+  providerKind: string,
+  modelName: string,
+): ModelSelection | null {
+  for (const provider of models) {
+    const model = provider.models.find(
+      (candidate) =>
+        candidate.model_id === catalogModelId ||
+        (!catalogModelId &&
+          provider.provider_kind === providerKind &&
+          candidate.id === modelName),
+    )
+    if (model) {
+      return {
+        provider: provider.provider,
+        model: model.id,
+        model_id: model.model_id,
+      }
+    }
+  }
+  return null
 }
 
 function toUiScope(scope: AgentExecutionScope): UiExecutionScope {

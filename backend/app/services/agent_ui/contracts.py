@@ -93,6 +93,7 @@ class ExecutionScopeSelection(StrictContract):
 
 
 class ModelSummary(StrictContract):
+    catalog_model_id: str | None = None
     provider: str
     model: str
     display_name: str

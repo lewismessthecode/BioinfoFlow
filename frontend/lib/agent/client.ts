@@ -133,6 +133,7 @@ export async function updateAgentSession(
     permissionMode?: AgentPermissionMode
     workspaceAccess?: AgentWorkspaceAccess
     status?: Extract<AgentSessionStatus, "active" | "archived">
+    modelId?: string
   },
 ) {
   const response = await apiRequest<SessionSnapshot>(
@@ -144,6 +145,7 @@ export async function updateAgentSession(
         permission_mode: updates.permissionMode,
         workspace_access: updates.workspaceAccess,
         status: updates.status,
+        model_id: updates.modelId,
       }),
     },
   )

@@ -214,6 +214,7 @@ describe("agent client", () => {
         permissionMode: "full_access",
         workspaceAccess: "read_only",
         status: "archived",
+        modelId: "model-record-2",
       }),
     ).resolves.toBe(snapshot)
     expect(mockedApiRequest).toHaveBeenCalledWith("/agent/sessions/session-1", {
@@ -223,6 +224,7 @@ describe("agent client", () => {
         permission_mode: "full_access",
         workspace_access: "read_only",
         status: "archived",
+        model_id: "model-record-2",
       }),
     })
   })

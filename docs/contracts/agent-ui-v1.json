@@ -1204,6 +1204,18 @@
     "ModelSummary": {
       "additionalProperties": false,
       "properties": {
+        "catalog_model_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Catalog Model Id"
+        },
         "display_name": {
           "title": "Display Name",
           "type": "string"

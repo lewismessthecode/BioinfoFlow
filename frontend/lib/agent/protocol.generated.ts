@@ -97,6 +97,7 @@ export type Phase = ("model" | "tools" | "interaction") | null
 export type Revision1 = number
 export type SessionId = string
 export type AllowedTargets = ExecutionTargetView[]
+export type CatalogModelId = string | null
 export type DisplayName = string
 export type Model = string
 export type Provider = string
@@ -470,6 +471,7 @@ export interface RunSettingsView {
   permission_mode: PermissionMode
 }
 export interface ModelSummary {
+  catalog_model_id?: CatalogModelId
   display_name: DisplayName
   model: Model
   provider: Provider

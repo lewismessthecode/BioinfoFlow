@@ -41,6 +41,7 @@ export type ToolCategory =
 export type ToolExecutionMode = "parallel" | "serial" | "mixed"
 
 export type AgentModelSummary = {
+  catalog_model_id?: string | null
   provider: string
   model: string
   display_name: string
@@ -368,9 +369,17 @@ export type MessageCommand = AgentCommandBase & {
   type: "message"
   parts: InputPart[]
   run_settings?: {
+    model?: AgentModelSelection
     permission_mode?: AgentPermissionMode
     execution_scope?: AgentExecutionScope
   }
+}
+
+export type AgentModelSelection = {
+  model_id?: string
+  profile_id?: string
+  provider?: string
+  model?: string
 }
 
 export type SteerCommand = AgentCommandBase & {

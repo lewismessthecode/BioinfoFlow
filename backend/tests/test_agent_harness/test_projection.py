@@ -538,6 +538,7 @@ def test_model_projection_exposes_only_rendering_capabilities() -> None:
     )
 
     assert projected == {
+        "catalog_model_id": None,
         "provider": "openai",
         "model": "gpt-5.6",
         "display_name": "GPT-5.6",

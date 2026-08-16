@@ -476,6 +476,31 @@
       "AgentSessionUpdate": {
         "additionalProperties": false,
         "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
           "permission_mode": {
             "anyOf": [
               {
@@ -491,6 +516,31 @@
               }
             ],
             "title": "Permission Mode"
+          },
+          "profile_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
           },
           "status": {
             "anyOf": [
@@ -3683,6 +3733,17 @@
       "ModelSummary": {
         "additionalProperties": false,
         "properties": {
+          "catalog_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Model Id"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -8357,6 +8418,17 @@
                       "ModelSummary": {
                         "additionalProperties": false,
                         "properties": {
+                          "catalog_model_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Catalog Model Id"
+                          },
                           "display_name": {
                             "title": "Display Name",
                             "type": "string"
