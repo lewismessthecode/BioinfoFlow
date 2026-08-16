@@ -82,6 +82,81 @@ const baseEntry = {
 }
 
 describe("AgentHistoryEntries", () => {
+  it("renders quiet user and unboxed assistant messages with durable timestamps", () => {
+    const entries: HistoryEntry[] = [
+      {
+        ...baseEntry,
+        id: "user-timestamp",
+        sequence: 1,
+        type: "message",
+        payload: {
+          role: "user",
+          parts: [{ id: "user-text", type: "text", text: "Inspect this run." }],
+        },
+      },
+      {
+        ...baseEntry,
+        id: "assistant-timestamp",
+        sequence: 2,
+        created_at: "2026-08-15T08:00:02Z",
+        type: "message",
+        payload: {
+          role: "assistant",
+          parts: [{ id: "assistant-text", type: "text", text: "The run is healthy." }],
+        },
+      },
+    ]
+
+    renderWithProviders(<AgentHistoryEntries entries={entries} />)
+
+    const userMessage = screen.getByText("Inspect this run.").closest("article")
+    const assistantMessage = screen.getByText("The run is healthy.").closest("article")
+    expect(userMessage).toHaveClass("max-w-[76%]")
+    expect(assistantMessage?.firstElementChild).not.toHaveClass("border")
+    expect(screen.getByTestId("agent-user-message-timestamp")).toHaveAttribute(
+      "datetime",
+      "2026-08-15T08:00:00Z",
+    )
+    expect(screen.getByTestId("assistant-response-timestamp")).toHaveAttribute(
+      "datetime",
+      "2026-08-15T08:00:02Z",
+    )
+  })
+
+  it("keeps tool output timing inside activity instead of labeling it as an assistant response", () => {
+    const entries: HistoryEntry[] = [
+      {
+        ...baseEntry,
+        id: "unpaired-tool-result",
+        sequence: 1,
+        type: "message",
+        payload: {
+          role: "tool",
+          parts: [
+            {
+              id: "tool-result",
+              type: "tool_result",
+              call_id: "missing-call",
+              status: "completed",
+              summary: "Read 42 lines",
+              output: null,
+              started_at: "2026-08-15T08:00:00Z",
+              completed_at: "2026-08-15T08:00:01Z",
+              error: null,
+            },
+          ],
+        },
+      },
+    ]
+
+    renderWithProviders(<AgentHistoryEntries entries={entries} />)
+
+    expect(screen.getByText("Read 42 lines")).toBeInTheDocument()
+    expect(
+      screen.queryByTestId("assistant-response-timestamp"),
+    ).not.toBeInTheDocument()
+  })
+
   it("renders a failed Run outcome even when no assistant entry exists", () => {
     const failedRun: RunView = {
       id: "run-1",
@@ -605,6 +680,14 @@ describe("AgentHistoryEntries", () => {
     expect(screen.getByText("samples.csv")).toBeInTheDocument()
     expect(screen.getByText("Unsupported content")).toBeInTheDocument()
     expect(screen.getByText("A future public content block.")).toBeInTheDocument()
+    expect(screen.getByTestId("agent-unknown-block")).toHaveAttribute(
+      "role",
+      "note",
+    )
+    expect(screen.getByTestId("agent-unknown-block")).toHaveAttribute(
+      "data-original-type",
+      "future_public_part",
+    )
     expect(screen.getByText("The run resumed after restart.")).toBeInTheDocument()
     expect(screen.getByText("Allow the workflow submission?")).toBeInTheDocument()
     expect(screen.getByText("Approved")).toBeInTheDocument()

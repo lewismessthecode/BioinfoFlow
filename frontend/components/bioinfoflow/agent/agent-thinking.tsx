@@ -46,12 +46,12 @@ export function AgentThinking({
   return (
     <section
       aria-label={label ?? t("title")}
-      className="min-w-0 border-l border-border/60 pl-3"
+      className="min-w-0 text-muted-foreground"
       data-testid="agent-thinking"
     >
       <button
         type="button"
-          className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[6px] py-1.5 pr-2 text-left text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none"
+        className="group/summary flex min-h-9 w-full min-w-0 items-center gap-2 rounded-[6px] px-1 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none"
         aria-expanded={expanded}
         aria-controls={detailsId}
         aria-label={`${label ?? t("title")}: ${firstLine(text)}. ${t(expanded ? "hide" : "show")}`}
@@ -63,14 +63,14 @@ export function AgentThinking({
           {firstLine(text)}
         </span>
         {expanded ? (
-          <ChevronDown aria-hidden="true" />
+          <ChevronDown aria-hidden="true" className="size-3.5 opacity-60 transition-opacity group-hover/summary:opacity-100" />
         ) : (
-          <ChevronRight aria-hidden="true" />
+          <ChevronRight aria-hidden="true" className="size-3.5 opacity-60 transition-opacity group-hover/summary:opacity-100" />
         )}
       </button>
 
       {expanded ? (
-        <div id={detailsId} className="pb-2 pl-6 pr-3 pt-1 text-foreground/72">
+        <div id={detailsId} className="ml-4 border-l border-border/50 pb-2 pl-3 pr-3 pt-1 text-foreground/72">
           <MarkdownRenderer content={text} />
         </div>
       ) : null}

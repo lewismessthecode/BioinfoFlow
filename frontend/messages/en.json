@@ -2520,6 +2520,11 @@
     "defaultModel": "Default model",
     "emptyTitle": "What would you like to work on?",
     "emptyDescription": "Ask a question, attach data, or reference a workflow. Bioinfoflow will show its plan, progress, tool activity, and any approval it needs.",
+    "starterPrompts": {
+      "reviewRun": "Review the latest run and highlight anything unusual",
+      "explainInputs": "Explain the inputs available in this project",
+      "checkWorkflow": "Check the workflow before I run it"
+    },
     "createError": "The conversation could not be started. Your message is still here; try again.",
     "modelConnection": {
       "title": "Connect a model to continue",
@@ -2574,6 +2579,12 @@
     "steering": "Steering…",
     "submitError": "The message could not be submitted. Try again.",
     "stopError": "The run could not be stopped. Try again.",
+    "starterHint": "Try a project-aware starting point",
+    "model": {
+      "updating": "Updating model…",
+      "updateError": "The model could not be updated.",
+      "retry": "Retry model update"
+    },
     "voice": {
       "start": "Start voice dictation",
       "stop": "Stop recording",
@@ -2598,10 +2609,34 @@
         "description": "Run automatically inside hard workspace and safety limits."
       },
       "activeRun": "Approval mode cannot change while a run is active.",
+      "nextRun": "Changes apply to the next run.",
       "readOnlyWorkspace": "This workspace is read-only. Approval mode cannot grant write access.",
       "updating": "Updating approval mode…",
       "updateError": "Approval mode could not be updated.",
       "retry": "Retry approval update"
+    },
+    "environment": {
+      "label": "Execution environments",
+      "title": "Choose visible environments",
+      "auto": {
+        "name": "Auto",
+        "description": "Let the agent use any available environment."
+      },
+      "manual": {
+        "name": "Manual",
+        "description": "Limit the agent to selected environments."
+      },
+      "local": "Local",
+      "targetCount": "{count, plural, one {# environment} other {# environments}}",
+      "updating": "Updating environments…",
+      "updateError": "Environments could not be updated.",
+      "retry": "Retry environment update",
+      "status": {
+        "online": "Online",
+        "offline": "Offline",
+        "error": "Error",
+        "unknown": "Unknown"
+      }
     }
   },
   "agentActivity": {

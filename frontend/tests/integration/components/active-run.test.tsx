@@ -174,16 +174,14 @@ describe("ActiveRun", () => {
     expect(
       screen.getByRole("region", { name: "Agent run in progress" }),
     ).toBeInTheDocument()
-    expect(screen.getByTestId("agent-active-run")).toHaveClass("border-l")
-    expect(screen.getByTestId("agent-active-run")).not.toHaveClass(
-      "rounded-[12px]",
+    expect(screen.getByTestId("agent-active-run")).not.toHaveClass("border-l")
+    expect(screen.getByTestId("agent-active-run")).not.toHaveClass("border")
+    expect(screen.getByTestId("agent-active-run-status")).toHaveTextContent(
+      "Running",
     )
-    expect(screen.getByRole("status")).toHaveTextContent("Running")
     expect(screen.getByText("Using tools")).toBeInTheDocument()
-    expect(screen.getByText("1 of 3 actions finished")).toBeInTheDocument()
-    expect(screen.getByRole("progressbar", { name: "Tool progress" })).toHaveAttribute(
-      "aria-valuenow",
-      "33",
+    expect(screen.getByTestId("agent-active-run-status")).toHaveTextContent(
+      "1 of 3 actions finished",
     )
 
     expect(
@@ -196,13 +194,11 @@ describe("ActiveRun", () => {
     const toolGroup = screen.getByRole("button", {
       name: "2 tools running in parallel",
     })
-    expect(toolGroup).toHaveAttribute("aria-expanded", "false")
-    expect(screen.getAllByTestId("agent-tool-card")).toHaveLength(1)
-
-    await user.click(toolGroup)
-
     expect(toolGroup).toHaveAttribute("aria-expanded", "true")
     expect(screen.getAllByTestId("agent-tool-card")).toHaveLength(3)
+
+    await user.click(toolGroup)
+    expect(toolGroup).toHaveAttribute("aria-expanded", "false")
   })
 
   it("keeps failed live tool details private until the user expands them", async () => {

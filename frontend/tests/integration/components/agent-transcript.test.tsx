@@ -639,6 +639,8 @@ describe("AgentTranscript", () => {
       name: "Jump to latest",
     })
     expect(jumpButton).toHaveTextContent("Jump to latest")
+    expect(jumpButton).toHaveClass("dark:bg-background/90")
+    expect(jumpButton).not.toHaveClass("dark:bg-input/30")
     expect(scrollTo).not.toHaveBeenCalled()
 
     await user.click(jumpButton)

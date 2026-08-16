@@ -198,9 +198,11 @@ export function AgentArtifactReference({ part }: AgentArtifactReferenceProps) {
       <Button
         type="button"
         variant="outline"
-        className="h-auto min-h-11 w-full min-w-0 justify-start rounded-[8px] px-2.5 py-2 text-xs"
+        className="h-auto min-h-11 w-full min-w-0 justify-start rounded-[8px] bg-transparent px-2.5 py-2 text-xs hover:bg-muted/35 dark:bg-transparent dark:hover:bg-muted/35"
         onClick={() => handleOpenChange(true)}
         aria-label={t("artifact.open", { name: label })}
+        data-artifact-id={part.artifact_id}
+        data-testid="agent-artifact-card"
       >
         <Badge variant="outline">{t("reference.artifact")}</Badge>
         <span
@@ -307,7 +309,13 @@ function ArtifactPreviewContent({
         <AlertCircle aria-hidden="true" />
         <AlertDescription className="flex flex-col items-start gap-3">
           <span>{t("artifact.loadFailed")}</span>
-          <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="dark:bg-transparent dark:hover:bg-muted/35"
+            onClick={() => void load()}
+          >
             <RefreshCw data-icon="inline-start" aria-hidden="true" />
             {t("artifact.retry")}
           </Button>

@@ -2520,6 +2520,11 @@
     "defaultModel": "默认模型",
     "emptyTitle": "你想先做什么？",
     "emptyDescription": "可以直接提问、添加数据，或引用工作流。Bioinfoflow 会展示计划、进度、工具执行，以及需要你确认的操作。",
+    "starterPrompts": {
+      "reviewRun": "检查最近一次运行，并指出值得注意的问题",
+      "explainInputs": "解释当前项目中可以使用的输入",
+      "checkWorkflow": "在运行前检查这个工作流"
+    },
     "createError": "无法开始对话。你的消息仍然保留，请重试。",
     "modelConnection": {
       "title": "连接模型后继续",
@@ -2574,6 +2579,12 @@
     "steering": "正在调整…",
     "submitError": "消息未能提交，请重试。",
     "stopError": "未能停止当前运行，请重试。",
+    "starterHint": "从与当前项目相关的建议开始",
+    "model": {
+      "updating": "正在更新模型…",
+      "updateError": "模型更新失败。",
+      "retry": "重试更新模型"
+    },
     "voice": {
       "start": "开始语音输入",
       "stop": "停止录音",
@@ -2598,10 +2609,34 @@
         "description": "在工作区和安全硬限制内自动执行。"
       },
       "activeRun": "当前有任务运行时不能修改审批方式。",
+      "nextRun": "更改将在下一次运行时生效。",
       "readOnlyWorkspace": "当前工作区为只读；审批方式不能授予写入权限。",
       "updating": "正在更新审批方式…",
       "updateError": "审批方式更新失败。",
       "retry": "重试更新审批方式"
+    },
+    "environment": {
+      "label": "执行环境",
+      "title": "选择智能助手可见的环境",
+      "auto": {
+        "name": "自动",
+        "description": "允许智能助手按需使用所有可用环境。"
+      },
+      "manual": {
+        "name": "手动",
+        "description": "只允许智能助手使用你选择的环境。"
+      },
+      "local": "本机",
+      "targetCount": "{count} 个环境",
+      "updating": "正在更新执行环境…",
+      "updateError": "执行环境更新失败。",
+      "retry": "重试更新执行环境",
+      "status": {
+        "online": "在线",
+        "offline": "离线",
+        "error": "异常",
+        "unknown": "未知"
+      }
     }
   },
   "agentActivity": {

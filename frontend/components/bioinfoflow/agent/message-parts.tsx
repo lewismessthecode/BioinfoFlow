@@ -113,6 +113,9 @@ export function AgentMessageParts({
           <div
             key={part.id}
             className="grid gap-1 rounded-[10px] border border-border/60 bg-muted/25 px-3 py-2"
+            role="note"
+            data-original-type={part.original_type}
+            data-testid="agent-unknown-block"
           >
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium text-foreground/80">

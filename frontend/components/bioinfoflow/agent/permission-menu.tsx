@@ -73,10 +73,11 @@ export function PermissionMenu({
     update?.state === "pending" && update.mode === permissionMode
       ? null
       : update
+  const displayedMode =
+    visibleUpdate?.state === "pending" ? visibleUpdate.mode : permissionMode
 
   const requestChange = async (mode: AgentPermissionMode) => {
     if (
-      activeRun ||
       disabled ||
       readOnlyWorkspace ||
       visibleUpdate?.state === "pending" ||
@@ -92,25 +93,28 @@ export function PermissionMenu({
     }
   }
 
-  const CurrentIcon = modeIcons[permissionMode]
+  const CurrentIcon = modeIcons[displayedMode]
   const isUpdating = visibleUpdate?.state === "pending"
-  const controlsDisabled =
-    disabled || activeRun || readOnlyWorkspace || isUpdating
+  const controlsDisabled = disabled || readOnlyWorkspace || isUpdating
   const trigger = (
     <Button
       type="button"
       variant="ghost"
       size="sm"
       disabled={controlsDisabled}
-      aria-label={`${t("permission.label")}: ${t(`permission.${permissionMode}.name`)}`}
+      aria-label={`${t("permission.label")}: ${t(`permission.${displayedMode}.name`)}`}
       aria-describedby={descriptionId}
+      className="h-8 max-w-[12rem] gap-1.5 rounded-lg px-2 text-xs font-medium text-muted-foreground shadow-none hover:bg-muted/70 hover:text-foreground"
     >
       {isUpdating ? (
-        <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
+        <Loader2
+          aria-hidden="true"
+          className="animate-spin motion-reduce:animate-none"
+        />
       ) : (
         <CurrentIcon aria-hidden="true" />
       )}
-      <span>{t(`permission.${permissionMode}.name`)}</span>
+      <span>{t(`permission.${displayedMode}.name`)}</span>
       <ChevronDown aria-hidden="true" />
     </Button>
   )
@@ -138,7 +142,7 @@ export function PermissionMenu({
             <SheetHeader className="border-b pr-12">
               <SheetTitle>{t("permission.title")}</SheetTitle>
               <SheetDescription>
-                {t(`permission.${permissionMode}.description`)}
+                {t(`permission.${displayedMode}.description`)}
               </SheetDescription>
             </SheetHeader>
             <div
@@ -150,13 +154,13 @@ export function PermissionMenu({
                 <button
                   key={mode}
                   type="button"
-                  aria-pressed={mode === permissionMode}
+                  aria-pressed={mode === displayedMode}
                   disabled={controlsDisabled}
                   onClick={() => selectMode(mode)}
                   className={cn(
                     "flex min-h-16 w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors",
                     "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none",
-                    mode === permissionMode && "border-primary/40 bg-accent",
+                    mode === displayedMode && "border-primary/40 bg-accent",
                     mode === "full_access" && "text-warning-foreground",
                     controlsDisabled && "cursor-not-allowed opacity-50",
                   )}
@@ -177,7 +181,7 @@ export function PermissionMenu({
           >
             <DropdownMenuLabel>{t("permission.title")}</DropdownMenuLabel>
             <DropdownMenuRadioGroup
-              value={permissionMode}
+              value={displayedMode}
               onValueChange={(value) => {
                 if (isPermissionMode(value)) selectMode(value)
               }}
@@ -200,11 +204,12 @@ export function PermissionMenu({
         </DropdownMenu>
       )}
 
-      <div id={descriptionId} className="text-xs leading-5 text-muted-foreground">
-        {activeRun ? <p>{t("permission.activeRun")}</p> : null}
-        {readOnlyWorkspace ? (
-          <p>{t("permission.readOnlyWorkspace")}</p>
-        ) : null}
+      <div
+        id={descriptionId}
+        className="px-2 text-[11px] leading-4 text-muted-foreground"
+      >
+        {activeRun ? <p>{t("permission.nextRun")}</p> : null}
+        {readOnlyWorkspace ? <p>{t("permission.readOnlyWorkspace")}</p> : null}
         {isUpdating ? <p role="status">{t("permission.updating")}</p> : null}
         {visibleUpdate?.state === "error" ? (
           <div className="flex flex-wrap items-center gap-2" role="alert">
