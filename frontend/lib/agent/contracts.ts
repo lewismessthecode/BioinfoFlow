@@ -166,6 +166,13 @@ export type ApprovalRiskView = {
 
 export type ApprovalAllowedResponse = "approve" | "reject"
 
+export type ApprovalTargetView = {
+  environment_id: string
+  display_name: string
+  kind: "local" | "ssh"
+  host?: string | null
+}
+
 export type ApprovalRequest = {
   type: "approval"
   call_id: string
@@ -173,6 +180,7 @@ export type ApprovalRequest = {
   summary: string
   input_preview: string | null
   allowed_responses: ApprovalAllowedResponse[]
+  target?: ApprovalTargetView
   risk: ApprovalRiskView
 }
 

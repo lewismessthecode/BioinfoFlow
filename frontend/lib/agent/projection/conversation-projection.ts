@@ -3,6 +3,8 @@ import { applyAgentEvent, initialAgentStoreState } from "../store"
 import type {
   ActivityGroupTranscriptBlock,
   ActivityItem,
+  ConversationInteractionRequest,
+  ConversationInteractionResponse,
   ConversationViewModel,
   MessageReference,
   TranscriptBlock,
@@ -64,7 +66,7 @@ export function createConversationProjection(
       entries: snapshot.entries,
       activeRun: snapshot.active_run,
     },
-    diagnostics: [],
+    diagnostics: parsed.value.diagnostics,
   }
   return {
     ok: true,
@@ -87,6 +89,7 @@ export function applyConversationProjectionEvent(
       code: "event_gap",
       message: `Agent presentation event requires a fresh snapshot: ${parsed.value.event.type}`,
       originalType: parsed.value.event.type,
+      params: { originalType: parsed.value.event.type },
     }
     const state = appendDiagnostic(current, diagnostic)
     return {
@@ -189,6 +192,110 @@ function normalizeEnvironmentScope(value: unknown): {
   }
 }
 
+function projectInteractionRequest(
+  request: import("../contracts").InteractionRequest,
+): ConversationInteractionRequest {
+  if (request.type === "approval") {
+    const rawTarget = (request as typeof request & {
+      target?: {
+        environment_id?: string
+        display_name?: string
+        kind?: string
+        host?: string | null
+      } | null
+      environment?: {
+        id?: string
+        label?: string
+        kind?: string
+        host?: string | null
+      } | null
+      environment_id?: string | null
+      environment_label?: string | null
+      environment_kind?: string | null
+      environment_host?: string | null
+    })
+    const nestedTarget = rawTarget.target ?? rawTarget.environment
+    const targetRecord = nestedTarget as Record<string, unknown> | null
+    const environmentId =
+      stringField(targetRecord, "environment_id") ??
+      stringField(targetRecord, "id") ??
+      rawTarget.environment_id
+    return {
+      type: "approval",
+      callId: request.call_id,
+      toolName: request.tool_name,
+      summary: request.summary,
+      inputPreview: request.input_preview,
+      allowedResponses: request.allowed_responses,
+      risk: {
+        level: request.risk.level,
+        effects: request.risk.effects,
+        reasons: request.risk.reasons,
+        affectedResources: request.risk.affected_resources,
+      },
+      target: environmentId
+        ? {
+            environmentId,
+            displayName: nestedTarget
+              ? stringField(targetRecord, "display_name") ??
+                stringField(targetRecord, "label") ??
+                environmentId
+              : rawTarget.environment_label ?? environmentId,
+            kind:
+              (nestedTarget?.kind ?? rawTarget.environment_kind) === "ssh"
+                ? "ssh"
+                : "local",
+            host: nestedTarget?.host ?? rawTarget.environment_host ?? null,
+          }
+        : null,
+    }
+  }
+  if (request.type === "ask_user") {
+    return {
+      type: "ask_user",
+      callId: request.call_id,
+      questions: request.questions.map((question) => ({
+        id: question.id,
+        header: question.header,
+        question: question.question,
+        multiSelect: question.multi_select,
+        options: question.options,
+      })),
+    }
+  }
+  return {
+    type: "recovery",
+    callId: request.call_id,
+    toolName: request.tool_name,
+    message: request.message,
+    options: request.options,
+  }
+}
+
+function projectInteractionResponse(
+  response: import("../contracts").InteractionResponse,
+): ConversationInteractionResponse {
+  return response
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" ? value : null
+}
+
+function stringField(value: Record<string, unknown> | null, key: string) {
+  const field = value?.[key]
+  return typeof field === "string" ? field : null
+}
+
+function durationMs(startedAt: string | null, completedAt: string | null) {
+  if (!startedAt || !completedAt) return null
+  const milliseconds =
+    new Date(completedAt).getTime() - new Date(startedAt).getTime()
+  return Number.isFinite(milliseconds) && milliseconds >= 0
+    ? milliseconds
+    : null
+}
+
 function appendDiagnostic(
   state: ConversationProjectionState,
   diagnostic: PresentationDiagnostic,
@@ -240,8 +347,8 @@ function projectTranscript(
       runId: null,
       createdAt: null,
       originalType: diagnostic.originalType,
-      message: diagnostic.message,
       diagnosticCode: diagnostic.code,
+      diagnosticParams: diagnostic.params,
     })
   })
   return transcript
@@ -292,6 +399,9 @@ function appendActiveRun(
           model: state.session?.model.model ?? null,
           sourceField: partType,
           truncated: false,
+          startedAt: null,
+          completedAt: null,
+          durationMs: null,
         })
       } else {
         transcript.push({
@@ -347,7 +457,7 @@ function appendActiveRun(
       createdAt: activeRun.run.updated_at,
       interactionId: interaction.interaction_id,
       status: "pending",
-      request: interaction.request,
+      request: projectInteractionRequest(interaction.request),
       response: null,
     })
   }
@@ -385,7 +495,7 @@ function projectEntry(
           createdAt: entry.created_at,
           interactionId: entry.payload.interaction_id,
           status: "pending",
-          request: entry.payload.request,
+          request: projectInteractionRequest(entry.payload.request),
           response: null,
         },
       ]
@@ -399,7 +509,7 @@ function projectEntry(
           interactionId: entry.payload.interaction_id,
           status: "resolved",
           request: null,
-          response: entry.payload.response,
+          response: projectInteractionResponse(entry.payload.response),
         },
       ]
     case "plan":
@@ -436,6 +546,8 @@ function projectMessageEntry(
       model?: unknown
       source?: unknown
       truncated?: unknown
+      started_at?: unknown
+      completed_at?: unknown
     }
     if (currentPart.type === "reasoning_trace") {
       blocks.push({
@@ -453,6 +565,12 @@ function projectMessageEntry(
             ? currentPart.source
             : "reasoning_trace",
         truncated: currentPart.truncated === true,
+        startedAt: stringOrNull(currentPart.started_at),
+        completedAt: stringOrNull(currentPart.completed_at),
+        durationMs: durationMs(
+          stringOrNull(currentPart.started_at),
+          stringOrNull(currentPart.completed_at),
+        ),
       })
       continue
     }
@@ -481,6 +599,9 @@ function projectMessageEntry(
           model: state.session?.model.model ?? null,
           sourceField: "reasoning_summary",
           truncated: false,
+          startedAt: null,
+          completedAt: null,
+          durationMs: null,
         })
         break
       case "tool_call":
@@ -514,8 +635,8 @@ function projectMessageEntry(
           runId: entry.run_id,
           createdAt: entry.created_at,
           originalType: part.original_type,
-          message: part.display_text,
           diagnosticCode: "unknown_message_part",
+          diagnosticParams: { originalType: part.original_type },
         })
         break
       default: {
@@ -533,8 +654,8 @@ function projectMessageEntry(
           runId: entry.run_id,
           createdAt: entry.created_at,
           originalType,
-          message: `This message contains unsupported content (${originalType}).`,
           diagnosticCode: "unknown_message_part",
+          diagnosticParams: { originalType },
         })
       }
     }
@@ -597,8 +718,8 @@ function projectToolResult(
       runId: entry.run_id,
       createdAt: entry.created_at,
       originalType: "orphan_tool_result",
-      message: part.summary ?? "Tool result could not be matched to a tool call.",
       diagnosticCode: "orphan_tool_result",
+      diagnosticParams: { callId: part.call_id },
     })
     return
   }
@@ -699,7 +820,13 @@ function unknownEntry(
     runId: entry.run_id,
     createdAt: entry.created_at,
     originalType: String(entry.type),
-    message: `This conversation contains unsupported content (${String(entry.type)}).`,
     diagnosticCode,
+    diagnosticParams:
+      diagnosticCode === "unsupported_entry_version"
+        ? {
+            originalType: String(entry.type),
+            version: String(entry.schema_version),
+          }
+        : { originalType: String(entry.type) },
   }
 }

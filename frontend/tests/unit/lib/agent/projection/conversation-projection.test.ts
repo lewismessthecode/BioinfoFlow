@@ -152,7 +152,7 @@ describe("Conversation projection", () => {
         status: "pending",
         request: expect.objectContaining({
           type: "approval",
-          tool_name: "bash",
+          toolName: "bash",
         }),
       }),
     ])
@@ -261,11 +261,46 @@ describe("Conversation projection", () => {
         type: "unknown",
         originalType: "provider_checkpoint",
         diagnosticCode: "unknown_message_part",
+        diagnosticParams: { originalType: "provider_checkpoint" },
       }),
       expect.objectContaining({
         type: "unknown",
         originalType: "harness_checkpoint",
         diagnosticCode: "unknown_history_entry",
+        diagnosticParams: { originalType: "harness_checkpoint" },
+      }),
+    ])
+  })
+
+  it("retains known Conversation content and appends a diagnostic for a newer protocol version", () => {
+    const result = createConversationProjection({
+      ...emptySnapshotFixture,
+      presentation_schema_version: 99,
+      entries: [
+        {
+          id: "entry-known",
+          session_id: "session-1",
+          run_id: "run-1",
+          sequence: 1,
+          schema_version: 1,
+          created_at: "2026-08-16T08:00:00.000Z",
+          type: "message",
+          payload: {
+            role: "assistant",
+            parts: [{ id: "known", type: "text", text: "Still visible" }],
+          },
+        },
+      ],
+    })
+    if (!result.ok) throw new Error(result.diagnostic.message)
+
+    expect(result.view.protocolVersion).toBe(99)
+    expect(result.view.transcript).toEqual([
+      expect.objectContaining({ type: "message", text: "Still visible" }),
+      expect.objectContaining({
+        type: "unknown",
+        diagnosticCode: "unsupported_protocol_version",
+        diagnosticParams: { version: "99" },
       }),
     ])
   })

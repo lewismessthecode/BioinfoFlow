@@ -21,6 +21,7 @@ import type {
   ToolExecutionMode,
   ToolProgressView,
 } from "@/lib/agent/contracts"
+import type { ActivityGroupTranscriptBlock } from "@/lib/agent/conversation-model/types"
 import { cn } from "@/lib/utils"
 
 type AgentToolCardProps = {
@@ -30,7 +31,8 @@ type AgentToolCardProps = {
 }
 
 type AgentActivityGroupProps = {
-  tools: ToolProgressView[]
+  tools?: ToolProgressView[]
+  activityGroup?: ActivityGroupTranscriptBlock
   executionMode?: ToolExecutionMode
   defaultExpanded?: boolean
 }
@@ -158,25 +160,30 @@ export function AgentToolCard({
 
 export function AgentActivityGroup({
   tools,
+  activityGroup,
   executionMode,
   defaultExpanded,
 }: AgentActivityGroupProps) {
+  const resolvedTools = useMemo(
+    () => tools ?? (activityGroup ? toolsFromActivityGroup(activityGroup) : []),
+    [activityGroup, tools],
+  )
   const t = useTranslations("agentActivity")
   const detailsId = useId()
   const disclosureKey = useMemo(
-    () => `tool-group:${tools.map((tool) => tool.call_id).join("|")}`,
-    [tools],
+    () => `tool-group:${resolvedTools.map((tool) => tool.call_id).join("|")}`,
+    [resolvedTools],
   )
   const [expanded, setExpanded] = useActivityDisclosure(
     disclosureKey,
-    defaultExpanded ?? tools.some((tool) => isActive(tool.status)),
+    defaultExpanded ?? resolvedTools.some((tool) => isActive(tool.status)),
   )
   const resolvedExecutionMode =
-    executionMode ?? commonExecutionMode(tools) ?? "mixed"
+    executionMode ?? activityGroup?.executionMode ?? commonExecutionMode(resolvedTools) ?? "mixed"
   const summaryKey = `group.${resolvedExecutionMode}`
   const groupedTools = useMemo(
-    () => groupContiguousToolsByCategory(tools),
-    [tools],
+    () => groupContiguousToolsByCategory(resolvedTools),
+    [resolvedTools],
   )
 
   return (
@@ -189,15 +196,15 @@ export function AgentActivityGroup({
         className="group/summary flex min-h-9 w-full min-w-0 items-center gap-2 rounded-[6px] px-1 py-1.5 text-left text-xs transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
         aria-expanded={expanded}
         aria-controls={detailsId}
-        aria-label={t(summaryKey, { count: tools.length })}
+        aria-label={t(summaryKey, { count: resolvedTools.length })}
         onClick={() => setExpanded((value) => !value)}
       >
-        <GroupStatusIcon tools={tools} />
+        <GroupStatusIcon tools={resolvedTools} />
         <span className="min-w-0 flex-1 truncate text-foreground/78">
-          {t(summaryKey, { count: tools.length })}
+          {t(summaryKey, { count: resolvedTools.length })}
         </span>
         <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
-          {groupStatusLabel(t, tools)}
+          {groupStatusLabel(t, resolvedTools)}
         </span>
         {expanded ? (
           <ChevronDown aria-hidden="true" className="size-3.5 opacity-60 transition-opacity group-hover/summary:opacity-100" />
@@ -414,4 +421,83 @@ function durationNumberFormatter(locale: string) {
   const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 })
   durationNumberFormatters.set(locale, formatter)
   return formatter
+}
+
+function toolsFromActivityGroup(
+  group: ActivityGroupTranscriptBlock,
+): ToolProgressView[] {
+  return group.activities.map((activity) => ({
+    call_id: activity.callId,
+    group_id: group.id,
+    execution_mode: group.executionMode,
+    name: activity.name,
+    display_name: activity.displayName,
+    category: activityCategory(activity.category),
+    summary: activity.summary,
+    arguments: jsonObject(activity.input),
+    status: activity.status,
+    revision: 0,
+    started_at: activity.startedAt,
+    completed_at: activity.completedAt,
+    input_summary: null,
+    output_summary: stringValue(activity.output),
+    error: activity.error,
+    public_details: [
+      detail(activity, "input", activity.input, "json"),
+      detail(activity, "output", activity.output, "text"),
+      detail(activity, "error", activity.error, "text"),
+    ].filter((item) => item !== null),
+  }))
+}
+
+function detail(
+  activity: ActivityGroupTranscriptBlock["activities"][number],
+  kind: "input" | "output" | "error",
+  value: unknown,
+  format: "json" | "text",
+) {
+  const text = stringValue(value)
+  if (text === null) return null
+  return {
+    id: `${activity.id}:${kind}`,
+    kind,
+    label: null,
+    value: text,
+    format,
+    copyable: true,
+    truncated: false,
+    redacted: false,
+  }
+}
+
+function activityCategory(value: string): ToolProgressView["category"] {
+  return [
+    "read",
+    "search",
+    "command",
+    "edit",
+    "write",
+    "workflow",
+    "plan",
+    "interaction",
+    "other",
+  ].includes(value)
+    ? (value as ToolProgressView["category"])
+    : "other"
+}
+
+function jsonObject(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, never>)
+    : {}
+}
+
+function stringValue(value: unknown) {
+  if (value === null || value === undefined) return null
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
 }

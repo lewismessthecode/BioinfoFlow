@@ -22,6 +22,7 @@ import {
   type AgentArtifactContent,
 } from "@/lib/agent/client"
 import type { ArtifactRefPart } from "@/lib/agent/contracts"
+import type { ArtifactTranscriptBlock } from "@/lib/agent/conversation-model/types"
 import { AlertCircle, Download, Loader2, RefreshCw } from "@/lib/icons"
 
 const MAX_TEXT_PREVIEW_BYTES = 1024 * 1024
@@ -52,10 +53,11 @@ type ArtifactPreview =
   | { kind: "error" }
 
 type AgentArtifactReferenceProps = {
-  part: ArtifactRefPart
+  part?: ArtifactRefPart
+  artifact?: ArtifactTranscriptBlock
 }
 
-export function AgentArtifactReference({ part }: AgentArtifactReferenceProps) {
+export function AgentArtifactReference({ part, artifact: block }: AgentArtifactReferenceProps) {
   const locale = useLocale()
   const t = useTranslations("agentHistory")
   const [open, setOpen] = useState(false)
@@ -67,7 +69,10 @@ export function AgentArtifactReference({ part }: AgentArtifactReferenceProps) {
   const requestRef = useRef(0)
   const contentRef = useRef<AgentArtifactContent | null>(null)
   const imageUrlRef = useRef<string | null>(null)
-  const label = part.title ?? part.artifact_id
+  const artifactId = block?.artifactId ?? part?.artifact_id ?? ""
+  const title = block?.title ?? part?.title ?? null
+  const mediaType = block?.mediaType ?? part?.media_type ?? null
+  const label = title ?? artifactId
 
   useEffect(
     () => () => {
@@ -102,14 +107,14 @@ export function AgentArtifactReference({ part }: AgentArtifactReferenceProps) {
     setDownloadFailed(false)
 
     try {
-      const detail = await getAgentArtifact(part.artifact_id, {
+      const detail = await getAgentArtifact(artifactId, {
         signal: controller.signal,
       })
       if (requestRef.current !== requestId) return
       setArtifact(detail)
 
-      const mediaType = artifactMediaType(detail, part)
-      const previewLimit = previewSizeLimit(mediaType)
+      const resolvedMediaType = artifactMediaType(detail, mediaType)
+      const previewLimit = previewSizeLimit(resolvedMediaType)
       const sizeBytes = artifactSize(detail)
       const hasStoredFile = Boolean(
         detail.resource_ref?.kind === "stored_file" ||
@@ -133,12 +138,12 @@ export function AgentArtifactReference({ part }: AgentArtifactReferenceProps) {
         return
       }
 
-      const content = await fetchAgentArtifactContent(part.artifact_id, {
+      const content = await fetchAgentArtifactContent(artifactId, {
         signal: controller.signal,
       })
       if (requestRef.current !== requestId) return
       contentRef.current = content
-      const responseMediaType = content.mediaType || mediaType
+      const responseMediaType = content.mediaType || resolvedMediaType
       const responseLimit = previewSizeLimit(responseMediaType)
       if (responseLimit === null) {
         setPreview({ kind: "unavailable", reason: "type" })
@@ -177,7 +182,7 @@ export function AgentArtifactReference({ part }: AgentArtifactReferenceProps) {
     try {
       const content =
         contentRef.current ??
-        (await fetchAgentArtifactContent(part.artifact_id, {
+        (await fetchAgentArtifactContent(artifactId, {
           signal: controllerRef.current?.signal,
         }))
       saveBlob(content.blob, content.filename || artifact?.title || label)
@@ -189,9 +194,10 @@ export function AgentArtifactReference({ part }: AgentArtifactReferenceProps) {
   }
 
   const resourceMediaType = artifact
-    ? artifactMediaType(artifact, part)
-    : part.media_type
+    ? artifactMediaType(artifact, mediaType)
+    : mediaType
   const resourceSize = artifact ? artifactSize(artifact) : null
+  if (!artifactId) return null
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -201,7 +207,7 @@ export function AgentArtifactReference({ part }: AgentArtifactReferenceProps) {
         className="h-auto min-h-11 w-full min-w-0 justify-start rounded-[8px] bg-transparent px-2.5 py-2 text-xs hover:bg-muted/35 dark:bg-transparent dark:hover:bg-muted/35"
         onClick={() => handleOpenChange(true)}
         aria-label={t("artifact.open", { name: label })}
-        data-artifact-id={part.artifact_id}
+        data-artifact-id={artifactId}
         data-testid="agent-artifact-card"
       >
         <Badge variant="outline">{t("reference.artifact")}</Badge>
@@ -211,12 +217,12 @@ export function AgentArtifactReference({ part }: AgentArtifactReferenceProps) {
         >
           {label}
         </span>
-        {part.media_type ? (
+        {mediaType ? (
           <span
             className="max-w-[42%] truncate font-mono text-[11px] text-muted-foreground"
             translate="no"
           >
-            {part.media_type}
+            {mediaType}
           </span>
         ) : null}
       </Button>
@@ -351,8 +357,8 @@ function ArtifactPreviewContent({
   )
 }
 
-function artifactMediaType(artifact: AgentArtifact, part: ArtifactRefPart) {
-  return String(artifact.resource_ref?.mime_type ?? part.media_type ?? "")
+function artifactMediaType(artifact: AgentArtifact, fallback: string | null) {
+  return String(artifact.resource_ref?.mime_type ?? fallback ?? "")
     .split(";", 1)[0]
     .trim()
     .toLowerCase()

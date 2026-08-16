@@ -5,16 +5,23 @@ import { useTranslations } from "next-intl"
 import { Check, Circle, Loader2 } from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import type { PlanEntry, PlanItemStatus } from "@/lib/agent/contracts"
+import type { PlanTranscriptBlock } from "@/lib/agent/conversation-model/types"
 import { cn } from "@/lib/utils"
 
 export function AgentPlanEntry({
   entry,
+  plan,
 }: {
-  entry: Pick<PlanEntry, "payload">
+  entry?: Pick<PlanEntry, "payload">
+  plan?: PlanTranscriptBlock
 }) {
   const t = useTranslations("agentHistory")
-  const total = entry.payload.items.length
-  const completed = entry.payload.items.filter(
+  const payload = plan
+    ? { title: plan.title, items: plan.items }
+    : entry?.payload
+  if (!payload) return null
+  const total = payload.items.length
+  const completed = payload.items.filter(
     (item) => item.status === "completed",
   ).length
 
@@ -22,14 +29,14 @@ export function AgentPlanEntry({
     <section className="grid gap-3 border-y border-border/60 py-3 [content-visibility:auto] [contain-intrinsic-size:auto_128px]">
       <div className="flex min-w-0 items-center justify-between gap-3">
         <h2 className="truncate text-sm font-semibold text-foreground">
-          {entry.payload.title ?? t("plan.title")}
+          {payload.title ?? t("plan.title")}
         </h2>
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
           {t("plan.progress", { completed, total })}
         </span>
       </div>
       <ol className="grid gap-2">
-        {entry.payload.items.map((item) => (
+        {payload.items.map((item) => (
           <li key={item.id} className="flex min-w-0 items-start gap-2.5 text-sm">
             <PlanStatusIcon status={item.status} />
             <span

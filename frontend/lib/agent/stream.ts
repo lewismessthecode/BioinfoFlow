@@ -71,6 +71,7 @@ export function subscribeAgentEvents(options: {
               code: "invalid_payload",
               message: `Agent presentation SSE event mismatch: ${eventType}`,
               originalType: eventType,
+              params: { originalType: eventType },
             })
           })
         }
@@ -123,6 +124,7 @@ function parseAgentEvent(
         code: "invalid_payload",
         message: `Invalid Agent presentation payload: ${eventType}`,
         originalType: eventType,
+        params: { originalType: eventType },
       },
     }
   }

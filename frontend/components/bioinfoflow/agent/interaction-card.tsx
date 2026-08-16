@@ -6,51 +6,77 @@ import { useTranslations } from "next-intl"
 import { Loader2 } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/ui/status-badge"
+import type { InteractionRequest, InteractionResponse, JsonObject } from "@/lib/agent/contracts"
 import type {
-  AskUserQuestion,
-  InteractionRequest,
-  InteractionResponse,
-  JsonObject,
-  RecoveryInteractionResponse,
-} from "@/lib/agent/contracts"
+  ConversationAskUserQuestion,
+  ConversationInteractionRequest,
+  ConversationInteractionResponse,
+  InteractionTranscriptBlock,
+} from "@/lib/agent/conversation-model/types"
 import { cn } from "@/lib/utils"
 
 type AgentInteractionCardProps = {
-  interactionId: string
-  request: InteractionRequest
+  interaction?: InteractionTranscriptBlock
+  interactionId?: string
+  request?: InteractionRequest
   response?: InteractionResponse | null
-  onRespond?: (response: InteractionResponse) => void | Promise<void>
+  actionable?: boolean
+  expired?: boolean
+  onRespond?: (response: ConversationInteractionResponse) => void | Promise<void>
 }
 
 type PendingAction =
   | "approve"
   | "reject"
   | "answers"
-  | RecoveryInteractionResponse["choice"]
+  | Extract<ConversationInteractionResponse, { type: "recovery" }>["choice"]
   | null
 
 export function AgentInteractionCard({
   ...props
 }: AgentInteractionCardProps) {
-  return <AgentInteractionCardState key={props.interactionId} {...props} />
+  const interactionId = props.interaction?.interactionId ?? props.interactionId
+  const request = props.interaction?.request ?? normalizeLegacyRequest(props.request)
+  const response = props.interaction?.response ?? props.response ?? null
+  if (!interactionId || !request) return null
+  return (
+    <AgentInteractionCardState
+      key={interactionId}
+      interactionId={interactionId}
+      request={request}
+      response={response}
+      actionable={props.actionable ?? Boolean(props.onRespond)}
+      expired={props.expired ?? false}
+      onRespond={props.onRespond}
+    />
+  )
 }
 
 function AgentInteractionCardState({
   interactionId,
   request,
   response,
+  actionable,
+  expired,
   onRespond,
-}: AgentInteractionCardProps) {
+}: {
+  interactionId: string
+  request: ConversationInteractionRequest
+  response: ConversationInteractionResponse | null
+  actionable: boolean
+  expired: boolean
+  onRespond?: (response: ConversationInteractionResponse) => void | Promise<void>
+}) {
   const t = useTranslations("agentInteraction")
   const [answers, setAnswers] = useState<Record<string, string[]>>({})
   const [pendingAction, setPendingAction] = useState<PendingAction>(null)
   const [submitFailed, setSubmitFailed] = useState(false)
   const submittingRef = useRef(false)
   const completed = response?.type === request.type
-  const status = interactionStatus(request, response)
+  const status = expired ? "expired" : interactionStatus(request, response)
   const tone = interactionTone(status)
 
-  async function submit(nextResponse: InteractionResponse, action: PendingAction) {
+  async function submit(nextResponse: ConversationInteractionResponse, action: PendingAction) {
     if (submittingRef.current || completed || !onRespond) return
     submittingRef.current = true
     setSubmitFailed(false)
@@ -76,7 +102,7 @@ function AgentInteractionCardState({
       data-interaction-type={request.type}
       data-testid="agent-interaction-card"
     >
-      {!completed ? (
+      {!completed && !expired ? (
         <p
           role="status"
           aria-live="polite"
@@ -96,9 +122,9 @@ function AgentInteractionCardState({
       {request.type === "approval" ? (
         <ApprovalInteraction
           request={request}
-          completed={completed}
+          completed={completed || expired}
           pendingAction={pendingAction}
-          canRespond={Boolean(onRespond)}
+          canRespond={actionable && Boolean(onRespond)}
           onSubmit={submit}
         />
       ) : null}
@@ -108,10 +134,10 @@ function AgentInteractionCardState({
           interactionId={interactionId}
           request={request}
           response={response?.type === "ask_user" ? response : null}
-          completed={completed}
+          completed={completed || expired}
           answers={answers}
           pendingAction={pendingAction}
-          canRespond={Boolean(onRespond)}
+          canRespond={actionable && Boolean(onRespond)}
           onAnswersChange={setAnswers}
           onSubmit={submit}
         />
@@ -121,9 +147,9 @@ function AgentInteractionCardState({
         <RecoveryInteraction
           request={request}
           response={response?.type === "recovery" ? response : null}
-          completed={completed}
+          completed={completed || expired}
           pendingAction={pendingAction}
-          canRespond={Boolean(onRespond)}
+          canRespond={actionable && Boolean(onRespond)}
           onSubmit={submit}
         />
       ) : null}
@@ -148,11 +174,11 @@ function ApprovalInteraction({
   canRespond,
   onSubmit,
 }: {
-  request: Extract<InteractionRequest, { type: "approval" }>
+  request: Extract<ConversationInteractionRequest, { type: "approval" }>
   completed: boolean
   pendingAction: PendingAction
   canRespond: boolean
-  onSubmit: (response: InteractionResponse, action: PendingAction) => Promise<void>
+  onSubmit: (response: ConversationInteractionResponse, action: PendingAction) => Promise<void>
 }) {
   const t = useTranslations("agentInteraction")
   const submitting = pendingAction !== null
@@ -171,7 +197,25 @@ function ApprovalInteraction({
         </span>
       </div>
 
-      {request.input_preview ? (
+      {request.target ? (
+        <div className="grid gap-1.5">
+          <h3 className="text-xs font-medium text-muted-foreground">
+            {t("approval.target")}
+          </h3>
+          <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/80">
+            <span className="font-medium" translate="no">
+              {request.target.displayName}
+            </span>
+            {request.target.host ? (
+              <span className="font-mono text-muted-foreground" translate="no">
+                {request.target.host}
+              </span>
+            ) : null}
+          </p>
+        </div>
+      ) : null}
+
+      {request.inputPreview ? (
         <div className="grid gap-1.5">
           <h3 className="text-xs font-medium text-muted-foreground">
             {t("approval.input")}
@@ -180,7 +224,7 @@ function ApprovalInteraction({
             className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-[8px] bg-background/75 px-3 py-2 font-mono text-xs leading-5 text-foreground/75"
             translate="no"
           >
-            {request.input_preview}
+            {request.inputPreview}
           </pre>
         </div>
       ) : null}
@@ -189,7 +233,7 @@ function ApprovalInteraction({
 
       {!completed ? (
         <div className="flex flex-wrap justify-end gap-2">
-          {request.allowed_responses.includes("reject") ? (
+          {request.allowedResponses.includes("reject") ? (
             <Button
               type="button"
               variant="outline"
@@ -206,7 +250,7 @@ function ApprovalInteraction({
               )}
             </Button>
           ) : null}
-          {request.allowed_responses.includes("approve") ? (
+          {request.allowedResponses.includes("approve") ? (
             <Button
               type="button"
               disabled={submitting || !canRespond}
@@ -230,13 +274,13 @@ function ApprovalInteraction({
 function RiskDetails({
   request,
 }: {
-  request: Extract<InteractionRequest, { type: "approval" }>
+  request: Extract<ConversationInteractionRequest, { type: "approval" }>
 }) {
   const t = useTranslations("agentInteraction")
   const sections = [
     ["approval.effects", request.risk.effects],
     ["approval.reasons", request.risk.reasons],
-    ["approval.resources", request.risk.affected_resources],
+    ["approval.resources", request.risk.affectedResources],
   ] as const
 
   return (
@@ -273,14 +317,14 @@ function AskUserInteraction({
   onSubmit,
 }: {
   interactionId: string
-  request: Extract<InteractionRequest, { type: "ask_user" }>
-  response: Extract<InteractionResponse, { type: "ask_user" }> | null
+  request: Extract<ConversationInteractionRequest, { type: "ask_user" }>
+  response: Extract<ConversationInteractionResponse, { type: "ask_user" }> | null
   completed: boolean
   answers: Record<string, string[]>
   pendingAction: PendingAction
   canRespond: boolean
   onAnswersChange: (answers: Record<string, string[]>) => void
-  onSubmit: (response: InteractionResponse, action: PendingAction) => Promise<void>
+  onSubmit: (response: ConversationInteractionResponse, action: PendingAction) => Promise<void>
 }) {
   const t = useTranslations("agentInteraction")
   const selectedAnswers = completed
@@ -292,9 +336,9 @@ function AskUserInteraction({
       (question) => (selectedAnswers[question.id]?.length ?? 0) > 0,
     )
 
-  function updateAnswer(question: AskUserQuestion, optionId: string) {
+  function updateAnswer(question: ConversationAskUserQuestion, optionId: string) {
     const current = answers[question.id] ?? []
-    const next = question.multi_select
+    const next = question.multiSelect
       ? current.includes(optionId)
         ? current.filter((id) => id !== optionId)
         : [...current, optionId]
@@ -306,7 +350,7 @@ function AskUserInteraction({
     const values: JsonObject = {}
     for (const question of request.questions) {
       const selected = selectedAnswers[question.id] ?? []
-      values[question.id] = question.multi_select ? selected : selected[0] ?? null
+      values[question.id] = question.multiSelect ? selected : selected[0] ?? null
     }
     return onSubmit({ type: "ask_user", answers: values }, "answers")
   }
@@ -338,7 +382,7 @@ function AskUserInteraction({
                   )}
                 >
                   <input
-                    type={question.multi_select ? "checkbox" : "radio"}
+                    type={question.multiSelect ? "checkbox" : "radio"}
                     name={`${interactionId}:${question.id}`}
                     value={option.id}
                     checked={selected}
@@ -388,12 +432,12 @@ function RecoveryInteraction({
   canRespond,
   onSubmit,
 }: {
-  request: Extract<InteractionRequest, { type: "recovery" }>
-  response: Extract<InteractionResponse, { type: "recovery" }> | null
+  request: Extract<ConversationInteractionRequest, { type: "recovery" }>
+  response: Extract<ConversationInteractionResponse, { type: "recovery" }> | null
   completed: boolean
   pendingAction: PendingAction
   canRespond: boolean
-  onSubmit: (response: InteractionResponse, action: PendingAction) => Promise<void>
+  onSubmit: (response: ConversationInteractionResponse, action: PendingAction) => Promise<void>
 }) {
   const t = useTranslations("agentInteraction")
   const optionById = new Map(request.options.map((option) => [option.id, option]))
@@ -458,7 +502,7 @@ function RecoveryInteraction({
 }
 
 function recoveryChoices(optionIds: string[]) {
-  const choices: RecoveryInteractionResponse["choice"][] = []
+  const choices: Extract<ConversationInteractionResponse, { type: "recovery" }>["choice"][] = []
   const seen = new Set<string>()
   for (const optionId of optionIds) {
     if (
@@ -468,7 +512,7 @@ function recoveryChoices(optionIds: string[]) {
       continue
     }
     seen.add(optionId)
-    choices.push(optionId as RecoveryInteractionResponse["choice"])
+    choices.push(optionId as Extract<ConversationInteractionResponse, { type: "recovery" }>["choice"])
   }
   return choices
 }
@@ -484,7 +528,7 @@ function SubmittingLabel() {
 }
 
 function answersFromResponse(
-  questions: AskUserQuestion[],
+  questions: ConversationAskUserQuestion[],
   answers?: JsonObject,
 ) {
   const selected: Record<string, string[]> = {}
@@ -502,8 +546,8 @@ function answersFromResponse(
 }
 
 function interactionStatus(
-  request: InteractionRequest,
-  response?: InteractionResponse | null,
+  request: ConversationInteractionRequest,
+  response?: ConversationInteractionResponse | null,
 ) {
   if (!response || response.type !== request.type) return "pending" as const
   if (response.type === "approval") {
@@ -513,8 +557,85 @@ function interactionStatus(
   return "resolved" as const
 }
 
-function interactionTone(status: ReturnType<typeof interactionStatus>) {
-  if (status === "pending") return "warning" as const
+function interactionTone(status: ReturnType<typeof interactionStatus> | "expired") {
+  if (status === "pending" || status === "expired") return "warning" as const
   if (status === "rejected") return "destructive" as const
   return "success" as const
+}
+
+function normalizeLegacyRequest(
+  request?: InteractionRequest,
+): ConversationInteractionRequest | null {
+  if (!request) return null
+  if (request.type === "approval") {
+    const legacyTarget = request as typeof request & {
+      target?: {
+        environment_id?: string
+        display_name?: string
+        kind?: string
+        host?: string | null
+      } | null
+      environment?: {
+        id?: string
+        label?: string
+        kind?: string
+        host?: string | null
+      } | null
+    }
+    const target = legacyTarget.target ?? legacyTarget.environment
+    const targetRecord = target as Record<string, unknown> | null
+    return {
+      type: "approval",
+      callId: request.call_id,
+      toolName: request.tool_name,
+      summary: request.summary,
+      inputPreview: request.input_preview,
+      allowedResponses: request.allowed_responses,
+      risk: {
+        level: request.risk.level,
+        effects: request.risk.effects,
+        reasons: request.risk.reasons,
+        affectedResources: request.risk.affected_resources,
+      },
+      target: target
+        ? {
+            environmentId:
+              stringField(targetRecord, "environment_id") ??
+              stringField(targetRecord, "id") ??
+              "unknown",
+            displayName:
+              stringField(targetRecord, "display_name") ??
+              stringField(targetRecord, "label") ??
+              "Unknown",
+            kind: target.kind === "ssh" ? "ssh" : "local",
+            host: target.host ?? null,
+          }
+        : null,
+    }
+  }
+  if (request.type === "ask_user") {
+    return {
+      type: "ask_user",
+      callId: request.call_id,
+      questions: request.questions.map((question) => ({
+        id: question.id,
+        header: question.header,
+        question: question.question,
+        multiSelect: question.multi_select,
+        options: question.options,
+      })),
+    }
+  }
+  return {
+    type: "recovery",
+    callId: request.call_id,
+    toolName: request.tool_name,
+    message: request.message,
+    options: request.options,
+  }
+}
+
+function stringField(value: Record<string, unknown> | null, key: string) {
+  const field = value?.[key]
+  return typeof field === "string" ? field : null
 }
