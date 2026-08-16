@@ -565,7 +565,12 @@ async def test_first_user_message_sets_a_concise_conversation_title(
 
     snapshot = await repository.snapshot(str(session.id))
     assert snapshot.session.title == "Summarize this very long"
+    assert len(snapshot.entries) == 1
     assert snapshot.entries[0].payload.parts[0].text == prompt
+    assert "title" not in snapshot.entries[0].payload.model_dump(mode="json")
+    persisted = await repository.get_session(str(session.id))
+    assert persisted is not None
+    assert persisted.prompt_snapshot == {"system": "stable"}
 
 
 @pytest.mark.asyncio

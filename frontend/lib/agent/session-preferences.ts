@@ -1,25 +1,38 @@
 import type { AgentSessionSummary } from "./client"
+import type { ConversationSummary } from "./conversation-model/types"
 import type { SessionView } from "./contracts"
 
 const SESSION_SUMMARY_UPDATED_EVENT = "bioinfoflow:agent-session-summary-updated"
 
-export function publishAgentSessionSummary(summary: AgentSessionSummary) {
+export type AgentSessionSummaryUpdate =
+  | { kind: "snapshot"; summary: AgentSessionSummary }
+  | { kind: "conversation"; summary: ConversationSummary }
+
+function publishSessionSummaryUpdate(update: AgentSessionSummaryUpdate) {
   if (typeof window === "undefined") return
   window.dispatchEvent(
-    new CustomEvent<AgentSessionSummary>(SESSION_SUMMARY_UPDATED_EVENT, {
-      detail: summary,
+    new CustomEvent<AgentSessionSummaryUpdate>(SESSION_SUMMARY_UPDATED_EVENT, {
+      detail: update,
     }),
   )
 }
 
+export function publishAgentSessionSummary(summary: AgentSessionSummary) {
+  publishSessionSummaryUpdate({ kind: "snapshot", summary })
+}
+
+export function publishConversationSummary(summary: ConversationSummary) {
+  publishSessionSummaryUpdate({ kind: "conversation", summary })
+}
+
 export function subscribeAgentSessionSummaries(
-  listener: (summary: AgentSessionSummary) => void,
+  listener: (update: AgentSessionSummaryUpdate) => void,
 ) {
   if (typeof window === "undefined") return () => {}
 
   const handleEvent = (event: Event) => {
-    const summary = (event as CustomEvent<AgentSessionSummary>).detail
-    if (summary) listener(summary)
+    const update = (event as CustomEvent<AgentSessionSummaryUpdate>).detail
+    if (update) listener(update)
   }
 
   window.addEventListener(SESSION_SUMMARY_UPDATED_EVENT, handleEvent)

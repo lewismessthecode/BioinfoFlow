@@ -197,8 +197,24 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   }, [selectedProjectId, conversationProjectId, activeConversationId, projectConversations, setActiveConversationTitle])
 
   useEffect(() => {
-    return subscribeAgentSessionSummaries((summary) => {
+    return subscribeAgentSessionSummaries((update) => {
       setSessions((current) => {
+        if (update.kind === "conversation") {
+          const summary = update.summary
+          if (!current.some((item) => item.id === summary.id)) return current
+          return current.map((item) =>
+            item.id === summary.id
+              ? {
+                  ...item,
+                  title: summary.title,
+                  project_id: summary.projectId,
+                  status: summary.status,
+                }
+              : item,
+          )
+        }
+
+        const summary = update.summary
         const exists = current.some((item) => item.id === summary.id)
         const next = exists
           ? current.map((item) => (item.id === summary.id ? summary : item))

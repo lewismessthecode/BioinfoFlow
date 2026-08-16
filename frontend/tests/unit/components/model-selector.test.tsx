@@ -142,6 +142,29 @@ describe("ModelSelector", () => {
     )
   })
 
+  it("keeps transient composer feedback outside the selector row geometry", () => {
+    const view = render(
+      <ModelSelector
+        models={models}
+        selectedModel={{ provider: "provider-openai", model: "gpt-4o-mini" }}
+        onSelectModel={vi.fn()}
+        variant="composer"
+        feedback={<p role="status">Updating model</p>}
+      />,
+    )
+
+    const trigger = screen.getByRole("combobox", { name: "GPT-4o mini" })
+    const field = trigger.closest('[data-composer-selector-field="true"]')
+    const feedback = view.container.querySelector(
+      '[data-composer-selector-feedback="true"]',
+    )
+
+    expect(field).toHaveClass("relative", "min-w-0", "shrink-0")
+    expect(trigger).toHaveClass("h-11", "min-h-11", "lg:h-8", "lg:min-h-8")
+    expect(feedback).toHaveClass("absolute", "bottom-full")
+    expect(feedback).toContainElement(screen.getByRole("status"))
+  })
+
   it("keeps the shared icon slot when the composer uses automatic model selection", () => {
     render(
       <ModelSelector
