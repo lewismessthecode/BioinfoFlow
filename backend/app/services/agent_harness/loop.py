@@ -1479,7 +1479,18 @@ class AgentLoop:
             session_id,
             run_id=run_id,
             entry_type="notice",
-            payload={"code": code, "message": message},
+            payload={
+                "code": code,
+                "message": message,
+                "details": (
+                    {"limit_seconds": self.limits.run_timeout_seconds}
+                    if code == "run_timeout_exceeded"
+                    else {
+                        "total_tokens": total_tokens,
+                        "token_budget": self.limits.run_token_budget,
+                    }
+                ),
+            },
         )
         await self.publish(EntryCommittedEvent(entry=entry_contract(notice)))
         await self._fail(run_id, code, message)
@@ -1850,6 +1861,8 @@ def _recovery_request(call: ToolCall, *, message: str) -> dict[str, Any]:
         "call_id": call.call_id,
         "tool_name": call.name,
         "message": message,
+        "message_code": "unknown_tool_effect",
+        "message_params": {"tool_name": call.name},
         "options": [
             {
                 "id": "inspect",

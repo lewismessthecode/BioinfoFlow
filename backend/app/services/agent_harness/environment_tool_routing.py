@@ -64,23 +64,25 @@ async def execute_routed_tool_call(
             environment_id,
             lambda workspace: execute(workspace, routed_call),
         )
-        if result.status == "completed":
-            result = replace(
-                result,
-                output={**result.output, "environment_id": environment_id},
-            )
+        result = replace(
+            result,
+            output={**result.output, "environment_id": environment_id},
+        )
         if result.interaction is None:
             return result
         environment = router.scope.require(environment_id)
+        target = {
+            "environment_id": environment.environment_id,
+            "display_name": environment.display_name,
+            "kind": environment.kind,
+        }
+        if environment.host:
+            target["host"] = environment.host
         return replace(
             result,
             interaction=replace(
                 result.interaction,
-                target={
-                    "environment_id": environment.environment_id,
-                    "display_name": environment.display_name,
-                    "kind": environment.kind,
-                },
+                target=target,
             ),
         )
     except EnvironmentRoutingError as exc:
