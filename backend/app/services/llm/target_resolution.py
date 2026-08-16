@@ -9,14 +9,11 @@ from app.services.llm.credentials import (
     CredentialMaterial,
     derive_model_target_revision,
 )
-from app.services.llm.provider_templates import (
-    get_provider_template,
-    normalize_anthropic_base_url,
-    normalize_ollama_base_url,
-    provider_template_for_kind,
+from app.services.llm.registry import (
+    provider_kind_for_template_id,
+    provider_runtime_for_kind,
     route_provider_model_name,
 )
-from app.services.llm.registry import provider_spec_for_kind
 from app.services.model_runtime.contracts import (
     ModelTarget,
     NetworkAccessPolicy,
@@ -39,18 +36,12 @@ def resolve_provider_endpoint(
     """
 
     template_id = str((provider_metadata or {}).get("providerTemplate") or "").strip()
-    template = get_provider_template(template_id) if template_id else None
-    effective_kind = template.kind if template is not None else provider_kind
+    effective_kind = provider_kind_for_template_id(template_id) or provider_kind
+    definition = provider_runtime_for_kind(effective_kind)
 
     candidate = str(base_url or "").strip()
-    if not candidate:
-        spec = provider_spec_for_kind(effective_kind)
-        if spec is not None:
-            candidate = spec.endpoint.default_base_url
-        else:
-            legacy_template = template or provider_template_for_kind(effective_kind)
-            if legacy_template is not None and not legacy_template.base_url_required:
-                candidate = str(legacy_template.default_base_url or "").strip()
+    if not candidate and definition is not None:
+        candidate = str(definition.default_base_url or "").strip()
     if not candidate:
         return None
     return _normalize_exact_endpoint(effective_kind, candidate)
@@ -75,6 +66,8 @@ async def resolve_model_target(
         base_url,
         provider_metadata=provider_metadata,
     )
+    if exact_endpoint is None:
+        raise ValueError("Provider endpoint is required for model runtime")
     network_access = await resolve_provider_network_access(
         exact_endpoint,
         private_endpoint_authorized=private_endpoint_authorized,
@@ -102,6 +95,9 @@ def build_model_target(
     credential: CredentialMaterial,
 ) -> ModelTarget:
     """Build the immutable target consumed by Provider Test and Agent Runtime."""
+
+    if exact_endpoint is None:
+        raise ValueError("Provider endpoint is required for model runtime")
 
     routed_model_name = route_provider_model_name(
         provider_kind,
@@ -132,9 +128,22 @@ def build_model_target(
 
 def _normalize_exact_endpoint(provider_kind: str, base_url: str) -> str:
     if provider_kind == "ollama":
-        return normalize_ollama_base_url(base_url)
+        normalized = base_url.strip().rstrip("/")
+        normalized = normalized.replace(
+            "http://localhost:", "http://127.0.0.1:", 1
+        )
+        normalized = normalized.replace(
+            "https://localhost:", "https://127.0.0.1:", 1
+        )
+        if normalized.endswith("/v1"):
+            normalized = normalized[:-3].rstrip("/")
+        return normalized
     if provider_kind == "anthropic":
-        return normalize_anthropic_base_url(base_url)
+        normalized = base_url.strip().rstrip("/")
+        for suffix in ("/v1/messages", "/v1"):
+            if normalized.endswith(suffix):
+                return normalized[: -len(suffix)].rstrip("/")
+        return normalized
     return base_url.strip().rstrip("/")
 
 

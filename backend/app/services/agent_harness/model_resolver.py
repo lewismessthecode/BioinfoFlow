@@ -139,7 +139,7 @@ class AgentModelResolver:
                 private_endpoint_authorized=server_authorized,
                 resolve_dns=not server_authorized,
             )
-        except PermissionDeniedError:
+        except (PermissionDeniedError, ValueError):
             return None
         request_args: dict[str, Any] = {}
         if target.resolved_api_key():

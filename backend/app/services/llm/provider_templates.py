@@ -6,7 +6,11 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 from app.models.llm import LlmWireProtocol
-from app.services.llm.registry import ModelSpec, list_provider_specs
+from app.services.llm.registry import (
+    ModelSpec,
+    list_provider_specs,
+    route_provider_model_name as route_registry_model_name,
+)
 
 
 ProviderDiscovery = Literal[
@@ -569,7 +573,7 @@ def route_provider_model_name(
     *,
     wire_protocol: str = LlmWireProtocol.CHAT_COMPLETIONS,
 ) -> str:
-    return PROVIDER_REGISTRY.route_model_name(
+    return route_registry_model_name(
         provider_kind,
         model_name,
         wire_protocol,

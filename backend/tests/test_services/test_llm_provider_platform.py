@@ -9,6 +9,7 @@ import socket
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.services.llm.bootstrap import sync_environment_llm_catalog
 from app.services.llm.catalog import LlmCatalogService, _validate_provider_base_url
+from app.services.llm.credentials import CredentialMaterial
 from app.services.llm.provider_templates import (
     ProviderRegistry,
     ProviderTemplate,
@@ -17,7 +18,10 @@ from app.services.llm.provider_templates import (
     normalize_provider_base_url,
     provider_template_for_provider,
 )
-from app.services.llm.target_resolution import resolve_provider_endpoint
+from app.services.llm.target_resolution import (
+    resolve_model_target,
+    resolve_provider_endpoint,
+)
 from app.utils.exceptions import PermissionDeniedError
 
 
@@ -197,6 +201,37 @@ def test_resolve_provider_endpoint_uses_exact_registry_defaults_and_preserves_ov
         )
         == expected
     )
+
+
+@pytest.mark.asyncio
+async def test_custom_provider_without_endpoint_fails_before_network(monkeypatch) -> None:
+    network_called = False
+
+    async def unexpected_network_access(*args, **kwargs):
+        nonlocal network_called
+        del args, kwargs
+        network_called = True
+        return "public_only"
+
+    monkeypatch.setattr(
+        "app.services.llm.target_resolution.resolve_provider_network_access",
+        unexpected_network_access,
+    )
+
+    with pytest.raises(ValueError, match="endpoint is required"):
+        await resolve_model_target(
+            endpoint_id="custom-provider",
+            provider_kind="openai_compatible",
+            model_name="custom-model",
+            wire_protocol="chat_completions",
+            base_url=None,
+            provider_metadata={"providerTemplate": "openai-compatible"},
+            credential=CredentialMaterial(api_key="custom-secret", source="stored"),
+            private_endpoint_authorized=False,
+            resolve_dns=True,
+        )
+
+    assert network_called is False
 
 
 def test_custom_provider_template_can_declare_responses_support() -> None:
@@ -497,6 +532,58 @@ async def test_model_discovery_rejects_unapproved_public_http_before_network(
         )
 
     assert network_called is False
+
+
+@pytest.mark.asyncio
+async def test_custom_provider_discovery_preserves_explicit_endpoint_path(
+    db_session,
+    monkeypatch,
+) -> None:
+    requested: list[str] = []
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            del args, kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            del exc_type, exc, tb
+            return None
+
+        async def get(self, url: str, **kwargs):
+            del kwargs
+            requested.append(url)
+            return httpx.Response(
+                200,
+                json={"data": []},
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
+    provider = LlmProvider(
+        name="Custom provider",
+        kind="openai_compatible",
+        base_url="https://relay.example/custom-api",
+        scope="user",
+        workspace_id=None,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+
+    await LlmCatalogService(db_session).discover_models_unchecked(
+        provider,
+        network_access="public_only",
+    )
+
+    assert requested == ["https://relay.example/custom-api/models"]
 
 
 @pytest.mark.asyncio

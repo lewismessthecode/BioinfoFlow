@@ -1779,6 +1779,45 @@ async def test_llm_provider_test_selects_model_and_rejects_foreign_model(
 
 
 @pytest.mark.asyncio
+async def test_custom_provider_test_without_endpoint_fails_before_probe(
+    async_client,
+    monkeypatch,
+) -> None:
+    provider_response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Missing endpoint provider",
+            "kind": "openai_compatible",
+        },
+    )
+    assert provider_response.status_code == 201
+    provider_id = provider_response.json()["data"]["id"]
+    model_response = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": provider_id,
+            "model_id": "custom-model",
+            "display_name": "Custom model",
+        },
+    )
+    assert model_response.status_code == 201
+
+    async def unexpected_probe(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("provider probe must not run without an endpoint")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        unexpected_probe,
+    )
+
+    tested = await async_client.post(f"/api/v1/llm/providers/{provider_id}/test")
+
+    assert tested.status_code == 422
+    assert "endpoint is required" in tested.text
+
+
+@pytest.mark.asyncio
 async def test_llm_provider_test_skips_and_rejects_stale_models(
     async_client,
     db_session,

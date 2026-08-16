@@ -56,6 +56,36 @@ async def test_event_hub_close_ends_existing_stream_and_allows_new_lifecycle() -
 
 
 @pytest.mark.asyncio
+async def test_event_hub_close_session_ends_only_deleted_session_streams() -> None:
+    hub = AgentEventHub()
+
+    async def snapshot():
+        return _snapshot()
+
+    deleted = hub.stream("deleted-session", snapshot)
+    retained = hub.stream("retained-session", snapshot)
+    assert (await anext(deleted)).type == "snapshot"
+    assert (await anext(retained)).type == "snapshot"
+
+    await hub.close_session("deleted-session")
+
+    with pytest.raises(StopAsyncIteration):
+        await anext(deleted)
+    event = AssistantDeltaEvent(
+        run_id=UUID("00000000-0000-0000-0000-000000000001"),
+        draft_id="draft-1",
+        part_id="draft-1:text",
+        part_type="text",
+        delta="still live",
+        start_offset=0,
+        end_offset=10,
+    )
+    await hub.publish("retained-session", event)
+    assert await anext(retained) == event
+    await retained.aclose()
+
+
+@pytest.mark.asyncio
 async def test_slow_event_subscriber_is_dropped_without_blocking_fast_subscribers() -> (
     None
 ):

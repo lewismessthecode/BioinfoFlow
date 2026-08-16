@@ -40,7 +40,6 @@ from app.services.llm.provider_templates import (
     get_provider_template,
     list_provider_templates,
     normalize_ollama_base_url,
-    normalize_openai_compatible_base_url,
     provider_template_for_kind,
     provider_template_for_provider,
     validate_provider_configuration,
@@ -1019,13 +1018,7 @@ class LlmCatalogService:
                 provider.base_url,
                 provider_metadata=provider.provider_metadata,
             )
-            if template and template.metadata.get("preserveOpenAIBaseUrl") is True:
-                base_url = (discovery_base_url or "").strip().rstrip("/")
-            else:
-                base_url = normalize_openai_compatible_base_url(
-                    discovery_base_url or "",
-                    prefer_loopback_ip=provider.kind == "vllm",
-                )
+            base_url = (discovery_base_url or "").strip().rstrip("/")
             if not base_url:
                 raise ValueError("Provider endpoint is required for model discovery")
             material = await self._provider_credential_material(provider)

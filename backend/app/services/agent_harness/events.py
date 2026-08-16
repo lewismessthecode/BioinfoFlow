@@ -73,6 +73,14 @@ class AgentEventHub:
         for queue in queues:
             _close_queue(queue)
 
+    async def close_session(self, session_id: str | UUID) -> None:
+        """End live streams for one deleted session without closing the hub."""
+
+        async with self._lock:
+            queues = tuple(self._subscribers.pop(str(session_id), ()))
+        for queue in queues:
+            _close_queue(queue)
+
 
 @dataclass(frozen=True)
 class _StreamClosed:

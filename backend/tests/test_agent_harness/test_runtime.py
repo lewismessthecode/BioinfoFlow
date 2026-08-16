@@ -459,7 +459,11 @@ async def test_cross_worker_delete_waits_for_running_bash_to_quiesce(
     snapshot = await deleting_worker.snapshot(session_id)
     assert _latest_run(snapshot).status == "cancelled"
     assert _latest_run(snapshot).termination_reason == "session_deleted"
+    events = deleting_worker.events(session_id)
+    assert (await anext(events)).type == "snapshot"
     await deleting_worker.delete_session(session_id)
+    with pytest.raises(StopAsyncIteration):
+        await anext(events)
     with pytest.raises(LookupError, match="agent session not found"):
         await deleting_worker.snapshot(session_id)
     await running_worker.shutdown()
