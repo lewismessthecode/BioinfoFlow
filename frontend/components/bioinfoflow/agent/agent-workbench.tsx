@@ -5,13 +5,10 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useMemo,
-  useRef,
   useState,
 } from "react"
 import type { RefObject } from "react"
 import type { ReactNode } from "react"
-import { useRouter } from "next/navigation"
 import { useLocale, useTranslations } from "next-intl"
 
 import { AgentComposer } from "@/components/bioinfoflow/agent/agent-composer"
@@ -22,6 +19,13 @@ import type {
 import { AgentContextPicker } from "@/components/bioinfoflow/agent/agent-context-picker"
 import { AgentModelConnectionDialog } from "@/components/bioinfoflow/agent/agent-model-connection-dialog"
 import { ConversationTranscript } from "@/components/bioinfoflow/agent/conversation-transcript"
+import {
+  environmentScopeFromSelection,
+  environmentSelectionEquals,
+  environmentSelectionFromSession,
+  useAgentWorkbenchController,
+  type DraftModelSelector,
+} from "@/components/bioinfoflow/agent/use-agent-workbench-controller"
 import { ModelSelector } from "@/components/bioinfoflow/chat/model-selector"
 import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -34,24 +38,16 @@ import { useAgentStarterPrompts } from "@/hooks/use-agent-starter-prompts"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
 import type { ModelSelection } from "@/hooks/use-llm-settings"
 import {
-  createAgentSession,
   dispatchAgentCommand,
   updateAgentSession,
 } from "@/lib/agent/client"
-import {
-  deleteAgentAttachment,
-  type AgentContextInput,
-} from "@/lib/agent/context"
+import type { AgentContextInput } from "@/lib/agent/context"
 import type {
   AgentPermissionMode,
   AgentWorkspaceAccess,
   InputPart,
   SessionView,
 } from "@/lib/agent/contracts"
-import {
-  fetchRemoteConnections,
-  type RemoteConnection,
-} from "@/lib/demo-connections"
 import {
   publishAgentSessionSummary,
   sessionSummaryFromView,
@@ -88,12 +84,6 @@ type AgentWorkbenchProps = {
   className?: string
 }
 
-type DraftModelSelector = {
-  modelId?: string
-  provider?: string
-  model?: string
-}
-
 export const AgentWorkbench = forwardRef<
   AgentWorkbenchHandle,
   AgentWorkbenchProps
@@ -118,235 +108,47 @@ export const AgentWorkbench = forwardRef<
   },
   ref,
 ) {
-  const router = useRouter()
-  const tEnvironment = useTranslations("agentComposer.environment")
-  const [localSessionId, setLocalSessionId] = useState<string | null>(null)
-  const [draftSessionId, setDraftSessionId] = useState<string | null>(null)
-  const [draftPermissionMode, setDraftPermissionMode] =
-    useState<AgentPermissionMode>("ask_dangerous")
-  const [draftWorkspaceAccess] = useState<AgentWorkspaceAccess>("read_write")
-  const [contextInputs, setContextInputs] = useState<AgentContextInput[]>([])
-  const [localEnvironmentSelection, setLocalEnvironmentSelection] =
-    useState<AgentEnvironmentSelection>({ mode: "auto" })
-  const [draftEffectiveEnvironmentSelection, setDraftEffectiveEnvironmentSelection] =
-    useState<AgentEnvironmentSelection>({ mode: "auto" })
-  const [draftEnvironmentSelectionPending, setDraftEnvironmentSelectionPending] =
-    useState(false)
-  const [remoteConnections, setRemoteConnections] = useState<
-    RemoteConnection[]
-  >([])
-  const [modelConnectionOpen, setModelConnectionOpen] = useState(false)
-  const createPromiseRef = useRef<Promise<string> | null>(null)
-  const cancelRef = useRef<(() => Promise<void>) | null>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const needsRouteSyncRef = useRef(sessionId === null)
-  const visibleEnvironmentSelection =
-    requestedEnvironmentSelection ?? localEnvironmentSelection
-  const visibleEnvironmentTargets = useMemo<readonly AgentEnvironmentTarget[]>(
-    () =>
-      environmentTargets ?? [
-        {
-          id: "local",
-          label: tEnvironment("local"),
-          kind: "local",
-          status: "online",
-        },
-        ...remoteConnections.map(environmentTargetFromConnection),
-      ],
-    [environmentTargets, remoteConnections, tEnvironment],
-  )
-
-  useEffect(() => {
-    if (environmentTargets) return
-    let active = true
-    void fetchRemoteConnections()
-      .then((connections) => {
-        if (active) setRemoteConnections(connections)
-      })
-      .catch(() => {
-        if (active) setRemoteConnections([])
-      })
-    return () => {
-      active = false
-    }
-  }, [environmentTargets])
-
-  const updateEnvironmentSelection = useCallback(
-    async (selection: AgentEnvironmentSelection) => {
-      if (onEnvironmentSelectionChange) {
-        await onEnvironmentSelectionChange(selection)
-        return
-      }
-
-      const previousSelection = localEnvironmentSelection
-      setLocalEnvironmentSelection(selection)
-      if (!draftSessionId) {
-        setDraftEffectiveEnvironmentSelection(selection)
-        return
-      }
-
-      setDraftEnvironmentSelectionPending(true)
-      try {
-        const snapshot = await updateAgentSession(draftSessionId, {
-          environmentScope: environmentScopeFromSelection(selection),
-        })
-        publishAgentSessionSummary(sessionSummaryFromView(snapshot.session))
-        const effectiveSelection = environmentSelectionFromSession(
-          snapshot.session,
-        )
-        setLocalEnvironmentSelection(effectiveSelection)
-        setDraftEffectiveEnvironmentSelection(effectiveSelection)
-      } catch (error) {
-        setLocalEnvironmentSelection(previousSelection)
-        throw error
-      } finally {
-        setDraftEnvironmentSelectionPending(false)
-      }
-    },
-    [
-      draftSessionId,
-      localEnvironmentSelection,
-      onEnvironmentSelectionChange,
-    ],
-  )
-
-  const effectiveSessionId = sessionId ?? localSessionId
-  const setCancelHandler = useCallback(
-    (handler: (() => Promise<void>) | null) => {
-      cancelRef.current = handler
-    },
-    [],
-  )
-
-  const ensureSession = useCallback(
-    (modelSelector?: DraftModelSelector) => {
-      if (effectiveSessionId) return Promise.resolve(effectiveSessionId)
-      if (draftSessionId) return Promise.resolve(draftSessionId)
-      if (createPromiseRef.current) return createPromiseRef.current
-
-      const request = createAgentSession({
-        projectId,
-        permissionMode: draftPermissionMode,
-        workspaceAccess: draftWorkspaceAccess,
-        environmentScope: environmentScopeFromSelection(
-          visibleEnvironmentSelection,
-        ),
-        ...modelSelector,
-      })
-        .then((snapshot) => {
-          const id = snapshot.session.id
-          publishAgentSessionSummary(sessionSummaryFromView(snapshot.session))
-          const effectiveSelection = environmentSelectionFromSession(
-            snapshot.session,
-          )
-          setLocalEnvironmentSelection(effectiveSelection)
-          setDraftEffectiveEnvironmentSelection(effectiveSelection)
-          setDraftSessionId(id)
-          return id
-        })
-        .finally(() => {
-          createPromiseRef.current = null
-        })
-      createPromiseRef.current = request
-      return request
-    },
-    [
-      draftPermissionMode,
-      draftWorkspaceAccess,
-      draftSessionId,
-      effectiveSessionId,
-      projectId,
-      visibleEnvironmentSelection,
-    ],
-  )
-
-  const routeToSession = useCallback(
-    (id: string) => {
-      if (!needsRouteSyncRef.current) return
-      needsRouteSyncRef.current = false
-      setLocalSessionId(id)
-      onActiveSessionIdChange?.(id)
-      router.replace(`/agent/${id}`)
-    },
-    [onActiveSessionIdChange, router],
-  )
-
-  const addContextInput = useCallback((input: AgentContextInput) => {
-    setContextInputs((current) =>
-      current.some((item) => item.id === input.id)
-        ? current
-        : [...current, input],
-    )
-  }, [])
-
-  const removeContextInput = useCallback((inputId: string) => {
-    setContextInputs((current) => {
-      const removed = current.find((item) => item.id === inputId)
-      if (removed?.input_part.type === "attachment_ref") {
-        void deleteAgentAttachment(removed.input_part.attachment_id)
-      }
-      return current.filter((item) => item.id !== inputId)
-    })
-  }, [])
-
-  const updateDraftPermissionMode = useCallback(
-    async (mode: AgentPermissionMode) => {
-      if (!draftSessionId) {
-        setDraftPermissionMode(mode)
-        return
-      }
-
-      const snapshot = await updateAgentSession(draftSessionId, {
-        permissionMode: mode,
-      })
-      publishAgentSessionSummary(sessionSummaryFromView(snapshot.session))
-      setDraftPermissionMode(snapshot.session.permission_mode)
-    },
-    [draftSessionId],
-  )
+  const controller = useAgentWorkbenchController({
+    sessionId,
+    projectId,
+    onActiveSessionIdChange,
+    environmentTargets,
+    requestedEnvironmentSelection,
+    effectiveEnvironmentSelection,
+    environmentSelectionPending,
+    onEnvironmentSelectionChange,
+  })
 
   useImperativeHandle(
     ref,
     () => ({
-      focusInput: () => textareaRef.current?.focus(),
-      stop: () => void cancelRef.current?.(),
-      newConversation: () => {
-        setLocalSessionId(null)
-        setDraftSessionId(null)
-        onActiveSessionIdChange?.("")
-        router.push("/agent")
-      },
+      focusInput: () => controller.textareaRef.current?.focus(),
+      stop: controller.stop,
+      newConversation: controller.newConversation,
     }),
-    [onActiveSessionIdChange, router],
+    [controller.newConversation, controller.stop, controller.textareaRef],
   )
 
   const common = {
     projectId,
-    contextInputs,
-    setContextInputs,
-    addContextInput,
-    removeContextInput,
-    ensureSession,
-    routeToSession,
-    textareaRef,
-    setCancelHandler,
-    setModelConnectionOpen,
+    contextInputs: controller.contextInputs,
+    setContextInputs: controller.setContextInputs,
+    addContextInput: controller.addContextInput,
+    removeContextInput: controller.removeContextInput,
+    ensureSession: controller.ensureSession,
+    routeToSession: controller.routeToSession,
+    textareaRef: controller.textareaRef,
+    setCancelHandler: controller.setCancelHandler,
+    setModelConnectionOpen: controller.setModelConnectionOpen,
     onOpenRun,
     conversationModelControls,
-    environmentTargets: visibleEnvironmentTargets,
-    environmentSelection: visibleEnvironmentSelection,
-    effectiveEnvironmentSelection:
-      effectiveEnvironmentSelection ??
-      (requestedEnvironmentSelection
-        ? visibleEnvironmentSelection
-        : draftEffectiveEnvironmentSelection),
-    environmentSelectionPending:
-      environmentSelectionPending || draftEnvironmentSelectionPending,
-    onEnvironmentSelectionChange: updateEnvironmentSelection,
+    environmentTargets: controller.visibleEnvironmentTargets,
+    environmentSelection: controller.visibleEnvironmentSelection,
+    effectiveEnvironmentSelection: controller.effectiveEnvironmentSelection,
+    environmentSelectionPending: controller.environmentSelectionPending,
+    onEnvironmentSelectionChange: controller.updateEnvironmentSelection,
     hasControlledEnvironmentSelection:
-      requestedEnvironmentSelection !== undefined ||
-      effectiveEnvironmentSelection !== undefined ||
-      onEnvironmentSelectionChange !== undefined,
+      controller.hasControlledEnvironmentSelection,
   }
 
   return (
@@ -357,11 +159,11 @@ export const AgentWorkbench = forwardRef<
       )}
       data-testid="agent-workbench"
     >
-      {effectiveSessionId ? (
+      {controller.effectiveSessionId ? (
         sessionState ? (
           <SessionWorkbench
-            key={effectiveSessionId}
-            sessionId={effectiveSessionId}
+            key={controller.effectiveSessionId}
+            sessionId={controller.effectiveSessionId}
             state={sessionState}
             allowLegacyProjection
             interactive={interactive}
@@ -371,8 +173,8 @@ export const AgentWorkbench = forwardRef<
           />
         ) : (
           <LiveSessionWorkbench
-            key={effectiveSessionId}
-            sessionId={effectiveSessionId}
+            key={controller.effectiveSessionId}
+            sessionId={controller.effectiveSessionId}
             interactive={interactive}
             onSessionResolved={onSessionResolved}
             headerActions={headerActions}
@@ -381,18 +183,18 @@ export const AgentWorkbench = forwardRef<
         )
       ) : (
         <DraftWorkbench
-          permissionMode={draftPermissionMode}
-          workspaceAccess={draftWorkspaceAccess}
-          draftSessionId={draftSessionId}
-          onPermissionModeChange={updateDraftPermissionMode}
+          permissionMode={controller.draftPermissionMode}
+          workspaceAccess={controller.draftWorkspaceAccess}
+          draftSessionId={controller.draftSessionId}
+          onPermissionModeChange={controller.updateDraftPermissionMode}
           headerActions={headerActions}
           starterPrompts={starterPrompts}
           {...common}
         />
       )}
       <AgentModelConnectionDialog
-        open={modelConnectionOpen}
-        onOpenChange={setModelConnectionOpen}
+        open={controller.modelConnectionOpen}
+        onOpenChange={controller.setModelConnectionOpen}
       />
     </main>
   )
@@ -990,45 +792,6 @@ function modelSelectionEquals(
 ) {
   if (left.model_id && right.model_id) return left.model_id === right.model_id
   return left.provider === right.provider && left.model === right.model
-}
-
-function environmentSelectionFromSession(
-  session: SessionView,
-): AgentEnvironmentSelection {
-  const scope = session.environment_scope
-  return scope?.mode === "manual"
-    ? { mode: "manual", targetIds: scope.selected_environment_ids }
-    : { mode: "auto" }
-}
-
-function environmentScopeFromSelection(selection: AgentEnvironmentSelection) {
-  return selection.mode === "manual"
-    ? { mode: "manual" as const, selected_environment_ids: selection.targetIds }
-    : { mode: "auto" as const }
-}
-
-function environmentSelectionEquals(
-  left: AgentEnvironmentSelection,
-  right: AgentEnvironmentSelection,
-) {
-  if (left.mode !== right.mode) return false
-  if (left.mode === "auto" || right.mode === "auto") return true
-  return (
-    left.targetIds.length === right.targetIds.length &&
-    left.targetIds.every((targetId, index) => targetId === right.targetIds[index])
-  )
-}
-
-function environmentTargetFromConnection(
-  connection: RemoteConnection,
-): AgentEnvironmentTarget {
-  return {
-    id: connection.id,
-    label: connection.name.trim() || connection.host,
-    description: `${connection.username}@${connection.host}:${connection.port}`,
-    kind: "ssh",
-    status: connection.status,
-  }
 }
 
 function isModelConfigurationError(error: unknown) {

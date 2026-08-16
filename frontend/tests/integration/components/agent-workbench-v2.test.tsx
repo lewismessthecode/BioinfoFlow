@@ -840,4 +840,23 @@ describe("AgentWorkbench v2", () => {
     act(() => ref.current?.stop())
     await waitFor(() => expect(state.cancel).toHaveBeenCalledTimes(1))
   })
+
+  it("starts a new conversation through the workbench imperative handle", () => {
+    const onActiveSessionIdChange = vi.fn()
+    const ref = { current: null as AgentWorkbenchHandle | null }
+
+    renderWithProviders(
+      <AgentWorkbench
+        ref={ref}
+        sessionId="session-1"
+        projectId="project-1"
+        onActiveSessionIdChange={onActiveSessionIdChange}
+      />,
+    )
+
+    act(() => ref.current?.newConversation())
+
+    expect(onActiveSessionIdChange).toHaveBeenCalledWith("")
+    expect(mocks.push).toHaveBeenCalledWith("/agent")
+  })
 })
