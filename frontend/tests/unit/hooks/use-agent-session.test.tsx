@@ -143,27 +143,29 @@ describe("useAgentSession", () => {
     })
   })
 
-  it("projects an unknown Harness event into a safe transcript diagnostic", () => {
+  it("projects an unknown Harness event into a safe transcript diagnostic", async () => {
     const { result } = renderHook(() => useAgentSession("session-1"))
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
     const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
 
     act(() => {
-      subscription.onEvent({ type: "snapshot", snapshot: snapshot() })
       subscription.onDiagnostic({
         code: "unknown_event_type",
-        message: "Unsupported Agent presentation event: harness.private",
+        params: { eventType: "harness.private" },
         originalType: "harness.private",
       })
     })
 
-    expect(result.current.session?.id).toBe("session-1")
-    expect(result.current.conversationView?.transcript).toEqual([
-      expect.objectContaining({
-        type: "unknown",
-        originalType: "harness.private",
-        diagnosticCode: "unknown_event_type",
-      }),
-    ])
+    await waitFor(() => {
+      expect(result.current.session?.id).toBe("session-1")
+      expect(result.current.conversationView?.transcript).toEqual([
+        expect.objectContaining({
+          type: "unknown",
+          originalType: "harness.private",
+          diagnosticCode: "unknown_event_type",
+        }),
+      ])
+    })
   })
 
   it("does not subscribe when the session snapshot is not found", async () => {
@@ -546,10 +548,8 @@ describe("useAgentSession", () => {
       .mockResolvedValueOnce(patchResponse)
 
     const { result } = renderHook(() => useAgentSession("session-1"))
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
     const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
-    act(() => {
-      subscription.onEvent({ type: "snapshot", snapshot: snapshot() })
-    })
 
     await act(async () => {
       await result.current.updateModel({
