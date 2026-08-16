@@ -308,15 +308,30 @@ describe("AgentComposer", () => {
       ),
     ).toHaveLength(1)
     expect(
+      screen
+        .getByTestId("agent-starter-prompt-list")
+        .querySelector('[data-starter-slot-icon="check"]'),
+    ).toHaveClass("lucide-check")
+    expect(
       screen.getByTestId("agent-starter-prompt-list").querySelectorAll(
-        '[data-starter-slot-icon="message"]',
+        '[data-starter-slot-icon="message-square"]',
       ),
     ).toHaveLength(1)
     expect(
+      screen
+        .getByTestId("agent-starter-prompt-list")
+        .querySelector('[data-starter-slot-icon="message-square"]'),
+    ).toHaveClass("lucide-message-square")
+    expect(
       screen.getByTestId("agent-starter-prompt-list").querySelectorAll(
-        '[data-starter-slot-icon="rotate"]',
+        '[data-starter-slot-icon="history"]',
       ),
     ).toHaveLength(1)
+    expect(
+      screen
+        .getByTestId("agent-starter-prompt-list")
+        .querySelector('[data-starter-slot-icon="history"]'),
+    ).toHaveClass("lucide-history")
     await user.click(
       screen.getByRole("button", { name: "Review the latest run" }),
     )

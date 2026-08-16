@@ -61,6 +61,7 @@ export {
   Github,
   Globe,
   HardDrive,
+  History,
   Home,
   Info,
   KeyRound,

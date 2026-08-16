@@ -472,7 +472,7 @@ type PlanItem = {
   status: PlanItemStatus
 }
 
-export type PlanPayload = {
+type PlanPayload = {
   plan_id: string
   revision: number
   title?: string | null
