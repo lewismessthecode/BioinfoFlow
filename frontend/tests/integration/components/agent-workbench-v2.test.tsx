@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   dispatchCommand: vi.fn(),
   updateSession: vi.fn(),
   publishSummary: vi.fn(),
+  publishConversation: vi.fn(),
   replace: vi.fn(),
   push: vi.fn(),
   useSession: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock("@/lib/agent/client", () => ({
 
 vi.mock("@/lib/agent/session-preferences", () => ({
   publishAgentSessionSummary: mocks.publishSummary,
+  publishConversationSummary: mocks.publishConversation,
   sessionSummaryFromView: (session: Record<string, unknown>) => session,
 }))
 
@@ -103,6 +105,7 @@ vi.mock("@/components/bioinfoflow/chat/model-selector", () => ({
     disabled,
     selectedModel,
     onSelectModel,
+    feedback,
   }: {
     disabled?: boolean
     selectedModel?: { provider?: string | null; model?: string | null } | null
@@ -111,21 +114,36 @@ vi.mock("@/components/bioinfoflow/chat/model-selector", () => ({
       model: string
       model_id: string
     }) => void
+    feedback?: ReactNode
   }) => (
-    <button
-      type="button"
-      disabled={disabled}
-      data-selected-provider={selectedModel?.provider ?? ""}
-      onClick={() =>
-        onSelectModel({
-          provider: "provider-2",
-          model: "claude-sonnet",
-          model_id: "model-record-2",
-        })
-      }
+    <div
+      data-testid="mock-model-selector-field"
+      data-composer-selector-field="true"
+      className="relative min-w-0 shrink-0"
     >
-      {selectedModel?.model ?? "GPT-5.6"} model selector
-    </button>
+      <button
+        type="button"
+        disabled={disabled}
+        data-selected-provider={selectedModel?.provider ?? ""}
+        onClick={() =>
+          onSelectModel({
+            provider: "provider-2",
+            model: "claude-sonnet",
+            model_id: "model-record-2",
+          })
+        }
+      >
+        {selectedModel?.model ?? "GPT-5.6"} model selector
+      </button>
+      {feedback ? (
+        <div
+          data-composer-selector-feedback="true"
+          className="absolute bottom-full"
+        >
+          {feedback}
+        </div>
+      ) : null}
+    </div>
   ),
 }))
 
@@ -356,6 +374,7 @@ describe("AgentWorkbench v2", () => {
     mocks.dispatchCommand.mockReset()
     mocks.updateSession.mockReset()
     mocks.publishSummary.mockReset()
+    mocks.publishConversation.mockReset()
     mocks.replace.mockReset()
     mocks.push.mockReset()
     mocks.useSession.mockReset()
@@ -442,10 +461,12 @@ describe("AgentWorkbench v2", () => {
       screen.getByRole("heading", { name: "emptyTitle", level: 1 }),
     ).toHaveClass(
       "mb-4",
-      "text-[15px]",
+      "text-balance",
+      "text-[18px]",
+      "sm:text-[19px]",
       "font-medium",
-      "tracking-normal",
-      "text-muted-foreground",
+      "tracking-[-0.015em]",
+      "text-foreground/80",
     )
     expect(screen.queryByText("emptyDescription")).not.toBeInTheDocument()
     expect(screen.queryByText("capabilityHint")).not.toBeInTheDocument()
@@ -796,30 +817,32 @@ describe("AgentWorkbench v2", () => {
   })
 
   it("publishes refreshed session titles for the sidebar without rendering them in the canvas", () => {
-    const initial = sessionState()
+    const initial = sessionState({ session: null })
     mocks.useSession.mockReturnValue(initial)
     const view = renderWithProviders(
       <AgentWorkbench sessionId="session-1" projectId="project-1" />,
     )
 
-    expect(mocks.publishSummary).toHaveBeenCalledWith(
+    expect(mocks.publishConversation).toHaveBeenCalledWith(
       expect.objectContaining({ title: "Variant review" }),
     )
-    mocks.publishSummary.mockClear()
+    mocks.publishConversation.mockClear()
 
-    const refreshedSession = {
-      ...snapshot().session,
-      title: "RNA-seq QC Plan",
-      updated_at: "2026-08-15T00:00:03Z",
+    const refreshedView = {
+      ...conversationView([]),
+      conversation: {
+        ...conversationView([]).conversation,
+        title: "RNA-seq QC Plan",
+      },
     }
     mocks.useSession.mockReturnValue(
-      sessionState({ session: refreshedSession }),
+      sessionState({ session: null, conversationView: refreshedView }),
     )
     view.rerender(
       <AgentWorkbench sessionId="session-1" projectId="project-1" />,
     )
 
-    expect(mocks.publishSummary).toHaveBeenCalledWith(
+    expect(mocks.publishConversation).toHaveBeenCalledWith(
       expect.objectContaining({ title: "RNA-seq QC Plan" }),
     )
     expect(
@@ -874,6 +897,12 @@ describe("AgentWorkbench v2", () => {
     })
     expect(modelSelector).toHaveAttribute("data-selected-provider", "provider-1")
     await user.click(modelSelector)
+    const modelField = screen.getByTestId("mock-model-selector-field")
+    expect(modelField).toHaveClass("relative", "min-w-0", "shrink-0")
+    expect(await screen.findByRole("status")).toHaveTextContent("model.updating")
+    expect(
+      modelField.querySelector('[data-composer-selector-feedback="true"]'),
+    ).toHaveClass("absolute", "bottom-full")
     await user.click(screen.getByRole("button", { name: "Change permission" }))
     await user.click(
       screen.getByRole("button", { name: "Choose manual environments" }),
@@ -888,6 +917,34 @@ describe("AgentWorkbench v2", () => {
       selected_environment_ids: ["local", "gpu-01"],
     })
     expect(screen.getByText("Environment pending: true")).toBeInTheDocument()
+  })
+
+  it("keeps model update errors above the dock row and offers retry", async () => {
+    const user = userEvent.setup()
+    const updateModel = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("model update failed"))
+      .mockResolvedValueOnce(undefined)
+    mocks.useSession.mockReturnValue(sessionState({ updateModel }))
+
+    renderWithProviders(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    await user.click(
+      screen.getByRole("button", { name: "gpt-5.6 model selector" }),
+    )
+
+    const field = screen.getByTestId("mock-model-selector-field")
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "model.updateError",
+    )
+    expect(
+      field.querySelector('[data-composer-selector-feedback="true"]'),
+    ).toHaveClass("absolute", "bottom-full")
+
+    await user.click(screen.getByRole("button", { name: "model.retry" }))
+    expect(updateModel).toHaveBeenCalledTimes(2)
   })
 
   it.each(["archived", "closing", "deleted"] as const)(

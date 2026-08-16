@@ -4,7 +4,10 @@ import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useSidebarData } from "@/hooks/use-sidebar-data"
 import { apiRequest } from "@/lib/api"
 import type { AgentSessionSummary } from "@/lib/agent/client"
-import { publishAgentSessionSummary } from "@/lib/agent/session-preferences"
+import {
+  publishAgentSessionSummary,
+  publishConversationSummary,
+} from "@/lib/agent/session-preferences"
 import type { Project } from "@/lib/types"
 import { createAppWrapper } from "@/tests/app-test-utils"
 
@@ -483,14 +486,13 @@ describe("useSidebarData", () => {
 
     await waitFor(() => expect(result.current.sidebar.projects).toHaveLength(1))
     act(() => {
-      publishAgentSessionSummary(
-        session({
-          id: "session-1",
-          project_id: project.id,
-          title: "Started analysis",
-          updated_at: "2026-06-04T00:00:03Z",
-        }),
-      )
+      publishConversationSummary({
+        id: "session-1",
+        projectId: project.id,
+        workspaceId: "workspace-1",
+        title: "Started analysis",
+        status: "active",
+      })
     })
 
     expect(
@@ -502,7 +504,6 @@ describe("useSidebarData", () => {
       {
         ...conversations[0],
         title: "Started analysis",
-        updated_at: "2026-06-04T00:00:03Z",
       },
     ])
   })
@@ -690,14 +691,13 @@ describe("useSidebarData", () => {
     )
 
     act(() => {
-      publishAgentSessionSummary(
-        session({
-          id: "session-1",
-          project_id: "project-1",
-          title: "RNA-seq QC Plan",
-          updated_at: "2026-06-04T00:00:03Z",
-        }),
-      )
+      publishConversationSummary({
+        id: "session-1",
+        projectId: "project-1",
+        workspaceId: "workspace-1",
+        title: "RNA-seq QC Plan",
+        status: "active",
+      })
     })
 
     await waitFor(() =>

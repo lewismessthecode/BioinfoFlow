@@ -1,5 +1,6 @@
 "use client"
 
+import type { ReactNode } from "react"
 import { useState } from "react"
 import { useTranslations } from "next-intl"
 import {
@@ -44,6 +45,7 @@ interface ModelSelectorProps {
   allowAuto?: boolean
   variant?: "default" | "composer"
   compact?: boolean
+  feedback?: ReactNode
 }
 
 export function ModelSelector({
@@ -54,6 +56,7 @@ export function ModelSelector({
   allowAuto = false,
   variant = "default",
   compact = false,
+  feedback,
 }: ModelSelectorProps) {
   const t = useTranslations("settings.modelSelector")
   const [open, setOpen] = useState(false)
@@ -115,7 +118,9 @@ export function ModelSelector({
       </ComposerSelectorTrigger>
     )
     return isComposer ? (
-      <ComposerSelectorField>{configureTrigger}</ComposerSelectorField>
+      <ComposerSelectorField feedback={feedback}>
+        {configureTrigger}
+      </ComposerSelectorField>
     ) : (
       configureTrigger
     )
@@ -330,7 +335,9 @@ export function ModelSelector({
     </Popover>
   )
   return isComposer ? (
-    <ComposerSelectorField>{selector}</ComposerSelectorField>
+    <ComposerSelectorField feedback={feedback}>
+      {selector}
+    </ComposerSelectorField>
   ) : (
     selector
   )

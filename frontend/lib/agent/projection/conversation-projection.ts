@@ -9,6 +9,7 @@ import type {
   InteractionTranscriptBlock,
   ConversationViewModel,
   MessageReference,
+  ReasoningTranscriptBlock,
   TranscriptBlock,
 } from "../conversation-model/types"
 import type {
@@ -48,6 +49,23 @@ type HistoryProjectionContext = {
   groups: Map<string, ActivityGroupTranscriptBlock>
   calls: Map<string, { groupKey: string; activity: ActivityItem }>
   interactions: Map<string, InteractionTranscriptBlock>
+}
+
+type ReasoningProjectionInput = {
+  id: string
+  runId: string | null
+  createdAt: string | null
+  text: string
+  streaming: boolean
+  provider?: string | null
+  model?: string | null
+  sourceField?: string | null
+  truncated?: boolean
+  startedAt?: string | null
+  completedAt?: string | null
+  fallbackProvider?: string | null
+  fallbackModel?: string | null
+  fallbackSourceField: string
 }
 
 const COMPOSER_CAPABILITIES = {
@@ -368,10 +386,6 @@ function projectInteractionResponse(
   return response
 }
 
-function stringOrNull(value: unknown) {
-  return typeof value === "string" ? value : null
-}
-
 function stringField(value: Record<string, unknown> | null, key: string) {
   const field = value?.[key]
   return typeof field === "string" ? field : null
@@ -384,6 +398,28 @@ function durationMs(startedAt: string | null, completedAt: string | null) {
   return Number.isFinite(milliseconds) && milliseconds >= 0
     ? milliseconds
     : null
+}
+
+function projectReasoningBlock(
+  input: ReasoningProjectionInput,
+): ReasoningTranscriptBlock {
+  const startedAt = input.startedAt ?? null
+  const completedAt = input.completedAt ?? null
+  return {
+    type: "reasoning",
+    id: input.id,
+    runId: input.runId,
+    createdAt: input.createdAt,
+    text: input.text,
+    streaming: input.streaming,
+    provider: input.provider ?? input.fallbackProvider ?? null,
+    model: input.model ?? input.fallbackModel ?? null,
+    sourceField: input.sourceField ?? input.fallbackSourceField,
+    truncated: input.truncated ?? false,
+    startedAt,
+    completedAt,
+    durationMs: durationMs(startedAt, completedAt),
+  }
 }
 
 function appendDiagnostic(
@@ -501,23 +537,25 @@ function appendActiveRun(
   const draft = activeRun.assistant_draft
   if (draft) {
     for (const part of draft.parts) {
-      const partType = String(part.type)
-      if (partType === "reasoning_summary" || partType === "reasoning_trace") {
-        transcript.push({
-          type: "reasoning",
+      if (part.type === "reasoning_summary" || part.type === "reasoning_trace") {
+        transcript.push(projectReasoningBlock({
           id: `draft:${draft.id}:${part.id}`,
           runId: activeRun.run.id,
           createdAt: activeRun.run.updated_at,
           text: part.text,
           streaming: true,
-          provider: effectiveModel?.provider ?? state.session?.model.provider ?? null,
-          model: effectiveModel?.model ?? state.session?.model.model ?? null,
-          sourceField: partType,
-          truncated: false,
-          startedAt: null,
-          completedAt: null,
-          durationMs: null,
-        })
+          provider: part.provider,
+          model: part.model,
+          sourceField: part.source,
+          truncated: part.truncated,
+          startedAt: part.started_at,
+          completedAt: part.completed_at,
+          fallbackProvider:
+            effectiveModel?.provider ?? state.session?.model.provider ?? null,
+          fallbackModel:
+            effectiveModel?.model ?? state.session?.model.model ?? null,
+          fallbackSourceField: part.type,
+        }))
       } else {
         transcript.push({
           type: "message",
@@ -669,42 +707,6 @@ function projectMessageEntry(
   const blocks: TranscriptBlock[] = []
   const effectiveModel = runModel(state, entry.run_id)
   for (const part of entry.payload.parts) {
-    const currentPart = part as unknown as {
-      id: string
-      type: string
-      text?: unknown
-      provider?: unknown
-      model?: unknown
-      source?: unknown
-      truncated?: unknown
-      started_at?: unknown
-      completed_at?: unknown
-    }
-    if (currentPart.type === "reasoning_trace") {
-      blocks.push({
-        type: "reasoning",
-        id: `${entry.id}:${currentPart.id}`,
-        runId: entry.run_id,
-        createdAt: entry.created_at,
-        text: typeof currentPart.text === "string" ? currentPart.text : "",
-        streaming: false,
-        provider:
-          typeof currentPart.provider === "string" ? currentPart.provider : null,
-        model: typeof currentPart.model === "string" ? currentPart.model : null,
-        sourceField:
-          typeof currentPart.source === "string"
-            ? currentPart.source
-            : "reasoning_trace",
-        truncated: currentPart.truncated === true,
-        startedAt: stringOrNull(currentPart.started_at),
-        completedAt: stringOrNull(currentPart.completed_at),
-        durationMs: durationMs(
-          stringOrNull(currentPart.started_at),
-          stringOrNull(currentPart.completed_at),
-        ),
-      })
-      continue
-    }
     switch (part.type) {
       case "text":
         blocks.push({
@@ -718,22 +720,35 @@ function projectMessageEntry(
           streaming: false,
         })
         break
-      case "reasoning_summary":
-        blocks.push({
-          type: "reasoning",
+      case "reasoning_trace":
+        blocks.push(projectReasoningBlock({
           id: `${entry.id}:${part.id}`,
           runId: entry.run_id,
           createdAt: entry.created_at,
           text: part.text,
           streaming: false,
-          provider: effectiveModel?.provider ?? state.session?.model.provider ?? null,
-          model: effectiveModel?.model ?? state.session?.model.model ?? null,
-          sourceField: "reasoning_summary",
-          truncated: false,
-          startedAt: null,
-          completedAt: null,
-          durationMs: null,
-        })
+          provider: part.provider,
+          model: part.model,
+          sourceField: part.source,
+          truncated: part.truncated,
+          startedAt: part.started_at,
+          completedAt: part.completed_at,
+          fallbackSourceField: "reasoning_trace",
+        }))
+        break
+      case "reasoning_summary":
+        blocks.push(projectReasoningBlock({
+          id: `${entry.id}:${part.id}`,
+          runId: entry.run_id,
+          createdAt: entry.created_at,
+          text: part.text,
+          streaming: false,
+          fallbackProvider:
+            effectiveModel?.provider ?? state.session?.model.provider ?? null,
+          fallbackModel:
+            effectiveModel?.model ?? state.session?.model.model ?? null,
+          fallbackSourceField: "reasoning_summary",
+        }))
         break
       case "tool_call":
         projectToolCall(entry, part, blocks, context)

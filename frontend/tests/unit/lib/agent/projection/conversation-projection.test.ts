@@ -435,6 +435,56 @@ describe("Conversation projection", () => {
     ])
   })
 
+  it("preserves live reasoning trace provenance and timing metadata", () => {
+    const activeRun = activeSnapshotFixture.active_run
+    expect(activeRun).not.toBeNull()
+    if (!activeRun) return
+
+    const snapshot = {
+      ...activeSnapshotFixture,
+      active_run: {
+        ...activeRun,
+        assistant_draft: {
+          id: "draft-live-reasoning",
+          run_id: "run-1",
+          parts: [
+            {
+              id: "trace-live",
+              type: "reasoning_trace" as const,
+              text: "Inspecting the scheduler state",
+              end_offset: 30,
+              provider: "deepseek",
+              model: "deepseek-reasoner",
+              source: "reasoning_content",
+              truncated: true,
+              started_at: "2026-08-16T08:00:00.000Z",
+              completed_at: "2026-08-16T08:00:02.500Z",
+            },
+          ],
+        },
+      },
+    }
+
+    const result = createConversationProjection(snapshot)
+    if (!result.ok) throw new Error(result.diagnostic.message)
+
+    expect(result.view.transcript[0]).toEqual({
+      type: "reasoning",
+      id: "draft:draft-live-reasoning:trace-live",
+      runId: "run-1",
+      createdAt: "2026-08-16T08:00:00.000Z",
+      text: "Inspecting the scheduler state",
+      streaming: true,
+      provider: "deepseek",
+      model: "deepseek-reasoner",
+      sourceField: "reasoning_content",
+      truncated: true,
+      startedAt: "2026-08-16T08:00:00.000Z",
+      completedAt: "2026-08-16T08:00:02.500Z",
+      durationMs: 2500,
+    })
+  })
+
   it("uses each Run's immutable model snapshot for reasoning and audit projection", () => {
     const snapshot = {
       ...activeSnapshotFixture,

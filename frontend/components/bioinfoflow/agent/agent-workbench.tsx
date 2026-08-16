@@ -53,6 +53,7 @@ import type {
 } from "@/lib/agent/conversation-model/types"
 import {
   publishAgentSessionSummary,
+  publishConversationSummary,
   sessionSummaryFromView,
 } from "@/lib/agent/session-preferences"
 import { ApiError } from "@/lib/api"
@@ -406,10 +407,10 @@ function SessionWorkbench({
   const conversationView = state.conversationView ?? null
 
   useEffect(() => {
-    if (!conversationView || !state.session) return
-    publishAgentSessionSummary(sessionSummaryFromView(state.session))
+    if (!conversationView) return
+    publishConversationSummary(conversationView.conversation)
     onSessionResolved?.(conversationView.conversation)
-  }, [conversationView, onSessionResolved, state.session])
+  }, [conversationView, onSessionResolved])
 
   const runSessionCommand = async (command: () => Promise<void>) => {
     shared.setModelConnectionOpen(false)
@@ -433,27 +434,7 @@ function SessionWorkbench({
     shared.setContextInputs([])
   }
 
-  if (state.isLoading && !state.session) return <WorkbenchSkeleton />
-  if (!state.session) {
-    return (
-      <div className="grid min-h-0 flex-1 place-items-center px-6 text-center">
-        <div className="flex max-w-sm flex-col items-center gap-3">
-          <CircleAlert
-            aria-hidden="true"
-            className="mx-auto text-destructive"
-          />
-          <h1 className="text-base font-medium">{t("loadErrorTitle")}</h1>
-          <p className="text-sm text-muted-foreground">
-            {state.error?.message ?? t("loadErrorDescription")}
-          </p>
-          <Button type="button" variant="outline" onClick={state.retry}>
-            <RefreshCw data-icon="inline-start" aria-hidden="true" />
-            {t("retry")}
-          </Button>
-        </div>
-      </div>
-    )
-  }
+  if (state.isLoading && !conversationView) return <WorkbenchSkeleton />
 
   const effectiveEnvironmentSelection = conversationView
     ? environmentSelectionFromSettings(conversationView.composer.settings)
@@ -511,7 +492,10 @@ function SessionWorkbench({
       ) : state.isLoading ? (
         <WorkbenchSkeleton />
       ) : (
-        <ConversationViewUnavailable onRetry={state.retry} />
+        <ConversationViewUnavailable
+          message={state.error?.message}
+          onRetry={state.retry}
+        />
       )}
       {conversationView && conversationView.conversation.status !== "active" ? (
         <p
@@ -563,7 +547,13 @@ function SessionWorkbench({
   )
 }
 
-function ConversationViewUnavailable({ onRetry }: { onRetry: () => void }) {
+function ConversationViewUnavailable({
+  message,
+  onRetry,
+}: {
+  message?: string
+  onRetry: () => void
+}) {
   const t = useTranslations("agentWorkbench")
   return (
     <div className="grid min-h-0 flex-1 place-items-center px-6 text-center">
@@ -571,7 +561,7 @@ function ConversationViewUnavailable({ onRetry }: { onRetry: () => void }) {
         <CircleAlert aria-hidden="true" className="text-destructive" />
         <h2 className="text-base font-medium">{t("loadErrorTitle")}</h2>
         <p className="text-sm text-muted-foreground">
-          {t("loadErrorDescription")}
+          {message ?? t("loadErrorDescription")}
         </p>
         <Button type="button" variant="outline" onClick={onRetry}>
           <RefreshCw data-icon="inline-start" aria-hidden="true" />
@@ -622,7 +612,7 @@ function AgentEmptyState({ compact = false }: { compact?: boolean }) {
   const t = useTranslations("agentWorkbench")
   if (compact) {
     return (
-      <h1 className="mb-4 text-center text-[15px] font-medium tracking-normal text-muted-foreground">
+      <h1 className="mb-4 text-balance text-center text-[18px] font-medium tracking-[-0.015em] text-foreground/80 sm:text-[19px]">
         {t("emptyTitle")}
       </h1>
     )
@@ -705,38 +695,32 @@ function SessionModelSelector({
     }
   }
 
-  return (
-    <div className="flex min-w-0 flex-col items-start gap-1.5">
-      <ModelSelector
-        models={models}
-        selectedModel={selectedModel}
-        onSelectModel={(selection) => void requestChange(selection)}
-        disabled={disabled || isLoading || pending}
-        variant="composer"
-      />
-      {pending ? (
-        <p role="status" className="px-2 text-[11px] text-muted-foreground">
-          {t("model.updating")}
-        </p>
-      ) : null}
-      {visibleUpdate?.state === "error" ? (
-        <div
-          role="alert"
-          className="flex items-center gap-1 px-2 text-[11px] text-destructive"
-        >
-          <span>{t("model.updateError")}</span>
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            className="h-auto px-1 text-[11px]"
-            onClick={() => void requestChange(visibleUpdate.selection)}
-          >
-            {t("model.retry")}
-          </Button>
-        </div>
-      ) : null}
+  const feedback = pending ? (
+    <p role="status">{t("model.updating")}</p>
+  ) : visibleUpdate?.state === "error" ? (
+    <div role="alert" className="flex items-center gap-1 text-destructive">
+      <span>{t("model.updateError")}</span>
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        className="h-auto px-1 text-[11px]"
+        onClick={() => void requestChange(visibleUpdate.selection)}
+      >
+        {t("model.retry")}
+      </Button>
     </div>
+  ) : null
+
+  return (
+    <ModelSelector
+      models={models}
+      selectedModel={selectedModel}
+      onSelectModel={(selection) => void requestChange(selection)}
+      disabled={disabled || isLoading || pending}
+      variant="composer"
+      feedback={feedback}
+    />
   )
 }
 
