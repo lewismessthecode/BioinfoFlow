@@ -10,6 +10,7 @@ from app.config import settings
 from app.models.remote_connection import RemoteConnection
 from app.repositories.agent_harness_repo import AgentHarnessRepository
 from app.workspace import DEFAULT_WORKSPACE_ID
+from tests.test_agent_harness.run_test_helpers import create_agent_run
 
 
 @pytest.mark.asyncio
@@ -97,8 +98,8 @@ async def test_team_member_agent_environment_access_is_limited_to_local(
     assert [item["id"] for item in listed.json()["data"]] == ["local"]
     assert selected.status_code == 400
     assert selected.json()["error"]["code"] == "BAD_REQUEST"
-    run = await AgentHarnessRepository(db_session).create_run(
-        auto_session.json()["data"]["session"]["id"]
+    run = await create_agent_run(
+        AgentHarnessRepository(db_session), auto_session.json()["data"]["session"]["id"]
     )
     assert run.turn_execution_config["environment_scope"] == {
         "mode": "auto",

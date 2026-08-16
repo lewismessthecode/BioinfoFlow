@@ -36,6 +36,7 @@ from app.services.agent_harness.workspace_runtime import (
     LocalWorkspaceBackend,
     WorkspaceRuntime,
 )
+from tests.test_agent_harness.run_test_helpers import create_agent_run
 from app.services.model_runtime.contracts import (
     canonical_input_prefix_digest,
     CompletionMetadata,
@@ -213,7 +214,7 @@ async def test_bif_token_plaintext_leaves_harness_memory_when_provider_returns(
     )
     harness.token_service = _IssuingTokenService()
     opened = await harness.open_session(_open_request())
-    run = await harness.repository.create_run(str(opened.session.id))
+    run = await create_agent_run(harness.repository, str(opened.session.id))
     generation = await harness.repository.claim_run(
         str(run.id),
         owner="token-test-worker",
@@ -802,7 +803,7 @@ async def test_model_context_does_not_load_attachments_covered_by_compaction(
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
     old_attachment_id = "30000000-0000-0000-0000-000000000001"
-    old_run = await harness.repository.create_run(session_id)
+    old_run = await create_agent_run(harness.repository, session_id)
     old_message = await harness.repository.append_entry(
         session_id,
         run_id=str(old_run.id),
@@ -1008,7 +1009,7 @@ async def test_context_overflow_commits_compaction_before_single_retry(
     session_id = str(opened.session.id)
     events = harness.events(session_id)
     assert (await anext(events)).type == "snapshot"
-    old_run = await repository.create_run(session_id)
+    old_run = await create_agent_run(repository, session_id)
     await repository.append_entry(
         session_id,
         run_id=str(old_run.id),
@@ -1061,7 +1062,7 @@ async def test_context_overflow_is_compacted_and_retried_only_once(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    old_run = await harness.repository.create_run(session_id)
+    old_run = await create_agent_run(harness.repository, session_id)
     await harness.repository.append_entry(
         session_id,
         run_id=str(old_run.id),
@@ -1138,7 +1139,7 @@ async def test_recovered_run_keeps_original_wall_clock_budget(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     user = await harness.repository.append_entry(
         session_id,
         run_id=str(run.id),
@@ -2046,7 +2047,7 @@ async def test_recover_unknown_bash_effect_waits_for_user_without_replay(
         workspace_factory=lambda _session: _workspace(tmp_path),
     )
     opened = await harness.open_session(_open_request())
-    run = await harness.repository.create_run(str(opened.session.id))
+    run = await create_agent_run(harness.repository, str(opened.session.id))
     assistant = await _append_tool_call_entry(
         harness,
         str(opened.session.id),
@@ -2168,9 +2169,7 @@ async def test_approved_bash_rejects_changed_cwd_assessment_before_execution(
     assert _active(waiting).pending_interaction is not None
     request = _active(waiting).pending_interaction.request
     assert request.summary == "Run command"
-    assert request.input_preview == (
-        "rm -f harmless && printf executed > executed.txt"
-    )
+    assert request.input_preview == ("rm -f harmless && printf executed > executed.txt")
     risk = request.risk.model_dump()
     assert "boundary" not in risk
     assert "assessment_fingerprint" not in risk
@@ -2417,7 +2416,7 @@ async def test_corrupt_checkpoint_restores_pending_bash_approval_fence(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     await _append_tool_call_entry(
         harness,
         session_id,
@@ -2505,7 +2504,7 @@ async def test_corrupt_checkpoint_restores_registered_tool_replay_policies(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     await harness.repository.append_entry(
         session_id,
         run_id=str(run.id),
@@ -2587,7 +2586,7 @@ async def test_recovery_retry_fences_and_executes_dangerous_bash_once(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     assistant = await _append_tool_call_entry(
         harness,
         session_id,
@@ -2718,7 +2717,7 @@ async def test_crash_during_approved_bash_recovers_as_unknown_effect_without_rep
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     assistant = await _append_tool_call_entry(
         harness,
         session_id,
@@ -2880,7 +2879,7 @@ async def test_recovery_interaction_preserves_other_in_flight_tools(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     assistant = await _append_tool_call_entry(
         harness,
         session_id,
@@ -2968,7 +2967,7 @@ async def test_user_cancel_commits_interrupted_results_for_unfinished_tools(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     assistant = await _append_tool_call_entry(
         harness,
         session_id,
@@ -3137,7 +3136,7 @@ async def test_verify_recovery_retry_executes_without_bash_approval_fingerprint(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     call = {
         "call_id": f"{tool_name}-1",
         "name": tool_name,
@@ -3248,7 +3247,7 @@ async def test_explicit_cancel_publishes_terminal_run_and_starts_follow_up(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    cancelled_run = await harness.repository.create_run(session_id)
+    cancelled_run = await create_agent_run(harness.repository, session_id)
     await harness.repository.update_run(
         str(cancelled_run.id),
         status="running",
@@ -3297,7 +3296,7 @@ async def test_recovery_consumes_a_durable_cancel_and_starts_follow_up(
     )
     opened = await first.open_session(_open_request())
     session_id = str(opened.session.id)
-    cancelled_run = await first.repository.create_run(session_id)
+    cancelled_run = await create_agent_run(first.repository, session_id)
     await first.repository.update_run(
         str(cancelled_run.id),
         status="running",
@@ -3356,7 +3355,7 @@ async def test_recovery_starts_follow_up_left_after_terminal_run(
     )
     opened = await first.open_session(_open_request())
     session_id = str(opened.session.id)
-    completed_run = await first.repository.create_run(session_id)
+    completed_run = await create_agent_run(first.repository, session_id)
     await first.repository.update_run(
         str(completed_run.id),
         status="completed",
@@ -3405,7 +3404,7 @@ async def test_steer_racing_run_completion_requires_a_new_message(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    finishing_run = await harness.repository.create_run(session_id)
+    finishing_run = await create_agent_run(harness.repository, session_id)
     original_enqueue = harness.repository.enqueue_command
 
     async def finish_before_enqueue(target_session_id, command):
@@ -3446,7 +3445,7 @@ async def test_recovery_continues_when_steer_follows_committed_final_answer(
     )
     opened = await first.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await first.repository.create_run(session_id)
+    run = await create_agent_run(first.repository, session_id)
     user = await first.repository.append_entry(
         session_id,
         run_id=str(run.id),
@@ -3515,7 +3514,7 @@ async def test_recovery_final_answer_safe_point_atomically_commits_a_new_steer(
     )
     opened = await first.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await first.repository.create_run(session_id)
+    run = await create_agent_run(first.repository, session_id)
     await first.repository.append_entry(
         session_id,
         run_id=str(run.id),
@@ -3584,7 +3583,7 @@ async def test_recovery_checkpoint_fallback_is_visible_before_model_retry(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     user = await harness.repository.append_entry(
         session_id,
         run_id=str(run.id),
@@ -3625,7 +3624,7 @@ async def test_corrupt_checkpoint_preserves_pending_interaction_from_history(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     await harness.repository.append_entry(
         session_id,
         run_id=str(run.id),
@@ -3715,7 +3714,7 @@ async def test_recovery_does_not_repeat_an_already_committed_final_answer(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     await harness.repository.append_entry(
         session_id,
         run_id=str(run.id),
@@ -3759,7 +3758,7 @@ async def test_recovery_executes_tools_from_an_already_committed_assistant_messa
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     await harness.repository.append_entry(
         session_id,
         run_id=str(run.id),
@@ -3810,7 +3809,7 @@ async def test_model_draft_recovery_notices_and_clears_draft_before_retry(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     user = await harness.repository.append_entry(
         session_id,
         run_id=str(run.id),
@@ -3867,7 +3866,7 @@ async def test_recover_same_version_read_commits_result_then_continues_model(
         workspace_factory=lambda _session: _workspace(tmp_path),
     )
     opened = await harness.open_session(_open_request())
-    run = await harness.repository.create_run(str(opened.session.id))
+    run = await create_agent_run(harness.repository, str(opened.session.id))
     assistant = await _append_tool_call_entry(
         harness,
         str(opened.session.id),
@@ -3932,7 +3931,7 @@ async def test_process_recovery_reuses_responses_continuation(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     user = await harness.repository.append_entry(
         session_id,
         run_id=str(run.id),
@@ -4126,7 +4125,7 @@ async def test_untrusted_responses_continuation_is_ignored(
     )
     opened = await harness.open_session(_open_request())
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     current_target = model_target_from_snapshot({"target": _model_target()})
     current_text = "Continue."
     entry = await harness.repository.append_entry(
@@ -4207,7 +4206,7 @@ async def test_recovery_inspect_choice_does_not_replay_unknown_bash(
         workspace_factory=lambda _session: _workspace(tmp_path),
     )
     opened = await harness.open_session(_open_request())
-    run = await harness.repository.create_run(str(opened.session.id))
+    run = await create_agent_run(harness.repository, str(opened.session.id))
     assistant = await _append_tool_call_entry(
         harness,
         str(opened.session.id),
@@ -4278,7 +4277,7 @@ def _model_target() -> dict[str, object]:
 
 
 async def _create_recoverable_tool_run(harness, session_id: str, call: ToolCall):
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     assistant = await _append_tool_call_entry(
         harness,
         session_id,

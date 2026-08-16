@@ -31,6 +31,7 @@ from app.services.model_runtime.contracts import (
     TextDelta,
     ToolCallDelta,
 )
+from tests.test_agent_harness.run_test_helpers import create_agent_run
 
 
 class BlockingModel:
@@ -299,7 +300,7 @@ async def test_sse_reconnect_snapshot_recovers_all_active_run_ui_state(
 
     async with app_database.async_session_maker() as db:
         repository = AgentHarnessRepository(db)
-        run = await repository.create_run(session_id)
+        run = await create_agent_run(repository, session_id)
         await repository.update_run(
             str(run.id),
             status="waiting_user",
@@ -323,18 +324,18 @@ async def test_sse_reconnect_snapshot_recovers_all_active_run_ui_state(
                 ],
             },
             tool_progress=[
-                    {
-                        "call_id": "ask-1",
-                        "group_id": "tool-group:ask-1",
-                        "execution_mode": "serial",
-                        "name": "ask_user",
-                        "display_name": "ask_user",
-                        "category": "interaction",
-                        "summary": "Ask how to continue",
-                        "arguments": {},
-                        "status": "interaction_required",
-                        "revision": 1,
-                    }
+                {
+                    "call_id": "ask-1",
+                    "group_id": "tool-group:ask-1",
+                    "execution_mode": "serial",
+                    "name": "ask_user",
+                    "display_name": "ask_user",
+                    "category": "interaction",
+                    "summary": "Ask how to continue",
+                    "arguments": {},
+                    "status": "interaction_required",
+                    "revision": 1,
+                }
             ],
         )
         await repository.append_entry(
@@ -429,7 +430,7 @@ async def test_waiting_user_revokes_old_token_and_respond_issues_fresh_bash_toke
         RespondCommand(
             command_id="respond-1",
             interaction_id="tool:ask-1",
-                response={"type": "ask_user", "answers": {"Continue?": "Yes"}},
+            response={"type": "ask_user", "answers": {"Continue?": "Yes"}},
         ),
     )
 
@@ -553,5 +554,7 @@ def _workspace(root: Path) -> WorkspaceRuntime:
             sandbox_runner=None,
         )
     )
+
+
 def _message(command_id: str, text: str) -> MessageCommand:
     return MessageCommand(command_id=command_id, parts=[InputTextPart(text=text)])

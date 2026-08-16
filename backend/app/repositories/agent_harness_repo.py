@@ -15,9 +15,6 @@ from app.models.agent_harness import (
     AgentHarnessSession,
 )
 from app.repositories.base import BaseRepository
-from app.repositories.remote_connection_repo import RemoteConnectionRepository
-from app.config import settings
-from app.services.agent_session_title import derive_automatic_session_title
 from app.services.agent_harness.contracts import (
     ENTRY_PAYLOAD_TYPES,
     ActiveRunView,
@@ -38,14 +35,6 @@ from app.services.agent_harness.projection import (
     public_model_summary,
     run_view,
 )
-from app.services.agent_harness.environment_catalog import EnvironmentCatalog
-from app.services.agent_harness.environment_scope import (
-    EnvironmentScopeRequest,
-    resolve_environment_scope,
-)
-from app.services.agent_harness.environment_target import (
-    remote_environment_target_snapshot,
-)
 from app.services.agent_harness.tool_projection import (
     public_error_message,
     public_result_details,
@@ -57,6 +46,11 @@ from app.services.agent_harness.tool_projection import (
 ACTIVE_RUN_STATUSES = ("queued", "running", "waiting_user")
 TERMINAL_RUN_STATUSES = ("completed", "failed", "cancelled")
 _SESSION_SETTING_UNSET = object()
+_EXPECTED_ACTIVE_RUN_UNSET = object()
+
+
+class SessionMutationConflict(RuntimeError):
+    """A session changed after business logic prepared an atomic mutation."""
 
 
 def _context_setting_changes(values: dict[str, object]) -> dict[str, Any]:
@@ -79,64 +73,6 @@ def _context_setting_changes(values: dict[str, object]) -> dict[str, Any]:
         scope = values["environment_scope"]
         changes["environment_scope"] = dict(scope) if isinstance(scope, dict) else scope
     return changes
-
-
-async def _turn_execution_config(
-    db: AsyncSession,
-    session: AgentHarnessSession,
-    *,
-    model_snapshot: dict | None = None,
-) -> dict[str, Any]:
-    requested_scope = session.environment_scope or {"mode": "auto"}
-    metadata = session.session_metadata or {}
-    stored_allow_remote = metadata.get("_allow_remote_environments")
-    allow_remote = (
-        stored_allow_remote
-        if isinstance(stored_allow_remote, bool)
-        else not settings.auth_is_team
-    )
-    connection_repository = RemoteConnectionRepository(db)
-    authorized = await EnvironmentCatalog(connection_repository).list_authorized(
-        workspace_id=str(session.workspace_id),
-        allow_remote=allow_remote,
-    )
-    resolved_scope = resolve_environment_scope(
-        EnvironmentScopeRequest(
-            mode=("manual" if requested_scope.get("mode") == "manual" else "auto"),
-            selected_environment_ids=tuple(
-                str(item)
-                for item in (requested_scope.get("environment_ids") or ())
-                if isinstance(item, str) and item
-            ),
-        ),
-        authorized,
-    )
-    environment_targets: dict[str, dict[str, Any]] = {}
-    for environment in resolved_scope.environments.values():
-        if environment.kind != "ssh":
-            continue
-        connection = await connection_repository.get_for_workspace(
-            environment.environment_id,
-            workspace_id=str(session.workspace_id),
-        )
-        if connection is not None:
-            environment_targets[
-                environment.environment_id
-            ] = await remote_environment_target_snapshot(
-                connection_repository,
-                connection,
-            )
-    return {
-        "settings_revision": int(session.settings_revision or 1),
-        "model": model_snapshot or session.model_snapshot,
-        "permission_mode": session.permission_mode,
-        "workspace_access": session.workspace_access,
-        "environment_scope": {
-            "mode": resolved_scope.mode,
-            "environment_ids": list(resolved_scope.environment_ids),
-        },
-        "environment_targets": environment_targets,
-    }
 
 
 @dataclass(frozen=True)
@@ -643,7 +579,11 @@ class AgentHarnessRepository:
         return session
 
     async def create_run(
-        self, session_id: str, *, model_snapshot: dict | None = None
+        self,
+        session_id: str,
+        *,
+        model_snapshot: dict | None = None,
+        turn_execution_config: dict[str, Any],
     ) -> AgentHarnessRun:
         session = await self.get_session(session_id)
         if session is None or session.status != "active":
@@ -654,11 +594,7 @@ class AgentHarnessRepository:
             session_id=session_id,
             status="queued",
             model_snapshot=model_snapshot or session.model_snapshot,
-            turn_execution_config=await _turn_execution_config(
-                self.db,
-                session,
-                model_snapshot=model_snapshot,
-            ),
+            turn_execution_config=turn_execution_config,
             command_queue=[],
             command_ids=[],
         )
@@ -673,6 +609,10 @@ class AgentHarnessRepository:
         command: MessageCommand,
         *,
         model_snapshot: dict | None = None,
+        automatic_title: str | None = None,
+        turn_execution_config: dict[str, Any] | None = None,
+        expected_settings_revision: int | None = None,
+        expected_active_run_id: str | None | object = _EXPECTED_ACTIVE_RUN_UNSET,
     ) -> tuple[AgentHarnessRun | None, AgentHarnessEntry | None, bool]:
         """Durably submit one user command without exposing a partial Run."""
 
@@ -699,18 +639,23 @@ class AgentHarnessRepository:
                 return None, None, False
 
             payload = await self._user_message_payload(session, command)
-            if session.title is None:
-                generated_title = derive_automatic_session_title(
-                    part["text"]
-                    for part in payload.get("parts") or []
-                    if isinstance(part, dict)
-                    and part.get("type") == "text"
-                    and isinstance(part.get("text"), str)
-                )
-                if generated_title is not None:
-                    session.title = generated_title
-
             current = await self.get_current_run(session_id)
+            current_id = str(current.id) if current is not None else None
+            if (
+                expected_active_run_id is not _EXPECTED_ACTIVE_RUN_UNSET
+                and current_id != expected_active_run_id
+            ):
+                raise SessionMutationConflict("active Run changed during submission")
+            if (
+                current is None
+                and expected_settings_revision is not None
+                and int(session.settings_revision or 1) != expected_settings_revision
+            ):
+                raise SessionMutationConflict(
+                    "session settings changed during submission"
+                )
+            if session.title is None and automatic_title:
+                session.title = automatic_title
             if current is not None:
                 session.command_ids = [*command_ids, command.command_id]
                 session.command_queue = [
@@ -720,16 +665,14 @@ class AgentHarnessRepository:
                 await self.db.commit()
                 await self.db.refresh(session)
                 return None, None, True
+            if turn_execution_config is None:
+                raise ValueError("turn execution config is required to start a Run")
 
             run = AgentHarnessRun(
                 session_id=session_id,
                 status="queued",
                 model_snapshot=model_snapshot or session.model_snapshot,
-                turn_execution_config=await _turn_execution_config(
-                    self.db,
-                    session,
-                    model_snapshot=model_snapshot,
-                ),
+                turn_execution_config=turn_execution_config,
                 command_queue=[],
                 command_ids=[],
             )
@@ -1631,6 +1574,8 @@ class AgentHarnessRepository:
         *,
         kind: str,
         model_snapshot: dict | None = None,
+        turn_execution_config: dict[str, Any],
+        expected_settings_revision: int | None = None,
     ) -> tuple[AgentHarnessRun, AgentHarnessEntry] | None:
         """Atomically consume one queued command, create its Run, and publish input."""
 
@@ -1655,6 +1600,13 @@ class AgentHarnessRepository:
             if await self.get_current_run(session_id) is not None:
                 await self.db.commit()
                 return None
+            if (
+                expected_settings_revision is not None
+                and int(session.settings_revision or 1) != expected_settings_revision
+            ):
+                raise SessionMutationConflict(
+                    "session settings changed before Run start"
+                )
             queue = list(session.command_queue or [])
             index = next(
                 (
@@ -1674,11 +1626,7 @@ class AgentHarnessRepository:
                 session_id=session_id,
                 status="queued",
                 model_snapshot=model_snapshot or session.model_snapshot,
-                turn_execution_config=await _turn_execution_config(
-                    self.db,
-                    session,
-                    model_snapshot=model_snapshot,
-                ),
+                turn_execution_config=turn_execution_config,
                 command_queue=[],
                 command_ids=[],
             )
@@ -2423,4 +2371,5 @@ __all__ = [
     "AgentHarnessArtifactRepository",
     "AgentHarnessAttachmentRepository",
     "AgentHarnessRepository",
+    "SessionMutationConflict",
 ]

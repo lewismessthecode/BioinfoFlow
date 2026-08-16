@@ -31,6 +31,7 @@ from app.services.model_runtime.contracts import (
     TextDelta,
     ToolCallDelta,
 )
+from tests.test_agent_harness.run_test_helpers import create_agent_run
 
 
 class BlockingModel:
@@ -521,9 +522,7 @@ async def test_cross_worker_quiesce_timeout_keeps_closing_session_durable(
     model.release.set()
     for _ in range(100):
         snapshot = await deleting_worker.snapshot(session_id)
-        if (
-            _latest_run(snapshot).status == "cancelled"
-        ):
+        if _latest_run(snapshot).status == "cancelled":
             break
         await asyncio.sleep(0.01)
     assert _latest_run(snapshot).status == "cancelled"
@@ -553,7 +552,7 @@ async def test_quiesce_terminalizes_run_owned_by_a_dead_worker(
     )
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_open_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     assert await repository.claim_run(
         str(run.id),
         owner="dead-process",
@@ -644,9 +643,7 @@ async def test_runtime_shutdown_preserves_active_run_for_startup_recovery(
     assert await second_runtime.recover() == 1
     for _ in range(30):
         recovered = await second_runtime.snapshot(session_id)
-        if (
-            _latest_run(recovered).status == "completed"
-        ):
+        if _latest_run(recovered).status == "completed":
             break
         await asyncio.sleep(0.01)
 
@@ -804,9 +801,7 @@ async def test_steer_arriving_during_model_stream_continues_before_run_completio
     model.release.set()
     for _ in range(50):
         snapshot = await runtime.snapshot(session_id)
-        if (
-            _latest_run(snapshot).status == "completed"
-        ):
+        if _latest_run(snapshot).status == "completed":
             break
         await asyncio.sleep(0.01)
 
@@ -902,7 +897,7 @@ async def test_runtime_recovery_schedules_tool_resume_without_blocking_startup(
     )
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_open_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     assistant_entry_id = str(uuid4())
     assistant = await repository.append_entry(
         str(session.id),
@@ -981,7 +976,7 @@ async def test_runtime_retries_recovery_after_foreign_lease_expires(
     )
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_open_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     assert await repository.claim_run(
         str(run.id),
         owner="dead-process",

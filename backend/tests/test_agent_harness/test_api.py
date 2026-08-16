@@ -7,6 +7,8 @@ from uuid import uuid4
 
 import pytest
 
+from tests.test_agent_harness.run_test_helpers import create_agent_run
+
 
 @pytest.mark.asyncio
 async def test_session_create_reports_a_stable_code_when_no_model_is_available(
@@ -242,7 +244,7 @@ async def test_session_patch_updates_future_policy_during_active_run(
         )
     session_id = created.json()["data"]["session"]["id"]
     async with app_database.async_session_maker() as db:
-        await AgentHarnessRepository(db).create_run(session_id)
+        await create_agent_run(AgentHarnessRepository(db), session_id)
 
     response = await async_client.patch(
         f"/api/v1/agent/sessions/{session_id}",
@@ -274,7 +276,7 @@ async def test_session_patch_allows_title_change_during_active_run(
         )
     session_id = created.json()["data"]["session"]["id"]
     async with app_database.async_session_maker() as db:
-        await AgentHarnessRepository(db).create_run(session_id)
+        await create_agent_run(AgentHarnessRepository(db), session_id)
 
     response = await async_client.patch(
         f"/api/v1/agent/sessions/{session_id}",
@@ -326,7 +328,7 @@ async def test_session_patch_rejects_archive_atomically_during_active_run(
         )
     session_id = created.json()["data"]["session"]["id"]
     async with app_database.async_session_maker() as db:
-        await AgentHarnessRepository(db).create_run(session_id)
+        await create_agent_run(AgentHarnessRepository(db), session_id)
 
     response = await async_client.patch(
         f"/api/v1/agent/sessions/{session_id}",
@@ -1001,7 +1003,7 @@ async def test_agent_api_preserves_attachment_and_artifact_frontend_contracts(
 
     async with app_database.async_session_maker() as db:
         repository = AgentHarnessRepository(db)
-        run = await repository.create_run(session_id)
+        run = await create_agent_run(repository, session_id)
         generation = await repository.claim_run(
             str(run.id),
             owner="api-test-worker",

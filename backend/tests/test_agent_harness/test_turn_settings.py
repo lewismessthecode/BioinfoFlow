@@ -25,6 +25,10 @@ from app.services.model_runtime.contracts import (
     TextDelta,
     ToolCallDelta,
 )
+from tests.test_agent_harness.run_test_helpers import (
+    agent_turn_execution_config,
+    create_agent_run,
+)
 
 
 def _model_snapshot(name: str) -> dict:
@@ -86,7 +90,7 @@ async def test_active_run_keeps_its_turn_config_when_thread_settings_change(
 
         async with app_database.async_session_maker() as db:
             repository = AgentHarnessRepository(db)
-            run = await repository.create_run(session_id)
+            run = await create_agent_run(repository, session_id)
             run_id = str(run.id)
 
         updated = await async_client.patch(
@@ -144,7 +148,7 @@ async def test_queued_message_uses_latest_thread_settings_when_its_run_starts(
         )
     )
     session_id = str(session.id)
-    active = await repository.create_run(session_id)
+    active = await create_agent_run(repository, session_id)
 
     queued = MessageCommand(
         command_id="queued-message",
@@ -159,10 +163,12 @@ async def test_queued_message_uses_latest_thread_settings_when_its_run_starts(
         permission_mode="full_access",
     )
     await repository.update_run(str(active.id), status="completed")
+    turn_execution_config = await agent_turn_execution_config(repository, session_id)
 
     started = await repository.create_run_from_next_session_command(
         session_id,
         kind="message",
+        turn_execution_config=turn_execution_config,
     )
 
     assert started is not None
@@ -307,7 +313,7 @@ async def test_recovery_workspace_uses_run_snapshot_after_thread_settings_change
         )
     )
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     assistant = await harness.repository.append_entry(
         session_id,
         run_id=str(run.id),
@@ -409,7 +415,7 @@ async def test_started_run_model_resolution_uses_its_snapshot_not_latest_thread_
         )
     )
     session_id = str(opened.session.id)
-    run = await harness.repository.create_run(session_id)
+    run = await create_agent_run(harness.repository, session_id)
     await harness.repository.update_session_settings(
         session_id,
         model_snapshot=next_model,

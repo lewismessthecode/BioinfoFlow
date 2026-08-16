@@ -18,6 +18,10 @@ from app.services.agent_harness.contracts import (
     SteerCommand,
 )
 from app.services.agent_harness.projection import entry_contract
+from tests.test_agent_harness.run_test_helpers import (
+    agent_turn_execution_config,
+    create_agent_run,
+)
 
 
 WORKSPACE_ID = UUID("30000000-0000-0000-0000-000000000001")
@@ -45,7 +49,9 @@ async def test_repository_opens_session_and_appends_strictly_ordered_history(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id), model_snapshot={"model": "fake"})
+    run = await create_agent_run(
+        repository, str(session.id), model_snapshot={"model": "fake"}
+    )
 
     first = await repository.append_entry(
         str(session.id),
@@ -127,7 +133,7 @@ async def test_snapshot_projects_failed_run_error_without_private_diagnostics(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     await repository.update_run(str(run.id), status="running", phase="model")
     await repository.update_run(
         str(run.id),
@@ -172,7 +178,7 @@ async def test_snapshot_replaces_unknown_or_malformed_run_errors(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     await repository.update_run(str(run.id), status="running", phase="model")
     await repository.update_run(
         str(run.id),
@@ -199,7 +205,7 @@ async def test_tool_progress_revisions_are_local_to_each_call(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     await repository.update_run(
         str(run.id),
         tool_progress=[
@@ -270,7 +276,7 @@ async def test_legacy_tool_progress_is_reprojected_for_snapshot_and_updates(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     await repository.update_run(
         str(run.id),
         status="running",
@@ -330,7 +336,7 @@ async def test_snapshot_is_authoritative_for_active_run_ui_state(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     await repository.update_run(
         str(run.id),
         status="waiting_user",
@@ -457,7 +463,7 @@ async def test_terminal_run_transitions_advance_the_public_revision(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    completed_run = await repository.create_run(str(session.id))
+    completed_run = await create_agent_run(repository, str(session.id))
     before_complete = completed_run.revision
 
     _, completed = await repository.commit_steers_or_complete_run(
@@ -465,7 +471,7 @@ async def test_terminal_run_transitions_advance_the_public_revision(
         run_id=str(completed_run.id),
     )
 
-    cancelled_run = await repository.create_run(str(session.id))
+    cancelled_run = await create_agent_run(repository, str(session.id))
     before_cancel = cancelled_run.revision
     _, cancelled = await repository.cancel_run_with_history(
         str(session.id),
@@ -486,7 +492,7 @@ async def test_repository_deduplicates_commands_and_keeps_message_durable(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
 
     command = SteerCommand(
         command_id="same-command",
@@ -517,10 +523,10 @@ async def test_repository_allows_only_one_active_run_per_session(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    await repository.create_run(str(session.id))
+    await create_agent_run(repository, str(session.id))
 
     with pytest.raises(ValueError, match="active run"):
-        await repository.create_run(str(session.id))
+        await create_agent_run(repository, str(session.id))
 
 
 @pytest.mark.asyncio
@@ -529,15 +535,20 @@ async def test_message_submission_atomically_creates_run_and_user_history(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
+    session_id = str(session.id)
+    turn_execution_config = await agent_turn_execution_config(repository, session_id)
 
     run, entry, inserted = await repository.submit_user_command(
-        str(session.id), _message("message-1", "hello")
+        session_id,
+        _message("message-1", "hello"),
+        turn_execution_config=turn_execution_config,
     )
 
     assert run is not None
     assert entry is not None
     assert inserted is True
-    snapshot = await repository.snapshot(str(session.id))
+    assert run.turn_execution_config == turn_execution_config
+    snapshot = await repository.snapshot(session_id)
     assert snapshot.active_run is not None
     assert snapshot.active_run.run.id == run.id
     assert snapshot.entries == [entry_contract(entry)]
@@ -551,19 +562,23 @@ async def test_message_submission_atomically_creates_run_and_user_history(
 
 
 @pytest.mark.asyncio
-async def test_first_user_message_sets_a_concise_conversation_title(
+async def test_message_submission_persists_a_precomputed_conversation_title(
     harness_db: AsyncSession,
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
+    session_id = str(session.id)
+    turn_execution_config = await agent_turn_execution_config(repository, session_id)
     prompt = "Summarize this very long workflow request with many details"
 
     await repository.submit_user_command(
-        str(session.id),
+        session_id,
         _message("message-title", prompt),
+        automatic_title="Summarize this very long",
+        turn_execution_config=turn_execution_config,
     )
 
-    snapshot = await repository.snapshot(str(session.id))
+    snapshot = await repository.snapshot(session_id)
     assert snapshot.session.title == "Summarize this very long"
     assert len(snapshot.entries) == 1
     assert snapshot.entries[0].payload.parts[0].text == prompt
@@ -581,13 +596,17 @@ async def test_message_submission_preserves_an_existing_conversation_title(
     session = await repository.open_session(
         _request().model_copy(update={"title": "Manual title"})
     )
+    session_id = str(session.id)
+    turn_execution_config = await agent_turn_execution_config(repository, session_id)
 
     await repository.submit_user_command(
-        str(session.id),
+        session_id,
         _message("message-title", "Generate a different title"),
+        automatic_title="Generated title",
+        turn_execution_config=turn_execution_config,
     )
 
-    snapshot = await repository.snapshot(str(session.id))
+    snapshot = await repository.snapshot(session_id)
     assert snapshot.session.title == "Manual title"
 
 
@@ -601,13 +620,17 @@ async def test_first_user_message_sets_title_after_setting_changes(
         str(session.id),
         permission_mode="full_access",
     )
+    session_id = str(session.id)
+    turn_execution_config = await agent_turn_execution_config(repository, session_id)
 
     await repository.submit_user_command(
-        str(session.id),
+        session_id,
         _message("message-title", "Review the configured workflow"),
+        automatic_title="Review the configured workflow",
+        turn_execution_config=turn_execution_config,
     )
 
-    snapshot = await repository.snapshot(str(session.id))
+    snapshot = await repository.snapshot(session_id)
     assert snapshot.session.title == "Review the configured workflow"
 
 
@@ -617,13 +640,16 @@ async def test_empty_user_text_does_not_create_a_conversation_title(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
+    session_id = str(session.id)
+    turn_execution_config = await agent_turn_execution_config(repository, session_id)
 
     await repository.submit_user_command(
-        str(session.id),
+        session_id,
         _message("message-title", "  \n  "),
+        turn_execution_config=turn_execution_config,
     )
 
-    snapshot = await repository.snapshot(str(session.id))
+    snapshot = await repository.snapshot(session_id)
     assert snapshot.session.title is None
 
 
@@ -642,6 +668,7 @@ async def test_message_submission_rolls_back_command_run_and_history_together(
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
     session_id = str(session.id)
+    turn_execution_config = await agent_turn_execution_config(repository, session_id)
 
     async def fail_commit() -> None:
         raise RuntimeError("simulated process loss before commit")
@@ -651,6 +678,7 @@ async def test_message_submission_rolls_back_command_run_and_history_together(
         await repository.submit_user_command(
             session_id,
             _message("message-1", "hello"),
+            turn_execution_config=turn_execution_config,
         )
 
     async with factory() as verification_db:
@@ -679,6 +707,7 @@ async def test_concurrent_messages_start_one_run_and_queue_the_other(
     setup = AgentHarnessRepository(harness_db)
     session = await setup.open_session(_request())
     session_id = str(session.id)
+    turn_execution_config = await agent_turn_execution_config(setup, session_id)
 
     async with factory() as first_db, factory() as second_db:
         first = AgentHarnessRepository(first_db)
@@ -688,10 +717,12 @@ async def test_concurrent_messages_start_one_run_and_queue_the_other(
             first.submit_user_command(
                 session_id,
                 _message("message-1", "first"),
+                turn_execution_config=turn_execution_config,
             ),
             second.submit_user_command(
                 session_id,
                 _message("message-2", "second"),
+                turn_execution_config=turn_execution_config,
             ),
             return_exceptions=True,
         )
@@ -720,7 +751,7 @@ async def test_repository_claims_run_atomically_and_transfers_session_commands(
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
     await repository.enqueue_command(str(session.id), _message("message-1", "hello"))
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     moved = await repository.move_session_commands_to_run(
         str(session.id), str(run.id), kinds={"message"}
     )
@@ -756,7 +787,7 @@ async def test_terminal_cancel_remains_visible_to_the_execution_worker(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     await repository.update_run(str(run.id), status="running", phase="model")
 
     _, cancelled = await repository.cancel_run_with_history(
@@ -776,7 +807,7 @@ async def test_cancel_history_rejects_a_non_owner_worker(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     run_id = str(run.id)
     generation = await repository.claim_run(
         run_id,
@@ -813,7 +844,7 @@ async def test_new_lease_generation_fences_stale_worker_writes(
         first = AgentHarnessRepository(first_db)
         second = AgentHarnessRepository(second_db)
         session = await first.open_session(_request())
-        run = await first.create_run(str(session.id))
+        run = await create_agent_run(first, str(session.id))
         first_generation = await first.claim_run(
             str(run.id),
             owner="worker-1",
@@ -864,7 +895,7 @@ async def test_new_lease_generation_fences_stale_worker_terminalization(
         first = AgentHarnessRepository(first_db)
         second = AgentHarnessRepository(second_db)
         session = await first.open_session(_request())
-        run = await first.create_run(str(session.id))
+        run = await create_agent_run(first, str(session.id))
         first_generation = await first.claim_run(
             str(run.id),
             owner="worker-1",
@@ -912,7 +943,7 @@ async def test_terminal_run_cannot_be_reactivated_by_stale_worker(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     await repository.update_run(
         str(run.id),
         status="cancelled",
@@ -955,7 +986,7 @@ async def test_terminal_fence_rejects_worker_with_stale_identity_map(
         worker = AgentHarnessRepository(worker_db)
         command = AgentHarnessRepository(command_db)
         session = await worker.open_session(_request())
-        run = await worker.create_run(str(session.id))
+        run = await create_agent_run(worker, str(session.id))
         await worker.update_run(str(run.id), status="running", phase="model")
         assert (await worker.get_run(str(run.id))).status == "running"
 
@@ -1007,7 +1038,7 @@ async def test_terminal_fence_rejects_stale_history_append(
         worker = AgentHarnessRepository(worker_db)
         command = AgentHarnessRepository(command_db)
         session = await worker.open_session(_request())
-        run = await worker.create_run(str(session.id))
+        run = await create_agent_run(worker, str(session.id))
         await worker.update_run(str(run.id), status="running", phase="model")
         assert (await worker.get_run(str(run.id))).status == "running"
 
@@ -1046,7 +1077,7 @@ async def test_waiting_interaction_rolls_back_history_and_run_state_together(
     )
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     generation = await repository.claim_run(
         str(run.id),
         owner="worker-1",
@@ -1099,7 +1130,7 @@ async def test_waiting_interaction_advances_the_public_run_revision(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     before_waiting = run.revision
 
     _, _, waiting = await repository.commit_waiting_interaction(
@@ -1159,7 +1190,7 @@ async def test_respond_ack_rolls_back_with_interaction_response_history(
     )
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     session_id = str(session.id)
     run_id = str(run.id)
     await repository.update_run(
@@ -1222,7 +1253,7 @@ async def test_approved_bash_ack_rolls_back_with_the_execution_fence(
     )
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     session_id = str(session.id)
     run_id = str(run.id)
     call = {
@@ -1313,7 +1344,7 @@ async def test_approved_tool_execution_preserves_complete_progress_in_snapshot(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     session_id = str(session.id)
     run_id = str(run.id)
     call = {
@@ -1390,7 +1421,7 @@ async def test_respond_ack_preserves_a_command_enqueued_after_the_worker_peek(
     )
     setup = AgentHarnessRepository(harness_db)
     session = await setup.open_session(_request())
-    run = await setup.create_run(str(session.id))
+    run = await create_agent_run(setup, str(session.id))
     session_id = str(session.id)
     run_id = str(run.id)
     await setup.update_run(run_id, status="waiting_user", phase="interaction")
@@ -1450,7 +1481,7 @@ async def test_concurrent_different_commands_are_both_preserved(
     )
     setup = AgentHarnessRepository(harness_db)
     session = await setup.open_session(_request())
-    run = await setup.create_run(str(session.id))
+    run = await create_agent_run(setup, str(session.id))
     session_id = str(session.id)
     run_id = str(run.id)
     async with factory() as first_db, factory() as second_db:
@@ -1491,7 +1522,7 @@ async def test_concurrent_same_command_id_is_inserted_once(
     )
     setup = AgentHarnessRepository(harness_db)
     session = await setup.open_session(_request())
-    run = await setup.create_run(str(session.id))
+    run = await create_agent_run(setup, str(session.id))
     session_id = str(session.id)
     run_id = str(run.id)
     async with factory() as first_db, factory() as second_db:
@@ -1541,7 +1572,7 @@ async def test_worker_dequeue_and_external_command_cannot_overwrite_each_other(
     )
     setup = AgentHarnessRepository(harness_db)
     session = await setup.open_session(_request())
-    run = await setup.create_run(str(session.id))
+    run = await create_agent_run(setup, str(session.id))
     session_id = str(session.id)
     run_id = str(run.id)
     await setup.enqueue_command(
@@ -1589,14 +1620,23 @@ async def test_concurrent_message_start_consumes_only_one_command(
     session_id = str(session.id)
     await setup.enqueue_command(session_id, _message("message-1", "first"))
     await setup.enqueue_command(session_id, _message("message-2", "second"))
+    turn_execution_config = await agent_turn_execution_config(setup, session_id)
 
     async with factory() as first_db, factory() as second_db:
         first = AgentHarnessRepository(first_db)
         second = AgentHarnessRepository(second_db)
         _barrier_get_session(monkeypatch, first, second)
         results = await asyncio.gather(
-            first.create_run_from_next_session_command(session_id, kind="message"),
-            second.create_run_from_next_session_command(session_id, kind="message"),
+            first.create_run_from_next_session_command(
+                session_id,
+                kind="message",
+                turn_execution_config=turn_execution_config,
+            ),
+            second.create_run_from_next_session_command(
+                session_id,
+                kind="message",
+                turn_execution_config=turn_execution_config,
+            ),
         )
 
     assert sum(result is not None for result in results) == 1
@@ -1631,12 +1671,13 @@ async def test_message_start_rolls_back_queue_run_and_history_together(
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
     session_id = str(session.id)
-    active = await repository.create_run(session_id)
+    active = await create_agent_run(repository, session_id)
     await repository.enqueue_command(
         session_id,
         _message("message-1", "next"),
     )
     await repository.update_run(str(active.id), status="completed")
+    turn_execution_config = await agent_turn_execution_config(repository, session_id)
 
     async def fail_commit() -> None:
         raise RuntimeError("simulated process loss before commit")
@@ -1646,6 +1687,7 @@ async def test_message_start_rolls_back_queue_run_and_history_together(
         await repository.create_run_from_next_session_command(
             session_id,
             kind="message",
+            turn_execution_config=turn_execution_config,
         )
 
     async with factory() as verification_db:
@@ -1730,7 +1772,7 @@ async def test_snapshot_keeps_latest_completed_run_and_delete_cascades(
 ) -> None:
     repository = AgentHarnessRepository(harness_db)
     session = await repository.open_session(_request())
-    run = await repository.create_run(str(session.id))
+    run = await create_agent_run(repository, str(session.id))
     await repository.update_run(str(run.id), status="completed")
 
     snapshot = await repository.snapshot(str(session.id))
@@ -1748,8 +1790,8 @@ async def test_repository_lists_only_runs_that_need_recovery(
     repository = AgentHarnessRepository(harness_db)
     first = await repository.open_session(_request())
     second = await repository.open_session(_request())
-    active = await repository.create_run(str(first.id))
-    terminal = await repository.create_run(str(second.id))
+    active = await create_agent_run(repository, str(first.id))
+    terminal = await create_agent_run(repository, str(second.id))
     await repository.update_run(str(active.id), status="running", phase="model")
     await repository.update_run(str(terminal.id), status="completed")
 
