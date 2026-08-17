@@ -210,12 +210,34 @@ function mergeSupplementalArtifacts(
       block.type === "artifact" ? [block.artifactId] : [],
     ),
   )
-  return [
-    ...transcript,
-    ...supplementalArtifacts.filter(
-      (artifact) => !artifactIds.has(artifact.artifactId),
-    ),
-  ]
+  const artifactsByRun = new Map<string, ArtifactTranscriptBlock[]>()
+  for (const artifact of supplementalArtifacts) {
+    if (!artifact.runId || artifactIds.has(artifact.artifactId)) continue
+    const runArtifacts = artifactsByRun.get(artifact.runId) ?? []
+    runArtifacts.push(artifact)
+    artifactsByRun.set(artifact.runId, runArtifacts)
+  }
+  if (artifactsByRun.size === 0) return [...transcript]
+
+  const finalAssistantIndexByRun = new Map<string, number>()
+  transcript.forEach((block, index) => {
+    if (
+      block.type === "message" &&
+      block.role === "assistant" &&
+      !block.streaming &&
+      block.runId &&
+      artifactsByRun.has(block.runId)
+    ) {
+      finalAssistantIndexByRun.set(block.runId, index)
+    }
+  })
+
+  return transcript.flatMap((block, index) => {
+    if (!block.runId || finalAssistantIndexByRun.get(block.runId) !== index) {
+      return [block]
+    }
+    return [block, ...(artifactsByRun.get(block.runId) ?? [])]
+  })
 }
 
 function TranscriptBlockView({
