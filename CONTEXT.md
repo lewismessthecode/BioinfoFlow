@@ -86,3 +86,33 @@ Textual reasoning content explicitly returned by a model provider for display.
 It does not include encrypted continuation state or imply access to private model
 reasoning.
 _Avoid_: complete chain of thought, encrypted reasoning
+
+**Agent Trace View / Agent 轨迹视图**:
+A Conversation-scoped, Harness-independent presentation of normalized System,
+User, Context, Assistant, and Tool events in occurrence order, grouped by Turn.
+_Avoid_: platform trace, Conversation transcript, Harness log
+
+**Trace Event / 轨迹事件**:
+One stable, ordered fact in an Agent Trace View, classified as System, User,
+Context, Assistant, or Tool.
+_Avoid_: provider event, log line, Transcript Block
+
+**Raw Model Trace / 原始模型轨迹**:
+The exact model request, model response, and Tool payload content associated with
+a Trace Event for local inspection.
+_Avoid_: Conversation View, public summary, normalized transcript
+
+**Context Composition / 上下文构成**:
+The token composition of one model request's context window, grouped by stable
+source categories. It is not cumulative Turn usage or a token budget.
+_Avoid_: usage progress, Run token total, cost meter
+
+**Context Snapshot / 上下文快照**:
+The complete ordered logical context submitted for one model request. Cached
+prefix content remains part of the snapshot even when its computation is reused.
+_Avoid_: Turn history, cache contents, cumulative usage
+
+**Context Flow / 上下文流**:
+The Conversation-wide append history showing how logical content enters and
+evolves across successive Context Snapshots while preserving Turn order.
+_Avoid_: Context Snapshot, cumulative billing usage, event timeline
