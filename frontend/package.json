@@ -24,6 +24,7 @@
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.41.0",
+    "@e965/xlsx": "^0.20.3",
     "@gsap/react": "^2.1.2",
     "@lobehub/icons": "^5.2.0",
     "@radix-ui/react-avatar": "1.1.2",

@@ -21,7 +21,6 @@ export function AgentArtifactReference({
   const t = useTranslations("agentHistory")
   const label = artifact.title ?? artifact.artifactId
   const titleId = `transcript-artifact-${artifact.id}`
-  const Icon = artifactIcon(artifact)
 
   if (!artifact.artifactId) return null
 
@@ -33,7 +32,7 @@ export function AgentArtifactReference({
       data-testid="agent-artifact-card"
     >
       <span className="flex size-14 shrink-0 items-center justify-center text-muted-foreground/75 transition-colors duration-200 group-hover:text-muted-foreground">
-        <Icon aria-hidden="true" className="size-10 stroke-[1.25]" />
+        <ArtifactIcon artifact={artifact} />
       </span>
       <span className="min-w-0 flex-1">
         <span
@@ -61,17 +60,17 @@ export function AgentArtifactReference({
   )
 }
 
-function artifactIcon(artifact: ArtifactTranscriptBlock) {
+function ArtifactIcon({ artifact }: { artifact: ArtifactTranscriptBlock }) {
   const mediaType = artifact.mediaType ?? ""
   const filename = artifact.title ?? ""
   if (/spreadsheet|excel/u.test(mediaType) || /\.(xlsx|xls|csv|tsv)$/iu.test(filename)) {
-    return FileSpreadsheet
+    return <FileSpreadsheet aria-hidden="true" className="size-10 stroke-[1.25]" />
   }
   if (mediaType.includes("json") || filename.toLowerCase().endsWith(".json")) {
-    return FileJson
+    return <FileJson aria-hidden="true" className="size-10 stroke-[1.25]" />
   }
   if (/html|javascript/u.test(mediaType) || /\.(html|htm|js|jsx|ts|tsx)$/iu.test(filename)) {
-    return FileCode
+    return <FileCode aria-hidden="true" className="size-10 stroke-[1.25]" />
   }
-  return FileText
+  return <FileText aria-hidden="true" className="size-10 stroke-[1.25]" />
 }

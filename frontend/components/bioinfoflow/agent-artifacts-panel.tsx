@@ -23,6 +23,7 @@ import {
   workspaceArtifactSelectionId,
 } from "@/lib/agent/workspace-adapter"
 import { WorkspaceCodePreview } from "./workspace-code-preview"
+import { WorkspaceSpreadsheetPreview } from "./workspace-spreadsheet-preview"
 
 const MAX_INLINE_PREVIEW_BYTES = 8 * 1024 * 1024
 const NON_DELIVERABLE_TYPES = new Set(["command", "log_summary", "todo_list"])
@@ -101,11 +102,17 @@ export function AgentArtifactsPanel({
     : stateMatchesRequest
       ? artifactState.status
       : "loading"
-  const artifacts = stateMatchesRequest ? artifactState.artifacts : []
+  const artifacts = useMemo(
+    () => (stateMatchesRequest ? artifactState.artifacts : []),
+    [artifactState.artifacts, stateMatchesRequest],
+  )
 
-  const activeSelection = artifacts.some((artifact) => artifact.id === selected?.id)
-    ? selected
-    : null
+  const activeSelection =
+    selectedArtifactId === null
+      ? null
+      : artifacts.some((artifact) => artifact.id === selected?.id)
+        ? selected
+        : null
 
   const openArtifact = useCallback(
     async (artifact: WorkspaceArtifact) => {
@@ -138,20 +145,19 @@ export function AgentArtifactsPanel({
 
   useEffect(() => {
     if (selectedArtifactId === undefined) return
-    if (selectedArtifactId === null) {
-      if (selected) {
-        releaseObjectUrl()
-        setSelected(null)
-        setPreview({ kind: "idle" })
-      }
-      return
-    }
+    if (selectedArtifactId === null) return
     const artifact = artifacts.find(
       (candidate) => workspaceArtifactSelectionId(candidate) === selectedArtifactId,
     )
     if (!artifact || artifact.id === selected?.id) return
-    void openArtifact(artifact)
-  }, [artifacts, openArtifact, releaseObjectUrl, selected, selectedArtifactId])
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) void openArtifact(artifact)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [artifacts, openArtifact, selected, selectedArtifactId])
 
   const download = useCallback(async () => {
     if (!selected) return
@@ -320,6 +326,14 @@ function ArtifactPreviewSurface({
   if (value.mediaType === "text/html") {
     return <HtmlArtifactPreview content={value.blob} title={artifact.title} />
   }
+  if (isSpreadsheet(value.filename || artifact.title, value.mediaType)) {
+    return (
+      <WorkspaceSpreadsheetPreview
+        blob={value.blob}
+        filename={value.filename || artifact.title}
+      />
+    )
+  }
   if (isTextMediaType(value.mediaType)) {
     return <TextArtifactPreview content={value.blob} filename={value.filename || artifact.title} mediaType={value.mediaType} />
   }
@@ -437,6 +451,10 @@ function isTextMediaType(mediaType: string) {
 
 function isDelimited(filename: string, mediaType: string) {
   return /\.(csv|tsv)$/iu.test(filename) || /csv|tab-separated/u.test(mediaType)
+}
+
+function isSpreadsheet(filename: string, mediaType: string) {
+  return /\.(xlsx|xls)$/iu.test(filename) || /spreadsheet|excel/u.test(mediaType)
 }
 
 function parseDelimited(text: string, delimiter: string) {
