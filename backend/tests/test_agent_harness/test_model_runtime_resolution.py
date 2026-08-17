@@ -11,6 +11,12 @@ from app.models.llm import (
     LlmProvider,
     LlmProviderCredential,
 )
+from app.repositories.llm_repo import (
+    LlmModelProfileRepository,
+    LlmModelRepository,
+    LlmProviderCredentialRepository,
+    LlmProviderRepository,
+)
 from app.services.agent_harness.contracts import (
     InputTextPart,
     MessageCommand,
@@ -24,6 +30,8 @@ from app.services.agent_harness.model_target import (
     model_target_from_snapshot,
     private_model_snapshot,
 )
+from app.services.agent_harness.model_resolver import AgentModelResolver
+from app.services.authorization_service import AuthorizationService
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ModelEvent,
@@ -203,6 +211,7 @@ async def test_model_snapshot_resolves_each_api_selection_without_persisting_sec
         "supports_tools": False,
         "supports_vision": False,
     }
+    assert snapshot["context_window_tokens"] == 200_000
     assert "api_key" not in repr(snapshot)
     assert "session-secret" not in repr(snapshot)
 
@@ -231,6 +240,42 @@ async def test_model_snapshot_uses_registry_endpoint_for_legacy_null_deepseek_ba
     assert snapshot["target"]["provider_kind"] == "deepseek"
     assert snapshot["target"]["routed_model_name"] == "deepseek/deepseek-chat"
     assert snapshot["target"]["base_url"] == "https://api.deepseek.com/v1"
+
+
+@pytest.mark.asyncio
+async def test_runtime_resolution_preserves_the_session_context_window(
+    harness_db,
+    monkeypatch,
+) -> None:
+    _provider, model, _profile = await _catalog(
+        harness_db,
+        monkeypatch,
+        api_key="session-secret",
+    )
+    snapshot = await resolve_model_snapshot(
+        harness_db,
+        workspace_id=WORKSPACE_ID,
+        user_id="user-1",
+        selection={"model_id": str(model.id)},
+    )
+    model.context_length = 300_000
+    await harness_db.commit()
+    resolver = AgentModelResolver(
+        llm_models=LlmModelRepository(harness_db),
+        llm_profiles=LlmModelProfileRepository(harness_db),
+        llm_providers=LlmProviderRepository(harness_db),
+        llm_credentials=LlmProviderCredentialRepository(harness_db),
+        authorization=AuthorizationService(harness_db),
+    )
+
+    resolved = await resolver.resolve_snapshot(
+        snapshot,
+        workspace_id=WORKSPACE_ID,
+        user_id="user-1",
+    )
+
+    assert resolved is not None
+    assert resolved["context_window_tokens"] == 200_000
 
 
 @pytest.mark.asyncio
@@ -544,6 +589,7 @@ async def _catalog(
         supports_vision=supports_vision,
         supports_reasoning=True,
         max_output_tokens=4096,
+        context_length=200_000,
     )
     harness_db.add(model)
     await harness_db.flush()

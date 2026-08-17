@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -53,6 +54,7 @@ from app.services.agent_harness.tools import ToolCall, ToolResult
 from app.services.agent_harness.tools.specs import ToolSpec
 from app.services.agent_harness.turn_settings import effective_turn_session
 from app.services.agent_harness.workspace_runtime import WorkspaceRuntime
+from app.services.agent_trace.recorder import ModelExchangeRecorder
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ImagePart,
@@ -73,6 +75,7 @@ from app.services.model_runtime.streams import aclose_async_iterator
 
 Publish = Callable[[Any], Awaitable[None]]
 HARNESS_VERSION = "complete-agent-harness-v1"
+logger = logging.getLogger(__name__)
 
 
 class ModelAttemptTimeoutError(TimeoutError):
@@ -108,6 +111,7 @@ class AgentLoop:
         model_runtime_resolver: Callable[[Any], Awaitable[dict[str, Any]]]
         | None = None,
         limits: LoopLimits | None = None,
+        model_exchange_recorder: ModelExchangeRecorder | None = None,
     ) -> None:
         self.repository = repository
         self.model_gateway = model_gateway
@@ -115,6 +119,7 @@ class AgentLoop:
         self.model_runtime_resolver = model_runtime_resolver
         self.publish = publish
         self.limits = limits or LoopLimits()
+        self.model_exchange_recorder = model_exchange_recorder
         self.context = ContextBuilder()
         self.compactor = DeterministicCompactor(
             preserve_recent_entries=self.limits.preserve_recent_entries
@@ -178,6 +183,7 @@ class AgentLoop:
                     )
                     return await self._invoke(
                         run_id=run_id,
+                        iteration=iteration,
                         session=session,
                         context=context,
                         workspace=workspace,
@@ -1097,7 +1103,9 @@ class AgentLoop:
             )
         )
 
-    async def _invoke(self, *, run_id, session, context, workspace, cancellation):
+    async def _invoke(
+        self, *, run_id, iteration, session, context, workspace, cancellation
+    ):
         if self.model_runtime_resolver is None:
             target = model_target_from_snapshot(session.model_snapshot)
             resolved = dict(session.model_snapshot or {})
@@ -1147,12 +1155,45 @@ class AgentLoop:
         while True:
             response = _ModelResponse()
             semantic = False
+            exchange_id = None
+            if self.model_exchange_recorder is not None:
+                exchange_id = await self._capture_model_exchange(
+                    "start",
+                    self.model_exchange_recorder.start(
+                        session_id=str(session.id),
+                        run_id=run_id,
+                        iteration=iteration,
+                        attempt=attempts + 1,
+                        context_through_sequence=context.history_revision,
+                        provider=target.provider_kind,
+                        model=target.model_name,
+                        wire_protocol=target.wire_protocol,
+                        context_snapshot=_trace_context_snapshot(
+                            context,
+                            input_items=input_items,
+                            tools=invocation.tools,
+                            max_context_tokens=_optional_positive_int(
+                                resolved.get("context_window_tokens")
+                            ),
+                        ),
+                    ),
+                )
+            attempt_invocation = replace(invocation, exchange_id=exchange_id)
             try:
                 async for event in _model_events_with_timeout(
-                    self.model_gateway.invoke(invocation),
+                    self.model_gateway.invoke(attempt_invocation),
                     timeout_seconds=self.limits.model_attempt_timeout_seconds,
                 ):
                     if cancellation.is_set():
+                        if exchange_id is not None:
+                            await self._capture_model_exchange(
+                                "fail",
+                                self.model_exchange_recorder.fail(
+                                    exchange_id,
+                                    code="cancelled",
+                                    message="Model exchange was cancelled.",
+                                ),
+                            )
                         return _ModelResponse(cancelled=True)
                     if isinstance(event, TextDelta):
                         semantic = True
@@ -1216,8 +1257,12 @@ class AgentLoop:
                             "input_tokens": event.input_tokens,
                             "output_tokens": event.output_tokens,
                             "total_tokens": event.total_tokens,
+                            "cached_input_tokens": event.cached_input_tokens,
+                            "reasoning_tokens": event.reasoning_tokens,
                         }
                     elif isinstance(event, CompletionMetadata):
+                        response.provider_response_id = event.response_id
+                        response.finish_reason = event.finish_reason
                         response.continuation = (
                             event.continuation.to_private_dict()
                             if event.continuation is not None
@@ -1228,7 +1273,8 @@ class AgentLoop:
                 usage = dict(current.token_usage or {}) if current else {}
                 if response.usage:
                     for key, value in response.usage.items():
-                        usage[key] = int(usage.get(key) or 0) + value
+                        if value is not None:
+                            usage[key] = int(usage.get(key) or 0) + value
                 await self.repository.update_run(
                     run_id,
                     token_usage=usage or None,
@@ -1238,8 +1284,27 @@ class AgentLoop:
                         reasoning_traces=response.reasoning_traces,
                     ),
                 )
+                if exchange_id is not None:
+                    await self._capture_model_exchange(
+                        "complete",
+                        self.model_exchange_recorder.complete(
+                            exchange_id,
+                            usage=response.usage,
+                            provider_response_id=response.provider_response_id,
+                            finish_reason=response.finish_reason,
+                        ),
+                    )
                 return response
             except TimeoutError as exc:
+                if exchange_id is not None:
+                    await self._capture_model_exchange(
+                        "fail",
+                        self.model_exchange_recorder.fail(
+                            exchange_id,
+                            code="timeout",
+                            message="Model exchange timed out.",
+                        ),
+                    )
                 attempts += 1
                 if semantic or attempts >= self.limits.retry_attempts:
                     raise ModelAttemptTimeoutError(
@@ -1251,6 +1316,15 @@ class AgentLoop:
                 )
                 await asyncio.sleep(delay)
             except ModelError as exc:
+                if exchange_id is not None:
+                    await self._capture_model_exchange(
+                        "fail",
+                        self.model_exchange_recorder.fail(
+                            exchange_id,
+                            code=exc.category,
+                            message=exc.message,
+                        ),
+                    )
                 attempts += 1
                 if (
                     is_context_overflow(exc)
@@ -1265,6 +1339,43 @@ class AgentLoop:
                     settings.agent_retry_max_delay_seconds,
                 )
                 await asyncio.sleep(delay)
+            except Exception as exc:
+                if exchange_id is not None:
+                    await self._capture_model_exchange(
+                        "fail",
+                        self.model_exchange_recorder.fail(
+                            exchange_id,
+                            code="internal_error",
+                            message="Model exchange failed unexpectedly.",
+                            details={"exception_type": type(exc).__name__},
+                        ),
+                    )
+                raise
+
+    async def _capture_model_exchange(
+        self,
+        operation: str,
+        capture: Awaitable[Any],
+    ) -> Any | None:
+        try:
+            return await capture
+        except Exception as exc:  # noqa: BLE001 - telemetry must remain best-effort
+            recorder = self.model_exchange_recorder
+            recover = getattr(recorder, "recover_after_failure", None)
+            if callable(recover):
+                try:
+                    await recover()
+                except Exception as recovery_exc:  # noqa: BLE001
+                    logger.warning(
+                        "Model exchange recorder recovery failed (%s).",
+                        type(recovery_exc).__name__,
+                    )
+            logger.warning(
+                "Model exchange recorder capture failed during %s (%s).",
+                operation,
+                type(exc).__name__,
+            )
+            return None
 
     async def _build_context(self, session, entries) -> Any:
         mappings = tuple(_history_mapping(entry) for entry in entries)
@@ -1304,6 +1415,19 @@ class AgentLoop:
         if role == "tool":
             if call_id is None:
                 raise ValueError("tool message requires call_id")
+            run = await self.repository.get_run(run_id)
+            progress = (
+                next(
+                    (
+                        item
+                        for item in (run.tool_progress or [])
+                        if isinstance(item, dict) and item.get("call_id") == call_id
+                    ),
+                    {},
+                )
+                if run is not None
+                else {}
+            )
             try:
                 private_output = json.loads(content)
             except (TypeError, ValueError):
@@ -1318,6 +1442,8 @@ class AgentLoop:
                         private_output, tool_name=tool_name
                     ),
                     "output": {"type": "text", "text": content},
+                    "started_at": progress.get("started_at"),
+                    "completed_at": progress.get("completed_at"),
                     "error": content if is_error else None,
                 }
             )
@@ -1580,8 +1706,10 @@ class _ModelResponse:
     reasoning_traces: list[_ReasoningTraceSegment] = None  # type: ignore[assignment]
     tool_deltas: list[ToolCallDelta] = None  # type: ignore[assignment]
     tool_calls: tuple[ToolCall, ...] = ()
-    usage: dict[str, int] | None = None
+    usage: dict[str, int | None] | None = None
     continuation: dict[str, Any] | None = None
+    provider_response_id: str | None = None
+    finish_reason: str | None = None
     cancelled: bool = False
 
     def __post_init__(self) -> None:
@@ -1610,6 +1738,76 @@ class _ModelResponse:
         start_offset = len(segment.text)
         segment.text += event.text
         return len(self.reasoning_traces) - 1, start_offset, len(segment.text)
+
+
+def _trace_context_snapshot(
+    context: Any,
+    *,
+    input_items: tuple[Any, ...],
+    tools: tuple[Any, ...],
+    max_context_tokens: int | None,
+) -> dict[str, Any]:
+    characters = {
+        "system": len(context.instructions),
+        "user": 0,
+        "context": 0,
+        "assistant": 0,
+        "tool": 0,
+    }
+    for item in input_items:
+        if isinstance(item, TextPart):
+            category = "assistant" if item.phase is not None else "user"
+            characters[category] += len(item.text)
+        elif isinstance(item, ImagePart):
+            characters["user"] += len(item.data)
+        elif isinstance(item, ToolCallPart):
+            characters["tool"] += len(
+                json.dumps(
+                    {
+                        "call_id": item.call_id,
+                        "name": item.name,
+                        "arguments": item.arguments,
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    default=str,
+                )
+            )
+        elif isinstance(item, ToolResultPart):
+            characters["tool"] += len(item.output)
+    if tools:
+        characters["tool"] += len(
+            json.dumps(
+                [
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters,
+                    }
+                    for tool in tools
+                ],
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+        )
+    return {
+        "compacted": bool(context.compacted),
+        "max_context_tokens": max_context_tokens,
+        "composition": [
+            {"category": category, "characters": count, "tokens": None}
+            for category, count in characters.items()
+            if count > 0
+        ],
+    }
+
+
+def _optional_positive_int(value: Any) -> int | None:
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0
+        else None
+    )
 
 
 def _advance_response_continuation(

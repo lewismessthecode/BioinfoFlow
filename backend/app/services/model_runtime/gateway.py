@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterable
+import json
+import logging
 from typing import Any
 
 from app.services.model_runtime.backend.litellm import LiteLLMBackend
@@ -17,7 +19,11 @@ from app.services.model_runtime.contracts import (
     WireProtocol,
 )
 from app.services.model_runtime.errors import ModelError
+from app.services.model_runtime.exchange import ModelExchangeObserver
 from app.services.model_runtime.streams import aclose_async_iterator
+
+
+logger = logging.getLogger(__name__)
 
 
 class ModelGateway:
@@ -28,8 +34,10 @@ class ModelGateway:
         *,
         backend: Any | None = None,
         codecs: Iterable[ModelCodec] | None = None,
+        exchange_observer: ModelExchangeObserver | None = None,
     ) -> None:
         self._backend = backend or LiteLLMBackend()
+        self._exchange_observer = exchange_observer
         configured_codecs = (
             list(codecs)
             if codecs is not None
@@ -66,6 +74,13 @@ class ModelGateway:
                 wire_protocol=wire_protocol,
                 reasoning=invocation.reasoning,
             )
+        if invocation.exchange_id is not None and self._exchange_observer is not None:
+            await _notify_exchange_observer(
+                self._exchange_observer,
+                "request_prepared",
+                invocation.exchange_id,
+                _json_payload(request),
+            )
         if invocation.target.base_url is not None:
             request["api_base"] = invocation.target.base_url
         api_key = invocation.target.resolved_api_key()
@@ -76,6 +91,20 @@ class ModelGateway:
             request,
             network_access=invocation.target.network_access,
         )
+        if invocation.exchange_id is not None and self._exchange_observer is not None:
+            if hasattr(raw_response, "__aiter__"):
+                raw_response = _observe_stream(
+                    raw_response,
+                    exchange_id=invocation.exchange_id,
+                    observer=self._exchange_observer,
+                )
+            else:
+                await _notify_exchange_observer(
+                    self._exchange_observer,
+                    "response_received",
+                    invocation.exchange_id,
+                    _json_payload(raw_response),
+                )
         semantic_output_emitted = False
         decoded_events = None
         try:
@@ -102,6 +131,75 @@ class ModelGateway:
             if decoded_events is not None:
                 await aclose_async_iterator(decoded_events)
             await aclose_async_iterator(raw_response)
+
+
+def _observe_stream(
+    response: Any,
+    *,
+    exchange_id: str,
+    observer: ModelExchangeObserver,
+) -> AsyncIterator[Any]:
+    async def iterate() -> AsyncIterator[Any]:
+        chunks: list[Any] = []
+        try:
+            async for chunk in response:
+                chunks.append(_json_payload(chunk))
+                yield chunk
+        finally:
+            try:
+                await _notify_exchange_observer(
+                    observer,
+                    "response_received",
+                    exchange_id,
+                    {"stream": True, "chunks": chunks},
+                )
+            finally:
+                await aclose_async_iterator(response)
+
+    return iterate()
+
+
+async def _notify_exchange_observer(
+    observer: ModelExchangeObserver,
+    callback_name: str,
+    exchange_id: str,
+    payload: dict | list,
+) -> None:
+    try:
+        callback = getattr(observer, callback_name)
+        await callback(exchange_id, payload)
+    except Exception as exc:  # noqa: BLE001 - telemetry must remain best-effort
+        await _recover_observer(observer)
+        logger.warning(
+            "Model exchange observer callback failed during %s (%s).",
+            callback_name,
+            type(exc).__name__,
+        )
+
+
+async def _recover_observer(observer: ModelExchangeObserver) -> None:
+    recover = getattr(observer, "recover_after_failure", None)
+    if not callable(recover):
+        return
+    try:
+        await recover()
+    except Exception as exc:  # noqa: BLE001 - recovery is also best-effort
+        logger.warning(
+            "Model exchange observer recovery failed (%s).",
+            type(exc).__name__,
+        )
+
+
+def _json_payload(value: Any) -> dict | list:
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        value = model_dump(mode="json")
+    elif not isinstance(value, (dict, list)) and hasattr(value, "__dict__"):
+        value = vars(value)
+    normalized = json.loads(json.dumps(value, ensure_ascii=False, default=str))
+    if isinstance(normalized, (dict, list)):
+        return normalized
+    return {"value": normalized}
 
 
 def _copy_model_error(exc: ModelError, *, replay_safe: bool) -> ModelError:

@@ -50,6 +50,7 @@ from app.services.agent_harness.tool_projection import (
 from app.services.agent_harness.tools import ToolCall
 from app.services.agent_harness.tools.specs import ToolSpec
 from app.services.agent_harness.turn_settings import effective_turn_session
+from app.services.agent_trace.recorder import ModelExchangeRecorder
 from app.services.model_runtime.gateway import ModelGateway
 
 
@@ -72,6 +73,7 @@ class AgentHarness:
         execution_scheduler: Callable[[str, str, str, dict[str, Any] | None], None]
         | None = None,
         lease_owner: str | None = None,
+        model_exchange_recorder: ModelExchangeRecorder | None = None,
     ) -> None:
         self.repository = repository
         self.run_submission = AgentRunSubmissionService(repository)
@@ -118,6 +120,7 @@ class AgentHarness:
             model_runtime_resolver=model_runtime_resolver,
             publish=self._publish_for_current_session,
             limits=limits,
+            model_exchange_recorder=model_exchange_recorder,
         )
         self._publishing_session_id: str | None = None
 
@@ -138,9 +141,16 @@ class AgentHarness:
         | None = None,
         lease_owner: str | None = None,
     ) -> AgentHarness:
+        recorder = None
+        gateway = model_gateway
+        if gateway is None:
+            from app.repositories.agent_trace_repo import AgentModelTraceRepository
+
+            recorder = ModelExchangeRecorder(AgentModelTraceRepository(db))
+            gateway = ModelGateway(exchange_observer=recorder)
         return cls(
             AgentHarnessRepository(db),
-            model_gateway=model_gateway or ModelGateway(),
+            model_gateway=gateway,
             workspace_factory=workspace_factory,
             model_runtime_resolver=model_runtime_resolver,
             event_hub=event_hub,
@@ -151,6 +161,7 @@ class AgentHarness:
             run_tokens=run_tokens,
             execution_scheduler=execution_scheduler,
             lease_owner=lease_owner,
+            model_exchange_recorder=recorder,
         )
 
     def bind_run_fence(self, run_id: str, *, owner: str, generation: int) -> None:
