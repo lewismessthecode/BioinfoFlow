@@ -63,6 +63,11 @@ from app.services.agent_harness.environment_scope import (
 )
 from app.services.agent_harness.runtime import agent_runtime
 from app.services.agent_harness.system_prompt import default_system_prompt_snapshot
+from app.services.agent_trace.adapter import CompleteHarnessTraceAdapter
+from app.services.agent_trace.contracts import (
+    AgentTraceEventDetail,
+    AgentTraceTimeline,
+)
 from app.services.file_service import FileService
 from app.services.run_service import RunService
 from app.services.workflow_service import WorkflowService
@@ -841,6 +846,47 @@ async def get_snapshot(
     await _owned_session(repository, session_id=session_id, user=user)
     return success_response(
         _dump(await repository.snapshot(session_id)), request=request
+    )
+
+
+@router.get(
+    "/sessions/{session_id}/trace",
+    response_model=SuccessEnvelope[AgentTraceTimeline],
+)
+async def get_trace(
+    session_id: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    repository = AgentHarnessRepository(db)
+    await _owned_session(repository, session_id=session_id, user=user)
+    timeline = await CompleteHarnessTraceAdapter(db).timeline(session_id)
+    return success_response(
+        timeline.model_dump(mode="json", by_alias=True),
+        request=request,
+    )
+
+
+@router.get(
+    "/sessions/{session_id}/trace/events/{event_id}",
+    response_model=SuccessEnvelope[AgentTraceEventDetail],
+)
+async def get_trace_event_detail(
+    session_id: str,
+    event_id: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    repository = AgentHarnessRepository(db)
+    await _owned_session(repository, session_id=session_id, user=user)
+    detail = await CompleteHarnessTraceAdapter(db).detail(session_id, event_id)
+    if detail is None:
+        raise NotFoundError(f"Agent trace event not found: {event_id}")
+    return success_response(
+        detail.model_dump(mode="json", by_alias=True),
+        request=request,
     )
 
 
