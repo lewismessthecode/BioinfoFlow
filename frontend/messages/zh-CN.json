@@ -306,7 +306,10 @@
       "noSession": "开始对话后可查看产物",
       "loadFailed": "无法加载产物",
       "previewFailed": "无法加载该产物",
-      "previewUnavailable": "暂不支持预览"
+      "previewUnavailable": "暂不支持预览",
+      "spreadsheetFailed": "无法预览该表格",
+      "spreadsheetEmpty": "当前工作表为空",
+      "worksheetTabs": "工作表"
     },
     "browser": {
       "label": "内置浏览器",

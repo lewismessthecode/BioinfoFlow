@@ -31,6 +31,12 @@ vi.mock("shiki", () => ({
   codeToHtml: vi.fn(async (content: string) => `<pre class="shiki"><code>${content}</code></pre>`),
 }))
 
+vi.mock("@/components/bioinfoflow/workspace-spreadsheet-preview", () => ({
+  WorkspaceSpreadsheetPreview: ({ filename }: { filename: string }) => (
+    <div data-testid="workspace-spreadsheet-preview">{filename}</div>
+  ),
+}))
+
 import { AgentArtifactsPanel } from "@/components/bioinfoflow/agent-artifacts-panel"
 
 function adapter(): AgentWorkspaceAdapter {
@@ -153,5 +159,43 @@ describe("AgentArtifactsPanel", () => {
       projectId: "project-1",
       signal: expect.any(AbortSignal),
     })
+  })
+
+  it("routes Excel artifacts to the workbook preview instead of text", async () => {
+    const workspaceAdapter = adapter()
+    vi.mocked(workspaceAdapter.listArtifacts).mockResolvedValueOnce([
+      {
+        id: "workspace:project-1:report.xlsx",
+        source: "workspace",
+        title: "report.xlsx",
+        summary: "report.xlsx",
+        kind: "xlsx",
+        mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        sizeBytes: 512,
+        createdAt: "2026-08-17T01:00:00Z",
+        updatedAt: "2026-08-17T01:00:00Z",
+        payload: null,
+        resource: {
+          kind: "workspace",
+          projectId: "project-1",
+          path: "report.xlsx",
+        },
+      },
+    ])
+    vi.mocked(workspaceAdapter.fetchArtifactContent).mockResolvedValueOnce({
+      blob: new Blob(["workbook bytes"], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+      filename: "report.xlsx",
+      mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    })
+
+    render(<AgentArtifactsPanel projectId="project-1" adapter={workspaceAdapter} />)
+
+    await userEvent.click(await screen.findByRole("button", { name: "Preview report.xlsx" }))
+    expect(await screen.findByTestId("workspace-spreadsheet-preview")).toHaveTextContent(
+      "report.xlsx",
+    )
+    expect(screen.queryByTestId("workspace-code-preview")).not.toBeInTheDocument()
   })
 })

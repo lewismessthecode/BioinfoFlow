@@ -306,7 +306,10 @@
       "noSession": "Start a conversation to collect artifacts",
       "loadFailed": "Could not load artifacts",
       "previewFailed": "Could not load this artifact",
-      "previewUnavailable": "Preview unavailable"
+      "previewUnavailable": "Preview unavailable",
+      "spreadsheetFailed": "Could not preview this spreadsheet",
+      "spreadsheetEmpty": "This worksheet is empty",
+      "worksheetTabs": "Worksheets"
     },
     "browser": {
       "label": "Built-in browser",
