@@ -228,6 +228,8 @@ export type ConversationInteractionRequest =
         level: string
         effects: string[]
         reasons: string[]
+        reasonCodes: string[]
+        justification: string | null
         affectedResources: string[]
       }
       target: ConversationInteractionTarget | null

@@ -178,7 +178,10 @@ function ApprovalInteraction({
 }) {
   const t = useTranslations("agentInteraction")
   const submitting = pendingAction !== null
-  const action = approvalAction(request.toolName, t)
+  const escalated = request.risk.reasonCodes.includes("sandbox_escalation")
+  const action = escalated
+    ? t("approval.action.escalation")
+    : approvalAction(request.toolName, t)
   const summary = request.summary.trim()
 
   return (
@@ -195,7 +198,9 @@ function ApprovalInteraction({
             {request.toolName}
           </span>
         </div>
-        {summary && summary !== action ? (
+        {summary &&
+        summary !== action &&
+        summary !== defaultApprovalSummary(request.toolName) ? (
           <p className="text-xs leading-5 text-muted-foreground">{summary}</p>
         ) : null}
       </div>
@@ -315,6 +320,25 @@ function approvalEffectCode(effect: string): ApprovalEffectCode | null {
   }
 }
 
+function approvalReasonCode(reason: string): "sandbox_escalation" | null {
+  return reason === "sandbox_escalation" ? reason : null
+}
+
+function defaultApprovalSummary(toolName: string): string | null {
+  switch (toolName) {
+    case "bash":
+      return "Run command"
+    case "write":
+      return "Write file"
+    case "edit":
+      return "Edit file"
+    case "read":
+      return "Read file"
+    default:
+      return null
+  }
+}
+
 function RiskDetails({
   request,
 }: {
@@ -325,8 +349,20 @@ function RiskDetails({
     const code = approvalEffectCode(effect)
     return code ? t(`approval.effect.${code}`) : effect
   })
+  const reasons = request.risk.reasonCodes.flatMap((reason) => {
+    const code = approvalReasonCode(reason)
+    return code ? [t(`approval.reason.${code}`)] : []
+  })
+  if (request.risk.justification) {
+    reasons.push(
+      t("approval.justification", {
+        justification: request.risk.justification,
+      }),
+    )
+  }
   const sections = [
     ["approval.effects", effects],
+    ["approval.reasons", reasons],
     ["approval.resources", request.risk.affectedResources],
   ] as const
 

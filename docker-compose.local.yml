@@ -13,15 +13,9 @@ services:
       CORS_ORIGINS: '["http://localhost:${FRONTEND_PORT:-3000}","http://127.0.0.1:${FRONTEND_PORT:-3000}"]'
       TRUSTED_HOSTS: '["localhost","127.0.0.1"]'
       DOCKER_SOCKET: unix:///var/run/docker.sock
+      AGENT_SANDBOX_IMAGE: ${IMAGE_REGISTRY:-ghcr.io/lewismessthecode}/bioinfoflow-backend:${BIOINFOFLOW_VERSION:?Set BIOINFOFLOW_VERSION to a release tag}
       BIOINFOFLOW_GPU_MODE: ${BIOINFOFLOW_GPU_MODE:-auto}
       BIOINFOFLOW_GPU_DEVICES: ${BIOINFOFLOW_GPU_DEVICES:-all}
-    # Bubblewrap needs user and mount namespaces inside the backend container.
-    # Docker's seccomp and AppArmor defaults can independently block them. These
-    # exceptions keep the container non-privileged and do not add SYS_ADMIN;
-    # Bubblewrap remains the per-command confinement boundary.
-    security_opt:
-      - seccomp:unconfined
-      - apparmor:unconfined
     volumes:
       - type: bind
         source: ${BIOINFOFLOW_HOME:?Set BIOINFOFLOW_HOME to an absolute host path}/skills

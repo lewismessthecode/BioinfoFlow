@@ -381,13 +381,15 @@ async def test_harness_resolves_current_credential_for_every_model_invocation(
     )
     recording = RecordingModel()
     harness = harness_for_database(harness_db, model_gateway=recording)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
     opened = await harness.open_session(
         OpenSessionRequest(
             user_id="user-1",
             workspace_id=WORKSPACE_ID,
             prompt_snapshot={"content": "Help the user."},
             model=snapshot,
-            workspace={"root": str(tmp_path), "runtime": "local"},
+            workspace={"root": str(workspace), "runtime": "local"},
         )
     )
     persisted = await harness.repository.get_session(str(opened.session.id))
@@ -423,13 +425,15 @@ async def test_harness_rejects_legacy_resolved_model_id_snapshot(
     )
     recording = RecordingModel()
     harness = harness_for_database(harness_db, model_gateway=recording)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
     opened = await harness.open_session(
         OpenSessionRequest(
             user_id="user-1",
             workspace_id=WORKSPACE_ID,
             prompt_snapshot={"content": "Reject old model snapshots."},
             model={"resolved_model_id": str(model.id)},
-            workspace={"root": str(tmp_path), "runtime": "local"},
+            workspace={"root": str(workspace), "runtime": "local"},
         )
     )
 
@@ -467,13 +471,15 @@ async def test_harness_applies_resolved_model_capabilities_and_profile_strategy(
     )
     recording = RecordingModel()
     harness = harness_for_database(harness_db, model_gateway=recording)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
     opened = await harness.open_session(
         OpenSessionRequest(
             user_id="user-1",
             workspace_id=WORKSPACE_ID,
             prompt_snapshot={"content": "Help the user."},
             model=snapshot,
-            workspace={"root": str(tmp_path), "runtime": "local"},
+            workspace={"root": str(workspace), "runtime": "local"},
         )
     )
 
@@ -528,13 +534,15 @@ async def test_harness_profile_uses_only_primary_model_without_fallback_snapshot
 
     recording = FailingRecordingModel()
     harness = harness_for_database(harness_db, model_gateway=recording)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
     opened = await harness.open_session(
         OpenSessionRequest(
             user_id="user-1",
             workspace_id=WORKSPACE_ID,
             prompt_snapshot={"content": "Use only the selected primary model."},
             model=snapshot,
-            workspace={"root": str(tmp_path), "runtime": "local"},
+            workspace={"root": str(workspace), "runtime": "local"},
         )
     )
     await harness.dispatch(

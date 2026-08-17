@@ -23,6 +23,7 @@ from app.services.agent_harness.environment_runtime import (
 from app.services.agent_harness.factory import open_session_request_workspace
 from app.services.agent_harness.sandbox.process_sandbox import (
     SandboxAvailability,
+    SandboxResult,
     SandboxRunner,
 )
 from app.services.agent_harness.tools import ToolCall
@@ -1516,19 +1517,21 @@ def test_local_runtime_respects_the_frozen_root_and_uses_the_default_tool_contra
     db_session, tmp_path, monkeypatch
 ) -> None:
     monkeypatch.setattr(settings, "bioinfoflow_public_api_base_url", "")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
     session = SimpleNamespace(
         workspace_id="workspace-1",
         user_id="user-1",
         project_id=None,
         permission_mode="ask_changes",
         workspace_access="read_only",
-        workspace_snapshot={"runtime": "local", "root": str(tmp_path)},
+        workspace_snapshot={"runtime": "local", "root": str(workspace)},
     )
 
     runtime = workspace_runtime_for_session(db_session, session)
 
     assert isinstance(runtime._executor.backend, LocalWorkspaceBackend)
-    assert runtime._executor.backend.working_directory == tmp_path.resolve()
+    assert runtime._executor.backend.working_directory == workspace.resolve()
     assert runtime._executor.environment["BIOFLOW_API_URL"] == (
         "http://127.0.0.1:8000/api/v1"
     )
@@ -1553,33 +1556,32 @@ async def test_local_factory_gives_bash_the_same_platform_path_protection(
     source = repo_root / "backend" / "app" / "secret.py"
     attachment = state / "agent_harness" / "attachments" / "secret.txt"
     socket = external_root / "docker.sock"
+    workspace = external_root / "projects" / "demo"
     for path in (source, attachment, socket):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("platform-secret", encoding="utf-8")
+    workspace.mkdir(parents=True)
     monkeypatch.setattr(settings, "repo_root", str(repo_root))
     monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
     monkeypatch.setattr(settings, "docker_socket", f"unix://{socket}")
 
     captured = []
 
-    class _CaptureAdapter:
-        name = "capture"
-
+    class _CaptureClient:
         def availability(self):
             return SandboxAvailability("capture", "/capture", True)
 
-        def available(self):
-            return True
+        def confine(self, **request):
+            captured.append(request)
+            return SandboxResult(
+                argv=["bash", "--noprofile", "--norc", "-c", "true"],
+                adapter="capture",
+                sandboxed=True,
+                mode=request["mode"],
+                enforcement="full",
+            )
 
-        def supports_docker_socket(self, root):
-            del root
-            return False
-
-        def build_argv(self, spec):
-            captured.append(spec)
-            return ["bash", "--noprofile", "--norc", "-c", "true"]
-
-    runner = SandboxRunner(enabled=True, adapters=[_CaptureAdapter()])
+    runner = SandboxRunner(enabled=True, client=_CaptureClient())
     monkeypatch.setattr(
         SandboxRunner,
         "from_settings",
@@ -1591,7 +1593,7 @@ async def test_local_factory_gives_bash_the_same_platform_path_protection(
         project_id="project-1",
         permission_mode="full_access",
         workspace_access="read_write",
-        workspace_snapshot={"runtime": "local", "root": str(external_root)},
+        workspace_snapshot={"runtime": "local", "root": str(workspace)},
     )
 
     runtime = workspace_runtime_for_session(db_session, session)
@@ -1605,14 +1607,12 @@ async def test_local_factory_gives_bash_the_same_platform_path_protection(
         ToolCall("bash-boundary", "bash", {"command": "true"})
     )
 
-    assert read_result.status == "failed"
+    assert read_result.status == "completed"
     assert write_result.status == "failed"
     assert bash_result.status == "completed"
     assert len(captured) == 1
-    protected = set(captured[0].protected_roots)
-    assert repo_root.resolve() in protected
-    assert state.resolve() in protected
-    assert socket.resolve() in protected
+    assert captured[0]["workspace_root"] == workspace.resolve()
+    assert socket.resolve() in captured[0]["protected_endpoints"]
 
 
 @pytest.mark.asyncio
@@ -1630,24 +1630,21 @@ async def test_local_factory_keeps_a_project_under_source_dev_data_writable(
 
     captured = []
 
-    class _CaptureAdapter:
-        name = "capture"
-
+    class _CaptureClient:
         def availability(self):
             return SandboxAvailability("capture", "/capture", True)
 
-        def available(self):
-            return True
+        def confine(self, **request):
+            captured.append(request)
+            return SandboxResult(
+                argv=["bash", "--noprofile", "--norc", "-c", "true"],
+                adapter="capture",
+                sandboxed=True,
+                mode=request["mode"],
+                enforcement="full",
+            )
 
-        def supports_docker_socket(self, root):
-            del root
-            return False
-
-        def build_argv(self, spec):
-            captured.append(spec)
-            return ["bash", "--noprofile", "--norc", "-c", "true"]
-
-    runner = SandboxRunner(enabled=True, adapters=[_CaptureAdapter()])
+    runner = SandboxRunner(enabled=True, client=_CaptureClient())
     monkeypatch.setattr(
         SandboxRunner,
         "from_settings",
@@ -1673,9 +1670,7 @@ async def test_local_factory_keeps_a_project_under_source_dev_data_writable(
     assert write_result.status == "completed"
     assert (project_root / "result.txt").read_text(encoding="utf-8") == "ok"
     assert bash_result.status == "completed"
-    assert captured[0].write_roots == [project_root.resolve()]
-    assert repo_root.resolve() not in captured[0].protected_roots
-    assert state.resolve() not in captured[0].protected_roots
+    assert captured[0]["workspace_root"] == project_root.resolve()
 
 
 @pytest.mark.asyncio

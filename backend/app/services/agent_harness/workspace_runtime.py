@@ -20,7 +20,11 @@ from app.services.agent_harness.command_risk import (
     CommandTargetProfile,
     assess_command_risk,
 )
-from app.services.agent_harness.sandbox import FilesystemPolicy, SandboxRunner
+from app.services.agent_harness.sandbox import (
+    DockerSandboxExecutor,
+    FilesystemPolicy,
+    SandboxRunner,
+)
 from app.services.agent_harness.token_policy import (
     is_scoped_bif_command,
     scoped_bif_argv,
@@ -128,6 +132,8 @@ class _BoundedProcessCapture:
 
 
 class LocalWorkspaceBackend:
+    supports_sandbox_escalation = True
+
     def __init__(
         self,
         *,
@@ -136,6 +142,7 @@ class LocalWorkspaceBackend:
         write_roots: tuple[Path, ...],
         protected_roots: tuple[Path, ...] = (),
         sandbox_runner: SandboxRunner | None = None,
+        container_executor: DockerSandboxExecutor | None = None,
         base_environment: dict[str, str] | None = None,
         artifact_writer: ArtifactWriter | None = None,
     ) -> None:
@@ -149,6 +156,11 @@ class LocalWorkspaceBackend:
         self.protected_roots = tuple(self.policy.sandbox_protected_roots())
         self.protected_read_roots = tuple(self.policy.sandbox_protected_read_roots())
         self.sandbox_runner = sandbox_runner or SandboxRunner.from_settings()
+        self.container_executor = (
+            container_executor
+            if container_executor is not None
+            else DockerSandboxExecutor.from_settings()
+        )
         self.base_environment = dict(base_environment or os.environ)
         self._safe_path = _safe_path(
             self.base_environment.get("PATH", ""),
@@ -158,7 +170,7 @@ class LocalWorkspaceBackend:
         self.artifact_writer = artifact_writer
 
     def canonical_path(self, raw_path: str) -> Path:
-        candidate = Path(raw_path)
+        candidate = Path(raw_path).expanduser()
         if not candidate.is_absolute():
             candidate = self.working_directory / candidate
         return candidate.resolve(strict=False)
@@ -379,7 +391,9 @@ class LocalWorkspaceBackend:
 
     def assess_command(self, command: str, *, cwd: Any = None):
         working_directory = self.policy.require_allowed_dir(
-            cwd if isinstance(cwd, str) else str(self.working_directory)
+            self.canonical_path(cwd)
+            if isinstance(cwd, str)
+            else self.working_directory
         )
         adapter = self.sandbox_runner.available_adapter()
         return assess_command_risk(
@@ -396,13 +410,15 @@ class LocalWorkspaceBackend:
                 read_roots=tuple(str(root) for root in self.policy.read_roots),
                 write_roots=tuple(str(root) for root in self.policy.write_roots),
                 working_directory=str(working_directory),
-                network_allowed=self.sandbox_runner.allow_network,
+                network_allowed=True,
             ),
         )
 
     async def command_cwd_binding(self, cwd: Any) -> dict[str, Any]:
         working_directory = self.policy.require_allowed_dir(
-            cwd if isinstance(cwd, str) else str(self.working_directory)
+            self.canonical_path(cwd)
+            if isinstance(cwd, str)
+            else self.working_directory
         )
         return _local_cwd_binding(working_directory)
 
@@ -415,10 +431,15 @@ class LocalWorkspaceBackend:
         output_limit: int,
         cancellation: Any | None,
         environment: dict[str, str],
+        sandbox_mode: Literal[
+            "read-only", "workspace-write", "danger-full-access"
+        ] = "workspace-write",
         expected_cwd_binding: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         working_directory = self.policy.require_allowed_dir(
-            cwd if isinstance(cwd, str) else str(self.working_directory)
+            self.canonical_path(cwd)
+            if isinstance(cwd, str)
+            else self.working_directory
         )
         if not self.sandbox_runner.enabled:
             raise RuntimeError("agent bash requires operating-system sandboxing")
@@ -438,22 +459,44 @@ class LocalWorkspaceBackend:
                 raise
             working_directory = Path(current_binding["path"])
         try:
+            if self.container_executor is not None:
+                cwd_identity = (
+                    os.fstat(cwd_fd)
+                    if cwd_fd is not None
+                    else working_directory.stat()
+                )
+                workspace_root = self.policy.write_roots[0]
+                workspace_identity = workspace_root.stat()
+                container_result = await self.container_executor.execute(
+                    argv=[
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-c",
+                        execution_command,
+                    ],
+                    cwd=working_directory,
+                    workspace_root=workspace_root,
+                    environment=self._child_environment(environment),
+                    mode=sandbox_mode,
+                    timeout_seconds=timeout_seconds,
+                    capture_limit=_LOCAL_ARTIFACT_CAPTURE_LIMIT,
+                    cancellation=cancellation,
+                    cwd_inode=cwd_identity.st_ino,
+                    workspace_inode=workspace_identity.st_ino,
+                )
+                return await self._container_command_result(
+                    container_result,
+                    command=command,
+                    cwd=working_directory,
+                    output_limit=output_limit,
+                    environment=environment,
+                )
             sandbox = self.sandbox_runner.build(
                 command=execution_command,
                 cwd=working_directory,
-                cwd_fd=cwd_fd,
-                read_roots=list(self.policy.read_roots),
-                write_roots=list(self.policy.write_roots),
-                protected_roots=list(self.protected_roots),
-                protected_read_roots=list(self.protected_read_roots),
-                allow_network=(
-                    self.sandbox_runner.allow_network
-                    or (
-                        scoped_bif
-                        and bool(environment.get("BIOFLOW_AGENT_TOKEN"))
-                        and bool(environment.get("BIOFLOW_API_URL"))
-                    )
-                ),
+                workspace_root=self.policy.write_roots[0],
+                mode=sandbox_mode,
             )
             process_argv = sandbox.argv
             process_cwd = str(working_directory)
@@ -536,6 +579,20 @@ class LocalWorkspaceBackend:
         full_stderr = _redact(
             bytes(capture.stderr).decode("utf-8", errors="replace"), secrets
         )
+        exit_code = int(process.returncode or 0)
+        runner_failed = _sandbox_runner_failed(
+            exit_code,
+            full_stderr,
+            tuple(getattr(sandbox, "runner_failure_rules", ())),
+        )
+        if runner_failed:
+            raise RuntimeError(
+                "DeepSeek sandbox runner failed before executing the command"
+            )
+        sandbox_denied = exit_code != 0 and _sandbox_denial_detected(
+            full_stderr,
+            tuple(getattr(sandbox, "denial_signatures", ())),
+        )
         if (
             expected_cwd_binding is not None
             and process.returncode == 126
@@ -548,7 +605,7 @@ class LocalWorkspaceBackend:
         stderr_truncated = capture.stderr_truncated or inline_stderr_truncated
         output_limit_exceeded = capture.limit_exceeded.is_set()
         result = {
-            "exit_code": int(process.returncode or 0),
+            "exit_code": exit_code,
             "stdout": stdout_text,
             "stderr": stderr_text,
             "stdout_truncated": stdout_truncated,
@@ -557,6 +614,12 @@ class LocalWorkspaceBackend:
             "output_limit_exceeded": output_limit_exceeded,
             "cwd": str(working_directory),
             "command": command,
+            "sandbox": {
+                "mode": getattr(sandbox, "mode", sandbox_mode),
+                "adapter": getattr(sandbox, "adapter", "test"),
+                "enforcement": getattr(sandbox, "enforcement", "full"),
+                "denied": sandbox_denied,
+            },
         }
         if self.artifact_writer is not None and (stdout_truncated or stderr_truncated):
             result["artifact"] = await self.artifact_writer(
@@ -567,6 +630,72 @@ class LocalWorkspaceBackend:
                     "stdout": full_stdout,
                     "stderr": full_stderr,
                     "capture_truncated": output_limit_exceeded,
+                }
+            )
+        return result
+
+    async def _container_command_result(
+        self,
+        execution: Any,
+        *,
+        command: str,
+        cwd: Path,
+        output_limit: int,
+        environment: dict[str, str],
+    ) -> dict[str, Any]:
+        if execution.timed_out:
+            raise TimeoutError("command timed out inside the sandbox container")
+        secrets = _secret_values(environment)
+        full_stdout = _redact(execution.stdout, secrets)
+        full_stderr = _redact(execution.stderr, secrets)
+        rules = tuple(execution.sandbox.get("runner_failure_rules") or ())
+        if _sandbox_runner_failed(execution.exit_code, full_stderr, rules):
+            raise RuntimeError(
+                "DeepSeek sandbox runner failed before executing the command"
+            )
+        denied = execution.exit_code != 0 and _sandbox_denial_detected(
+            full_stderr,
+            tuple(execution.sandbox.get("denial_signatures") or ()),
+        )
+        stdout_text, stdout_inline_truncated = _limit_output(
+            full_stdout,
+            output_limit,
+        )
+        stderr_text, stderr_inline_truncated = _limit_output(
+            full_stderr,
+            output_limit,
+        )
+        stdout_truncated = execution.output_limit_exceeded or stdout_inline_truncated
+        stderr_truncated = execution.output_limit_exceeded or stderr_inline_truncated
+        result: dict[str, Any] = {
+            "exit_code": execution.exit_code,
+            "stdout": stdout_text,
+            "stderr": stderr_text,
+            "stdout_truncated": stdout_truncated,
+            "stderr_truncated": stderr_truncated,
+            "truncated": stdout_truncated or stderr_truncated,
+            "output_limit_exceeded": execution.output_limit_exceeded,
+            "cwd": str(cwd),
+            "command": command,
+            "sandbox": {
+                "mode": execution.sandbox.get("mode"),
+                "adapter": execution.sandbox.get("adapter"),
+                "enforcement": execution.sandbox.get("enforcement"),
+                "denied": denied,
+                "execution": "disposable-container",
+            },
+        }
+        if self.artifact_writer is not None and (
+            stdout_truncated or stderr_truncated
+        ):
+            result["artifact"] = await self.artifact_writer(
+                {
+                    "type": "command_output",
+                    "command": command,
+                    "cwd": str(cwd),
+                    "stdout": full_stdout,
+                    "stderr": full_stderr,
+                    "capture_truncated": execution.output_limit_exceeded,
                 }
             )
         return result
@@ -607,6 +736,8 @@ class LocalWorkspaceBackend:
 
 
 class RemoteWorkspaceBackend:
+    supports_sandbox_escalation = False
+
     def __init__(
         self,
         *,
@@ -781,8 +912,15 @@ class RemoteWorkspaceBackend:
         output_limit: int,
         cancellation: Any | None,
         environment: dict[str, str],
+        sandbox_mode: Literal[
+            "read-only", "workspace-write", "danger-full-access"
+        ] = "workspace-write",
         expected_cwd_binding: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        if sandbox_mode == "danger-full-access":
+            raise PermissionDeniedError(
+                "sandbox escalation is not supported for remote SSH environments"
+            )
         deadline = asyncio.get_running_loop().time() + timeout_seconds
         working_directory = self._command_cwd(cwd)
         if expected_cwd_binding is not None:
@@ -1313,6 +1451,39 @@ def _redact(text: str, secrets: tuple[str, ...]) -> str:
     for secret in secrets:
         text = text.replace(secret, "[REDACTED]")
     return text
+
+
+def _sandbox_runner_failed(
+    exit_code: int,
+    stderr: str,
+    rules: tuple[dict[str, Any], ...],
+) -> bool:
+    if exit_code == 0:
+        return False
+    lines = stderr.splitlines()
+    for rule in rules:
+        allowed = rule.get("allowed_exit_codes")
+        if allowed and exit_code not in allowed:
+            continue
+        informational = {
+            str(line).casefold() for line in rule.get("informational_lines", ())
+        }
+        fatal = tuple(
+            str(signature).casefold()
+            for signature in rule.get("fatal_signatures", ())
+        )
+        for line in lines:
+            folded = line.casefold()
+            if folded in informational:
+                continue
+            if any(signature in folded for signature in fatal):
+                return True
+    return False
+
+
+def _sandbox_denial_detected(stderr: str, signatures: tuple[str, ...]) -> bool:
+    folded = stderr.casefold()
+    return any(signature.casefold() in folded for signature in signatures)
 
 
 def _read_local_text_at(

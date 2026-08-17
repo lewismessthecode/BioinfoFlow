@@ -33,6 +33,8 @@ vi.mock("next-intl", () => ({
         "agentInteraction.approval.input": "Command preview",
         "agentInteraction.approval.target": "Execution target",
         "agentInteraction.approval.action.command": "Run command",
+        "agentInteraction.approval.action.escalation":
+          "Allow one-time sandbox escalation",
         "agentInteraction.approval.action.write": "Write file",
         "agentInteraction.approval.action.edit": "Edit file",
         "agentInteraction.approval.action.read": "Read file",
@@ -46,6 +48,10 @@ vi.mock("next-intl", () => ({
         "agentInteraction.approval.effect.execute": "Runs a command",
         "agentInteraction.approval.effects": "Effects",
         "agentInteraction.approval.reasons": "Reasons",
+        "agentInteraction.approval.justification":
+          `Agent justification: ${values?.justification ?? ""}`,
+        "agentInteraction.approval.reason.sandbox_escalation":
+          "This exact command will run once with the sandbox filesystem restrictions disabled.",
         "agentInteraction.approval.resources": "Affected resources",
         "agentInteraction.ask_user.title": "The agent asked for input",
         "agentInteraction.ask_user.announcement": "The agent asked for input. Waiting for response.",
@@ -251,7 +257,7 @@ describe("AgentInteractionCard", () => {
     expect(reject).not.toHaveClass("dark:bg-input/30")
   })
 
-  it("explains the approval action without exposing protocol risk details", () => {
+  it("explains the approval action and its user-facing reasons", () => {
     renderWithProviders(
       <AgentInteractionCard
         interaction={{
@@ -272,6 +278,8 @@ describe("AgentInteractionCard", () => {
               level: "act_high",
               effects: ["execute", "write"],
               reasons: ["command semantics classified as act_high"],
+              reasonCodes: ["sandbox_escalation"],
+              justification: "write the explicitly approved external target",
               affectedResources: ["e2e-approved.txt"],
             },
             target: {
@@ -288,7 +296,9 @@ describe("AgentInteractionCard", () => {
     )
 
     const card = screen.getByTestId("agent-interaction-card")
-    expect(within(card).getByText("Run command")).toBeInTheDocument()
+    expect(
+      within(card).getByText("Allow one-time sandbox escalation"),
+    ).toBeInTheDocument()
     expect(within(card).getByText("bash")).toBeInTheDocument()
     expect(within(card).getByText("touch e2e-approved.txt")).toBeInTheDocument()
     expect(within(card).getByText("Local")).toBeInTheDocument()
@@ -297,8 +307,15 @@ describe("AgentInteractionCard", () => {
     expect(within(card).getByText("e2e-approved.txt")).toBeInTheDocument()
     expect(within(card).queryByText(/act_high/i)).not.toBeInTheDocument()
     expect(
-      within(card).queryByText("command semantics classified as act_high"),
-    ).not.toBeInTheDocument()
+      within(card).getByText(
+        "This exact command will run once with the sandbox filesystem restrictions disabled.",
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(card).getByText(
+        "Agent justification: write the explicitly approved external target",
+      ),
+    ).toBeInTheDocument()
   })
 
   it("announces a newly arrived pending interaction without interrupting the user", () => {

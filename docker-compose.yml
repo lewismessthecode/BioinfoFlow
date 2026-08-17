@@ -30,6 +30,7 @@ services:
       DATABASE_URL: sqlite+aiosqlite:///${BIOINFOFLOW_HOME:-${PWD}/data}/state/bioinfoflow.db
       BETTER_AUTH_DB_PATH: ${BIOINFOFLOW_HOME:-${PWD}/data}/state/auth/better-auth.db
       DOCKER_SOCKET: unix:///var/run/docker.sock
+      AGENT_SANDBOX_IMAGE: bioinfoflow-backend:latest
       BIOINFOFLOW_GPU_MODE: ${BIOINFOFLOW_GPU_MODE:-auto}
       BIOINFOFLOW_GPU_DEVICES: ${BIOINFOFLOW_GPU_DEVICES:-all}
       ASR_PROVIDER: ${ASR_PROVIDER:-}
@@ -38,13 +39,6 @@ services:
       ASR_MODEL: ${ASR_MODEL:-}
       ASR_LANGUAGE: ${ASR_LANGUAGE:-zh}
       ASR_CONTEXT_TERMS: ${ASR_CONTEXT_TERMS:-["Bioinfoflow","Nextflow","MiniWDL","FASTQ"]}
-    # Bubblewrap needs user and mount namespaces inside the backend container.
-    # Docker's seccomp and AppArmor defaults can independently block them. These
-    # exceptions keep the container non-privileged and do not add SYS_ADMIN;
-    # Bubblewrap remains the per-command confinement boundary.
-    security_opt:
-      - seccomp:unconfined
-      - apparmor:unconfined
     volumes:
       - ${BIOINFOFLOW_HOME:-${PWD}/data}:${BIOINFOFLOW_HOME:-${PWD}/data}
       - type: bind

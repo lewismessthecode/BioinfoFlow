@@ -96,9 +96,10 @@ The localhost stack binds the UI and API to `127.0.0.1` and intentionally runs
 with authentication disabled. The published frontend reads its host-visible API
 URL at container runtime, so changing `BACKEND_PORT` does not rebuild the image.
 It is for one trusted local machine, not a shared server, reverse proxy, or
-port-forwarded deployment. It also mounts the local Docker socket so the Agent
-and workflow runtime can launch containers. See [Security Notes](docs/security.md)
-before changing that boundary.
+port-forwarded deployment. The backend mounts the local Docker socket so it can
+launch workflow and disposable Agent execution containers. Agent Bash never
+receives the socket. See [Security Notes](docs/security.md) before changing that
+boundary.
 
 If you only remember one rule, remember this:
 
@@ -495,10 +496,11 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml config
 docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml config
 ```
 
-The rendered backend must retain the writable `/var/run/docker.sock` bind,
-`seccomp:unconfined`, `apparmor:unconfined`, `privileged: false`, and no
-`SYS_ADMIN` capability. After changing `.env` or a Compose file, recreate the
-backend instead of restarting it:
+The rendered backend must retain the writable `/var/run/docker.sock` bind and
+the `AGENT_SANDBOX_IMAGE` value must exactly match the backend image. The
+backend remains non-privileged, uses Docker's default seccomp/AppArmor policy,
+and has no `SYS_ADMIN` capability. After changing `.env` or a Compose file,
+recreate the backend instead of restarting it:
 
 ```bash
 # Source-build deployment:
@@ -512,15 +514,16 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build --f
 docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --force-recreate backend
 ```
 
-Do not troubleshoot Bubblewrap by enabling `privileged` or adding `SYS_ADMIN`.
-Docker's default Linux seccomp profile can make the probe fail with
-`No permissions to create new namespace`; an enforcing container AppArmor
-profile can separately fail mount propagation with
-`Failed to make / slave: Permission denied`. Bioinfoflow disables both outer
-filters for the backend while keeping the container non-privileged; Bubblewrap
-then supplies the per-command filesystem and network boundary. Sandbox
-availability reports one of four failure categories: `binary_missing`,
-`probe_exit`, `probe_timeout`, or `probe_os_error`.
+Do not troubleshoot the sandbox by enabling `privileged` or adding `SYS_ADMIN`
+to the backend. Compose launches each Agent Bash call in a disposable container
+from `AGENT_SANDBOX_IMAGE`. That container has a read-only root, a bounded
+`/tmp`, all capabilities dropped, no new privileges, only public BioinfoFlow
+project/source/skill roots read-only with the workspace overlaid read-write, and
+no Docker socket. Control-plane state is never mounted. Docker's default
+seccomp/AppArmor policy remains active; the pinned DeepSeek provider selects an
+available fully enforcing adapter such as Bubblewrap or Landlock on Linux.
+Native macOS development uses Seatbelt. Missing or partial confinement fails
+closed, and the disposable container is always removed after the call.
 
 ### Authenticated run with published images
 
@@ -757,17 +760,32 @@ Commands explicitly marked for confirmation still ask in every mode. Ordinary
 questions, command confirmation, and recovery choices use one persisted
 interaction channel.
 
-Local and remote workspaces both require OS confinement. Local Linux/container
-Bash uses Bubblewrap and macOS development uses Seatbelt. Remote tools verify
-and enter Bubblewrap on the SSH host. Missing or untrusted sandbox components
-fail closed. Permission mode cannot add roots, enable arbitrary network access,
-change the saved SSH connection, or bypass server-side authorization.
+Local and remote workspaces both require OS confinement. Local Bash uses the
+pinned DeepSeek Harness local sandbox provider; remote tools retain the verified
+Bubblewrap path on the SSH host. Missing, broken, or partial confinement fails
+closed. DeepSeek confinement intentionally protects filesystem integrity rather
+than confidentiality: native commands may read paths visible to their process
+identity except BioinfoFlow control-plane state and request roots, while writes
+are limited to the workspace and temporary area. In Compose, the disposable
+container narrows that readable identity to its image and explicit public
+BioinfoFlow data roots; control-plane state stays absent.
 
-One important exception is Docker daemon delegation. Agent Bash can use the
-mounted Docker socket and therefore has the Docker daemon's full authority.
-Bubblewrap or macOS Seatbelt filesystem/network restrictions constrain the
-local CLI process, but they do not constrain filesystem mounts, networking, or
-other actions that the Docker daemon performs on its behalf.
+Use a dedicated project directory as the Agent workspace. BioinfoFlow rejects
+`/`, a credential-bearing user home, the whole `BIOINFOFLOW_HOME`, and any root
+that contains or is contained by protected state, auth, process-metadata,
+Docker, or credential paths. This validation prevents an overly broad workspace
+bind from reintroducing backend capabilities into the disposable container.
+
+Network and process visibility are outside the DeepSeek sandbox vocabulary.
+Do not describe the local sandbox as a network boundary. Long-lived provider
+credentials and Bioinfoflow control-plane tokens remain absent from the ambient
+child environment. Compose deployments add a separate container identity
+boundary: each Bash call runs without the backend's Docker socket. A local Bash
+call may request `require_escalated` with a non-empty justification; that exact
+call always requires confirmation and runs once as `danger-full-access` inside
+the same socket-free disposable container. That one container receives an
+ephemeral writable image root, while persistent writes remain limited to the
+workspace. The approval is not inherited by later calls or remote SSH execution.
 
 For CLI automation, choose the mode when creating a Session:
 

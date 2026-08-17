@@ -588,6 +588,8 @@ function isApprovalRisk(value: unknown): boolean {
     typeof value.level === "string" &&
     isStringArray(value.effects) &&
     isStringArray(value.reasons) &&
+    (value.reason_codes === undefined || isStringArray(value.reason_codes)) &&
+    isOptionalNullableString(value.justification) &&
     isStringArray(value.affected_resources)
   )
 }

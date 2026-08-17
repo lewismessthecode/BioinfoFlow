@@ -101,10 +101,29 @@ class ToolExecutor:
         except (TypeError, ValueError) as exc:
             return _failed(call, tool, exc)
         call = ToolCall(call.call_id, call.name, arguments)
+        try:
+            sandbox_mode = _effective_sandbox_mode(
+                call,
+                workspace_access=self.workspace_access,
+            )
+        except ValueError as exc:
+            return _failed(call, tool, exc)
+        escalated = sandbox_mode == "danger-full-access"
+        if escalated and not bool(
+            getattr(self.backend, "supports_sandbox_escalation", False)
+        ):
+            return ToolResult(
+                call_id=call.call_id,
+                tool_name=call.name,
+                status="blocked",
+                replay_policy=tool.spec.replay_policy,
+                error="sandbox escalation is not supported for this environment",
+            )
         context = ToolExecutionContext(
             backend=self.backend,
             cancellation=cancellation,
             environment=dict(self.environment),
+            sandbox_mode=sandbox_mode,
         )
         if call.name == "ask_user":
             if interaction_response is not None:
@@ -151,7 +170,7 @@ class ToolExecutor:
                 risk = tool.assess_risk(call.arguments, context)
             except (TypeError, ValueError) as exc:
                 return _failed(call, tool, exc)
-            if risk.hard_blocked:
+            if risk.hard_blocked and not escalated:
                 return ToolResult(
                     call_id=call.call_id,
                     tool_name=call.name,
@@ -162,7 +181,7 @@ class ToolExecutor:
                 )
 
         is_read_only = _is_read_only(tool, risk)
-        if self.workspace_access == "read_only" and not is_read_only:
+        if self.workspace_access == "read_only" and not is_read_only and not escalated:
             return ToolResult(
                 call_id=call.call_id,
                 tool_name=call.name,
@@ -170,7 +189,7 @@ class ToolExecutor:
                 replay_policy=tool.spec.replay_policy,
                 error="tool is not permitted in a read_only workspace",
             )
-        requires_confirmation = (
+        requires_confirmation = escalated or (
             self.permission_mode == "ask_changes" and not is_read_only
         ) or (
             self.permission_mode == "ask_dangerous"
@@ -300,12 +319,14 @@ class ToolExecutor:
                 backend=self.backend,
                 cancellation=cancellation,
                 environment={**self.environment, **bash_environment},
+                sandbox_mode=sandbox_mode,
             )
         if approved_cwd_binding is not None and interaction_response is not None:
             context = ToolExecutionContext(
                 backend=_CwdBoundBackend(self.backend, approved_cwd_binding),
                 cancellation=context.cancellation,
                 environment=context.environment,
+                sandbox_mode=context.sandbox_mode,
             )
         lock = self._lock_for(call, tool)
         try:
@@ -473,7 +494,15 @@ class ToolExecutor:
                 environment=dict(self.environment),
             ),
         )
-        return current.assessment_fingerprint()
+        sandbox_mode = _effective_sandbox_mode(
+            call,
+            workspace_access=self.workspace_access,
+        )
+        return _bash_base_fingerprint(
+            call,
+            current.assessment_fingerprint(),
+            sandbox_mode=sandbox_mode,
+        )
 
     async def _approval_snapshot(
         self,
@@ -487,8 +516,29 @@ class ToolExecutor:
         binding = await binder(call.arguments.get("cwd"))
         if not isinstance(binding, dict):
             raise RuntimeError("Bash working directory identity is unavailable")
-        base_fingerprint = risk.assessment_fingerprint()
+        sandbox_mode = _effective_sandbox_mode(
+            call,
+            workspace_access=self.workspace_access,
+        )
+        base_fingerprint = _bash_base_fingerprint(
+            call,
+            risk.assessment_fingerprint(),
+            sandbox_mode=sandbox_mode,
+        )
         snapshot["base_assessment_fingerprint"] = base_fingerprint
+        snapshot["sandbox_mode"] = sandbox_mode
+        justification = call.arguments.get("justification")
+        if isinstance(justification, str) and justification.strip():
+            cleaned_justification = justification.strip()
+            snapshot["justification"] = cleaned_justification
+            snapshot["reason_codes"] = [
+                *snapshot.get("reason_codes", []),
+                "sandbox_escalation",
+            ]
+            snapshot["effects"] = [
+                *snapshot.get("effects", []),
+                "privilege",
+            ]
         snapshot["cwd_identity"] = dict(binding)
         snapshot["assessment_fingerprint"] = _approval_fingerprint(
             base_fingerprint,
@@ -567,6 +617,52 @@ def _approval_fingerprint(
         ensure_ascii=True,
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def _bash_base_fingerprint(
+    call: ToolCall,
+    risk_fingerprint: str,
+    *,
+    sandbox_mode: Literal["read-only", "workspace-write", "danger-full-access"],
+) -> str:
+    payload = json.dumps(
+        {
+            "risk_fingerprint": risk_fingerprint,
+            "command": call.arguments.get("command"),
+            "cwd": call.arguments.get("cwd"),
+            "sandbox_permissions": call.arguments.get(
+                "sandbox_permissions", "use_default"
+            ),
+            "sandbox_mode": sandbox_mode,
+            "justification": call.arguments.get("justification"),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _effective_sandbox_mode(
+    call: ToolCall,
+    *,
+    workspace_access: WorkspaceAccess,
+) -> Literal["read-only", "workspace-write", "danger-full-access"]:
+    if call.name != "bash":
+        return "read-only" if workspace_access == "read_only" else "workspace-write"
+    requested = call.arguments.get("sandbox_permissions", "use_default")
+    justification = call.arguments.get("justification")
+    if requested == "require_escalated":
+        if not isinstance(justification, str) or not justification.strip():
+            raise ValueError(
+                "justification is required when sandbox_permissions is require_escalated"
+            )
+        return "danger-full-access"
+    if justification is not None:
+        raise ValueError(
+            "justification is only valid when sandbox_permissions is require_escalated"
+        )
+    return "read-only" if workspace_access == "read_only" else "workspace-write"
 
 
 class ToolCancelledError(Exception):

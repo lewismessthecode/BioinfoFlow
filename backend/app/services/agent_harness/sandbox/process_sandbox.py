@@ -1,94 +1,41 @@
-"""OS-level process confinement for the bash tool.
+"""DeepSeek Harness backed local process confinement.
 
-The bible's core principle: *permissions gate the tool; the OS sandbox confines
-the process — do not trust command-string parsing.* The risk classifier
-(:mod:`app.services.agent_harness.command_risk`) decides whether a command
-auto-runs or requires confirmation, but it can never be a security boundary
-against a shell that runs arbitrary strings. This module builds the real
-boundary: an argv that runs the command under ``bwrap`` (Linux/containers) or
-``sandbox-exec`` (macOS), confined to explicit read/write roots with the network
-off by default.
-
-Selection is platform-aware and fail-closed: when sandboxing is enabled but no
-adapter binary is available, :meth:`SandboxRunner.build` raises rather than
-silently running the command unconfined.
+BioinfoFlow owns the stable JSON-lines bridge and process supervision. Platform
+profiles, provider selection, denial signatures, and launcher-failure rules come
+from the pinned ``@deepseek-ai/dsh-sandbox-local`` package.
 """
 
 from __future__ import annotations
 
+import atexit
+from collections import deque
+from dataclasses import dataclass
 import json
 import os
-import platform
+from pathlib import Path
+import queue
 import shutil
 import subprocess
-import sys
 import threading
-import time
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Callable, ClassVar, Protocol
+from typing import Any, Literal, Protocol, TypeAlias
+import uuid
 
 from app.config import BACKEND_ROOT, settings
+from app.services.agent_harness.sandbox.capability_paths import (
+    sensitive_capability_paths,
+)
+
+
+SandboxMode: TypeAlias = Literal[
+    "read-only", "workspace-write", "danger-full-access"
+]
+ConfinedSandboxMode: TypeAlias = Literal["read-only", "workspace-write"]
+_shared_client_instance: DeepSeekSandboxClient | None = None
+_shared_client_lock = threading.Lock()
 
 
 class SandboxUnavailableError(RuntimeError):
-    """Raised when sandboxing is required (fail-closed) but unavailable."""
-
-
-# Read-only system directories every confined command needs to run a shell.
-# Do not bind /etc wholesale: the sandbox boundary should block commands such
-# as `cat /etc/passwd` rather than relying on the permission classifier.
-_LINUX_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/opt")
-_MACOS_WRITE_ROOTS = (
-    "/dev/null",
-    "/dev/dtracehelper",
-    "/private/tmp",
-)
-_MACOS_SYSTEM_READ_ROOTS = (
-    "/System",
-    "/usr",
-    "/bin",
-    "/sbin",
-    "/dev",
-    "/Library/Apple",
-    "/System/Cryptexes",
-    "/private/var/db/dyld",
-    "/private/etc",
-    "/etc",
-)
-_BWRAP_PROTECTED_STAGE_PREFIX = "/.bioinfoflow-protected-read"
-_BWRAP_USER_NAMESPACE_ARGS = ("--unshare-user", "--uid", "0", "--gid", "0")
-_BWRAP_PROBE_ARGS = (
-    *_BWRAP_USER_NAMESPACE_ARGS,
-    "--ro-bind",
-    "/",
-    "/",
-    "--",
-    "/bin/true",
-)
-_BWRAP_PROBE_TIMEOUT_SECONDS = 2.0
-_BWRAP_AVAILABILITY_CACHE_TTL_SECONDS = 30.0
-
-
-@dataclass(frozen=True)
-class SandboxSpec:
-    command: str
-    cwd: Path
-    cwd_fd: int | None = None
-    read_roots: list[Path] = field(default_factory=list)
-    write_roots: list[Path] = field(default_factory=list)
-    deny_read_roots: list[Path] = field(default_factory=list)
-    protected_roots: list[Path] = field(default_factory=list)
-    protected_read_roots: list[Path] = field(default_factory=list)
-    docker_socket_root: Path | None = None
-    allow_network: bool = False
-
-
-@dataclass(frozen=True)
-class SandboxResult:
-    argv: list[str]
-    adapter: str
-    sandboxed: bool
+    """Raised when required confinement cannot be established."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,517 +47,503 @@ class SandboxAvailability:
     failure_message: str | None = None
 
 
-class SandboxAdapter(Protocol):
-    name: str
+@dataclass(frozen=True, slots=True)
+class SandboxResult:
+    argv: list[str]
+    adapter: str
+    sandboxed: bool
+    mode: SandboxMode
+    enforcement: Literal["full", "partial"] | None = None
+    denial_signatures: tuple[str, ...] = ()
+    runner_failure_rules: tuple[dict[str, Any], ...] = ()
 
-    def availability(self) -> SandboxAvailability: ...
 
-    def available(self) -> bool: ...
+class SandboxClient(Protocol):
+    def availability(self) -> SandboxAvailability | dict[str, Any]: ...
 
-    def supports_docker_socket(self, root: Path) -> bool: ...
+    def confine(
+        self,
+        *,
+        argv: list[str],
+        mode: ConfinedSandboxMode,
+        workspace_root: Path,
+        protected_endpoints: list[Path],
+    ) -> SandboxResult: ...
 
-    def build_argv(self, spec: SandboxSpec) -> list[str]: ...
 
+class DeepSeekSandboxClient:
+    """Persistent fail-closed client for the versioned Node worker protocol."""
 
-class BubblewrapAdapter:
-    """Linux/container confinement via ``bwrap`` (bubblewrap)."""
-
-    name = "bubblewrap"
-    _availability_cache: ClassVar[
-        dict[tuple[str, tuple[str, ...]], tuple[float, SandboxAvailability]]
-    ] = {}
-    _availability_cache_lock: ClassVar[threading.Lock] = threading.Lock()
-
-    def __init__(self, *, clock: Callable[[], float] | None = None) -> None:
-        self._clock = clock or time.monotonic
-
-    @classmethod
-    def clear_availability_cache(cls) -> None:
-        """Clear the process cache, primarily for deterministic tests."""
-        with cls._availability_cache_lock:
-            cls._availability_cache.clear()
+    def __init__(
+        self,
+        *,
+        worker_command: tuple[str, ...] | None = None,
+        request_timeout_seconds: float = 5.0,
+    ) -> None:
+        self.worker_command = worker_command or _default_worker_command()
+        if request_timeout_seconds <= 0:
+            raise ValueError("request_timeout_seconds must be positive")
+        self.request_timeout_seconds = request_timeout_seconds
+        self._process: subprocess.Popen[str] | None = None
+        self._responses: queue.Queue[dict[str, Any] | BaseException | None] = (
+            queue.Queue()
+        )
+        self._stderr: deque[str] = deque(maxlen=20)
+        self._request_lock = threading.Lock()
+        self._lifecycle_lock = threading.Lock()
+        self._reader: threading.Thread | None = None
+        self._stderr_reader: threading.Thread | None = None
+        self._closed = False
+        atexit.register(self.close)
 
     def availability(self) -> SandboxAvailability:
-        executable = shutil.which("bwrap")
+        executable = shutil.which(self.worker_command[0])
+        worker = _worker_script_from_command(self.worker_command)
         if executable is None:
             return SandboxAvailability(
-                adapter=self.name,
+                adapter="deepseek-local",
                 executable=None,
                 available=False,
                 failure_category="binary_missing",
-                failure_message="bwrap executable not found",
+                failure_message=f"{self.worker_command[0]} executable not found",
             )
-
-        cache_key = (executable, _BWRAP_PROBE_ARGS)
-        now = self._clock()
-        with self._availability_cache_lock:
-            cached = self._availability_cache.get(cache_key)
-            if (
-                cached is not None
-                and now - cached[0] < _BWRAP_AVAILABILITY_CACHE_TTL_SECONDS
-            ):
-                return cached[1]
-
-            try:
-                probe = subprocess.run(
-                    [executable, *_BWRAP_PROBE_ARGS],
-                    check=False,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=_BWRAP_PROBE_TIMEOUT_SECONDS,
-                )
-            except subprocess.TimeoutExpired:
-                result = SandboxAvailability(
-                    adapter=self.name,
-                    executable=executable,
-                    available=False,
-                    failure_category="probe_timeout",
-                    failure_message="probe timed out after 2 seconds",
-                )
-            except (OSError, UnicodeError) as exc:
-                result = SandboxAvailability(
-                    adapter=self.name,
-                    executable=executable,
-                    available=False,
-                    failure_category="probe_os_error",
-                    failure_message=_sanitize_diagnostic(str(exc)),
-                )
-            else:
-                if probe.returncode == 0:
-                    result = SandboxAvailability(
-                        adapter=self.name,
-                        executable=executable,
-                        available=True,
-                    )
-                else:
-                    message = _sanitize_diagnostic(probe.stderr)
-                    result = SandboxAvailability(
-                        adapter=self.name,
-                        executable=executable,
-                        available=False,
-                        failure_category="probe_exit",
-                        failure_message=message
-                        or f"probe exited with status {probe.returncode}",
-                    )
-            self._availability_cache[cache_key] = (now, result)
-            return result
-
-    def available(self) -> bool:
-        return self.availability().available
-
-    def supports_docker_socket(self, root: Path) -> bool:
-        return root.exists()
-
-    def build_argv(self, spec: SandboxSpec) -> list[str]:
-        argv: list[str] = ["bwrap", *_BWRAP_USER_NAMESPACE_ARGS]
-        if spec.cwd_fd is not None:
-            argv += ["--sync-fd", str(spec.cwd_fd)]
-        for directory in _LINUX_SYSTEM_RO:
-            if Path(directory).exists():
-                argv += ["--ro-bind", directory, directory]
-        # Establish synthetic filesystems before capability binds. Otherwise a
-        # later tmpfs mount would hide any allowed workspace rooted under /tmp.
-        argv += ["--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"]
-        protected_roots = _existing(spec.protected_roots)
-        for root in _outside_protected(_existing(spec.read_roots), protected_roots):
-            argv += ["--ro-bind", str(root), str(root)]
-        # Write roots are bound after read roots so rw access wins where they
-        # overlap a read-only bind.
-        for root in _outside_protected(_existing(spec.write_roots), protected_roots):
-            argv += ["--bind", str(root), str(root)]
-        if spec.cwd_fd is not None:
-            cwd_bind = (
-                "--bind"
-                if any(
-                    _is_relative_to(spec.cwd, root)
-                    for root in _existing(spec.write_roots)
-                )
-                else "--ro-bind"
-            )
-            argv += [
-                cwd_bind,
-                f"/proc/self/fd/{spec.cwd_fd}",
-                str(spec.cwd),
-            ]
-        protected_read_roots = _existing(spec.protected_read_roots)
-        staged_roots = [
-            (root, f"{_BWRAP_PROTECTED_STAGE_PREFIX}-{index}")
-            for index, root in enumerate(protected_read_roots)
-        ]
-        for root, stage in staged_roots:
-            argv += ["--ro-bind", str(root), stage]
-        mount_actions = [
-            (len(root.parts), 0, root, None, None) for root in protected_roots
-        ] + [
-            (len(root.parts), 1, root, stage, "--ro-bind")
-            for root, stage in staged_roots
-        ]
-        for _depth, kind, root, stage, bind in sorted(
-            mount_actions,
-            key=lambda item: (item[0], item[1], str(item[2])),
-        ):
-            if kind == 0:
-                if root.is_dir():
-                    argv += ["--dir", str(root), "--tmpfs", str(root)]
-                else:
-                    argv += ["--ro-bind", "/dev/null", str(root)]
-            else:
-                argv += ["--dir", str(root), str(bind), str(stage), str(root)]
-        for _root, stage in staged_roots:
-            argv += ["--tmpfs", stage]
-        if not spec.allow_network:
-            argv += ["--unshare-net"]
-        argv += ["--chdir", str(spec.cwd), "--die-with-parent"]
-        argv += ["bash", "--noprofile", "--norc", "-c", spec.command]
-        return argv
-
-
-class SeatbeltAdapter:
-    """macOS dev confinement via ``sandbox-exec`` (Seatbelt)."""
-
-    name = "seatbelt"
-
-    def availability(self) -> SandboxAvailability:
-        executable = shutil.which("sandbox-exec")
-        if executable is None:
+        if worker is not None and not worker.is_file():
             return SandboxAvailability(
-                adapter=self.name,
-                executable=None,
+                adapter="deepseek-local",
+                executable=executable,
                 available=False,
-                failure_category="binary_missing",
-                failure_message="sandbox-exec executable not found",
+                failure_category="worker_missing",
+                failure_message=f"sandbox worker not found: {worker}",
+            )
+        if worker is not None and not (
+            worker.parent
+            / "node_modules"
+            / "@deepseek-ai"
+            / "dsh-sandbox-local"
+            / "package.json"
+        ).is_file():
+            return SandboxAvailability(
+                adapter="deepseek-local",
+                executable=executable,
+                available=False,
+                failure_category="dependencies_missing",
+                failure_message="sandbox worker dependencies are not installed",
             )
         return SandboxAvailability(
-            adapter=self.name,
+            adapter="deepseek-local",
             executable=executable,
             available=True,
         )
 
-    def available(self) -> bool:
-        return self.availability().available
-
-    def supports_docker_socket(self, root: Path) -> bool:
-        return root.exists()
-
-    def build_argv(self, spec: SandboxSpec) -> list[str]:
-        profile = self._profile(spec)
-        return [
-            "sandbox-exec",
-            "-p",
-            profile,
-            "/bin/bash",
-            "--noprofile",
-            "--norc",
-            "-c",
-            spec.command,
-        ]
-
-    def _profile(self, spec: SandboxSpec) -> str:
-        write_roots = list(_MACOS_WRITE_ROOTS) + [
-            str(root) for root in _existing(spec.write_roots)
-        ]
-        deny_read_rules = "\n".join(
-            f'    (subpath "{path}")'
-            for path in _dedupe([str(root) for root in spec.deny_read_roots])
-        )
-        deny_read_section = (
-            ["(deny file-read-data", deny_read_rules, ")"] if deny_read_rules else []
-        )
-        read_roots = _dedupe(
-            [
-                *(
-                    str(root)
-                    for root in _existing(
-                        [Path(path) for path in _MACOS_SYSTEM_READ_ROOTS]
-                    )
-                ),
-                *(str(root) for root in _existing(spec.read_roots)),
-            ]
-        )
-        read_denials = _seatbelt_global_denial(
-            operation="file-read-data",
-            allowed=read_roots,
-        )
-        write_denials = _seatbelt_global_denial(
-            operation="file-write*",
-            allowed=_dedupe(write_roots),
-        )
-        if spec.allow_network:
-            network_rule = ""
-        elif spec.docker_socket_root is not None:
-            network_rule = (
-                "(deny network* (require-not (literal "
-                f"{json.dumps(str(spec.docker_socket_root))})))"
-            )
-        else:
-            network_rule = "(deny network*)"
-        protected_read_roots = [
-            str(root) for root in _existing(spec.protected_read_roots)
-        ]
-        protected_rules: list[str] = []
-        for root in _existing(spec.protected_roots):
-            protected_rules.append(f'(deny file-write* (subpath "{root}"))')
-            read_exceptions = [
-                allowed
-                for allowed in protected_read_roots
-                if _is_relative_to(Path(allowed), root)
-            ]
-            if read_exceptions:
-                protected_rules.extend(
-                    [
-                        "(deny file-read*",
-                        "    (require-all",
-                        f'        (subpath "{root}")',
-                        *[
-                            f'        (require-not (subpath "{path}"))'
-                            for path in read_exceptions
-                        ],
-                        "    )",
-                        ")",
-                    ]
+    def confine(
+        self,
+        *,
+        argv: list[str],
+        mode: ConfinedSandboxMode,
+        workspace_root: Path,
+        protected_endpoints: list[Path],
+    ) -> SandboxResult:
+        if mode not in {"read-only", "workspace-write"}:
+            raise ValueError(f"unsupported confined sandbox mode: {mode}")
+        if not argv or any(not isinstance(item, str) or not item for item in argv):
+            raise ValueError("sandbox argv must contain non-empty strings")
+        root = workspace_root.expanduser().resolve(strict=True)
+        if not root.is_dir():
+            raise ValueError(f"sandbox workspace root is not a directory: {root}")
+        request_id = uuid.uuid4().hex
+        request = {
+            "version": 1,
+            "id": request_id,
+            "method": "confine",
+            "argv": list(argv),
+            "mode": mode,
+            "workspace_root": str(root),
+            "protected_endpoints": [
+                str(path.expanduser().resolve(strict=False))
+                for path in protected_endpoints
+            ],
+        }
+        with self._request_lock:
+            process = self._ensure_process()
+            assert process.stdin is not None
+            try:
+                process.stdin.write(json.dumps(request, separators=(",", ":")) + "\n")
+                process.stdin.flush()
+            except (BrokenPipeError, OSError) as exc:
+                self._invalidate_process()
+                raise SandboxUnavailableError(
+                    f"DeepSeek sandbox worker exited before request: {exc}"
+                ) from exc
+            try:
+                response = self._responses.get(timeout=self.request_timeout_seconds)
+            except queue.Empty as exc:
+                self._invalidate_process()
+                raise SandboxUnavailableError(
+                    "DeepSeek sandbox worker response timed out"
+                ) from exc
+            if response is None:
+                detail = self._stderr_detail()
+                self._invalidate_process()
+                raise SandboxUnavailableError(
+                    "DeepSeek sandbox worker exited before responding" + detail
                 )
-            else:
-                protected_rules.append(f'(deny file-read* (subpath "{root}"))')
-        return "\n".join(
-            [
-                "(version 1)",
-                # macOS processes need evolving Mach/IPC capabilities. Start
-                # from the platform baseline, then deny file contents, writes
-                # and network outside explicit capabilities.
-                "(allow default)",
-                *read_denials,
-                *deny_read_section,
-                *write_denials,
-                *protected_rules,
-                network_rule,
-            ]
-        )
+            if isinstance(response, BaseException):
+                self._invalidate_process()
+                raise SandboxUnavailableError(
+                    f"DeepSeek sandbox worker returned invalid JSON: {response}"
+                ) from response
+            if set(response) not in (
+                {"version", "id", "ok", "result"},
+                {"version", "id", "ok", "error"},
+            ):
+                self._invalidate_process()
+                raise SandboxUnavailableError(
+                    "DeepSeek sandbox worker response schema is invalid"
+                )
+            if response.get("version") != 1:
+                self._invalidate_process()
+                raise SandboxUnavailableError(
+                    "DeepSeek sandbox worker response version is unsupported"
+                )
+            if response.get("id") != request_id:
+                self._invalidate_process()
+                raise SandboxUnavailableError(
+                    "DeepSeek sandbox worker response id did not match request"
+                )
+            if response.get("ok") is not True:
+                error = response.get("error")
+                if not isinstance(error, dict) or set(error) != {"code", "message"}:
+                    self._invalidate_process()
+                    raise SandboxUnavailableError(
+                        "DeepSeek sandbox worker error schema is invalid"
+                    )
+                message = (
+                    str(error.get("message"))
+                    if isinstance(error, dict) and error.get("message")
+                    else "DeepSeek sandbox worker rejected the request"
+                )
+                raise SandboxUnavailableError(message)
+            try:
+                return _parse_result(response.get("result"), mode=mode)
+            except SandboxUnavailableError:
+                self._invalidate_process()
+                raise
+
+    def close(self) -> None:
+        with self._lifecycle_lock:
+            self._closed = True
+            self._stop_process_locked()
+
+    def _ensure_process(self) -> subprocess.Popen[str]:
+        with self._lifecycle_lock:
+            if self._closed:
+                raise SandboxUnavailableError("DeepSeek sandbox client is closed")
+            if self._process is not None and self._process.poll() is None:
+                return self._process
+            availability = self.availability()
+            if not availability.available:
+                raise SandboxUnavailableError(
+                    availability.failure_message or "DeepSeek sandbox worker unavailable"
+                )
+            self._responses = queue.Queue()
+            self._stderr.clear()
+            try:
+                process = subprocess.Popen(
+                    list(self.worker_command),
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    bufsize=1,
+                )
+            except OSError as exc:
+                raise SandboxUnavailableError(
+                    f"unable to start DeepSeek sandbox worker: {exc}"
+                ) from exc
+            self._process = process
+            assert process.stdout is not None
+            assert process.stderr is not None
+            self._reader = threading.Thread(
+                target=self._read_responses,
+                args=(process, self._responses),
+                name="deepseek-sandbox-worker-stdout",
+                daemon=True,
+            )
+            self._stderr_reader = threading.Thread(
+                target=self._read_stderr,
+                args=(process,),
+                name="deepseek-sandbox-worker-stderr",
+                daemon=True,
+            )
+            self._reader.start()
+            self._stderr_reader.start()
+            return process
+
+    def _read_responses(
+        self,
+        process: subprocess.Popen[str],
+        responses: queue.Queue[dict[str, Any] | BaseException | None],
+    ) -> None:
+        assert process.stdout is not None
+        try:
+            for line in process.stdout:
+                try:
+                    response = json.loads(line)
+                    if not isinstance(response, dict):
+                        raise TypeError("response must be a JSON object")
+                except (json.JSONDecodeError, TypeError) as exc:
+                    responses.put(exc)
+                    return
+                responses.put(response)
+        finally:
+            responses.put(None)
+
+    def _read_stderr(self, process: subprocess.Popen[str]) -> None:
+        assert process.stderr is not None
+        for line in process.stderr:
+            cleaned = " ".join(line.split())
+            if cleaned:
+                self._stderr.append(cleaned[:400])
+
+    def _stderr_detail(self) -> str:
+        return f": {' | '.join(self._stderr)}" if self._stderr else ""
+
+    def _invalidate_process(self) -> None:
+        with self._lifecycle_lock:
+            self._stop_process_locked()
+
+    def _stop_process_locked(self) -> None:
+        process = self._process
+        self._process = None
+        if process is None:
+            return
+        if process.stdin is not None:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=1)
 
 
 class SandboxRunner:
+    """Map BioinfoFlow policy to DeepSeek confinement for one local command."""
+
     def __init__(
         self,
         *,
         enabled: bool,
-        allow_network: bool = False,
-        adapters: list[SandboxAdapter] | None = None,
+        client: SandboxClient | None = None,
     ) -> None:
         self.enabled = enabled
-        self.allow_network = allow_network
-        self.adapters = adapters if adapters is not None else _default_adapters()
+        # DeepSeek's file-effect sandbox does not restrict network visibility.
+        self.allow_network = True
+        self.client = client or _shared_client()
 
     @classmethod
     def from_settings(cls, source: object | None = None) -> "SandboxRunner":
-        if source is None:
-            source = settings
-        return cls(
-            enabled=bool(getattr(source, "agent_sandbox_enabled")),
-            allow_network=bool(getattr(source, "agent_sandbox_allow_network", False)),
-        )
+        configured = source or settings
+        return cls(enabled=bool(getattr(configured, "agent_sandbox_enabled", True)))
 
     def build(
         self,
         *,
         command: str,
         cwd: Path,
-        read_roots: list[Path],
-        write_roots: list[Path],
-        cwd_fd: int | None = None,
-        deny_read_roots: list[Path] | None = None,
-        protected_roots: list[Path] | None = None,
-        protected_read_roots: list[Path] | None = None,
-        docker_socket_root: Path | None = None,
-        allow_network: bool | None = None,
+        workspace_root: Path | None = None,
+        mode: SandboxMode = "workspace-write",
+        protected_endpoints: list[Path] | None = None,
+        **legacy_options: Any,
     ) -> SandboxResult:
+        if legacy_options:
+            names = ", ".join(sorted(legacy_options))
+            raise TypeError(f"unsupported sandbox options: {names}")
         if not self.enabled:
             raise SandboxUnavailableError(
                 "agent bash requires operating-system sandboxing"
             )
-
-        adapter, availability = self._select_adapter()
-        if adapter is None:
-            detail = f"{availability.adapter} {availability.failure_category}"
-            if availability.failure_message:
-                detail += f": {availability.failure_message}"
-            raise SandboxUnavailableError(f"agent sandbox unavailable: {detail}")
-
-        spec = SandboxSpec(
-            command=command,
-            cwd=cwd,
-            cwd_fd=cwd_fd,
-            read_roots=_dedupe_paths([*read_roots, *_runtime_read_roots()]),
-            write_roots=write_roots,
-            deny_read_roots=list(deny_read_roots or []),
-            protected_roots=protected_roots or [],
-            protected_read_roots=protected_read_roots or [],
-            docker_socket_root=docker_socket_root,
-            allow_network=(
-                self.allow_network if allow_network is None else allow_network
+        shell_argv = [
+            "/bin/bash",
+            "--noprofile",
+            "--norc",
+            "-c",
+            command,
+        ]
+        if mode == "danger-full-access":
+            return SandboxResult(
+                argv=shell_argv,
+                adapter="danger-full-access",
+                sandboxed=False,
+                mode=mode,
+            )
+        if mode not in {"read-only", "workspace-write"}:
+            raise ValueError(f"unknown sandbox mode: {mode}")
+        result = self.client.confine(
+            argv=shell_argv,
+            mode=mode,
+            workspace_root=workspace_root or cwd,
+            protected_endpoints=(
+                _protected_endpoints()
+                if protected_endpoints is None
+                else protected_endpoints
             ),
         )
-        return SandboxResult(adapter.build_argv(spec), adapter.name, True)
-
-    def _select_adapter(self) -> tuple[SandboxAdapter | None, SandboxAvailability]:
-        unavailable: SandboxAvailability | None = None
-        for adapter in self.adapters:
-            availability = adapter.availability()
-            if availability.available:
-                return adapter, availability
-            if unavailable is None:
-                unavailable = availability
-        return None, unavailable or SandboxAvailability(
-            adapter="none",
-            executable=None,
-            available=False,
-            failure_category="binary_missing",
-            failure_message="no sandbox adapter configured",
+        return SandboxResult(
+            argv=list(result.argv),
+            adapter=result.adapter,
+            sandboxed=True,
+            mode=mode,
+            enforcement=result.enforcement,
+            denial_signatures=tuple(result.denial_signatures),
+            runner_failure_rules=tuple(result.runner_failure_rules),
         )
 
-    def available_adapter(self) -> SandboxAdapter | None:
-        """Return the OS sandbox adapter currently available for this runner."""
-        return self._select_adapter()[0]
-
     def availability(self) -> SandboxAvailability:
-        """Return the selected adapter's complete availability diagnostic."""
-        return self._select_adapter()[1]
+        value = self.client.availability()
+        if isinstance(value, SandboxAvailability):
+            return value
+        return SandboxAvailability(
+            adapter=str(value.get("adapter") or "deepseek-local"),
+            executable=(
+                str(value["executable"]) if value.get("executable") else None
+            ),
+            available=bool(value.get("available")),
+            failure_category=(
+                str(value["failure_category"])
+                if value.get("failure_category")
+                else None
+            ),
+            failure_message=(
+                str(value["failure_message"])
+                if value.get("failure_message")
+                else None
+            ),
+        )
+
+    def available_adapter(self) -> SandboxClient | None:
+        return self.client if self.availability().available else None
 
 
-def adapter_supports_docker_socket(
-    adapter: SandboxAdapter | None,
-    root: Path | None,
-) -> bool:
-    if adapter is None or root is None:
-        return False
-    supports = getattr(adapter, "supports_docker_socket", None)
-    return bool(supports is not None and supports(root))
-
-
-def _default_adapters() -> list[SandboxAdapter]:
-    system = platform.system()
-    if system == "Darwin":
-        return [SeatbeltAdapter()]
-    return [BubblewrapAdapter()]
-
-
-def _existing(roots: list[Path]) -> list[Path]:
-    seen: set[str] = set()
-    result: list[Path] = []
-    for root in roots:
-        resolved = Path(root)
-        key = str(resolved)
-        if key in seen or not resolved.exists():
-            continue
-        seen.add(key)
-        result.append(resolved)
-    return result
-
-
-def _dedupe(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for value in values:
-        if value not in seen:
-            seen.add(value)
-            result.append(value)
-    return result
-
-
-def _dedupe_paths(values: list[Path]) -> list[Path]:
-    return [Path(value) for value in _dedupe([str(Path(value)) for value in values])]
-
-
-def _seatbelt_global_denial(
-    *,
-    operation: str,
-    allowed: list[str],
-) -> list[str]:
-    paths = _dedupe(allowed)
-    if not paths:
-        return [f"(deny {operation})"]
-    ancestors = _dedupe(
-        [str(parent) for path in paths for parent in (Path(path), *Path(path).parents)]
-    )
-    filters = [
-        *[f'(subpath "{path}")' for path in paths],
-        *[f'(literal "{path}")' for path in ancestors],
-    ]
-    return [
-        f"(deny {operation}",
-        "    (require-all",
-        *[f"        (require-not {item})" for item in filters],
-        "    )",
-        ")",
-    ]
-
-
-def _runtime_read_roots() -> list[Path]:
-    """Return narrow executable/runtime roots, never the user's whole home."""
-
-    candidates = [
-        Path(sys.prefix),
-        Path(sys.executable).resolve().parent.parent,
-        Path(BACKEND_ROOT) / "app",
-    ]
-    path = os.environ.get("PATH", "")
-    for name in (
-        "bif",
-        "python",
-        "python3",
-        "rg",
-        "git",
-        "node",
-        "npm",
-        "bun",
-        "R",
-        "Rscript",
-        "nextflow",
-        "miniwdl",
-        "docker",
+def _parse_result(value: Any, *, mode: ConfinedSandboxMode) -> SandboxResult:
+    if not isinstance(value, dict):
+        raise SandboxUnavailableError("DeepSeek sandbox worker result is missing")
+    if set(value) != {
+        "argv",
+        "adapter",
+        "enforcement",
+        "denial_signatures",
+        "runner_failure_rules",
+    }:
+        raise SandboxUnavailableError(
+            "DeepSeek sandbox worker result schema is invalid"
+        )
+    argv = value.get("argv")
+    adapter = value.get("adapter")
+    enforcement = value.get("enforcement")
+    denial_signatures = value.get("denial_signatures")
+    runner_failure_rules = value.get("runner_failure_rules")
+    if not isinstance(argv, list) or not argv or any(
+        not isinstance(item, str) or not item for item in argv
     ):
-        executable = shutil.which(name, path=path)
-        if executable is None:
-            continue
-        resolved = Path(executable).resolve()
-        candidates.append(_executable_runtime_root(resolved))
-    broad = {Path("/"), Path.home().resolve()}
-    return [
-        root
-        for root in _existing(_dedupe_paths(candidates))
-        if root.resolve() not in broad
-    ]
-
-
-def _executable_runtime_root(executable: Path) -> Path:
-    for parent in executable.parents:
-        if parent.name == "bin":
-            candidate = parent.parent
-            if candidate in {Path("/"), Path.home().resolve()}:
-                return parent
-            return candidate
-    return executable.parent
-
-
-def _sanitize_diagnostic(message: str | None) -> str:
-    printable = "".join(
-        character if character.isprintable() else " " for character in message or ""
+        raise SandboxUnavailableError("DeepSeek sandbox worker returned invalid argv")
+    if not isinstance(adapter, str) or not adapter:
+        raise SandboxUnavailableError("DeepSeek sandbox worker returned no adapter")
+    if enforcement != "full":
+        raise SandboxUnavailableError(
+            "DeepSeek sandbox worker did not provide full enforcement"
+        )
+    if not isinstance(denial_signatures, list) or any(
+        not isinstance(item, str) or not item for item in denial_signatures
+    ):
+        raise SandboxUnavailableError(
+            "DeepSeek sandbox worker returned invalid denial signatures"
+        )
+    rules = _normalize_runner_failure_rules(runner_failure_rules)
+    return SandboxResult(
+        argv=list(argv),
+        adapter=adapter,
+        sandboxed=True,
+        mode=mode,
+        enforcement="full",
+        denial_signatures=tuple(denial_signatures),
+        runner_failure_rules=rules,
     )
-    return " ".join(printable.split())[:400]
 
 
-def _outside_protected(roots: list[Path], protected_roots: list[Path]) -> list[Path]:
-    return [
-        root
-        for root in roots
-        if not any(_is_relative_to(root, protected) for protected in protected_roots)
-    ]
+def _normalize_runner_failure_rules(value: Any) -> tuple[dict[str, Any], ...]:
+    if not isinstance(value, list):
+        raise SandboxUnavailableError(
+            "DeepSeek sandbox worker returned invalid runner failure rules"
+        )
+    normalized: list[dict[str, Any]] = []
+    for rule in value:
+        if not isinstance(rule, dict):
+            raise SandboxUnavailableError(
+                "DeepSeek sandbox worker returned invalid runner failure rule"
+            )
+        item: dict[str, Any] = {}
+        for key, raw in rule.items():
+            if key not in {
+                "allowed_exit_codes",
+                "fatal_signatures",
+                "informational_lines",
+            }:
+                raise SandboxUnavailableError(
+                    "DeepSeek sandbox worker returned an unknown runner failure field"
+                )
+            if not isinstance(raw, list):
+                raise SandboxUnavailableError(
+                    "DeepSeek sandbox worker returned invalid runner failure values"
+                )
+            if key == "allowed_exit_codes":
+                if any(
+                    isinstance(entry, bool) or not isinstance(entry, int)
+                    for entry in raw
+                ):
+                    raise SandboxUnavailableError(
+                        "DeepSeek sandbox worker returned invalid exit codes"
+                    )
+            elif any(not isinstance(entry, str) or not entry for entry in raw):
+                raise SandboxUnavailableError(
+                    "DeepSeek sandbox worker returned invalid failure signatures"
+                )
+            item[key] = tuple(raw)
+        if not item.get("fatal_signatures"):
+            raise SandboxUnavailableError(
+                "DeepSeek sandbox worker returned a failure rule without signatures"
+            )
+        normalized.append(item)
+    return tuple(normalized)
 
 
-def _is_relative_to(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
+def _default_worker_command() -> tuple[str, ...]:
+    return (
+        os.environ.get("BIOINFOFLOW_SANDBOX_NODE", "node"),
+        str(Path(BACKEND_ROOT) / "sandbox_worker" / "worker.mjs"),
+    )
+
+
+def _worker_script_from_command(command: tuple[str, ...]) -> Path | None:
+    if len(command) != 2 or command[0].endswith(("python", "python3")):
+        return None
+    candidate = Path(command[1])
+    return candidate if candidate.suffix in {".js", ".mjs", ".cjs"} else None
+
+
+def _protected_endpoints() -> list[Path]:
+    return list(sensitive_capability_paths())
+
+
+def _shared_client() -> DeepSeekSandboxClient:
+    global _shared_client_instance
+    with _shared_client_lock:
+        if _shared_client_instance is None:
+            _shared_client_instance = DeepSeekSandboxClient()
+        return _shared_client_instance

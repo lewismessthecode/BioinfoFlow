@@ -101,8 +101,8 @@ class Settings(BaseSettings):
 
     # Agent / LLM
     agent_sandbox_enabled: bool = True  # Required OS confinement for agent bash
-    # Allow the sandboxed process to reach the network. Off by default.
-    agent_sandbox_allow_network: bool = False
+    # Compose sets this to the backend image so agent Bash runs without Docker authority.
+    agent_sandbox_image: str | None = None
     agent_max_tokens: int = 16384
     agent_max_iterations: int = 90  # Per-turn loop safety limit
     removed_agent_max_rounds: str | None = Field(

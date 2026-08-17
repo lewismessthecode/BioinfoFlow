@@ -4,6 +4,9 @@ import os
 from pathlib import Path
 
 from app.config import BACKEND_ROOT, settings
+from app.services.agent_harness.sandbox.capability_paths import (
+    sensitive_capability_paths,
+)
 from app.utils.exceptions import PermissionDeniedError
 
 
@@ -195,7 +198,10 @@ class FilesystemPolicy:
         roots: list[Path],
         write: bool = False,
     ) -> None:
-        self._require_not_protected(target)
+        if write:
+            self._require_not_protected(target)
+        else:
+            self._require_not_sensitive_read(target)
         if not any(_is_relative_to(target, root) for root in roots):
             if write and any(_is_relative_to(target, root) for root in self.read_roots):
                 raise PermissionDeniedError(
@@ -206,6 +212,13 @@ class FilesystemPolicy:
     def _require_not_protected(self, target: Path) -> None:
         if self._is_protected_target(target):
             raise PermissionDeniedError(f"Path is protected: {target}")
+
+    def _require_not_sensitive_read(self, target: Path) -> None:
+        if any(_is_relative_to(target, root) for root in self.protected_roots):
+            raise PermissionDeniedError(f"Path is protected: {target}")
+        for root in _sensitive_read_roots():
+            if _is_relative_to(target, root):
+                raise PermissionDeniedError(f"Path is protected: {target}")
 
     def _is_protected_target(self, target: Path) -> bool:
         if any(_is_relative_to(target, root) for root in self.protected_roots):
@@ -272,18 +285,8 @@ def _docker_socket_path() -> Path | None:
 
 
 def _platform_protected_roots() -> list[Path]:
-    roots = [Path(settings.state_root).expanduser().resolve()]
-    docker_socket = _docker_socket_path()
-    if docker_socket is not None:
-        roots.append(docker_socket)
+    return _sensitive_read_roots()
 
-    repo_root = Path(settings.repo_root).expanduser().resolve()
-    if repo_root == Path("/"):
-        backend_root = Path(BACKEND_ROOT).resolve()
-        roots.extend(
-            (backend_root / name).resolve()
-            for name in ("app", "alembic", "scripts", "tests")
-        )
-    else:
-        roots.append(repo_root)
-    return roots
+
+def _sensitive_read_roots() -> list[Path]:
+    return list(sensitive_capability_paths())

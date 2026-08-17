@@ -120,6 +120,9 @@ class ToolExecutionContext:
     backend: Any
     cancellation: Any | None = None
     environment: dict[str, str] = field(default_factory=dict)
+    sandbox_mode: Literal[
+        "read-only", "workspace-write", "danger-full-access"
+    ] = "workspace-write"
 
 
 class HarnessTool(Protocol):

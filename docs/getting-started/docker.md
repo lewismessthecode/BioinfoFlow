@@ -390,21 +390,23 @@ same explicit-selection rules: full image names can be pulled directly,
 Automatic keeps an unqualified name unchanged, and explicit `registry_id` use is
 limited to owners/admins in team mode.
 
-The bundled Compose files enable `seccomp:unconfined` and
-`apparmor:unconfined` for the backend so Bubblewrap can create its unprivileged
-user and mount namespaces. The outer filters fail at different stages:
-seccomp commonly reports `No permissions to create new namespace`, while an
-enforcing container AppArmor profile can report
-`Failed to make / slave: Permission denied`. Disabling both policies for the
-backend is a meaningful security tradeoff, but it does not make the container
-privileged or add `SYS_ADMIN`; Bubblewrap remains the per-command filesystem
-and network confinement boundary. A deployment may replace these settings with
-validated custom seccomp and AppArmor profiles that permit the required
-namespace operations. Sandbox selection still treats Bubblewrap as unavailable
-unless a bounded runtime probe succeeds. Inspect the rendered Compose
-configuration and recreate the backend rather than adding `privileged` or
-`SYS_ADMIN`. Use the same Compose file set that started the deployment for both
-inspection and recovery:
+The bundled Compose files keep Docker's default seccomp and AppArmor policies
+on the long-lived backend. Each Agent Bash call is launched in a disposable
+container using the exact image named by `AGENT_SANDBOX_IMAGE`. That execution
+container has a read-only root, bounded tmpfs, all capabilities dropped,
+`no-new-privileges`, explicit project/source/skill roots mounted read-only with
+only the workspace overlaid read-write, and no control-plane state, Docker
+socket, or arbitrary host binds. Docker's default seccomp/AppArmor policies
+remain active; the pinned DeepSeek provider selects any fully enforcing adapter
+available under those policies. Sandbox selection fails closed unless a bounded
+runtime probe succeeds. Inspect
+the rendered Compose configuration and recreate the backend rather than adding
+`privileged` or `SYS_ADMIN`. Use the same Compose file set that started the
+deployment for both inspection and recovery:
+
+The workspace itself must be a dedicated project subdirectory. Roots that are
+`/`, contain BioinfoFlow state/auth, or overlap process, Docker, SSH, cloud, or
+other credential capability paths are rejected before Agent execution starts.
 
 ```bash
 # Source-build deployment:
@@ -422,10 +424,11 @@ docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml config
 docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --force-recreate backend
 ```
 
-The backend socket gives Agent Bash complete Docker daemon authority.
-Bubblewrap and macOS Seatbelt filesystem/network restrictions apply to the
-local CLI process, but do not constrain mounts, networking, or other actions
-that the Docker daemon performs on that process's behalf.
+The backend socket gives the backend and workflow scheduler Docker daemon
+authority. Agent Bash never receives that socket. The DeepSeek sandbox protects
+filesystem integrity rather than confidentiality and does not claim network or
+process isolation; the disposable container is the separate capability boundary
+that removes Docker daemon access from Agent execution.
 
 For WDL, static task `docker`/`container` references are captured during workflow
 registration and missing images are prefetched automatically before MiniWDL

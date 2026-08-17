@@ -2958,9 +2958,11 @@
       "target": "Execution target",
       "effects": "Effects",
       "reasons": "Reasons",
+      "justification": "Agent justification: {justification}",
       "resources": "Affected resources",
       "action": {
         "command": "Run command",
+        "escalation": "Allow one-time sandbox escalation",
         "write": "Write file",
         "edit": "Edit file",
         "read": "Read file",
@@ -2974,6 +2976,9 @@
         "process_control": "Controls processes",
         "privilege": "Uses elevated access",
         "execute": "Runs a command"
+      },
+      "reason": {
+        "sandbox_escalation": "This exact command will run once with the sandbox filesystem restrictions disabled."
       }
     },
     "ask_user": {

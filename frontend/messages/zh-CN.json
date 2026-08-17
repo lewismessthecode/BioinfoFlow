@@ -2958,9 +2958,11 @@
       "target": "执行目标",
       "effects": "可能产生的影响",
       "reasons": "原因",
+      "justification": "Agent 提供的理由：{justification}",
       "resources": "受影响资源",
       "action": {
         "command": "执行命令",
+        "escalation": "允许单次提升沙盒权限",
         "write": "写入文件",
         "edit": "编辑文件",
         "read": "读取文件",
@@ -2974,6 +2976,9 @@
         "process_control": "控制进程",
         "privilege": "使用提升权限",
         "execute": "执行命令"
+      },
+      "reason": {
+        "sandbox_escalation": "仅这一次命令会在不启用沙盒文件系统限制的情况下运行。"
       }
     },
     "ask_user": {

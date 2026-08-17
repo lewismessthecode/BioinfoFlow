@@ -92,12 +92,21 @@ def test_compose_backends_allow_nested_sandbox_without_privileged_escalation(
 ) -> None:
     backend = _compose(filename)["services"]["backend"]
 
-    assert backend["security_opt"] == [
-        "seccomp:unconfined",
-        "apparmor:unconfined",
-    ]
+    assert "security_opt" not in backend
     assert backend.get("privileged", False) is False
     assert "SYS_ADMIN" not in backend.get("cap_add", [])
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["docker-compose.yml", "docker-compose.local.yml", "docker-compose.prod.yml"],
+)
+def test_compose_backends_use_the_matching_image_for_disposable_agent_bash(
+    filename: str,
+) -> None:
+    backend = _compose(filename)["services"]["backend"]
+
+    assert backend["environment"]["AGENT_SANDBOX_IMAGE"] == backend["image"]
 
 
 @pytest.mark.parametrize(
@@ -139,10 +148,7 @@ def test_gpu_override_preserves_backend_socket_and_seccomp_contracts() -> None:
     ]["backend"]
     socket_mount = _docker_socket_mount(backend)
 
-    assert backend["security_opt"] == [
-        "seccomp:unconfined",
-        "apparmor:unconfined",
-    ]
+    assert "security_opt" not in backend
     assert backend.get("privileged", False) is False
     assert "SYS_ADMIN" not in backend.get("cap_add", [])
     assert socket_mount["source"] == "/var/run/docker.sock"
@@ -175,16 +181,16 @@ def test_compose_render_supports_a_custom_docker_desktop_socket_path() -> None:
     assert backend["environment"]["DOCKER_SOCKET"] == "unix:///var/run/docker.sock"
 
 
-def test_docker_guide_explains_outer_sandbox_tradeoffs() -> None:
+def test_docker_guide_explains_disposable_sandbox_boundary() -> None:
     guide = (ROOT / "docs" / "getting-started" / "docker.md").read_text(
         encoding="utf-8"
     )
     normalized_guide = " ".join(guide.split())
 
-    assert "seccomp:unconfined" in normalized_guide
-    assert "apparmor:unconfined" in normalized_guide
-    assert "Failed to make / slave: Permission denied" in normalized_guide
-    assert "validated custom seccomp and AppArmor profiles" in normalized_guide
+    assert "AGENT_SANDBOX_IMAGE" in normalized_guide
+    assert "read-only root" in normalized_guide
+    assert "no control-plane state, Docker socket" in normalized_guide
+    assert "does not claim network or process isolation" in normalized_guide
 
 
 def test_published_image_compose_fails_closed_to_personal_auth() -> None:
@@ -232,7 +238,7 @@ def test_backend_env_example_scopes_compose_socket_path_to_repo_root() -> None:
     assert "# DOCKER_SOCKET=unix:///var/run/docker.sock" in env_example
 
 
-def test_security_docs_describe_the_bash_only_docker_socket_exception() -> None:
+def test_security_docs_describe_the_disposable_bash_identity() -> None:
     security = (ROOT / "docs" / "security.md").read_text(encoding="utf-8")
     normalized_security = " ".join(security.split())
 
@@ -241,12 +247,11 @@ def test_security_docs_describe_the_bash_only_docker_socket_exception() -> None:
         not in normalized_security
     )
     assert "complete authority over the host Docker daemon" in normalized_security
-    assert (
-        "Bubblewrap and macOS Seatbelt constrain the local Bash process, not actions delegated to the Docker daemon"
-        in normalized_security
-    )
-    assert "A sandboxed command that reaches the socket" in normalized_security
-    assert "start privileged workloads outside the sandbox" in normalized_security
+    assert "each call is delegated to a disposable container" in normalized_security
+    assert "never control-plane state" in normalized_security
+    assert "the Docker socket" in normalized_security
+    assert "filesystem integrity, not confidentiality" in normalized_security
+    assert "Network and process visibility are not sandbox properties" in normalized_security
 
 
 @pytest.mark.parametrize(

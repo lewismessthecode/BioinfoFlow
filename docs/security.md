@@ -56,16 +56,17 @@ The Docker Compose setup mounts:
 
 `DOCKER_SOCKET_PATH` is the host path used by the Compose bind mount;
 `DOCKER_SOCKET=unix:///var/run/docker.sock` is the backend-visible URI. The
-socket must be writable for Docker API operations. It gives the backend, Agent
-Bash, and workflow execution complete authority over the host Docker daemon.
-Use it only on trusted machines and trusted networks.
+socket must be writable for Docker API operations. It gives the backend and
+workflow scheduler complete authority over the host Docker daemon. Agent Bash
+does not run in that backend identity: each call is delegated to a disposable
+container that receives explicit project/source/skill roots read-only, its
+workspace read-write, and its own request file, but never control-plane state,
+another request, the Docker socket, or arbitrary host binds. Use the stack only
+on trusted machines and trusted networks because a
+backend compromise still reaches the daemon.
 
-Bubblewrap and macOS Seatbelt constrain the local Bash process, not actions
-delegated to the Docker daemon. A sandboxed command that reaches the socket can
-ask the daemon to mount host paths, create networks, or start privileged
-workloads outside the sandbox's filesystem and network restrictions. For
-recovery, use the same Compose file set that started the deployment for both
-inspection and backend recreation:
+For recovery, use the same Compose file set that started the deployment for
+both inspection and backend recreation:
 
 ```bash
 # Source-build deployment:
@@ -83,13 +84,13 @@ docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml config
 docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --force-recreate backend
 ```
 
-The backend must remain non-privileged and must not gain `SYS_ADMIN`. On Linux,
-Docker's default seccomp profile can block Bubblewrap's user-namespace probe
-with `No permissions to create new namespace`. Bioinfoflow therefore uses
-`seccomp:unconfined` and `apparmor:unconfined` for the backend while retaining
-the non-privileged and no-`SYS_ADMIN` boundaries. Seccomp permits the user
-namespace syscall; the AppArmor exception permits the mount propagation setup
-inside that namespace. Bubblewrap remains the per-command confinement layer.
+The backend must remain non-privileged, retain Docker's default seccomp and
+AppArmor policies, and must not gain `SYS_ADMIN`. `AGENT_SANDBOX_IMAGE` must
+resolve to the exact immutable image digest used by the running backend. The
+disposable Agent container drops every capability, sets `no-new-privileges`,
+uses a read-only root and bounded tmpfs, and retains Docker's default seccomp
+and AppArmor policies. A confirmed `danger-full-access` call gets an ephemeral
+writable image root but no additional persistent mount or Docker authority.
 
 ## Authentication
 
@@ -215,17 +216,29 @@ The model sees only `read`, `bash`, `edit`, `write`, and `ask_user`. Product
 operations go through the normal `bif` CLI and HTTP APIs instead of privileged
 in-process model tools.
 
-Local Bash requires an operating-system sandbox and fails closed. Linux and
-container deployments use Bubblewrap; macOS development uses Seatbelt. Declared
-workspace roots are capability boundaries, network access is disabled by
-default, and protected Bioinfoflow source and internal state remain denied.
+Local Bash requires an operating-system sandbox and fails closed. The pinned
+DeepSeek local provider selects Bubblewrap or Landlock on Linux and Seatbelt on
+macOS. Its contract protects filesystem integrity, not confidentiality: files
+visible to the execution identity may be read except BioinfoFlow state/auth and
+request capability roots, process metadata such as `/proc`, and credential
+configuration paths, while writes are restricted to the canonical
+workspace in confined modes. Network and process visibility are not sandbox
+properties. Compose defines a narrower execution identity from the
+backend image plus explicit public data roots, then adds a disposable
+socket-free container around every local Bash call so Docker authority and
+control-plane credentials are not ambient.
+
+The canonical workspace must not be `/`, a user home containing credential
+stores, the whole `BIOINFOFLOW_HOME`, or any directory that contains or is
+contained by a protected capability path. Such a Session fails closed before a
+container starts. Use a dedicated project subdirectory instead.
 
 Remote Harness tools use the same logical root policy but establish confinement
 inside the selected SSH account. Before executing a helper or Bash command, the
 adapter verifies remote Bubblewrap, shell, Python, and runtime roots outside
 writable project directories. Failure to find or trust them aborts the command.
-Network access remains off except for the narrowly recognized authenticated
-`bif` path when a reachable API URL is configured.
+The scoped authenticated `bif` path remains a separate short-lived capability;
+it is not evidence of general network isolation.
 
 Permission mode is a separate interaction policy:
 
@@ -235,8 +248,11 @@ Permission mode is a separate interaction policy:
   marked for confirmation
 
 Hard path, target, sandbox, and server-authorization violations remain blocked
-in every mode. Questions, command confirmation, and recovery choices use the
-same persisted Harness interaction channel.
+in every mode. A local Bash call can request a one-shot
+`require_escalated`/`danger-full-access` execution, but it always requires an
+exact-call approval and remains inside the socket-free disposable container in
+Compose. Questions, command confirmation, and recovery choices use the same
+persisted Harness interaction channel.
 
 Command classification is defense in depth, not complete parsing of arbitrary
 shell programs. The enforceable boundaries are the local or remote OS sandbox,

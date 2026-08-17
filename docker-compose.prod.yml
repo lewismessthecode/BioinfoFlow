@@ -39,15 +39,9 @@ services:
       DATABASE_URL: sqlite+aiosqlite:///${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/bioinfoflow.db
       BETTER_AUTH_DB_PATH: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/auth/better-auth.db
       DOCKER_SOCKET: unix:///var/run/docker.sock
+      AGENT_SANDBOX_IMAGE: ${IMAGE_REGISTRY:+${IMAGE_REGISTRY}/}bioinfoflow-backend:${IMAGE_TAG:-latest}
       BIOINFOFLOW_GPU_MODE: ${BIOINFOFLOW_GPU_MODE:-auto}
       BIOINFOFLOW_GPU_DEVICES: ${BIOINFOFLOW_GPU_DEVICES:-all}
-    # Bubblewrap needs user and mount namespaces inside the backend container.
-    # Docker's seccomp and AppArmor defaults can independently block them. These
-    # exceptions keep the container non-privileged and do not add SYS_ADMIN;
-    # Bubblewrap remains the per-command confinement boundary.
-    security_opt:
-      - seccomp:unconfined
-      - apparmor:unconfined
     volumes:
       - ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}:${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
       - type: bind
