@@ -6,6 +6,7 @@ import {
   fetchAgentArtifactContent,
   getAgentArtifact,
   getAgentSnapshot,
+  listAgentArtifacts,
   listAgentSessions,
   updateAgentSession,
 } from "@/lib/agent/client"
@@ -51,6 +52,17 @@ describe("agent client", () => {
     await expect(getAgentArtifact("artifact-1")).resolves.toBe(artifact)
     expect(mockedApiRequest).toHaveBeenCalledWith(
       "/agent/artifacts/artifact-1",
+      undefined,
+    )
+  })
+
+  it("lists artifacts through the public session endpoint", async () => {
+    const artifacts = [{ id: "artifact-1" }]
+    mockedApiRequest.mockResolvedValueOnce({ data: artifacts })
+
+    await expect(listAgentArtifacts("session-1")).resolves.toBe(artifacts)
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/agent/sessions/session-1/artifacts",
       undefined,
     )
   })

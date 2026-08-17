@@ -22,6 +22,7 @@ import type {
 import { AgentContextPicker } from "@/components/bioinfoflow/agent/agent-context-picker"
 import { AgentModelConnectionDialog } from "@/components/bioinfoflow/agent/agent-model-connection-dialog"
 import { ConversationTranscript } from "@/components/bioinfoflow/agent/conversation-transcript"
+import { useAgentTranscriptArtifacts } from "@/components/bioinfoflow/agent/use-agent-transcript-artifacts"
 import {
   environmentScopeFromSelection,
   environmentSelectionEquals,
@@ -57,6 +58,10 @@ import {
   sessionSummaryFromView,
 } from "@/lib/agent/session-preferences"
 import { ApiError } from "@/lib/api"
+import {
+  bioinfoFlowAgentWorkspaceAdapter,
+  type AgentWorkspaceAdapter,
+} from "@/lib/agent/workspace-adapter"
 import { Bot, CircleAlert, Loader2, RefreshCw, WifiOff } from "@/lib/icons"
 import { cn } from "@/lib/utils"
 
@@ -74,6 +79,8 @@ type AgentWorkbenchProps = {
   onActiveSessionIdChange?: (sessionId: string) => void
   onSessionResolved?: (session: ConversationSummary) => void
   onOpenRun?: (runId: string) => void
+  onOpenArtifact?: (artifactId: string) => void
+  workspaceAdapter?: AgentWorkspaceAdapter
   conversationModelControls?: ReactNode
   environmentTargets?: readonly AgentEnvironmentTarget[]
   requestedEnvironmentSelection?: AgentEnvironmentSelection
@@ -98,6 +105,8 @@ export const AgentWorkbench = forwardRef<
     onActiveSessionIdChange,
     onSessionResolved,
     onOpenRun,
+    onOpenArtifact,
+    workspaceAdapter = bioinfoFlowAgentWorkspaceAdapter,
     conversationModelControls,
     environmentTargets,
     requestedEnvironmentSelection,
@@ -142,6 +151,8 @@ export const AgentWorkbench = forwardRef<
     setCancelHandler: controller.setCancelHandler,
     setModelConnectionOpen: controller.setModelConnectionOpen,
     onOpenRun,
+    onOpenArtifact,
+    workspaceAdapter,
     conversationModelControls,
     environmentTargets: controller.visibleEnvironmentTargets,
     environmentSelection: controller.visibleEnvironmentSelection,
@@ -209,6 +220,8 @@ type SharedWorkbenchProps = {
   setCancelHandler: (handler: (() => Promise<void>) | null) => void
   setModelConnectionOpen: (open: boolean) => void
   onOpenRun?: (runId: string) => void
+  onOpenArtifact?: (artifactId: string) => void
+  workspaceAdapter: AgentWorkspaceAdapter
   conversationModelControls?: ReactNode
   environmentTargets: readonly AgentEnvironmentTarget[]
   environmentSelection: AgentEnvironmentSelection
@@ -406,6 +419,13 @@ function SessionWorkbench({
 
   const conversationView = state.conversationView ?? null
 
+  const supplementalArtifacts = useAgentTranscriptArtifacts({
+    adapter: shared.workspaceAdapter,
+    sessionId,
+    projectId: shared.projectId,
+    view: conversationView,
+  })
+
   useEffect(() => {
     if (!conversationView) return
     publishConversationSummary(conversationView.conversation)
@@ -488,6 +508,8 @@ function SessionWorkbench({
           view={conversationView}
           onRespond={interactive ? state.respond : undefined}
           onOpenRun={shared.onOpenRun}
+          onOpenArtifact={shared.onOpenArtifact}
+          supplementalArtifacts={supplementalArtifacts}
         />
       ) : state.isLoading ? (
         <WorkbenchSkeleton />

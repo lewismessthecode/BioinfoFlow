@@ -276,7 +276,49 @@
     "liveDeck": {
       "label": "Live workspace information",
       "files": "Files",
-      "pipeline": "Workflow"
+      "pipeline": "Workflow",
+      "artifacts": "Artifacts",
+      "browser": "Browser"
+    },
+    "files": {
+      "label": "Project file browser",
+      "root": "workspace",
+      "tree": "File tree",
+      "filter": "Filter files...",
+      "select": "Select a file",
+      "noProject": "No project selected",
+      "noMatches": "No matching files",
+      "download": "Download file",
+      "refresh": "Refresh files",
+      "truncated": "Showing a partial preview of {count} lines"
+    },
+    "artifacts": {
+      "label": "Agent artifacts",
+      "title": "Artifacts",
+      "preview": "Artifact preview",
+      "open": "Preview",
+      "back": "Back to artifacts",
+      "download": "Download artifact",
+      "refresh": "Refresh artifacts",
+      "loading": "Loading artifacts",
+      "loadingPreview": "Loading preview",
+      "empty": "No artifacts yet",
+      "noSession": "Start a conversation to collect artifacts",
+      "loadFailed": "Could not load artifacts",
+      "previewFailed": "Could not load this artifact",
+      "previewUnavailable": "Preview unavailable"
+    },
+    "browser": {
+      "label": "Built-in browser",
+      "title": "Browser",
+      "address": "Browser address",
+      "placeholder": "Enter a URL",
+      "back": "Back",
+      "forward": "Forward",
+      "reload": "Reload",
+      "go": "Open address",
+      "openExternal": "Open in a new tab",
+      "empty": "Enter a URL"
     }
   },
   "chat": {
@@ -2757,6 +2799,8 @@
     },
     "artifact": {
       "open": "Open {name}",
+      "preview": "Preview file",
+      "action": "Preview",
       "description": "Preview or download this artifact.",
       "loading": "Loading artifact",
       "loadFailed": "Could not load this artifact.",
@@ -2784,6 +2828,8 @@
     "plan": {
       "title": "Plan",
       "progress": "{completed}/{total} complete",
+      "expand": "Expand plan",
+      "collapse": "Collapse plan",
       "status": {
         "pending": "Pending",
         "in_progress": "In progress",

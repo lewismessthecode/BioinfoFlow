@@ -20,6 +20,7 @@ import { AgentPlanEntry } from "@/components/bioinfoflow/agent/plan-entry"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { Button } from "@/components/ui/button"
 import type {
+  ArtifactTranscriptBlock,
   ConversationInteractionResponse,
   ConversationRunAudit,
   ConversationViewModel,
@@ -46,6 +47,8 @@ type ConversationTranscriptProps = {
     response: ConversationInteractionResponse,
   ) => void | Promise<void>
   onOpenRun?: (runId: string) => void
+  onOpenArtifact?: (artifactId: string) => void
+  supplementalArtifacts?: readonly ArtifactTranscriptBlock[]
   className?: string
 }
 
@@ -58,15 +61,21 @@ export function ConversationTranscript({
   view,
   onRespond,
   onOpenRun,
+  onOpenArtifact,
+  supplementalArtifacts = [],
   className,
 }: ConversationTranscriptProps) {
   const t = useTranslations("agentTranscript")
+  const transcript = useMemo(
+    () => mergeSupplementalArtifacts(view.transcript, supplementalArtifacts),
+    [supplementalArtifacts, view.transcript],
+  )
   const contentRevision = useMemo(
     () =>
-      view.transcript
+      transcript
         .map((block) => `${block.id}:${block.type}:${block.createdAt ?? ""}`)
         .join("|"),
-    [view.transcript],
+    [transcript],
   )
   const scrollRef = useRef<HTMLElement>(null)
   const initializedRef = useRef(false)
@@ -76,8 +85,8 @@ export function ConversationTranscript({
   const [hasNewContent, setHasNewContent] = useState(false)
   const activeInteractionBlockId = currentActiveInteractionBlockId(view)
   const copyableMessageIds = useMemo(
-    () => completedFinalAssistantMessageIds(view.transcript, view.runs),
-    [view.runs, view.transcript],
+    () => completedFinalAssistantMessageIds(transcript, view.runs),
+    [transcript, view.runs],
   )
 
   useLayoutEffect(() => {
@@ -149,7 +158,7 @@ export function ConversationTranscript({
             className="mx-auto grid w-full max-w-[46rem] min-w-0 content-start gap-3"
             data-testid="agent-transcript-content"
           >
-            {view.transcript.map((block) => (
+            {transcript.map((block) => (
               <div
                 key={block.id}
                 className="min-w-0"
@@ -159,6 +168,7 @@ export function ConversationTranscript({
                   block={block}
                   onRespond={onRespond}
                   onOpenRun={onOpenRun}
+                  onOpenArtifact={onOpenArtifact}
                   activeInteractionBlockId={activeInteractionBlockId}
                   copyableMessageIds={copyableMessageIds}
                 />
@@ -190,16 +200,36 @@ export function ConversationTranscript({
   )
 }
 
+function mergeSupplementalArtifacts(
+  transcript: readonly TranscriptBlock[],
+  supplementalArtifacts: readonly ArtifactTranscriptBlock[],
+): TranscriptBlock[] {
+  if (supplementalArtifacts.length === 0) return [...transcript]
+  const artifactIds = new Set(
+    transcript.flatMap((block) =>
+      block.type === "artifact" ? [block.artifactId] : [],
+    ),
+  )
+  return [
+    ...transcript,
+    ...supplementalArtifacts.filter(
+      (artifact) => !artifactIds.has(artifact.artifactId),
+    ),
+  ]
+}
+
 function TranscriptBlockView({
   block,
   onRespond,
   onOpenRun,
+  onOpenArtifact,
   activeInteractionBlockId,
   copyableMessageIds,
 }: {
   block: TranscriptBlock
   onRespond: ConversationTranscriptProps["onRespond"]
   onOpenRun?: (runId: string) => void
+  onOpenArtifact?: (artifactId: string) => void
   activeInteractionBlockId: string | null
   copyableMessageIds: ReadonlySet<string>
 }) {
@@ -244,7 +274,9 @@ function TranscriptBlockView({
         />
       )
     case "artifact":
-      return <AgentArtifactReference artifact={block} />
+      return (
+        <AgentArtifactReference artifact={block} onOpen={onOpenArtifact} />
+      )
     case "notice":
       return (
         <section

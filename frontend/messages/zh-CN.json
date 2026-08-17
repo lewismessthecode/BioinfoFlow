@@ -276,7 +276,49 @@
     "liveDeck": {
       "label": "工作区实时信息",
       "files": "文件",
-      "pipeline": "工作流"
+      "pipeline": "工作流",
+      "artifacts": "产物",
+      "browser": "浏览器"
+    },
+    "files": {
+      "label": "项目文件浏览器",
+      "root": "工作区",
+      "tree": "文件树",
+      "filter": "筛选文件...",
+      "select": "选择文件",
+      "noProject": "未选择项目",
+      "noMatches": "没有匹配的文件",
+      "download": "下载文件",
+      "refresh": "刷新文件",
+      "truncated": "当前仅预览 {count} 行中的部分内容"
+    },
+    "artifacts": {
+      "label": "Agent 产物",
+      "title": "产物",
+      "preview": "产物预览",
+      "open": "预览",
+      "back": "返回产物列表",
+      "download": "下载产物",
+      "refresh": "刷新产物",
+      "loading": "正在加载产物",
+      "loadingPreview": "正在加载预览",
+      "empty": "暂无产物",
+      "noSession": "开始对话后可查看产物",
+      "loadFailed": "无法加载产物",
+      "previewFailed": "无法加载该产物",
+      "previewUnavailable": "暂不支持预览"
+    },
+    "browser": {
+      "label": "内置浏览器",
+      "title": "浏览器",
+      "address": "浏览器地址",
+      "placeholder": "输入网址",
+      "back": "后退",
+      "forward": "前进",
+      "reload": "刷新",
+      "go": "打开地址",
+      "openExternal": "在新标签页打开",
+      "empty": "输入网址"
     }
   },
   "chat": {
@@ -2757,6 +2799,8 @@
     },
     "artifact": {
       "open": "打开 {name}",
+      "preview": "预览文件",
+      "action": "预览",
       "description": "预览或下载这个产物。",
       "loading": "正在加载产物",
       "loadFailed": "无法加载这个产物。",
@@ -2784,6 +2828,8 @@
     "plan": {
       "title": "计划",
       "progress": "已完成 {completed}/{total}",
+      "expand": "展开计划",
+      "collapse": "收起计划",
       "status": {
         "pending": "等待中",
         "in_progress": "进行中",

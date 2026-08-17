@@ -1,199 +1,134 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-const {
-  apiRequestMock,
-  buildApiUrlMock,
-  openInNewTabMock,
-  toastErrorMock,
-  toastWarningMock,
-  useProjectContextMock,
-  translateMock,
-} = vi.hoisted(() => ({
-  apiRequestMock: vi.fn(),
-  buildApiUrlMock: vi.fn(),
-  openInNewTabMock: vi.fn(),
-  toastErrorMock: vi.fn(),
-  toastWarningMock: vi.fn(),
-  useProjectContextMock: vi.fn(),
-  translateMock: vi.fn((key: string, values?: Record<string, string | number>) => {
+import type { AgentWorkspaceAdapter } from "@/lib/agent/workspace-adapter"
+
+vi.mock("next-intl", () => ({
+  useTranslations: () => (key: string, values?: Record<string, number>) => {
     const copy: Record<string, string> = {
       loading: "Loading files",
       noFiles: "No files",
-      selected: "Selected",
-      "actions.preview": "Preview",
-      "preview.title": "Preview",
-      "preview.folder": "Folder preview",
-      "preview.filesOnly": "Files only",
+      "files.label": "Project file browser",
+      "files.root": "workspace",
+      "files.tree": "File tree",
+      "files.filter": "Filter files",
+      "files.select": "Select a file",
+      "files.noProject": "No project selected",
+      "files.noMatches": "No matching files",
+      "files.download": "Download file",
+      "files.refresh": "Refresh files",
       "preview.loading": "Loading preview",
       "preview.unable": "Unable to preview",
-      "preview.clickToLoad": "Click to load preview",
-      "tree.loading": "Loading folder",
-      "tree.empty": "Folder is empty",
       "errors.loadFilesFailed": "Load files failed",
-      "errors.loadFolderFailed": "Load folder failed",
-      "errors.previewFailed": "Preview failed",
-      "errors.deleteFailed": "Delete failed",
-      "toasts.deleteConfirmTitle": `Delete ${values?.name ?? ""}`.trim(),
-      "toasts.deleteConfirmDescription": "Confirm delete",
-      download: "Download",
-      delete: "Delete",
-      confirm: "Confirm",
-      refreshWorkspace: "Refresh workspace",
     }
-    if (key === "preview.lines") {
-      return `First ${values?.count ?? 0} lines`
-    }
+    if (key === "files.truncated") return `Partial ${values?.count ?? 0}`
     return copy[key] ?? key
-  }),
-}))
-
-vi.mock("next-intl", () => ({
-  useTranslations: () => translateMock,
-}))
-
-vi.mock("@/components/bioinfoflow/project-context", () => ({
-  useProjectContext: (...args: unknown[]) => useProjectContextMock(...args),
-}))
-
-vi.mock("@/lib/api", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api")
-  return {
-    ...actual,
-    apiRequest: (...args: unknown[]) => apiRequestMock(...args),
-    buildApiUrl: (...args: unknown[]) => buildApiUrlMock(...args),
-    getApiErrorMessage: (_error: unknown, fallback: string) => fallback,
-  }
-})
-
-vi.mock("@/lib/window-utils", () => ({
-  openInNewTab: (...args: unknown[]) => openInNewTabMock(...args),
-}))
-
-vi.mock("sonner", () => ({
-  toast: {
-    error: (...args: unknown[]) => toastErrorMock(...args),
-    warning: (...args: unknown[]) => toastWarningMock(...args),
   },
+}))
+
+vi.mock("shiki", () => ({
+  codeToHtml: vi.fn(async (content: string) => `<pre class="shiki"><code>${content}</code></pre>`),
 }))
 
 import { WorkspacePanel } from "@/components/bioinfoflow/workspace-panel"
 
+function createAdapter(): AgentWorkspaceAdapter {
+  return {
+    listFiles: vi.fn(async () => []),
+    readFile: vi.fn(async ({ path }) => ({
+      path,
+      content: "",
+      totalLines: 0,
+      truncated: false,
+    })),
+    fileDownloadUrl: vi.fn(() => "https://download.test/file"),
+    listArtifacts: vi.fn(async () => []),
+    getArtifact: vi.fn(async () => {
+      throw new Error("unused")
+    }),
+    fetchArtifactContent: vi.fn(async () => {
+      throw new Error("unused")
+    }),
+  }
+}
+
 describe("WorkspacePanel", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    buildApiUrlMock.mockReturnValue("https://download.test/file")
-    useProjectContextMock.mockReturnValue({ activeProjectId: "project-1" })
   })
 
-  it("shows an empty state without calling the API when no project is active", async () => {
-    useProjectContextMock.mockReturnValue({ activeProjectId: null })
+  it("shows the project-less state without calling the adapter", async () => {
+    const adapter = createAdapter()
+    render(<WorkspacePanel projectId={null} adapter={adapter} />)
 
-    render(<WorkspacePanel />)
-
-    expect(await screen.findByText("No files")).toBeInTheDocument()
-    expect(apiRequestMock).not.toHaveBeenCalled()
+    expect(await screen.findByText("No project selected")).toBeInTheDocument()
+    expect(adapter.listFiles).not.toHaveBeenCalled()
   })
 
-  it("loads root files, hides dotfiles, and loads folder children on demand", async () => {
-    apiRequestMock.mockImplementation(async (path: string, options?: { params?: Record<string, unknown> }) => {
-      if (path === "/files" && options?.params?.path === ".") {
-        return {
-          data: {
-            path: ".",
-            files: [
-              { name: ".hidden", type: "file", path: ".hidden" },
-              { name: "results", type: "directory", path: "results" },
-              { name: "report.txt", type: "file", path: "report.txt", size_bytes: 24 },
-            ],
-          },
-        }
-      }
-      if (path === "/files" && options?.params?.path === "results") {
-        return {
-          data: {
-            path: "results",
-            files: [{ name: "child.txt", type: "file", path: "results/child.txt" }],
-          },
-        }
-      }
-      throw new Error(`Unexpected request: ${path}`)
-    })
+  it("keeps dotfiles visible and loads folder children on demand", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.listFiles)
+      .mockResolvedValueOnce([
+        { name: "results", path: "results", type: "directory", sizeBytes: null, modifiedAt: null },
+        { name: ".env", path: ".env", type: "file", sizeBytes: 12, modifiedAt: null },
+      ])
+      .mockResolvedValueOnce([
+        { name: "child.txt", path: "results/child.txt", type: "file", sizeBytes: 24, modifiedAt: null },
+      ])
 
-    render(<WorkspacePanel />)
+    render(<WorkspacePanel projectId="project-1" adapter={adapter} />)
 
-    expect(await screen.findByText("report.txt")).toBeInTheDocument()
-    expect(screen.queryByText(".hidden")).not.toBeInTheDocument()
-
+    expect(await screen.findByText(".env")).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: /results/i }))
     expect(await screen.findByText("child.txt")).toBeInTheDocument()
+    expect(adapter.listFiles).toHaveBeenLastCalledWith({
+      projectId: "project-1",
+      path: "results",
+    })
   })
 
-  it("previews a selected file and downloads it through the helper URL", async () => {
-    apiRequestMock.mockImplementation(async (path: string, options?: { params?: Record<string, unknown> }) => {
-      if (path === "/files" && options?.params?.path === ".") {
-        return {
-          data: {
-            path: ".",
-            files: [{ name: "report.txt", type: "file", path: "report.txt", size_bytes: 24 }],
-          },
-        }
-      }
-      if (path === "/files/read") {
-        return { data: { content: "preview line 1\npreview line 2" } }
-      }
-      throw new Error(`Unexpected request: ${path}`)
+  it("loads a selected file immediately and exposes its breadcrumb and download", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.listFiles).mockResolvedValueOnce([
+      { name: "report.json", path: "results/report.json", type: "file", sizeBytes: 24, modifiedAt: null },
+    ])
+    vi.mocked(adapter.readFile).mockResolvedValueOnce({
+      path: "results/report.json",
+      content: "{\"status\":\"ok\"}",
+      totalLines: 1,
+      truncated: false,
     })
 
-    render(<WorkspacePanel />)
+    render(<WorkspacePanel projectId="project-1" adapter={adapter} />)
 
-    await userEvent.click(await screen.findByRole("button", { name: /report.txt/i }))
-    await userEvent.click(screen.getByRole("button", { name: "Preview" }))
-
-    expect(await screen.findByText(/preview line 1/)).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole("button", { name: "Download" }))
-
-    expect(buildApiUrlMock).toHaveBeenCalledWith("/files/download", {
-      project_id: "project-1",
-      path: "report.txt",
+    await userEvent.click(await screen.findByRole("button", { name: /report.json/i }))
+    expect(await screen.findByTestId("workspace-code-preview")).toHaveTextContent(
+      '{"status":"ok"}',
+    )
+    expect(screen.getByText("results")).toBeInTheDocument()
+    expect(screen.getAllByText("report.json")).toHaveLength(2)
+    expect(screen.getByRole("link", { name: "Download file" })).toHaveAttribute(
+      "href",
+      "https://download.test/file",
+    )
+    expect(adapter.readFile).toHaveBeenCalledWith({
+      projectId: "project-1",
+      path: "results/report.json",
     })
-    expect(openInNewTabMock).toHaveBeenCalledWith("https://download.test/file")
   })
 
-  it("surfaces the delete confirmation toast and refreshes after confirmation", async () => {
-    apiRequestMock.mockImplementation(async (path: string, options?: { method?: string; params?: Record<string, unknown> }) => {
-      if (path === "/files" && !options?.method) {
-        return {
-          data: {
-            path: ".",
-            files: [{ name: "report.txt", type: "file", path: "report.txt", size_bytes: 24 }],
-          },
-        }
-      }
-      if (path === "/files" && options?.method === "DELETE") {
-        return { data: null }
-      }
-      throw new Error(`Unexpected request: ${path}`)
-    })
+  it("filters the visible tree without adding extra panels", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.listFiles).mockResolvedValueOnce([
+      { name: "alpha.py", path: "alpha.py", type: "file", sizeBytes: 1, modifiedAt: null },
+      { name: "beta.md", path: "beta.md", type: "file", sizeBytes: 1, modifiedAt: null },
+    ])
+    render(<WorkspacePanel projectId="project-1" adapter={adapter} />)
 
-    render(<WorkspacePanel />)
-
-    await userEvent.click(await screen.findByRole("button", { name: /report.txt/i }))
-    await userEvent.click(screen.getByRole("button", { name: "Delete" }))
-
-    expect(toastWarningMock).toHaveBeenCalled()
-    const toastPayload = toastWarningMock.mock.calls[0]?.[1] as {
-      action?: { onClick?: () => Promise<void> | void }
-    }
-    await toastPayload.action?.onClick?.()
-
-    await waitFor(() => {
-      expect(apiRequestMock).toHaveBeenCalledWith("/files", {
-        method: "DELETE",
-        params: { project_id: "project-1", path: "report.txt" },
-      })
-    })
+    await screen.findByText("alpha.py")
+    await userEvent.type(screen.getByRole("textbox", { name: "Filter files" }), "beta")
+    expect(screen.queryByText("alpha.py")).not.toBeInTheDocument()
+    expect(screen.getByText("beta.md")).toBeInTheDocument()
   })
 })

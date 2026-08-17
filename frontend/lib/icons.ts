@@ -48,6 +48,7 @@ export {
   FileIcon,
   FileJson,
   FileQuestion,
+  FileSpreadsheet,
   FileText,
   Filter,
   Folder,

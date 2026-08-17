@@ -22,6 +22,9 @@ vi.mock("next-intl", () => ({
         "agentHistory.unknown.title": "Unsupported content",
         "agentHistory.notice.title": "Agent notice",
         "agentHistory.notice.message.run_timeout_exceeded": `The run reached its ${values?.limitSeconds ?? ""}-second time limit.`,
+        "agentHistory.artifact.open": `Preview ${values?.name ?? "artifact"}`,
+        "agentHistory.artifact.preview": "Preview file",
+        "agentHistory.artifact.action": "Preview",
         "agentRun.error.runtime_failed": "The Agent runtime stopped unexpectedly.",
         "agentRun.spinner.announcement": "Agent is working",
         "agentRun.spinner.tracing_clues": "Tracing clues…",
@@ -96,6 +99,64 @@ const planView: ConversationViewModel = {
 }
 
 describe("ConversationTranscript", () => {
+  it("delegates transcript artifact previews through the stable artifact block", async () => {
+    const onOpenArtifact = vi.fn()
+    renderWithProviders(
+      <ConversationTranscript
+        view={{
+          ...planView,
+          transcript: [
+            {
+              type: "artifact",
+              id: "artifact-block-1",
+              runId: "run-1",
+              createdAt: "2026-08-16T08:00:03.000Z",
+              artifactId: "artifact-1",
+              title: "report.xlsx",
+              mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            },
+          ],
+        }}
+        onOpenArtifact={onOpenArtifact}
+      />,
+    )
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Preview report.xlsx" }),
+    )
+
+    expect(onOpenArtifact).toHaveBeenCalledWith("artifact-1")
+  })
+
+  it("renders adapter-discovered deliverables as transcript artifact cards", async () => {
+    const onOpenArtifact = vi.fn()
+    renderWithProviders(
+      <ConversationTranscript
+        view={planView}
+        supplementalArtifacts={[
+          {
+            type: "artifact",
+            id: "workspace-artifact-report",
+            runId: "run-1",
+            createdAt: "2026-08-16T08:00:03.000Z",
+            artifactId: "workspace:project-1:report.xlsx",
+            title: "report.xlsx",
+            mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          },
+        ]}
+        onOpenArtifact={onOpenArtifact}
+      />,
+    )
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Preview report.xlsx" }),
+    )
+
+    expect(onOpenArtifact).toHaveBeenCalledWith(
+      "workspace:project-1:report.xlsx",
+    )
+  })
+
   it("renders a stable plan block with the existing Agent plan presentation", () => {
     renderWithProviders(<ConversationTranscript view={planView} />)
 

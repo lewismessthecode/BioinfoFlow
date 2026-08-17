@@ -1,353 +1,367 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
-import { ChevronRight, ChevronDown, Folder, FileText, RefreshCw, Download, Trash2, Eye, Loader2 } from "@/lib/icons"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { useTranslations } from "next-intl"
-import { cn } from "@/lib/utils"
-import { formatSize } from "@/lib/format-utils"
+
 import { Button } from "@/components/ui/button"
-import { apiRequest, getApiErrorMessage, buildApiUrl } from "@/lib/api"
-import { openInNewTab } from "@/lib/window-utils"
-import { toast } from "sonner"
-import { useProjectContext } from "@/components/bioinfoflow/project-context"
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  FileArchive,
+  FileCode,
+  FileJson,
+  FileText,
+  Folder,
+  FolderOpen,
+  Loader2,
+  RefreshCw,
+  Search,
+} from "@/lib/icons"
+import {
+  bioinfoFlowAgentWorkspaceAdapter,
+  type AgentWorkspaceAdapter,
+  type WorkspaceFileNode,
+  type WorkspaceFilePreview,
+} from "@/lib/agent/workspace-adapter"
+import { cn } from "@/lib/utils"
+import { WorkspaceCodePreview } from "./workspace-code-preview"
 
-interface FileNode {
-  name: string
-  type: "file" | "directory"
-  size_bytes?: number | null
-  children?: FileNode[]
-  path?: string
+const ROOT_PATH = "."
+
+export function WorkspacePanel({
+  projectId,
+  adapter = bioinfoFlowAgentWorkspaceAdapter,
+}: {
+  projectId?: string | null
+  adapter?: AgentWorkspaceAdapter
+}) {
+  const t = useTranslations("workspace")
+  const [nodes, setNodes] = useState<WorkspaceFileNode[]>([])
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
+  const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set())
+  const [selectedFile, setSelectedFile] = useState<WorkspaceFileNode | null>(null)
+  const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null)
+  const [query, setQuery] = useState("")
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading")
+  const [previewStatus, setPreviewStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
+
+  const loadRoot = useCallback(async () => {
+    if (!projectId) {
+      setNodes([])
+      setStatus("ready")
+      return
+    }
+    setStatus("loading")
+    try {
+      const next = await adapter.listFiles({ projectId, path: ROOT_PATH })
+      setNodes(sortNodes(next))
+      setStatus("ready")
+    } catch {
+      setNodes([])
+      setStatus("error")
+    }
+  }, [adapter, projectId])
+
+  useEffect(() => {
+    setSelectedFile(null)
+    setPreview(null)
+    setPreviewStatus("idle")
+    setExpandedPaths(new Set())
+    void loadRoot()
+  }, [loadRoot])
+
+  const loadChildren = useCallback(
+    async (node: WorkspaceFileNode) => {
+      if (!projectId || node.type !== "directory" || node.children) return
+      setLoadingPaths((current) => new Set(current).add(node.path))
+      try {
+        const children = await adapter.listFiles({ projectId, path: node.path })
+        setNodes((current) => replaceChildren(current, node.path, sortNodes(children)))
+      } finally {
+        setLoadingPaths((current) => {
+          const next = new Set(current)
+          next.delete(node.path)
+          return next
+        })
+      }
+    },
+    [adapter, projectId],
+  )
+
+  const selectFile = useCallback(
+    async (node: WorkspaceFileNode) => {
+      if (!projectId || node.type !== "file") return
+      setSelectedFile(node)
+      setPreview(null)
+      setPreviewStatus("loading")
+      try {
+        const next = await adapter.readFile({ projectId, path: node.path })
+        setPreview(next)
+        setPreviewStatus("ready")
+      } catch {
+        setPreviewStatus("error")
+      }
+    },
+    [adapter, projectId],
+  )
+
+  const visibleNodes = useMemo(
+    () => filterNodes(nodes, query.trim().toLowerCase()),
+    [nodes, query],
+  )
+  const crumbs = selectedFile?.path.split("/").filter(Boolean) ?? []
+
+  return (
+    <section className="flex h-full min-h-0 flex-col bg-background" aria-label={t("files.label")}>
+      <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border/55 px-2.5">
+        <button
+          type="button"
+          onClick={() => setSelectedFile(null)}
+          className="min-w-0 truncate rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+        >
+          {t("files.root")}
+        </button>
+        {crumbs.map((crumb, index) => (
+          <span key={`${crumb}-${index}`} className="flex min-w-0 items-center">
+            <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0 text-muted-foreground/55" />
+            <span
+              className={cn(
+                "max-w-36 truncate px-1.5 py-1 text-xs",
+                index === crumbs.length - 1 ? "font-medium text-foreground" : "text-muted-foreground",
+              )}
+              title={crumb}
+            >
+              {crumb}
+            </span>
+          </span>
+        ))}
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {selectedFile && projectId ? (
+            <Button variant="ghost" size="icon" className="size-8 rounded-md" asChild>
+              <a
+                href={adapter.fileDownloadUrl({ projectId, path: selectedFile.path })}
+                download
+                aria-label={t("files.download")}
+              >
+                <Download aria-hidden="true" className="h-3.5 w-3.5" />
+              </a>
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-8 rounded-md"
+            onClick={() => void loadRoot()}
+            aria-label={t("files.refresh")}
+          >
+            <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(10.5rem,38%)]">
+        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+          {!selectedFile ? (
+            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+              {t("files.select")}
+            </div>
+          ) : previewStatus === "loading" ? (
+            <div className="flex h-full items-center justify-center" role="status" aria-label={t("preview.loading")}>
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground motion-reduce:animate-none" />
+            </div>
+          ) : previewStatus === "error" ? (
+            <div className="flex h-full items-center justify-center px-6 text-center text-xs text-muted-foreground">
+              {t("preview.unable")}
+            </div>
+          ) : preview ? (
+            <>
+              <WorkspaceCodePreview content={preview.content} path={preview.path} />
+              {preview.truncated ? (
+                <div className="shrink-0 border-t border-border/45 px-3 py-1.5 text-[11px] text-muted-foreground">
+                  {t("files.truncated", { count: preview.totalLines })}
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+
+        <aside className="flex min-h-0 min-w-0 flex-col border-l border-border/55 bg-muted/[0.08]" aria-label={t("files.tree")}>
+          <label className="relative mx-2.5 my-2 block">
+            <Search aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("files.filter")}
+              aria-label={t("files.filter")}
+              className="h-8 w-full rounded-md border border-border/60 bg-background pl-7 pr-2 text-xs outline-none placeholder:text-muted-foreground/65 focus-visible:border-foreground/25 focus-visible:ring-2 focus-visible:ring-ring/20"
+            />
+          </label>
+          <div className="min-h-0 flex-1 overflow-auto px-1.5 pb-2">
+            {!projectId ? (
+              <TreeState>{t("files.noProject")}</TreeState>
+            ) : status === "loading" ? (
+              <TreeState>{t("loading")}</TreeState>
+            ) : status === "error" ? (
+              <TreeState>{t("errors.loadFilesFailed")}</TreeState>
+            ) : visibleNodes.length === 0 ? (
+              <TreeState>{query ? t("files.noMatches") : t("noFiles")}</TreeState>
+            ) : (
+              visibleNodes.map((node) => (
+                <FileTreeRow
+                  key={node.path}
+                  node={node}
+                  depth={0}
+                  selectedPath={selectedFile?.path ?? null}
+                  expandedPaths={expandedPaths}
+                  loadingPaths={loadingPaths}
+                  queryActive={Boolean(query)}
+                  onToggle={(directory) => {
+                    const expanded = expandedPaths.has(directory.path)
+                    setExpandedPaths((current) => {
+                      const next = new Set(current)
+                      if (expanded) next.delete(directory.path)
+                      else next.add(directory.path)
+                      return next
+                    })
+                    if (!expanded) void loadChildren(directory)
+                  }}
+                  onSelect={(file) => void selectFile(file)}
+                />
+              ))
+            )}
+          </div>
+        </aside>
+      </div>
+    </section>
+  )
 }
 
-interface FileTreeItemProps {
-  node: FileNode
+function FileTreeRow({
+  node,
+  depth,
+  selectedPath,
+  expandedPaths,
+  loadingPaths,
+  queryActive,
+  onToggle,
+  onSelect,
+}: {
+  node: WorkspaceFileNode
   depth: number
-  selectedFile: string | null
-  onSelect: (node: FileNode) => void
-  onToggle: (node: FileNode) => void
+  selectedPath: string | null
+  expandedPaths: Set<string>
   loadingPaths: Set<string>
-}
-
-function FileTreeItem({ node, depth, selectedFile, onSelect, onToggle, loadingPaths }: FileTreeItemProps) {
-  const tWorkspace = useTranslations("workspace")
-  const [expanded, setExpanded] = useState(false)
-  const isFolder = node.type === "directory"
-  const isSelected = selectedFile === node.path
-  const nodePath = node.path ?? node.name
-  const isLoadingChildren = isFolder && loadingPaths.has(nodePath)
+  queryActive: boolean
+  onToggle: (node: WorkspaceFileNode) => void
+  onSelect: (node: WorkspaceFileNode) => void
+}) {
+  const directory = node.type === "directory"
+  const expanded = queryActive || expandedPaths.has(node.path)
+  const loading = loadingPaths.has(node.path)
 
   return (
     <div>
       <button
-        onClick={() => {
-          if (isFolder) {
-            const nextExpanded = !expanded
-            setExpanded(nextExpanded)
-            if (nextExpanded && node.children == null) {
-              onToggle(node)
-            }
-          } else {
-            onSelect(node)
-          }
-        }}
+        type="button"
+        onClick={() => (directory ? onToggle(node) : onSelect(node))}
         className={cn(
-          "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-secondary transition-colors",
-          isSelected && "bg-secondary",
+          "flex h-7 w-full min-w-0 items-center gap-1 rounded-md pr-1.5 text-left text-xs transition-colors hover:bg-muted/55",
+          selectedPath === node.path && "bg-muted/70 text-foreground",
         )}
-        style={{ paddingLeft: `${depth * 12 + 8}px` }}
+        style={{ paddingLeft: `${depth * 12 + 4}px` }}
+        aria-expanded={directory ? expanded : undefined}
+        title={node.path}
       >
-        {isFolder ? (
-          <>
-            {expanded ? (
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-            )}
-            <Folder className="h-4 w-4 text-muted-foreground" />
-          </>
-        ) : (
-          <>
-            <span className="w-3.5" />
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </>
-        )}
-        <span className="flex-1 truncate text-left text-foreground">{node.name}</span>
-        {node.size_bytes ? (
-          <span className="text-xs text-muted-foreground">
-            {formatSize(node.size_bytes)}
-          </span>
-        ) : null}
-      </button>
-
-      {isFolder && expanded && (
-        <div>
-          {node.children?.length ? (
-            node.children.map((child) => (
-              <FileTreeItem
-                key={child.path ?? `${nodePath}-${child.name}`}
-                node={child}
-                depth={depth + 1}
-                selectedFile={selectedFile}
-                onSelect={onSelect}
-                onToggle={onToggle}
-                loadingPaths={loadingPaths}
-              />
-            ))
-          ) : isLoadingChildren ? (
-            <div className="px-4 py-1.5 text-xs text-muted-foreground" style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}>
-              {tWorkspace("tree.loading")}
-            </div>
+        {directory ? (
+          loading ? (
+            <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
+          ) : expanded ? (
+            <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
           ) : (
-            <div className="px-4 py-1.5 text-xs text-muted-foreground" style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}>
-              {tWorkspace("tree.empty")}
-            </div>
-          )}
-        </div>
-      )}
+            <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+          )
+        ) : (
+          <span className="w-3 shrink-0" />
+        )}
+        {directory ? (
+          expanded ? (
+            <FolderOpen className="h-3.5 w-3.5 shrink-0 text-sky-600/80 dark:text-sky-400/75" />
+          ) : (
+            <Folder className="h-3.5 w-3.5 shrink-0 text-sky-600/80 dark:text-sky-400/75" />
+          )
+        ) : (
+          <FileGlyph name={node.name} />
+        )}
+        <span className="min-w-0 flex-1 truncate">{node.name}</span>
+      </button>
+      {directory && expanded
+        ? node.children?.map((child) => (
+            <FileTreeRow
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              selectedPath={selectedPath}
+              expandedPaths={expandedPaths}
+              loadingPaths={loadingPaths}
+              queryActive={queryActive}
+              onToggle={onToggle}
+              onSelect={onSelect}
+            />
+          ))
+        : null}
     </div>
   )
 }
 
-export function WorkspacePanel() {
-  const tWorkspace = useTranslations("workspace")
-  const tCommon = useTranslations("common")
-  const tAccessibility = useTranslations("accessibility")
+function TreeState({ children }: { children: ReactNode }) {
+  return <div className="px-2 py-3 text-xs text-muted-foreground">{children}</div>
+}
 
-  const [selectedFile, setSelectedFile] = useState<FileNode | null>(null)
-  const { activeProjectId } = useProjectContext()
-  const [rootPath] = useState(".")
-  const [fileTree, setFileTree] = useState<FileNode[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set())
-  const [previewContent, setPreviewContent] = useState<string | null>(null)
-  const [previewStatus, setPreviewStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
-  const [previewError, setPreviewError] = useState<string | null>(null)
-  const previewLines = 80
-
-  const fetchFiles = useCallback(async () => {
-    if (!activeProjectId) {
-      setFileTree([])
-      setLoadingPaths(new Set())
-      setIsLoading(false)
-      return
-    }
-    setIsLoading(true)
-    setLoadingPaths(new Set())
-    try {
-      const { data } = await apiRequest<{ path: string; files: FileNode[] }>("/files", {
-        params: { project_id: activeProjectId, path: rootPath, recursive: false },
-      })
-      setFileTree(data.files)
-    } catch (error) {
-      const message = getApiErrorMessage(error, tWorkspace("errors.loadFilesFailed"))
-      toast.error(message)
-      // Fallback to empty array on error
-      setFileTree([])
-    } finally {
-      setIsLoading(false)
-    }
-  }, [activeProjectId, rootPath, tWorkspace])
-
-  const updateTreeNodes = (
-    nodes: FileNode[],
-    targetPath: string,
-    children: FileNode[]
-  ): FileNode[] =>
-    nodes.map((node) => {
-      if (node.path === targetPath) {
-        return { ...node, children }
-      }
-      if (node.children) {
-        return { ...node, children: updateTreeNodes(node.children, targetPath, children) }
-      }
-      return node
-    })
-
-  const loadChildren = async (node: FileNode) => {
-    if (!activeProjectId || node.type !== "directory" || !node.path) return
-    if (loadingPaths.has(node.path)) return
-    setLoadingPaths((prev) => new Set(prev).add(node.path as string))
-    try {
-      const { data } = await apiRequest<{ path: string; files: FileNode[] }>("/files", {
-        params: { project_id: activeProjectId, path: node.path, recursive: false },
-      })
-      setFileTree((prev) => updateTreeNodes(prev, node.path as string, data.files.filter((f) => !f.name.startsWith("."))))
-    } catch (error) {
-      const message = getApiErrorMessage(error, tWorkspace("errors.loadFolderFailed"))
-      toast.error(message)
-    } finally {
-      setLoadingPaths((prev) => {
-        const next = new Set(prev)
-        next.delete(node.path as string)
-        return next
-      })
-    }
-  }
-
-  useEffect(() => {
-    fetchFiles()
-  }, [fetchFiles])
-
-  useEffect(() => {
-    setPreviewContent(null)
-    setPreviewStatus("idle")
-    setPreviewError(null)
-  }, [selectedFile?.path])
-
-  const handlePreview = async () => {
-    if (!selectedFile?.path || !activeProjectId) return
-    if (selectedFile.type !== "file") return
-    setPreviewStatus("loading")
-    setPreviewError(null)
-    try {
-      const { data } = await apiRequest<{ content: string }>("/files/read", {
-        params: { project_id: activeProjectId, path: selectedFile.path, lines: previewLines },
-      })
-      setPreviewContent(data.content || "")
-      setPreviewStatus("ready")
-    } catch (error) {
-      const message = getApiErrorMessage(error, tWorkspace("errors.previewFailed"))
-      setPreviewError(message)
-      setPreviewStatus("error")
-      toast.error(message)
-    }
-  }
-
-  const handleDownload = () => {
-    if (!selectedFile?.path || !activeProjectId) return
-    const url = buildApiUrl("/files/download", {
-      project_id: activeProjectId,
-      path: selectedFile.path,
-    })
-    openInNewTab(url)
-  }
-
-  const handleDelete = () => {
-    if (!selectedFile?.path || !activeProjectId) return
-    toast.warning(tWorkspace("toasts.deleteConfirmTitle", { name: selectedFile.name }), {
-      description: tWorkspace("toasts.deleteConfirmDescription"),
-      action: {
-        label: tCommon("confirm"),
-        onClick: async () => {
-          try {
-            await apiRequest("/files", {
-              method: "DELETE",
-              params: { project_id: activeProjectId, path: selectedFile.path },
-            })
-            setSelectedFile(null)
-            fetchFiles()
-          } catch (error) {
-            const message = getApiErrorMessage(error, tWorkspace("errors.deleteFailed"))
-            toast.error(message)
-          }
-        },
-      },
-    })
-  }
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <span className="text-sm font-medium text-foreground truncate">{rootPath}</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground hover:text-foreground"
-          onClick={fetchFiles}
-          aria-label={tAccessibility("refreshWorkspace")}
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-
-      {/* File Tree */}
-      <div className="flex-1 overflow-y-auto p-2">
-        {isLoading ? (
-          <div className="px-3 py-2 text-xs text-muted-foreground">{tWorkspace("loading")}</div>
-        ) : fileTree.length ? (
-          fileTree.filter((n) => !n.name.startsWith(".")).map((node, index) => (
-            <FileTreeItem
-              key={node.path ?? `${node.name}-${index}`}
-              node={node}
-              depth={0}
-              selectedFile={selectedFile?.path ?? null}
-              onSelect={setSelectedFile}
-              onToggle={loadChildren}
-              loadingPaths={loadingPaths}
-            />
-          ))
-        ) : (
-          <div className="px-3 py-2 text-xs text-muted-foreground">{tWorkspace("noFiles")}</div>
-        )}
-      </div>
-
-      {/* Selected File Actions */}
-      {selectedFile && (
-        <div className="border-t border-border p-4 space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1">
-              <p className="text-xs uppercase tracking-wider text-muted-foreground">{tWorkspace("selected")}</p>
-              <p className="text-sm font-medium text-foreground">{selectedFile.name}</p>
-              {selectedFile.path && (
-                <p className="text-xs font-mono text-muted-foreground break-all">{selectedFile.path}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5 bg-transparent"
-                onClick={handlePreview}
-                disabled={selectedFile.type !== "file" || previewStatus === "loading"}
-              >
-                {previewStatus === "loading" ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
-                ) : (
-                  <Eye className="h-3.5 w-3.5" />
-                )}
-                {tWorkspace("actions.preview")}
-              </Button>
-              <Button variant="outline" size="sm" className="gap-1.5 bg-transparent" onClick={handleDownload}>
-                <Download className="h-3.5 w-3.5" />
-                {tCommon("download")}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5 text-destructive hover:text-destructive bg-transparent"
-                onClick={handleDelete}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                {tCommon("delete")}
-              </Button>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-secondary/20 p-3">
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
-              <span className="uppercase tracking-wider">{tWorkspace("preview.title")}</span>
-              <span>{selectedFile.type === "file" ? tWorkspace("preview.lines", { count: previewLines }) : tWorkspace("preview.folder")}</span>
-            </div>
-            {selectedFile.type !== "file" ? (
-              <div className="text-xs text-muted-foreground">{tWorkspace("preview.filesOnly")}</div>
-            ) : previewStatus === "loading" ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
-                {tWorkspace("preview.loading")}
-              </div>
-            ) : previewStatus === "error" ? (
-              <div className="text-xs text-destructive">{previewError || tWorkspace("preview.unable")}</div>
-            ) : previewContent ? (
-              <pre className="max-h-40 overflow-auto rounded-lg bg-background/80 p-2 text-xs-tight leading-relaxed text-foreground font-mono whitespace-pre-wrap">
-                {previewContent}
-              </pre>
-            ) : (
-              <div className="text-xs text-muted-foreground">{tWorkspace("preview.clickToLoad")}</div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+function replaceChildren(
+  nodes: WorkspaceFileNode[],
+  path: string,
+  children: WorkspaceFileNode[],
+): WorkspaceFileNode[] {
+  return nodes.map((node) =>
+    node.path === path
+      ? { ...node, children }
+      : node.children
+        ? { ...node, children: replaceChildren(node.children, path, children) }
+        : node,
   )
+}
+
+function sortNodes(nodes: WorkspaceFileNode[]) {
+  return [...nodes].sort((left, right) => {
+    if (left.type !== right.type) return left.type === "directory" ? -1 : 1
+    return left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+  })
+}
+
+function filterNodes(nodes: WorkspaceFileNode[], query: string): WorkspaceFileNode[] {
+  if (!query) return nodes
+  return nodes.flatMap((node) => {
+    const children = node.children ? filterNodes(node.children, query) : []
+    if (node.name.toLowerCase().includes(query) || children.length > 0) {
+      return [{ ...node, children }]
+    }
+    return []
+  })
+}
+
+function FileGlyph({ name }: { name: string }) {
+  const extension = name.split(".").pop()?.toLowerCase()
+  const className = "h-3.5 w-3.5 shrink-0 text-muted-foreground"
+  if (["json", "jsonl", "yaml", "yml", "toml"].includes(extension ?? "")) {
+    return <FileJson className={className} />
+  }
+  if (["zip", "tar", "gz", "bz2", "xz"].includes(extension ?? "")) {
+    return <FileArchive className={className} />
+  }
+  if (["js", "jsx", "ts", "tsx", "py", "r", "go", "rs", "java", "c", "cpp", "nf", "wdl", "sh"].includes(extension ?? "")) {
+    return <FileCode className={className} />
+  }
+  return <FileText className={className} />
 }
