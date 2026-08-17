@@ -33,7 +33,10 @@ export type TraceTransportContextSnapshot = {
   through_sequence: number
   compacted: boolean
   input_tokens: number | null
+  output_tokens: number | null
   cached_input_tokens: number | null
+  reasoning_tokens: number | null
+  total_tokens: number | null
   max_context_tokens: number | null
   composition: TraceTransportComposition[]
   created_at: string
@@ -77,6 +80,8 @@ export type AgentTraceDetailContract = {
   schema: TraceJsonValue
   timing: {
     started_at: string | null
+    request_prepared_at: string | null
+    first_byte_at: string | null
     completed_at: string | null
     duration_ms: number | null
   } | null
@@ -190,7 +195,10 @@ function isContextSnapshot(
     isNonNegativeInteger(value.through_sequence) &&
     typeof value.compacted === "boolean" &&
     isNullableNonNegativeNumber(value.input_tokens) &&
+    isNullableNonNegativeNumber(value.output_tokens) &&
     isNullableNonNegativeNumber(value.cached_input_tokens) &&
+    isNullableNonNegativeNumber(value.reasoning_tokens) &&
+    isNullableNonNegativeNumber(value.total_tokens) &&
     isNullablePositiveNumber(value.max_context_tokens) &&
     Array.isArray(value.composition) &&
     value.composition.every(isContextComposition)
@@ -229,6 +237,8 @@ function isTraceTiming(value: unknown) {
   return (
     isRecord(value) &&
     isNullableString(value.started_at) &&
+    isNullableString(value.request_prepared_at) &&
+    isNullableString(value.first_byte_at) &&
     isNullableString(value.completed_at) &&
     isNullableNonNegativeNumber(value.duration_ms)
   )

@@ -40,4 +40,24 @@ describe("Agent conversation UI contract boundary", () => {
 
     expect(offenders).toEqual([])
   })
+
+  it("keeps the 02 Trace visual language free of gradients", () => {
+    const source = readFileSync(
+      join(process.cwd(), `${agentComponentsDirectory}/agent-trace-view.tsx`),
+      "utf8",
+    )
+
+    expect(source).not.toContain("linear-gradient")
+  })
+
+  it("keeps Trace inspector loading and breakpoint behavior explicit", () => {
+    const source = readFileSync(
+      join(process.cwd(), `${agentComponentsDirectory}/agent-trace-view.tsx`),
+      "utf8",
+    )
+
+    expect(source).toContain('useMediaQuery("(min-width: 1280px)")')
+    expect(source).toContain('role="status"')
+    expect(source).toContain('aria-live="polite"')
+  })
 })

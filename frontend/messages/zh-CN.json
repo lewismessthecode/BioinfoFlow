@@ -2795,7 +2795,7 @@
     "title": "Agent 轨迹",
     "session": "Session",
     "turn": "Turn {index}",
-    "loading": "正在加载轨迹",
+    "loading": "正在加载轨迹…",
     "loadError": "无法加载轨迹",
     "detailError": "无法加载详情",
     "retry": "重试",
@@ -2805,7 +2805,39 @@
       "label": "上下文流",
       "title": "上下文流",
       "cached": "{count} 已缓存",
+      "capacity": "上下文 {count}",
+      "usage": {
+        "input": "输入 {count}",
+        "output": "输出 {count}",
+        "reasoning": "推理 {count}",
+        "total": "总计 {count}"
+      },
       "snapshot": "上下文快照 {id}"
+    },
+    "category": {
+      "system": "系统",
+      "user": "用户",
+      "context": "上下文",
+      "assistant": "助手",
+      "tool": "工具",
+      "unknown": "未知"
+    },
+    "status": {
+      "completed": "已完成",
+      "ready": "就绪",
+      "received": "已接收",
+      "success": "成功",
+      "running": "运行中",
+      "pending": "等待中",
+      "queued": "排队中",
+      "failed": "失败",
+      "error": "错误",
+      "cancelled": "已取消",
+      "blocked": "已阻塞"
+    },
+    "units": {
+      "thousand": "{value}千",
+      "durationMs": "{value} 毫秒"
     },
     "timeline": {
       "label": "轨迹事件",
@@ -2836,6 +2868,8 @@
       },
       "timing": {
         "started": "开始",
+        "requestPrepared": "请求",
+        "firstByte": "首字节",
         "completed": "完成",
         "duration": "耗时"
       }

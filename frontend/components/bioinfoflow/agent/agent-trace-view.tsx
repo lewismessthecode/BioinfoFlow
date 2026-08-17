@@ -16,7 +16,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useIsMobile } from "@/hooks/use-media-query"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import { useAgentTrace } from "@/hooks/use-agent-trace"
 import type {
   AgentTraceCategory,
@@ -53,9 +53,59 @@ const INSPECTOR_TABS = [
 
 type InspectorTab = (typeof INSPECTOR_TABS)[number]
 
+const TRACE_CATEGORY_STYLES: Record<
+  AgentTraceCategory,
+  { context: string; badge: string; dot: string }
+> = {
+  system: {
+    context: "bg-foreground/50",
+    badge: "bg-foreground/[0.08] text-foreground/65",
+    dot: "bg-foreground/55",
+  },
+  user: {
+    context: "bg-[var(--brand-accent)]/75",
+    badge: "bg-[var(--brand-accent-muted)] text-[var(--brand-accent)]",
+    dot: "bg-[var(--brand-accent)]",
+  },
+  context: {
+    context: "bg-warning/65",
+    badge: "bg-warning-muted text-warning",
+    dot: "bg-warning",
+  },
+  assistant: {
+    context: "bg-success/70",
+    badge: "bg-success-muted text-success-foreground",
+    dot: "bg-success",
+  },
+  tool: {
+    context: "bg-info/65",
+    badge: "bg-info-muted text-info",
+    dot: "bg-info",
+  },
+  unknown: {
+    context: "bg-muted-foreground/45",
+    badge: "bg-muted text-muted-foreground",
+    dot: "bg-muted-foreground",
+  },
+}
+
+const TRACE_STATUS_KEYS = {
+  completed: "completed",
+  ready: "ready",
+  received: "received",
+  success: "success",
+  running: "running",
+  pending: "pending",
+  queued: "queued",
+  failed: "failed",
+  error: "error",
+  cancelled: "cancelled",
+  blocked: "blocked",
+} as const
+
 export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
   const t = useTranslations("agentTrace")
-  const isMobile = useIsMobile()
+  const isInspectorInline = useMediaQuery("(min-width: 1280px)")
   const detailCache = useRef(new Map<string, AgentTraceEventDetail>())
   const detailRequest = useRef(0)
   const [selectedEvent, setSelectedEvent] = useState<AgentTraceEvent | null>(
@@ -76,16 +126,13 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
   const maxSequence = events.at(-1)?.sequence ?? 0
   const visiblePlayheadSequence = playheadSequence ?? maxSequence
 
-  async function selectEvent(event: AgentTraceEvent) {
-    if (event.category === "assistant" || event.category === "tool") {
-      setPlayheadSequence(event.sequence)
-    }
-    if (!event.hasDetail) return
-
-    setSelectedEvent(event)
+  async function loadEventDetail(
+    event: AgentTraceEvent,
+    { bypassCache = false }: { bypassCache?: boolean } = {},
+  ) {
     setDetailError(false)
     const cached = detailCache.current.get(event.id)
-    if (cached) {
+    if (cached && !bypassCache) {
       setDetail(cached)
       setDetailLoading(false)
       return
@@ -105,6 +152,16 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
     } finally {
       if (detailRequest.current === request) setDetailLoading(false)
     }
+  }
+
+  function selectEvent(event: AgentTraceEvent) {
+    if (event.category === "assistant" || event.category === "tool") {
+      setPlayheadSequence(event.sequence)
+    }
+    if (!event.hasDetail) return
+
+    setSelectedEvent(event)
+    void loadEventDetail(event)
   }
 
   function closeInspector() {
@@ -131,6 +188,7 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
       loading={detailLoading}
       error={detailError}
       onClose={closeInspector}
+      onRetry={() => void loadEventDetail(selectedEvent, { bypassCache: true })}
     />
   ) : null
 
@@ -147,7 +205,7 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
         onSelectSnapshot={setPlayheadSequence}
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_auto]">
         <TraceTimeline
           view={view}
           selectedEventId={selectedEvent?.id ?? null}
@@ -156,7 +214,7 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
           onToggleExpanded={toggleExpanded}
         />
 
-        {!isMobile && inspector ? (
+        {isInspectorInline && inspector ? (
           <aside
             className="flex min-h-0 w-[306px] flex-col border-l border-border/70 bg-background"
             aria-label={t("inspector.label")}
@@ -167,7 +225,7 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
         ) : null}
       </div>
 
-      {isMobile ? (
+      {!isInspectorInline ? (
         <Sheet
           open={selectedEvent !== null}
           onOpenChange={(open) => {
@@ -177,7 +235,8 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
           <SheetContent
             side="right"
             closeLabel={t("inspector.close")}
-            className="w-[min(92vw,24rem)] max-w-none gap-0 overflow-hidden p-0 sm:max-w-[24rem]"
+            showCloseButton={false}
+            className="w-[min(92vw,24rem)] max-w-none gap-0 overscroll-contain overflow-hidden p-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:max-w-[24rem]"
           >
             <SheetHeader className="sr-only">
               <SheetTitle>{t("inspector.label")}</SheetTitle>
@@ -217,6 +276,10 @@ function TraceContextFlow({
     .reduce((sum, weight) => sum + weight, 0)
   const playheadPercent =
     totalWeight > 0 ? (selectedWeight / totalWeight) * 100 : 100
+  const compactNumber = (value: number) =>
+    formatCompactNumber(value, (formatted) =>
+      t("units.thousand", { value: formatted }),
+    )
 
   return (
     <section
@@ -228,19 +291,52 @@ function TraceContextFlow({
         <span className="font-medium text-foreground/72">
           {t("contextFlow.title")}
         </span>
-        <span className="flex min-w-0 items-center gap-2 tabular-nums">
-          {snapshot &&
-          snapshot.inputTokens !== null &&
-          snapshot.maxContextTokens !== null ? (
-            <strong className="font-medium text-foreground/72">
-              {formatCompactNumber(snapshot.inputTokens)} /{" "}
-              {formatCompactNumber(snapshot.maxContextTokens)}
-            </strong>
+        <span
+          className="flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap tabular-nums [scrollbar-width:none]"
+          translate="no"
+        >
+          {snapshot?.inputTokens !== null && snapshot?.inputTokens !== undefined ? (
+            <span className="font-medium text-foreground/72">
+              {t("contextFlow.usage.input", {
+                count: compactNumber(snapshot.inputTokens),
+              })}
+            </span>
           ) : null}
-          {snapshot && snapshot.cachedInputTokens !== null ? (
+          {snapshot?.outputTokens !== null && snapshot?.outputTokens !== undefined ? (
+            <span>
+              {t("contextFlow.usage.output", {
+                count: compactNumber(snapshot.outputTokens),
+              })}
+            </span>
+          ) : null}
+          {snapshot?.cachedInputTokens !== null &&
+          snapshot?.cachedInputTokens !== undefined ? (
             <span>
               {t("contextFlow.cached", {
-                count: formatCompactNumber(snapshot.cachedInputTokens),
+                count: compactNumber(snapshot.cachedInputTokens),
+              })}
+            </span>
+          ) : null}
+          {snapshot?.reasoningTokens !== null &&
+          snapshot?.reasoningTokens !== undefined ? (
+            <span>
+              {t("contextFlow.usage.reasoning", {
+                count: compactNumber(snapshot.reasoningTokens),
+              })}
+            </span>
+          ) : null}
+          {snapshot?.totalTokens !== null && snapshot?.totalTokens !== undefined ? (
+            <span>
+              {t("contextFlow.usage.total", {
+                count: compactNumber(snapshot.totalTokens),
+              })}
+            </span>
+          ) : null}
+          {snapshot?.maxContextTokens !== null &&
+          snapshot?.maxContextTokens !== undefined ? (
+            <span className="text-muted-foreground/70">
+              {t("contextFlow.capacity", {
+                count: compactNumber(snapshot.maxContextTokens),
               })}
             </span>
           ) : null}
@@ -330,7 +426,10 @@ function ContextSnapshotSegment({
       {snapshot.composition.map((item, index) => (
         <span
           key={`${snapshot.id}:${item.category}:${index}`}
-          className={cn("h-full min-w-px", contextColor(item.category))}
+          className={cn(
+            "h-full min-w-px",
+            TRACE_CATEGORY_STYLES[item.category].context,
+          )}
           style={{
             flexGrow: totalWeight > 0 ? weights[index] : 1,
           }}
@@ -339,7 +438,7 @@ function ContextSnapshotSegment({
       ))}
       {cachedPercent !== null && cachedPercent > 0 ? (
         <span
-          className="pointer-events-none absolute inset-y-0 left-0 opacity-45 [background-image:repeating-linear-gradient(135deg,transparent_0,transparent_3px,currentColor_3px,currentColor_4px)]"
+          className="pointer-events-none absolute inset-y-0 left-0 border-r border-foreground/20 bg-foreground/[0.08]"
           style={{ width: `${cachedPercent}%` }}
           aria-hidden="true"
         />
@@ -397,7 +496,7 @@ function TraceTimeline({
       {view.turns.map((turn) => (
         <section
           key={turn.id}
-          className="relative min-w-0 pl-[76px] [&+&]:mt-3"
+          className="relative min-w-0 pl-[76px] [content-visibility:auto] [contain-intrinsic-size:auto_320px] [&+&]:mt-3"
           aria-label={t("turn", { index: turn.index })}
         >
           <div className="absolute inset-y-0 left-[57px] w-px bg-border/80" aria-hidden="true" />
@@ -484,6 +583,7 @@ function TraceEventRow({
   const t = useTranslations("agentTrace")
   const selectable =
     event.hasDetail || event.category === "assistant" || event.category === "tool"
+  const expandable = event.summary.includes("\n") || event.summary.length > 120
 
   return (
     <article
@@ -509,10 +609,11 @@ function TraceEventRow({
       <span
         className={cn(
           "pointer-events-none relative z-[1] mt-0.5 w-fit rounded-[5px] px-1.5 py-0.5 font-mono text-[8px] font-semibold tracking-[0.08em]",
-          categoryBadge(event.category),
+          TRACE_CATEGORY_STYLES[event.category].badge,
         )}
+        translate="no"
       >
-        {event.category.toUpperCase()}
+        {t(`category.${event.category}`)}
       </span>
       <div className="pointer-events-none relative z-[1] min-w-0">
         <div
@@ -532,7 +633,7 @@ function TraceEventRow({
       </div>
       <div className="pointer-events-none relative z-[2] flex items-center gap-1">
         <TraceStatus status={event.status} />
-        {event.summary.includes("\n") ? (
+        {expandable ? (
           <Button
             type="button"
             variant="ghost"
@@ -558,7 +659,7 @@ function TraceEventRow({
       <span
         className={cn(
           "absolute -left-[22px] top-[17px] size-[7px] rounded-full border-2 border-background",
-          categoryDot(event.category),
+          TRACE_CATEGORY_STYLES[event.category].dot,
         )}
         aria-hidden="true"
       />
@@ -567,6 +668,7 @@ function TraceEventRow({
 }
 
 function TraceStatus({ status }: { status: string | null }) {
+  const t = useTranslations("agentTrace")
   if (!status) return null
   const normalized = status.toLowerCase()
   const complete = ["completed", "ready", "received", "success"].includes(
@@ -577,6 +679,9 @@ function TraceStatus({ status }: { status: string | null }) {
     normalized,
   )
   const Icon = complete ? Check : running ? Loader2 : failed ? Circle : CircleDashed
+  const localizedStatus = isKnownTraceStatus(normalized)
+    ? t(`status.${TRACE_STATUS_KEYS[normalized]}`)
+    : status
 
   return (
     <span
@@ -585,12 +690,13 @@ function TraceStatus({ status }: { status: string | null }) {
         failed && "text-error-foreground",
       )}
       title={status}
+      translate="no"
     >
       <Icon
         aria-hidden="true"
         className={cn("size-3 shrink-0", running && "animate-spin motion-reduce:animate-none")}
       />
-      <span className="hidden truncate xl:inline">{status}</span>
+      <span className="hidden truncate xl:inline">{localizedStatus}</span>
     </span>
   )
 }
@@ -601,12 +707,14 @@ function TraceInspector({
   loading,
   error,
   onClose,
+  onRetry,
 }: {
   event: AgentTraceEvent
   detail: AgentTraceEventDetail | null
   loading: boolean
   error: boolean
   onClose: () => void
+  onRetry: () => void
 }) {
   const t = useTranslations("agentTrace")
   const [activeTab, setActiveTab] = useState<InspectorTab>("summary")
@@ -615,10 +723,19 @@ function TraceInspector({
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border/70 px-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className={cn("rounded-[5px] px-1.5 py-0.5 font-mono text-[8px] font-semibold tracking-[0.08em]", categoryBadge(event.category))}>
-            {event.category.toUpperCase()}
+          <span
+            className={cn(
+              "rounded-[5px] px-1.5 py-0.5 font-mono text-[8px] font-semibold tracking-[0.08em]",
+              TRACE_CATEGORY_STYLES[event.category].badge,
+            )}
+            translate="no"
+          >
+            {t(`category.${event.category}`)}
           </span>
-          <code className="truncate text-[10px] text-muted-foreground">
+          <code
+            className="truncate text-[10px] text-muted-foreground"
+            translate="no"
+          >
             {event.id}
           </code>
         </div>
@@ -660,24 +777,29 @@ function TraceInspector({
               <span className="sr-only">{t("loading")}</span>
             </div>
           ) : error ? (
-            <p role="alert" className="text-xs text-error-foreground">
-              {t("detailError")}
-            </p>
+            <div className="grid justify-items-start gap-2">
+              <p role="alert" className="text-xs text-error-foreground">
+                {t("detailError")}
+              </p>
+              <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+                {t("retry")}
+              </Button>
+            </div>
           ) : detail ? (
             <>
-              <TabsContent forceMount value="summary" className="m-0 data-[state=inactive]:hidden">
+              <TabsContent value="summary" className="m-0">
                 <SummaryPane value={detail.summary} />
               </TabsContent>
-              <TabsContent forceMount value="payload" className="m-0 data-[state=inactive]:hidden">
+              <TabsContent value="payload" className="m-0">
                 <RawPane value={detail.payload} />
               </TabsContent>
-              <TabsContent forceMount value="result" className="m-0 data-[state=inactive]:hidden">
+              <TabsContent value="result" className="m-0">
                 <RawPane value={detail.result} />
               </TabsContent>
-              <TabsContent forceMount value="schema" className="m-0 data-[state=inactive]:hidden">
+              <TabsContent value="schema" className="m-0">
                 <RawPane value={detail.schema} />
               </TabsContent>
-              <TabsContent forceMount value="timing" className="m-0 data-[state=inactive]:hidden">
+              <TabsContent value="timing" className="m-0">
                 <TimingPane timing={detail.timing} />
               </TabsContent>
             </>
@@ -709,7 +831,10 @@ function SummaryPane({
 
 function RawPane({ value }: { value: TraceJsonValue }) {
   return (
-    <pre className="min-w-0 whitespace-pre-wrap break-words rounded-[8px] bg-muted/45 p-3 font-mono text-[11px] leading-5 text-foreground/78 ring-1 ring-border/50">
+    <pre
+      className="min-w-0 whitespace-pre-wrap break-words rounded-[8px] bg-muted/45 p-3 font-mono text-[11px] leading-5 text-foreground/78 ring-1 ring-border/50"
+      translate="no"
+    >
       {JSON.stringify(value, null, 2)}
     </pre>
   )
@@ -726,10 +851,14 @@ function TimingPane({
   }
   const rows = [
     [t("inspector.timing.started"), timing.startedAt],
+    [t("inspector.timing.requestPrepared"), timing.requestPreparedAt],
+    [t("inspector.timing.firstByte"), timing.firstByteAt],
     [t("inspector.timing.completed"), timing.completedAt],
     [
       t("inspector.timing.duration"),
-      timing.durationMs === null ? null : `${timing.durationMs} ms`,
+      timing.durationMs === null
+        ? null
+        : t("units.durationMs", { value: timing.durationMs }),
     ],
   ]
   return (
@@ -761,7 +890,12 @@ export function AgentTracePanel({
 
   if (isLoading && !view) {
     return (
-      <div className="grid h-full min-h-0 place-items-center" aria-busy="true">
+      <div
+        className="grid h-full min-h-0 place-items-center"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
         <Loader2 className="size-4 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden="true" />
         <span className="sr-only">{t("loading")}</span>
       </div>
@@ -799,9 +933,16 @@ function snapshotWeight(snapshot: AgentTraceContextSnapshot) {
   )
 }
 
-function formatCompactNumber(value: number) {
+function formatCompactNumber(
+  value: number,
+  formatThousands: (formatted: string) => string,
+) {
   if (value < 1000) return String(value)
-  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value / 1000)}K`
+  return formatThousands(
+    new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(
+      value / 1000,
+    ),
+  )
 }
 
 function humanizeKey(key: string) {
@@ -813,35 +954,8 @@ function compactJson(value: TraceJsonValue) {
   return JSON.stringify(value)
 }
 
-function contextColor(category: AgentTraceCategory) {
-  return {
-    system: "bg-foreground/50",
-    user: "bg-[var(--brand-accent)]/75",
-    context: "bg-warning/65",
-    assistant: "bg-success/70",
-    tool: "bg-info/65",
-    unknown: "bg-muted-foreground/45",
-  }[category]
-}
-
-function categoryBadge(category: AgentTraceCategory) {
-  return {
-    system: "bg-foreground/[0.08] text-foreground/65",
-    user: "bg-[var(--brand-accent-muted)] text-[var(--brand-accent)]",
-    context: "bg-warning-muted text-warning",
-    assistant: "bg-success-muted text-success-foreground",
-    tool: "bg-info-muted text-info",
-    unknown: "bg-muted text-muted-foreground",
-  }[category]
-}
-
-function categoryDot(category: AgentTraceCategory) {
-  return {
-    system: "bg-foreground/55",
-    user: "bg-[var(--brand-accent)]",
-    context: "bg-warning",
-    assistant: "bg-success",
-    tool: "bg-info",
-    unknown: "bg-muted-foreground",
-  }[category]
+function isKnownTraceStatus(
+  status: string,
+): status is keyof typeof TRACE_STATUS_KEYS {
+  return status in TRACE_STATUS_KEYS
 }

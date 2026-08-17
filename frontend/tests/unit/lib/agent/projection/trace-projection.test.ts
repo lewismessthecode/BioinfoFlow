@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import { createAgentTraceView } from "@/lib/agent/projection/trace-projection"
+import {
+  createAgentTraceDetail,
+  createAgentTraceView,
+} from "@/lib/agent/projection/trace-projection"
 
 const timestamp = "2026-08-17T08:00:00.000Z"
 
@@ -59,7 +62,10 @@ function timelineFixture() {
         through_sequence: 5,
         compacted: false,
         input_tokens: null,
+        output_tokens: null,
         cached_input_tokens: null,
+        reasoning_tokens: null,
+        total_tokens: null,
         max_context_tokens: null,
         composition: [
           { category: "system", characters: 100, tokens: null },
@@ -114,17 +120,43 @@ describe("Agent Trace projection", () => {
     )
   })
 
-  it("does not invent token totals, context capacity, or cache hits", () => {
+  it("does not invent usage, context capacity, or cache hits", () => {
     const projected = createAgentTraceView(timelineFixture())
 
     expect(projected.ok).toBe(true)
     if (!projected.ok) return
     expect(projected.view.contextFlow[0]).toMatchObject({
       inputTokens: null,
+      outputTokens: null,
       cachedInputTokens: null,
+      reasoningTokens: null,
+      totalTokens: null,
       maxContextTokens: null,
     })
     expect(projected.view.contextFlow[0].composition[0].tokens).toBeNull()
+  })
+
+  it("projects every provider-reported usage field without synthesis", () => {
+    const payload = timelineFixture()
+    Object.assign(payload.context_flow[0], {
+      input_tokens: 120,
+      output_tokens: 20,
+      cached_input_tokens: 80,
+      reasoning_tokens: 4,
+      total_tokens: 140,
+    })
+
+    const projected = createAgentTraceView(payload)
+
+    expect(projected.ok).toBe(true)
+    if (!projected.ok) return
+    expect(projected.view.contextFlow[0]).toMatchObject({
+      inputTokens: 120,
+      outputTokens: 20,
+      cachedInputTokens: 80,
+      reasoningTokens: 4,
+      totalTokens: 140,
+    })
   })
 
   it("keeps events from an unknown Turn visible as session events", () => {
@@ -145,5 +177,37 @@ describe("Agent Trace projection", () => {
         firstLine: "Future adapter event",
       }),
     )
+  })
+
+  it("projects request and first-byte timing without inventing missing values", () => {
+    const projected = createAgentTraceDetail({
+      protocol: "bioinfoflow.agent.trace",
+      protocol_version: 1,
+      event_id: "model:trace-1",
+      summary: { category: "context" },
+      payload: null,
+      result: null,
+      schema: null,
+      timing: {
+        started_at: timestamp,
+        request_prepared_at: "2026-08-17T08:00:00.100Z",
+        first_byte_at: null,
+        completed_at: "2026-08-17T08:00:01.000Z",
+        duration_ms: 1000,
+      },
+    })
+
+    expect(projected).toEqual({
+      ok: true,
+      detail: expect.objectContaining({
+        timing: {
+          startedAt: timestamp,
+          requestPreparedAt: "2026-08-17T08:00:00.100Z",
+          firstByteAt: null,
+          completedAt: "2026-08-17T08:00:01.000Z",
+          durationMs: 1000,
+        },
+      }),
+    })
   })
 })

@@ -48,7 +48,10 @@ function timelineFixture(): AgentTraceTimelineContract {
         through_sequence: 3,
         compacted: false,
         input_tokens: null,
+        output_tokens: null,
         cached_input_tokens: null,
+        reasoning_tokens: null,
+        total_tokens: null,
         max_context_tokens: null,
         composition: [
           {
@@ -97,7 +100,10 @@ describe("Agent Trace transport contract", () => {
     if (!parsed.ok) return
     expect(parsed.value.context_flow[0]).toMatchObject({
       input_tokens: null,
+      output_tokens: null,
       cached_input_tokens: null,
+      reasoning_tokens: null,
+      total_tokens: null,
       max_context_tokens: null,
     })
     expect(parsed.value.events[0]).toMatchObject({
@@ -109,6 +115,18 @@ describe("Agent Trace transport contract", () => {
   it("rejects malformed timeline data before it reaches the Trace UI", () => {
     const malformed = timelineFixture()
     malformed.events[0].sequence = -1
+
+    expect(parseAgentTraceTimeline(malformed)).toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: "invalid_payload" }),
+    })
+  })
+
+  it("rejects malformed optional usage before it reaches the Trace UI", () => {
+    const malformed = timelineFixture() as AgentTraceTimelineContract & {
+      context_flow: Array<{ output_tokens: unknown }>
+    }
+    malformed.context_flow[0].output_tokens = -1
 
     expect(parseAgentTraceTimeline(malformed)).toEqual({
       ok: false,
@@ -134,6 +152,8 @@ describe("Agent Trace transport contract", () => {
       schema: { type: "object", required: ["pipeline"] },
       timing: {
         started_at: timestamp,
+        request_prepared_at: "2026-08-17T08:00:00.100Z",
+        first_byte_at: "2026-08-17T08:00:00.300Z",
         completed_at: "2026-08-17T08:00:01.250Z",
         duration_ms: 1250,
       },

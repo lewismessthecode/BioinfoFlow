@@ -63,7 +63,10 @@ export type AgentTraceContextSnapshot = {
   throughSequence: number
   compacted: boolean
   inputTokens: number | null
+  outputTokens: number | null
   cachedInputTokens: number | null
+  reasoningTokens: number | null
+  totalTokens: number | null
   maxContextTokens: number | null
   composition: AgentTraceContextComposition[]
 }
@@ -84,6 +87,8 @@ export type AgentTraceViewModel = {
 
 export type AgentTraceTiming = {
   startedAt: string | null
+  requestPreparedAt: string | null
+  firstByteAt: string | null
   completedAt: string | null
   durationMs: number | null
 }
