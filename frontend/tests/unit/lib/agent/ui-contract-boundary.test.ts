@@ -28,10 +28,14 @@ function productionConversationUiFiles() {
 }
 
 describe("Agent conversation UI contract boundary", () => {
-  it("keeps production UI independent from Harness transport contracts", () => {
+  it("keeps production UI behind stable Conversation and Trace view models", () => {
+    const forbiddenImports = [
+      "@/lib/agent/contracts",
+      "@/lib/agent/transport/",
+    ]
     const offenders = productionConversationUiFiles().filter((relativePath) => {
       const source = readFileSync(join(process.cwd(), relativePath), "utf8")
-      return source.includes("@/lib/agent/contracts")
+      return forbiddenImports.some((specifier) => source.includes(specifier))
     })
 
     expect(offenders).toEqual([])

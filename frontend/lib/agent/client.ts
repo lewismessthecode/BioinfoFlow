@@ -103,6 +103,29 @@ export async function getAgentSnapshot(sessionId: string) {
   return requirePresentationSnapshot(response.data)
 }
 
+export async function getAgentTraceTimeline(
+  sessionId: string,
+  options?: { signal?: AbortSignal },
+) {
+  const response = await apiRequest<unknown>(
+    `/agent/sessions/${sessionId}/trace`,
+    { signal: options?.signal },
+  )
+  return response.data
+}
+
+export async function getAgentTraceDetail(
+  sessionId: string,
+  eventId: string,
+  options?: { signal?: AbortSignal },
+) {
+  const response = await apiRequest<unknown>(
+    `/agent/sessions/${sessionId}/trace/events/${encodeURIComponent(eventId)}`,
+    { signal: options?.signal },
+  )
+  return response.data
+}
+
 export async function getAgentArtifact(
   artifactId: string,
   options?: { signal?: AbortSignal },
