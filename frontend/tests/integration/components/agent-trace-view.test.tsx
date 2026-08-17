@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentTraceView } from "@/components/bioinfoflow/agent/agent-trace-view"
 import type {
@@ -118,6 +118,10 @@ const detail: AgentTraceEventDetail = {
 describe("AgentTraceView", () => {
   beforeEach(() => {
     mocks.inspectorInline = true
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it("renders the compact Event Rail without fabricating usage or precise time", () => {
@@ -335,6 +339,41 @@ describe("AgentTraceView", () => {
     ).toHaveLength(1)
   })
 
+  it("uses the Sheet when the trace container is too narrow for an inline inspector", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(private readonly callback: ResizeObserverCallback) {}
+
+        observe() {
+          this.callback(
+            [{ contentRect: { width: 800 } } as ResizeObserverEntry],
+            this as unknown as ResizeObserver,
+          )
+        }
+
+        disconnect() {}
+
+        unobserve() {}
+      },
+    )
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AgentTraceView view={view} onLoadDetail={vi.fn().mockResolvedValue(detail)} />,
+    )
+
+    await user.click(
+      screen.getByRole("button", {
+        name: 'event.openDetail:{"title":"nextflow_run"}',
+      }),
+    )
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument()
+    expect(
+      screen.queryByRole("complementary", { name: "inspector.label" }),
+    ).not.toBeInTheDocument()
+  })
+
   it("retries a failed detail request from the inspector", async () => {
     const user = userEvent.setup()
     const loadDetail = vi
@@ -397,6 +436,9 @@ describe("AgentTraceView", () => {
     )
 
     expect(screen.getByText("category.tool")).toHaveAttribute("translate", "no")
+    expect(
+      screen.getByText("nextflow_run({ pipeline: 'main.nf' })"),
+    ).toHaveAttribute("translate", "no")
     expect(
       screen
         .getAllByText("status.completed")

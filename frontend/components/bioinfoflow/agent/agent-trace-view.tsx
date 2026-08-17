@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -103,9 +104,14 @@ const TRACE_STATUS_KEYS = {
   blocked: "blocked",
 } as const
 
+const INLINE_INSPECTOR_MIN_WIDTH = 960
+
 export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
   const t = useTranslations("agentTrace")
-  const isInspectorInline = useMediaQuery("(min-width: 1280px)")
+  const viewportSupportsInlineInspector = useMediaQuery("(min-width: 1280px)")
+  const traceRootRef = useRef<HTMLElement | null>(null)
+  const [containerSupportsInlineInspector, setContainerSupportsInlineInspector] =
+    useState<boolean | null>(null)
   const detailCache = useRef(new Map<string, AgentTraceEventDetail>())
   const detailRequest = useRef(0)
   const [selectedEvent, setSelectedEvent] = useState<AgentTraceEvent | null>(
@@ -125,6 +131,27 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
   )
   const maxSequence = events.at(-1)?.sequence ?? 0
   const visiblePlayheadSequence = playheadSequence ?? maxSequence
+  const isInspectorInline =
+    containerSupportsInlineInspector ?? viewportSupportsInlineInspector
+
+  useEffect(() => {
+    const element = traceRootRef.current
+    if (!element || typeof ResizeObserver === "undefined") {
+      setContainerSupportsInlineInspector(null)
+      return
+    }
+
+    const update = (width: number) => {
+      setContainerSupportsInlineInspector(width >= INLINE_INSPECTOR_MIN_WIDTH)
+    }
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (entry) update(entry.contentRect.width)
+    })
+    observer.observe(element)
+    update(element.getBoundingClientRect().width)
+    return () => observer.disconnect()
+  }, [])
 
   async function loadEventDetail(
     event: AgentTraceEvent,
@@ -194,6 +221,7 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
 
   return (
     <section
+      ref={traceRootRef}
       className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
       aria-label={t("title")}
       data-testid="agent-trace-view"
@@ -205,7 +233,12 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
         onSelectSnapshot={setPlayheadSequence}
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_auto]">
+      <div
+        className={cn(
+          "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)]",
+          isInspectorInline && "grid-cols-[minmax(0,1fr)_auto]",
+        )}
+      >
         <TraceTimeline
           view={view}
           selectedEventId={selectedEvent?.id ?? null}
@@ -622,11 +655,15 @@ function TraceEventRow({
             event.category !== "tool" && "font-sans text-[13px]",
           )}
           title={event.firstLine}
+          translate="no"
         >
           {event.firstLine}
         </div>
         {expanded ? (
-          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words border-l border-border/70 pl-3 font-mono text-[11px] leading-5 text-foreground/68">
+          <pre
+            className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words border-l border-border/70 pl-3 font-mono text-[11px] leading-5 text-foreground/68"
+            translate="no"
+          >
             {event.summary}
           </pre>
         ) : null}
