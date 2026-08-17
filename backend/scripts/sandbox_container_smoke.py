@@ -52,7 +52,7 @@ async def _run(*, image: str, workspace: Path) -> None:
 
     assert denied.exit_code != 0
     assert not (workspace / "denied.txt").exists()
-    assert allowed.exit_code == 0 and allowed.stdout == "ready"
+    assert allowed.exit_code == 0 and allowed.stdout == "ready", allowed
     assert (workspace / "allowed.txt").exists()
     assert confined_root.exit_code != 0
     assert escalated_root.exit_code == 0

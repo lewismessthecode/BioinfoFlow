@@ -168,8 +168,8 @@ jobs:
 
       - name: Smoke test disposable Agent sandbox
         run: |
-          smoke_root="$(mktemp -d)"
-          trap 'rm -rf "$smoke_root"' EXIT
+          smoke_root="$(mktemp -d "${RUNNER_TEMP}/bioinfoflow-sandbox-smoke.XXXXXX")"
+          trap 'sudo rm -rf "$smoke_root"' EXIT
           mkdir -p "$smoke_root/projects/demo" "$smoke_root/state"
           docker run --rm \
             --name bioinfoflow-sandbox-ci-outer \
