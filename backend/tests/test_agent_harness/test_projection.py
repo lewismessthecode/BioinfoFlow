@@ -859,11 +859,13 @@ def test_interaction_request_projection_normalizes_approval_risk() -> None:
                 "kind": "ssh",
                 "host": "gpu.example.test",
             },
-            "risk": {
-                "level": "high",
-                "effects": ["delete"],
-                "reasons": ["removes output"],
-                "affected_resources": [{"id": "output.txt", "private": True}],
+                "risk": {
+                    "level": "high",
+                    "effects": ["delete"],
+                    "reasons": ["removes output"],
+                    "reason_codes": ["sandbox_escalation"],
+                    "justification": "remove the obsolete output",
+                    "affected_resources": [{"id": "output.txt", "private": True}],
             },
             "private_policy": {"rule": "secret"},
         }
@@ -886,6 +888,8 @@ def test_interaction_request_projection_normalizes_approval_risk() -> None:
             "level": "high",
             "effects": ["delete"],
             "reasons": ["removes output"],
+            "reason_codes": ["sandbox_escalation"],
+            "justification": "remove the obsolete output",
             "affected_resources": ["output.txt"],
         },
     }

@@ -22,6 +22,11 @@ class BashTool:
                 "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},
                 "output_limit": {"type": "integer", "minimum": 100, "maximum": 50_000},
                 "description": {"type": "string"},
+                "sandbox_permissions": {
+                    "type": "string",
+                    "enum": ["use_default", "require_escalated"],
+                },
+                "justification": {"type": "string"},
             },
             "required": ["command"],
             "additionalProperties": False,
@@ -61,6 +66,7 @@ class BashTool:
             output_limit=output_limit,
             cancellation=context.cancellation,
             environment=context.environment,
+            sandbox_mode=context.sandbox_mode,
         )
 
 

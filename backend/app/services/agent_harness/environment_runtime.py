@@ -21,6 +21,9 @@ from app.services.agent_harness.environment_target import (
 )
 from app.services.agent_harness.routed_workspace_runtime import RoutedWorkspaceRuntime
 from app.services.agent_harness.sandbox import SandboxRunner
+from app.services.agent_harness.sandbox.capability_paths import (
+    require_safe_workspace_root,
+)
 from app.services.agent_harness.workspace_router import WorkspaceRouter
 from app.services.agent_harness.workspace_runtime import (
     LocalWorkspaceBackend,
@@ -55,10 +58,10 @@ def workspace_runtime_for_session(
         raw_root = snapshot.get("root")
         if not isinstance(raw_root, str) or not raw_root.strip():
             raise ValueError("local project workspace is missing its root")
-        root = Path(raw_root).expanduser().resolve()
+        root = require_safe_workspace_root(Path(raw_root))
         backend = LocalWorkspaceBackend(
             working_directory=root,
-            read_roots=(root, *_local_skill_read_roots(session)),
+            read_roots=(Path("/"),),
             write_roots=(root,),
             protected_roots=(),
             sandbox_runner=SandboxRunner.from_settings(),
@@ -227,9 +230,10 @@ def _local_workspace_runtime_for_session(
         ).resolve()
     )
     root.mkdir(parents=True, exist_ok=True)
+    root = require_safe_workspace_root(root)
     backend = LocalWorkspaceBackend(
         working_directory=root,
-        read_roots=(root, *_local_skill_read_roots(session)),
+        read_roots=(Path("/"),),
         write_roots=(root,),
         protected_roots=(),
         sandbox_runner=SandboxRunner.from_settings(),
@@ -440,29 +444,6 @@ def _remote_connection_snapshot(snapshot: dict[str, Any]) -> RemoteConnectionCon
         username=raw["username"],
         port=port,
     )
-
-
-def _local_skill_read_roots(session: Any) -> tuple[Path, ...]:
-    prompt_snapshot = getattr(session, "prompt_snapshot", None)
-    if not isinstance(prompt_snapshot, dict):
-        return ()
-    raw_roots = prompt_snapshot.get("skill_read_roots")
-    if not isinstance(raw_roots, list):
-        return ()
-    roots: list[Path] = []
-    for raw_root in raw_roots[:200]:
-        if not isinstance(raw_root, str) or not raw_root.strip():
-            continue
-        candidate = Path(raw_root).expanduser()
-        if not candidate.is_absolute():
-            continue
-        try:
-            resolved = candidate.resolve(strict=True)
-        except OSError:
-            continue
-        if resolved.is_dir() and resolved not in roots:
-            roots.append(resolved)
-    return tuple(roots)
 
 
 def _workspace_api_url(runtime: str) -> str:

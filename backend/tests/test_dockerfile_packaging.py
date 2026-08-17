@@ -97,3 +97,18 @@ def test_backend_dependencies_exclude_retired_harness_packages():
     for retired in ("duckduckgo-search", "hermes-agent"):
         assert retired not in pyproject
         assert f'name = "{retired}"' not in lockfile
+
+
+def test_backend_image_packages_the_pinned_deepseek_sandbox_worker():
+    backend_root = Path(__file__).resolve().parents[1]
+    dockerfile = _dockerfile()
+    package = (backend_root / "sandbox_worker" / "package.json").read_text(
+        encoding="utf-8"
+    )
+
+    assert "FROM node:24-bookworm-slim AS sandbox-worker" in dockerfile
+    assert "npm ci --omit=dev" in dockerfile
+    assert "COPY --from=sandbox-worker /sandbox_worker /app/sandbox_worker" in dockerfile
+    assert '"@deepseek-ai/dsh-sandbox": "0.1.0-rc.7"' in package
+    assert '"@deepseek-ai/dsh-sandbox-local": "0.1.0-rc.7"' in package
+    assert "^0.1.0-rc.7" not in package

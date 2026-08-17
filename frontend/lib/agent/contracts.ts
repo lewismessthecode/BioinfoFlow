@@ -212,6 +212,8 @@ export type ApprovalRiskView = {
   level: string
   effects: string[]
   reasons: string[]
+  reason_codes?: string[]
+  justification?: string | null
   affected_resources: string[]
 }
 

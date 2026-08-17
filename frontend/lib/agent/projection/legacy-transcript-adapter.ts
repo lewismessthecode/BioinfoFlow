@@ -83,6 +83,8 @@ function projectInteractionRequest(
         level: request.risk.level,
         effects: request.risk.effects,
         reasons: request.risk.reasons,
+        reasonCodes: request.risk.reason_codes ?? [],
+        justification: request.risk.justification ?? null,
         affectedResources: request.risk.affected_resources,
       },
       target: null,

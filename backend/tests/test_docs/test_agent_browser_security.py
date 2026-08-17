@@ -11,8 +11,8 @@ def test_security_docs_describe_harness_network_boundaries() -> None:
         (_REPO_ROOT / "docs/security.md").read_text(encoding="utf-8").split()
     )
 
-    assert "network access is disabled by default" in security
-    assert "narrowly recognized authenticated `bif` path" in security
+    assert "Network and process visibility are not sandbox properties" in security
+    assert "scoped authenticated `bif` path remains a separate" in security
     assert "remote Bubblewrap" in security
     assert "Command classification is defense in depth" in security
     assert "agent-browser" not in security

@@ -143,6 +143,17 @@ jobs:
       - name: Install Python
         run: uv python install 3.13
 
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.1
+          cache: npm
+          cache-dependency-path: backend/sandbox_worker/package-lock.json
+
+      - name: Install and test sandbox worker
+        working-directory: backend/sandbox_worker
+        run: npm ci && npm test
+
       - name: Install dependencies
         run: uv sync --frozen --python 3.13
 
@@ -151,6 +162,25 @@ jobs:
 
       - name: Test
         run: uv run pytest
+
+      - name: Build backend sandbox image
+        run: docker build -t bioinfoflow-backend:sandbox-ci .
+
+      - name: Smoke test disposable Agent sandbox
+        run: |
+          smoke_root="$(mktemp -d)"
+          trap 'rm -rf "$smoke_root"' EXIT
+          mkdir -p "$smoke_root/projects/demo" "$smoke_root/state"
+          docker run --rm \
+            --name bioinfoflow-sandbox-ci-outer \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$smoke_root:$smoke_root" \
+            -e "BIOINFOFLOW_HOME=$smoke_root" \
+            --entrypoint python \
+            bioinfoflow-backend:sandbox-ci \
+            /app/scripts/sandbox_container_smoke.py \
+            --image bioinfoflow-backend:sandbox-ci \
+            --workspace "$smoke_root/projects/demo"
 
   frontend-lint:
     name: frontend lint

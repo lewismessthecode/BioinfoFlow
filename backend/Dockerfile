@@ -1,5 +1,13 @@
 # syntax=docker/dockerfile:1.7
-FROM python:3.13-slim
+FROM node:24-bookworm-slim AS sandbox-worker
+
+WORKDIR /sandbox_worker
+COPY sandbox_worker/package.json sandbox_worker/package-lock.json ./
+RUN npm ci --omit=dev
+COPY sandbox_worker/worker.mjs ./
+COPY sandbox_worker/executor.mjs ./
+
+FROM python:3.13-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=0 \
     PYTHONUNBUFFERED=1 \
@@ -60,6 +68,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN python -m compileall -b -q app && \
     find app -type f -name "*.py" -delete && \
     find app -type d -name "__pycache__" -exec rm -rf {} +
+
+# DeepSeek Harness local sandbox provider and its pinned runtime dependencies.
+# Keep this after the expensive Python/system layers so worker-only changes do
+# not invalidate Java, ffmpeg, Nextflow, or Python dependency installation.
+COPY --from=sandbox-worker /usr/local/bin/node /usr/local/bin/node
+COPY --from=sandbox-worker /sandbox_worker /app/sandbox_worker
 
 # ── Support files (rarely change) ────────────────────────────
 COPY alembic alembic

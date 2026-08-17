@@ -129,6 +129,15 @@ def public_interaction_request(value: dict[str, Any]) -> dict[str, Any]:
                 "level": str(risk.get("level") or "unknown"),
                 "effects": [str(item) for item in risk.get("effects") or []],
                 "reasons": [str(item) for item in risk.get("reasons") or []],
+                "reason_codes": [
+                    str(item) for item in risk.get("reason_codes") or []
+                ],
+                "justification": (
+                    str(risk["justification"])
+                    if isinstance(risk.get("justification"), str)
+                    and risk["justification"]
+                    else None
+                ),
                 "affected_resources": [
                     str(item.get("id") if isinstance(item, dict) else item)
                     for item in resources

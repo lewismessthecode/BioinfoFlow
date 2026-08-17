@@ -380,6 +380,8 @@ describe("ConversationTranscript", () => {
         level: "high",
         effects: ["Deletes a file"],
         reasons: ["Destructive command"],
+        reasonCodes: [],
+        justification: null,
         affectedResources: ["generated.tmp"],
       },
       target: {
