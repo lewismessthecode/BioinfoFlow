@@ -113,6 +113,12 @@ async def test_harness_records_each_model_exchange_with_usage_and_context(
     assert len(traces) == 1
     trace = traces[0]
     assert trace.status == "completed"
+    assert trace.request_prepared_at is not None
+    assert trace.first_byte_at is not None
+    assert trace.completed_at is not None
+    assert trace.started_at <= trace.request_prepared_at
+    assert trace.request_prepared_at <= trace.first_byte_at
+    assert trace.first_byte_at <= trace.completed_at
     assert trace.request_payload["messages"][-1] == {
         "role": "user",
         "content": "Run QC.",
@@ -169,6 +175,94 @@ class FailingModel:
             message="Provider is unavailable.",
         )
         yield  # pragma: no cover - keep this an async generator
+
+
+class DetailedFailingModel:
+    async def invoke(self, invocation):
+        raise ModelError(
+            category="rate_limit",
+            message="Provider rate limit reached.",
+            http_status=429,
+            provider_code="rate_limit_exceeded",
+            retryable=True,
+            retry_after_seconds=0.001,
+            request_id="request-safe-1",
+            cause=RuntimeError("credential-secret"),
+        )
+        yield  # pragma: no cover - keep this an async generator
+
+
+@pytest.mark.asyncio
+async def test_harness_records_only_safe_model_error_metadata(
+    db_session,
+    tmp_path,
+) -> None:
+    db_session.add(
+        Workspace(
+            id=str(WORKSPACE_ID),
+            name="Trace Safe Error",
+            slug="trace-safe-error",
+            is_default=False,
+        )
+    )
+    await db_session.commit()
+    trace_repository = AgentModelTraceRepository(db_session)
+    recorder = ModelExchangeRecorder(trace_repository)
+    harness = AgentHarness(
+        AgentHarnessRepository(db_session),
+        model_gateway=DetailedFailingModel(),
+        workspace_factory=lambda _session: WorkspaceRuntime(
+            LocalWorkspaceBackend(
+                working_directory=tmp_path,
+                read_roots=(tmp_path,),
+                write_roots=(tmp_path,),
+                sandbox_runner=None,
+            )
+        ),
+        model_exchange_recorder=recorder,
+    )
+    opened = await harness.open_session(
+        OpenSessionRequest(
+            user_id="user-1",
+            workspace_id=WORKSPACE_ID,
+            prompt_snapshot={"schema_version": 1, "content": "System prompt."},
+            model={
+                "target": {
+                    "endpoint_id": "endpoint-1",
+                    "provider_kind": "openai",
+                    "model_name": "gpt-5",
+                    "routed_model_name": "openai/gpt-5",
+                    "wire_protocol": "chat_completions",
+                },
+                "capabilities": {
+                    "supports_streaming": False,
+                    "supports_tools": True,
+                },
+            },
+        )
+    )
+
+    await harness.dispatch(
+        str(opened.session.id),
+        MessageCommand(
+            command_id="message-safe-error",
+            parts=[InputTextPart(text="Run QC.")],
+        ),
+    )
+    traces = await trace_repository.list_for_session(str(opened.session.id))
+
+    expected_error = {
+        "code": "rate_limit",
+        "message": "Provider rate limit reached.",
+        "http_status": 429,
+        "provider_code": "rate_limit_exceeded",
+        "retryable": True,
+        "retry_after_seconds": 0.001,
+        "request_id": "request-safe-1",
+    }
+    assert len(traces) == 3
+    assert all(trace.error == expected_error for trace in traces)
+    assert "credential-secret" not in str([trace.error for trace in traces])
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterable
+from datetime import datetime, timezone
 import json
-import logging
 from typing import Any
 
 from app.services.model_runtime.backend.litellm import LiteLLMBackend
@@ -19,11 +19,11 @@ from app.services.model_runtime.contracts import (
     WireProtocol,
 )
 from app.services.model_runtime.errors import ModelError
-from app.services.model_runtime.exchange import ModelExchangeObserver
+from app.services.model_runtime.exchange import (
+    ModelExchangeObserver,
+    notify_exchange_observer,
+)
 from app.services.model_runtime.streams import aclose_async_iterator
-
-
-logger = logging.getLogger(__name__)
 
 
 class ModelGateway:
@@ -75,11 +75,12 @@ class ModelGateway:
                 reasoning=invocation.reasoning,
             )
         if invocation.exchange_id is not None and self._exchange_observer is not None:
-            await _notify_exchange_observer(
+            await notify_exchange_observer(
                 self._exchange_observer,
                 "request_prepared",
                 invocation.exchange_id,
                 _json_payload(request),
+                prepared_at=datetime.now(timezone.utc),
             )
         if invocation.target.base_url is not None:
             request["api_base"] = invocation.target.base_url
@@ -99,7 +100,13 @@ class ModelGateway:
                     observer=self._exchange_observer,
                 )
             else:
-                await _notify_exchange_observer(
+                await notify_exchange_observer(
+                    self._exchange_observer,
+                    "first_byte_received",
+                    invocation.exchange_id,
+                    occurred_at=datetime.now(timezone.utc),
+                )
+                await notify_exchange_observer(
                     self._exchange_observer,
                     "response_received",
                     invocation.exchange_id,
@@ -141,13 +148,22 @@ def _observe_stream(
 ) -> AsyncIterator[Any]:
     async def iterate() -> AsyncIterator[Any]:
         chunks: list[Any] = []
+        first_byte_recorded = False
         try:
             async for chunk in response:
+                if not first_byte_recorded:
+                    first_byte_recorded = True
+                    await notify_exchange_observer(
+                        observer,
+                        "first_byte_received",
+                        exchange_id,
+                        occurred_at=datetime.now(timezone.utc),
+                    )
                 chunks.append(_json_payload(chunk))
                 yield chunk
         finally:
             try:
-                await _notify_exchange_observer(
+                await notify_exchange_observer(
                     observer,
                     "response_received",
                     exchange_id,
@@ -157,37 +173,6 @@ def _observe_stream(
                 await aclose_async_iterator(response)
 
     return iterate()
-
-
-async def _notify_exchange_observer(
-    observer: ModelExchangeObserver,
-    callback_name: str,
-    exchange_id: str,
-    payload: dict | list,
-) -> None:
-    try:
-        callback = getattr(observer, callback_name)
-        await callback(exchange_id, payload)
-    except Exception as exc:  # noqa: BLE001 - telemetry must remain best-effort
-        await _recover_observer(observer)
-        logger.warning(
-            "Model exchange observer callback failed during %s (%s).",
-            callback_name,
-            type(exc).__name__,
-        )
-
-
-async def _recover_observer(observer: ModelExchangeObserver) -> None:
-    recover = getattr(observer, "recover_after_failure", None)
-    if not callable(recover):
-        return
-    try:
-        await recover()
-    except Exception as exc:  # noqa: BLE001 - recovery is also best-effort
-        logger.warning(
-            "Model exchange observer recovery failed (%s).",
-            type(exc).__name__,
-        )
 
 
 def _json_payload(value: Any) -> dict | list:

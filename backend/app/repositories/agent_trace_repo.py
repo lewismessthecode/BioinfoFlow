@@ -46,13 +46,31 @@ class AgentModelTraceRepository:
         return trace
 
     async def record_request(
-        self, trace_id: str, request_payload: dict | list
+        self,
+        trace_id: str,
+        request_payload: dict | list,
+        *,
+        prepared_at: datetime | None = None,
     ) -> AgentModelTrace:
         trace = await self._required(trace_id)
         trace.request_payload = request_payload
+        trace.request_prepared_at = prepared_at or datetime.now(timezone.utc)
         trace.status = "running"
         await self.db.commit()
         await self.db.refresh(trace)
+        return trace
+
+    async def record_first_byte(
+        self,
+        trace_id: str,
+        *,
+        occurred_at: datetime | None = None,
+    ) -> AgentModelTrace:
+        trace = await self._required(trace_id)
+        if trace.first_byte_at is None:
+            trace.first_byte_at = occurred_at or datetime.now(timezone.utc)
+            await self.db.commit()
+            await self.db.refresh(trace)
         return trace
 
     async def complete(
@@ -63,6 +81,7 @@ class AgentModelTraceRepository:
         usage: dict[str, Any] | None,
         provider_response_id: str | None,
         finish_reason: str | None,
+        completed_at: datetime | None = None,
     ) -> AgentModelTrace:
         trace = await self._required(trace_id)
         trace.response_payload = response_payload
@@ -70,7 +89,7 @@ class AgentModelTraceRepository:
         trace.provider_response_id = provider_response_id
         trace.finish_reason = finish_reason
         trace.status = "completed"
-        trace.completed_at = datetime.now(timezone.utc)
+        trace.completed_at = completed_at or datetime.now(timezone.utc)
         await self.db.commit()
         await self.db.refresh(trace)
         return trace
@@ -90,12 +109,13 @@ class AgentModelTraceRepository:
         *,
         error: dict[str, Any],
         response_payload: dict | list | None = None,
+        completed_at: datetime | None = None,
     ) -> AgentModelTrace:
         trace = await self._required(trace_id)
         trace.response_payload = response_payload
         trace.error = error
         trace.status = "failed"
-        trace.completed_at = datetime.now(timezone.utc)
+        trace.completed_at = completed_at or datetime.now(timezone.utc)
         await self.db.commit()
         await self.db.refresh(trace)
         return trace

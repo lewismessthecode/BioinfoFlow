@@ -90,6 +90,9 @@ async def test_complete_harness_adapter_builds_session_trace_from_raw_sources(
             ],
         },
     )
+    request_prepared_at = trace.started_at + timedelta(milliseconds=10)
+    first_byte_at = trace.started_at + timedelta(milliseconds=45)
+    model_completed_at = trace.started_at + timedelta(milliseconds=90)
     await traces.record_request(
         str(trace.id),
         {
@@ -107,7 +110,9 @@ async def test_complete_harness_adapter_builds_session_trace_from_raw_sources(
                 }
             ],
         },
+        prepared_at=request_prepared_at,
     )
+    await traces.record_first_byte(str(trace.id), occurred_at=first_byte_at)
     await traces.complete(
         str(trace.id),
         response_payload={"id": "resp-1", "output": [{"type": "tool_call"}]},
@@ -120,6 +125,7 @@ async def test_complete_harness_adapter_builds_session_trace_from_raw_sources(
         },
         provider_response_id="resp-1",
         finish_reason="tool_calls",
+        completed_at=model_completed_at,
     )
     assistant = await harness.append_entry(
         str(session.id),
@@ -188,8 +194,36 @@ async def test_complete_harness_adapter_builds_session_trace_from_raw_sources(
     assert timeline.events[4].summary == ('bash({"command":"fastqc reads.fastq.gz"})')
     assert timeline.context_flow[0].sequence == 3
     assert timeline.context_flow[0].through_sequence == 2
+    assert timeline.context_flow[0].input_tokens == 120
+    assert timeline.context_flow[0].output_tokens == 20
     assert timeline.context_flow[0].cached_input_tokens == 80
+    assert timeline.context_flow[0].reasoning_tokens is None
+    assert timeline.context_flow[0].total_tokens == 140
     assert timeline.context_flow[0].max_context_tokens == 128000
+
+    model_detail = await adapter.detail(str(session.id), f"model:{trace.id}")
+
+    assert model_detail is not None
+    assert model_detail.summary == {
+        "category": "context",
+        "provider": "openai",
+        "model": "gpt-5",
+        "status": "completed",
+        "wire_protocol": "responses",
+        "input_tokens": 120,
+        "output_tokens": 20,
+        "cached_input_tokens": 80,
+        "reasoning_tokens": None,
+        "total_tokens": 140,
+    }
+    assert model_detail.timing is not None
+    assert model_detail.timing.started_at == trace.started_at.replace(tzinfo=None)
+    assert model_detail.timing.request_prepared_at == request_prepared_at.replace(
+        tzinfo=None
+    )
+    assert model_detail.timing.first_byte_at == first_byte_at.replace(tzinfo=None)
+    assert model_detail.timing.completed_at == model_completed_at.replace(tzinfo=None)
+    assert model_detail.timing.duration_ms == 90
 
     call_event_id = f"entry:{assistant.id}:tool-call:call-1"
     detail = await adapter.detail(str(session.id), call_event_id)

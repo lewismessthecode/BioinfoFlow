@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from uuid import UUID
 
 import pytest
@@ -67,10 +68,15 @@ async def test_model_trace_repository_preserves_raw_exchange_without_credentials
             "composition": [{"category": "system", "characters": 13, "tokens": None}],
         },
     )
+    request_prepared_at = trace.started_at + timedelta(milliseconds=10)
+    first_byte_at = trace.started_at + timedelta(milliseconds=40)
+    completed_at = trace.started_at + timedelta(milliseconds=90)
     await repository.record_request(
         str(trace.id),
         {"model": "gpt-5", "input": [{"role": "user", "content": "hello"}]},
+        prepared_at=request_prepared_at,
     )
+    await repository.record_first_byte(str(trace.id), occurred_at=first_byte_at)
     completed = await repository.complete(
         str(trace.id),
         response_payload={"stream": True, "chunks": [{"type": "response.done"}]},
@@ -83,6 +89,7 @@ async def test_model_trace_repository_preserves_raw_exchange_without_credentials
         },
         provider_response_id="resp-1",
         finish_reason="completed",
+        completed_at=completed_at,
     )
 
     stored = await repository.get(str(trace.id), session_id=str(session.id))
@@ -98,4 +105,7 @@ async def test_model_trace_repository_preserves_raw_exchange_without_credentials
         "chunks": [{"type": "response.done"}],
     }
     assert stored.usage["cached_input_tokens"] is None
+    assert stored.request_prepared_at == request_prepared_at.replace(tzinfo=None)
+    assert stored.first_byte_at == first_byte_at.replace(tzinfo=None)
+    assert stored.completed_at == completed_at.replace(tzinfo=None)
     assert "api_key" not in str(stored.request_payload)

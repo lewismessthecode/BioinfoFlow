@@ -324,7 +324,10 @@ def _context_flow_snapshot(
         through_sequence=through_sequence,
         compacted=bool(snapshot.get("compacted", False)),
         input_tokens=_optional_int(usage.get("input_tokens")),
+        output_tokens=_optional_int(usage.get("output_tokens")),
         cached_input_tokens=_optional_int(usage.get("cached_input_tokens")),
+        reasoning_tokens=_optional_int(usage.get("reasoning_tokens")),
+        total_tokens=_optional_int(usage.get("total_tokens")),
         max_context_tokens=_optional_int(snapshot.get("max_context_tokens")),
         composition=[
             ContextCompositionItem.model_validate(item)
@@ -352,6 +355,7 @@ def _normalized_through_sequence(
 
 
 def _model_trace_detail(trace: AgentModelTrace) -> AgentTraceEventDetail:
+    usage = trace.usage if isinstance(trace.usage, Mapping) else {}
     return AgentTraceEventDetail(
         event_id=f"model:{trace.id}",
         summary={
@@ -360,11 +364,21 @@ def _model_trace_detail(trace: AgentModelTrace) -> AgentTraceEventDetail:
             "model": trace.model,
             "status": trace.status,
             "wire_protocol": trace.wire_protocol,
+            "input_tokens": _optional_int(usage.get("input_tokens")),
+            "output_tokens": _optional_int(usage.get("output_tokens")),
+            "cached_input_tokens": _optional_int(usage.get("cached_input_tokens")),
+            "reasoning_tokens": _optional_int(usage.get("reasoning_tokens")),
+            "total_tokens": _optional_int(usage.get("total_tokens")),
         },
         payload=trace.request_payload,
         result=trace.response_payload,
         schema=_tool_schemas(trace.request_payload),
-        timing=_timing(trace.started_at, trace.completed_at),
+        timing=_timing(
+            trace.started_at,
+            trace.completed_at,
+            request_prepared_at=trace.request_prepared_at,
+            first_byte_at=trace.first_byte_at,
+        ),
     )
 
 
@@ -493,12 +507,20 @@ def _tools(payload: Any) -> list[dict[str, Any]]:
     return [item for item in payload["tools"] if isinstance(item, dict)]
 
 
-def _timing(started_at: datetime | None, completed_at: datetime | None) -> TraceTiming:
+def _timing(
+    started_at: datetime | None,
+    completed_at: datetime | None,
+    *,
+    request_prepared_at: datetime | None = None,
+    first_byte_at: datetime | None = None,
+) -> TraceTiming:
     duration_ms = None
     if started_at is not None and completed_at is not None:
         duration_ms = max(0, round((completed_at - started_at).total_seconds() * 1000))
     return TraceTiming(
         started_at=started_at,
+        request_prepared_at=request_prepared_at,
+        first_byte_at=first_byte_at,
         completed_at=completed_at,
         duration_ms=duration_ms,
     )

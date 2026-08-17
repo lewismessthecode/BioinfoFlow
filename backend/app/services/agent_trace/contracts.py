@@ -55,7 +55,10 @@ class ContextFlowSnapshot(_StrictContract):
     through_sequence: int = Field(ge=0)
     compacted: bool = False
     input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
     cached_input_tokens: int | None = Field(default=None, ge=0)
+    reasoning_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
     max_context_tokens: int | None = Field(default=None, ge=1)
     composition: list[ContextCompositionItem] = Field(default_factory=list)
     created_at: datetime
@@ -84,6 +87,8 @@ class AgentTraceTimeline(_StrictContract):
 
 class TraceTiming(_StrictContract):
     started_at: datetime | None = None
+    request_prepared_at: datetime | None = None
+    first_byte_at: datetime | None = None
     completed_at: datetime | None = None
     duration_ms: int | None = Field(default=None, ge=0)
 

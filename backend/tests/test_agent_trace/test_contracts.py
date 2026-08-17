@@ -47,7 +47,10 @@ def _timeline_payload() -> dict:
                 "through_sequence": 1,
                 "compacted": False,
                 "input_tokens": 120,
+                "output_tokens": 20,
                 "cached_input_tokens": None,
+                "reasoning_tokens": 4,
+                "total_tokens": 144,
                 "max_context_tokens": 128000,
                 "composition": [
                     {
@@ -83,6 +86,9 @@ def test_trace_timeline_has_a_versioned_harness_independent_contract() -> None:
     assert dumped["protocol"] == AGENT_TRACE_PROTOCOL
     assert dumped["protocol_version"] == AGENT_TRACE_PROTOCOL_VERSION
     assert dumped["context_flow"][0]["cached_input_tokens"] is None
+    assert dumped["context_flow"][0]["output_tokens"] == 20
+    assert dumped["context_flow"][0]["reasoning_tokens"] == 4
+    assert dumped["context_flow"][0]["total_tokens"] == 144
     assert dumped["events"][0]["category"] == "system"
 
 

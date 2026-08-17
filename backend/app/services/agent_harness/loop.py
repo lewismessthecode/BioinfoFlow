@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
-import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -70,12 +69,12 @@ from app.services.model_runtime.contracts import (
     UsageReport,
 )
 from app.services.model_runtime.errors import ModelError
+from app.services.model_runtime.exchange import capture_exchange_best_effort
 from app.services.model_runtime.streams import aclose_async_iterator
 
 
 Publish = Callable[[Any], Awaitable[None]]
 HARNESS_VERSION = "complete-agent-harness-v1"
-logger = logging.getLogger(__name__)
 
 
 class ModelAttemptTimeoutError(TimeoutError):
@@ -1156,10 +1155,12 @@ class AgentLoop:
             response = _ModelResponse()
             semantic = False
             exchange_id = None
-            if self.model_exchange_recorder is not None:
-                exchange_id = await self._capture_model_exchange(
+            recorder = self.model_exchange_recorder
+            if recorder is not None:
+                exchange_id = await capture_exchange_best_effort(
+                    recorder,
                     "start",
-                    self.model_exchange_recorder.start(
+                    lambda: recorder.start(
                         session_id=str(session.id),
                         run_id=run_id,
                         iteration=iteration,
@@ -1186,9 +1187,11 @@ class AgentLoop:
                 ):
                     if cancellation.is_set():
                         if exchange_id is not None:
-                            await self._capture_model_exchange(
+                            assert recorder is not None
+                            await capture_exchange_best_effort(
+                                recorder,
                                 "fail",
-                                self.model_exchange_recorder.fail(
+                                lambda: recorder.fail(
                                     exchange_id,
                                     code="cancelled",
                                     message="Model exchange was cancelled.",
@@ -1285,9 +1288,11 @@ class AgentLoop:
                     ),
                 )
                 if exchange_id is not None:
-                    await self._capture_model_exchange(
+                    assert recorder is not None
+                    await capture_exchange_best_effort(
+                        recorder,
                         "complete",
-                        self.model_exchange_recorder.complete(
+                        lambda: recorder.complete(
                             exchange_id,
                             usage=response.usage,
                             provider_response_id=response.provider_response_id,
@@ -1297,9 +1302,11 @@ class AgentLoop:
                 return response
             except TimeoutError as exc:
                 if exchange_id is not None:
-                    await self._capture_model_exchange(
+                    assert recorder is not None
+                    await capture_exchange_best_effort(
+                        recorder,
                         "fail",
-                        self.model_exchange_recorder.fail(
+                        lambda: recorder.fail(
                             exchange_id,
                             code="timeout",
                             message="Model exchange timed out.",
@@ -1317,12 +1324,24 @@ class AgentLoop:
                 await asyncio.sleep(delay)
             except ModelError as exc:
                 if exchange_id is not None:
-                    await self._capture_model_exchange(
+                    assert recorder is not None
+                    error_code = exc.category
+                    error_message = exc.message
+                    error_details = {
+                        "http_status": exc.http_status,
+                        "provider_code": exc.provider_code,
+                        "retryable": exc.retryable,
+                        "retry_after_seconds": exc.retry_after_seconds,
+                        "request_id": exc.request_id,
+                    }
+                    await capture_exchange_best_effort(
+                        recorder,
                         "fail",
-                        self.model_exchange_recorder.fail(
+                        lambda: recorder.fail(
                             exchange_id,
-                            code=exc.category,
-                            message=exc.message,
+                            code=error_code,
+                            message=error_message,
+                            details=error_details,
                         ),
                     )
                 attempts += 1
@@ -1341,41 +1360,19 @@ class AgentLoop:
                 await asyncio.sleep(delay)
             except Exception as exc:
                 if exchange_id is not None:
-                    await self._capture_model_exchange(
+                    assert recorder is not None
+                    exception_type = type(exc).__name__
+                    await capture_exchange_best_effort(
+                        recorder,
                         "fail",
-                        self.model_exchange_recorder.fail(
+                        lambda: recorder.fail(
                             exchange_id,
                             code="internal_error",
                             message="Model exchange failed unexpectedly.",
-                            details={"exception_type": type(exc).__name__},
+                            details={"exception_type": exception_type},
                         ),
                     )
                 raise
-
-    async def _capture_model_exchange(
-        self,
-        operation: str,
-        capture: Awaitable[Any],
-    ) -> Any | None:
-        try:
-            return await capture
-        except Exception as exc:  # noqa: BLE001 - telemetry must remain best-effort
-            recorder = self.model_exchange_recorder
-            recover = getattr(recorder, "recover_after_failure", None)
-            if callable(recover):
-                try:
-                    await recover()
-                except Exception as recovery_exc:  # noqa: BLE001
-                    logger.warning(
-                        "Model exchange recorder recovery failed (%s).",
-                        type(recovery_exc).__name__,
-                    )
-            logger.warning(
-                "Model exchange recorder capture failed during %s (%s).",
-                operation,
-                type(exc).__name__,
-            )
-            return None
 
     async def _build_context(self, session, entries) -> Any:
         mappings = tuple(_history_mapping(entry) for entry in entries)
