@@ -96,6 +96,18 @@ async def execute_routed_tool_call(
             error=str(exc),
             output={"code": exc.code, "environment_id": exc.environment_id},
         )
+    except Exception as exc:  # noqa: BLE001 - adapter failures are tool results
+        return ToolResult(
+            call_id=call.call_id,
+            tool_name=call.name,
+            status="failed",
+            replay_policy=_replay_policy(call.name),
+            error=str(exc) or "environment tool execution failed",
+            output={
+                "code": "environment_execution_failed",
+                "environment_id": environment_id,
+            },
+        )
 
 
 def _replay_policy(tool_name: str) -> ReplayPolicy:

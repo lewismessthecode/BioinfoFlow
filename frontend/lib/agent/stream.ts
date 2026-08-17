@@ -47,11 +47,12 @@ export function subscribeAgentEvents(options: {
       maxBackoffMs: MAX_BACKOFF_MS,
       backoffMultiplier: 2,
       failedSourcePolicy: "close",
-      shouldReconnect: () => true,
+      shouldReconnect: () => false,
       onOpen: () => {
         options.onConnectionChange?.("connected")
       },
-      onError: (_source, event) => {
+      onError: (source, event) => {
+        source.close()
         options.onConnectionChange?.("reconnecting")
         options.onError?.(event)
       },

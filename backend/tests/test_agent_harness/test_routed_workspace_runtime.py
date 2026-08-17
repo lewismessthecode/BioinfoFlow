@@ -252,6 +252,39 @@ async def test_routed_runtime_batch_uses_the_same_per_call_routing() -> None:
 
 
 @pytest.mark.asyncio
+async def test_routed_runtime_returns_workspace_resolution_errors_as_results() -> (
+    None
+):
+    runtime, _, _ = _routed_runtime()
+
+    async def unavailable_remote(_environment_id: str):
+        raise ValueError(
+            "BIOINFOFLOW_PUBLIC_API_BASE_URL must be configured with an address "
+            "reachable from remote Agent workspaces"
+        )
+
+    runtime.router.resolve = unavailable_remote
+
+    result = await runtime.execute(
+        ToolCall(
+            "remote-bash",
+            "bash",
+            {"environment_id": "ssh:gpu", "command": "hostname"},
+        )
+    )
+
+    assert result.status == "failed"
+    assert result.error == (
+        "BIOINFOFLOW_PUBLIC_API_BASE_URL must be configured with an address "
+        "reachable from remote Agent workspaces"
+    )
+    assert result.output == {
+        "code": "environment_execution_failed",
+        "environment_id": "ssh:gpu",
+    }
+
+
+@pytest.mark.asyncio
 async def test_routed_runtime_serial_batch_cancels_calls_after_cancellation() -> None:
     runtime, runtimes, checks = _routed_runtime()
     original_execute = runtimes["local"].execute

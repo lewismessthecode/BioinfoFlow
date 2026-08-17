@@ -134,20 +134,25 @@ describe("subscribeAgentEvents", () => {
     unsubscribe()
   })
 
-  it("reconnects after an error and never adds a cursor to the next URL", () => {
+  it("delegates reconnect recovery to the owning session hook", () => {
     const onConnectionChange = vi.fn()
+    const onError = vi.fn()
     const unsubscribe = subscribeAgentEvents({
       sessionId: "session-1",
       onEvent: vi.fn(),
       onConnectionChange,
+      onError,
     })
 
-    MockEventSource.instances[0].error()
+    const source = MockEventSource.instances[0]
+    source.error()
     expect(onConnectionChange).toHaveBeenCalledWith("reconnecting")
-    vi.advanceTimersByTime(1000)
+    expect(onError).toHaveBeenCalledOnce()
+    expect(source.closed).toBe(true)
 
-    expect(MockEventSource.instances).toHaveLength(2)
-    expect(new URL(MockEventSource.instances[1].url).search).toBe("")
+    vi.advanceTimersByTime(15_000)
+
+    expect(MockEventSource.instances).toHaveLength(1)
 
     unsubscribe()
   })

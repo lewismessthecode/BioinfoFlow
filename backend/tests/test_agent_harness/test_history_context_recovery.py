@@ -20,8 +20,11 @@ from app.services.agent_harness.compression import (
     invoke_with_context_overflow_retry,
 )
 from app.services.agent_harness.recovery import RecoveryPlanner, create_checkpoint
+from app.services.model_runtime.codecs.chat_completions import ChatCompletionsCodec
 from app.services.model_runtime.contracts import (
     ImagePart,
+    ModelInvocation,
+    ModelTarget,
     TextPart,
     ToolCallPart,
     ToolResultPart,
@@ -349,6 +352,137 @@ def test_context_keeps_ask_user_tool_round_adjacent_for_chat_completions() -> No
             is_error=False,
         ),
     )
+
+
+def test_context_repairs_orphaned_tool_calls_before_a_followup_message() -> None:
+    entries = [
+        _entry(
+            1,
+            "message",
+            _tool_call_message(
+                {
+                    "call_id": "read-completed",
+                    "name": "read",
+                    "arguments": {"path": "tool_test.md"},
+                },
+                {
+                    "call_id": "remote-bash-orphaned",
+                    "name": "bash",
+                    "arguments": {
+                        "environment_id": "ssh:gpu",
+                        "command": "hostname",
+                    },
+                },
+                text="I will test the tools.",
+            ),
+        ),
+        _entry(
+            2,
+            "message",
+            _tool_result_message("read-completed", "file contents"),
+        ),
+        _entry(3, "message", _text_message("user", "hi")),
+    ]
+
+    context = ContextBuilder().build(prompt_snapshot="Stable", entries=entries)
+
+    assert context.input_items == (
+        TextPart("I will test the tools.", phase="final_answer"),
+        ToolCallPart(
+            call_id="read-completed",
+            name="read",
+            arguments={"path": "tool_test.md"},
+        ),
+        ToolCallPart(
+            call_id="remote-bash-orphaned",
+            name="bash",
+            arguments={
+                "environment_id": "ssh:gpu",
+                "command": "hostname",
+            },
+        ),
+        ToolResultPart(
+            call_id="read-completed",
+            output="file contents",
+            is_error=False,
+        ),
+        ToolResultPart(
+            call_id="remote-bash-orphaned",
+            output=(
+                '{"error":"Previous Agent run ended before this tool result '
+                'was recorded.","status":"interrupted"}'
+            ),
+            is_error=True,
+        ),
+        TextPart("hi"),
+    )
+
+    request = ChatCompletionsCodec().encode_request(
+        ModelInvocation(
+            target=ModelTarget(
+                endpoint_id="deepseek",
+                provider_kind="deepseek",
+                model_name="deepseek-chat",
+                routed_model_name="deepseek/deepseek-chat",
+                wire_protocol="chat_completions",
+            ),
+            instructions=context.instructions,
+            input_items=context.input_items,
+            tools=(),
+            stream=True,
+            max_output_tokens=1024,
+        )
+    )
+
+    assert request["messages"][-3:] == [
+        {
+            "role": "tool",
+            "tool_call_id": "read-completed",
+            "content": "file contents",
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "remote-bash-orphaned",
+            "content": (
+                '{"error":"Previous Agent run ended before this tool result '
+                'was recorded.","status":"interrupted"}'
+            ),
+        },
+        {"role": "user", "content": "hi"},
+    ]
+
+
+def test_context_defers_run_notices_until_an_in_flight_tool_finishes() -> None:
+    entries = [
+        _entry(
+            1,
+            "message",
+            _tool_call_message(
+                {"call_id": "read-1", "name": "read", "arguments": {"path": "a"}},
+                {
+                    "call_id": "bash-1",
+                    "name": "bash",
+                    "arguments": {"command": "hostname"},
+                },
+            ),
+        ),
+        _entry(2, "message", _tool_result_message("read-1", "alpha")),
+        _entry(3, "notice", {"message": "Waiting for recovery choice"}),
+        _entry(4, "message", _tool_result_message("bash-1", "remote-host")),
+    ]
+
+    context = ContextBuilder().build(prompt_snapshot="Stable", entries=entries)
+
+    assert context.input_items[-3:] == (
+        ToolResultPart(call_id="read-1", output="alpha", is_error=False),
+        ToolResultPart(call_id="bash-1", output="remote-host", is_error=False),
+        TextPart("Agent run notice: Waiting for recovery choice"),
+    )
+    assert sum(
+        item.call_id == "bash-1"
+        for item in context.input_items
+        if isinstance(item, ToolResultPart)
+    ) == 1
 
 
 def test_context_accepts_public_history_entry_contracts() -> None:
