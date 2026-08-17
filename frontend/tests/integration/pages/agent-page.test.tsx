@@ -53,6 +53,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-workbench", () => ({
       onSessionResolved?: (session: unknown) => void
       headerActions?: ReactNode
       onOpenRun?: (runId: string) => void
+      onOpenArtifact?: (artifactId: string) => void
     },
     ref,
   ) {
@@ -69,6 +70,9 @@ vi.mock("@/components/bioinfoflow/agent/agent-workbench", () => ({
         <button type="button" onClick={() => props.onOpenRun?.("run-42")}>
           Open referenced run
         </button>
+        <button type="button" onClick={() => props.onOpenArtifact?.("artifact-42")}>
+          Open referenced artifact
+        </button>
       </div>
     )
   }),
@@ -79,14 +83,16 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
     onCollapse,
     activeTab,
     runId,
+    selectedArtifactId,
   }: {
-    onCollapse: () => void
+    onCollapse?: () => void
     activeTab: string
     runId?: string | null
+    selectedArtifactId?: string | null
   }) => (
-    <div data-testid="live-deck">
-      tab:{activeTab}|run:{runId ?? "none"}
-      <button type="button" onClick={onCollapse}>close</button>
+    <div data-testid="live-deck" data-has-collapse={Boolean(onCollapse)}>
+      tab:{activeTab}|run:{runId ?? "none"}|artifact:{selectedArtifactId ?? "none"}
+      {onCollapse ? <button type="button" onClick={onCollapse}>close</button> : null}
     </div>
   ),
 }))
@@ -154,7 +160,10 @@ describe("Agent pages", () => {
     fireEvent.click(
       workspaceButton,
     )
-    expect(screen.getByTestId("live-deck")).toBeInTheDocument()
+    expect(screen.getByTestId("live-deck")).toHaveAttribute(
+      "data-has-collapse",
+      "false",
+    )
     fireEvent.click(workspaceButton)
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
   })
@@ -167,6 +176,10 @@ describe("Agent pages", () => {
     })
 
     expect(screen.getByTestId("live-deck")).toBeInTheDocument()
+    expect(screen.getByTestId("live-deck")).toHaveAttribute(
+      "data-has-collapse",
+      "false",
+    )
   })
 
   it("offers the LiveDeck in a safe mobile sheet", () => {
@@ -180,6 +193,10 @@ describe("Agent pages", () => {
     render(<>{navbarAction}</>)
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
     expect(screen.getByTestId("live-deck")).toBeInTheDocument()
+    expect(screen.getByTestId("live-deck")).toHaveAttribute(
+      "data-has-collapse",
+      "true",
+    )
     expect(screen.getByRole("dialog")).toHaveClass("overscroll-contain")
     expect(screen.getByRole("dialog")).toHaveClass(
       "pb-[env(safe-area-inset-bottom)]",
@@ -206,6 +223,20 @@ describe("Agent pages", () => {
 
     expect(screen.getByTestId("live-deck")).toHaveTextContent(
       "tab:dag|run:run-42",
+    )
+  })
+
+  it("opens a transcript artifact directly in the artifact workspace", () => {
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open referenced artifact" }),
+    )
+
+    expect(screen.getByTestId("live-deck")).toHaveTextContent(
+      "tab:artifacts|run:none|artifact:artifact-42",
     )
   })
 })

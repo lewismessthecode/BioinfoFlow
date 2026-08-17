@@ -6,7 +6,7 @@ import {
   AgentWorkbench,
   type AgentWorkbenchHandle,
 } from "@/components/bioinfoflow/agent/agent-workbench"
-import { LiveDeck } from "@/components/bioinfoflow/live-deck"
+import { LiveDeck, type LiveDeckTab } from "@/components/bioinfoflow/live-deck"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useEvents } from "@/hooks/use-events"
@@ -47,15 +47,17 @@ export function AgentPageContent({
     conversationProjectId,
     setSelectedProjectId,
     setConversationProjectId,
+    activeConversationId,
     setActiveConversationId,
     setActiveConversationTitle,
   } = useProjectContext()
-  const [liveDeckTab, setLiveDeckTab] = useState<"workspace" | "dag">("workspace")
+  const [liveDeckTab, setLiveDeckTab] = useState<LiveDeckTab>("workspace")
   const [rightSidebarWidth, setRightSidebarWidth] = useState(RIGHT_SIDEBAR_DEFAULT)
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(true)
   const [mobileLiveDeckOpen, setMobileLiveDeckOpen] = useState(false)
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
   const [focusedRunId, setFocusedRunId] = useState<string | null>(null)
+  const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null)
   const [dag, setDag] = useState<DagData | null>(null)
 
   useEffect(() => {
@@ -117,7 +119,7 @@ export function AgentPageContent({
         type="button"
         variant="ghost"
         size="icon"
-        className="h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
+        className="h-8 w-8 rounded-lg border border-transparent bg-transparent text-foreground/78 transition-colors hover:bg-accent/70 hover:text-foreground"
         aria-label={workspaceActionLabel}
         onClick={() => {
           if (isMobile) setMobileLiveDeckOpen(true)
@@ -153,6 +155,16 @@ export function AgentPageContent({
       setFocusedRunId(runId)
       setDag(null)
       setLiveDeckTab("dag")
+      if (isMobile) setMobileLiveDeckOpen(true)
+      else setRightSidebarCollapsed(false)
+    },
+    [isMobile],
+  )
+
+  const openReferencedArtifact = useCallback(
+    (artifactId: string) => {
+      setFocusedArtifactId(artifactId)
+      setLiveDeckTab("artifacts")
       if (isMobile) setMobileLiveDeckOpen(true)
       else setRightSidebarCollapsed(false)
     },
@@ -233,6 +245,7 @@ export function AgentPageContent({
         onActiveSessionIdChange={setActiveConversationId}
         onSessionResolved={handleSessionResolved}
         onOpenRun={openReferencedRun}
+        onOpenArtifact={openReferencedArtifact}
         className="min-w-0 flex-1"
       />
       {showShortcuts && (
@@ -260,6 +273,9 @@ export function AgentPageContent({
               onTabChange={setLiveDeckTab}
               onCollapse={() => setMobileLiveDeckOpen(false)}
               projectId={selectedProjectId}
+              sessionId={activeConversationId || routeSessionId}
+              selectedArtifactId={focusedArtifactId}
+              onSelectedArtifactIdChange={setFocusedArtifactId}
               runId={selectedRun?.run_id ?? focusedRunId}
               dag={dag}
               onRunSelect={handleRunSelect}
@@ -277,8 +293,10 @@ export function AgentPageContent({
           <LiveDeck
             activeTab={liveDeckTab}
             onTabChange={setLiveDeckTab}
-            onCollapse={toggleRightSidebar}
             projectId={selectedProjectId}
+            sessionId={activeConversationId || routeSessionId}
+            selectedArtifactId={focusedArtifactId}
+            onSelectedArtifactIdChange={setFocusedArtifactId}
             runId={selectedRun?.run_id ?? focusedRunId}
             dag={dag}
             onRunSelect={handleRunSelect}

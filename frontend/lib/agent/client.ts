@@ -114,6 +114,17 @@ export async function getAgentArtifact(
   return response.data
 }
 
+export async function listAgentArtifacts(
+  sessionId: string,
+  options?: { signal?: AbortSignal },
+) {
+  const response = await apiRequest<AgentArtifact[]>(
+    `/agent/sessions/${sessionId}/artifacts`,
+    options,
+  )
+  return response.data
+}
+
 export async function fetchAgentArtifactContent(
   artifactId: string,
   options?: { signal?: AbortSignal },
