@@ -12,10 +12,25 @@ from app.services.agent_harness.sandbox.capability_paths import (
     require_safe_workspace_root,
     sensitive_capability_paths,
 )
-from app.services.agent_harness.sandbox.process_sandbox import SandboxRunner
+from app.services.agent_harness.sandbox.process_sandbox import (
+    SandboxRunner,
+    SandboxUnavailableError,
+)
 from app.services.agent_harness.tools.executor import ToolExecutor
 from app.services.agent_harness.tools.specs import ToolCall
 from app.services.agent_harness.workspace_runtime import LocalWorkspaceBackend
+
+
+async def _run_with_available_host_sandbox(
+    backend: LocalWorkspaceBackend,
+    **kwargs,
+) -> dict[str, object]:
+    try:
+        return await backend.run_command(**kwargs)
+    except SandboxUnavailableError as exc:
+        if "cannot protect privileged endpoint" not in str(exc):
+            raise
+        pytest.skip(f"host sandbox cannot mask capability paths: {exc}")
 
 
 @pytest.mark.asyncio
@@ -29,7 +44,8 @@ async def test_real_deepseek_read_only_mode_denies_workspace_write(
         sandbox_runner=SandboxRunner(enabled=True),
     )
 
-    result = await backend.run_command(
+    result = await _run_with_available_host_sandbox(
+        backend,
         command="touch denied.txt",
         cwd=None,
         timeout_seconds=10,
@@ -59,7 +75,8 @@ async def test_real_deepseek_workspace_write_allows_workspace_only(
         sandbox_runner=SandboxRunner(enabled=True),
     )
 
-    allowed = await backend.run_command(
+    allowed = await _run_with_available_host_sandbox(
+        backend,
         command="printf ok > allowed.txt",
         cwd=None,
         timeout_seconds=10,
@@ -68,7 +85,8 @@ async def test_real_deepseek_workspace_write_allows_workspace_only(
         environment={},
         sandbox_mode="workspace-write",
     )
-    denied = await backend.run_command(
+    denied = await _run_with_available_host_sandbox(
+        backend,
         command=f"printf no > {outside}",
         cwd=None,
         timeout_seconds=10,
@@ -99,7 +117,8 @@ async def test_real_deepseek_confined_modes_allow_external_reads(
         sandbox_runner=SandboxRunner(enabled=True),
     )
 
-    result = await backend.run_command(
+    result = await _run_with_available_host_sandbox(
+        backend,
         command=f"cat {shlex.quote(str(outside))}",
         cwd=None,
         timeout_seconds=10,
