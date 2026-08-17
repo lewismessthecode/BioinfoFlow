@@ -37,3 +37,12 @@ def test_production_harness_and_agent_api_do_not_import_agent_core() -> None:
     }
 
     assert violations == {}
+
+
+def test_agent_loop_does_not_depend_on_agent_trace_implementation() -> None:
+    loop_path = BACKEND_ROOT / "app/services/agent_harness/loop.py"
+
+    assert not any(
+        module.startswith("app.services.agent_trace")
+        for module in _imports(loop_path)
+    )

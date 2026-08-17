@@ -53,7 +53,6 @@ from app.services.agent_harness.tools import ToolCall, ToolResult
 from app.services.agent_harness.tools.specs import ToolSpec
 from app.services.agent_harness.turn_settings import effective_turn_session
 from app.services.agent_harness.workspace_runtime import WorkspaceRuntime
-from app.services.agent_trace.recorder import ModelExchangeRecorder
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ImagePart,
@@ -69,7 +68,10 @@ from app.services.model_runtime.contracts import (
     UsageReport,
 )
 from app.services.model_runtime.errors import ModelError
-from app.services.model_runtime.exchange import capture_exchange_best_effort
+from app.services.model_runtime.exchange import (
+    ModelExchangeLifecycle,
+    capture_exchange_best_effort,
+)
 from app.services.model_runtime.streams import aclose_async_iterator
 
 
@@ -110,7 +112,7 @@ class AgentLoop:
         model_runtime_resolver: Callable[[Any], Awaitable[dict[str, Any]]]
         | None = None,
         limits: LoopLimits | None = None,
-        model_exchange_recorder: ModelExchangeRecorder | None = None,
+        model_exchange_recorder: ModelExchangeLifecycle | None = None,
     ) -> None:
         self.repository = repository
         self.model_gateway = model_gateway

@@ -50,7 +50,7 @@ from app.services.agent_harness.tool_projection import (
 from app.services.agent_harness.tools import ToolCall
 from app.services.agent_harness.tools.specs import ToolSpec
 from app.services.agent_harness.turn_settings import effective_turn_session
-from app.services.agent_trace.recorder import ModelExchangeRecorder
+from app.services.model_runtime.exchange import ModelExchangeLifecycle
 from app.services.model_runtime.gateway import ModelGateway
 
 
@@ -73,7 +73,7 @@ class AgentHarness:
         execution_scheduler: Callable[[str, str, str, dict[str, Any] | None], None]
         | None = None,
         lease_owner: str | None = None,
-        model_exchange_recorder: ModelExchangeRecorder | None = None,
+        model_exchange_recorder: ModelExchangeLifecycle | None = None,
     ) -> None:
         self.repository = repository
         self.run_submission = AgentRunSubmissionService(repository)
@@ -145,6 +145,7 @@ class AgentHarness:
         gateway = model_gateway
         if gateway is None:
             from app.repositories.agent_trace_repo import AgentModelTraceRepository
+            from app.services.agent_trace.recorder import ModelExchangeRecorder
 
             recorder = ModelExchangeRecorder(AgentModelTraceRepository(db))
             gateway = ModelGateway(exchange_observer=recorder)
