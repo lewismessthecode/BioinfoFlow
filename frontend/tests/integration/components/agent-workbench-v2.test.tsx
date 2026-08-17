@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   setSelectedModel: vi.fn(),
   fetchRemoteConnections: vi.fn(),
   useStarterPrompts: vi.fn(),
+  tracePanel: vi.fn(),
 }))
 
 vi.mock("next/navigation", () => ({
@@ -168,6 +169,23 @@ vi.mock("@/components/bioinfoflow/agent/conversation-transcript", () => ({
         .join("|")}
     </div>
   ),
+}))
+
+vi.mock("@/components/bioinfoflow/agent/agent-trace-view", () => ({
+  AgentTracePanel: ({
+    sessionId,
+    active,
+  }: {
+    sessionId: string
+    active: boolean
+  }) => {
+    mocks.tracePanel({ sessionId, active })
+    return (
+      <div data-testid="trace-panel" data-active={String(active)}>
+        Trace panel
+      </div>
+    )
+  },
 }))
 
 vi.mock("@/components/bioinfoflow/settings/llm-catalog-panel", () => ({
@@ -382,6 +400,7 @@ describe("AgentWorkbench v2", () => {
     mocks.setSelectedModel.mockReset()
     mocks.fetchRemoteConnections.mockReset()
     mocks.useStarterPrompts.mockReset()
+    mocks.tracePanel.mockReset()
     mocks.useStarterPrompts.mockReturnValue({
       prompts: ["Review the generated project fingerprint"],
       source: "cache",
@@ -770,6 +789,48 @@ describe("AgentWorkbench v2", () => {
       "blocks:1:Stable presentation text",
     )
     expect(screen.queryByText("emptyTitle")).not.toBeInTheDocument()
+  })
+
+  it("switches between sibling Conversation and Trace views without unmounting the composer", async () => {
+    const user = userEvent.setup()
+    mocks.useSession.mockReturnValue(
+      sessionState({
+        conversationView: conversationView([
+          {
+            type: "message",
+            id: "stable-message",
+            runId: "run-1",
+            createdAt: timestamp,
+            role: "assistant",
+            text: "Stable presentation text",
+            references: [],
+            streaming: false,
+          },
+        ]),
+      }),
+    )
+
+    renderWithProviders(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    const draft = screen.getByRole("textbox", { name: "Draft message" })
+    await user.clear(draft)
+    await user.type(draft, "Keep this exact draft")
+    await user.click(screen.getByRole("tab", { name: "views.trace" }))
+
+    expect(screen.getByTestId("trace-panel")).toHaveAttribute(
+      "data-active",
+      "true",
+    )
+    expect(screen.getByRole("textbox", { name: "Draft message" })).toHaveValue(
+      "Keep this exact draft",
+    )
+
+    await user.click(screen.getByRole("tab", { name: "views.conversation" }))
+    expect(screen.getByTestId("transcript")).toHaveTextContent(
+      "Stable presentation text",
+    )
   })
 
   it("derives the empty state from the stable conversation view", () => {

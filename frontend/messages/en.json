@@ -2547,6 +2547,10 @@
   },
   "agentWorkbench": {
     "newConversation": "New conversation",
+    "views": {
+      "conversation": "Conversation",
+      "trace": "Trace"
+    },
     "untitled": "Untitled conversation",
     "defaultModel": "Default model",
     "emptyTitle": "Ready when you are.",
@@ -2786,6 +2790,56 @@
     "scroll_to_bottom": "Jump to latest",
     "run_ended": "Ended {time}",
     "run_duration": "{duration}"
+  },
+  "agentTrace": {
+    "title": "Agent trace",
+    "session": "Session",
+    "turn": "Turn {index}",
+    "loading": "Loading trace",
+    "loadError": "Trace unavailable",
+    "detailError": "Detail unavailable",
+    "retry": "Retry",
+    "empty": "No trace events",
+    "unavailable": "Unavailable",
+    "contextFlow": {
+      "label": "Context flow",
+      "title": "Context Flow",
+      "cached": "{count} cached",
+      "snapshot": "Context snapshot {id}"
+    },
+    "timeline": {
+      "label": "Trace events",
+      "title": "Session Trace",
+      "events": "{count, plural, one {# event} other {# events}}"
+    },
+    "phase": {
+      "pre_call": "Before call",
+      "user_input": "User input",
+      "agent_work": "Agent work",
+      "final_response": "Final response"
+    },
+    "event": {
+      "openDetail": "Inspect {title}",
+      "select": "Select {title}",
+      "expand": "Expand {title}",
+      "collapse": "Collapse {title}"
+    },
+    "inspector": {
+      "label": "Event inspector",
+      "close": "Close inspector",
+      "tabs": {
+        "summary": "Summary",
+        "payload": "Payload",
+        "result": "Result",
+        "schema": "Schema",
+        "timing": "Timing"
+      },
+      "timing": {
+        "started": "Started",
+        "completed": "Completed",
+        "duration": "Duration"
+      }
+    }
   },
   "agentHistory": {
     "reasoning": {

@@ -21,6 +21,7 @@ import type {
 } from "@/components/bioinfoflow/agent/environment-selector"
 import { AgentContextPicker } from "@/components/bioinfoflow/agent/agent-context-picker"
 import { AgentModelConnectionDialog } from "@/components/bioinfoflow/agent/agent-model-connection-dialog"
+import { AgentTracePanel } from "@/components/bioinfoflow/agent/agent-trace-view"
 import { ConversationTranscript } from "@/components/bioinfoflow/agent/conversation-transcript"
 import { useAgentTranscriptArtifacts } from "@/components/bioinfoflow/agent/use-agent-transcript-artifacts"
 import {
@@ -33,6 +34,7 @@ import { ModelSelector } from "@/components/bioinfoflow/chat/model-selector"
 import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   useAgentSession,
   type AgentSessionState,
@@ -409,6 +411,9 @@ function SessionWorkbench({
   const [environmentUpdate, setEnvironmentUpdate] = useState<{
     selection: AgentEnvironmentSelection
   } | null>(null)
+  const [activeView, setActiveView] = useState<"conversation" | "trace">(
+    "conversation",
+  )
 
   useEffect(() => {
     setCancelHandler(interactive ? state.cancel : null)
@@ -500,71 +505,111 @@ function SessionWorkbench({
   return (
     <>
       <ConversationConnectionStatus connectionStatus={state.connectionStatus} />
-      {isEmpty ? (
-        <AgentEmptyState />
-      ) : conversationView ? (
-        <ConversationTranscript
-          className="flex-1"
-          view={conversationView}
-          onRespond={interactive ? state.respond : undefined}
-          onOpenRun={shared.onOpenRun}
-          onOpenArtifact={shared.onOpenArtifact}
-          supplementalArtifacts={supplementalArtifacts}
-        />
-      ) : state.isLoading ? (
-        <WorkbenchSkeleton />
-      ) : (
-        <ConversationViewUnavailable
-          message={state.error?.message}
-          onRetry={state.retry}
-        />
-      )}
-      {conversationView && conversationView.conversation.status !== "active" ? (
-        <p
-          role="status"
-          className="border-t border-border/70 bg-muted/25 px-4 py-2 text-center text-xs leading-5 text-muted-foreground"
+      <Tabs
+        value={activeView}
+        onValueChange={(value) =>
+          setActiveView(value as "conversation" | "trace")
+        }
+        className="min-h-0 flex-1 gap-0"
+      >
+        <div className="flex h-10 shrink-0 items-center border-b border-border/70 px-4">
+          <TabsList className="h-8 gap-4 rounded-none bg-transparent p-0">
+            <TabsTrigger
+              value="conversation"
+              className="h-8 rounded-none border-0 border-b-2 border-transparent px-0 text-xs font-medium text-muted-foreground shadow-none data-[state=active]:border-foreground/65 data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            >
+              {t("views.conversation")}
+            </TabsTrigger>
+            <TabsTrigger
+              value="trace"
+              className="h-8 rounded-none border-0 border-b-2 border-transparent px-0 text-xs font-medium text-muted-foreground shadow-none data-[state=active]:border-foreground/65 data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            >
+              {t("views.trace")}
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent
+          forceMount
+          value="conversation"
+          className="m-0 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
         >
-          {t(`readOnly.${conversationView.conversation.status}`)}
-        </p>
-      ) : null}
-      <AgentComposer
-        placement="dock"
-        permissionMode={conversationView?.composer.settings.permissionMode ?? "ask_dangerous"}
-        workspaceAccess={conversationView?.composer.settings.workspaceAccess ?? "read_write"}
-        activeRun={conversationView?.activeWork ?? null}
-        onSendMessage={sendMessage}
-        onSteer={steer}
-        onCancel={state.cancel}
-        onPermissionModeChange={state.updatePermissionMode}
-        contextInputs={shared.contextInputs}
-        onRemoveContextInput={shared.removeContextInput}
-        onContextSubmitted={() => shared.setContextInputs([])}
-        textareaRef={shared.textareaRef}
-        disabled={!interactive || conversationView?.conversation.status !== "active"}
-        contextControls={
-          <AgentContextPicker
-            projectId={conversationView?.conversation.projectId ?? null}
-            sessionId={sessionId}
-            ensureSession={shared.ensureSession}
-            onAdd={shared.addContextInput}
-            disabled={!interactive || conversationView?.conversation.status !== "active"}
-          />
-        }
-        modelControls={
-          shared.conversationModelControls ?? (
-            <SessionModelSelector
-              model={conversationView?.composer.settings.model ?? null}
-              disabled={!interactive || conversationView?.conversation.status !== "active"}
-              onChange={state.updateModel}
+          {isEmpty ? (
+            <AgentEmptyState />
+          ) : conversationView ? (
+            <ConversationTranscript
+              className="flex-1"
+              view={conversationView}
+              onRespond={interactive ? state.respond : undefined}
+              onOpenRun={shared.onOpenRun}
+              onOpenArtifact={shared.onOpenArtifact}
+              supplementalArtifacts={supplementalArtifacts}
             />
-          )
-        }
-        environmentTargets={shared.environmentTargets}
-        environmentSelection={requestedEnvironmentSelection}
-        effectiveEnvironmentSelection={confirmedEnvironmentSelection}
-        environmentSelectionPending={environmentSelectionPending}
-        onEnvironmentSelectionChange={updateLiveEnvironmentSelection}
-      />
+          ) : state.isLoading ? (
+            <WorkbenchSkeleton />
+          ) : (
+            <ConversationViewUnavailable
+              message={state.error?.message}
+              onRetry={state.retry}
+            />
+          )}
+          {conversationView &&
+          conversationView.conversation.status !== "active" ? (
+            <p
+              role="status"
+              className="border-t border-border/70 bg-muted/25 px-4 py-2 text-center text-xs leading-5 text-muted-foreground"
+            >
+              {t(`readOnly.${conversationView.conversation.status}`)}
+            </p>
+          ) : null}
+          <AgentComposer
+            placement="dock"
+            permissionMode={conversationView?.composer.settings.permissionMode ?? "ask_dangerous"}
+            workspaceAccess={conversationView?.composer.settings.workspaceAccess ?? "read_write"}
+            activeRun={conversationView?.activeWork ?? null}
+            onSendMessage={sendMessage}
+            onSteer={steer}
+            onCancel={state.cancel}
+            onPermissionModeChange={state.updatePermissionMode}
+            contextInputs={shared.contextInputs}
+            onRemoveContextInput={shared.removeContextInput}
+            onContextSubmitted={() => shared.setContextInputs([])}
+            textareaRef={shared.textareaRef}
+            disabled={!interactive || conversationView?.conversation.status !== "active"}
+            contextControls={
+              <AgentContextPicker
+                projectId={conversationView?.conversation.projectId ?? null}
+                sessionId={sessionId}
+                ensureSession={shared.ensureSession}
+                onAdd={shared.addContextInput}
+                disabled={!interactive || conversationView?.conversation.status !== "active"}
+              />
+            }
+            modelControls={
+              shared.conversationModelControls ?? (
+                <SessionModelSelector
+                  model={conversationView?.composer.settings.model ?? null}
+                  disabled={!interactive || conversationView?.conversation.status !== "active"}
+                  onChange={state.updateModel}
+                />
+              )
+            }
+            environmentTargets={shared.environmentTargets}
+            environmentSelection={requestedEnvironmentSelection}
+            effectiveEnvironmentSelection={confirmedEnvironmentSelection}
+            environmentSelectionPending={environmentSelectionPending}
+            onEnvironmentSelectionChange={updateLiveEnvironmentSelection}
+          />
+        </TabsContent>
+
+        <TabsContent
+          forceMount
+          value="trace"
+          className="m-0 min-h-0 flex-1 data-[state=inactive]:hidden"
+        >
+          <AgentTracePanel sessionId={sessionId} active={activeView === "trace"} />
+        </TabsContent>
+      </Tabs>
     </>
   )
 }
