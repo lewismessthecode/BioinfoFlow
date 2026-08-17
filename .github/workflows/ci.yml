@@ -171,6 +171,7 @@ jobs:
           smoke_root="$(mktemp -d "${RUNNER_TEMP}/bioinfoflow-sandbox-smoke.XXXXXX")"
           trap 'sudo rm -rf "$smoke_root"' EXIT
           mkdir -p "$smoke_root/projects/demo" "$smoke_root/state"
+          sudo chown -R 0:0 "$smoke_root/projects"
           docker run --rm \
             --name bioinfoflow-sandbox-ci-outer \
             -v /var/run/docker.sock:/var/run/docker.sock \
