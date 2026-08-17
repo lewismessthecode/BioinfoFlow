@@ -171,7 +171,7 @@ class SuccessfulModel:
 class FailingModel:
     async def invoke(self, invocation):
         raise ModelError(
-            category="provider_unavailable",
+            category="service_unavailable",
             message="Provider is unavailable.",
         )
         yield  # pragma: no cover - keep this an async generator

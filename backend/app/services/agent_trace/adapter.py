@@ -356,6 +356,17 @@ def _normalized_through_sequence(
 
 def _model_trace_detail(trace: AgentModelTrace) -> AgentTraceEventDetail:
     usage = trace.usage if isinstance(trace.usage, Mapping) else {}
+    usage_summary = {
+        key: value
+        for key in (
+            "input_tokens",
+            "output_tokens",
+            "cached_input_tokens",
+            "reasoning_tokens",
+            "total_tokens",
+        )
+        if (value := _optional_int(usage.get(key))) is not None
+    }
     return AgentTraceEventDetail(
         event_id=f"model:{trace.id}",
         summary={
@@ -364,11 +375,7 @@ def _model_trace_detail(trace: AgentModelTrace) -> AgentTraceEventDetail:
             "model": trace.model,
             "status": trace.status,
             "wire_protocol": trace.wire_protocol,
-            "input_tokens": _optional_int(usage.get("input_tokens")),
-            "output_tokens": _optional_int(usage.get("output_tokens")),
-            "cached_input_tokens": _optional_int(usage.get("cached_input_tokens")),
-            "reasoning_tokens": _optional_int(usage.get("reasoning_tokens")),
-            "total_tokens": _optional_int(usage.get("total_tokens")),
+            **usage_summary,
         },
         payload=trace.request_payload,
         result=trace.response_payload,

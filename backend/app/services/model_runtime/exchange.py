@@ -31,6 +31,42 @@ class ModelExchangeObserver(Protocol):
     ) -> None: ...
 
 
+class ModelExchangeLifecycle(ModelExchangeObserver, Protocol):
+    async def start(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+        iteration: int,
+        attempt: int,
+        context_through_sequence: int,
+        provider: str,
+        model: str,
+        wire_protocol: str,
+        context_snapshot: dict[str, Any],
+    ) -> str: ...
+
+    async def complete(
+        self,
+        exchange_id: str,
+        *,
+        usage: dict[str, Any] | None,
+        provider_response_id: str | None,
+        finish_reason: str | None,
+    ) -> None: ...
+
+    async def fail(
+        self,
+        exchange_id: str,
+        *,
+        code: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> None: ...
+
+    async def recover_after_failure(self) -> None: ...
+
+
 async def capture_exchange_best_effort(
     owner: object,
     operation: str,
@@ -78,6 +114,7 @@ async def _recover_capture_owner(owner: object) -> None:
 
 
 __all__ = [
+    "ModelExchangeLifecycle",
     "ModelExchangeObserver",
     "capture_exchange_best_effort",
     "notify_exchange_observer",

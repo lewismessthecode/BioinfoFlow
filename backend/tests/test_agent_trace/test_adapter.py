@@ -213,7 +213,6 @@ async def test_complete_harness_adapter_builds_session_trace_from_raw_sources(
         "input_tokens": 120,
         "output_tokens": 20,
         "cached_input_tokens": 80,
-        "reasoning_tokens": None,
         "total_tokens": 140,
     }
     assert model_detail.timing is not None
