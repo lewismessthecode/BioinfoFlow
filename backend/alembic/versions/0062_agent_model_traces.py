@@ -40,6 +40,8 @@ def upgrade() -> None:
         sa.Column("finish_reason", sa.String(length=100), nullable=True),
         sa.Column("error", sa.JSON(), nullable=True),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("request_prepared_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("first_byte_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", GUID(), nullable=False),
         sa.Column(

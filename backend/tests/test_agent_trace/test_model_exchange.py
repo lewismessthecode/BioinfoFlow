@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -15,13 +16,29 @@ from app.services.model_runtime.gateway import ModelGateway
 
 class RecordingObserver:
     def __init__(self) -> None:
-        self.requests: list[tuple[str, dict | list]] = []
+        self.requests: list[tuple[str, dict | list, datetime]] = []
+        self.first_bytes: list[tuple[str, datetime]] = []
         self.responses: list[tuple[str, dict | list]] = []
+        self.callbacks: list[str] = []
 
-    async def request_prepared(self, exchange_id: str, payload: dict | list) -> None:
-        self.requests.append((exchange_id, payload))
+    async def request_prepared(
+        self,
+        exchange_id: str,
+        payload: dict | list,
+        *,
+        prepared_at: datetime,
+    ) -> None:
+        self.callbacks.append("request_prepared")
+        self.requests.append((exchange_id, payload, prepared_at))
+
+    async def first_byte_received(
+        self, exchange_id: str, *, occurred_at: datetime
+    ) -> None:
+        self.callbacks.append("first_byte_received")
+        self.first_bytes.append((exchange_id, occurred_at))
 
     async def response_received(self, exchange_id: str, payload: dict | list) -> None:
+        self.callbacks.append("response_received")
         self.responses.append((exchange_id, payload))
 
 
@@ -81,16 +98,77 @@ async def test_gateway_observer_records_provider_payload_without_transport_secre
     assert events[-1] == CompletionMetadata(
         response_id="resp-1", finish_reason="completed"
     )
-    assert observer.requests == [
-        (
-            "trace-1",
-            {
-                "model": "gpt-5",
-                "input": [{"role": "user", "content": "hello"}],
-            },
-        )
-    ]
+    assert observer.requests[0][:2] == (
+        "trace-1",
+        {
+            "model": "gpt-5",
+            "input": [{"role": "user", "content": "hello"}],
+        },
+    )
+    assert observer.first_bytes[0][0] == "trace-1"
+    assert observer.requests[0][2] <= observer.first_bytes[0][1]
     assert observer.responses == [("trace-1", raw_response)]
+    assert observer.callbacks == [
+        "request_prepared",
+        "first_byte_received",
+        "response_received",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_gateway_records_first_stream_chunk_once() -> None:
+    chunks = [{"delta": "one"}, {"delta": "two"}]
+
+    class FakeCodec:
+        wire_protocol = "responses"
+
+        def encode_request(self, invocation: ModelInvocation) -> dict[str, Any]:
+            return {"model": invocation.target.model_name, "input": []}
+
+        async def decode_response(self, response: Any) -> AsyncIterator[object]:
+            assert [chunk async for chunk in response] == chunks
+            yield CompletionMetadata(response_id="resp-1", finish_reason="completed")
+
+    class FakeBackend:
+        async def invoke(self, wire_protocol, request, *, network_access):
+            async def stream():
+                for chunk in chunks:
+                    yield chunk
+
+            return stream()
+
+    observer = RecordingObserver()
+    gateway = ModelGateway(
+        backend=FakeBackend(), codecs=[FakeCodec()], exchange_observer=observer
+    )
+    invocation = ModelInvocation(
+        target=ModelTarget(
+            endpoint_id="endpoint-1",
+            provider_kind="unknown-provider",
+            model_name="gpt-5",
+            routed_model_name="gpt-5",
+            wire_protocol="responses",
+        ),
+        instructions="",
+        input_items=(),
+        tools=(),
+        stream=True,
+        max_output_tokens=128,
+        exchange_id="trace-1",
+    )
+
+    events = [event async for event in gateway.invoke(invocation)]
+
+    assert events[-1] == CompletionMetadata(
+        response_id="resp-1", finish_reason="completed"
+    )
+    assert observer.callbacks == [
+        "request_prepared",
+        "first_byte_received",
+        "response_received",
+    ]
+    assert len(observer.first_bytes) == 1
+    assert observer.responses == [("trace-1", {"stream": True, "chunks": chunks})]
 
 
 @pytest.mark.asyncio
@@ -116,8 +194,12 @@ async def test_gateway_observer_failure_does_not_change_model_result(caplog) -> 
         def __init__(self) -> None:
             self.callbacks: list[str] = []
 
-        async def request_prepared(self, exchange_id, payload) -> None:
+        async def request_prepared(self, exchange_id, payload, *, prepared_at) -> None:
             self.callbacks.append("request_prepared")
+            raise RuntimeError(secret)
+
+        async def first_byte_received(self, exchange_id, *, occurred_at) -> None:
+            self.callbacks.append("first_byte_received")
             raise RuntimeError(secret)
 
         async def response_received(self, exchange_id, payload) -> None:
@@ -151,5 +233,9 @@ async def test_gateway_observer_failure_does_not_change_model_result(caplog) -> 
     assert events[-1] == CompletionMetadata(
         response_id="resp-1", finish_reason="completed"
     )
-    assert observer.callbacks == ["request_prepared", "response_received"]
+    assert observer.callbacks == [
+        "request_prepared",
+        "first_byte_received",
+        "response_received",
+    ]
     assert secret not in caplog.text

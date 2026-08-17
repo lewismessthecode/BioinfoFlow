@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from app.repositories.agent_trace_repo import AgentModelTraceRepository
@@ -38,8 +39,29 @@ class ModelExchangeRecorder(ModelExchangeObserver):
         )
         return str(trace.id)
 
-    async def request_prepared(self, exchange_id: str, payload: dict | list) -> None:
-        await self.repository.record_request(exchange_id, payload)
+    async def request_prepared(
+        self,
+        exchange_id: str,
+        payload: dict | list,
+        *,
+        prepared_at: datetime,
+    ) -> None:
+        await self.repository.record_request(
+            exchange_id,
+            payload,
+            prepared_at=prepared_at,
+        )
+
+    async def first_byte_received(
+        self,
+        exchange_id: str,
+        *,
+        occurred_at: datetime,
+    ) -> None:
+        await self.repository.record_first_byte(
+            exchange_id,
+            occurred_at=occurred_at,
+        )
 
     async def response_received(self, exchange_id: str, payload: dict | list) -> None:
         await self.repository.record_response(exchange_id, payload)
