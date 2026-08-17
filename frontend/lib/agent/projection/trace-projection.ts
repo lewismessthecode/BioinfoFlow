@@ -98,7 +98,10 @@ function projectTimeline(
         throughSequence: snapshot.through_sequence,
         compacted: snapshot.compacted,
         inputTokens: snapshot.input_tokens,
+        outputTokens: snapshot.output_tokens,
         cachedInputTokens: snapshot.cached_input_tokens,
+        reasoningTokens: snapshot.reasoning_tokens,
+        totalTokens: snapshot.total_tokens,
         maxContextTokens: snapshot.max_context_tokens,
         composition: snapshot.composition.map((item) => ({
           category: knownCategory(item.category),
@@ -159,6 +162,8 @@ function projectDetail(detail: AgentTraceDetailContract): AgentTraceEventDetail 
     timing: detail.timing
       ? {
           startedAt: detail.timing.started_at,
+          requestPreparedAt: detail.timing.request_prepared_at,
+          firstByteAt: detail.timing.first_byte_at,
           completedAt: detail.timing.completed_at,
           durationMs: detail.timing.duration_ms,
         }

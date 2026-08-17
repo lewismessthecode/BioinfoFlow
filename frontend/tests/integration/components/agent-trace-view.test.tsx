@@ -1,6 +1,6 @@
-import { screen } from "@testing-library/react"
+import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentTraceView } from "@/components/bioinfoflow/agent/agent-trace-view"
 import type {
@@ -8,6 +8,12 @@ import type {
   AgentTraceViewModel,
 } from "@/lib/agent/trace-model/types"
 import { renderWithProviders } from "@/tests/test-utils"
+
+const mocks = vi.hoisted(() => ({ inspectorInline: true }))
+
+vi.mock("@/hooks/use-media-query", () => ({
+  useMediaQuery: () => mocks.inspectorInline,
+}))
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
@@ -73,7 +79,10 @@ const view: AgentTraceViewModel = {
       throughSequence: 2,
       compacted: false,
       inputTokens: null,
+      outputTokens: null,
       cachedInputTokens: null,
+      reasoningTokens: null,
+      totalTokens: null,
       maxContextTokens: null,
       composition: [
         { category: "system", characters: 120, tokens: null },
@@ -93,18 +102,24 @@ const detail: AgentTraceEventDetail = {
   },
   payload: {
     name: "nextflow_run",
-    arguments: { pipeline: "main.nf" },
+    arguments: { pipeline: "payload-only-secret.nf" },
   },
-  result: { run_id: "run-1", status: "completed" },
-  schema: { type: "object", required: ["pipeline"] },
+  result: { run_id: "result-only-secret", status: "completed" },
+  schema: { type: "schema-only-secret", required: ["pipeline"] },
   timing: {
     startedAt: "2026-08-17T08:00:01.000Z",
+    requestPreparedAt: "2026-08-17T08:00:01.100Z",
+    firstByteAt: "2026-08-17T08:00:01.300Z",
     completedAt: "2026-08-17T08:00:03.000Z",
     durationMs: 2000,
   },
 }
 
 describe("AgentTraceView", () => {
+  beforeEach(() => {
+    mocks.inspectorInline = true
+  })
+
   it("renders the compact Event Rail without fabricating usage or precise time", () => {
     renderWithProviders(
       <AgentTraceView view={view} onLoadDetail={vi.fn()} />,
@@ -136,11 +151,20 @@ describe("AgentTraceView", () => {
       expect(screen.getByRole("tab", { name: `inspector.tabs.${tab}` })).toBeInTheDocument()
     }
 
+    expect(screen.queryByText(/payload-only-secret/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/result-only-secret/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/schema-only-secret/)).not.toBeInTheDocument()
+
     await user.click(screen.getByRole("tab", { name: "inspector.tabs.payload" }))
     expect(screen.getByText(/"name": "nextflow_run"/)).toBeInTheDocument()
+    expect(screen.getByText(/payload-only-secret/)).toBeInTheDocument()
+    expect(screen.queryByText(/result-only-secret/)).not.toBeInTheDocument()
 
     await user.click(screen.getByRole("tab", { name: "inspector.tabs.timing" }))
-    expect(screen.getByText("2026-08-17T08:00:01.000Z")).toBeInTheDocument()
+    expect(screen.queryByText(/payload-only-secret/)).not.toBeInTheDocument()
+    expect(screen.getByText("2026-08-17T08:00:01.100Z")).toBeInTheDocument()
+    expect(screen.getByText("2026-08-17T08:00:01.300Z")).toBeInTheDocument()
+    expect(screen.getByText('units.durationMs:{"value":2000}')).toBeInTheDocument()
   })
 
   it("weights the append flow by request usage and moves its playhead by trace sequence", async () => {
@@ -188,7 +212,10 @@ describe("AgentTraceView", () => {
           sequence: 3,
           throughSequence: 2,
           inputTokens: 100,
+          outputTokens: 20,
           cachedInputTokens: 50,
+          reasoningTokens: 4,
+          totalTokens: 120,
           maxContextTokens: 1000,
         },
         {
@@ -197,7 +224,10 @@ describe("AgentTraceView", () => {
           sequence: 7,
           throughSequence: 4,
           inputTokens: 300,
+          outputTokens: 40,
           cachedInputTokens: 150,
+          reasoningTokens: 8,
+          totalTokens: 340,
           maxContextTokens: 1000,
         },
         {
@@ -206,7 +236,10 @@ describe("AgentTraceView", () => {
           sequence: 12,
           throughSequence: 9,
           inputTokens: null,
+          outputTokens: null,
           cachedInputTokens: null,
+          reasoningTokens: null,
+          totalTokens: null,
           maxContextTokens: null,
           composition: [
             { category: "system", characters: 400, tokens: null },
@@ -240,12 +273,146 @@ describe("AgentTraceView", () => {
         name: "event.select:{\"title\":\"Assistant\"}",
       }),
     )
-    expect(screen.getByText("100 / 1K")).toBeInTheDocument()
+    expect(screen.getByText('contextFlow.usage.input:{"count":"100"}')).toBeInTheDocument()
+    expect(screen.getByText('contextFlow.usage.output:{"count":"20"}')).toBeInTheDocument()
     expect(screen.getByText('contextFlow.cached:{"count":"50"}')).toBeInTheDocument()
+    expect(screen.getByText('contextFlow.usage.reasoning:{"count":"4"}')).toBeInTheDocument()
+    expect(screen.getByText('contextFlow.usage.total:{"count":"120"}')).toBeInTheDocument()
+    expect(screen.getByText('contextFlow.capacity:{"count":"units.thousand:{\\"value\\":\\"1\\"}"}')).toBeInTheDocument()
     expect(early).toHaveAttribute("aria-current", "true")
 
     await user.click(late)
-    expect(screen.getByText("300 / 1K")).toBeInTheDocument()
+    expect(screen.getByText('contextFlow.usage.input:{"count":"300"}')).toBeInTheDocument()
     expect(late).toHaveAttribute("aria-current", "true")
+  })
+
+  it("localizes finite category and status labels while preserving unknown status text", () => {
+    const localizedView: AgentTraceViewModel = {
+      ...view,
+      turns: [
+        {
+          ...view.turns[0],
+          events: [
+            view.turns[0].events[1],
+            {
+              ...view.turns[0].events[0],
+              id: "entry:user-unknown",
+              status: "waiting_on_cluster",
+              sequence: 3,
+            },
+          ],
+        },
+      ],
+    }
+
+    renderWithProviders(
+      <AgentTraceView view={localizedView} onLoadDetail={vi.fn()} />,
+    )
+
+    expect(screen.getByText("category.tool")).toBeInTheDocument()
+    expect(screen.getByText("status.completed")).toBeInTheDocument()
+    expect(screen.getByText("waiting_on_cluster")).toBeInTheDocument()
+  })
+
+  it("uses one safe narrow-screen inspector close action", async () => {
+    mocks.inspectorInline = false
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AgentTraceView view={view} onLoadDetail={vi.fn().mockResolvedValue(detail)} />,
+    )
+
+    await user.click(
+      screen.getByRole("button", {
+        name: 'event.openDetail:{"title":"nextflow_run"}',
+      }),
+    )
+
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog).toHaveClass("overscroll-contain")
+    expect(dialog.className).toContain("safe-area-inset")
+    expect(
+      screen.getAllByRole("button", { name: "inspector.close" }),
+    ).toHaveLength(1)
+  })
+
+  it("retries a failed detail request from the inspector", async () => {
+    const user = userEvent.setup()
+    const loadDetail = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(detail)
+    renderWithProviders(
+      <AgentTraceView view={view} onLoadDetail={loadDetail} />,
+    )
+
+    await user.click(
+      screen.getByRole("button", {
+        name: 'event.openDetail:{"title":"nextflow_run"}',
+      }),
+    )
+    expect(await screen.findByRole("alert")).toHaveTextContent("detailError")
+
+    await user.click(screen.getByRole("button", { name: "retry" }))
+
+    expect(loadDetail).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument())
+  })
+
+  it("allows a long single-line event to expand without changing weighted layout", () => {
+    const longSummary = `nextflow_run(${"x".repeat(180)})`
+    const longView: AgentTraceViewModel = {
+      ...view,
+      turns: [
+        {
+          ...view.turns[0],
+          events: [
+            {
+              ...view.turns[0].events[1],
+              summary: longSummary,
+              firstLine: longSummary,
+            },
+          ],
+        },
+      ],
+    }
+
+    renderWithProviders(
+      <AgentTraceView view={longView} onLoadDetail={vi.fn()} />,
+    )
+
+    expect(
+      screen.getByRole("button", {
+        name: 'event.expand:{"title":"nextflow_run"}',
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: 'turn:{"index":1}' })).toHaveClass(
+      "[content-visibility:auto]",
+    )
+  })
+
+  it("marks technical trace values as non-translatable", async () => {
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AgentTraceView view={view} onLoadDetail={vi.fn().mockResolvedValue(detail)} />,
+    )
+
+    expect(screen.getByText("category.tool")).toHaveAttribute("translate", "no")
+    expect(
+      screen
+        .getAllByText("status.completed")
+        .every((item) => item.closest("span[translate='no']") !== null),
+    ).toBe(true)
+    await user.click(
+      screen.getByRole("button", {
+        name: 'event.openDetail:{"title":"nextflow_run"}',
+      }),
+    )
+    await user.click(screen.getByRole("tab", { name: "inspector.tabs.payload" }))
+
+    expect(screen.getByText("entry:tool-1")).toHaveAttribute("translate", "no")
+    expect(screen.getByText(/payload-only-secret/)).toHaveAttribute(
+      "translate",
+      "no",
+    )
   })
 })

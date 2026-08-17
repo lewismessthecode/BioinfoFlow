@@ -2795,7 +2795,7 @@
     "title": "Agent trace",
     "session": "Session",
     "turn": "Turn {index}",
-    "loading": "Loading trace",
+    "loading": "Loading trace…",
     "loadError": "Trace unavailable",
     "detailError": "Detail unavailable",
     "retry": "Retry",
@@ -2805,7 +2805,39 @@
       "label": "Context flow",
       "title": "Context Flow",
       "cached": "{count} cached",
+      "capacity": "{count} context",
+      "usage": {
+        "input": "{count} in",
+        "output": "{count} out",
+        "reasoning": "{count} reasoning",
+        "total": "{count} total"
+      },
       "snapshot": "Context snapshot {id}"
+    },
+    "category": {
+      "system": "System",
+      "user": "User",
+      "context": "Context",
+      "assistant": "Assistant",
+      "tool": "Tool",
+      "unknown": "Unknown"
+    },
+    "status": {
+      "completed": "Completed",
+      "ready": "Ready",
+      "received": "Received",
+      "success": "Success",
+      "running": "Running",
+      "pending": "Pending",
+      "queued": "Queued",
+      "failed": "Failed",
+      "error": "Error",
+      "cancelled": "Cancelled",
+      "blocked": "Blocked"
+    },
+    "units": {
+      "thousand": "{value}K",
+      "durationMs": "{value} ms"
     },
     "timeline": {
       "label": "Trace events",
@@ -2836,6 +2868,8 @@
       },
       "timing": {
         "started": "Started",
+        "requestPrepared": "Request",
+        "firstByte": "First byte",
         "completed": "Completed",
         "duration": "Duration"
       }
