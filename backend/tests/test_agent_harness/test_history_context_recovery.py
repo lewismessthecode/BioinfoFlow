@@ -235,7 +235,7 @@ def test_context_keeps_settings_updates_when_compaction_covers_older_history() -
     )
 
 
-def test_context_preserves_tool_error_and_interaction_response() -> None:
+def test_context_preserves_tool_error_without_replaying_interaction_response() -> None:
     entries = [
         _entry(
             1,
@@ -276,9 +276,77 @@ def test_context_preserves_tool_error_and_interaction_response() -> None:
     assert context.input_items == (
         ToolCallPart(call_id="bash-1", name="bash", arguments={"command": "false"}),
         ToolResultPart(call_id="bash-1", output="exit status 1", is_error=True),
-        TextPart(
-            'User interaction response: {"answers": {"choice": "continue"}, '
-            '"type": "ask_user"}'
+    )
+
+
+def test_context_keeps_ask_user_tool_round_adjacent_for_chat_completions() -> None:
+    entries = [
+        _entry(
+            1,
+            "message",
+            _tool_call_message(
+                {
+                    "call_id": "ask-1",
+                    "name": "ask_user",
+                    "arguments": {
+                        "questions": [
+                            {
+                                "header": "Choice",
+                                "question": "Continue?",
+                                "options": [
+                                    {"label": "Yes", "description": "Continue"},
+                                    {"label": "No", "description": "Stop"},
+                                ],
+                            }
+                        ]
+                    },
+                }
+            ),
+        ),
+        _entry(
+            2,
+            "interaction_response",
+            {
+                "interaction_id": "tool:ask-1",
+                "response": {
+                    "type": "ask_user",
+                    "answers": {"Choice": "Yes"},
+                },
+            },
+        ),
+        _entry(
+            3,
+            "message",
+            _tool_result_message(
+                "ask-1",
+                '{"answers":{"Choice":"Yes"}}',
+            ),
+        ),
+    ]
+
+    context = ContextBuilder().build(prompt_snapshot="Stable", entries=entries)
+
+    assert context.input_items == (
+        ToolCallPart(
+            call_id="ask-1",
+            name="ask_user",
+            arguments={
+                "questions": [
+                    {
+                        "header": "Choice",
+                        "question": "Continue?",
+                        "options": [
+                            {"label": "Yes", "description": "Continue"},
+                            {"label": "No", "description": "Stop"},
+                        ],
+                    }
+                ]
+            },
+        ),
+        ToolResultPart(
+            call_id="ask-1",
+            output='{"answers":{"Choice":"Yes"}}',
+            is_error=False,
         ),
     )
 

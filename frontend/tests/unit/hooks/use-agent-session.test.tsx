@@ -234,19 +234,26 @@ describe("useAgentSession", () => {
     expect(result.current.error?.message).toBe(
       "Agent event stream disconnected",
     )
+    expect(mocks.unsubscribe).toHaveBeenCalledOnce()
 
     await act(async () => {
       resolveRecovery(snapshot())
       await Promise.resolve()
       await Promise.resolve()
-      subscription.onEvent({ type: "snapshot", snapshot: snapshot() })
-      subscription.onConnectionChange("connected")
+    })
+    await waitFor(() =>
+      expect(mocks.subscribeAgentEvents).toHaveBeenCalledTimes(2),
+    )
+    const recoveredSubscription = mocks.subscribeAgentEvents.mock.calls[1][0]
+    act(() => {
+      recoveredSubscription.onEvent({ type: "snapshot", snapshot: snapshot() })
+      recoveredSubscription.onConnectionChange("connected")
     })
     expect(result.current.connectionStatus).toBe("connected")
     expect(result.current.error).toBeNull()
   })
 
-  it("coalesces concurrent snapshot recovery requests", async () => {
+  it("ignores duplicate callbacks from a disposed event stream", async () => {
     let resolveRecovery!: (value: SessionSnapshot) => void
     mocks.getAgentSnapshot
       .mockResolvedValueOnce(snapshot("Initial"))
@@ -255,7 +262,6 @@ describe("useAgentSession", () => {
           resolveRecovery = resolve
         }),
       )
-      .mockResolvedValueOnce(snapshot("Coalesced recovery"))
 
     const { result } = renderHook(() => useAgentSession("session-1"))
     await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
@@ -275,10 +281,34 @@ describe("useAgentSession", () => {
       await Promise.resolve()
     })
 
-    await waitFor(() => expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(3))
+    expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(2)
     await waitFor(() =>
-      expect(result.current.session?.title).toBe("Coalesced recovery"),
+      expect(mocks.subscribeAgentEvents).toHaveBeenCalledTimes(2),
     )
+    await waitFor(() =>
+      expect(result.current.session?.title).toBe("First recovery"),
+    )
+  })
+
+  it("does not reopen a failed stream when snapshot recovery also fails", async () => {
+    mocks.getAgentSnapshot
+      .mockResolvedValueOnce(snapshot("Initial"))
+      .mockRejectedValueOnce(new Error("Recovery unavailable"))
+
+    const { result } = renderHook(() => useAgentSession("session-1"))
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalledOnce())
+    const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
+
+    act(() => {
+      subscription.onError(new Event("error"))
+    })
+
+    await waitFor(() =>
+      expect(result.current.error?.message).toBe("Recovery unavailable"),
+    )
+    expect(mocks.unsubscribe).toHaveBeenCalledOnce()
+    expect(mocks.subscribeAgentEvents).toHaveBeenCalledOnce()
+    expect(result.current.connectionStatus).toBe("disconnected")
   })
 
   it("applies live events and refetches when a delta cannot be reconciled", async () => {

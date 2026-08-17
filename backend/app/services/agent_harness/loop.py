@@ -237,12 +237,13 @@ class AgentLoop:
                             cancellation=cancellation,
                         )
                         if result.status != "completed":
-                            await self._fail(
-                                run_id,
-                                "invalid_plan",
-                                result.error or "Agent produced an invalid plan.",
+                            control_input.extend(
+                                _private_control_error_exchange(
+                                    call,
+                                    result.error or "Agent produced an invalid plan.",
+                                )
                             )
-                            return
+                            continue
                         plan = await self.repository.commit_plan(
                             str(session.id),
                             run_id=run_id,
@@ -281,14 +282,19 @@ class AgentLoop:
                 if control_input:
                     current = await self.repository.get_run(run_id)
                     checkpoint = dict(current.checkpoint or {}) if current else {}
+                    history_revision = (
+                        assistant.sequence
+                        if assistant is not None
+                        else last_control_sequence
+                    )
                     checkpoint.update(
                         {
                             "continuation": None,
                             "control_input": control_input,
-                            "history_revision": (
-                                assistant.sequence
-                                if assistant is not None
-                                else last_control_sequence
+                            **(
+                                {"history_revision": history_revision}
+                                if history_revision is not None
+                                else {}
                             ),
                         }
                     )
@@ -1653,6 +1659,31 @@ def _private_control_exchange(
             "call_id": call.call_id,
             "output": acknowledgment,
             "is_error": False,
+        },
+    ]
+
+
+def _private_control_error_exchange(
+    call: ToolCall,
+    error: str,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "type": "tool_call",
+            "call_id": call.call_id,
+            "name": call.name,
+            "arguments": dict(call.arguments),
+        },
+        {
+            "type": "tool_result",
+            "call_id": call.call_id,
+            "output": json.dumps(
+                {"error": error},
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            ),
+            "is_error": True,
         },
     ]
 

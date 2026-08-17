@@ -301,7 +301,7 @@ class SeatbeltAdapter:
             "sandbox-exec",
             "-p",
             profile,
-            "bash",
+            "/bin/bash",
             "--noprofile",
             "--norc",
             "-c",

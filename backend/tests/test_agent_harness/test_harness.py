@@ -421,6 +421,82 @@ async def test_real_update_plan_tool_persists_plan_without_public_tool_messages(
     assert _latest_run(snapshot).status == "completed"
 
 
+@pytest.mark.asyncio
+async def test_invalid_update_plan_is_returned_privately_for_model_correction(
+    harness_db,
+    tmp_path,
+) -> None:
+    model = ScriptedModel(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="plan-invalid",
+                name="update_plan",
+                arguments_delta='{"plan":[{"status":"in_progress"}]}',
+            ),
+            CompletionMetadata(
+                response_id="response-plan-invalid",
+                finish_reason="tool_calls",
+            ),
+        ),
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="plan-corrected",
+                name="update_plan",
+                arguments_delta=(
+                    '{"plan":[{"step":"Finish the task",'
+                    '"status":"completed"}]}'
+                ),
+            ),
+            CompletionMetadata(
+                response_id="response-plan-corrected",
+                finish_reason="tool_calls",
+            ),
+        ),
+        (
+            TextDelta(text="Done.", phase="final_answer"),
+            CompletionMetadata(response_id="response-final", finish_reason="stop"),
+        ),
+    )
+    harness = AgentHarness.for_database(
+        harness_db,
+        model_gateway=model,
+        workspace_factory=lambda _session: _workspace(tmp_path),
+    )
+    opened = await harness.open_session(_open_request())
+
+    await harness.dispatch(
+        str(opened.session.id),
+        _message("repair-plan", "Complete the task."),
+    )
+    snapshot = await harness.snapshot(str(opened.session.id))
+
+    assert _latest_run(snapshot).status == "completed"
+    plans = [entry for entry in snapshot.entries if entry.type == "plan"]
+    assert len(plans) == 1
+    assert plans[0].payload.items[0].text == "Finish the task"
+    correction_input = [
+        item
+        for item in model.invocations[1].input_items
+        if isinstance(item, (ToolCallPart, ToolResultPart))
+        and item.call_id == "plan-invalid"
+    ]
+    assert correction_input == [
+        ToolCallPart(
+            call_id="plan-invalid",
+            name="update_plan",
+            arguments={"plan": [{"status": "in_progress"}]},
+        ),
+        ToolResultPart(
+            call_id="plan-invalid",
+            output='{"error":"missing required tool arguments: step"}',
+            is_error=True,
+        ),
+    ]
+    assert _text_values(snapshot.entries[-1].payload) == ["Done."]
+
+
 class _CancelSerialBatchTool:
     spec = ToolSpec(
         name="cancel_serial_batch",
