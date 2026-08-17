@@ -2547,6 +2547,10 @@
   },
   "agentWorkbench": {
     "newConversation": "新对话",
+    "views": {
+      "conversation": "对话",
+      "trace": "轨迹"
+    },
     "untitled": "未命名对话",
     "defaultModel": "默认模型",
     "emptyTitle": "准备好了，随时开始",
@@ -2786,6 +2790,56 @@
     "scroll_to_bottom": "回到最新内容",
     "run_ended": "结束于 {time}",
     "run_duration": "{duration}"
+  },
+  "agentTrace": {
+    "title": "Agent 轨迹",
+    "session": "Session",
+    "turn": "Turn {index}",
+    "loading": "正在加载轨迹",
+    "loadError": "无法加载轨迹",
+    "detailError": "无法加载详情",
+    "retry": "重试",
+    "empty": "暂无轨迹事件",
+    "unavailable": "不可用",
+    "contextFlow": {
+      "label": "上下文流",
+      "title": "上下文流",
+      "cached": "{count} 已缓存",
+      "snapshot": "上下文快照 {id}"
+    },
+    "timeline": {
+      "label": "轨迹事件",
+      "title": "Session 轨迹",
+      "events": "{count} 个事件"
+    },
+    "phase": {
+      "pre_call": "调用前",
+      "user_input": "用户输入",
+      "agent_work": "Agent 工作",
+      "final_response": "最终响应"
+    },
+    "event": {
+      "openDetail": "检查 {title}",
+      "select": "选择 {title}",
+      "expand": "展开 {title}",
+      "collapse": "收起 {title}"
+    },
+    "inspector": {
+      "label": "事件检查器",
+      "close": "关闭检查器",
+      "tabs": {
+        "summary": "Summary",
+        "payload": "Payload",
+        "result": "Result",
+        "schema": "Schema",
+        "timing": "Timing"
+      },
+      "timing": {
+        "started": "开始",
+        "completed": "完成",
+        "duration": "耗时"
+      }
+    }
   },
   "agentHistory": {
     "reasoning": {
