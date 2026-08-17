@@ -186,7 +186,7 @@ type ProjectRecord = {
 
 type ConversationRecord = {
   id: string
-  project_id: string
+  project_id: string | null
   title: string
   pinned?: boolean
 }
@@ -317,7 +317,14 @@ describe("WorkspaceShell sidebar integration", () => {
       if (typeof path === "string" && path.startsWith("/projects/") && options?.method === "DELETE") {
         const projectId = path.replace("/projects/", "")
         projectsState = projectsState.filter((project) => project.id !== projectId)
+        const preservedConversations = (conversationsState.get(projectId) ?? []).map(
+          (conversation) => ({ ...conversation, project_id: null }),
+        )
         conversationsState.delete(projectId)
+        conversationsState.set(defaultProject.id, [
+          ...(conversationsState.get(defaultProject.id) ?? []),
+          ...preservedConversations,
+        ])
         return { data: null, meta: undefined }
       }
 
@@ -381,6 +388,27 @@ describe("WorkspaceShell sidebar integration", () => {
     await waitFor(() =>
       expect(screen.getByTestId("active-project-name")).toHaveTextContent("Gamma"),
     )
+  })
+
+  it("keeps preserved conversations visible when their project is deleted and after remount", async () => {
+    const { unmount } = renderSidebar()
+
+    const betaHeader = (await screen.findByRole("button", { name: "Beta" })).parentElement
+    expect(betaHeader).not.toBeNull()
+    fireEvent.click(within(betaHeader as HTMLElement).getByRole("button", { name: "common.actions" }))
+    fireEvent.click(within(betaHeader as HTMLElement).getByRole("button", { name: "common.delete" }))
+    const deleteDialog = await screen.findByTestId("delete-confirm-dialog")
+    fireEvent.click(within(deleteDialog).getByRole("button", { name: "common.delete" }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Beta" })).not.toBeInTheDocument(),
+    )
+    expect(await screen.findByRole("link", { name: "Beta thread" })).toBeInTheDocument()
+
+    unmount()
+    renderSidebar()
+
+    expect(await screen.findByRole("link", { name: "Beta thread" })).toBeInTheDocument()
   })
 
   it("selects a conversation from the sidebar and syncs project context before navigating", async () => {
