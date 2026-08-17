@@ -164,6 +164,9 @@ class AgentModelResolver:
             "wire_protocol": wire_protocol,
             "target_revision": target.resolved_target_revision(),
             "network_access": target.network_access,
+            "context_window_tokens": (
+                int(model.context_length) if model.context_length is not None else None
+            ),
         }
         if profile_id:
             result["profile_id"] = profile_id
@@ -206,6 +209,15 @@ class AgentModelResolver:
             ).as_dict()
         if isinstance(snapshot.get("profile_id"), str):
             resolved["profile_id"] = snapshot["profile_id"]
+        frozen_context_window = snapshot.get("context_window_tokens")
+        if (
+            isinstance(frozen_context_window, int)
+            and not isinstance(frozen_context_window, bool)
+            and frozen_context_window > 0
+        ):
+            # Session snapshots freeze model policy. Refresh credentials and target
+            # routing, but do not silently change the context scale mid-session.
+            resolved["context_window_tokens"] = frozen_context_window
         return resolved
 
     async def _provider_model(

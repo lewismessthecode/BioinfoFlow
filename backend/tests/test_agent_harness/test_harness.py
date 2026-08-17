@@ -445,8 +445,7 @@ async def test_invalid_update_plan_is_returned_privately_for_model_correction(
                 call_id="plan-corrected",
                 name="update_plan",
                 arguments_delta=(
-                    '{"plan":[{"step":"Finish the task",'
-                    '"status":"completed"}]}'
+                    '{"plan":[{"step":"Finish the task","status":"completed"}]}'
                 ),
             ),
             CompletionMetadata(
@@ -1027,6 +1026,9 @@ async def test_tool_call_result_is_committed_before_model_continues(
     ], _latest_run(snapshot).error
     public_result = _tool_result(snapshot.entries[2].payload)
     assert public_result.call_id == "read-1"
+    assert public_result.started_at is not None
+    assert public_result.completed_at is not None
+    assert public_result.completed_at >= public_result.started_at
     assert public_result.summary is not None
     assert [detail.kind for detail in public_result.public_details] == ["output"]
     assert "alpha" not in str(public_result.model_dump(mode="json"))

@@ -335,6 +335,7 @@ class ModelInvocation:
     max_output_tokens: int
     reasoning: ReasoningRequest = field(default_factory=ReasoningRequest)
     continuation: ResponsesContinuation | None = None
+    exchange_id: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)

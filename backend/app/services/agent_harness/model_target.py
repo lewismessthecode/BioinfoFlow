@@ -81,6 +81,9 @@ def private_model_snapshot(resolved: Mapping[str, Any]) -> dict[str, Any]:
         "runtime_strategy": runtime_strategy_from_mapping(
             resolved.get("runtime_strategy")
         ).as_dict(),
+        "context_window_tokens": _optional_positive_int(
+            resolved.get("context_window_tokens")
+        ),
         "target": {
             "endpoint_id": resolved.get("endpoint_id"),
             "provider_kind": resolved.get("provider"),
@@ -111,6 +114,14 @@ def _optional(value: Mapping[str, Any], *names: str) -> str | None:
         if isinstance(item, str) and item:
             return item
     return None
+
+
+def _optional_positive_int(value: Any) -> int | None:
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0
+        else None
+    )
 
 
 __all__ = [

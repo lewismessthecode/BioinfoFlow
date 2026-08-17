@@ -7,6 +7,7 @@ from app.models.agent_harness import (
     AgentHarnessRun,
     AgentHarnessSession,
 )
+from app.models.agent_trace import AgentModelTrace
 from app.models.agent_token import AgentToken
 from app.models.audit_log import AuditLog
 from app.models.batch import Batch, BatchRun, BatchStatus
@@ -64,6 +65,7 @@ __all__ = [
     "AgentHarnessEntry",
     "AgentHarnessAttachment",
     "AgentHarnessArtifact",
+    "AgentModelTrace",
     "LlmProvider",
     "LlmProviderCredential",
     "LlmCredentialSource",
