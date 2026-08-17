@@ -19,7 +19,7 @@ export type TraceTransportTurn = {
   completed_at: string | null
 }
 
-export type TraceTransportComposition = {
+type TraceTransportComposition = {
   category: string
   characters: number
   tokens: number | null
