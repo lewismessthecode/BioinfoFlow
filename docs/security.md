@@ -217,13 +217,14 @@ operations go through the normal `bif` CLI and HTTP APIs instead of privileged
 in-process model tools.
 
 Local Bash requires an operating-system sandbox and fails closed. The pinned
-DeepSeek local provider selects Bubblewrap or Landlock on Linux and Seatbelt on
-macOS. Its contract protects filesystem integrity, not confidentiality: files
-visible to the execution identity may be read except BioinfoFlow state/auth and
-request capability roots, process metadata such as `/proc`, and credential
-configuration paths, while writes are restricted to the canonical
-workspace in confined modes. Network and process visibility are not sandbox
-properties. Compose defines a narrower execution identity from the
+DeepSeek local provider uses Bubblewrap on Linux and Seatbelt on macOS. Its
+Landlock fallback can restrict writes but cannot hide protected capability paths
+such as `/proc`, so BioinfoFlow rejects that incomplete boundary. The contract
+protects filesystem integrity, not confidentiality: files visible to the
+execution identity may be read except BioinfoFlow state/auth and request
+capability roots, process metadata, and credential configuration paths, while
+writes are restricted to the canonical workspace in confined modes. Network and
+process visibility are not sandbox properties. Compose defines a narrower execution identity from the
 backend image plus explicit public data roots, then adds a disposable
 socket-free container around every local Bash call so Docker authority and
 control-plane credentials are not ambient.
