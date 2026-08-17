@@ -113,6 +113,8 @@ export function useAgentSession(sessionId: string): AgentSessionState {
     let snapshotRequest: Promise<boolean> | null = null
     let snapshotRefreshQueued = false
     let sessionMissing = false
+    let streamRecoveryPending = false
+    let streamRevision = 0
     let viewFrame: number | null = null
     const generation = generationRef.current + 1
 
@@ -152,6 +154,13 @@ export function useAgentSession(sessionId: string): AgentSessionState {
       })
     }
 
+    const disposeStream = () => {
+      streamRevision += 1
+      const dispose = unsubscribe
+      unsubscribe = null
+      dispose?.()
+    }
+
     const refreshSnapshot = (): Promise<boolean> => {
       if (!active || sessionMissing) return Promise.resolve(false)
       if (snapshotRequest) {
@@ -166,6 +175,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
           if (replaced && unsubscribe === null) {
             unsubscribe = subscribe()
           }
+          if (replaced) streamRecoveryPending = false
           return replaced
         })
         .catch((caught) => {
@@ -173,8 +183,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
           if (isMissingSessionError(caught)) {
             sessionMissing = true
             snapshotRefreshQueued = false
-            unsubscribe?.()
-            unsubscribe = null
+            disposeStream()
             setView((current) => ({
               ...(current.sessionId === sessionId
                 ? current
@@ -193,7 +202,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
             error: asError(caught, "Unable to load agent session"),
             isLoading: false,
           }))
-          if (unsubscribe === null) {
+          if (unsubscribe === null && !streamRecoveryPending) {
             unsubscribe = subscribe()
           }
           return false
@@ -215,12 +224,25 @@ export function useAgentSession(sessionId: string): AgentSessionState {
       ) {
         return null
       }
+      const revision = streamRevision + 1
+      streamRevision = revision
+      const isCurrentStream = () =>
+        active &&
+        !sessionMissing &&
+        generationRef.current === generation &&
+        streamRevision === revision
       return subscribeAgentEvents({
         sessionId,
-        onEvent,
-        onDiagnostic,
+        onEvent: (event) => {
+          if (!isCurrentStream()) return
+          onEvent(event)
+        },
+        onDiagnostic: (diagnostic) => {
+          if (!isCurrentStream()) return
+          onDiagnostic(diagnostic)
+        },
         onConnectionChange: (status) => {
-          if (!active || sessionMissing) return
+          if (!isCurrentStream()) return
           setView((current) => ({
             ...(current.sessionId === sessionId
               ? current
@@ -229,7 +251,9 @@ export function useAgentSession(sessionId: string): AgentSessionState {
           }))
         },
         onError: () => {
-          if (!active || sessionMissing) return
+          if (!isCurrentStream()) return
+          streamRecoveryPending = true
+          disposeStream()
           setView((current) => ({
             ...(current.sessionId === sessionId
               ? current
@@ -291,8 +315,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
       active = false
       cancelViewFrame()
       if (generationRef.current === generation) generationRef.current += 1
-      unsubscribe?.()
-      unsubscribe = null
+      disposeStream()
     }
   }, [replaceSnapshot, retryRevision, sessionId])
 

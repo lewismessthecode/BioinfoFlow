@@ -120,17 +120,6 @@ def _non_message_parts(entry_type: str, payload: Mapping[str, Any]) -> list[Inpu
                     )
                 )
             ]
-    if entry_type == "interaction_response":
-        response = payload.get("response")
-        if response is not None:
-            return [
-                TextPart(
-                    "User interaction response: "
-                    + json.dumps(
-                        response, ensure_ascii=False, sort_keys=True, default=str
-                    )
-                )
-            ]
     if entry_type == "notice":
         message = payload.get("message")
         if isinstance(message, str) and message:

@@ -207,6 +207,28 @@ def test_seatbelt_profile_allows_only_workspace_and_runtime_reads(
     assert f'(require-not (subpath "{Path.home() / ".ssh"}"))' not in profile
 
 
+def test_seatbelt_bootstraps_commands_with_the_system_bash(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    argv = SeatbeltAdapter().build_argv(
+        SandboxSpec(
+            command="/bin/echo ready",
+            cwd=workspace,
+            read_roots=[workspace],
+            write_roots=[workspace],
+        )
+    )
+
+    assert argv[-5:] == [
+        "/bin/bash",
+        "--noprofile",
+        "--norc",
+        "-c",
+        "/bin/echo ready",
+    ]
+
+
 @pytest.mark.skipif(
     platform.system() != "Darwin" or shutil.which("sandbox-exec") is None,
     reason="real Seatbelt verification requires macOS sandbox-exec",
