@@ -132,12 +132,62 @@ describe("ConversationTranscript", () => {
     const onOpenArtifact = vi.fn()
     renderWithProviders(
       <ConversationTranscript
-        view={planView}
+        view={{
+          ...planView,
+          transcript: [
+            {
+              type: "message",
+              id: "assistant-created",
+              runId: "run-created",
+              createdAt: "2026-08-16T08:00:04.000Z",
+              role: "assistant",
+              text: "Created the report.",
+              references: [],
+              streaming: false,
+            },
+            {
+              type: "message",
+              id: "user-later",
+              runId: "run-later",
+              createdAt: "2026-08-16T08:05:00.000Z",
+              role: "user",
+              text: "Explain the result.",
+              references: [],
+              streaming: false,
+            },
+            {
+              type: "message",
+              id: "assistant-later",
+              runId: "run-later",
+              createdAt: "2026-08-16T08:05:04.000Z",
+              role: "assistant",
+              text: "Here is the explanation.",
+              references: [],
+              streaming: false,
+            },
+          ],
+          runs: [
+            {
+              id: "run-created",
+              status: "completed",
+              startedAt: "2026-08-16T08:00:00.000Z",
+              completedAt: "2026-08-16T08:00:05.000Z",
+              executionConfig: null,
+            },
+            {
+              id: "run-later",
+              status: "completed",
+              startedAt: "2026-08-16T08:05:00.000Z",
+              completedAt: "2026-08-16T08:05:05.000Z",
+              executionConfig: null,
+            },
+          ],
+        }}
         supplementalArtifacts={[
           {
             type: "artifact",
             id: "workspace-artifact-report",
-            runId: "run-1",
+            runId: "run-created",
             createdAt: "2026-08-16T08:00:03.000Z",
             artifactId: "workspace:project-1:report.xlsx",
             title: "report.xlsx",
@@ -155,6 +205,19 @@ describe("ConversationTranscript", () => {
     expect(onOpenArtifact).toHaveBeenCalledWith(
       "workspace:project-1:report.xlsx",
     )
+    const createdResponse = screen.getByText("Created the report.")
+    const artifactCard = screen.getByRole("button", {
+      name: "Preview report.xlsx",
+    })
+    const laterResponse = screen.getByText("Here is the explanation.")
+    expect(
+      createdResponse.compareDocumentPosition(artifactCard) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      artifactCard.compareDocumentPosition(laterResponse) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 
   it("renders a stable plan block with the existing Agent plan presentation", () => {
