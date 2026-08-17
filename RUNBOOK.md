@@ -520,10 +520,11 @@ from `AGENT_SANDBOX_IMAGE`. That container has a read-only root, a bounded
 `/tmp`, all capabilities dropped, no new privileges, only public BioinfoFlow
 project/source/skill roots read-only with the workspace overlaid read-write, and
 no Docker socket. Control-plane state is never mounted. Docker's default
-seccomp/AppArmor policy remains active; the pinned DeepSeek provider selects an
-available fully enforcing adapter such as Bubblewrap or Landlock on Linux.
-Native macOS development uses Seatbelt. Missing or partial confinement fails
-closed, and the disposable container is always removed after the call.
+seccomp/AppArmor policy remains active; the pinned DeepSeek provider uses
+Bubblewrap on Linux and Seatbelt on native macOS development. Landlock may
+restrict writes, but it cannot hide protected capability paths such as `/proc`,
+so BioinfoFlow fails closed rather than weakening that boundary. The disposable
+container is always removed after the call.
 
 ### Authenticated run with published images
 
@@ -762,7 +763,9 @@ interaction channel.
 
 Local and remote workspaces both require OS confinement. Local Bash uses the
 pinned DeepSeek Harness local sandbox provider; remote tools retain the verified
-Bubblewrap path on the SSH host. Missing, broken, or partial confinement fails
+Bubblewrap path on the SSH host. Linux native development also requires a
+working Bubblewrap installation because the Landlock fallback cannot hide
+protected capability paths. Missing, broken, or partial confinement fails
 closed. DeepSeek confinement intentionally protects filesystem integrity rather
 than confidentiality: native commands may read paths visible to their process
 identity except BioinfoFlow control-plane state and request roots, while writes
