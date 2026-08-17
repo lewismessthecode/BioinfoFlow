@@ -6,6 +6,8 @@ import {
   fetchAgentArtifactContent,
   getAgentArtifact,
   getAgentSnapshot,
+  getAgentTraceDetail,
+  getAgentTraceTimeline,
   listAgentArtifacts,
   listAgentSessions,
   updateAgentSession,
@@ -167,6 +169,30 @@ describe("agent client", () => {
     expect(mockedApiRequest).toHaveBeenNthCalledWith(
       2,
       "/agent/sessions/session-1/snapshot",
+    )
+  })
+
+  it("loads Trace data from its sibling contract endpoints", async () => {
+    const timeline = { protocol: "bioinfoflow.agent.trace" }
+    const detail = { event_id: "entry:tool-1" }
+    mockedApiRequest
+      .mockResolvedValueOnce({ data: timeline })
+      .mockResolvedValueOnce({ data: detail })
+
+    await expect(getAgentTraceTimeline("session-1")).resolves.toBe(timeline)
+    await expect(
+      getAgentTraceDetail("session-1", "entry:tool-1"),
+    ).resolves.toBe(detail)
+
+    expect(mockedApiRequest).toHaveBeenNthCalledWith(
+      1,
+      "/agent/sessions/session-1/trace",
+      { signal: undefined },
+    )
+    expect(mockedApiRequest).toHaveBeenNthCalledWith(
+      2,
+      "/agent/sessions/session-1/trace/events/entry%3Atool-1",
+      { signal: undefined },
     )
   })
 
