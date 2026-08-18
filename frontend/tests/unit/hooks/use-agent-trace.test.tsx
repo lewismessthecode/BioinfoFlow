@@ -52,14 +52,9 @@ describe("useAgentTrace", () => {
     mocks.detail.mockResolvedValue(detail)
   })
 
-  it("loads the timeline only when enabled and projects event detail on demand", async () => {
-    const { result, rerender } = renderHook(
-      ({ enabled }) => useAgentTrace("session-1", enabled),
-      { initialProps: { enabled: false } },
-    )
+  it("loads the timeline on mount and projects event detail on demand", async () => {
+    const { result } = renderHook(() => useAgentTrace("session-1"))
 
-    expect(mocks.timeline).not.toHaveBeenCalled()
-    rerender({ enabled: true })
     await waitFor(() => expect(result.current.view).not.toBeNull())
 
     let projectedDetail
@@ -76,7 +71,7 @@ describe("useAgentTrace", () => {
 
   it("reports malformed Trace payloads without exposing transport data", async () => {
     mocks.timeline.mockResolvedValue({ protocol: "other", protocol_version: 1 })
-    const { result } = renderHook(() => useAgentTrace("session-1", true))
+    const { result } = renderHook(() => useAgentTrace("session-1"))
 
     await waitFor(() => expect(result.current.error).not.toBeNull())
     expect(result.current.view).toBeNull()

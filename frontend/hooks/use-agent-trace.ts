@@ -23,10 +23,7 @@ export type AgentTraceState = {
   loadDetail: (eventId: string) => Promise<AgentTraceEventDetail>
 }
 
-export function useAgentTrace(
-  sessionId: string,
-  enabled: boolean,
-): AgentTraceState {
+export function useAgentTrace(sessionId: string): AgentTraceState {
   const [loaded, setLoaded] = useState<{
     sessionId: string
     view: AgentTraceViewModel
@@ -38,7 +35,6 @@ export function useAgentTrace(
   const [retryRevision, setRetryRevision] = useState(0)
   const requestKey = `${sessionId}:${retryRevision}`
   useEffect(() => {
-    if (!enabled) return
     const controller = new AbortController()
     let active = true
 
@@ -64,7 +60,7 @@ export function useAgentTrace(
       active = false
       controller.abort()
     }
-  }, [enabled, requestKey, sessionId])
+  }, [requestKey, sessionId])
 
   const loadDetail = useCallback(
     async (eventId: string) => {
@@ -82,7 +78,7 @@ export function useAgentTrace(
 
   return {
     view: currentView,
-    isLoading: enabled && currentView === null && currentError === null,
+    isLoading: currentView === null && currentError === null,
     error: currentError,
     retry: () => setRetryRevision((revision) => revision + 1),
     loadDetail,
