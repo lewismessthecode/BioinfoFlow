@@ -24,10 +24,13 @@ import type {
   AgentTraceContextSnapshot,
   AgentTraceEvent,
   AgentTraceEventDetail,
-  AgentTracePhase,
   AgentTraceViewModel,
   TraceJsonValue,
 } from "@/lib/agent/trace-model/types"
+import {
+  createContextWindowPresentation,
+  findContextSnapshotForSequence,
+} from "@/lib/agent/trace-model/context-window"
 import {
   Check,
   ChevronDown,
@@ -182,9 +185,15 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
   }
 
   function selectEvent(event: AgentTraceEvent) {
-    if (event.category === "assistant" || event.category === "tool") {
-      setPlayheadSequence(event.sequence)
-    }
+    const preference = ["system", "user", "context"].includes(event.category)
+      ? "containing"
+      : "preceding"
+    const request = findContextSnapshotForSequence(
+      view.contextFlow,
+      event.sequence,
+      preference,
+    )
+    if (request) setPlayheadSequence(request.sequence)
     if (!event.hasDetail) return
 
     setSelectedEvent(event)
@@ -226,9 +235,13 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
       aria-label={t("title")}
       data-testid="agent-trace-view"
     >
-      <TraceContextFlow
+      <TraceContextOverview
         snapshots={view.contextFlow}
-        turns={view.turns.map((turn) => ({ id: turn.id, index: turn.index }))}
+        turns={view.turns.map((turn) => ({
+          id: turn.id,
+          index: turn.index,
+          modelLabel: turn.model?.displayName ?? view.session.model.displayName,
+        }))}
         playheadSequence={visiblePlayheadSequence}
         onSelectSnapshot={setPlayheadSequence}
       />
@@ -249,7 +262,7 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
 
         {isInspectorInline && inspector ? (
           <aside
-            className="flex min-h-0 w-[306px] flex-col border-l border-border/70 bg-background"
+            className="flex min-h-0 w-[400px] flex-col border-l border-border/70 bg-background"
             aria-label={t("inspector.label")}
             role="complementary"
           >
@@ -285,198 +298,224 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
   )
 }
 
-function TraceContextFlow({
+function TraceContextOverview({
   snapshots,
   turns,
   playheadSequence,
   onSelectSnapshot,
 }: {
   snapshots: AgentTraceContextSnapshot[]
-  turns: Array<{ id: string; index: number }>
+  turns: Array<{ id: string; index: number; modelLabel: string }>
   playheadSequence: number
   onSelectSnapshot: (sequence: number) => void
 }) {
   const t = useTranslations("agentTrace")
-  const turnIndex = new Map(turns.map((turn) => [turn.id, turn.index]))
-  const snapshot = snapshotAtSequence(snapshots, playheadSequence)
-  const snapshotWeights = snapshots.map(snapshotWeight)
-  const totalWeight = snapshotWeights.reduce((sum, weight) => sum + weight, 0)
-  const selectedSnapshotIndex = snapshot
-    ? snapshots.findIndex((item) => item.id === snapshot.id)
-    : -1
-  const selectedWeight = snapshotWeights
-    .slice(0, selectedSnapshotIndex + 1)
-    .reduce((sum, weight) => sum + weight, 0)
-  const playheadPercent =
-    totalWeight > 0 ? (selectedWeight / totalWeight) * 100 : 100
+  const orderedSnapshots = snapshots.toSorted(
+    (left, right) => left.sequence - right.sequence,
+  )
+  const snapshot = findContextSnapshotForSequence(
+    orderedSnapshots,
+    playheadSequence,
+    "preceding",
+  )
+  const presentation = snapshot
+    ? createContextWindowPresentation(snapshot)
+    : null
+  const requestGroups = turns
+    .map((turn) => ({
+      ...turn,
+      requests: orderedSnapshots.filter((item) => item.turnId === turn.id),
+    }))
+    .filter((turn) => turn.requests.length > 0)
+  const selectedGroup = snapshot
+    ? requestGroups.find((turn) => turn.id === snapshot.turnId)
+    : null
+  const selectedRequestIndex =
+    snapshot && selectedGroup
+      ? selectedGroup.requests.findIndex((item) => item.id === snapshot.id) + 1
+      : null
   const compactNumber = (value: number) =>
     formatCompactNumber(value, (formatted) =>
       t("units.thousand", { value: formatted }),
     )
+  const usedWidth = presentation?.usedPercent ?? 0
+  const knownCapacity = presentation?.usedPercent !== null && presentation !== null
 
   return (
     <section
-      className="shrink-0 border-b border-border/70 px-[22px] pb-2 pt-2.5"
-      aria-label={t("contextFlow.label")}
+      className="shrink-0 border-b border-border/70 bg-background px-[22px] pb-3 pt-3"
+      aria-label={t("contextWindow.label")}
       role="region"
     >
-      <div className="mb-[7px] flex min-w-0 items-center justify-between gap-3 text-[11px] text-muted-foreground">
-        <span className="font-medium text-foreground/72">
-          {t("contextFlow.title")}
-        </span>
-        <span
-          className="flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap tabular-nums [scrollbar-width:none]"
-          translate="no"
-        >
-          {snapshot?.inputTokens !== null && snapshot?.inputTokens !== undefined ? (
-            <span className="font-medium text-foreground/72">
-              {t("contextFlow.usage.input", {
-                count: compactNumber(snapshot.inputTokens),
+      <div className="flex min-w-0 items-start justify-between gap-5">
+        <div className="min-w-0">
+          <h2 className="text-[11px] font-semibold tracking-[-0.01em] text-foreground/78">
+            {t("contextWindow.title")}
+          </h2>
+          {selectedGroup && selectedRequestIndex ? (
+            <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+              {t("requestNavigator.selection", {
+                turn: selectedGroup.index,
+                index: selectedRequestIndex,
+                model: selectedGroup.modelLabel,
               })}
-            </span>
+            </p>
           ) : null}
-          {snapshot?.outputTokens !== null && snapshot?.outputTokens !== undefined ? (
-            <span>
-              {t("contextFlow.usage.output", {
-                count: compactNumber(snapshot.outputTokens),
+        </div>
+
+        <div className="min-w-0 text-right tabular-nums" translate="no">
+          {presentation?.usedTokens !== null &&
+          presentation?.capacityTokens !== null ? (
+            <div className="text-[12px] font-semibold text-foreground/82">
+              {t("contextWindow.usedOfLimit", {
+                used: compactNumber(presentation.usedTokens),
+                limit: compactNumber(presentation.capacityTokens),
               })}
-            </span>
-          ) : null}
-          {snapshot?.cachedInputTokens !== null &&
-          snapshot?.cachedInputTokens !== undefined ? (
-            <span>
-              {t("contextFlow.cached", {
-                count: compactNumber(snapshot.cachedInputTokens),
+            </div>
+          ) : presentation?.usedTokens !== null && presentation ? (
+            <div className="text-[12px] font-semibold text-foreground/82">
+              {t("contextWindow.used", {
+                count: compactNumber(presentation.usedTokens),
               })}
-            </span>
+            </div>
           ) : null}
-          {snapshot?.reasoningTokens !== null &&
-          snapshot?.reasoningTokens !== undefined ? (
-            <span>
-              {t("contextFlow.usage.reasoning", {
-                count: compactNumber(snapshot.reasoningTokens),
-              })}
-            </span>
-          ) : null}
-          {snapshot?.totalTokens !== null && snapshot?.totalTokens !== undefined ? (
-            <span>
-              {t("contextFlow.usage.total", {
-                count: compactNumber(snapshot.totalTokens),
-              })}
-            </span>
-          ) : null}
-          {snapshot?.maxContextTokens !== null &&
-          snapshot?.maxContextTokens !== undefined ? (
-            <span className="text-muted-foreground/70">
-              {t("contextFlow.capacity", {
-                count: compactNumber(snapshot.maxContextTokens),
-              })}
-            </span>
-          ) : null}
-        </span>
+          <div className="mt-0.5 text-[10px] text-muted-foreground">
+            {presentation?.usedPercent !== null && presentation ? (
+              t("contextWindow.percent", { value: presentation.usedPercent })
+            ) : (
+              t("contextWindow.limitUnavailable")
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="relative pt-[15px]">
-        <div className="absolute inset-x-0 top-0 flex text-[9px] font-medium text-muted-foreground/65">
-          {snapshots.map((item, index) => (
-            <span
-              key={item.id}
-              className="min-w-0 basis-0 truncate px-1"
-              style={{ flexGrow: snapshotWeights[index] }}
-            >
-              {t("turn", { index: turnIndex.get(item.turnId) ?? "" })}
+      <div
+        data-testid="context-window-track"
+        data-state={knownCapacity ? "available" : "unavailable"}
+        className="relative mt-2.5 h-[22px] overflow-hidden rounded-[7px] border border-border/75 bg-muted/60 p-[3px] shadow-[inset_0_1px_1px_rgba(0,0,0,0.04)]"
+        role={knownCapacity ? "progressbar" : undefined}
+        aria-valuemin={knownCapacity ? 0 : undefined}
+        aria-valuemax={knownCapacity ? 100 : undefined}
+        aria-valuenow={knownCapacity ? usedWidth : undefined}
+      >
+        {knownCapacity && presentation ? (
+          <div
+            data-testid="context-window-used"
+            className="flex h-full min-w-0 overflow-hidden rounded-[4px] transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
+            style={{ width: `${usedWidth}%` }}
+          >
+            {presentation.composition.map((segment, index) => (
+              <span
+                key={`${segment.category}:${index}`}
+                className={cn(
+                  "h-full min-w-px border-r border-background/35 last:border-r-0",
+                  TRACE_CATEGORY_STYLES[segment.category].context,
+                )}
+                style={{ flexGrow: segment.percent }}
+                aria-hidden="true"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="h-full rounded-[4px] border border-dashed border-border/70 bg-background/25" />
+        )}
+      </div>
+
+      <div className="mt-2 flex min-w-0 items-center justify-between gap-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[9px] text-muted-foreground">
+          {presentation?.composition.map((segment) => (
+            <span key={segment.category} className="inline-flex items-center gap-1.5">
+              <span
+                className={cn(
+                  "size-1.5 rounded-[2px]",
+                  TRACE_CATEGORY_STYLES[segment.category].context,
+                )}
+                aria-hidden="true"
+              />
+              {t(`category.${segment.category}`)}
             </span>
           ))}
+          {presentation?.compositionEstimated ? (
+            <span className="text-muted-foreground/65">
+              {t("contextWindow.compositionEstimated")}
+            </span>
+          ) : null}
         </div>
-        <div className="relative flex h-[30px] min-w-0 gap-px overflow-hidden rounded-[8px] bg-muted/65 p-[3px] ring-1 ring-border/60">
-          {snapshots.length > 0 ? (
-            snapshots.map((item, index) => (
-              <ContextSnapshotSegment
-                key={item.id}
-                snapshot={item}
-                weight={snapshotWeights[index]}
-                selected={item.id === snapshot?.id}
-                onSelect={() => onSelectSnapshot(item.sequence)}
-              />
-            ))
-          ) : (
-            <div className="h-full flex-1 rounded-[4px] bg-muted/70" />
-          )}
+
+        <div
+          className="flex shrink-0 items-center gap-3 whitespace-nowrap text-[9px] text-muted-foreground tabular-nums"
+          translate="no"
+        >
+          {presentation?.cachedInputTokens !== null && presentation ? (
+            <span>
+              {t("contextWindow.cached", {
+                count: compactNumber(presentation.cachedInputTokens),
+              })}
+            </span>
+          ) : null}
+          {presentation?.outputTokens !== null && presentation ? (
+            <span>
+              {t("contextWindow.output", {
+                count: compactNumber(presentation.outputTokens),
+              })}
+            </span>
+          ) : null}
+          {presentation?.reasoningTokens !== null && presentation ? (
+            <span>
+              {t("contextWindow.reasoning", {
+                count: compactNumber(presentation.reasoningTokens),
+              })}
+            </span>
+          ) : null}
         </div>
-        <div
-          className="pointer-events-none absolute bottom-[-4px] top-[13px] left-0 rounded-l-[6px] border border-r-0 border-foreground/18 bg-foreground/[0.025] transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
-          style={{ width: `${playheadPercent}%` }}
-          aria-hidden="true"
-        />
-        <div
-          className="pointer-events-none absolute bottom-[-5px] top-[11px] w-px bg-foreground/45 transition-[left] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
-          style={{ left: `${playheadPercent}%` }}
-          aria-hidden="true"
-        />
       </div>
+
+      <nav
+        className="mt-2.5 border-t border-border/60 pt-2"
+        aria-label={t("requestNavigator.label")}
+      >
+        <div className="mb-1.5 flex items-center justify-between gap-3 text-[9px] text-muted-foreground">
+          <span className="font-medium text-foreground/68">
+            {t("requestNavigator.title")}
+          </span>
+          <span>{t("requestNavigator.requests", { count: orderedSnapshots.length })}</span>
+        </div>
+        <div className="flex min-w-0 gap-4 overflow-x-auto pb-0.5 [scrollbar-width:none]">
+          {requestGroups.map((turn) => (
+            <div key={turn.id} className="shrink-0">
+              <div className="mb-1 text-[8px] font-semibold text-muted-foreground/70">
+                {t("turn", { index: turn.index })}
+              </div>
+              <div className="relative flex items-center gap-1.5 before:absolute before:inset-x-2 before:top-1/2 before:h-px before:bg-border/80">
+                {turn.requests.map((request, index) => {
+                  const selected = request.id === snapshot?.id
+                  return (
+                    <button
+                      key={request.id}
+                      type="button"
+                      className={cn(
+                        "relative z-[1] grid size-5 place-items-center rounded-[5px] border border-border/80 bg-background font-mono text-[8px] font-semibold tabular-nums text-muted-foreground outline-none transition-[background-color,border-color,color,transform] duration-150 hover:-translate-y-px hover:border-foreground/25 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/55 motion-reduce:transition-none",
+                        selected &&
+                          "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-foreground)]",
+                        request.compacted && !selected && "opacity-45",
+                      )}
+                      aria-label={t("requestNavigator.request", {
+                        turn: turn.index,
+                        index: index + 1,
+                      })}
+                      aria-current={selected ? "true" : undefined}
+                      onClick={() => onSelectSnapshot(request.sequence)}
+                    >
+                      {index + 1}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </nav>
     </section>
-  )
-}
-
-function ContextSnapshotSegment({
-  snapshot,
-  weight,
-  selected,
-  onSelect,
-}: {
-  snapshot: AgentTraceContextSnapshot
-  weight: number
-  selected: boolean
-  onSelect: () => void
-}) {
-  const t = useTranslations("agentTrace")
-  const hasCompleteTokenWeights = snapshot.composition.every(
-    (item) => item.tokens !== null,
-  )
-  const weights = snapshot.composition.map((item) =>
-    hasCompleteTokenWeights ? item.tokens! : item.characters,
-  )
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
-  const cachedPercent =
-    snapshot.inputTokens !== null &&
-    snapshot.cachedInputTokens !== null &&
-    snapshot.inputTokens > 0
-      ? Math.min(100, (snapshot.cachedInputTokens / snapshot.inputTokens) * 100)
-      : null
-
-  return (
-    <button
-      type="button"
-      className={cn(
-        "group/context relative flex min-w-px basis-0 overflow-hidden rounded-[4px] outline-none transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-px focus-visible:ring-2 focus-visible:ring-ring/50 motion-reduce:transition-none",
-        snapshot.compacted && "opacity-45",
-      )}
-      style={{ flexGrow: weight }}
-      onClick={onSelect}
-      aria-label={t("contextFlow.snapshot", { id: snapshot.id })}
-      aria-current={selected ? "true" : undefined}
-    >
-      {snapshot.composition.map((item, index) => (
-        <span
-          key={`${snapshot.id}:${item.category}:${index}`}
-          className={cn(
-            "h-full min-w-px",
-            TRACE_CATEGORY_STYLES[item.category].context,
-          )}
-          style={{
-            flexGrow: totalWeight > 0 ? weights[index] : 1,
-          }}
-          aria-hidden="true"
-        />
-      ))}
-      {cachedPercent !== null && cachedPercent > 0 ? (
-        <span
-          className="pointer-events-none absolute inset-y-0 left-0 border-r border-foreground/20 bg-foreground/[0.08]"
-          style={{ width: `${cachedPercent}%` }}
-          aria-hidden="true"
-        />
-      ) : null}
-    </button>
   )
 }
 
@@ -572,32 +611,16 @@ function TurnEvents({
   onSelectEvent: (event: AgentTraceEvent) => void
   onToggleExpanded: (eventId: string) => void
 }) {
-  let previousPhase: AgentTracePhase | null = null
-  return events.map((event) => {
-    const showPhase = event.phase !== previousPhase
-    previousPhase = event.phase
-    return (
-      <div key={event.id}>
-        {showPhase ? <TracePhase phase={event.phase} /> : null}
-        <TraceEventRow
-          event={event}
-          selected={event.id === selectedEventId}
-          expanded={expandedEventIds.has(event.id)}
-          onSelect={() => onSelectEvent(event)}
-          onToggleExpanded={() => onToggleExpanded(event.id)}
-        />
-      </div>
-    )
-  })
-}
-
-function TracePhase({ phase }: { phase: AgentTracePhase }) {
-  const t = useTranslations("agentTrace")
-  return (
-    <div className="mb-1 mt-2 text-[9px] font-medium uppercase tracking-[0.12em] text-muted-foreground/65 first:mt-0">
-      {t(`phase.${phase}`)}
-    </div>
-  )
+  return events.map((event) => (
+    <TraceEventRow
+      key={event.id}
+      event={event}
+      selected={event.id === selectedEventId}
+      expanded={expandedEventIds.has(event.id)}
+      onSelect={() => onSelectEvent(event)}
+      onToggleExpanded={() => onToggleExpanded(event.id)}
+    />
+  ))
 }
 
 function TraceEventRow({
@@ -617,13 +640,14 @@ function TraceEventRow({
   const selectable =
     event.hasDetail || event.category === "assistant" || event.category === "tool"
   const expandable = event.summary.includes("\n") || event.summary.length > 120
+  const showStatus = shouldShowTraceStatus(event)
 
   return (
     <article
       className={cn(
-        "group/event relative mb-[5px] grid min-h-[41px] min-w-0 grid-cols-[96px_minmax(0,1fr)_auto] items-start gap-2 rounded-[11px] border border-border/75 bg-card px-[7px] py-2 transition-[transform,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:translate-x-[3px] motion-reduce:transition-none",
+        "group/event relative grid min-h-[42px] min-w-0 grid-cols-[78px_minmax(0,1fr)_auto] items-start gap-3 border-b border-border/60 px-2 py-2 transition-[background-color] duration-150 hover:bg-muted/30 motion-reduce:transition-none",
         selected &&
-          "border-[color-mix(in_srgb,var(--brand-accent)_35%,var(--border))] shadow-[inset_2px_0_0_var(--brand-accent),0_8px_22px_rgba(23,27,34,0.05)] dark:shadow-[inset_2px_0_0_var(--brand-accent),0_8px_22px_rgba(0,0,0,0.13)]",
+          "bg-[var(--brand-accent-muted)]/45 before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-[var(--brand-accent)]",
       )}
       data-category={event.category}
       data-testid="agent-trace-event"
@@ -631,7 +655,7 @@ function TraceEventRow({
       {selectable ? (
         <button
           type="button"
-          className="absolute inset-0 z-0 rounded-[11px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/55"
+          className="absolute inset-0 z-0 rounded-[6px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/55"
           aria-label={t(
             event.hasDetail ? "event.openDetail" : "event.select",
             { title: event.title },
@@ -641,17 +665,23 @@ function TraceEventRow({
       ) : null}
       <span
         className={cn(
-          "pointer-events-none relative z-[1] mt-0.5 w-fit rounded-[5px] px-1.5 py-0.5 font-mono text-[8px] font-semibold tracking-[0.08em]",
-          TRACE_CATEGORY_STYLES[event.category].badge,
+          "pointer-events-none relative z-[1] mt-0.5 inline-flex w-fit items-center gap-1.5 font-mono text-[8px] font-semibold tracking-[0.06em] text-muted-foreground",
         )}
         translate="no"
       >
+        <span
+          className={cn(
+            "size-1.5 rounded-[2px]",
+            TRACE_CATEGORY_STYLES[event.category].dot,
+          )}
+          aria-hidden="true"
+        />
         {t(`category.${event.category}`)}
       </span>
       <div className="pointer-events-none relative z-[1] min-w-0">
         <div
           className={cn(
-            "truncate font-mono text-[12px] leading-5 text-foreground/78",
+            "max-w-[90ch] truncate font-mono text-[12px] leading-5 text-foreground/78",
             event.category !== "tool" && "font-sans text-[13px]",
           )}
           title={event.firstLine}
@@ -661,7 +691,7 @@ function TraceEventRow({
         </div>
         {expanded ? (
           <pre
-            className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words border-l border-border/70 pl-3 font-mono text-[11px] leading-5 text-foreground/68"
+            className="mt-1.5 max-h-56 max-w-[96ch] overflow-auto whitespace-pre-wrap break-words pl-0 font-mono text-[11px] leading-5 text-foreground/68"
             translate="no"
           >
             {event.summary}
@@ -669,7 +699,7 @@ function TraceEventRow({
         ) : null}
       </div>
       <div className="pointer-events-none relative z-[2] flex items-center gap-1">
-        <TraceStatus status={event.status} />
+        {showStatus ? <TraceStatus status={event.status} /> : null}
         {expandable ? (
           <Button
             type="button"
@@ -693,28 +723,30 @@ function TraceEventRow({
           </Button>
         ) : null}
       </div>
-      <span
-        className={cn(
-          "absolute -left-[22px] top-[17px] size-[7px] rounded-full border-2 border-background",
-          TRACE_CATEGORY_STYLES[event.category].dot,
-        )}
-        aria-hidden="true"
-      />
     </article>
   )
 }
 
-function TraceStatus({ status }: { status: string | null }) {
+function shouldShowTraceStatus(event: AgentTraceEvent) {
+  const statusKind = classifyTraceStatus(event.status)
+  const exceptional = statusKind === "running" || statusKind === "failed"
+  return exceptional || event.category === "tool" || event.category === "context"
+}
+
+function TraceStatus({
+  status,
+  showLabel = false,
+}: {
+  status: string | null
+  showLabel?: boolean
+}) {
   const t = useTranslations("agentTrace")
   if (!status) return null
   const normalized = status.toLowerCase()
-  const complete = ["completed", "ready", "received", "success"].includes(
-    normalized,
-  )
-  const running = ["running", "pending", "queued"].includes(normalized)
-  const failed = ["failed", "error", "cancelled", "blocked"].includes(
-    normalized,
-  )
+  const statusKind = classifyTraceStatus(normalized)
+  const complete = statusKind === "complete"
+  const running = statusKind === "running"
+  const failed = statusKind === "failed"
   const Icon = complete ? Check : running ? Loader2 : failed ? Circle : CircleDashed
   const localizedStatus = isKnownTraceStatus(normalized)
     ? t(`status.${TRACE_STATUS_KEYS[normalized]}`)
@@ -733,7 +765,9 @@ function TraceStatus({ status }: { status: string | null }) {
         aria-hidden="true"
         className={cn("size-3 shrink-0", running && "animate-spin motion-reduce:animate-none")}
       />
-      <span className="hidden truncate xl:inline">{localizedStatus}</span>
+      <span className={cn("truncate", !showLabel && "hidden xl:inline")}>
+        {localizedStatus}
+      </span>
     </span>
   )
 }
@@ -755,38 +789,73 @@ function TraceInspector({
 }) {
   const t = useTranslations("agentTrace")
   const [activeTab, setActiveTab] = useState<InspectorTab>("summary")
+  const failed = isFailedStatus(event.status)
+  const diagnostic =
+    failed && detail
+      ? findDiagnosticText(detail.result) ?? findDiagnosticText(detail.summary)
+      : null
+  const duration = detail?.timing?.durationMs ?? null
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border/70 px-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            className={cn(
-              "rounded-[5px] px-1.5 py-0.5 font-mono text-[8px] font-semibold tracking-[0.08em]",
-              TRACE_CATEGORY_STYLES[event.category].badge,
-            )}
-            translate="no"
-          >
-            {t(`category.${event.category}`)}
-          </span>
+      <header className="flex min-h-14 shrink-0 items-start justify-between gap-3 border-b border-border/70 px-3.5 py-2.5">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <span
+              className={cn(
+                "rounded-[5px] px-1.5 py-0.5 font-mono text-[8px] font-semibold tracking-[0.08em]",
+                TRACE_CATEGORY_STYLES[event.category].badge,
+              )}
+              translate="no"
+            >
+              {t(`category.${event.category}`)}
+            </span>
+            <strong className="truncate text-[12px] font-semibold text-foreground/85">
+              {event.title}
+            </strong>
+          </div>
           <code
-            className="truncate text-[10px] text-muted-foreground"
+            className="mt-1 block max-w-[30ch] truncate text-[9px] text-muted-foreground/75"
+            title={event.id}
             translate="no"
           >
             {event.id}
           </code>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
-          aria-label={t("inspector.close")}
-          onClick={onClose}
-        >
-          <X aria-hidden="true" />
-        </Button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <TraceStatus status={event.status} showLabel />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+            aria-label={t("inspector.close")}
+            onClick={onClose}
+          >
+            <X aria-hidden="true" />
+          </Button>
+        </div>
       </header>
+
+      {diagnostic || duration !== null ? (
+        <div
+          className={cn(
+            "shrink-0 border-b border-border/70 px-3.5 py-2.5",
+            failed && "border-error-border bg-error-muted/35",
+          )}
+        >
+          {diagnostic ? (
+            <p className="text-[11px] leading-5 text-error-foreground">
+              {diagnostic}
+            </p>
+          ) : null}
+          {duration !== null ? (
+            <div className="mt-1 font-mono text-[9px] tabular-nums text-muted-foreground">
+              {t("units.durationMs", { value: duration })}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <Tabs
         value={activeTab}
@@ -953,23 +1022,6 @@ export function AgentTracePanel({
   return view ? <AgentTraceView view={view} onLoadDetail={loadDetail} /> : null
 }
 
-function snapshotAtSequence(
-  snapshots: AgentTraceContextSnapshot[],
-  sequence: number,
-) {
-  return [...snapshots]
-    .reverse()
-    .find((snapshot) => snapshot.sequence <= sequence) ?? snapshots[0] ?? null
-}
-
-function snapshotWeight(snapshot: AgentTraceContextSnapshot) {
-  if (snapshot.inputTokens !== null) return Math.max(snapshot.inputTokens, 1)
-  return Math.max(
-    snapshot.composition.reduce((sum, item) => sum + item.characters, 0),
-    1,
-  )
-}
-
 function formatCompactNumber(
   value: number,
   formatThousands: (formatted: string) => string,
@@ -989,6 +1041,33 @@ function humanizeKey(key: string) {
 function compactJson(value: TraceJsonValue) {
   if (typeof value === "string") return value
   return JSON.stringify(value)
+}
+
+function isFailedStatus(status: string | null) {
+  return classifyTraceStatus(status) === "failed"
+}
+
+function classifyTraceStatus(status: string | null) {
+  const normalized = status?.toLowerCase()
+  if (["completed", "ready", "received", "success"].includes(normalized ?? "")) {
+    return "complete" as const
+  }
+  if (["running", "pending", "queued"].includes(normalized ?? "")) {
+    return "running" as const
+  }
+  if (["failed", "error", "cancelled", "blocked"].includes(normalized ?? "")) {
+    return "failed" as const
+  }
+  return "other" as const
+}
+
+function findDiagnosticText(value: TraceJsonValue): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  for (const key of ["error", "message", "reason", "detail", "stderr"]) {
+    const candidate = value[key]
+    if (typeof candidate === "string" && candidate.trim()) return candidate
+  }
+  return null
 }
 
 function isKnownTraceStatus(

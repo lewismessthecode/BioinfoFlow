@@ -2802,6 +2802,25 @@
     "retry": "Retry",
     "empty": "No trace events",
     "unavailable": "Unavailable",
+    "contextWindow": {
+      "label": "Context window",
+      "title": "Context Window",
+      "usedOfLimit": "{used} / {limit}",
+      "used": "{count} used",
+      "percent": "{value}% used",
+      "limitUnavailable": "Context limit unavailable",
+      "cached": "{count} cached",
+      "output": "{count} output",
+      "reasoning": "{count} reasoning",
+      "compositionEstimated": "Composition estimated by characters"
+    },
+    "requestNavigator": {
+      "label": "Model request navigation",
+      "title": "Model requests",
+      "requests": "{count, plural, one {# request} other {# requests}}",
+      "request": "Turn {turn}, request {index}",
+      "selection": "Turn {turn} · Request {index} · {model}"
+    },
     "contextFlow": {
       "label": "Context flow",
       "title": "Context Flow",
