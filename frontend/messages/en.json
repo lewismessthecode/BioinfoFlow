@@ -2977,8 +2977,9 @@
       "input": "Action preview",
       "target": "Execution target",
       "effects": "Effects",
+      "details": "Why approval is needed",
       "reasons": "Reasons",
-      "justification": "Agent justification: {justification}",
+      "justification": "{justification}",
       "resources": "Affected resources",
       "action": {
         "command": "Run command",

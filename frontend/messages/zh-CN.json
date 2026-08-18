@@ -2977,8 +2977,9 @@
       "input": "操作内容",
       "target": "执行目标",
       "effects": "可能产生的影响",
+      "details": "查看审批原因",
       "reasons": "原因",
-      "justification": "Agent 提供的理由：{justification}",
+      "justification": "{justification}",
       "resources": "受影响资源",
       "action": {
         "command": "执行命令",
