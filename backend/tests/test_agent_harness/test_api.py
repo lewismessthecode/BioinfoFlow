@@ -610,16 +610,16 @@ async def test_message_command_rejects_attachment_reference_kind_mismatch(
 
 @pytest.mark.asyncio
 async def test_session_mutation_locks_are_request_scoped(async_client) -> None:
-    from app.api.v1 import agent as agent_api
+    from app.services.agent_harness import session_deletion
 
-    agent_api._session_mutation_locks.clear()
+    session_deletion._session_mutation_locks.clear()
     missing = await async_client.post(
         "/api/v1/agent/sessions/00000000-0000-0000-0000-000000000001/commands",
         json={"type": "cancel", "command_id": "cancel-missing"},
     )
 
     assert missing.status_code == 404
-    assert agent_api._session_mutation_locks == {}
+    assert session_deletion._session_mutation_locks == {}
 
     with patch(
         "app.api.v1.agent.resolve_model_snapshot",
@@ -634,7 +634,7 @@ async def test_session_mutation_locks_are_request_scoped(async_client) -> None:
         )
 
     assert dispatched.status_code == 202
-    assert agent_api._session_mutation_locks == {}
+    assert session_deletion._session_mutation_locks == {}
 
 
 @pytest.mark.asyncio
@@ -799,7 +799,11 @@ async def test_session_delete_rejects_upload_from_another_worker_after_closing(
 
     with (
         patch(
-            "app.api.v1.agent._session_mutation_lock",
+            "app.api.v1.agent.session_mutation_lock",
+            side_effect=independent_worker_lock,
+        ),
+        patch(
+            "app.services.agent_harness.session_deletion.session_mutation_lock",
             side_effect=independent_worker_lock,
         ),
         patch(

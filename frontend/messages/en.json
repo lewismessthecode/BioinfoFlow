@@ -202,6 +202,7 @@
       "projectRenamed": "Renamed to \"{name}\"",
       "projectDuplicated": "\"{name}\" duplicated",
       "deleteProjectConfirmTitle": "Delete \"{name}\"?",
+      "deleteProjectConfirmDescription": "The workspace and its conversations will be deleted. Files on disk will be kept. This action cannot be undone.",
       "projectDeleted": "\"{name}\" deleted",
       "deleteConversationConfirmTitle": "Delete this conversation?",
       "conversationRenamed": "Conversation renamed",

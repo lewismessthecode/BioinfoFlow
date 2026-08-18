@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
 from datetime import datetime
 import json
 from typing import Literal
@@ -28,7 +25,6 @@ from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.services.agent_harness.assets import (
     AgentHarnessArtifactService,
     AgentHarnessAttachmentService,
-    stage_agent_session_files_for_delete,
 )
 from app.services.agent_harness.contracts import (
     AgentCommand,
@@ -62,6 +58,10 @@ from app.services.agent_harness.environment_scope import (
     resolve_environment_scope,
 )
 from app.services.agent_harness.runtime import agent_runtime
+from app.services.agent_harness.session_deletion import (
+    delete_agent_session,
+    session_mutation_lock,
+)
 from app.services.agent_harness.system_prompt import default_system_prompt_snapshot
 from app.services.agent_trace.adapter import CompleteHarnessTraceAdapter
 from app.services.agent_trace.contracts import (
@@ -100,28 +100,6 @@ _agent_event_stream_schema = {
     ),
     "x-sse-data-schema": _agent_event_data_schema,
 }
-
-
-@dataclass
-class _SessionMutationLockEntry:
-    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    users: int = 0
-
-
-_session_mutation_locks: dict[str, _SessionMutationLockEntry] = {}
-
-
-@asynccontextmanager
-async def _session_mutation_lock(session_id: str):
-    entry = _session_mutation_locks.setdefault(session_id, _SessionMutationLockEntry())
-    entry.users += 1
-    try:
-        async with entry.lock:
-            yield
-    finally:
-        entry.users -= 1
-        if entry.users == 0 and _session_mutation_locks.get(session_id) is entry:
-            _session_mutation_locks.pop(session_id, None)
 
 
 class AgentSessionCreate(BaseModel):
@@ -697,7 +675,7 @@ async def upload_attachments(
 ):
     repository = AgentHarnessRepository(db)
     await _owned_session(repository, session_id=session_id, user=user)
-    async with _session_mutation_lock(session_id):
+    async with session_mutation_lock(session_id):
         db.expire_all()
         session = await _mutable_owned_session(
             repository, session_id=session_id, user=user
@@ -795,7 +773,7 @@ async def update_session(
 ):
     repository = AgentHarnessRepository(db)
     await _owned_session(repository, session_id=session_id, user=user)
-    async with _session_mutation_lock(session_id):
+    async with session_mutation_lock(session_id):
         db.expire_all()
         await _owned_session(repository, session_id=session_id, user=user)
         values = {
@@ -904,7 +882,7 @@ async def dispatch_command(
 ):
     repository = AgentHarnessRepository(db)
     await _owned_session(repository, session_id=session_id, user=user)
-    async with _session_mutation_lock(session_id):
+    async with session_mutation_lock(session_id):
         db.expire_all()
         agent_session = await _mutable_owned_session(
             repository, session_id=session_id, user=user
@@ -943,28 +921,8 @@ async def delete_session(
 ):
     repository = AgentHarnessRepository(db)
     await _owned_session(repository, session_id=session_id, user=user)
-    async with _session_mutation_lock(session_id):
-        db.expire_all()
-        await _owned_session(repository, session_id=session_id, user=user)
-        try:
-            await agent_runtime.quiesce_session(session_id)
-        except TimeoutError as exc:
-            raise ConflictError(
-                "Agent session is still stopping; retry deletion later"
-            ) from exc
-        tombstone = stage_agent_session_files_for_delete(session_id)
-        try:
-            await agent_runtime.delete_session(session_id)
-        except Exception:
-            await db.rollback()
-            db.expire_all()
-            if await repository.get_session(session_id) is None:
-                tombstone.purge()
-            else:
-                tombstone.restore()
-            raise
-        tombstone.purge_deleted_session_files()
-        return success_response({}, request=request, status_code=204)
+    await delete_agent_session(session_id, db=db, runtime=agent_runtime)
+    return success_response({}, request=request, status_code=204)
 
 
 @router.get(

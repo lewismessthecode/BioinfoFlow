@@ -41,7 +41,11 @@ export function DeleteConfirmDialog({
               ? tSidebar("toasts.deleteProjectConfirmTitle", { name: deleteConfirm?.name ?? "" })
               : tSidebar("toasts.deleteConversationConfirmTitle")}
           </DialogTitle>
-          <DialogDescription>{tCommon("cannotUndo")}</DialogDescription>
+          <DialogDescription>
+            {deleteConfirm?.type === "project"
+              ? tSidebar("toasts.deleteProjectConfirmDescription")
+              : tCommon("cannotUndo")}
+          </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={onCancel}>

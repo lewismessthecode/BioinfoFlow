@@ -202,6 +202,7 @@
       "projectRenamed": "已重命名为“{name}”",
       "projectDuplicated": "已复制“{name}”",
       "deleteProjectConfirmTitle": "删除“{name}”？",
+      "deleteProjectConfirmDescription": "工作区及其中的会话将被删除，但磁盘上的文件会保留。此操作无法撤销。",
       "projectDeleted": "已删除“{name}”",
       "deleteConversationConfirmTitle": "删除此对话？",
       "conversationRenamed": "对话已重命名",

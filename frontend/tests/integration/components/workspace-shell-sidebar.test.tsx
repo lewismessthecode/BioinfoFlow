@@ -317,14 +317,7 @@ describe("WorkspaceShell sidebar integration", () => {
       if (typeof path === "string" && path.startsWith("/projects/") && options?.method === "DELETE") {
         const projectId = path.replace("/projects/", "")
         projectsState = projectsState.filter((project) => project.id !== projectId)
-        const preservedConversations = (conversationsState.get(projectId) ?? []).map(
-          (conversation) => ({ ...conversation, project_id: null }),
-        )
         conversationsState.delete(projectId)
-        conversationsState.set(defaultProject.id, [
-          ...(conversationsState.get(defaultProject.id) ?? []),
-          ...preservedConversations,
-        ])
         return { data: null, meta: undefined }
       }
 
@@ -390,7 +383,7 @@ describe("WorkspaceShell sidebar integration", () => {
     )
   })
 
-  it("keeps preserved conversations visible when their project is deleted and after remount", async () => {
+  it("removes project conversations when their project is deleted and after remount", async () => {
     const { unmount } = renderSidebar()
 
     const betaHeader = (await screen.findByRole("button", { name: "Beta" })).parentElement
@@ -403,12 +396,14 @@ describe("WorkspaceShell sidebar integration", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Beta" })).not.toBeInTheDocument(),
     )
-    expect(await screen.findByRole("link", { name: "Beta thread" })).toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "Beta thread" })).not.toBeInTheDocument()
 
     unmount()
     renderSidebar()
 
-    expect(await screen.findByRole("link", { name: "Beta thread" })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: "Beta thread" })).not.toBeInTheDocument(),
+    )
   })
 
   it("selects a conversation from the sidebar and syncs project context before navigating", async () => {

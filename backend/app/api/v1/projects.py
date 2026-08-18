@@ -10,7 +10,9 @@ from app.api.deps import (
     require_agent_scope,
 )
 from app.auth.session import AuthUser
+from app.repositories.agent_harness_repo import AgentHarnessRepository
 from app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
+from app.services.agent_harness.session_deletion import delete_agent_session
 from app.services.project_service import ProjectService
 from app.utils.authorization import (
     can_manage_external_roots,
@@ -190,5 +192,12 @@ async def delete_project(
             status_code=403,
             request=request,
         )
+    sessions = await AgentHarnessRepository(db).list_project_sessions(
+        project_id=project_id,
+        workspace_id=user.workspace_id,
+    )
+    session_ids = [str(session.id) for session in sessions]
+    for session_id in session_ids:
+        await delete_agent_session(session_id, db=db)
     await service.delete_project(project)
     return success_response(None, request=request, status_code=204)
