@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react"
+import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -124,16 +124,21 @@ describe("AgentTraceView", () => {
     vi.unstubAllGlobals()
   })
 
-  it("renders the compact Event Rail without fabricating usage or precise time", () => {
+  it("renders an unavailable Context Window without fabricating capacity or precise time", () => {
     renderWithProviders(
       <AgentTraceView view={view} onLoadDetail={vi.fn()} />,
     )
 
-    expect(screen.getByRole("region", { name: "contextFlow.label" })).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "contextWindow.label" })).toBeInTheDocument()
+    expect(screen.getByTestId("context-window-track")).toHaveAttribute(
+      "data-state",
+      "unavailable",
+    )
+    expect(screen.getByText("contextWindow.limitUnavailable")).toBeInTheDocument()
     expect(screen.queryByText(/128K|cached/i)).not.toBeInTheDocument()
     expect(screen.getByText("nextflow_run({ pipeline: 'main.nf' })")).toBeInTheDocument()
     expect(screen.queryByText("2026-08-17T08:00:03.000Z")).not.toBeInTheDocument()
-    expect(screen.getByText("phase.agent_work")).toBeInTheDocument()
+    expect(screen.queryByText("phase.agent_work")).not.toBeInTheDocument()
   })
 
   it("opens the inspector for a Tool event and exposes all five exact-detail tabs", async () => {
@@ -168,10 +173,64 @@ describe("AgentTraceView", () => {
     expect(screen.queryByText(/payload-only-secret/)).not.toBeInTheDocument()
     expect(screen.getByText("2026-08-17T08:00:01.100Z")).toBeInTheDocument()
     expect(screen.getByText("2026-08-17T08:00:01.300Z")).toBeInTheDocument()
-    expect(screen.getByText('units.durationMs:{"value":2000}')).toBeInTheDocument()
+    expect(
+      screen.getAllByText('units.durationMs:{"value":2000}'),
+    ).toHaveLength(2)
   })
 
-  it("weights the append flow by request usage and moves its playhead by trace sequence", async () => {
+  it("surfaces a failed Tool diagnosis before the Inspector tabs", async () => {
+    const user = userEvent.setup()
+    const failedView: AgentTraceViewModel = {
+      ...view,
+      turns: [
+        {
+          ...view.turns[0],
+          events: [
+            {
+              ...view.turns[0].events[1],
+              status: "failed",
+              title: "bash",
+              summary: "bash({ command: 'pwd' })",
+              firstLine: "bash({ command: 'pwd' })",
+            },
+          ],
+        },
+      ],
+    }
+    const failedDetail: AgentTraceEventDetail = {
+      ...detail,
+      summary: { category: "tool", name: "bash", status: "failed" },
+      result: { error: "Working directory does not exist" },
+      timing: { ...detail.timing!, durationMs: 1800 },
+    }
+
+    renderWithProviders(
+      <AgentTraceView
+        view={failedView}
+        onLoadDetail={vi.fn().mockResolvedValue(failedDetail)}
+      />,
+    )
+
+    await user.click(
+      screen.getByRole("button", {
+        name: 'event.openDetail:{"title":"bash"}',
+      }),
+    )
+
+    const inspector = await screen.findByRole("complementary", {
+      name: "inspector.label",
+    })
+    expect(inspector).toHaveClass("w-[400px]")
+    expect(within(inspector).getByText("status.failed")).not.toHaveClass("hidden")
+    expect(
+      within(inspector).getByText("Working directory does not exist"),
+    ).toBeInTheDocument()
+    expect(
+      within(inspector).getByText('units.durationMs:{"value":1800}'),
+    ).toBeInTheDocument()
+  })
+
+  it("separates Context Window capacity from Turn-grouped request navigation", async () => {
     const user = userEvent.setup()
     const metricView: AgentTraceViewModel = {
       ...view,
@@ -192,10 +251,31 @@ describe("AgentTraceView", () => {
               createdAt: "2026-08-17T08:00:01.000Z",
               phase: "agent_work",
             },
+            {
+              id: "model:request-1",
+              turnId: "turn-1",
+              category: "context",
+              title: "Model request",
+              summary: "openai/gpt-5.6 · 100 input tokens",
+              firstLine: "openai/gpt-5.6 · 100 input tokens",
+              status: "completed",
+              sequence: 3,
+              hasDetail: true,
+              createdAt: "2026-08-17T08:00:01.500Z",
+              phase: "model_request",
+            },
             { ...view.turns[0].events[1], sequence: 8 },
+          ],
+        },
+        {
+          ...view.turns[0],
+          id: "turn-2",
+          runId: "run-2",
+          index: 2,
+          events: [
             {
               id: "assistant:final",
-              turnId: "turn-1",
+              turnId: "turn-2",
               category: "assistant",
               title: "Final answer",
               summary: "Done",
@@ -237,14 +317,15 @@ describe("AgentTraceView", () => {
         {
           ...view.contextFlow[0],
           id: "context-fallback",
+          turnId: "turn-2",
           sequence: 12,
           throughSequence: 9,
-          inputTokens: null,
-          outputTokens: null,
-          cachedInputTokens: null,
-          reasoningTokens: null,
-          totalTokens: null,
-          maxContextTokens: null,
+          inputTokens: 600,
+          outputTokens: 60,
+          cachedInputTokens: 250,
+          reasoningTokens: 12,
+          totalTokens: 900,
+          maxContextTokens: 1000,
           composition: [
             { category: "system", characters: 400, tokens: null },
             { category: "user", characters: 200, tokens: null },
@@ -257,37 +338,66 @@ describe("AgentTraceView", () => {
       <AgentTraceView view={metricView} onLoadDetail={vi.fn()} />,
     )
 
-    const early = screen.getByRole("button", {
-      name: 'contextFlow.snapshot:{"id":"context-early"}',
+    const navigator = screen.getByRole("navigation", {
+      name: "requestNavigator.label",
     })
-    const late = screen.getByRole("button", {
-      name: 'contextFlow.snapshot:{"id":"context-late"}',
+    const early = within(navigator).getByRole("button", {
+      name: 'requestNavigator.request:{"turn":1,"index":1}',
     })
-    const fallback = screen.getByRole("button", {
-      name: 'contextFlow.snapshot:{"id":"context-fallback"}',
+    const late = within(navigator).getByRole("button", {
+      name: 'requestNavigator.request:{"turn":1,"index":2}',
+    })
+    const fallback = within(navigator).getByRole("button", {
+      name: 'requestNavigator.request:{"turn":2,"index":1}',
     })
 
-    expect(early).toHaveStyle({ flexGrow: "100" })
-    expect(late).toHaveStyle({ flexGrow: "300" })
-    expect(fallback).toHaveStyle({ flexGrow: "600" })
+    expect(
+      within(navigator).getAllByText('turn:{"index":1}'),
+    ).toHaveLength(1)
+    expect(
+      within(navigator).getAllByText('turn:{"index":2}'),
+    ).toHaveLength(1)
     expect(fallback).toHaveAttribute("aria-current", "true")
+    expect(screen.getByTestId("context-window-used")).toHaveStyle({
+      width: "60%",
+    })
+    expect(
+      screen.getByText(
+        'contextWindow.usedOfLimit:{"used":"600","limit":"units.thousand:{\\"value\\":\\"1\\"}"}',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByText('contextWindow.percent:{"value":60}')).toBeInTheDocument()
+    expect(screen.getByText('contextWindow.cached:{"count":"250"}')).toBeInTheDocument()
+    expect(screen.getByText("contextWindow.compositionEstimated")).toBeInTheDocument()
 
     await user.click(
       screen.getByRole("button", {
         name: "event.select:{\"title\":\"Assistant\"}",
       }),
     )
-    expect(screen.getByText('contextFlow.usage.input:{"count":"100"}')).toBeInTheDocument()
-    expect(screen.getByText('contextFlow.usage.output:{"count":"20"}')).toBeInTheDocument()
-    expect(screen.getByText('contextFlow.cached:{"count":"50"}')).toBeInTheDocument()
-    expect(screen.getByText('contextFlow.usage.reasoning:{"count":"4"}')).toBeInTheDocument()
-    expect(screen.getByText('contextFlow.usage.total:{"count":"120"}')).toBeInTheDocument()
-    expect(screen.getByText('contextFlow.capacity:{"count":"units.thousand:{\\"value\\":\\"1\\"}"}')).toBeInTheDocument()
     expect(early).toHaveAttribute("aria-current", "true")
+    expect(screen.getByTestId("context-window-used")).toHaveStyle({
+      width: "10%",
+    })
+    expect(
+      screen.queryByText('contextWindow.percent:{"value":12}'),
+    ).not.toBeInTheDocument()
 
     await user.click(late)
-    expect(screen.getByText('contextFlow.usage.input:{"count":"300"}')).toBeInTheDocument()
+    expect(screen.getByTestId("context-window-used")).toHaveStyle({
+      width: "30%",
+    })
     expect(late).toHaveAttribute("aria-current", "true")
+
+    await user.click(
+      screen.getByRole("button", {
+        name: 'event.openDetail:{"title":"Model request"}',
+      }),
+    )
+    expect(early).toHaveAttribute("aria-current", "true")
+    expect(screen.getByTestId("context-window-used")).toHaveStyle({
+      width: "10%",
+    })
   })
 
   it("localizes finite category and status labels while preserving unknown status text", () => {
@@ -299,8 +409,8 @@ describe("AgentTraceView", () => {
           events: [
             view.turns[0].events[1],
             {
-              ...view.turns[0].events[0],
-              id: "entry:user-unknown",
+              ...view.turns[0].events[1],
+              id: "entry:tool-unknown",
               status: "waiting_on_cluster",
               sequence: 3,
             },
@@ -313,7 +423,7 @@ describe("AgentTraceView", () => {
       <AgentTraceView view={localizedView} onLoadDetail={vi.fn()} />,
     )
 
-    expect(screen.getByText("category.tool")).toBeInTheDocument()
+    expect(screen.getAllByText("category.tool")).toHaveLength(2)
     expect(screen.getByText("status.completed")).toBeInTheDocument()
     expect(screen.getByText("waiting_on_cluster")).toBeInTheDocument()
   })

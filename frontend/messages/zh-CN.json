@@ -2802,6 +2802,25 @@
     "retry": "重试",
     "empty": "暂无轨迹事件",
     "unavailable": "不可用",
+    "contextWindow": {
+      "label": "上下文窗口",
+      "title": "上下文窗口",
+      "usedOfLimit": "{used} / {limit}",
+      "used": "已使用 {count}",
+      "percent": "已使用 {value}%",
+      "limitUnavailable": "上下文上限不可用",
+      "cached": "缓存命中 {count}",
+      "output": "输出 {count}",
+      "reasoning": "推理 {count}",
+      "compositionEstimated": "按字符估算构成"
+    },
+    "requestNavigator": {
+      "label": "模型请求导航",
+      "title": "模型请求",
+      "requests": "{count} 次请求",
+      "request": "Turn {turn}，第 {index} 次请求",
+      "selection": "Turn {turn} · 请求 {index} · {model}"
+    },
     "contextFlow": {
       "label": "上下文流",
       "title": "上下文流",
