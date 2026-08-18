@@ -22,25 +22,18 @@ describe("globals.css theme tokens", () => {
     expect(css).not.toContain("--background: #fbfbfa;")
     expect(css).not.toContain("--sidebar: #f1f0ed;")
     expect(css).not.toContain("--sidebar-accent: #e4e1dc;")
-    expect(css).toContain(
-      "--agent-halo: color-mix(in srgb, var(--foreground) 4.5%, transparent);",
-    )
-    expect(css).toContain("--agent-halo-opacity: 0.72;")
-    expect(css).toContain(".agent-halo-surface::before")
-    expect(css).toContain("ellipse 48% 32%")
+    expect(css).not.toContain("--agent-halo")
+    expect(css).not.toContain(".agent-halo-surface")
   })
 
-  it("keeps the dark composer aura neutral and restrained", () => {
+  it("keeps the dark composer surface neutral and restrained", () => {
     const css = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8")
 
     expect(css).toContain(
       "--composer-shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 14px 38px rgba(0, 0, 0, 0.20);",
     )
     expect(css).toContain("color-scheme: dark;")
-    expect(css).toContain(
-      "--agent-halo: color-mix(in srgb, var(--foreground) 5.5%, transparent);",
-    )
-    expect(css).toContain("--agent-halo-opacity: 0.86;")
+    expect(css).not.toContain("--agent-halo")
     expect(css).not.toContain(
       "--composer-shadow: 0 2px 10px rgba(0, 0, 0, 0.28), 0 18px 48px rgba(0, 0, 0, 0.30);",
     )

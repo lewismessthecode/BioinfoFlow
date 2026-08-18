@@ -459,7 +459,7 @@ describe("AgentWorkbench v2", () => {
       <AgentWorkbench sessionId={null} projectId="project-1" />,
     )
 
-    expect(screen.getByTestId("agent-draft-entry")).toHaveClass(
+    expect(screen.getByTestId("agent-draft-entry")).not.toHaveClass(
       "agent-halo-surface",
     )
     expect(screen.getByTestId("agent-draft-stage")).toHaveClass(

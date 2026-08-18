@@ -92,10 +92,6 @@
   --accent-muted: rgba(25, 25, 25, 0.05);
   --accent-subtle: rgba(25, 25, 25, 0.03);
   --accent-hover: rgba(25, 25, 25, 0.08);
-  --agent-halo: color-mix(in srgb, var(--foreground) 4.5%, transparent);
-  --agent-halo-soft: color-mix(in srgb, var(--accent) 56%, transparent);
-  --agent-halo-edge: rgba(255, 255, 255, 0);
-  --agent-halo-opacity: 0.72;
   --composer-shadow: 0 1px 2px rgba(15, 15, 15, 0.032), 0 10px 24px rgba(15, 15, 15, 0.028);
   --brand-accent: #4f7894;
   --brand-accent-muted: #e5edf1;
@@ -221,10 +217,6 @@
   --divider: var(--border-subtle);
   --announcement-bg: #09090b;
   --announcement-fg: #e4e4e7;
-  --agent-halo: color-mix(in srgb, var(--foreground) 5.5%, transparent);
-  --agent-halo-soft: color-mix(in srgb, var(--accent) 34%, transparent);
-  --agent-halo-edge: rgba(9, 9, 11, 0);
-  --agent-halo-opacity: 0.86;
   --composer-shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 14px 38px rgba(0, 0, 0, 0.20);
   --brand-accent: #8fb9d2;
   --brand-accent-muted: #1c2a32;
@@ -348,33 +340,6 @@
 }
 
 @layer components {
-  .agent-halo-surface {
-    position: relative;
-    overflow: hidden;
-    background: var(--background);
-  }
-
-  .agent-halo-surface::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    opacity: var(--agent-halo-opacity);
-    background: radial-gradient(
-      ellipse 48% 32% at calc(50% - var(--left-rail-compensation, 0px)) 51%,
-      var(--agent-halo) 0%,
-      color-mix(in srgb, var(--agent-halo) 58%, transparent) 28%,
-      color-mix(in srgb, var(--agent-halo-soft) 68%, transparent) 48%,
-      var(--agent-halo-edge) 78%
-    );
-    filter: blur(2px);
-  }
-
-  .agent-halo-surface > * {
-    position: relative;
-    z-index: 1;
-  }
-
   .agent-center-stage {
     transform: translateX(calc(var(--left-rail-compensation, 0px) * -1));
   }
