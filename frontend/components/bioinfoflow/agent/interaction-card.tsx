@@ -185,9 +185,9 @@ function ApprovalInteraction({
   const summary = request.summary.trim()
 
   return (
-    <div className="grid gap-3">
-      <div className="grid min-w-0 gap-1">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+    <div className="grid gap-3.5">
+      <div className="grid min-w-0 gap-1.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <p className="text-sm font-medium leading-5 text-foreground">
             {action}
           </p>
@@ -197,6 +197,21 @@ function ApprovalInteraction({
           >
             {request.toolName}
           </span>
+          {request.target ? (
+            <>
+              <span aria-hidden="true" className="text-muted-foreground/45">
+                ·
+              </span>
+              <span className="font-medium text-foreground/72" translate="no">
+                {request.target.displayName}
+              </span>
+              {request.target.host ? (
+                <span className="font-mono" translate="no">
+                  {request.target.host}
+                </span>
+              ) : null}
+            </>
+          ) : null}
         </div>
         {summary &&
         summary !== action &&
@@ -205,42 +220,21 @@ function ApprovalInteraction({
         ) : null}
       </div>
 
-      {request.target ? (
-        <div className="grid gap-1.5">
-          <h3 className="text-xs font-medium text-muted-foreground">
-            {t("approval.target")}
-          </h3>
-          <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/80">
-            <span className="font-medium" translate="no">
-              {request.target.displayName}
-            </span>
-            {request.target.host ? (
-              <span className="font-mono text-muted-foreground" translate="no">
-                {request.target.host}
-              </span>
-            ) : null}
-          </p>
-        </div>
-      ) : null}
-
       {request.inputPreview ? (
-        <div className="grid gap-1.5">
-          <h3 className="text-xs font-medium text-muted-foreground">
-            {t("approval.input")}
-          </h3>
-          <pre
-            className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-[7px] border border-border/55 bg-background/55 px-3 py-2 font-mono text-xs leading-5 text-foreground/80"
-            translate="no"
-          >
-            {request.inputPreview}
-          </pre>
-        </div>
+        <pre
+          aria-label={t("approval.input")}
+          className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-[8px] border border-border/70 bg-foreground/[0.035] px-3.5 py-3 font-mono text-sm leading-6 text-foreground dark:bg-background/55"
+          data-testid="agent-approval-command"
+          translate="no"
+        >
+          {request.inputPreview}
+        </pre>
       ) : null}
 
       <RiskDetails request={request} />
 
       {!completed ? (
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border/55 pt-3">
           {request.allowedResponses.includes("reject") ? (
             <Button
               type="button"
@@ -360,33 +354,56 @@ function RiskDetails({
       }),
     )
   }
-  const sections = [
-    ["approval.effects", effects],
+  const detailSections = [
     ["approval.reasons", reasons],
     ["approval.resources", request.risk.affectedResources],
   ] as const
+  const hasDetails = detailSections.some(([, values]) => values.length > 0)
 
   return (
-    <dl className="grid gap-x-5 gap-y-2 sm:grid-cols-2">
-      {sections.map(([label, values]) =>
-        values.length > 0 ? (
-          <div key={label} className="grid content-start gap-1">
-            <dt className="text-[11px] font-medium text-muted-foreground">
-              {t(label)}
-            </dt>
-            <dd>
-              <ul className="flex flex-wrap gap-x-2 gap-y-1 text-xs leading-5 text-foreground/72">
-                {values.map((value, index) => (
-                  <li key={`${index}:${value}`} className="break-words">
-                    {value}
-                  </li>
-                ))}
-              </ul>
-            </dd>
-          </div>
-        ) : null,
-      )}
-    </dl>
+    <div className="grid gap-2.5">
+      {effects.length > 0 ? (
+        <ul
+          aria-label={t("approval.effects")}
+          className="flex flex-wrap gap-x-2.5 gap-y-1 text-xs leading-5 text-foreground/72"
+          data-testid="agent-approval-effects"
+        >
+          {effects.map((effect, index) => (
+            <li key={`${index}:${effect}`} className="break-words">
+              {effect}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {hasDetails ? (
+        <details className="group text-xs text-muted-foreground">
+          <summary className="w-fit cursor-pointer select-none rounded-[4px] outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/45 motion-reduce:transition-none">
+            {t("approval.details")}
+          </summary>
+          <dl className="mt-2 grid gap-x-5 gap-y-2 border-l border-border/70 pl-3 sm:grid-cols-2">
+            {detailSections.map(([label, values]) =>
+              values.length > 0 ? (
+                <div key={label} className="grid content-start gap-1">
+                  <dt className="text-[11px] font-medium text-muted-foreground">
+                    {t(label)}
+                  </dt>
+                  <dd>
+                    <ul className="grid gap-1 text-xs leading-5 text-foreground/72">
+                      {values.map((value, index) => (
+                        <li key={`${index}:${value}`} className="break-words">
+                          {value}
+                        </li>
+                      ))}
+                    </ul>
+                  </dd>
+                </div>
+              ) : null,
+            )}
+          </dl>
+        </details>
+      ) : null}
+    </div>
   )
 }
 

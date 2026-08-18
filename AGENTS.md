@@ -96,6 +96,7 @@ Backend, from `backend/`:
 
 ```bash
 rtk uv sync
+rtk npm ci --prefix sandbox_worker
 rtk uv run alembic upgrade head
 rtk uv run uvicorn app.main:app --reload --reload-dir app --port 8000
 rtk uv run pytest

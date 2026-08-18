@@ -47,9 +47,10 @@ vi.mock("next-intl", () => ({
         "agentInteraction.approval.effect.privilege": "Uses elevated access",
         "agentInteraction.approval.effect.execute": "Runs a command",
         "agentInteraction.approval.effects": "Effects",
+        "agentInteraction.approval.details": "Why approval is needed",
         "agentInteraction.approval.reasons": "Reasons",
         "agentInteraction.approval.justification":
-          `Agent justification: ${values?.justification ?? ""}`,
+          `${values?.justification ?? ""}`,
         "agentInteraction.approval.reason.sandbox_escalation":
           "This exact command will run once with the sandbox filesystem restrictions disabled.",
         "agentInteraction.approval.resources": "Affected resources",
@@ -257,7 +258,8 @@ describe("AgentInteractionCard", () => {
     expect(reject).not.toHaveClass("dark:bg-input/30")
   })
 
-  it("explains the approval action and its user-facing reasons", () => {
+  it("prioritizes the command and progressively discloses approval reasons", async () => {
+    const user = userEvent.setup()
     renderWithProviders(
       <AgentInteractionCard
         interaction={{
@@ -300,12 +302,18 @@ describe("AgentInteractionCard", () => {
       within(card).getByText("Allow one-time sandbox escalation"),
     ).toBeInTheDocument()
     expect(within(card).getByText("bash")).toBeInTheDocument()
-    expect(within(card).getByText("touch e2e-approved.txt")).toBeInTheDocument()
+    const command = within(card).getByTestId("agent-approval-command")
+    expect(command).toHaveTextContent("touch e2e-approved.txt")
+    expect(command).toHaveAttribute("aria-label", "Command preview")
     expect(within(card).getByText("Local")).toBeInTheDocument()
     expect(within(card).getByText("Runs a command")).toBeInTheDocument()
     expect(within(card).getByText("Changes files")).toBeInTheDocument()
-    expect(within(card).getByText("e2e-approved.txt")).toBeInTheDocument()
+    expect(within(card).getByText("e2e-approved.txt")).not.toBeVisible()
     expect(within(card).queryByText(/act_high/i)).not.toBeInTheDocument()
+
+    await user.click(within(card).getByText("Why approval is needed"))
+
+    expect(within(card).getByText("e2e-approved.txt")).toBeInTheDocument()
     expect(
       within(card).getByText(
         "This exact command will run once with the sandbox filesystem restrictions disabled.",
@@ -313,7 +321,7 @@ describe("AgentInteractionCard", () => {
     ).toBeInTheDocument()
     expect(
       within(card).getByText(
-        "Agent justification: write the explicitly approved external target",
+        "write the explicitly approved external target",
       ),
     ).toBeInTheDocument()
   })
