@@ -321,7 +321,7 @@ function DraftWorkbench({
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         data-testid="agent-draft-entry"
-        className="agent-halo-surface relative flex min-h-0 flex-1 items-center justify-center px-4 py-8"
+        className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-background px-4 py-8"
       >
         <div
           data-testid="agent-draft-stage"
