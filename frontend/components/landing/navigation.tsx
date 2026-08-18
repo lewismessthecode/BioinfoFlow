@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useEffect, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import Link from "next/link"
-import { Menu, X, Moon, Sun, Globe, Github } from "@/lib/icons"
+import { useRouter } from "next/navigation"
+import { Menu, Moon, Sun, Globe, Github } from "@/lib/icons"
 import { useTheme } from "next-themes"
 import { useLocale, useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
@@ -12,75 +13,126 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
 import { Logo } from "@/components/bioinfoflow/logo"
 import { locales, localeNames, type Locale } from "@/i18n/config"
 import { setSecureCookie } from "@/lib/cookies"
 
+const githubUrl = "https://github.com/lewismessthecode/BioinfoFlow"
+const docsUrl = `${githubUrl}/tree/main/docs`
+
+type NavigationLink = {
+  label: string
+  href: string
+  external?: boolean
+}
+
 export function Navigation() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
   const { setTheme, theme } = useTheme()
   const locale = useLocale()
+  const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const t = useTranslations("landing.nav")
-  const githubUrl = "https://github.com/lewismessthecode/BioinfoFlow"
 
-  const navLinks = [
+  const navLinks: NavigationLink[] = [
     { label: t("product"), href: "#product" },
     { label: t("workflows"), href: "#features" },
     { label: t("security"), href: "#security" },
-    { label: t("docs"), href: "#" },
+    { label: t("docs"), href: docsUrl, external: true },
   ]
 
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 10)
     }
+    const frame = window.requestAnimationFrame(handleScroll)
+
+    handleScroll()
     window.addEventListener("scroll", handleScroll, { passive: true })
-    return () => window.removeEventListener("scroll", handleScroll)
+    window.addEventListener("pageshow", handleScroll)
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener("scroll", handleScroll)
+      window.removeEventListener("pageshow", handleScroll)
+    }
+  }, [])
+
+  useEffect(() => {
+    const desktopMedia = window.matchMedia("(min-width: 1024px)")
+    const closeOnDesktop = () => {
+      if (desktopMedia.matches) setIsMobileMenuOpen(false)
+    }
+
+    closeOnDesktop()
+    desktopMedia.addEventListener("change", closeOnDesktop)
+    return () => desktopMedia.removeEventListener("change", closeOnDesktop)
   }, [])
 
   const handleLocaleChange = (newLocale: Locale) => {
+    if (newLocale === locale) return
+
+    setSecureCookie("NEXT_LOCALE", newLocale, { maxAge: 31536000 })
+    setIsMobileMenuOpen(false)
     startTransition(() => {
-      setSecureCookie("NEXT_LOCALE", newLocale, { maxAge: 31536000 })
-      window.location.reload()
+      router.refresh()
     })
   }
 
+  const closeMobileMenu = () => setIsMobileMenuOpen(false)
+
   return (
     <header
+      data-scrolled={isScrolled}
       className={cn(
-        "sticky top-0 z-50 flex h-16 items-center border-b transition-[background-color,border-color] duration-200",
+        "landing-navigation sticky top-0 z-50 flex h-16 items-center border-b transition-[background-color,border-color,box-shadow] duration-200",
         isScrolled
-          ? "border-border bg-background/92 backdrop-blur-xl"
+          ? "border-border bg-background/92 shadow-[0_1px_0_color-mix(in_srgb,var(--brand-accent)_10%,transparent)] backdrop-blur-xl"
           : "border-border/70 bg-background/96"
       )}
     >
       <div className="mx-auto flex w-full max-w-[1440px] items-center justify-between px-5 md:px-8">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--brand-accent)]">
+        <Link
+          href="/"
+          className="flex items-center gap-2.5 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--brand-accent)]"
+        >
           <div className="flex size-7 items-center justify-center">
             <Logo size={28} className="text-foreground" />
           </div>
           <span className="text-sm font-semibold tracking-[-0.02em]">Bioinfoflow</span>
         </Link>
 
-        {/* Desktop Nav */}
-        <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-7 lg:flex">
-          {navLinks.map((link) => (
-            <Link
-              key={link.label}
-              href={link.href}
-              className="relative py-2 text-xs font-medium text-muted-foreground transition-colors after:absolute after:inset-x-0 after:-bottom-3 after:h-0.5 after:origin-left after:scale-x-0 after:bg-[var(--brand-accent)] after:transition-transform hover:text-foreground hover:after:scale-x-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--brand-accent)]"
-            >
-              {link.label}
-            </Link>
-          ))}
+        <nav aria-label={t("product")} className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-7 lg:flex">
+          {navLinks.map((link) =>
+            link.external ? (
+              <a
+                key={link.label}
+                href={link.href}
+                target="_blank"
+                rel="noreferrer"
+                className="landing-nav-link"
+              >
+                {link.label}
+              </a>
+            ) : (
+              <Link key={link.label} href={link.href} className="landing-nav-link">
+                {link.label}
+              </Link>
+            )
+          )}
         </nav>
 
-        {/* Desktop CTAs */}
-        <div className="hidden items-center gap-1.5 md:flex">
+        <div className="hidden items-center gap-1.5 lg:flex">
           <Button
             asChild
             variant="ghost"
@@ -93,8 +145,7 @@ export function Navigation() {
             </a>
           </Button>
 
-          {/* Language Switcher */}
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
@@ -107,19 +158,18 @@ export function Navigation() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
-              {locales.map((l) => (
+              {locales.map((language) => (
                 <DropdownMenuItem
-                  key={l}
-                  onClick={() => handleLocaleChange(l)}
-                  className={locale === l ? "bg-secondary" : ""}
+                  key={language}
+                  onClick={() => handleLocaleChange(language)}
+                  className={locale === language ? "bg-secondary" : ""}
                 >
-                  {localeNames[l]}
+                  {localeNames[language]}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Dark Mode Toggle */}
           <Button
             variant="ghost"
             size="icon"
@@ -139,104 +189,120 @@ export function Navigation() {
           </Button>
         </div>
 
-        {/* Mobile Menu Button */}
-        <button
-          className="rounded-md p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-accent)] md:hidden"
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          aria-label={t("toggleMenu")}
-        >
-          {isMobileMenuOpen ? (
-            <X className="size-5" />
-          ) : (
-            <Menu className="size-5" />
-          )}
-        </button>
-      </div>
-
-      {/* Mobile Menu */}
-      {isMobileMenuOpen && (
-        <div className="absolute left-0 right-0 top-16 border-b border-border bg-background p-5 shadow-[var(--landing-shadow)] md:hidden">
-          <nav className="flex flex-col gap-4">
-            {navLinks.map((link) => (
-              <Link
-                key={link.label}
-                href={link.href}
-                className="text-base text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                {link.label}
-              </Link>
-            ))}
-
-            {/* Mobile Settings Row */}
-            <div className="flex items-center justify-between pt-4 border-t border-border">
-              <span className="text-sm text-muted-foreground">{t("theme")}</span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              >
-                {theme === "dark" ? (
-                  <>
-                    <Moon className="size-4" />
-                    {t("dark")}
-                  </>
-                ) : (
-                  <>
-                    <Sun className="size-4" />
-                    {t("light")}
-                  </>
-                )}
-              </Button>
-            </div>
-
-            <Button asChild variant="outline" className="w-full justify-start gap-2 bg-transparent">
-              <a
-                href={githubUrl}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                <Github className="size-4" />
-                GitHub
-              </a>
+        <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+          <div className="flex items-center gap-1.5 lg:hidden">
+            <Button asChild size="sm" className="hidden rounded-md px-3 shadow-none min-[420px]:inline-flex">
+              <Link href="/auth">{t("startFree")}</Link>
             </Button>
+            <SheetTrigger asChild>
+              <button
+                ref={menuButtonRef}
+                type="button"
+                className="flex size-11 items-center justify-center rounded-md text-foreground transition-colors hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-accent)]"
+                aria-label={t("toggleMenu")}
+                aria-controls="landing-navigation-menu"
+                aria-expanded={isMobileMenuOpen}
+              >
+                <Menu className="size-5" />
+              </button>
+            </SheetTrigger>
+          </div>
 
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">{t("language")}</span>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2" disabled={isPending}>
-                    <Globe className="size-4" />
-                    {localeNames[locale as Locale]}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-40">
-                  {locales.map((l) => (
-                    <DropdownMenuItem
-                      key={l}
-                      onClick={() => handleLocaleChange(l)}
-                      className={locale === l ? "bg-secondary" : ""}
+          <SheetContent
+            side="top"
+            id="landing-navigation-menu"
+            closeLabel={t("closeMenu")}
+            className="landing-toolbar-panel max-h-[calc(100dvh-1rem)] overflow-y-auto px-5 pb-6 pt-14 lg:hidden md:px-8"
+          >
+            <SheetTitle className="sr-only">{t("menu")}</SheetTitle>
+            <SheetDescription className="sr-only">{t("menuDescription")}</SheetDescription>
+            <nav aria-label={t("menu")} className="mx-auto grid max-w-[1440px] gap-5">
+              <div className="grid gap-1 border-y border-border py-3">
+                {navLinks.map((link) =>
+                  link.external ? (
+                    <a
+                      key={link.label}
+                      href={link.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="landing-menu-link"
+                      onClick={closeMobileMenu}
                     >
-                      {localeNames[l]}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+                      {link.label}
+                    </a>
+                  ) : (
+                    <Link key={link.label} href={link.href} className="landing-menu-link" onClick={closeMobileMenu}>
+                      {link.label}
+                    </Link>
+                  )
+                )}
+              </div>
 
-            <div className="flex flex-col gap-3 pt-4 border-t border-border">
-              <Button asChild variant="outline" className="w-full bg-transparent">
-                <Link href="/auth">{t("signIn")}</Link>
-              </Button>
-              <Button asChild className="w-full rounded-md">
-                <Link href="/auth">{t("startFree")}</Link>
-              </Button>
-            </div>
-          </nav>
-        </div>
-      )}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-sm text-muted-foreground">{t("theme")}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 bg-transparent"
+                    onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                  >
+                    {theme === "dark" ? (
+                      <>
+                        <Moon className="size-4" />
+                        {t("dark")}
+                      </>
+                    ) : (
+                      <>
+                        <Sun className="size-4" />
+                        {t("light")}
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-sm text-muted-foreground">{t("language")}</span>
+                  <DropdownMenu modal={false}>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-2 bg-transparent" disabled={isPending}>
+                        <Globe className="size-4" />
+                        {localeNames[locale as Locale]}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-40">
+                      {locales.map((language) => (
+                        <DropdownMenuItem
+                          key={language}
+                          onClick={() => handleLocaleChange(language)}
+                          className={locale === language ? "bg-secondary" : ""}
+                        >
+                          {localeNames[language]}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+
+              <div className="grid gap-3 border-t border-border pt-5 sm:grid-cols-3">
+                <Button asChild variant="outline" className="w-full justify-start gap-2 bg-transparent">
+                  <a href={githubUrl} target="_blank" rel="noreferrer" onClick={closeMobileMenu}>
+                    <Github className="size-4" />
+                    GitHub
+                  </a>
+                </Button>
+                <Button asChild variant="outline" className="w-full bg-transparent">
+                  <Link href="/auth" onClick={closeMobileMenu}>{t("signIn")}</Link>
+                </Button>
+                <Button asChild className="w-full rounded-md">
+                  <Link href="/auth" onClick={closeMobileMenu}>{t("startFree")}</Link>
+                </Button>
+              </div>
+            </nav>
+          </SheetContent>
+        </Sheet>
+      </div>
     </header>
   )
 }
