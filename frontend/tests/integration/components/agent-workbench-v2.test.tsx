@@ -172,19 +172,9 @@ vi.mock("@/components/bioinfoflow/agent/conversation-transcript", () => ({
 }))
 
 vi.mock("@/components/bioinfoflow/agent/agent-trace-view", () => ({
-  AgentTracePanel: ({
-    sessionId,
-    active,
-  }: {
-    sessionId: string
-    active: boolean
-  }) => {
-    mocks.tracePanel({ sessionId, active })
-    return (
-      <div data-testid="trace-panel" data-active={String(active)}>
-        Trace panel
-      </div>
-    )
+  AgentTracePanel: ({ sessionId }: { sessionId: string }) => {
+    mocks.tracePanel({ sessionId })
+    return <div data-testid="trace-panel">Trace panel</div>
   },
 }))
 
@@ -791,7 +781,7 @@ describe("AgentWorkbench v2", () => {
     expect(screen.queryByText("emptyTitle")).not.toBeInTheDocument()
   })
 
-  it("switches between sibling Conversation and Trace views without unmounting the composer", async () => {
+  it("preserves the Conversation draft but unmounts Trace when returning from it", async () => {
     const user = userEvent.setup()
     mocks.useSession.mockReturnValue(
       sessionState({
@@ -817,12 +807,11 @@ describe("AgentWorkbench v2", () => {
     const draft = screen.getByRole("textbox", { name: "Draft message" })
     await user.clear(draft)
     await user.type(draft, "Keep this exact draft")
+    expect(screen.queryByTestId("trace-panel")).not.toBeInTheDocument()
+
     await user.click(screen.getByRole("tab", { name: "views.trace" }))
 
-    expect(screen.getByTestId("trace-panel")).toHaveAttribute(
-      "data-active",
-      "true",
-    )
+    expect(screen.getByTestId("trace-panel")).toBeInTheDocument()
     expect(screen.getByRole("textbox", { name: "Draft message" })).toHaveValue(
       "Keep this exact draft",
     )
@@ -831,6 +820,7 @@ describe("AgentWorkbench v2", () => {
     expect(screen.getByTestId("transcript")).toHaveTextContent(
       "Stable presentation text",
     )
+    expect(screen.queryByTestId("trace-panel")).not.toBeInTheDocument()
   })
 
   it("derives the empty state from the stable conversation view", () => {

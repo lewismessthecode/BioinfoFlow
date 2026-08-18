@@ -983,16 +983,11 @@ function TimingPane({
 
 export function AgentTracePanel({
   sessionId,
-  active,
 }: {
   sessionId: string
-  active: boolean
 }) {
   const t = useTranslations("agentTrace")
-  const { view, isLoading, error, retry, loadDetail } = useAgentTrace(
-    sessionId,
-    active,
-  )
+  const { view, isLoading, error, retry, loadDetail } = useAgentTrace(sessionId)
 
   if (isLoading && !view) {
     return (

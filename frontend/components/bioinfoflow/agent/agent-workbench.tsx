@@ -603,11 +603,10 @@ function SessionWorkbench({
         </TabsContent>
 
         <TabsContent
-          forceMount
           value="trace"
-          className="m-0 min-h-0 flex-1 data-[state=inactive]:hidden"
+          className="m-0 min-h-0 flex-1"
         >
-          <AgentTracePanel sessionId={sessionId} active={activeView === "trace"} />
+          <AgentTracePanel sessionId={sessionId} />
         </TabsContent>
       </Tabs>
     </>
