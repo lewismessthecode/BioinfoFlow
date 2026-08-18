@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import pytest
 
+from app.models.agent_harness import AgentHarnessSession
 from app.models.project import Project
-from app.path_layout import project_data_root, project_home, project_runs_root
+from app.path_layout import (
+    agent_session_artifacts_root,
+    agent_session_attachments_root,
+    project_data_root,
+    project_home,
+    project_runs_root,
+)
 
 
 @pytest.mark.asyncio
@@ -50,6 +57,59 @@ async def test_projects_crud(async_client, db_session):
 
     delete_resp = await async_client.delete(f"/api/v1/projects/{project_id}")
     assert delete_resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_delete_project_removes_its_agent_sessions(async_client, db_session):
+    create_resp = await async_client.post(
+        "/api/v1/projects",
+        json={"name": "Project with conversation"},
+    )
+    assert create_resp.status_code == 201
+    project_id = create_resp.json()["data"]["id"]
+    project = await db_session.get(Project, project_id)
+    assert project is not None
+    project_root = project_home(project)
+    retained_file = project_root / "keep-me.txt"
+    retained_file.write_text("user data", encoding="utf-8")
+    session = AgentHarnessSession(
+        project_id=project_id,
+        workspace_id="00000000-0000-0000-0000-000000000001",
+        title="Deleted with project",
+        user_id="dev",
+        permission_mode="ask_dangerous",
+        prompt_snapshot={"content": "Test Agent session."},
+        model_snapshot=None,
+        workspace_snapshot={"runtime": "local", "root": "/tmp"},
+        command_queue=[],
+        command_ids=[],
+    )
+    db_session.add(session)
+    await db_session.commit()
+    await db_session.refresh(session)
+    session_id = str(session.id)
+    project_foreign_key = next(
+        iter(AgentHarnessSession.__table__.c.project_id.foreign_keys)
+    )
+    assert project_foreign_key.ondelete == "CASCADE"
+    attachments_root = agent_session_attachments_root(session_id)
+    artifacts_root = agent_session_artifacts_root(session_id)
+    attachments_root.mkdir(parents=True)
+    artifacts_root.mkdir(parents=True)
+    (attachments_root / "attachment.txt").write_text("attachment", encoding="utf-8")
+    (artifacts_root / "artifact.txt").write_text("artifact", encoding="utf-8")
+
+    delete_resp = await async_client.delete(f"/api/v1/projects/{project_id}")
+
+    assert delete_resp.status_code == 204
+    db_session.expire_all()
+    assert await db_session.get(AgentHarnessSession, session_id) is None
+    assert not attachments_root.exists()
+    assert not artifacts_root.exists()
+    assert retained_file.read_text(encoding="utf-8") == "user data"
+    sessions_resp = await async_client.get("/api/v1/agent/sessions")
+    assert sessions_resp.status_code == 200
+    assert session_id not in {item["id"] for item in sessions_resp.json()["data"]}
 
 
 @pytest.mark.asyncio

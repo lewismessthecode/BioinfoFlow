@@ -486,6 +486,22 @@ class AgentHarnessRepository:
         )
         return list(result.scalars().all())
 
+    async def list_project_sessions(
+        self,
+        *,
+        project_id: str,
+        workspace_id: str,
+    ) -> list[AgentHarnessSession]:
+        result = await self.db.execute(
+            select(AgentHarnessSession)
+            .where(
+                AgentHarnessSession.project_id == project_id,
+                AgentHarnessSession.workspace_id == workspace_id,
+            )
+            .order_by(AgentHarnessSession.id)
+        )
+        return list(result.scalars().all())
+
     async def update_session_settings(
         self,
         session_id: str,

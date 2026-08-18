@@ -30,7 +30,7 @@ class AgentHarnessSession(Base, UUIDMixin, TimestampMixin):
     )
     project_id: Mapped[str | None] = mapped_column(
         GUID(),
-        ForeignKey("projects.id", ondelete="SET NULL"),
+        ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )

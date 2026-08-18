@@ -323,13 +323,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       await apiRequest(`/projects/${projectId}`, { method: "DELETE" })
       setProjects((prev) => prev.filter((item) => item.id !== projectId))
       setSessions((current) =>
-        sortAgentSessionSummaries(
-          current.map((session) =>
-            session.project_id === projectId
-              ? { ...session, project_id: null }
-              : session,
-          ),
-        ),
+        current.filter((session) => session.project_id !== projectId),
       )
       if (getStoredLastUsedProjectId() === projectId) {
         setStoredLastUsedProjectId(null)
