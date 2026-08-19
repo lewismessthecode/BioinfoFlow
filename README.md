@@ -96,6 +96,9 @@ See [Parabricks WGS workflows](docs/workflows/parabricks-wgs.md).
 ## Development
 
 See [AGENTS.md](AGENTS.md) for repository conventions and verification commands.
+When running the backend directly from source, first run
+`npm ci --prefix sandbox_worker` from `backend/` to install the local Agent
+sandbox worker dependencies.
 
 ## License
 

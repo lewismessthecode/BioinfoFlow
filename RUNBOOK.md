@@ -686,7 +686,6 @@ its credentials. **From Tarball** is unchanged and never uses registry settings.
 - Python 3.13+
 - `uv`
 - Bun
-- Node.js 22+ and npm (for the pinned local sandbox worker)
 - Docker daemon if you want Docker-backed workflow execution
 - Nextflow installed if you want Nextflow runs
 - MiniWDL installed if you want WDL runs
@@ -699,7 +698,6 @@ repo-root `.env` when it exists.
 ```bash
 cd backend
 uv sync
-npm ci --prefix sandbox_worker
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --reload-dir app --port 8000
 ```
@@ -815,7 +813,6 @@ Commands:
 ```bash
 cd backend
 uv sync
-npm ci --prefix sandbox_worker
 uv run alembic upgrade head
 
 cd ../frontend
