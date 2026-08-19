@@ -585,7 +585,7 @@ describe("Conversation projection", () => {
     ])
   })
 
-  it("projects a durable plan entry into a stable plan Transcript Block", () => {
+  it("projects the latest durable plan outside the transcript", () => {
     const snapshot = {
       ...emptySnapshotFixture,
       entries: [
@@ -614,22 +614,106 @@ describe("Conversation projection", () => {
     const result = createConversationProjection(snapshot)
     if (!result.ok) throw new Error(result.diagnostic.message)
 
-    expect(result.view.transcript).toEqual([
-      {
-        type: "plan",
-        id: "plan-entry-1",
-        runId: "run-1",
-        createdAt: "2026-08-16T08:00:00.000Z",
-        planId: "plan-1",
-        revision: 2,
-        title: "Investigate the workflow",
-        items: [
-          { id: "step-1", text: "Inspect logs", status: "completed" },
-          { id: "step-2", text: "Verify outputs", status: "in_progress" },
-        ],
-        updatedAt: "2026-08-16T08:00:01.000Z",
-      },
+    expect(result.view.transcript).toEqual([])
+    expect(result.view.currentPlan).toEqual({
+      id: "plan-entry-1",
+      runId: "run-1",
+      planId: "plan-1",
+      revision: 2,
+      title: "Investigate the workflow",
+      active: false,
+      items: [
+        { id: "step-1", text: "Inspect logs", status: "completed" },
+        { id: "step-2", text: "Verify outputs", status: "in_progress" },
+      ],
+      updatedAt: "2026-08-16T08:00:01.000Z",
+    })
+  })
+
+  it("finishes every plan item when its Run completes", () => {
+    const result = createConversationProjection({
+      ...completedSnapshotFixture,
+      entries: [
+        entryFixture({
+          id: "plan-entry-complete",
+          type: "plan",
+          payload: {
+            plan_id: "plan-complete",
+            revision: 1,
+            title: null,
+            items: [
+              { id: "step-1", text: "Inspect", status: "completed" },
+              { id: "step-2", text: "Report", status: "in_progress" },
+            ],
+            updated_at: "2026-08-16T08:00:02.000Z",
+          },
+        }),
+      ],
+    })
+    if (!result.ok) throw new Error(result.diagnostic.message)
+
+    expect(result.view.currentPlan?.active).toBe(false)
+    expect(result.view.currentPlan?.items.map((item) => item.status)).toEqual([
+      "completed",
+      "completed",
     ])
+  })
+
+  it("keeps failed plan facts but removes the active spinner state", () => {
+    const result = createConversationProjection({
+      ...failedSnapshotFixture,
+      entries: [
+        entryFixture({
+          id: "plan-entry-failed",
+          type: "plan",
+          payload: {
+            plan_id: "plan-failed",
+            revision: 1,
+            title: null,
+            items: [
+              { id: "step-1", text: "Inspect", status: "in_progress" },
+              { id: "step-2", text: "Report", status: "pending" },
+            ],
+            updated_at: "2026-08-16T08:00:01.000Z",
+          },
+        }),
+      ],
+    })
+    if (!result.ok) throw new Error(result.diagnostic.message)
+
+    expect(result.view.currentPlan).toMatchObject({
+      active: false,
+      items: [
+        { status: "in_progress" },
+        { status: "pending" },
+      ],
+    })
+  })
+
+  it("keeps live plan tool progress out of the transcript", () => {
+    const result = createConversationProjection({
+      ...activeSnapshotFixture,
+      active_run: activeSnapshotFixture.active_run
+        ? {
+            ...activeSnapshotFixture.active_run,
+            assistant_draft: null,
+            tool_progress: [
+              {
+                ...activeSnapshotFixture.active_run.tool_progress[0],
+                call_id: "call-plan",
+                group_id: "group-plan",
+                name: "update_plan",
+                display_name: "Update plan",
+                category: "plan",
+                summary: "Update the current plan",
+              },
+            ],
+          }
+        : null,
+    })
+    if (!result.ok) throw new Error(result.diagnostic.message)
+
+    expect(result.view.transcript).toEqual([])
   })
 
   it("keeps a failed Run readable as an outcome block", () => {

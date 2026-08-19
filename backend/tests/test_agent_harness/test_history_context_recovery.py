@@ -25,6 +25,7 @@ from app.services.model_runtime.contracts import (
     ImagePart,
     ModelInvocation,
     ModelTarget,
+    ReasoningPart,
     TextPart,
     ToolCallPart,
     ToolResultPart,
@@ -500,7 +501,7 @@ def test_context_accepts_public_history_entry_contracts() -> None:
     assert context.input_items == (TextPart("hello"),)
 
 
-def test_context_ignores_public_reasoning_trace_but_preserves_final_answer() -> None:
+def test_context_preserves_provider_reasoning_trace_with_final_answer() -> None:
     context = ContextBuilder().build(
         prompt_snapshot="Stable",
         entries=[
@@ -526,7 +527,10 @@ def test_context_ignores_public_reasoning_trace_but_preserves_final_answer() -> 
         ],
     )
 
-    assert context.input_items == (TextPart("Final answer", phase="final_answer"),)
+    assert context.input_items == (
+        ReasoningPart("Provider-returned trace", source="reasoning_content"),
+        TextPart("Final answer", phase="final_answer"),
+    )
 
 
 def test_tool_content_history_accepts_reasoning_trace_and_legacy_summary() -> None:

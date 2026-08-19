@@ -23,6 +23,7 @@ import { AgentContextPicker } from "@/components/bioinfoflow/agent/agent-context
 import { AgentModelConnectionDialog } from "@/components/bioinfoflow/agent/agent-model-connection-dialog"
 import { AgentTracePanel } from "@/components/bioinfoflow/agent/agent-trace-view"
 import { ConversationTranscript } from "@/components/bioinfoflow/agent/conversation-transcript"
+import { AgentPlanCard } from "@/components/bioinfoflow/agent/plan-entry"
 import { useAgentTranscriptArtifacts } from "@/components/bioinfoflow/agent/use-agent-transcript-artifacts"
 import {
   environmentScopeFromSelection,
@@ -561,6 +562,11 @@ function SessionWorkbench({
             >
               {t(`readOnly.${conversationView.conversation.status}`)}
             </p>
+          ) : null}
+          {conversationView?.currentPlan ? (
+            <div className="relative z-10 flex shrink-0 justify-center px-4 pb-2">
+              <AgentPlanCard plan={conversationView.currentPlan} />
+            </div>
           ) : null}
           <AgentComposer
             placement="dock"
