@@ -90,6 +90,8 @@ RTX 4080 SUPER 这样的显卡可以用来在本机运行 GPU 流程；最终能
 ## 开发
 
 仓库约定和验证命令见 [AGENTS.md](AGENTS.md)。
+直接从源码启动后端时，请先在 `backend/` 目录运行
+`npm ci --prefix sandbox_worker`，安装 Agent 本地沙盒 worker 所需的依赖。
 
 ## 开源协议
 
