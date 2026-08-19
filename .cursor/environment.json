@@ -1,0 +1,17 @@
+{
+  "name": "BioinfoFlow",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "terminals": [
+    {
+      "name": "backend",
+      "command": "export PATH=\"$HOME/.local/bin:$PATH\"; cd backend && uv run uvicorn app.main:app --reload --reload-dir app --port 8000"
+    },
+    {
+      "name": "frontend",
+      "command": "export PATH=\"$HOME/.bun/bin:$PATH\"; cd frontend && bun run dev"
+    }
+  ],
+  "ports": [3000, 8000]
+}
