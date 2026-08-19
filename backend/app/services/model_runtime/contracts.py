@@ -22,6 +22,12 @@ class TextPart:
 
 
 @dataclass(frozen=True)
+class ReasoningPart:
+    text: str
+    source: str
+
+
+@dataclass(frozen=True)
 class ImagePart:
     mime_type: str
     data: str
@@ -248,7 +254,9 @@ class ResponsesContinuation:
         )
 
 
-InputPart: TypeAlias = TextPart | ImagePart | ToolCallPart | ToolResultPart
+InputPart: TypeAlias = (
+    TextPart | ReasoningPart | ImagePart | ToolCallPart | ToolResultPart
+)
 
 
 _CANONICAL_INPUT_DIGEST_DOMAIN = b"bioinfoflow-canonical-input-prefix.v1"
@@ -279,6 +287,12 @@ def _advance_canonical_input_digest(
 def _canonical_input_payload(item: InputPart) -> bytes:
     if isinstance(item, TextPart):
         payload = {"type": "text", "text": item.text, "phase": item.phase}
+    elif isinstance(item, ReasoningPart):
+        payload = {
+            "type": "reasoning",
+            "text": item.text,
+            "source": item.source,
+        }
     elif isinstance(item, ImagePart):
         payload = {
             "type": "image",

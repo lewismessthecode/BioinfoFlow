@@ -339,6 +339,7 @@ function sessionState(
 function conversationView(
   transcript: ConversationViewModel["transcript"],
   activeWork: ConversationViewModel["activeWork"] = null,
+  currentPlan: ConversationViewModel["currentPlan"] = null,
 ): ConversationViewModel {
   return {
     protocolVersion: 1,
@@ -371,6 +372,7 @@ function conversationView(
       },
     },
     transcript,
+    currentPlan,
     runs: [],
     activeWork,
   }
@@ -865,6 +867,44 @@ describe("AgentWorkbench v2", () => {
     expect(
       screen.queryByLabelText("connection.connected"),
     ).not.toBeInTheDocument()
+  })
+
+  it("renders the current plan as a compact popover above the composer", async () => {
+    const user = userEvent.setup()
+    mocks.useSession.mockReturnValue(
+      sessionState({
+        conversationView: conversationView([], null, {
+          id: "plan-entry-1",
+          runId: "run-1",
+          planId: "plan-1",
+          revision: 2,
+          title: "Investigate the workflow",
+          active: true,
+          items: [
+            { id: "step-1", text: "Inspect logs", status: "completed" },
+            { id: "step-2", text: "Verify outputs", status: "in_progress" },
+          ],
+          updatedAt: timestamp,
+        }),
+      }),
+    )
+
+    renderWithProviders(
+      <AgentWorkbench sessionId="session-1" projectId="project-1" />,
+    )
+
+    const trigger = screen.getByTestId("agent-plan-trigger")
+    expect(trigger).toHaveTextContent("plan.step_progress")
+    expect(screen.getByTestId("mock-composer").previousElementSibling).toContainElement(
+      trigger,
+    )
+    expect(screen.queryByText("Inspect logs")).toBeNull()
+
+    await user.click(trigger)
+
+    expect(screen.getByText("Investigate the workflow")).toBeInTheDocument()
+    expect(screen.getByText("Inspect logs")).toBeInTheDocument()
+    expect(screen.getByText("Verify outputs")).toBeInTheDocument()
   })
 
   it("publishes refreshed session titles for the sidebar without rendering them in the canvas", () => {

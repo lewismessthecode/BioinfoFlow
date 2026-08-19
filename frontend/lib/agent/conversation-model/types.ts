@@ -129,6 +129,13 @@ export type PlanTranscriptBlock = {
   updatedAt: string
 }
 
+export type ConversationPlan = Omit<
+  PlanTranscriptBlock,
+  "type" | "createdAt"
+> & {
+  active: boolean
+}
+
 export type ActivityStatus =
   | "pending"
   | "running"
@@ -309,7 +316,6 @@ export type UnknownTranscriptBlock = {
 export type TranscriptBlock =
   | MessageTranscriptBlock
   | ReasoningTranscriptBlock
-  | PlanTranscriptBlock
   | ActivityGroupTranscriptBlock
   | InteractionTranscriptBlock
   | ArtifactTranscriptBlock
@@ -334,6 +340,7 @@ export type ConversationViewModel = {
     capabilities: ComposerCapabilities
   }
   transcript: TranscriptBlock[]
+  currentPlan: ConversationPlan | null
   runs: ConversationRunAudit[]
   activeWork: ActiveWork | null
 }

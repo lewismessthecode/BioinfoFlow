@@ -16,7 +16,6 @@ import { AgentArtifactReference } from "@/components/bioinfoflow/agent/agent-art
 import { AgentLiveStatus } from "@/components/bioinfoflow/agent/agent-live-status"
 import { AgentThinking } from "@/components/bioinfoflow/agent/agent-thinking"
 import { AgentInteractionCard } from "@/components/bioinfoflow/agent/interaction-card"
-import { AgentPlanEntry } from "@/components/bioinfoflow/agent/plan-entry"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { Button } from "@/components/ui/button"
 import type {
@@ -272,10 +271,6 @@ function TranscriptBlockView({
         <AgentThinking
           reasoning={block}
         />
-      )
-    case "plan":
-      return (
-        <AgentPlanEntry plan={block} />
       )
     case "activity_group":
       return <AgentActivityGroup activityGroup={block} />

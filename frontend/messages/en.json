@@ -2939,6 +2939,7 @@
     "plan": {
       "title": "Plan",
       "progress": "{completed}/{total} complete",
+      "step_progress": "Step {step} / {total}",
       "expand": "Expand plan",
       "collapse": "Collapse plan",
       "status": {

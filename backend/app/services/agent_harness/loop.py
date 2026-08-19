@@ -58,6 +58,7 @@ from app.services.model_runtime.contracts import (
     ImagePart,
     ModelInvocation,
     ReasoningDelta,
+    ReasoningPart,
     ReasoningRequest,
     ResponsesContinuation,
     TextDelta,
@@ -226,43 +227,6 @@ class AgentLoop:
                     await self._cancel(run_id)
                     return
 
-                control_calls = tuple(
-                    call for call in response.tool_calls if call.name == "update_plan"
-                )
-                control_input: list[dict[str, Any]] = []
-                last_control_sequence: int | None = None
-                if control_calls:
-                    response.tool_calls = tuple(
-                        call
-                        for call in response.tool_calls
-                        if call.name != "update_plan"
-                    )
-                    response.continuation = None
-                    for call in control_calls:
-                        result = await workspace.execute(
-                            call,
-                            cancellation=cancellation,
-                        )
-                        if result.status != "completed":
-                            control_input.extend(
-                                _private_control_error_exchange(
-                                    call,
-                                    result.error or "Agent produced an invalid plan.",
-                                )
-                            )
-                            continue
-                        plan = await self.repository.commit_plan(
-                            str(session.id),
-                            run_id=run_id,
-                            title=result.output.get("title"),
-                            items=list(result.output.get("items") or []),
-                        )
-                        last_control_sequence = plan.sequence
-                        control_input.extend(_private_control_exchange(call, plan))
-                        await self.publish(
-                            EntryCommittedEvent(entry=entry_contract(plan))
-                        )
-
                 execution_mode = workspace.batch_execution_mode(response.tool_calls)
                 assistant_entry_id = str(uuid4())
                 group_id = assistant_entry_id
@@ -286,32 +250,7 @@ class AgentLoop:
                         ],
                     )
                 response.continuation = _advance_response_continuation(response)
-                if control_input:
-                    current = await self.repository.get_run(run_id)
-                    checkpoint = dict(current.checkpoint or {}) if current else {}
-                    history_revision = (
-                        assistant.sequence
-                        if assistant is not None
-                        else last_control_sequence
-                    )
-                    checkpoint.update(
-                        {
-                            "continuation": None,
-                            "control_input": control_input,
-                            **(
-                                {"history_revision": history_revision}
-                                if history_revision is not None
-                                else {}
-                            ),
-                        }
-                    )
-                    await self.repository.update_run(
-                        run_id,
-                        draft=None,
-                        checkpoint=checkpoint,
-                    )
-                else:
-                    await self.repository.update_run(run_id, draft=None)
+                await self.repository.update_run(run_id, draft=None)
                 if assistant is not None:
                     await self.publish(EntryCommittedEvent(entry=assistant))
 
@@ -319,8 +258,6 @@ class AgentLoop:
                     return
 
                 if not response.tool_calls:
-                    if control_calls:
-                        continue
                     (
                         steer_entries,
                         completed,
@@ -382,7 +319,6 @@ class AgentLoop:
                                 for call in response.tool_calls
                             ),
                         ),
-                        **({"control_input": control_input} if control_input else {}),
                         "iteration": iteration,
                         "last_tool_signature": signature,
                         "repeat_count": repeats,
@@ -464,11 +400,6 @@ class AgentLoop:
                                     ),
                                     interaction=_interaction_dict(result),
                                 ),
-                                **(
-                                    {"control_input": control_input}
-                                    if control_input
-                                    else {}
-                                ),
                                 "waiting_call": _tool_call_dict(
                                     _find_call(response.tool_calls, result.call_id)
                                 ),
@@ -493,6 +424,25 @@ class AgentLoop:
                             )
                         )
                         return
+                    if result.tool_name == "update_plan" and result.status == "completed":
+                        plan = await self.repository.commit_plan(
+                            str(session.id),
+                            run_id=run_id,
+                            title=result.output.get("title"),
+                            items=list(result.output.get("items") or []),
+                        )
+                        await self.publish(
+                            EntryCommittedEvent(entry=entry_contract(plan))
+                        )
+                        payload = plan.payload if isinstance(plan.payload, Mapping) else {}
+                        result = replace(
+                            result,
+                            output={
+                                "plan_id": payload.get("plan_id"),
+                                "revision": payload.get("revision"),
+                                "status": "completed",
+                            },
+                        )
                     tool_entry = await self._append_message(
                         str(session.id),
                         run_id,
@@ -500,6 +450,7 @@ class AgentLoop:
                         content=json.dumps(
                             _tool_result_history_output(result),
                             ensure_ascii=False,
+                            separators=(",", ":"),
                             default=str,
                         ),
                         call_id=result.call_id,
@@ -1757,6 +1708,8 @@ def _trace_context_snapshot(
         if isinstance(item, TextPart):
             category = "assistant" if item.phase is not None else "user"
             characters[category] += len(item.text)
+        elif isinstance(item, ReasoningPart):
+            characters["assistant"] += len(item.text)
         elif isinstance(item, ImagePart):
             characters["user"] += len(item.data)
         elif isinstance(item, ToolCallPart):
@@ -1816,6 +1769,11 @@ def _advance_response_continuation(
     if continuation is None:
         return response.continuation
     committed_parts = (
+        *(
+            ReasoningPart(text=trace.text, source=trace.source)
+            for trace in response.reasoning_traces
+            if trace.text
+        ),
         *((TextPart(response.text, phase="final_answer"),) if response.text else ()),
         *(
             ToolCallPart(
@@ -1827,62 +1785,6 @@ def _advance_response_continuation(
         ),
     )
     return continuation.advance_canonical_input(committed_parts).to_private_dict()
-
-
-def _private_control_exchange(
-    call: ToolCall,
-    plan: Any,
-) -> list[dict[str, Any]]:
-    payload = plan.payload if isinstance(plan.payload, Mapping) else {}
-    acknowledgment = json.dumps(
-        {
-            "plan_id": payload.get("plan_id"),
-            "revision": payload.get("revision"),
-            "status": "completed",
-        },
-        ensure_ascii=False,
-        separators=(",", ":"),
-        default=str,
-    )
-    return [
-        {
-            "type": "tool_call",
-            "call_id": call.call_id,
-            "name": call.name,
-            "arguments": dict(call.arguments),
-        },
-        {
-            "type": "tool_result",
-            "call_id": call.call_id,
-            "output": acknowledgment,
-            "is_error": False,
-        },
-    ]
-
-
-def _private_control_error_exchange(
-    call: ToolCall,
-    error: str,
-) -> list[dict[str, Any]]:
-    return [
-        {
-            "type": "tool_call",
-            "call_id": call.call_id,
-            "name": call.name,
-            "arguments": dict(call.arguments),
-        },
-        {
-            "type": "tool_result",
-            "call_id": call.call_id,
-            "output": json.dumps(
-                {"error": error},
-                ensure_ascii=False,
-                separators=(",", ":"),
-                default=str,
-            ),
-            "is_error": True,
-        },
-    ]
 
 
 def _private_control_input_parts(

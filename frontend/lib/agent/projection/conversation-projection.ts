@@ -6,6 +6,7 @@ import type {
   ConversationInteractionRequest,
   ConversationInteractionResponse,
   ConversationExecutionConfig,
+  ConversationPlan,
   InteractionTranscriptBlock,
   ConversationViewModel,
   MessageReference,
@@ -50,6 +51,7 @@ type HistoryProjectionContext = {
   groups: Map<string, ActivityGroupTranscriptBlock>
   calls: Map<string, { groupKey: string; activity: ActivityItem }>
   interactions: Map<string, InteractionTranscriptBlock>
+  hiddenCalls: Set<string>
 }
 
 type ReasoningProjectionInput = {
@@ -233,6 +235,7 @@ function projectConversationView(
         capabilities: COMPOSER_CAPABILITIES,
       },
       transcript: projectTranscript(transportState, state.diagnostics),
+      currentPlan: projectCurrentPlan(transportState),
       runs: runs.map((run) => ({
         id: run.id,
         status: run.status,
@@ -489,6 +492,7 @@ function projectTranscript(
     groups: new Map(),
     calls: new Map(),
     interactions: new Map(),
+    hiddenCalls: new Set(),
   }
   const entries = [...state.entries].sort((left, right) => left.sequence - right.sequence)
   for (const entry of entries) {
@@ -622,6 +626,9 @@ function appendActiveRun(
   }
 
   for (const tool of activeRun.tool_progress) {
+    if (tool.category === "plan") {
+      continue
+    }
     const runKey = activeRun.run.id
     const callKey = `${runKey}:${tool.call_id}`
     const existingCall = context.calls.get(callKey)
@@ -731,19 +738,7 @@ function projectEntry(
     case "interaction_response":
       return projectInteractionResponseEntry(entry)
     case "plan":
-      return [
-        {
-          type: "plan",
-          id: entry.id,
-          runId: entry.run_id,
-          createdAt: entry.created_at,
-          planId: entry.payload.plan_id,
-          revision: entry.payload.revision,
-          title: entry.payload.title ?? null,
-          items: entry.payload.items,
-          updatedAt: entry.payload.updated_at,
-        },
-      ]
+      return []
     default:
       return [unknownEntry(entry, "unknown_history_entry")]
   }
@@ -866,6 +861,10 @@ function projectToolCall(
   context: HistoryProjectionContext,
 ) {
   const runKey = entry.run_id ?? "session"
+  if (part.category === "plan") {
+    context.hiddenCalls.add(`${runKey}:${part.call_id}`)
+    return
+  }
   const groupKey = `${runKey}:${part.group_id}`
   let group = context.groups.get(groupKey)
   if (!group) {
@@ -907,6 +906,7 @@ function projectToolResult(
 ) {
   const runKey = entry.run_id ?? "session"
   const callKey = `${runKey}:${part.call_id}`
+  if (context.hiddenCalls.has(callKey)) return
   const call = context.calls.get(callKey)
   if (!call) {
     blocks.push({
@@ -937,6 +937,34 @@ function projectToolResult(
   }
   group.activities[activityIndex] = activity
   context.calls.set(callKey, { groupKey: call.groupKey, activity })
+}
+
+function projectCurrentPlan(state: AgentStoreState): ConversationPlan | null {
+  const latest = [...state.entries]
+    .filter((entry): entry is Extract<HistoryEntry, { type: "plan" }> =>
+      entry.type === "plan"
+    )
+    .sort((left, right) => left.sequence - right.sequence)
+    .at(-1)
+  if (!latest) return null
+  const run = state.runs.find((candidate) => candidate.id === latest.run_id)
+  const active = Boolean(
+    run && ["queued", "running", "waiting_user"].includes(run.status),
+  )
+  const completed = run?.status === "completed"
+  return {
+    id: latest.id,
+    runId: latest.run_id,
+    planId: latest.payload.plan_id,
+    revision: latest.payload.revision,
+    title: latest.payload.title ?? null,
+    active,
+    items: latest.payload.items.map((item) => ({
+      ...item,
+      status: completed ? "completed" : item.status,
+    })),
+    updatedAt: latest.payload.updated_at,
+  }
 }
 
 function projectInteractionRequestEntry(
