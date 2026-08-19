@@ -10,6 +10,7 @@ from typing import Any, Literal, Protocol
 from app.services.model_runtime.contracts import (
     ImagePart,
     InputPart,
+    ReasoningPart,
     TextPart,
     ToolCallPart,
     ToolResultPart,
@@ -272,6 +273,16 @@ def _message_parts(
         elif role == "user":
             result.append(TextPart(content))
     if role == "assistant":
+        result[:0] = [
+            ReasoningPart(text=str(part["text"]), source=str(part["source"]))
+            for part in typed_parts
+            if isinstance(part, Mapping)
+            and part.get("type") == "reasoning_trace"
+            and isinstance(part.get("text"), str)
+            and part.get("text")
+            and isinstance(part.get("source"), str)
+            and part.get("source")
+        ]
         for call in typed_parts:
             if not isinstance(call, Mapping) or call.get("type") != "tool_call":
                 continue

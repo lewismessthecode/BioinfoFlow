@@ -9,6 +9,7 @@ from app.services.model_runtime.contracts import (
     ImagePart,
     ModelEvent,
     ModelInvocation,
+    ReasoningPart,
     ReasoningDelta,
     TextDelta,
     TextPart,
@@ -28,6 +29,7 @@ class ChatCompletionsCodec:
         if invocation.instructions:
             messages.append({"role": "system", "content": invocation.instructions})
         pending_user_parts: list[TextPart | ImagePart] = []
+        pending_reasoning: list[ReasoningPart] = []
         for item in invocation.input_items:
             if isinstance(item, ImagePart) or (
                 isinstance(item, TextPart) and item.phase is None
@@ -36,26 +38,27 @@ class ChatCompletionsCodec:
                 continue
 
             _flush_user_parts(messages, pending_user_parts)
-            if isinstance(item, TextPart):
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": item.text,
-                    }
-                )
+            if isinstance(item, ReasoningPart):
+                pending_reasoning.append(item)
+            elif isinstance(item, TextPart):
+                message = {"role": "assistant", "content": item.text}
+                _attach_reasoning_content(message, pending_reasoning)
+                messages.append(message)
             elif isinstance(item, ToolCallPart):
                 tool_call = _encode_tool_call(item)
                 if messages and _is_assistant_message(messages[-1]):
+                    _attach_reasoning_content(messages[-1], pending_reasoning)
                     messages[-1].setdefault("tool_calls", []).append(tool_call)
                 else:
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [tool_call],
-                        }
-                    )
+                    message = {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [tool_call],
+                    }
+                    _attach_reasoning_content(message, pending_reasoning)
+                    messages.append(message)
             elif isinstance(item, ToolResultPart):
+                pending_reasoning.clear()
                 messages.append(
                     {
                         "role": "tool",
@@ -204,6 +207,17 @@ def _encode_tool_call(item: ToolCallPart) -> dict[str, Any]:
             ),
         },
     }
+
+
+def _attach_reasoning_content(
+    message: dict[str, Any], pending: list[ReasoningPart]
+) -> None:
+    reasoning = "".join(
+        part.text for part in pending if part.source == "reasoning_content"
+    )
+    if reasoning:
+        message["reasoning_content"] = reasoning
+    pending.clear()
 
 
 def _is_assistant_message(message: dict[str, Any]) -> bool:

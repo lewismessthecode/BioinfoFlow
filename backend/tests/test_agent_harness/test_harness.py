@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import base64
 from collections.abc import AsyncIterator
 from dataclasses import replace
@@ -308,12 +309,17 @@ async def test_reasoning_deltas_preserve_public_trace_boundaries(
 
 
 @pytest.mark.asyncio
-async def test_real_update_plan_tool_persists_plan_without_public_tool_messages(
+async def test_update_plan_stays_in_its_model_tool_round_and_persists_plan(
     harness_db,
     tmp_path,
 ) -> None:
+    (tmp_path / "input.txt").write_text("sample\n")
     model = ScriptedModel(
         (
+            ReasoningDelta(
+                text="I should inspect the inputs before running the workflow.",
+                source="reasoning_content",
+            ),
             TextDelta(text="I will start with a short plan."),
             ToolCallDelta(
                 index=0,
@@ -324,6 +330,12 @@ async def test_real_update_plan_tool_persists_plan_without_public_tool_messages(
                     '{"step":"Inspect inputs","status":"in_progress"},'
                     '{"step":"Run workflow","status":"pending"}]}'
                 ),
+            ),
+            ToolCallDelta(
+                index=1,
+                call_id="read-1",
+                name="read",
+                arguments_delta='{"path":"input.txt"}',
             ),
             CompletionMetadata(response_id="response-plan", finish_reason="tool_calls"),
         ),
@@ -373,30 +385,26 @@ async def test_real_update_plan_tool_persists_plan_without_public_tool_messages(
         "Inspect inputs",
         "Run workflow",
     ]
-    message_parts = [
-        part
+    first_assistant = next(
+        entry
         for entry in snapshot.entries
         if entry.type == "message"
-        for part in entry.payload.parts
-    ]
-    assert all(
-        not (
-            part.type in {"tool_call", "tool_result"}
-            and getattr(part, "name", None) == "update_plan"
-        )
-        for part in message_parts
+        and entry.payload.role == "assistant"
+        and any(getattr(part, "call_id", None) == "plan-1" for part in entry.payload.parts)
     )
-    assert all(
-        getattr(part, "call_id", None) not in {"plan-1", "plan-2"}
-        for part in message_parts
-    )
+    assert [
+        part.call_id
+        for part in first_assistant.payload.parts
+        if part.type == "tool_call"
+    ] == ["plan-1", "read-1"]
     assert len(model.invocations) == 3
-    private_exchange = [
+    first_round = [
         item
         for item in model.invocations[1].input_items
-        if isinstance(item, (ToolCallPart, ToolResultPart)) and item.call_id == "plan-1"
+        if isinstance(item, (ToolCallPart, ToolResultPart))
+        and item.call_id in {"plan-1", "read-1"}
     ]
-    assert private_exchange == [
+    assert first_round[:2] == [
         ToolCallPart(
             call_id="plan-1",
             name="update_plan",
@@ -408,13 +416,19 @@ async def test_real_update_plan_tool_persists_plan_without_public_tool_messages(
                 ],
             },
         ),
-        ToolResultPart(
-            call_id="plan-1",
-            output='{"plan_id":"plan:'
-            + str(_latest_run(snapshot).id)
-            + '","revision":1,"status":"completed"}',
+        ToolCallPart(
+            call_id="read-1",
+            name="read",
+            arguments={"path": "input.txt"},
         ),
     ]
+    assert [item.call_id for item in first_round[2:]] == ["plan-1", "read-1"]
+    assert json.loads(first_round[2].output) == {
+        "plan_id": "plan:" + str(_latest_run(snapshot).id),
+        "revision": 1,
+        "status": "completed",
+    }
+    assert "sample" in first_round[3].output
     assert _text_values(snapshot.entries[-1].payload) == [
         "I have started with the input inspection."
     ]

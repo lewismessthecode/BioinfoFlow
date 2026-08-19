@@ -12,6 +12,7 @@ from app.services.model_runtime.contracts import (
     ModelWarning,
     Phase,
     ReasoningDelta,
+    ReasoningPart,
     ResponsesContinuation,
     TextDelta,
     TextPart,
@@ -66,6 +67,8 @@ class ResponsesCodec:
                 continue
 
             _flush_user_parts(input_items, pending_user_parts)
+            if isinstance(item, ReasoningPart):
+                continue
             if isinstance(item, TextPart):
                 input_items.append(
                     {

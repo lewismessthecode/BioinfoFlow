@@ -78,22 +78,20 @@ const planView: ConversationViewModel = {
       planMode: false,
     },
   },
-  transcript: [
-    {
-      type: "plan",
-      id: "plan-entry-1",
-      runId: "run-1",
-      createdAt: "2026-08-16T08:00:00.000Z",
-      planId: "plan-1",
-      revision: 2,
-      title: "Investigate the workflow",
-      items: [
-        { id: "step-1", text: "Inspect logs", status: "completed" },
-        { id: "step-2", text: "Verify outputs", status: "in_progress" },
-      ],
-      updatedAt: "2026-08-16T08:00:01.000Z",
-    },
-  ],
+  transcript: [],
+  currentPlan: {
+    id: "plan-entry-1",
+    runId: "run-1",
+    planId: "plan-1",
+    revision: 2,
+    title: "Investigate the workflow",
+    active: true,
+    items: [
+      { id: "step-1", text: "Inspect logs", status: "completed" },
+      { id: "step-2", text: "Verify outputs", status: "in_progress" },
+    ],
+    updatedAt: "2026-08-16T08:00:01.000Z",
+  },
   runs: [],
   activeWork: null,
 }
@@ -220,15 +218,13 @@ describe("ConversationTranscript", () => {
     ).toBeTruthy()
   })
 
-  it("renders a stable plan block with the existing Agent plan presentation", () => {
+  it("does not render product plan state inside the transcript", () => {
     renderWithProviders(<ConversationTranscript view={planView} />)
 
     expect(screen.getByTestId("agent-transcript-content")).toHaveClass("gap-3")
     expect(screen.getByTestId("agent-transcript-content")).not.toHaveClass("gap-5")
-    expect(screen.getByText("Investigate the workflow")).toBeInTheDocument()
-    expect(screen.getByText("1/2 complete")).toBeInTheDocument()
-    expect(screen.getByText("Inspect logs")).toBeInTheDocument()
-    expect(screen.getByText("Verify outputs")).toBeInTheDocument()
+    expect(screen.queryByText("Investigate the workflow")).toBeNull()
+    expect(screen.queryByText("Inspect logs")).toBeNull()
     expect(screen.queryByTestId("agent-unknown-transcript-block")).toBeNull()
   })
 

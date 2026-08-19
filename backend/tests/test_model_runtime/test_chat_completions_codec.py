@@ -12,6 +12,7 @@ from app.services.model_runtime.contracts import (
     ImagePart,
     ModelInvocation,
     ModelTarget,
+    ReasoningPart,
     ReasoningDelta,
     TextDelta,
     TextPart,
@@ -60,7 +61,11 @@ def test_encode_request_groups_adjacent_user_text_and_image() -> None:
     }
 
 
-def _invocation(*, stream: bool = False) -> ModelInvocation:
+def _invocation(
+    *,
+    stream: bool = False,
+    input_items: tuple | None = None,
+) -> ModelInvocation:
     return ModelInvocation(
         target=ModelTarget(
             endpoint_id="endpoint-1",
@@ -72,7 +77,7 @@ def _invocation(*, stream: bool = False) -> ModelInvocation:
             api_key="secret",
         ),
         instructions="You are concise.",
-        input_items=(
+        input_items=input_items or (
             TextPart(text="Run the workflow."),
             ToolCallPart(
                 call_id="call-1",
@@ -626,3 +631,59 @@ def _stream(*chunks: Any) -> AsyncIterator[Any]:
             yield chunk
 
     return iterate()
+def test_encode_keeps_reasoning_with_the_assistant_tool_round() -> None:
+    invocation = _invocation(
+        input_items=(
+            ReasoningPart(
+                text="Inspect the workspace first.",
+                source="reasoning_content",
+            ),
+            TextPart("I will inspect it.", phase="final_answer"),
+            ToolCallPart(
+                call_id="call-plan",
+                name="update_plan",
+                arguments={"plan": [{"step": "Inspect", "status": "in_progress"}]},
+            ),
+            ToolCallPart(
+                call_id="call-read",
+                name="read",
+                arguments={"path": "input.txt"},
+            ),
+            ToolResultPart(
+                call_id="call-plan",
+                output='{"status":"completed"}',
+            ),
+            ToolResultPart(call_id="call-read", output="contents"),
+        )
+    )
+
+    request = ChatCompletionsCodec().encode_request(invocation)
+
+    assert request["messages"] == [
+        {"role": "system", "content": "You are concise."},
+        {
+            "role": "assistant",
+            "content": "I will inspect it.",
+            "reasoning_content": "Inspect the workspace first.",
+            "tool_calls": [
+                {
+                    "id": "call-plan",
+                    "type": "function",
+                    "function": {
+                        "name": "update_plan",
+                        "arguments": '{"plan":[{"step":"Inspect","status":"in_progress"}]}',
+                    },
+                },
+                {
+                    "id": "call-read",
+                    "type": "function",
+                    "function": {
+                        "name": "read",
+                        "arguments": '{"path":"input.txt"}',
+                    },
+                },
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call-plan", "content": '{"status":"completed"}'},
+        {"role": "tool", "tool_call_id": "call-read", "content": "contents"},
+    ]

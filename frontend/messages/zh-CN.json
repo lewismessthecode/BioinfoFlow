@@ -2939,6 +2939,7 @@
     "plan": {
       "title": "计划",
       "progress": "已完成 {completed}/{total}",
+      "step_progress": "第 {step} / {total} 步",
       "expand": "展开计划",
       "collapse": "收起计划",
       "status": {
