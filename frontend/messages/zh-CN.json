@@ -1507,18 +1507,19 @@
       "dark": "深色",
       "light": "浅色",
       "toggleMenu": "菜单",
+      "menu": "导航",
+      "menuDescription": "落地页导航和控制项。",
+      "closeMenu": "关闭菜单",
       "toggleTheme": "主题",
       "selectLanguage": "语言",
       "github": "GitHub"
     },
     "story": {
-      "eyebrow": "本地运行的生物信息学 Agent",
       "title": "Bioinfoflow",
       "titleSuffix": "用自然语言分析生物信息学",
-      "description": "说出你的分析目标，Agent 会准备工作流和参数，确认后即可运行。",
+      "description": "说出你的分析目标，剩下的交给 Agent。",
       "primaryAction": "用 Agent 开始分析",
       "secondaryAction": "看看如何运行",
-      "reassurance": "运行前由你确认，数据留在自己的环境里。",
       "stages": {
         "dashboard": {
           "label": "仪表盘",
@@ -1579,7 +1580,8 @@
     },
     "hardware": {
       "badge": "本机检查",
-      "title": "这台电脑，能跑 WGS 吗？",
+      "titleLead": "这台电脑，",
+      "titleRest": "能跑 WGS 吗？",
       "subtitle": "检查显卡、内存和存储是否满足本地分析需求。",
       "gpu": {
         "title": "显卡",
@@ -1609,12 +1611,14 @@
         "partial": "可能有限制",
         "notCompatible": "需要 NVIDIA GPU",
         "noGpu": "未检测到 GPU",
-        "cannotDetect": "请手动检查 NVIDIA GPU"
+        "cannotDetect": "请手动检查 NVIDIA GPU",
+        "unknownGpu": "未知 GPU"
       }
     },
     "security": {
       "badge": "数据与权限",
-      "title": "数据留在你的环境里",
+      "titleLead": "数据始终留在",
+      "titleRest": "你的环境里。",
       "subtitle": "在本机或自己的服务器上运行。数据放在哪里，始终由你决定。",
       "boundaryLabel": "运行边界",
       "boundaryStatus": "由你控制",
@@ -1635,14 +1639,15 @@
       }
     },
     "cta": {
-      "eyebrow": "从一个分析目标开始",
-      "title": "说出你的目标，Agent 接着做",
-      "subtitle": "工作流、参数和运行位置准备好后，再由你确认。",
+      "titleLead": "说出分析目标。",
+      "titleRest": "Agent 接着处理。",
+      "subtitle": "工作流、运行和结果都沉淀为一条可复现的记录。",
       "getStarted": "开始一次分析",
       "contactUs": "联系我们"
     },
     "footer": {
       "tagline": "本地运行，Agent 协作，结果可复现。",
+      "navigationLabel": "页脚导航",
       "copyright": "© {year} Bioinfoflow",
       "bottomTagline": "本地优先的生物信息学平台",
       "product": {

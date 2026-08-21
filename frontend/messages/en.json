@@ -1507,18 +1507,19 @@
       "dark": "Dark",
       "light": "Light",
       "toggleMenu": "Toggle menu",
+      "menu": "Navigation",
+      "menuDescription": "Landing page navigation and controls.",
+      "closeMenu": "Close menu",
       "toggleTheme": "Toggle theme",
       "selectLanguage": "Select language",
       "github": "GitHub"
     },
     "story": {
-      "eyebrow": "A local Agent for bioinformatics",
       "title": "Bioinfoflow",
       "titleSuffix": "Bioinformatics in plain language.",
-      "description": "Describe the goal. The Agent prepares the workflow and parameters, ready for your approval.",
+      "description": "Describe the analysis goal. The Agent handles the rest.",
       "primaryAction": "Start with the Agent",
       "secondaryAction": "See how it runs",
-      "reassurance": "You approve each run. Data stays in your environment.",
       "stages": {
         "dashboard": {
           "label": "Dashboard",
@@ -1579,7 +1580,8 @@
     },
     "hardware": {
       "badge": "Local check",
-      "title": "Can this computer run WGS?",
+      "titleLead": "Can this computer",
+      "titleRest": "run WGS?",
       "subtitle": "Check whether its GPU, memory, and storage meet local analysis requirements.",
       "gpu": {
         "title": "GPU",
@@ -1609,12 +1611,14 @@
         "partial": "May work with limitations",
         "notCompatible": "NVIDIA GPU required",
         "noGpu": "No GPU detected",
-        "cannotDetect": "Check your NVIDIA GPU manually"
+        "cannotDetect": "Check your NVIDIA GPU manually",
+        "unknownGpu": "Unknown GPU"
       }
     },
     "security": {
       "badge": "Data and permissions",
-      "title": "Keep data in your environment",
+      "titleLead": "Keep your data",
+      "titleRest": "in your environment.",
       "subtitle": "Run on your computer or server. You decide where data lives.",
       "boundaryLabel": "Run boundary",
       "boundaryStatus": "You stay in control",
@@ -1635,14 +1639,15 @@
       }
     },
     "cta": {
-      "eyebrow": "Start with an analysis goal",
-      "title": "State the goal. The Agent takes it from there.",
-      "subtitle": "Review the workflow, parameters, and run location before anything starts.",
+      "titleLead": "State the analysis goal.",
+      "titleRest": "The Agent takes it from there.",
+      "subtitle": "Workflows, runs, and results stay together in one reproducible record.",
       "getStarted": "Start an analysis",
       "contactUs": "Contact us"
     },
     "footer": {
       "tagline": "Run locally. Work with an Agent. Reproduce the result.",
+      "navigationLabel": "Footer navigation",
       "copyright": "© {year} Bioinfoflow. All rights reserved.",
       "bottomTagline": "Local-first bioinformatics workflows",
       "product": {
