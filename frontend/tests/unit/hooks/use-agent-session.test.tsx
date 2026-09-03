@@ -141,6 +141,17 @@ describe("useAgentSession", () => {
       composer: { placement: "centered" },
       transcript: [],
     })
+    expect(result.current.view).toEqual(result.current.conversationView)
+    expect(result.current.commands).toMatchObject({
+      sendMessage: expect.any(Function),
+      steer: expect.any(Function),
+      respond: expect.any(Function),
+      cancel: expect.any(Function),
+      updatePermissionMode: expect.any(Function),
+      updateModel: expect.any(Function),
+      updateEnvironmentScope: expect.any(Function),
+      retry: expect.any(Function),
+    })
   })
 
   it("projects an unknown Harness event into a safe transcript diagnostic", async () => {
@@ -660,6 +671,26 @@ describe("useAgentSession", () => {
     expect(result.current.session?.environment_scope).toEqual({
       mode: "manual",
       environment_ids: ["local", "gpu-01"],
+    })
+  })
+
+  it("maps UI-only command port inputs at the live transport boundary", async () => {
+    mocks.updateAgentSession.mockResolvedValue(snapshot())
+    const { result } = renderHook(() => useAgentSession("session-1"))
+    await waitFor(() => expect(mocks.subscribeAgentEvents).toHaveBeenCalled())
+
+    await act(async () => {
+      await result.current.commands.updateEnvironmentScope({
+        mode: "manual",
+        environmentIds: ["local", "gpu-01"],
+      })
+    })
+
+    expect(mocks.updateAgentSession).toHaveBeenCalledWith("session-1", {
+      environmentScope: {
+        mode: "manual",
+        selected_environment_ids: ["local", "gpu-01"],
+      },
     })
   })
 

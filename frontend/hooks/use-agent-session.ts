@@ -15,7 +15,11 @@ import {
   initialAgentStoreState,
   type AgentStoreState,
 } from "@/lib/agent/store"
-import type { ConversationViewModel } from "@/lib/agent/conversation-model/types"
+import type {
+  ConversationEnvironmentScope,
+  ConversationSessionBinding,
+  ConversationViewModel,
+} from "@/lib/agent/conversation-model/types"
 import {
   applyConversationProjectionDiagnostic,
   applyConversationProjectionEvent,
@@ -35,21 +39,30 @@ import type {
 import type { AgentConnectionStatus } from "@/lib/agent/stream"
 import type { PresentationDiagnostic } from "@/lib/agent/transport/presentation-contract"
 
-export type AgentSessionState = AgentStoreState & {
+export type AgentSessionState = ConversationSessionBinding & AgentStoreState & {
+  /** @deprecated Use `view`. */
   conversationView: ConversationViewModel | null
   connectionStatus: AgentConnectionStatus
   error: Error | null
   isLoading: boolean
+  /** @deprecated Use `commands.sendMessage`. */
   sendMessage: (parts: InputPart[]) => Promise<void>
+  /** @deprecated Use `commands.steer`. */
   steer: (parts: InputPart[]) => Promise<void>
+  /** @deprecated Use `commands.respond`. */
   respond: (
     interactionId: string,
     response: InteractionResponse,
   ) => Promise<void>
+  /** @deprecated Use `commands.cancel`. */
   cancel: () => Promise<void>
+  /** @deprecated Use `commands.updatePermissionMode`. */
   updatePermissionMode: (mode: AgentPermissionMode) => Promise<void>
+  /** @deprecated Use `commands.updateModel`. */
   updateModel: (selection: AgentModelSelection) => Promise<void>
+  /** @deprecated Use `commands.updateEnvironmentScope`. */
   updateEnvironmentScope: (scope: AgentEnvironmentScope) => Promise<void>
+  /** @deprecated Use `commands.retry`. */
   retry: () => void
 }
 
@@ -455,6 +468,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
   return {
     ...currentView.store,
     conversationView: currentView.conversationView,
+    view: currentView.conversationView,
     connectionStatus: currentView.connectionStatus,
     error: currentView.error,
     isLoading: currentView.isLoading,
@@ -466,7 +480,26 @@ export function useAgentSession(sessionId: string): AgentSessionState {
     updateModel,
     updateEnvironmentScope,
     retry: () => setRetryRevision((revision) => revision + 1),
+    commands: {
+      sendMessage: (parts) => sendMessage(parts),
+      steer: (parts) => steer(parts),
+      respond: (interactionId, response) => respond(interactionId, response),
+      cancel: () => cancel(),
+      updatePermissionMode: (mode) => updatePermissionMode(mode),
+      updateModel: (selection) => updateModel(selection),
+      updateEnvironmentScope: (scope) =>
+        updateEnvironmentScope(environmentScopeFromConversation(scope)),
+      retry: () => setRetryRevision((revision) => revision + 1),
+    },
   }
+}
+
+function environmentScopeFromConversation(
+  scope: ConversationEnvironmentScope,
+): AgentEnvironmentScope {
+  return scope.mode === "manual"
+    ? { mode: "manual", selected_environment_ids: scope.environmentIds }
+    : { mode: "auto" }
 }
 
 function asError(value: unknown, fallback: string) {

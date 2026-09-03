@@ -26,6 +26,22 @@ export type ConversationSettings = {
 export type ConversationPermissionMode = ConversationSettings["permissionMode"]
 export type ConversationWorkspaceAccess = ConversationSettings["workspaceAccess"]
 
+/** UI-owned model selection. Transport field names must not cross into renderers. */
+export type ConversationModelSelection =
+  | { modelId: string; provider?: never; model?: never }
+  | { modelId?: never; provider: string; model: string }
+
+/** UI-owned environment scope. The transport adapter maps this to its wire shape. */
+export type ConversationEnvironmentScope =
+  | { mode: "auto" }
+  | { mode: "manual"; environmentIds: string[] }
+
+export type ConversationConnectionStatus =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "disconnected"
+
 export type ComposerInputPart =
   | { type: "text"; text: string }
   | { type: "attachment_ref"; attachment_id: string }
@@ -343,4 +359,31 @@ export type ConversationViewModel = {
   currentPlan: ConversationPlan | null
   runs: ConversationRunAudit[]
   activeWork: ActiveWork | null
+}
+
+export type ConversationCommandPorts = {
+  sendMessage: (parts: ComposerInputPart[]) => Promise<void>
+  steer: (parts: ComposerInputPart[]) => Promise<void>
+  respond: (
+    interactionId: string,
+    response: ConversationInteractionResponse,
+  ) => Promise<void>
+  cancel: () => Promise<void>
+  updatePermissionMode: (
+    mode: ConversationPermissionMode,
+  ) => Promise<void>
+  updateModel: (selection: ConversationModelSelection) => Promise<void>
+  updateEnvironmentScope: (
+    scope: ConversationEnvironmentScope,
+  ) => Promise<void>
+  retry: () => void
+}
+
+/** Public binding consumed by Conversation UI. Implementations may be live or demo adapters. */
+export type ConversationSessionBinding = {
+  view: ConversationViewModel | null
+  connectionStatus: ConversationConnectionStatus
+  error: Error | null
+  isLoading: boolean
+  commands: ConversationCommandPorts
 }
