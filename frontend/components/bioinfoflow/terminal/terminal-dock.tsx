@@ -408,6 +408,7 @@ export function TerminalDock() {
           <ResizeHandle
             side="top"
             onResize={(delta) => setDockHeight(dockHeight + delta)}
+            ariaLabel={tAccessibility("resizeTerminal")}
           />
           <div className="flex h-full min-h-0 flex-col">
             {header}
