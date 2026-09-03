@@ -1,6 +1,6 @@
 "use client"
 
-import type { ReactNode } from "react"
+import { useCallback, useRef, type KeyboardEvent, type ReactNode } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -59,6 +59,39 @@ export function AgentWorkspaceActionGroup({
   onTogglePanel,
   onCloseTab,
 }: AgentWorkspaceActionGroupProps) {
+  const actionRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+
+  const focusAction = useCallback((action: string) => {
+    actionRefs.current[action]?.focus()
+  }, [])
+
+  const handleActionKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>) => {
+      const actions = ["artifacts", "files", "dag", "browser", "panel"]
+      const current = event.currentTarget.dataset.workspaceAction
+      if (!current) return
+      const currentIndex = actions.indexOf(current)
+      if (currentIndex < 0) return
+
+      let nextIndex: number | null = null
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        nextIndex = (currentIndex + 1) % actions.length
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        nextIndex = (currentIndex - 1 + actions.length) % actions.length
+      } else if (event.key === "Home") {
+        nextIndex = 0
+      } else if (event.key === "End") {
+        nextIndex = actions.length - 1
+      }
+
+      if (nextIndex === null) return
+      event.preventDefault()
+      const nextAction = actions[nextIndex]
+      focusAction(nextAction)
+    },
+    [focusAction],
+  )
+
   return (
     <div
       className="flex min-w-0 items-center gap-1"
@@ -86,7 +119,11 @@ export function AgentWorkspaceActionGroup({
                 className="flex h-full min-w-0 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
                 aria-label={actionLabel}
                 aria-pressed={active}
+                ref={(node) => {
+                  actionRefs.current[key] = node
+                }}
                 data-workspace-action={key}
+                onKeyDown={handleActionKeyDown}
                 onClick={() => onOpenTab(key)}
               >
                 <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
@@ -97,7 +134,10 @@ export function AgentWorkspaceActionGroup({
                   type="button"
                   className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
                   aria-label={labels.closeTab}
-                  onClick={onCloseTab}
+                  onClick={() => {
+                    onCloseTab()
+                    actionRefs.current[key]?.focus()
+                  }}
                 >
                   <X aria-hidden="true" className="h-3 w-3" />
                 </button>
@@ -114,6 +154,10 @@ export function AgentWorkspaceActionGroup({
         action="panel"
         active={panelOpen}
         onClick={onTogglePanel}
+        onKeyDown={handleActionKeyDown}
+        buttonRef={(node) => {
+          actionRefs.current.panel = node
+        }}
         icon={
           <PanelRightClose
             aria-hidden="true"
@@ -131,12 +175,16 @@ function ActionIconButton({
   active = false,
   icon,
   onClick,
+  onKeyDown,
+  buttonRef,
 }: {
   label: string
   action: "panel"
   active?: boolean
   icon: ReactNode
   onClick: () => void
+  onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void
+  buttonRef: (node: HTMLButtonElement | null) => void
 }) {
   return (
     <Button
@@ -147,6 +195,8 @@ function ActionIconButton({
       aria-label={label}
       aria-pressed={active}
       data-workspace-action={action}
+      ref={buttonRef}
+      onKeyDown={onKeyDown}
       onClick={onClick}
     >
       {icon}
