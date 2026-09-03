@@ -99,6 +99,7 @@ export function WorkspacePanel({
       previewControllerRef.current?.abort()
       childControllers.forEach((controller) => controller.abort())
       childControllers.clear()
+      setLoadingPaths(new Set())
     }
   }, [loadRoot])
 
@@ -118,6 +119,11 @@ export function WorkspacePanel({
         })
         if (controller.signal.aborted || generation !== requestGenerationRef.current) return
         setNodes((current) => replaceChildren(current, node.path, sortNodes(children)))
+      } catch (error) {
+        if (!controller.signal.aborted && generation === requestGenerationRef.current) {
+          setStatus("error")
+          throw error
+        }
       } finally {
         if (childControllersRef.current.get(node.path) === controller) {
           childControllersRef.current.delete(node.path)
@@ -283,7 +289,9 @@ export function WorkspacePanel({
                       else next.add(directory.path)
                       return next
                     })
-                    if (!expanded) void loadChildren(directory)
+                    if (!expanded) {
+                      void loadChildren(directory).catch(() => undefined)
+                    }
                   }}
                   onSelect={(file) => void selectFile(file)}
                 />
