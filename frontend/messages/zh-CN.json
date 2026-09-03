@@ -2584,6 +2584,9 @@
       "action": "工作区",
       "open": "打开工作区面板",
       "close": "关闭工作区面板",
+      "codePreview": {
+        "wdlFallback": "WDL 语法高亮使用 Scala 降级方案"
+      },
       "actions": {
         "browser": "浏览器",
         "files": "文件",
