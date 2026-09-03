@@ -108,6 +108,15 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
       {onCollapse ? (
         <button type="button" onClick={onCollapse}>close</button>
       ) : null}
+      <button
+        type="button"
+        data-testid="nested-escape-control"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") event.preventDefault()
+        }}
+      >
+        nested control
+      </button>
     </div>
   ),
 }))
@@ -220,6 +229,43 @@ describe("Agent pages", () => {
     expect(localStorage.getItem("agent-panel:project-1:draft")).toBe(
       JSON.stringify({ activeTab: "artifacts", open: true, width: 400 }),
     )
+  })
+
+  it("keeps the panel storage listener bound across panel updates", async () => {
+    const addEventListener = vi.spyOn(window, "addEventListener")
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
+    render(<>{navbarAction}</>)
+    await waitFor(() => {
+      expect(
+        addEventListener.mock.calls.filter(([type]) => type === "storage"),
+      ).toHaveLength(1)
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Open artifacts" }))
+    fireEvent.click(screen.getByTestId("agent-action-artifacts"))
+    expect(
+      addEventListener.mock.calls.filter(([type]) => type === "storage"),
+    ).toHaveLength(1)
+    addEventListener.mockRestore()
+  })
+
+  it("does not close LiveDeck when a nested control consumes Escape", () => {
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
+    render(<>{navbarAction}</>)
+    fireEvent.click(screen.getByRole("button", { name: "Open files" }))
+    fireEvent.keyDown(screen.getByTestId("nested-escape-control"), {
+      key: "Escape",
+    })
+
+    expect(screen.getByTestId("live-deck")).toBeInTheDocument()
   })
 
   it("clamps a restored desktop rail to the supported width range", () => {
