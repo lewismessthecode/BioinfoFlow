@@ -84,4 +84,41 @@ describe("AgentWorkspaceActionGroup", () => {
     expect(screen.getByRole("button", { name: "Open workspace panel" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Close Open file" })).not.toBeInTheDocument()
   })
+
+  it("moves across workspace actions with arrows and Home/End", async () => {
+    const user = userEvent.setup()
+    renderActions()
+
+    const artifacts = screen.getByRole("button", { name: "Artifacts" })
+    const files = screen.getByRole("button", { name: "Open file" })
+    const browser = screen.getByRole("button", { name: "Browser" })
+    const panel = screen.getByRole("button", { name: "Close workspace panel" })
+
+    artifacts.focus()
+    await user.keyboard("{ArrowRight}")
+    expect(files).toHaveFocus()
+    await user.keyboard("{ArrowRight}")
+    await user.keyboard("{ArrowRight}")
+    expect(browser).toHaveFocus()
+    await user.keyboard("{End}")
+    expect(panel).toHaveFocus()
+    await user.keyboard("{Home}")
+    expect(artifacts).toHaveFocus()
+    await user.keyboard("{ArrowLeft}")
+    expect(panel).toHaveFocus()
+  })
+
+  it("returns focus to the active surface after closing it", async () => {
+    const user = userEvent.setup()
+    const onCloseTab = vi.fn()
+    renderActions({ onCloseTab })
+
+    const files = screen.getByRole("button", { name: "Open file" })
+    const close = screen.getByRole("button", { name: "Close Open file" })
+    files.focus()
+    await user.click(close)
+
+    expect(onCloseTab).toHaveBeenCalledTimes(1)
+    expect(files).toHaveFocus()
+  })
 })
