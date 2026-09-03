@@ -1,6 +1,7 @@
-import { readFileSync } from "node:fs"
-import { resolve } from "node:path"
 import { act, renderHook } from "@testing-library/react"
+import { hydrateRoot } from "react-dom/client"
+import { renderToString } from "react-dom/server"
+import { createElement } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 // Must import the named export (useIsMobile) — useMediaQuery is not exported
@@ -100,13 +101,30 @@ describe("useIsMobile (useMediaQuery)", () => {
     expect(COMPACT_VIEWPORT_MAX).toBe(1024)
   })
 
-  it("keeps the first client render aligned with the server snapshot", () => {
-    const source = readFileSync(
-      resolve(process.cwd(), "hooks/use-media-query.ts"),
-      "utf8",
-    )
+  it("hydrates from the stable server snapshot without a mismatch", () => {
+    mockMatchMedia = createMockMatchMedia(true)
+    vi.stubGlobal("matchMedia", vi.fn(() => mockMatchMedia.mql))
+    function Probe() {
+      return createElement("output", null, useIsMobile() ? "compact" : "wide")
+    }
 
-    expect(source).toContain("useSyncExternalStore")
-    expect(source).toContain("() => false")
+    const serverMarkup = renderToString(createElement(Probe))
+    expect(serverMarkup).toContain("wide")
+    const container = document.createElement("div")
+    container.innerHTML = serverMarkup
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    let root: ReturnType<typeof hydrateRoot>
+    act(() => {
+      root = hydrateRoot(container, createElement(Probe))
+    })
+
+    expect(consoleError).not.toHaveBeenCalledWith(
+      expect.stringContaining("hydration"),
+      expect.anything(),
+    )
+    expect(container).toHaveTextContent("compact")
+    root!.unmount()
+    consoleError.mockRestore()
   })
 })
