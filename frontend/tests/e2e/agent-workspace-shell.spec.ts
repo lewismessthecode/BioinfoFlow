@@ -220,6 +220,9 @@ test.describe("Agent workspace shell", () => {
         (handleBox?.x ?? 0) - 40,
         (handleBox?.y ?? 0) + 12,
       )
+      await expect
+        .poll(async () => Number(await rail.getAttribute("data-width")))
+        .toBeGreaterThan(400)
       await page.mouse.up()
       await expect
         .poll(async () => Number(await rail.getAttribute("data-width")))
