@@ -104,6 +104,7 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
     activeTab,
     runId,
     selectedArtifactId,
+    onSelectedArtifactIdChange,
     dag,
     onRunSelect,
   }: {
@@ -111,6 +112,7 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
     activeTab: string
     runId?: string | null
     selectedArtifactId?: string | null
+    onSelectedArtifactIdChange?: (artifactId: string | null) => void
     dag?: unknown
     onRunSelect?: (run: { run_id: string } | null) => void
   }) => (
@@ -136,6 +138,9 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
       </button>
       <button type="button" data-testid="select-run" onClick={() => onRunSelect?.({ run_id: "run-a" })}>
         select run
+      </button>
+      <button type="button" data-testid="select-artifact" onClick={() => onSelectedArtifactIdChange?.("artifact-99")}>
+        select artifact
       </button>
     </div>
   ),
@@ -311,6 +316,9 @@ describe("Agent pages", () => {
     expect(screen.getByTestId("live-deck")).toHaveTextContent("run:none")
     expect(screen.getByTestId("live-deck")).toHaveTextContent("artifact:none")
     expect(screen.getByTestId("live-deck")).toHaveTextContent("dag:none")
+
+    fireEvent.click(screen.getByTestId("select-artifact"))
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("artifact:artifact-99")
   })
 
   it("isolates transient run state when switching projects", () => {
@@ -346,6 +354,8 @@ describe("Agent pages", () => {
 
     fireEvent.click(screen.getByTestId("select-run"))
     expect(screen.getByTestId("live-deck")).toHaveTextContent("run:run-a")
+    fireEvent.click(screen.getByTestId("select-artifact"))
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("artifact:artifact-99")
   })
 
   it("keeps draft preferences when the active session resets to an empty id", () => {
