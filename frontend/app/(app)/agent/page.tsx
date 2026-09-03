@@ -1,11 +1,17 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 import {
   AgentWorkbench,
   type AgentWorkbenchHandle,
 } from "@/components/bioinfoflow/agent/agent-workbench"
+import {
+  AgentActionGroup,
+  type AgentActionCommandPort,
+  type AgentActionId,
+  type AgentActionModel,
+} from "@/components/bioinfoflow/agent-action-group"
 import { LiveDeck, type LiveDeckTab } from "@/components/bioinfoflow/live-deck"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
@@ -15,7 +21,6 @@ import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useIsMobile } from "@/hooks/use-media-query"
 import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard-shortcuts-overlay"
 import type { ConversationSummary } from "@/lib/agent/conversation-model/types"
-import { Button } from "@/components/ui/button"
 import {
   Sheet,
   SheetContent,
@@ -23,7 +28,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { PanelRightClose } from "@/lib/icons"
+import { FileCode2, Globe, Network, Package } from "@/lib/icons"
 
 const RIGHT_SIDEBAR_MIN = 300
 const RIGHT_SIDEBAR_MAX = 600
@@ -40,6 +45,13 @@ const liveDeckStorageKey = (projectId: string, key: "open" | "tab") =>
 
 function isLiveDeckTab(value: string | null): value is LiveDeckTab {
   return value !== null && LIVE_DECK_TABS.includes(value as LiveDeckTab)
+}
+
+const LIVE_DECK_TAB_BY_ACTION: Record<AgentActionId, LiveDeckTab> = {
+  browser: "browser",
+  files: "workspace",
+  artifacts: "artifacts",
+  dag: "dag",
 }
 
 export default function AgentPage() {
@@ -84,7 +96,7 @@ export function AgentPageContent({
     const savedWidth = localStorage.getItem("right-sidebar-width")
     const savedCollapsed = localStorage.getItem("right-sidebar-collapsed")
     /* eslint-disable react-hooks/set-state-in-effect */
-    if (savedWidth) setRightSidebarWidth(Number(savedWidth))
+    if (savedWidth) setRightSidebarWidth(clampRightSidebarWidth(Number(savedWidth)))
     if (savedCollapsed) setRightSidebarCollapsed(savedCollapsed === "true")
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [])
@@ -153,19 +165,92 @@ export function AgentPageContent({
 
   const handleRightResize = useCallback((delta: number) => {
     setRightSidebarWidth((prev) => {
-      const next = prev + delta
-      return Math.min(RIGHT_SIDEBAR_MAX, Math.max(RIGHT_SIDEBAR_MIN, next))
+      return clampRightSidebarWidth(prev + delta)
     })
   }, [])
 
   const toggleRightSidebar = useCallback(() => {
     setRightSidebarCollapsed((prev) => !prev)
   }, [])
-  const workspaceActionLabel = t(
-    !isMobile && !rightSidebarCollapsed
-      ? "workspacePanel.close"
-      : "workspacePanel.open",
+
+  const toggleAction = useCallback(
+    (actionId: AgentActionId) => {
+      const nextTab = LIVE_DECK_TAB_BY_ACTION[actionId]
+      const isActive =
+        liveDeckTab === nextTab &&
+        (isMobile ? mobileLiveDeckOpen : !rightSidebarCollapsed)
+
+      if (isActive) {
+        if (isMobile) setMobileLiveDeckOpen(false)
+        else setRightSidebarCollapsed(true)
+        return
+      }
+
+      setLiveDeckTab(nextTab)
+      if (isMobile) setMobileLiveDeckOpen(true)
+      else setRightSidebarCollapsed(false)
+    },
+    [
+      isMobile,
+      liveDeckTab,
+      mobileLiveDeckOpen,
+      rightSidebarCollapsed,
+    ],
   )
+
+  const actionCommandPort = useMemo<AgentActionCommandPort>(
+    () => ({ toggle: toggleAction }),
+    [toggleAction],
+  )
+  const actionModels = useMemo<AgentActionModel[]>(() => {
+    const isLiveDeckOpen = isMobile
+      ? mobileLiveDeckOpen
+      : !rightSidebarCollapsed
+    return [
+      {
+        id: "browser",
+        label: t("workspacePanel.actions.browser"),
+        openLabel: t("workspacePanel.actions.openBrowser"),
+        closeLabel: t("workspacePanel.actions.closeBrowser"),
+        icon: Globe,
+        active: isLiveDeckOpen && liveDeckTab === "browser",
+        pressed: isLiveDeckOpen && liveDeckTab === "browser",
+      },
+      {
+        id: "files",
+        label: t("workspacePanel.actions.files"),
+        openLabel: t("workspacePanel.actions.openFiles"),
+        closeLabel: t("workspacePanel.actions.closeFiles"),
+        icon: FileCode2,
+        active: isLiveDeckOpen && liveDeckTab === "workspace",
+        pressed: isLiveDeckOpen && liveDeckTab === "workspace",
+      },
+      {
+        id: "artifacts",
+        label: t("workspacePanel.actions.artifacts"),
+        openLabel: t("workspacePanel.actions.openArtifacts"),
+        closeLabel: t("workspacePanel.actions.closeArtifacts"),
+        icon: Package,
+        active: isLiveDeckOpen && liveDeckTab === "artifacts",
+        pressed: isLiveDeckOpen && liveDeckTab === "artifacts",
+      },
+      {
+        id: "dag",
+        label: t("workspacePanel.actions.dag"),
+        openLabel: t("workspacePanel.actions.openDag"),
+        closeLabel: t("workspacePanel.actions.closeDag"),
+        icon: Network,
+        active: isLiveDeckOpen && liveDeckTab === "dag",
+        pressed: isLiveDeckOpen && liveDeckTab === "dag",
+      },
+    ]
+  }, [
+    isMobile,
+    liveDeckTab,
+    mobileLiveDeckOpen,
+    rightSidebarCollapsed,
+    t,
+  ])
 
   useEffect(() => {
     if (!selectedProjectId) {
@@ -174,32 +259,18 @@ export function AgentPageContent({
     }
 
     setNavbarActions(
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 rounded-lg border border-transparent bg-transparent text-foreground/78 transition-colors hover:bg-accent/70 hover:text-foreground"
-        aria-label={workspaceActionLabel}
-        onClick={() => {
-          if (isMobile) setMobileLiveDeckOpen(true)
-          else toggleRightSidebar()
-        }}
-      >
-        <PanelRightClose
-          aria-hidden="true"
-          className={rightSidebarCollapsed || isMobile ? "rotate-180" : undefined}
-        />
-      </Button>,
+      <AgentActionGroup
+        actions={actionModels}
+        commandPort={actionCommandPort}
+      />,
     )
 
     return () => setNavbarActions(null)
   }, [
-    isMobile,
-    rightSidebarCollapsed,
+    actionCommandPort,
+    actionModels,
     selectedProjectId,
     setNavbarActions,
-    toggleRightSidebar,
-    workspaceActionLabel,
   ])
 
   const handleRunSelect = useCallback((run: Run | null) => {
@@ -283,13 +354,29 @@ export function AgentPageContent({
         return
       }
 
-      if (event.key === "Escape" && showShortcuts) {
-        setShowShortcuts(false)
+      if (event.key === "Escape") {
+        if (showShortcuts) {
+          setShowShortcuts(false)
+          return
+        }
+        if (isMobile && mobileLiveDeckOpen) {
+          setMobileLiveDeckOpen(false)
+          return
+        }
+        if (!isMobile && !rightSidebarCollapsed) {
+          setRightSidebarCollapsed(true)
+        }
       }
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
-  }, [toggleRightSidebar, showShortcuts])
+  }, [
+    isMobile,
+    mobileLiveDeckOpen,
+    rightSidebarCollapsed,
+    showShortcuts,
+    toggleRightSidebar,
+  ])
 
   return (
     <div
@@ -345,10 +432,18 @@ export function AgentPageContent({
 
       {!isMobile && selectedProjectId && !rightSidebarCollapsed ? (
         <div
+          data-testid="agent-live-deck-rail"
+          data-width={rightSidebarWidth}
           className="relative flex-shrink-0 animate-in slide-in-from-right-2 fade-in duration-200 motion-reduce:animate-none"
           style={{ width: rightSidebarWidth }}
         >
-          <ResizeHandle side="right" onResize={handleRightResize} />
+          <ResizeHandle
+            side="right"
+            onResize={handleRightResize}
+            valueNow={rightSidebarWidth}
+            valueMin={RIGHT_SIDEBAR_MIN}
+            valueMax={RIGHT_SIDEBAR_MAX}
+          />
           <LiveDeck
             activeTab={liveDeckTab}
             onTabChange={setLiveDeckTab}
@@ -364,4 +459,9 @@ export function AgentPageContent({
       ) : null}
     </div>
   )
+}
+
+function clampRightSidebarWidth(value: number) {
+  if (!Number.isFinite(value)) return RIGHT_SIDEBAR_DEFAULT
+  return Math.min(RIGHT_SIDEBAR_MAX, Math.max(RIGHT_SIDEBAR_MIN, value))
 }

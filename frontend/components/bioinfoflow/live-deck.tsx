@@ -56,7 +56,10 @@ export function LiveDeck({
         onValueChange={(value) => onTabChange(value as LiveDeckTab)}
         className="flex flex-col h-full"
       >
-        <div className="flex min-h-11 items-center gap-1 border-b border-border/60 px-2">
+        <div
+          data-testid="live-deck-tab-bar"
+          className="flex min-h-11 items-center gap-1 border-b border-border/60 px-2"
+        >
           {onCollapse && (
             <Button
               variant="ghost"
