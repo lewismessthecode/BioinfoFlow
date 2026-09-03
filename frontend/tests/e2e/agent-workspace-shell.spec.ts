@@ -52,7 +52,16 @@ test.describe("Agent workspace shell", () => {
       page.getByRole("button", { name: "More preferences", exact: true }),
     ).toBeVisible()
     await expect(
-      page.getByRole("button", { name: "Open workspace panel", exact: true }),
+      page.getByRole("button", { name: "Open browser", exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: "Open files", exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: "Open artifacts", exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: "Open DAG", exact: true }),
     ).toBeVisible()
     await expect(page.getByText(/Subagents/i)).toHaveCount(0)
     const viewport = page.viewportSize()
@@ -73,12 +82,12 @@ test.describe("Agent workspace shell", () => {
     )
 
     const isMobile = (page.viewportSize()?.width ?? 0) < 768
-    const workspaceButton = page.getByRole("button", {
-      name: "Open workspace panel",
+    const filesButton = page.getByRole("button", {
+      name: "Open files",
       exact: true,
     })
-    await workspaceButton.focus()
-    await expect(workspaceButton).toBeFocused()
+    await filesButton.focus()
+    await expect(filesButton).toBeFocused()
     await page.keyboard.press("Enter")
 
     const liveDeck = page.getByRole("complementary", {
@@ -108,18 +117,18 @@ test.describe("Agent workspace shell", () => {
       await expect(liveDeck).toHaveCount(0)
     } else {
       await expect(
-        page.getByRole("button", { name: "Close workspace panel", exact: true }),
+        page.getByRole("button", { name: "Close artifacts", exact: true }),
       ).toBeVisible()
       await page
-        .getByRole("button", { name: "Close workspace panel", exact: true })
+        .getByRole("button", { name: "Close artifacts", exact: true })
         .click()
       await expect(liveDeck).toHaveCount(0)
 
-      await workspaceButton.click()
+      await filesButton.click()
       await expect(liveDeck).toBeVisible()
       await page.reload()
       await expect(
-        page.getByRole("button", { name: "Close workspace panel", exact: true }),
+        page.getByRole("button", { name: "Close files", exact: true }),
       ).toBeVisible()
       await expect(liveDeck).toBeVisible()
     }
@@ -131,7 +140,7 @@ test.describe("Agent workspace shell", () => {
     await expect(page.getByTestId("terminal-dock-tab")).toHaveCount(0)
 
     if (isMobile) {
-      await page.getByRole("button", { name: "Open workspace panel", exact: true }).click()
+      await page.getByRole("button", { name: "Open files", exact: true }).click()
       await expect(liveDeck).toBeVisible()
       await page.getByRole("button", { name: "Hide panel", exact: true }).click()
       await expect(liveDeck).toHaveCount(0)

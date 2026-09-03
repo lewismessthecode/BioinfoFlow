@@ -201,11 +201,11 @@ test.describe("Agent workbench live run journey", () => {
       .toBe("244px")
     await page.keyboard.press("Escape")
 
-    const workspaceButton = page.getByRole("button", {
-      name: "Open workspace panel",
+    const filesButton = page.getByRole("button", {
+      name: "Open files",
     })
     const terminalButton = page.getByRole("button", { name: "Open terminal" })
-    await expect(workspaceButton).toBeVisible()
+    await expect(filesButton).toBeVisible()
     await expect(terminalButton).toBeVisible()
     const navbarActionGeometry = await page.evaluate(() => {
       const row = document.querySelector<HTMLElement>(
@@ -214,37 +214,37 @@ test.describe("Agent workbench live run journey", () => {
       const terminal = document.querySelector<HTMLElement>(
         'button[aria-label="Open terminal"]',
       )
-      const workspace = document.querySelector<HTMLElement>(
-        'button[aria-label="Open workspace panel"]',
+      const files = document.querySelector<HTMLElement>(
+        'button[aria-label="Open files"]',
       )
       const canvas = document.querySelector<HTMLElement>(
         '[data-testid="agent-workbench"]',
       )
-      if (!row || !terminal || !workspace || !canvas) return null
+      if (!row || !terminal || !files || !canvas) return null
       const terminalBox = terminal.getBoundingClientRect()
-      const workspaceBox = workspace.getBoundingClientRect()
+      const filesBox = files.getBoundingClientRect()
       return {
         sameActionRow:
-          terminal.parentElement === row && workspace.parentElement === row,
+          terminal.parentElement === row && files.parentElement === row,
         terminalHeight: terminalBox.height,
-        workspaceHeight: workspaceBox.height,
-        verticalDelta: Math.abs(terminalBox.top - workspaceBox.top),
-        horizontalGap: workspaceBox.left - terminalBox.right,
-        workspaceAfterTerminal: workspaceBox.left > terminalBox.left,
-        workspaceInsideCanvas: canvas.contains(workspace),
+        filesHeight: filesBox.height,
+        verticalDelta: Math.abs(terminalBox.top - filesBox.top),
+        horizontalGap: filesBox.left - terminalBox.right,
+        filesAfterTerminal: filesBox.left > terminalBox.left,
+        filesInsideCanvas: canvas.contains(files),
       }
     })
     expect(navbarActionGeometry?.sameActionRow).toBe(true)
     expect(navbarActionGeometry?.terminalHeight).toBe(
-      navbarActionGeometry?.workspaceHeight,
+      navbarActionGeometry?.filesHeight,
     )
     expect(navbarActionGeometry?.terminalHeight).toBeGreaterThanOrEqual(32)
     expect(navbarActionGeometry?.terminalHeight).toBeLessThanOrEqual(36)
     expect(navbarActionGeometry?.verticalDelta).toBe(0)
     expect(navbarActionGeometry?.horizontalGap).toBe(6)
-    expect(navbarActionGeometry?.workspaceAfterTerminal).toBe(true)
-    expect(navbarActionGeometry?.workspaceInsideCanvas).toBe(false)
-    await workspaceButton.click()
+    expect(navbarActionGeometry?.filesAfterTerminal).toBe(true)
+    expect(navbarActionGeometry?.filesInsideCanvas).toBe(false)
+    await filesButton.click()
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible()
     await expect(page.getByRole("tab", { name: "Workflow" })).toBeVisible()
     await expect(page.getByRole("tab", { name: "Monitor" })).toHaveCount(0)
