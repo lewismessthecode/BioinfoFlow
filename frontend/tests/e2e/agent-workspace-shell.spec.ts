@@ -193,6 +193,10 @@ test.describe("Agent workspace shell", () => {
       await expect(
         page.getByRole("separator", { name: "Resize right sidebar" }),
       ).toHaveAttribute("aria-valuenow", "300")
+      await liveDeck.getByRole("tab", { name: "Files" }).focus()
+      await page.keyboard.press("Control+Shift+b")
+      await expect(page.getByTestId("agent-live-deck-rail")).toHaveCount(0)
+      await expect(filesButton).toBeFocused()
     }
 
     await page.getByRole("button", { name: "Open terminal", exact: true }).click()
