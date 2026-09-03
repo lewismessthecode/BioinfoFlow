@@ -37,7 +37,7 @@ function panelPreferenceKey(
   sessionId: string | null,
 ): string | null {
   return projectId
-    ? `agent-panel:${projectId}:${sessionId ?? "draft"}`
+    ? `agent-panel:${projectId}:${sessionId || "draft"}`
     : null
 }
 
