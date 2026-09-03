@@ -146,6 +146,8 @@ function panelPreferenceKey(
     : null
 }
 
+const getServerPanelPreferences = () => null
+
 export default function AgentPage() {
   return <AgentPageContent routeSessionId={null} />
 }
@@ -172,10 +174,18 @@ export function AgentPageContent({
     () => routeSessionId ?? "draft",
   )
   const panelKey = panelPreferenceKey(selectedProjectId, panelSessionId)
-  const panelSnapshot = useSyncExternalStore(
-    (listener) => subscribeToPanelPreferences(panelKey, listener),
+  const subscribePanelPreferences = useCallback(
+    (listener: () => void) => subscribeToPanelPreferences(panelKey, listener),
+    [panelKey],
+  )
+  const getPanelPreferencesSnapshot = useCallback(
     () => readPanelPreferences(panelKey),
-    () => null,
+    [panelKey],
+  )
+  const panelSnapshot = useSyncExternalStore(
+    subscribePanelPreferences,
+    getPanelPreferencesSnapshot,
+    getServerPanelPreferences,
   )
   const panelPreferences = useMemo(
     () => parsePanelPreferences(panelSnapshot),
@@ -431,6 +441,8 @@ export function AgentPageContent({
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey
+
+      if (event.defaultPrevented) return
 
       if (mod && event.shiftKey && event.key.toLowerCase() === "b") {
         event.preventDefault()
