@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { useTranslations } from "next-intl"
 
 import { cn } from "@/lib/utils"
 
@@ -48,7 +49,7 @@ function languageForPath(path: string) {
     tsv: "tsv",
     tsx: "tsx",
     txt: "text",
-    wdl: "wdl",
+    wdl: "scala",
     xml: "xml",
     yaml: "yaml",
     yml: "yaml",
@@ -67,6 +68,7 @@ export function WorkspaceCodePreview({
   className?: string
 }) {
   const language = languageForPath(path)
+  const t = useTranslations("agentWorkbench.workspacePanel")
   const cacheKey = `${language}:${content}`
   const [highlightedState, setHighlightedState] = useState<{
     key: string
@@ -112,7 +114,17 @@ export function WorkspaceCodePreview({
         className,
       )}
       data-testid="workspace-code-preview"
+      data-language={path.split(".").pop()?.toLowerCase() ?? "text"}
+      data-highlight-language={language}
+      aria-label={
+        language === "scala" && path.toLowerCase().endsWith(".wdl")
+          ? t("codePreview.wdlFallback")
+          : undefined
+      }
     >
+      {language === "scala" && path.toLowerCase().endsWith(".wdl") ? (
+        <span className="sr-only">{t("codePreview.wdlFallback")}</span>
+      ) : null}
       <div className="flex min-h-full min-w-max items-stretch">
         <pre
           aria-hidden="true"

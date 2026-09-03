@@ -2584,6 +2584,9 @@
       "action": "Workspace",
       "open": "Open workspace panel",
       "close": "Close workspace panel",
+      "codePreview": {
+        "wdlFallback": "WDL syntax highlighting uses Scala fallback"
+      },
       "actions": {
         "browser": "Browser",
         "files": "Files",
