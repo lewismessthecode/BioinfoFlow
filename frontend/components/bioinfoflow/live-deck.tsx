@@ -63,8 +63,8 @@ export function LiveDeck({
           {onCollapse && (
             <Button
               variant="ghost"
-              size="icon"
-              className="size-11 shrink-0 rounded-[8px] text-muted-foreground hover:bg-muted/60 hover:text-foreground lg:size-8"
+              size="icon-responsive"
+              className="shrink-0 rounded-[8px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
               onClick={onCollapse}
               title={tAccessibility("hidePanel")}
               aria-label={tAccessibility("hidePanel")}

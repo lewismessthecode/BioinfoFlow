@@ -168,6 +168,13 @@ test.describe("Agent workspace shell", () => {
       await page.keyboard.press("Escape")
       await expect(page.getByRole("dialog")).toHaveCount(0)
       await expect(filesButton).toBeFocused()
+      await page.keyboard.press("Control+Shift+b")
+      await expect(page.getByRole("dialog")).toBeVisible()
+      await expect(filesButton).toHaveAttribute("aria-pressed", "true")
+      await liveDeck.getByRole("tab", { name: "Files" }).focus()
+      await page.keyboard.press("Control+Shift+b")
+      await expect(page.getByRole("dialog")).toHaveCount(0)
+      await expect(filesButton).toBeFocused()
     } else {
       await filesButton.click()
       const rail = page.getByTestId("agent-live-deck-rail")
