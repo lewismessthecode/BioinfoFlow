@@ -97,6 +97,7 @@ export function AgentPageContent({
     element: HTMLElement | null
     actionId: AgentActionId | null
   }>({ element: null, actionId: null })
+  const focusRestorePendingRef = useRef(false)
 
   useEffect(() => {
     setActiveConversationId(routeSessionId ?? "")
@@ -205,23 +206,27 @@ export function AgentPageContent({
     return true
   }, [])
 
+  const ensurePanelFocusReturn = useCallback(() => {
+    const { element, actionId } = focusReturnRef.current
+    if (element?.isConnected || actionId) return
+    focusReturnRef.current = {
+      element: null,
+      actionId: ACTION_BY_LIVE_DECK_TAB[liveDeckTab] ?? null,
+    }
+  }, [liveDeckTab])
+
   const toggleRightSidebar = useCallback(() => {
-    setRightSidebarCollapsed((prev) => {
-      if (prev) {
-        focusReturnRef.current = {
-          element: null,
-          actionId: ACTION_BY_LIVE_DECK_TAB[liveDeckTab] ?? null,
-        }
-        return false
-      }
-      focusReturnRef.current = {
-        element: null,
-        actionId: ACTION_BY_LIVE_DECK_TAB[liveDeckTab] ?? null,
-      }
-      queueMicrotask(restoreFocusReturn)
-      return true
-    })
-  }, [liveDeckTab, restoreFocusReturn])
+    const nextCollapsed = !rightSidebarCollapsed
+    ensurePanelFocusReturn()
+    if (nextCollapsed) focusRestorePendingRef.current = true
+    setRightSidebarCollapsed(nextCollapsed)
+  }, [ensurePanelFocusReturn, rightSidebarCollapsed])
+
+  const toggleMobileLiveDeck = useCallback(() => {
+    const nextOpen = !mobileLiveDeckOpen
+    ensurePanelFocusReturn()
+    setMobileLiveDeckOpen(nextOpen)
+  }, [ensurePanelFocusReturn, mobileLiveDeckOpen])
 
   const toggleAction = useCallback(
     (actionId: AgentActionId) => {
@@ -254,6 +259,12 @@ export function AgentPageContent({
     () => ({ toggle: toggleAction }),
     [toggleAction],
   )
+
+  useEffect(() => {
+    if (!rightSidebarCollapsed || !focusRestorePendingRef.current) return
+    focusRestorePendingRef.current = false
+    restoreFocusReturn()
+  }, [restoreFocusReturn, rightSidebarCollapsed])
   const actionModels = useMemo<AgentActionModel[]>(() => {
     const isLiveDeckOpen = isMobile
       ? mobileLiveDeckOpen
@@ -380,7 +391,8 @@ export function AgentPageContent({
 
       if (mod && event.shiftKey && event.key.toLowerCase() === "b") {
         event.preventDefault()
-        toggleRightSidebar()
+        if (isMobile) toggleMobileLiveDeck()
+        else toggleRightSidebar()
         return
       }
 
@@ -415,16 +427,12 @@ export function AgentPageContent({
         }
         if (isMobile && mobileLiveDeckOpen) {
           setMobileLiveDeckOpen(false)
-          queueMicrotask(restoreFocusReturn)
           return
         }
         if (!isMobile && !rightSidebarCollapsed) {
-          focusReturnRef.current = {
-            element: null,
-            actionId: ACTION_BY_LIVE_DECK_TAB[liveDeckTab] ?? null,
-          }
+          ensurePanelFocusReturn()
+          focusRestorePendingRef.current = true
           setRightSidebarCollapsed(true)
-          queueMicrotask(restoreFocusReturn)
         }
       }
     }
@@ -434,9 +442,11 @@ export function AgentPageContent({
     isMobile,
     liveDeckTab,
     mobileLiveDeckOpen,
+    ensurePanelFocusReturn,
     rightSidebarCollapsed,
     restoreFocusReturn,
     showShortcuts,
+    toggleMobileLiveDeck,
     toggleRightSidebar,
   ])
 

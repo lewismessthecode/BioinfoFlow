@@ -88,7 +88,9 @@ describe("LiveDeck", () => {
     )
 
     expect(screen.getByTestId("dag-panel")).toHaveTextContent("project-7:run-7:RNASeq")
-    await user.click(screen.getByRole("button", { name: "Hide panel" }))
+    const hideButton = screen.getByRole("button", { name: "Hide panel" })
+    expect(hideButton).toHaveClass("size-11", "min-[1025px]:size-8")
+    await user.click(hideButton)
     expect(onCollapse).toHaveBeenCalledTimes(1)
   })
 

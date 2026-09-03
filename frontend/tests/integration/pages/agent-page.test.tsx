@@ -262,6 +262,27 @@ describe("Agent pages", () => {
     await waitFor(() => expect(filesButton).toHaveFocus())
   })
 
+  it("opens and closes the mobile sheet from the panel keyboard shortcut", async () => {
+    mocks.isMobile.mockReturnValue(true)
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
+    render(<>{navbarAction}</>)
+    const filesButton = screen.getByRole("button", { name: "Open files" })
+    fireEvent.keyDown(window, {
+      key: "b",
+      ctrlKey: true,
+      shiftKey: true,
+    })
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+    screen.getByTestId("live-deck").focus()
+    fireEvent.keyDown(window, { key: "Escape" })
+
+    await waitFor(() => expect(filesButton).toHaveFocus())
+  })
+
   it("returns desktop rail focus to the selected navbar action on Escape and shortcut close", async () => {
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
@@ -353,6 +374,20 @@ describe("Agent pages", () => {
     expect(screen.getByTestId("live-deck")).toHaveTextContent(
       "tab:dag|run:run-42",
     )
+  })
+
+  it("preserves a connected referenced opener when desktop Escape closes the rail", async () => {
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    const opener = screen.getByRole("button", { name: "Open referenced run" })
+    opener.focus()
+    fireEvent.click(opener)
+    screen.getByTestId("live-deck").focus()
+    fireEvent.keyDown(window, { key: "Escape" })
+
+    await waitFor(() => expect(opener).toHaveFocus())
   })
 
   it("opens a transcript artifact directly in the artifact workspace", () => {
