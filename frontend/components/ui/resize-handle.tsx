@@ -27,12 +27,15 @@ export function ResizeHandle({
   const [isDragging, setIsDragging] = useState(false)
   const startX = useRef(0)
   const startY = useRef(0)
+  const pointerId = useRef<number | null>(null)
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault()
+    pointerId.current = e.pointerId
     setIsDragging(true)
     startX.current = e.clientX
     startY.current = e.clientY
+    e.currentTarget.setPointerCapture?.(e.pointerId)
   }, [])
 
   const handleKeyDown = useCallback(
@@ -60,7 +63,13 @@ export function ResizeHandle({
   useEffect(() => {
     if (!isDragging) return
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const previousCursor = document.body.style.cursor
+    const previousUserSelect = document.body.style.userSelect
+    document.body.style.cursor = side === "top" ? "row-resize" : "col-resize"
+    document.body.style.userSelect = "none"
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (pointerId.current !== null && e.pointerId !== pointerId.current) return
       let delta = 0
       if (side === "top") {
         delta = startY.current - e.clientY
@@ -74,17 +83,22 @@ export function ResizeHandle({
       onResize(delta)
     }
 
-    const handleMouseUp = () => {
+    const finishDrag = () => {
       setIsDragging(false)
+      pointerId.current = null
       onResizeEnd?.()
     }
 
-    document.addEventListener("mousemove", handleMouseMove)
-    document.addEventListener("mouseup", handleMouseUp)
+    document.addEventListener("pointermove", handlePointerMove)
+    document.addEventListener("pointerup", finishDrag)
+    document.addEventListener("pointercancel", finishDrag)
 
     return () => {
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
+      document.removeEventListener("pointermove", handlePointerMove)
+      document.removeEventListener("pointerup", finishDrag)
+      document.removeEventListener("pointercancel", finishDrag)
+      document.body.style.cursor = previousCursor
+      document.body.style.userSelect = previousUserSelect
     }
   }, [isDragging, onResize, onResizeEnd, side])
 
@@ -98,7 +112,7 @@ export function ResizeHandle({
         "rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-1",
         className
       )}
-      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
       onKeyDown={handleKeyDown}
       role="separator"
       aria-orientation={side === "top" ? "horizontal" : "vertical"}
