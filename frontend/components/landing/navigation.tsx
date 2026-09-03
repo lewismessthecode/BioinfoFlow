@@ -112,7 +112,7 @@ export function Navigation() {
           <span className="text-sm font-semibold tracking-[-0.02em]">Bioinfoflow</span>
         </Link>
 
-        <nav aria-label={t("product")} className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-7 lg:flex">
+        <nav aria-label={t("menu")} className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-7 lg:flex">
           {navLinks.map((link) =>
             link.external ? (
               <a
