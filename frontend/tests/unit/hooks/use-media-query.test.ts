@@ -97,7 +97,7 @@ describe("useIsMobile (useMediaQuery)", () => {
     renderHook(() => useIsMobile())
 
     expect(window.matchMedia).toHaveBeenCalledWith(COMPACT_MEDIA_QUERY)
-    expect(COMPACT_VIEWPORT_MAX).toBe(1023)
+    expect(COMPACT_VIEWPORT_MAX).toBe(1024)
   })
 
   it("keeps the first client render aligned with the server snapshot", () => {

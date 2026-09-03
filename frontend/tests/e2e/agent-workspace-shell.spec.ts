@@ -155,6 +155,7 @@ test.describe("Agent workspace shell", () => {
       await expect(filesButton).toHaveAttribute("aria-pressed", "false")
       await filesButton.click()
       await expect(liveDeck).toBeVisible()
+      await liveDeck.getByRole("tab", { name: "Files" }).focus()
       await page.keyboard.press("Escape")
       await expect(liveDeck).toHaveCount(0)
       await expect(filesButton).toBeFocused()
