@@ -405,11 +405,13 @@ test.describe("Agent workbench live run journey", () => {
     await agent.expectComposerReady()
     await agent.sendMessage("Show a plan before continuing.")
 
+    await page.getByRole("button", { name: "Expand plan", exact: true }).click()
+    const planCard = page.getByTestId("agent-plan-card")
     await expect(
-      agent.transcript.getByRole("heading", { name: "Keyless execution plan" }),
+      planCard.getByRole("heading", { name: "Keyless execution plan" }),
     ).toBeVisible({ timeout: 20_000 })
-    await expect(agent.transcript.getByText("Inspect the request")).toBeVisible()
-    await expect(agent.transcript.getByText("Summarize the result")).toBeVisible()
+    await expect(planCard.getByText("Inspect the request")).toBeVisible()
+    await expect(planCard.getByText("Summarize the result")).toBeVisible()
     await expect(
       agent.transcript.getByText("The keyless plan is ready.", { exact: true }),
     ).toBeVisible({ timeout: 20_000 })
