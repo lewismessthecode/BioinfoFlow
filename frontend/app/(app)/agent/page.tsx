@@ -87,6 +87,7 @@ export function AgentPageContent({
   const [focusedRunId, setFocusedRunId] = useState<string | null>(null)
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null)
   const [dag, setDag] = useState<DagData | null>(null)
+  const lastActionIdRef = useRef<AgentActionId | null>(null)
 
   useEffect(() => {
     setActiveConversationId(routeSessionId ?? "")
@@ -175,6 +176,7 @@ export function AgentPageContent({
 
   const toggleAction = useCallback(
     (actionId: AgentActionId) => {
+      lastActionIdRef.current = actionId
       const nextTab = LIVE_DECK_TAB_BY_ACTION[actionId]
       const isActive =
         liveDeckTab === nextTab &&
@@ -197,6 +199,14 @@ export function AgentPageContent({
       rightSidebarCollapsed,
     ],
   )
+
+  const restoreActionFocus = useCallback(() => {
+    const actionId = lastActionIdRef.current
+    if (!actionId) return
+    document
+      .querySelector<HTMLButtonElement>(`[data-action-id="${actionId}"]`)
+      ?.focus()
+  }, [])
 
   const actionCommandPort = useMemo<AgentActionCommandPort>(
     () => ({ toggle: toggleAction }),
@@ -361,6 +371,7 @@ export function AgentPageContent({
         }
         if (isMobile && mobileLiveDeckOpen) {
           setMobileLiveDeckOpen(false)
+          queueMicrotask(restoreActionFocus)
           return
         }
         if (!isMobile && !rightSidebarCollapsed) {
@@ -374,6 +385,7 @@ export function AgentPageContent({
     isMobile,
     mobileLiveDeckOpen,
     rightSidebarCollapsed,
+    restoreActionFocus,
     showShortcuts,
     toggleRightSidebar,
   ])
@@ -406,6 +418,10 @@ export function AgentPageContent({
           <SheetContent
             side="right"
             closeLabel={t("workspacePanel.close")}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              restoreActionFocus()
+            }}
             className="w-full max-w-none gap-0 overflow-hidden overscroll-contain p-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:max-w-[32rem]"
           >
             <SheetHeader className="sr-only">
