@@ -28,6 +28,19 @@ import { PanelRightClose } from "@/lib/icons"
 const RIGHT_SIDEBAR_MIN = 300
 const RIGHT_SIDEBAR_MAX = 600
 const RIGHT_SIDEBAR_DEFAULT = 400
+const LIVE_DECK_TABS: readonly LiveDeckTab[] = [
+  "workspace",
+  "browser",
+  "artifacts",
+  "dag",
+]
+
+const liveDeckStorageKey = (projectId: string, key: "open" | "tab") =>
+  `agent-live-deck:${projectId}:${key}`
+
+function isLiveDeckTab(value: string | null): value is LiveDeckTab {
+  return value !== null && LIVE_DECK_TABS.includes(value as LiveDeckTab)
+}
 
 export default function AgentPage() {
   return <AgentPageContent routeSessionId={null} />
@@ -55,6 +68,9 @@ export function AgentPageContent({
   const [rightSidebarWidth, setRightSidebarWidth] = useState(RIGHT_SIDEBAR_DEFAULT)
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(true)
   const [mobileLiveDeckOpen, setMobileLiveDeckOpen] = useState(false)
+  const [liveDeckStorageProjectId, setLiveDeckStorageProjectId] = useState<
+    string | null
+  >(null)
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
   const [focusedRunId, setFocusedRunId] = useState<string | null>(null)
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null)
@@ -72,6 +88,49 @@ export function AgentPageContent({
     if (savedCollapsed) setRightSidebarCollapsed(savedCollapsed === "true")
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [])
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      /* eslint-disable react-hooks/set-state-in-effect */
+      setLiveDeckStorageProjectId(null)
+      /* eslint-enable react-hooks/set-state-in-effect */
+      return
+    }
+
+    const storedTab = localStorage.getItem(
+      liveDeckStorageKey(selectedProjectId, "tab"),
+    )
+    const storedOpen =
+      localStorage.getItem(liveDeckStorageKey(selectedProjectId, "open")) ===
+      "true"
+
+    if (isLiveDeckTab(storedTab)) setLiveDeckTab(storedTab)
+    setMobileLiveDeckOpen(isMobile && storedOpen)
+    setLiveDeckStorageProjectId(selectedProjectId)
+  }, [isMobile, selectedProjectId])
+
+  useEffect(() => {
+    if (
+      !selectedProjectId ||
+      liveDeckStorageProjectId !== selectedProjectId
+    ) {
+      return
+    }
+    localStorage.setItem(
+      liveDeckStorageKey(selectedProjectId, "tab"),
+      liveDeckTab,
+    )
+    localStorage.setItem(
+      liveDeckStorageKey(selectedProjectId, "open"),
+      String(isMobile && mobileLiveDeckOpen),
+    )
+  }, [
+    isMobile,
+    liveDeckStorageProjectId,
+    liveDeckTab,
+    mobileLiveDeckOpen,
+    selectedProjectId,
+  ])
 
   // Persist state
   useEffect(() => {
