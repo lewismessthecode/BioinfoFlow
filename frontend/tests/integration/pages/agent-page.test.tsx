@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, type ReactNode } from "react"
+import { act, forwardRef, useImperativeHandle, type ReactNode } from "react"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -212,6 +212,68 @@ describe("Agent pages", () => {
         "350",
       )
     })
+  })
+
+  it("hands draft panel preferences to the resolved session", async () => {
+    const draftPreferences = {
+      activeTab: "artifacts",
+      open: true,
+      width: 520,
+    }
+    localStorage.setItem(
+      "agent-panel:project-1:draft",
+      JSON.stringify(draftPreferences),
+    )
+
+    renderAppPage(<AgentPageContent routeSessionId={null} />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+    const workbenchProps = mocks.workbench.mock.calls.at(-1)?.[0] as {
+      onSessionResolved?: (session: {
+        id: string
+        projectId: string
+        title: string
+      }) => void
+    }
+
+    act(() => {
+      workbenchProps.onSessionResolved?.({
+        id: "session-new",
+        projectId: "project-1",
+        title: "New session",
+      })
+    })
+
+    await waitFor(() => {
+      expect(localStorage.getItem("agent-panel:project-1:session-new")).toBe(
+        JSON.stringify(draftPreferences),
+      )
+    })
+    expect(localStorage.getItem("agent-panel:project-1:draft")).toBeNull()
+  })
+
+  it("preserves draft panel preferences across the real route transition", async () => {
+    localStorage.setItem(
+      "agent-panel:project-1:draft",
+      JSON.stringify({ activeTab: "browser", open: true, width: 480 }),
+    )
+    const view = renderAppPage(<AgentPageContent routeSessionId={null} />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    view.rerender(<AgentPageContent routeSessionId="session-routed" />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:browser")
+      expect(screen.getByTestId("agent-live-deck-rail")).toHaveAttribute(
+        "data-width",
+        "480",
+      )
+      expect(
+        localStorage.getItem("agent-panel:project-1:session-routed"),
+      ).toBe(JSON.stringify({ activeTab: "browser", open: true, width: 480 }))
+    })
+    expect(localStorage.getItem("agent-panel:project-1:draft")).toBeNull()
   })
 
   it("registers independent desktop actions for every workspace surface", () => {
