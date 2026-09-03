@@ -823,7 +823,8 @@ async def get_snapshot(
     repository = AgentHarnessRepository(db)
     await _owned_session(repository, session_id=session_id, user=user)
     return success_response(
-        _dump(await repository.snapshot(session_id)), request=request
+        _dump(await repository.snapshot(session_id)),
+        request=request,
     )
 
 
