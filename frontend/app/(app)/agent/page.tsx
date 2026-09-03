@@ -440,6 +440,7 @@ export function AgentPageContent({
 
       {!isMobile && selectedProjectId && !rightSidebarCollapsed ? (
         <div
+          ref={railRef}
           data-testid="agent-live-deck-rail"
           data-width={rightSidebarWidth}
           className="relative flex-shrink-0 animate-in slide-in-from-right-2 fade-in duration-200 motion-reduce:animate-none"
