@@ -297,6 +297,13 @@ export function AgentPageContent({
     },
     [recordFocusReturn, stateIdentity, updatePanelPreferences],
   )
+  const handleSelectedArtifactIdChange = useCallback(
+    (artifactId: string | null) => {
+      setActiveStateIdentity(stateIdentity)
+      setFocusedArtifactId(artifactId)
+    },
+    [stateIdentity],
+  )
 
   const [showShortcuts, setShowShortcuts] = useState(false)
 
@@ -445,7 +452,7 @@ export function AgentPageContent({
               projectId={selectedProjectId}
               sessionId={activeConversationId || routeSessionId}
               selectedArtifactId={visibleFocusedArtifactId}
-              onSelectedArtifactIdChange={setFocusedArtifactId}
+              onSelectedArtifactIdChange={handleSelectedArtifactIdChange}
               runId={visibleSelectedRun?.run_id ?? visibleFocusedRunId}
               dag={visibleDag}
               onRunSelect={handleRunSelect}
@@ -478,7 +485,7 @@ export function AgentPageContent({
             projectId={selectedProjectId}
             sessionId={activeConversationId || routeSessionId}
             selectedArtifactId={visibleFocusedArtifactId}
-            onSelectedArtifactIdChange={setFocusedArtifactId}
+            onSelectedArtifactIdChange={handleSelectedArtifactIdChange}
             runId={visibleSelectedRun?.run_id ?? visibleFocusedRunId}
             dag={visibleDag}
             onRunSelect={handleRunSelect}
