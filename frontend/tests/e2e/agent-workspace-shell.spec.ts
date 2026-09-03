@@ -91,13 +91,14 @@ test.describe("Agent workspace shell", () => {
         ? page.getByRole("dialog")
         : page.getByTestId("agent-live-deck-rail"),
     ).toBeVisible()
-    await expect(page).toHaveScreenshot(
+    const openSurface = isCompact
+      ? page.getByRole("dialog")
+      : page.getByTestId("agent-live-deck-rail")
+    await expect(openSurface).toHaveScreenshot(
       `agent-workspace-shell-${viewport.width}x${viewport.height}-open.png`,
       {
         animations: "disabled",
         caret: "hide",
-        mask: [page.getByText(project.name, { exact: true })],
-        maskColor: "#ff00ff",
       },
     )
     await page.keyboard.press("Escape")
@@ -172,6 +173,11 @@ test.describe("Agent workspace shell", () => {
       await filesButton.click()
       await expect(liveDeck).toHaveCount(0)
       await expect(filesButton).toHaveAttribute("aria-pressed", "false")
+      await filesButton.click()
+      await expect(liveDeck).toBeVisible()
+      await page.getByRole("button", { name: "Hide panel", exact: true }).click()
+      await expect(liveDeck).toHaveCount(0)
+      await expect(filesButton).toBeFocused()
       await filesButton.click()
       await expect(liveDeck).toBeVisible()
       await liveDeck.getByRole("tab", { name: "Files" }).focus()
