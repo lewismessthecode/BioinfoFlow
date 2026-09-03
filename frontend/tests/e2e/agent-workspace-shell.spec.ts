@@ -84,6 +84,25 @@ test.describe("Agent workspace shell", () => {
 
     const isCompact = (page.viewportSize()?.width ?? 0) <= COMPACT_VIEWPORT_MAX
     const filesButton = page.getByTestId("agent-action-files")
+    await page.emulateMedia({ colorScheme: "dark" })
+    await filesButton.click()
+    await expect(
+      isCompact
+        ? page.getByRole("dialog")
+        : page.getByTestId("agent-live-deck-rail"),
+    ).toBeVisible()
+    await expect(page).toHaveScreenshot(
+      `agent-workspace-shell-${viewport.width}x${viewport.height}-open.png`,
+      {
+        animations: "disabled",
+        caret: "hide",
+        mask: [page.getByText(project.name, { exact: true })],
+        maskColor: "#ff00ff",
+      },
+    )
+    await page.keyboard.press("Escape")
+    await expect(page.getByTestId("agent-live-deck-rail")).toHaveCount(0)
+    await expect(page.getByRole("dialog")).toHaveCount(0)
     const filesBox = await filesButton.boundingBox()
     expect(filesBox).not.toBeNull()
     if (isCompact) {
