@@ -63,7 +63,7 @@ type FontStatusDocument = Document & {
   }
 }
 
-export function TerminalDock() {
+export function TerminalDock({ screenshotFixture = false }: { screenshotFixture?: boolean }) {
   const {
     enabled,
     isMobile,
@@ -304,21 +304,23 @@ export function TerminalDock() {
         <div
           className="inline-flex h-6 min-w-0 max-w-[320px] items-center gap-1.5 rounded-md bg-muted/55 px-2 text-xs dark:bg-muted/35"
           data-testid="terminal-dock-tab"
-          title={sessionMeta}
+          title={screenshotFixture ? tTerminal("screenshotFixture") : sessionMeta}
         >
           <TerminalSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="shrink-0 text-xs font-medium text-foreground">{tTerminal("title")}</span>
           <span className="min-w-0 truncate text-xs text-muted-foreground">
-            {targetLabel}
+            {screenshotFixture ? tTerminal("targets.local") : targetLabel}
           </span>
-          <span
-            className={cn(
-              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-              connectionDotClassName(connectionState),
-            )}
-            aria-label={connectionAriaLabel}
-          />
-          {connectionLabel ? (
+          {!screenshotFixture ? (
+            <span
+              className={cn(
+                "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+                connectionDotClassName(connectionState),
+              )}
+              aria-label={connectionAriaLabel}
+            />
+          ) : null}
+          {!screenshotFixture && connectionLabel ? (
             <span
               className={cn(
                 "inline-flex shrink-0 rounded-[4px] px-1.5 py-0.5 text-[10px] font-medium",
@@ -366,11 +368,20 @@ export function TerminalDock() {
         className="min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--terminal-background)] px-5 pb-3 pt-2"
         onClick={() => terminalRef.current?.focus()}
       >
-        <div
-          ref={terminalViewportRef}
-          data-testid="terminal-dock-viewport"
-          className="terminal-dock-scroll h-full min-h-0 w-full overflow-hidden bg-transparent"
-        />
+        {screenshotFixture ? (
+          <div
+            data-testid="terminal-dock-fixture"
+            className="flex h-full min-h-0 w-full items-start bg-transparent px-1 py-1 font-mono text-xs text-foreground/80"
+          >
+            bioinfoflow$ ready
+          </div>
+        ) : (
+          <div
+            ref={terminalViewportRef}
+            data-testid="terminal-dock-viewport"
+            className="terminal-dock-scroll h-full min-h-0 w-full overflow-hidden bg-transparent"
+          />
+        )}
       </div>
     </div>
   )
