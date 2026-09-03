@@ -174,6 +174,11 @@ class MessageCommand(_Command):
     parts: list[InputPart] = Field(min_length=1)
 
 
+class FollowUpCommand(_Command):
+    type: Literal["follow_up"] = "follow_up"
+    parts: list[InputPart] = Field(min_length=1)
+
+
 class SteerCommand(_Command):
     type: Literal["steer"] = "steer"
     parts: list[InputPart] = Field(min_length=1)
@@ -214,7 +219,7 @@ class CancelCommand(_Command):
 
 
 AgentCommand = Annotated[
-    MessageCommand | SteerCommand | RespondCommand | CancelCommand,
+    MessageCommand | FollowUpCommand | SteerCommand | RespondCommand | CancelCommand,
     Field(discriminator="type"),
 ]
 
@@ -811,6 +816,7 @@ __all__ = [
     "InteractionResponseEntry",
     "InteractionResponsePayload",
     "MessageEntry",
+    "FollowUpCommand",
     "MessageCommand",
     "MessagePart",
     "ModelSummary",

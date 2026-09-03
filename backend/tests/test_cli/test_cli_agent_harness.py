@@ -76,6 +76,29 @@ def test_send_dispatches_message_command(runner: CliRunner) -> None:
     assert isinstance(payload["command_id"], str) and payload["command_id"]
 
 
+def test_follow_up_dispatches_follow_up_command(runner: CliRunner) -> None:
+    response = make_envelope({"session": {"id": "session-1"}})
+
+    with patch(
+        f"{_COMMAND}.api_post", new_callable=AsyncMock, return_value=response
+    ) as post:
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "follow-up",
+                "session-1",
+                "Continue after this run",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert "follow_up accepted" in result.stdout
+    payload = post.await_args.args[2]
+    assert payload["type"] == "follow_up"
+    assert payload["parts"] == [{"type": "text", "text": "Continue after this run"}]
+
+
 def test_respond_requires_a_json_object(runner: CliRunner) -> None:
     result = runner.invoke(
         app,

@@ -150,6 +150,15 @@ class TestRemoteTransport:
         await transport.close()
 
 
+    @pytest.mark.asyncio
+    async def test_agent_token_is_not_exposed_in_transport_repr(self) -> None:
+        token = "secret-agent-token"
+        transport = RemoteTransport(TEST_BASE_URL, bearer_token=token)
+
+        assert token not in repr(transport)
+        await transport.close()
+
+
 class TestApiError:
     def test_api_error_str(self) -> None:
         err = ApiError(code="OOPS", message="Something broke", status_code=400)

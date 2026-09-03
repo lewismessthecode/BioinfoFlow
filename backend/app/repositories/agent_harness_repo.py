@@ -20,6 +20,7 @@ from app.services.agent_harness.contracts import (
     ActiveRunView,
     AgentCommand,
     AssistantDraftView,
+    FollowUpCommand,
     MessageCommand,
     OpenSessionRequest,
     PendingInteractionView,
@@ -673,6 +674,96 @@ class AgentHarnessRepository:
             if session.title is None and automatic_title:
                 session.title = automatic_title
             if current is not None:
+                raise ValueError(
+                    "session already has an active run; use follow_up instead"
+                )
+            if turn_execution_config is None:
+                raise ValueError("turn execution config is required to start a Run")
+
+            run = AgentHarnessRun(
+                session_id=session_id,
+                status="queued",
+                model_snapshot=model_snapshot or session.model_snapshot,
+                turn_execution_config=turn_execution_config,
+                command_queue=[],
+                command_ids=[],
+            )
+            self.db.add(run)
+            await self.db.flush()
+            sequence = int(session.history_revision) + 1
+            entry = AgentHarnessEntry(
+                session_id=session_id,
+                run_id=str(run.id),
+                sequence=sequence,
+                type="message",
+                schema_version=2,
+                payload=payload,
+            )
+            session.history_revision = sequence
+            session.command_ids = [*command_ids, command.command_id]
+            self.db.add(entry)
+            await self.db.commit()
+            await self.db.refresh(run)
+            await self.db.refresh(entry)
+            return run, entry, True
+        except Exception:
+            await self.db.rollback()
+            raise
+
+    async def submit_follow_up_command(
+        self,
+        session_id: str,
+        command: FollowUpCommand,
+        *,
+        model_snapshot: dict | None = None,
+        automatic_title: str | None = None,
+        turn_execution_config: dict[str, Any] | None = None,
+        expected_settings_revision: int | None = None,
+        expected_active_run_id: str | None | object = _EXPECTED_ACTIVE_RUN_UNSET,
+    ) -> tuple[AgentHarnessRun | None, AgentHarnessEntry | None, bool]:
+        """Queue or immediately start one follow-up command."""
+
+        if command.type != "follow_up":
+            raise ValueError("submit_follow_up_command requires follow_up")
+        session = await self.get_session(session_id)
+        if session is None or session.status != "active":
+            raise LookupError(f"agent session not found: {session_id}")
+        try:
+            mutable = await self.db.execute(
+                update(AgentHarnessSession)
+                .where(
+                    AgentHarnessSession.id == session_id,
+                    AgentHarnessSession.status == "active",
+                )
+                .values(history_revision=AgentHarnessSession.history_revision)
+            )
+            if not mutable.rowcount:
+                raise ValueError("agent session is closing")
+            await self.db.refresh(session)
+            command_ids = list(session.command_ids or [])
+            if command.command_id in command_ids:
+                await self.db.commit()
+                return None, None, False
+
+            payload = await self._user_message_payload(session, command)
+            current = await self.get_current_run(session_id)
+            current_id = str(current.id) if current is not None else None
+            if (
+                expected_active_run_id is not _EXPECTED_ACTIVE_RUN_UNSET
+                and current_id != expected_active_run_id
+            ):
+                raise SessionMutationConflict("active Run changed during submission")
+            if (
+                current is None
+                and expected_settings_revision is not None
+                and int(session.settings_revision or 1) != expected_settings_revision
+            ):
+                raise SessionMutationConflict(
+                    "session settings changed during submission"
+                )
+            if session.title is None and automatic_title:
+                session.title = automatic_title
+            if current is not None:
                 session.command_ids = [*command_ids, command.command_id]
                 session.command_queue = [
                     *(session.command_queue or []),
@@ -876,8 +967,9 @@ class AgentHarnessRepository:
         return list(result.scalars().all())
 
     async def list_sessions_with_queued_command(
-        self, *, kind: str
+        self, *, kinds: Iterable[str]
     ) -> list[AgentHarnessSession]:
+        selected_kinds = set(kinds)
         result = await self.db.execute(
             select(AgentHarnessSession)
             .where(AgentHarnessSession.status == "active")
@@ -887,7 +979,7 @@ class AgentHarnessRepository:
             session
             for session in result.scalars().all()
             if any(
-                isinstance(command, dict) and command.get("type") == kind
+                isinstance(command, dict) and command.get("type") in selected_kinds
                 for command in session.command_queue or []
             )
         ]
@@ -1588,13 +1680,14 @@ class AgentHarnessRepository:
         self,
         session_id: str,
         *,
-        kind: str,
+        kinds: Iterable[str] = ("follow_up", "message"),
         model_snapshot: dict | None = None,
         turn_execution_config: dict[str, Any],
         expected_settings_revision: int | None = None,
     ) -> tuple[AgentHarnessRun, AgentHarnessEntry] | None:
         """Atomically consume one queued command, create its Run, and publish input."""
 
+        selected_kinds = tuple(kinds)
         session = await self.get_session(session_id)
         if session is None:
             raise LookupError(f"agent session not found: {session_id}")
@@ -1628,7 +1721,7 @@ class AgentHarnessRepository:
                 (
                     position
                     for position, item in enumerate(queue)
-                    if item.get("type") == kind
+                    if item.get("type") in selected_kinds
                 ),
                 None,
             )

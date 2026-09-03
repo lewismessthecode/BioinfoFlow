@@ -5,7 +5,7 @@ from app.repositories.agent_harness_repo import (
     SessionMutationConflict,
 )
 from app.services.agent_session_title import derive_automatic_session_title
-from app.services.agent_harness.contracts import MessageCommand
+from app.services.agent_harness.contracts import FollowUpCommand, MessageCommand
 from app.services.agent_harness.turn_execution_config import (
     resolve_turn_execution_config,
 )
@@ -51,11 +51,42 @@ class AgentRunSubmissionService:
                     raise
         raise AssertionError("unreachable")
 
+    async def submit_follow_up_command(self, session_id: str, command: FollowUpCommand):
+        automatic_title = derive_automatic_session_title(
+            part.text for part in command.parts if part.type == "text"
+        )
+        for attempt in range(_MAX_SESSION_REFRESH_ATTEMPTS):
+            session = await self.repository.get_session(session_id)
+            if session is None or session.status != "active":
+                raise LookupError(f"agent session not found: {session_id}")
+            current = await self.repository.get_current_run(session_id)
+            turn_execution_config = (
+                None
+                if current is not None
+                else await resolve_turn_execution_config(
+                    self.repository.db,
+                    session,
+                )
+            )
+            try:
+                return await self.repository.submit_follow_up_command(
+                    session_id,
+                    command,
+                    automatic_title=automatic_title,
+                    turn_execution_config=turn_execution_config,
+                    expected_settings_revision=int(session.settings_revision or 1),
+                    expected_active_run_id=(str(current.id) if current else None),
+                )
+            except SessionMutationConflict:
+                if attempt + 1 == _MAX_SESSION_REFRESH_ATTEMPTS:
+                    raise
+        raise AssertionError("unreachable")
+
     async def create_run_from_next_session_command(
         self,
         session_id: str,
         *,
-        kind: str,
+        kinds: tuple[str, ...] = ("follow_up", "message"),
     ):
         for attempt in range(_MAX_SESSION_REFRESH_ATTEMPTS):
             session = await self.repository.get_session(session_id)
@@ -70,7 +101,7 @@ class AgentRunSubmissionService:
             try:
                 return await self.repository.create_run_from_next_session_command(
                     session_id,
-                    kind=kind,
+                    kinds=kinds,
                     turn_execution_config=turn_execution_config,
                     expected_settings_revision=int(session.settings_revision or 1),
                 )

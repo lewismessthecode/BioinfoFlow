@@ -175,12 +175,14 @@ def test_agent_openapi_contract_describes_the_harness_wire_protocol(
     assert command_body["discriminator"]["propertyName"] == "type"
     assert set(command_body["discriminator"]["mapping"]) == {
         "message",
+        "follow_up",
         "steer",
         "respond",
         "cancel",
     }
     assert {item["$ref"].rsplit("/", 1)[-1] for item in command_body["oneOf"]} == {
         "MessageCommand",
+        "FollowUpCommand",
         "SteerCommand",
         "RespondCommand",
         "CancelCommand",

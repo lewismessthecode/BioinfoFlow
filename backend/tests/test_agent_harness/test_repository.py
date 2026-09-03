@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.agent_harness_repo import AgentHarnessRepository
 from app.services.agent_harness.contracts import (
     CancelCommand,
+    FollowUpCommand,
     InputTextPart,
     MessageCommand,
     NoticePayload,
@@ -29,6 +30,13 @@ WORKSPACE_ID = UUID("30000000-0000-0000-0000-000000000001")
 
 def _message(command_id: str, text: str) -> MessageCommand:
     return MessageCommand(
+        command_id=command_id,
+        parts=[InputTextPart(text=text)],
+    )
+
+
+def _follow_up(command_id: str, text: str) -> FollowUpCommand:
+    return FollowUpCommand(
         command_id=command_id,
         parts=[InputTextPart(text=text)],
     )
@@ -693,6 +701,61 @@ async def test_message_submission_rolls_back_command_run_and_history_together(
 
 
 @pytest.mark.asyncio
+async def test_message_starts_run_and_follow_up_queues_when_active(
+    harness_db: AsyncSession,
+) -> None:
+    repository = AgentHarnessRepository(harness_db)
+    session = await repository.open_session(_request())
+    session_id = str(session.id)
+    turn_execution_config = await agent_turn_execution_config(repository, session_id)
+
+    started_run, entry, inserted = await repository.submit_user_command(
+        session_id,
+        _message("message-1", "first"),
+        turn_execution_config=turn_execution_config,
+    )
+    queued_run, queued_entry, queued_inserted = await repository.submit_follow_up_command(
+        session_id,
+        _follow_up("follow-up-1", "second"),
+        turn_execution_config=turn_execution_config,
+    )
+
+    assert started_run is not None
+    assert entry is not None
+    assert inserted is True
+    assert queued_run is None
+    assert queued_entry is None
+    assert queued_inserted is True
+    stored = await repository.get_session(session_id)
+    assert stored is not None
+    assert len(stored.command_queue) == 1
+    assert stored.command_queue[0]["type"] == "follow_up"
+    assert stored.command_ids == ["message-1", "follow-up-1"]
+
+
+@pytest.mark.asyncio
+async def test_message_rejects_submission_while_a_run_is_active(
+    harness_db: AsyncSession,
+) -> None:
+    repository = AgentHarnessRepository(harness_db)
+    session = await repository.open_session(_request())
+    session_id = str(session.id)
+    turn_execution_config = await agent_turn_execution_config(repository, session_id)
+    await repository.submit_user_command(
+        session_id,
+        _message("message-1", "first"),
+        turn_execution_config=turn_execution_config,
+    )
+
+    with pytest.raises(ValueError, match="follow_up"):
+        await repository.submit_user_command(
+            session_id,
+            _message("message-2", "second"),
+            turn_execution_config=turn_execution_config,
+        )
+
+
+@pytest.mark.asyncio
 async def test_concurrent_messages_start_one_run_and_queue_the_other(
     harness_db: AsyncSession,
     monkeypatch,
@@ -708,6 +771,7 @@ async def test_concurrent_messages_start_one_run_and_queue_the_other(
     session = await setup.open_session(_request())
     session_id = str(session.id)
     turn_execution_config = await agent_turn_execution_config(setup, session_id)
+    await create_agent_run(setup, session_id)
 
     async with factory() as first_db, factory() as second_db:
         first = AgentHarnessRepository(first_db)
@@ -719,29 +783,23 @@ async def test_concurrent_messages_start_one_run_and_queue_the_other(
                 _message("message-1", "first"),
                 turn_execution_config=turn_execution_config,
             ),
-            second.submit_user_command(
+            second.submit_follow_up_command(
                 session_id,
-                _message("message-2", "second"),
+                _follow_up("follow-up-1", "second"),
                 turn_execution_config=turn_execution_config,
             ),
             return_exceptions=True,
         )
 
-    assert all(not isinstance(result, Exception) for result in results)
-    assert sum(result[0] is not None for result in results) == 1
-    assert sum(result[1] is not None for result in results) == 1
-    assert all(result[2] is True for result in results)
+    assert isinstance(results[0], ValueError)
+    assert results[1] == (None, None, True)
     async with factory() as verification_db:
         verification = AgentHarnessRepository(verification_db)
-        snapshot = await verification.snapshot(session_id)
-        assert snapshot.active_run is not None
-        assert len(snapshot.runs) == 1
-        assert len(snapshot.entries) == 1
         stored = await verification.get_session(session_id)
         assert stored is not None
         assert len(stored.command_queue) == 1
-        assert stored.command_queue[0]["type"] == "message"
-        assert len(stored.command_ids) == 2
+        assert stored.command_queue[0]["type"] == "follow_up"
+        assert stored.command_ids == ["follow-up-1"]
 
 
 @pytest.mark.asyncio
@@ -1629,12 +1687,12 @@ async def test_concurrent_message_start_consumes_only_one_command(
         results = await asyncio.gather(
             first.create_run_from_next_session_command(
                 session_id,
-                kind="message",
+                kinds=("message",),
                 turn_execution_config=turn_execution_config,
             ),
             second.create_run_from_next_session_command(
                 session_id,
-                kind="message",
+                kinds=("message",),
                 turn_execution_config=turn_execution_config,
             ),
         )
@@ -1686,7 +1744,7 @@ async def test_message_start_rolls_back_queue_run_and_history_together(
     with pytest.raises(RuntimeError, match="simulated process loss"):
         await repository.create_run_from_next_session_command(
             session_id,
-            kind="message",
+            kinds=("message",),
             turn_execution_config=turn_execution_config,
         )
 

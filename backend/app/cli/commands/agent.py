@@ -221,6 +221,33 @@ def send(
     renderer.success("Agent message accepted.", raw=response)
 
 
+@agent_app.command("follow-up")
+@handle_errors
+def follow_up(
+    ctx: typer.Context,
+    session_id: str,
+    message: str,
+    attachment_ids: list[str] | None = typer.Option(
+        None, "--attachment", help="Attachment ID; repeat for multiple attachments"
+    ),
+) -> None:
+    """Queue a message to start after the active run ends."""
+    _dispatch_command(
+        ctx,
+        session_id,
+        {
+            "type": "follow_up",
+            "parts": [
+                {"type": "text", "text": message},
+                *(
+                    {"type": "attachment_ref", "attachment_id": attachment_id}
+                    for attachment_id in attachment_ids or []
+                ),
+            ],
+        },
+    )
+
+
 @agent_app.command("steer")
 @handle_errors
 def steer(ctx: typer.Context, session_id: str, message: str) -> None:

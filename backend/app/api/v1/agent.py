@@ -30,6 +30,7 @@ from app.services.agent_harness.contracts import (
     AgentCommand,
     AgentEvent,
     EnvironmentScope,
+    FollowUpCommand,
     InputAttachmentRefPart,
     InputDirectoryRefPart,
     InputFileRefPart,
@@ -342,7 +343,7 @@ async def _authorize_command_parts(
     command: AgentCommand,
     user: AuthUser,
 ) -> None:
-    if not isinstance(command, (MessageCommand, SteerCommand)):
+    if not isinstance(command, (MessageCommand, FollowUpCommand, SteerCommand)):
         return
 
     attachment_ids = []

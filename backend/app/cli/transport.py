@@ -26,6 +26,9 @@ class RemoteTransport(BaseTransport):
         self._bearer_token = bearer_token
         self._client: httpx.AsyncClient | None = None
 
+    def __repr__(self) -> str:
+        return f"RemoteTransport(base_url={self._base_url!r})"
+
     async def get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             headers = (

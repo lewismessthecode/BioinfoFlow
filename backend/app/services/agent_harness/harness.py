@@ -18,6 +18,7 @@ from app.services.agent_harness.contracts import (
     AgentEvent,
     CancelCommand,
     EntryCommittedEvent,
+    FollowUpCommand,
     InteractionRequestedEvent,
     MessageCommand,
     OpenSessionRequest,
@@ -194,6 +195,21 @@ class AgentHarness:
                 )
                 await self._start_run(session_id, str(run.id), wait=True)
             return
+        if isinstance(command, FollowUpCommand):
+            run, entry, inserted = await self.run_submission.submit_follow_up_command(
+                session_id,
+                command,
+            )
+            if not inserted:
+                return
+            if run is not None:
+                assert entry is not None
+                await self.event_hub.publish(
+                    session_id,
+                    EntryCommittedEvent(entry=entry_contract(entry)),
+                )
+                await self._start_run(session_id, str(run.id), wait=True)
+            return
         if isinstance(command, SteerCommand):
             if current is None:
                 raise ValueError("there is no active run to steer")
@@ -295,10 +311,10 @@ class AgentHarness:
         else:
             recovered = sum([await self.recover_run(str(run.id)) for run in runs])
         sessions = await self.repository.list_sessions_with_queued_command(
-            kind="message"
+            kinds=("follow_up", "message")
         )
         for session in sessions:
-            if await self._start_next_message(str(session.id), wait=True):
+            if await self._start_next_follow_up(str(session.id), wait=True):
                 recovered += 1
         return recovered
 
@@ -1111,15 +1127,15 @@ class AgentHarness:
         run = await self.repository.get_run(run_id)
         if run is not None and run.status in {"completed", "failed", "cancelled"}:
             self._cancellations.pop(run_id, None)
-            await self._start_next_message(session_id, wait=wait)
+            await self._start_next_follow_up(session_id, wait=wait)
 
-    async def _start_next_message(self, session_id: str, *, wait: bool) -> bool:
+    async def _start_next_follow_up(self, session_id: str, *, wait: bool) -> bool:
         session = await self.repository.get_session(session_id)
         if session is None or session.status != "active":
             return False
         next_run = await self.run_submission.create_run_from_next_session_command(
             session_id,
-            kind="message",
+            kinds=("follow_up", "message"),
         )
         if next_run is None:
             return False

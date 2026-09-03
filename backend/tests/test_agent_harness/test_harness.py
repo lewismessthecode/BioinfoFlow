@@ -17,6 +17,7 @@ from fastapi import UploadFile
 from app.services.agent_harness.assets import AgentHarnessAttachmentService
 from app.services.agent_harness.contracts import (
     CancelCommand,
+    FollowUpCommand,
     InputAttachmentRefPart,
     InputTextPart,
     MessageCommand,
@@ -90,6 +91,21 @@ def _message(
     attachment_ids=(),
 ) -> MessageCommand:
     return MessageCommand(
+        command_id=command_id,
+        parts=[
+            InputTextPart(text=text),
+            *(InputAttachmentRefPart(attachment_id=item) for item in attachment_ids),
+        ],
+    )
+
+
+def _follow_up(
+    command_id: str,
+    text: str,
+    *,
+    attachment_ids=(),
+) -> FollowUpCommand:
+    return FollowUpCommand(
         command_id=command_id,
         parts=[
             InputTextPart(text=text),
@@ -3347,7 +3363,7 @@ async def test_explicit_cancel_publishes_terminal_run_and_starts_follow_up(
     )
     await harness.dispatch(
         session_id,
-        _message("message-after-cancel", "Continue next."),
+        _follow_up("message-after-cancel", "Continue next."),
     )
     events = harness.events(session_id)
     await anext(events)
@@ -3396,7 +3412,7 @@ async def test_recovery_consumes_a_durable_cancel_and_starts_follow_up(
     )
     await first.repository.enqueue_command(
         session_id,
-        _message("message-after-restart", "Continue next."),
+        _follow_up("message-after-restart", "Continue next."),
     )
     await first.repository.enqueue_command(
         session_id,
@@ -3456,7 +3472,7 @@ async def test_recovery_starts_follow_up_left_after_terminal_run(
     )
     await first.repository.enqueue_command(
         session_id,
-        _message("message-after-terminal-crash", "Continue after restart."),
+        _follow_up("message-after-terminal-crash", "Continue after restart."),
     )
 
     restarted_model = TextModel("Recovered follow-up completed.")
@@ -3482,6 +3498,94 @@ async def test_recovery_starts_follow_up_left_after_terminal_run(
         for part in entry.payload.parts
         if part.type == "text"
     ] == ["Continue after restart."]
+
+
+@pytest.mark.asyncio
+async def test_message_rejects_while_a_run_is_active(harness_db, tmp_path) -> None:
+    harness = AgentHarness.for_database(
+        harness_db,
+        model_gateway=TextModel("unused"),
+        workspace_factory=lambda _session: _workspace(tmp_path),
+    )
+    opened = await harness.open_session(_open_request())
+    session_id = str(opened.session.id)
+    active_run = await create_agent_run(harness.repository, session_id)
+    await harness.repository.update_run(
+        str(active_run.id),
+        status="running",
+        phase="model",
+    )
+
+    with pytest.raises(ValueError, match="follow_up"):
+        await harness.dispatch(session_id, _message("message-during-run", "Now?"))
+
+
+@pytest.mark.asyncio
+async def test_follow_up_queues_until_the_active_run_finishes(
+    harness_db, tmp_path
+) -> None:
+    model = TextModel("Follow-up finished.")
+    harness = AgentHarness.for_database(
+        harness_db,
+        model_gateway=model,
+        workspace_factory=lambda _session: _workspace(tmp_path),
+    )
+    opened = await harness.open_session(_open_request())
+    session_id = str(opened.session.id)
+    active_run = await create_agent_run(harness.repository, session_id)
+    await harness.repository.update_run(
+        str(active_run.id),
+        status="running",
+        phase="model",
+    )
+
+    await harness.dispatch(
+        session_id,
+        _follow_up("follow-up-1", "Continue after the first run."),
+    )
+    queued = await harness.repository.get_session(session_id)
+    assert queued is not None
+    assert [item["type"] for item in queued.command_queue] == ["follow_up"]
+    assert len(model.invocations) == 0
+
+    await harness.repository.terminalize_run(
+        str(active_run.id),
+        status="completed",
+        phase=None,
+        termination_reason="completed",
+    )
+    await harness._start_next_follow_up(session_id, wait=True)
+
+    snapshot = await harness.snapshot(session_id)
+    assert _latest_run(snapshot).id != active_run.id
+    assert _latest_run(snapshot).status == "completed"
+    assert len(model.invocations) == 1
+
+
+@pytest.mark.asyncio
+async def test_follow_up_command_id_is_deduped(harness_db, tmp_path) -> None:
+    harness = AgentHarness.for_database(
+        harness_db,
+        model_gateway=TextModel("unused"),
+        workspace_factory=lambda _session: _workspace(tmp_path),
+    )
+    opened = await harness.open_session(_open_request())
+    session_id = str(opened.session.id)
+    active_run = await create_agent_run(harness.repository, session_id)
+    await harness.repository.update_run(
+        str(active_run.id),
+        status="running",
+        phase="model",
+    )
+    command = _follow_up("follow-up-dedupe", "Later.")
+
+    await harness.dispatch(session_id, command)
+    await harness.dispatch(session_id, command)
+
+    stored = await harness.repository.get_session(session_id)
+    assert stored is not None
+    assert stored.command_queue == [command.model_dump(mode="json")]
+    assert stored.command_ids == ["follow-up-dedupe"]
 
 
 @pytest.mark.asyncio

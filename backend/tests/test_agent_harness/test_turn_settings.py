@@ -129,7 +129,7 @@ async def test_queued_message_uses_latest_thread_settings_when_its_run_starts(
     harness_db,
 ) -> None:
     from app.repositories.agent_harness_repo import AgentHarnessRepository
-    from app.services.agent_harness.contracts import MessageCommand, OpenSessionRequest
+    from app.services.agent_harness.contracts import FollowUpCommand, OpenSessionRequest
 
     repository = AgentHarnessRepository(harness_db)
     initial_model = _model_snapshot("gpt-initial")
@@ -150,11 +150,11 @@ async def test_queued_message_uses_latest_thread_settings_when_its_run_starts(
     session_id = str(session.id)
     active = await create_agent_run(repository, session_id)
 
-    queued = MessageCommand(
+    queued = FollowUpCommand(
         command_id="queued-message",
         parts=[{"type": "text", "text": "run later"}],
     )
-    run, entry, inserted = await repository.submit_user_command(session_id, queued)
+    run, entry, inserted = await repository.submit_follow_up_command(session_id, queued)
     assert (run, entry, inserted) == (None, None, True)
 
     await repository.update_session_settings(
@@ -167,7 +167,7 @@ async def test_queued_message_uses_latest_thread_settings_when_its_run_starts(
 
     started = await repository.create_run_from_next_session_command(
         session_id,
-        kind="message",
+        kinds=("follow_up", "message"),
         turn_execution_config=turn_execution_config,
     )
 
