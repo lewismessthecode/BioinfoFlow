@@ -108,6 +108,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-workbench", () => ({
 
 vi.mock("@/components/bioinfoflow/live-deck", () => ({
   LiveDeck: ({
+    sessionId,
     onCollapse,
     activeTab,
     runId,
@@ -116,6 +117,7 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
     dag,
     onRunSelect,
   }: {
+    sessionId?: string | null
     onCollapse?: () => void
     activeTab: string
     runId?: string | null
@@ -130,7 +132,7 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
       data-live-deck-focus-target
       tabIndex={0}
     >
-      tab:{activeTab}|run:{runId ?? "none"}|artifact:{selectedArtifactId ?? "none"}|dag:
+      session:{sessionId ?? "draft"}|tab:{activeTab}|run:{runId ?? "none"}|artifact:{selectedArtifactId ?? "none"}|dag:
       {dag ? "present" : "none"}
       {onCollapse ? (
         <button type="button" onClick={onCollapse}>close</button>
@@ -238,6 +240,7 @@ describe("Agent pages", () => {
     )
     await waitFor(() => {
       expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:browser")
+      expect(screen.getByTestId("live-deck")).toHaveTextContent("session:session-b")
       expect(screen.getByTestId("agent-live-deck-rail")).toHaveAttribute(
         "data-width",
         "350",
