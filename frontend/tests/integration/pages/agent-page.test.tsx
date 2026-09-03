@@ -98,7 +98,12 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
     runId?: string | null
     selectedArtifactId?: string | null
   }) => (
-    <div data-testid="live-deck" data-has-collapse={Boolean(onCollapse)}>
+    <div
+      data-testid="live-deck"
+      data-has-collapse={Boolean(onCollapse)}
+      data-live-deck-focus-target
+      tabIndex={0}
+    >
       tab:{activeTab}|run:{runId ?? "none"}|artifact:{selectedArtifactId ?? "none"}
       {onCollapse ? (
         <button type="button" onClick={onCollapse}>close</button>
@@ -255,6 +260,76 @@ describe("Agent pages", () => {
     fireEvent.keyDown(window, { key: "Escape" })
 
     await waitFor(() => expect(filesButton).toHaveFocus())
+  })
+
+  it("returns desktop rail focus to the selected navbar action on Escape and shortcut close", async () => {
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
+    render(<>{navbarAction}</>)
+    const filesButton = screen.getByRole("button", { name: "Open files" })
+    fireEvent.click(filesButton)
+    const focusTarget = screen.getByTestId("live-deck")
+    focusTarget.focus()
+    fireEvent.keyDown(window, { key: "Escape" })
+    await waitFor(() => expect(filesButton).toHaveFocus())
+
+    fireEvent.click(filesButton)
+    screen.getByTestId("live-deck").focus()
+    fireEvent.keyDown(window, {
+      key: "b",
+      ctrlKey: true,
+      shiftKey: true,
+    })
+    await waitFor(() => expect(filesButton).toHaveFocus())
+  })
+
+  it("returns a referenced run opener after closing its mobile sheet", async () => {
+    mocks.isMobile.mockReturnValue(true)
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
+    render(<>{navbarAction}</>)
+    const staleAction = screen.getByRole("button", { name: "Open files" })
+    fireEvent.click(staleAction)
+    fireEvent.keyDown(window, { key: "Escape" })
+    await waitFor(() => expect(staleAction).toHaveFocus())
+
+    const opener = screen.getByRole("button", { name: "Open referenced run" })
+    opener.focus()
+    fireEvent.click(opener)
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:dag|run:run-42")
+    fireEvent.keyDown(window, { key: "Escape" })
+
+    await waitFor(() => expect(opener).toHaveFocus())
+  })
+
+  it("returns a referenced artifact opener after closing its mobile sheet", async () => {
+    mocks.isMobile.mockReturnValue(true)
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
+    render(<>{navbarAction}</>)
+    const staleAction = screen.getByRole("button", { name: "Open files" })
+    fireEvent.click(staleAction)
+    fireEvent.keyDown(window, { key: "Escape" })
+    await waitFor(() => expect(staleAction).toHaveFocus())
+
+    const opener = screen.getByRole("button", { name: "Open referenced artifact" })
+    opener.focus()
+    fireEvent.click(opener)
+    expect(screen.getByTestId("live-deck")).toHaveTextContent(
+      "tab:artifacts|run:none|artifact:artifact-42",
+    )
+    fireEvent.keyDown(window, { key: "Escape" })
+
+    await waitFor(() => expect(opener).toHaveFocus())
   })
 
   it("clears the global Workspace action when the Agent page unmounts", () => {
