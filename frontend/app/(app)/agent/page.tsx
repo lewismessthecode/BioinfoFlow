@@ -6,7 +6,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react"
 import { useTranslations } from "next-intl"
 import {
@@ -23,6 +22,11 @@ import { LiveDeck, type LiveDeckTab } from "@/components/bioinfoflow/live-deck"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useEvents } from "@/hooks/use-events"
+import {
+  RIGHT_SIDEBAR_MAX,
+  RIGHT_SIDEBAR_MIN,
+  useAgentPanelController,
+} from "@/hooks/use-agent-panel-controller"
 import type { DagData, Run } from "@/lib/types"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useIsMobile } from "@/hooks/use-media-query"
@@ -60,94 +64,6 @@ const LIVE_DECK_TAB_BY_ACTION: Record<AgentActionId, LiveDeckTab> = {
   artifacts: "artifacts",
   dag: "dag",
 }
-const ACTION_BY_LIVE_DECK_TAB: Partial<Record<LiveDeckTab, AgentActionId>> = {
-  browser: "browser",
-  workspace: "files",
-  artifacts: "artifacts",
-  dag: "dag",
-}
-type AgentPanelPreferences = {
-  activeTab: LiveDeckTab
-  open: boolean
-  width: number
-}
-
-const DEFAULT_PANEL_PREFERENCES: AgentPanelPreferences = {
-  activeTab: "workspace",
-  open: false,
-  width: RIGHT_SIDEBAR_DEFAULT,
-}
-const panelPreferenceListeners = new Map<string, Set<() => void>>()
-
-function readPanelPreferences(key: string | null): string | null {
-  if (!key || typeof window === "undefined") return null
-  return window.localStorage.getItem(key)
-}
-
-function subscribeToPanelPreferences(
-  key: string | null,
-  listener: () => void,
-): () => void {
-  if (!key || typeof window === "undefined") return () => {}
-  const listeners = panelPreferenceListeners.get(key) ?? new Set()
-  listeners.add(listener)
-  panelPreferenceListeners.set(key, listeners)
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === key) listener()
-  }
-  window.addEventListener("storage", handleStorage)
-  return () => {
-    listeners.delete(listener)
-    window.removeEventListener("storage", handleStorage)
-    if (listeners.size === 0) panelPreferenceListeners.delete(key)
-  }
-}
-
-function writePanelPreferences(
-  key: string | null,
-  updates: Partial<AgentPanelPreferences>,
-): void {
-  if (!key || typeof window === "undefined") return
-  const current = parsePanelPreferences(readPanelPreferences(key))
-  window.localStorage.setItem(key, JSON.stringify({ ...current, ...updates }))
-  panelPreferenceListeners.get(key)?.forEach((listener) => listener())
-}
-
-function parsePanelPreferences(raw: string | null): AgentPanelPreferences {
-  if (!raw) return DEFAULT_PANEL_PREFERENCES
-  try {
-    const parsed = JSON.parse(raw) as Partial<AgentPanelPreferences>
-    const activeTab =
-      parsed.activeTab === "workspace" ||
-      parsed.activeTab === "dag" ||
-      parsed.activeTab === "artifacts" ||
-      parsed.activeTab === "browser"
-        ? parsed.activeTab
-        : DEFAULT_PANEL_PREFERENCES.activeTab
-    return {
-      activeTab,
-      open: typeof parsed.open === "boolean" ? parsed.open : DEFAULT_PANEL_PREFERENCES.open,
-      width:
-        typeof parsed.width === "number"
-          ? clampRightSidebarWidth(parsed.width)
-          : DEFAULT_PANEL_PREFERENCES.width,
-    }
-  } catch {
-    return DEFAULT_PANEL_PREFERENCES
-  }
-}
-
-function panelPreferenceKey(
-  projectId: string | null,
-  routeSessionId: string | null,
-): string | null {
-  return projectId
-    ? `agent-panel:${projectId}:${routeSessionId ?? "draft"}`
-    : null
-}
-
-const getServerPanelPreferences = () => null
-
 export default function AgentPage() {
   return <AgentPageContent routeSessionId={null} />
 }
@@ -158,6 +74,7 @@ export function AgentPageContent({
   routeSessionId: string | null
 }) {
   const t = useTranslations("agentWorkbench")
+  const tAccessibility = useTranslations("accessibility")
   const isMobile = useIsMobile()
   const { setNavbarActions } = useWorkspaceShell()
   const chatRef = useRef<AgentWorkbenchHandle>(null)
@@ -170,45 +87,31 @@ export function AgentPageContent({
     setActiveConversationId,
     setActiveConversationTitle,
   } = useProjectContext()
-  const [resolvedPanelSessionId, setPanelSessionId] = useState("draft")
-  const panelSessionId = routeSessionId ?? resolvedPanelSessionId
-  const panelKey = panelPreferenceKey(selectedProjectId, panelSessionId)
-  const subscribePanelPreferences = useCallback(
-    (listener: () => void) => subscribeToPanelPreferences(panelKey, listener),
-    [panelKey],
-  )
-  const getPanelPreferencesSnapshot = useCallback(
-    () => readPanelPreferences(panelKey),
-    [panelKey],
-  )
-  const panelSnapshot = useSyncExternalStore(
-    subscribePanelPreferences,
-    getPanelPreferencesSnapshot,
-    getServerPanelPreferences,
-  )
-  const panelPreferences = useMemo(
-    () => parsePanelPreferences(panelSnapshot),
-    [panelSnapshot],
-  )
+  const railRef = useRef<HTMLDivElement>(null)
+  const {
+    preferences: panelPreferences,
+    update: updatePanelPreferences,
+    close: closeLiveDeck,
+    recordFocusReturn,
+    restoreFocusReturn,
+    ensurePanelFocusReturn,
+    resize: handleRightResize,
+    resizeEnd: handleRightResizeEnd,
+    setPanelSessionId,
+  } = useAgentPanelController({
+    projectId: selectedProjectId,
+    routeSessionId,
+    isMobile,
+    railRef,
+  })
   const liveDeckTab = panelPreferences.activeTab
   const rightSidebarWidth = panelPreferences.width
   const rightSidebarCollapsed = !panelPreferences.open
   const mobileLiveDeckOpen = panelPreferences.open
-  const updatePanelPreferences = useCallback(
-    (updates: Partial<AgentPanelPreferences>) => {
-      writePanelPreferences(panelKey, updates)
-    },
-    [panelKey],
-  )
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
   const [focusedRunId, setFocusedRunId] = useState<string | null>(null)
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null)
   const [dag, setDag] = useState<DagData | null>(null)
-  const focusReturnRef = useRef<{
-    element: HTMLElement | null
-    actionId: AgentActionId | null
-  }>({ element: null, actionId: null })
-  const focusRestorePendingRef = useRef(false)
 
   useEffect(() => {
     setActiveConversationId(routeSessionId ?? "")
@@ -223,53 +126,6 @@ export function AgentPageContent({
       if (envelope.data.dag) updatePanelPreferences({ activeTab: "dag" })
     },
   })
-
-  const handleRightResize = useCallback((delta: number) => {
-    updatePanelPreferences({
-      width: clampRightSidebarWidth(rightSidebarWidth + delta),
-    })
-  }, [rightSidebarWidth, updatePanelPreferences])
-
-  const recordFocusReturn = useCallback((actionId: AgentActionId | null) => {
-    const activeElement = document.activeElement
-    focusReturnRef.current = {
-      element:
-        activeElement instanceof HTMLElement && activeElement !== document.body
-          ? activeElement
-          : null,
-      actionId,
-    }
-  }, [])
-
-  const restoreFocusReturn = useCallback(() => {
-    const { element, actionId } = focusReturnRef.current
-    if (element?.isConnected) {
-      element.focus()
-      return true
-    }
-    if (!actionId) return false
-    const action = document.querySelector<HTMLButtonElement>(
-      `[data-action-id="${actionId}"]`,
-    )
-    if (!action?.isConnected) return false
-    action.focus()
-    return true
-  }, [])
-
-  const ensurePanelFocusReturn = useCallback(() => {
-    const { element, actionId } = focusReturnRef.current
-    if (element?.isConnected || actionId) return
-    focusReturnRef.current = {
-      element: null,
-      actionId: ACTION_BY_LIVE_DECK_TAB[liveDeckTab] ?? null,
-    }
-  }, [liveDeckTab])
-
-  const closeLiveDeck = useCallback(() => {
-    ensurePanelFocusReturn()
-    focusRestorePendingRef.current = true
-    updatePanelPreferences({ open: false })
-  }, [ensurePanelFocusReturn, updatePanelPreferences])
 
   const toggleRightSidebar = useCallback(() => {
     const nextCollapsed = !rightSidebarCollapsed
@@ -332,11 +188,6 @@ export function AgentPageContent({
     [toggleAction],
   )
 
-  useEffect(() => {
-    if (!rightSidebarCollapsed || !focusRestorePendingRef.current) return
-    focusRestorePendingRef.current = false
-    restoreFocusReturn()
-  }, [restoreFocusReturn, rightSidebarCollapsed])
   const actionModels = useMemo<AgentActionModel[]>(() => {
     const isLiveDeckOpen = isMobile
       ? mobileLiveDeckOpen
@@ -450,6 +301,7 @@ export function AgentPageContent({
       setActiveConversationTitle,
       setConversationProjectId,
       setSelectedProjectId,
+      setPanelSessionId,
     ],
   )
   const handleActiveSessionIdChange = useCallback(
@@ -457,7 +309,7 @@ export function AgentPageContent({
       setActiveConversationId(sessionId)
       setPanelSessionId(sessionId || "draft")
     },
-    [setActiveConversationId],
+    [setActiveConversationId, setPanelSessionId],
   )
 
   // Keyboard shortcuts
@@ -596,9 +448,11 @@ export function AgentPageContent({
           <ResizeHandle
             side="right"
             onResize={handleRightResize}
+            onResizeEnd={handleRightResizeEnd}
             valueNow={rightSidebarWidth}
             valueMin={RIGHT_SIDEBAR_MIN}
             valueMax={RIGHT_SIDEBAR_MAX}
+            ariaLabel={tAccessibility("resizePanel")}
           />
           <LiveDeck
             activeTab={liveDeckTab}
@@ -618,7 +472,3 @@ export function AgentPageContent({
   )
 }
 
-function clampRightSidebarWidth(value: number) {
-  if (!Number.isFinite(value)) return RIGHT_SIDEBAR_DEFAULT
-  return Math.min(RIGHT_SIDEBAR_MAX, Math.max(RIGHT_SIDEBAR_MIN, value))
-}

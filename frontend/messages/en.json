@@ -1471,6 +1471,8 @@
     "openSidebar": "Open sidebar",
     "closeSidebar": "Close sidebar",
     "hidePanel": "Hide panel",
+    "resizePanel": "Resize workspace panel",
+    "resizeTerminal": "Resize terminal",
     "refreshWorkspace": "Refresh workspace",
     "userMenu": "User menu",
     "message": "Message",
