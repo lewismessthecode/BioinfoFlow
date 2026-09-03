@@ -208,9 +208,25 @@ describe("Agent pages", () => {
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
   })
 
+  it("persists active tab and open state per project draft", () => {
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
+    render(<>{navbarAction}</>)
+    fireEvent.click(screen.getByRole("button", { name: "Open artifacts" }))
+
+    expect(localStorage.getItem("agent-panel:project-1:draft")).toBe(
+      JSON.stringify({ activeTab: "artifacts", open: true, width: 400 }),
+    )
+  })
+
   it("clamps a restored desktop rail to the supported width range", () => {
-    localStorage.setItem("right-sidebar-width", "900")
-    localStorage.setItem("right-sidebar-collapsed", "false")
+    localStorage.setItem(
+      "agent-panel:project-1:draft",
+      JSON.stringify({ activeTab: "artifacts", open: true, width: 900 }),
+    )
 
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
@@ -223,6 +239,7 @@ describe("Agent pages", () => {
       "data-has-collapse",
       "false",
     )
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:artifacts")
   })
 
   it("offers the LiveDeck in a safe mobile sheet", () => {
