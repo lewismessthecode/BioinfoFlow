@@ -106,7 +106,7 @@ describe("useIsMobile (useMediaQuery)", () => {
       "utf8",
     )
 
-    expect(source).not.toContain("useState(getMatches)")
-    expect(source).toContain("useState(false)")
+    expect(source).toContain("useSyncExternalStore")
+    expect(source).toContain("() => false")
   })
 })
