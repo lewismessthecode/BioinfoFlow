@@ -121,11 +121,29 @@ function migratePanelPreferences(
   const targetKey = panelPreferenceKey(projectId, toSessionId)
   if (!sourceKey || !targetKey || sourceKey === targetKey) return
   const source = readPanelPreferences(sourceKey)
-  if (!source || readPanelPreferences(targetKey)) return
-  window.localStorage.setItem(targetKey, source)
-  window.localStorage.removeItem(sourceKey)
-  panelPreferenceListeners.get(targetKey)?.forEach((listener) => listener())
-  panelPreferenceListeners.get(sourceKey)?.forEach((listener) => listener())
+  const target = readPanelPreferences(targetKey)
+  if (source && !target) {
+    window.localStorage.setItem(targetKey, source)
+    window.localStorage.removeItem(sourceKey)
+  }
+
+  const sourceMobileKey = mobilePreferenceKey(sourceKey)
+  const targetMobileKey = mobilePreferenceKey(targetKey)
+  const sourceMobile = readPanelPreferences(sourceMobileKey)
+  const targetMobile = readPanelPreferences(targetMobileKey)
+  if (sourceMobile && !targetMobile) {
+    window.localStorage.setItem(targetMobileKey!, sourceMobile)
+    window.localStorage.removeItem(sourceMobileKey!)
+  }
+
+  if (source && !target) {
+    panelPreferenceListeners.get(targetKey)?.forEach((listener) => listener())
+    panelPreferenceListeners.get(sourceKey)?.forEach((listener) => listener())
+  }
+  if (sourceMobile && !targetMobile) {
+    panelPreferenceListeners.get(targetMobileKey!)?.forEach((listener) => listener())
+    panelPreferenceListeners.get(sourceMobileKey!)?.forEach((listener) => listener())
+  }
 }
 
 const getServerPanelPreferences = () => null
