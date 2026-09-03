@@ -204,7 +204,7 @@ test.describe("Agent workspace shell", () => {
       await filesButton.click()
       const rail = page.getByTestId("agent-live-deck-rail")
       const resizeHandle = page.getByRole("separator", {
-        name: "Resize right sidebar",
+        name: "Resize workspace panel",
       })
       await expect(rail).toHaveAttribute("data-width", "400")
       await expect(resizeHandle).toHaveAttribute("aria-valuenow", "400")
