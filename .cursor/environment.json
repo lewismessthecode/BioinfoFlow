@@ -13,5 +13,8 @@
       "command": "export PATH=\"$HOME/.bun/bin:$PATH\"; cd frontend && bun run dev"
     }
   ],
-  "ports": [3000, 8000]
+  "ports": [
+    { "name": "frontend", "port": 3000 },
+    { "name": "backend", "port": 8000 }
+  ]
 }
