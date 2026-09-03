@@ -304,7 +304,11 @@ export default function AppLayout({
                     >
                       {renderSidebar(false)}
                       {showResizeHandle && (
-                        <ResizeHandle side="left" onResize={handleLeftResize} />
+                        <ResizeHandle
+                          side="left"
+                          onResize={handleLeftResize}
+                          ariaLabel={tAccessibility("resizeSidebar")}
+                        />
                       )}
                     </div>
                   </nav>
