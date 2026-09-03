@@ -6,6 +6,7 @@ import AgentSessionPage from "@/app/(app)/agent/[sessionId]/page"
 import AgentPage, {
   AgentPageContent,
 } from "@/app/(app)/agent/page"
+import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { renderAppPage } from "@/tests/app-test-utils"
 
 const mocks = vi.hoisted(() => ({
@@ -15,6 +16,15 @@ const mocks = vi.hoisted(() => ({
   workbench: vi.fn(),
   setNavbarActions: vi.fn(),
 }))
+
+function ProjectSwitcher() {
+  const { selectWorkspaceProject } = useProjectContext()
+  return (
+    <button type="button" onClick={() => selectWorkspaceProject("project-b")}>
+      switch project
+    </button>
+  )
+}
 
 vi.mock("next/navigation", () => ({
   useParams: () => mocks.params(),
@@ -301,6 +311,41 @@ describe("Agent pages", () => {
     expect(screen.getByTestId("live-deck")).toHaveTextContent("run:none")
     expect(screen.getByTestId("live-deck")).toHaveTextContent("artifact:none")
     expect(screen.getByTestId("live-deck")).toHaveTextContent("dag:none")
+  })
+
+  it("isolates transient run state when switching projects", () => {
+    localStorage.setItem(
+      "agent-panel:project-a:draft",
+      JSON.stringify({ activeTab: "dag", open: true, width: 400 }),
+    )
+    localStorage.setItem(
+      "agent-panel:project-b:draft",
+      JSON.stringify({ activeTab: "dag", open: true, width: 400 }),
+    )
+    renderAppPage(
+      <>
+        <ProjectSwitcher />
+        <AgentPageContent routeSessionId={null} />
+      </>,
+      { projectContext: { selectedProjectId: "project-a" } },
+    )
+
+    fireEvent.click(screen.getByTestId("select-run"))
+    fireEvent.click(screen.getByText("Open referenced artifact"))
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("run:run-a")
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("artifact:artifact-42")
+
+    fireEvent.click(screen.getByRole("button", { name: "switch project" }))
+
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("run:none")
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("artifact:none")
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("dag:none")
+    expect(mocks.useEvents.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ projectId: "project-b" }),
+    )
+
+    fireEvent.click(screen.getByTestId("select-run"))
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("run:run-a")
   })
 
   it("keeps draft preferences when the active session resets to an empty id", () => {
