@@ -2580,7 +2580,21 @@
       "description": "查看工作区文件和工作流。",
       "action": "工作区",
       "open": "打开工作区面板",
-      "close": "关闭工作区面板"
+      "close": "关闭工作区面板",
+      "actions": {
+        "browser": "浏览器",
+        "files": "文件",
+        "artifacts": "产物",
+        "dag": "DAG",
+        "openBrowser": "打开浏览器",
+        "closeBrowser": "关闭浏览器",
+        "openFiles": "打开文件",
+        "closeFiles": "关闭文件",
+        "openArtifacts": "打开产物",
+        "closeArtifacts": "关闭产物",
+        "openDag": "打开 DAG",
+        "closeDag": "关闭 DAG"
+      }
     },
     "connection": {
       "connecting": "正在连接",

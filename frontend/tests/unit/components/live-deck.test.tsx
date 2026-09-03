@@ -103,4 +103,27 @@ describe("LiveDeck", () => {
     expect(screen.getByRole("tab", { name: "Artifacts" })).toBeInTheDocument()
     expect(screen.getByRole("tab", { name: "Browser" })).toBeInTheDocument()
   })
+
+  it("marks only the selected tab active and preserves the compact divider", () => {
+    render(
+      <LiveDeck
+        activeTab="artifacts"
+        onTabChange={vi.fn()}
+        projectId="project-1"
+      />,
+    )
+
+    expect(screen.getByRole("tab", { name: "Artifacts" })).toHaveAttribute(
+      "data-state",
+      "active",
+    )
+    expect(screen.getByRole("tab", { name: "Files" })).toHaveAttribute(
+      "data-state",
+      "inactive",
+    )
+    expect(screen.getByTestId("live-deck-tab-bar")).toHaveClass(
+      "border-b",
+      "min-h-11",
+    )
+  })
 })

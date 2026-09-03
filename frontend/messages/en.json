@@ -2580,7 +2580,21 @@
       "description": "Inspect workspace files and workflows.",
       "action": "Workspace",
       "open": "Open workspace panel",
-      "close": "Close workspace panel"
+      "close": "Close workspace panel",
+      "actions": {
+        "browser": "Browser",
+        "files": "Files",
+        "artifacts": "Artifacts",
+        "dag": "DAG",
+        "openBrowser": "Open browser",
+        "closeBrowser": "Close browser",
+        "openFiles": "Open files",
+        "closeFiles": "Close files",
+        "openArtifacts": "Open artifacts",
+        "closeArtifacts": "Close artifacts",
+        "openDag": "Open DAG",
+        "closeDag": "Close DAG"
+      }
     },
     "connection": {
       "connecting": "Connecting",

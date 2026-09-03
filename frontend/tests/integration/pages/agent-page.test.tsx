@@ -28,6 +28,14 @@ vi.mock("next-intl", () => ({
       "workspacePanel.action": "Workspace",
       "workspacePanel.title": "Workspace panel",
       "workspacePanel.description": "Workspace details",
+      "workspacePanel.actions.openBrowser": "Open browser",
+      "workspacePanel.actions.closeBrowser": "Close browser",
+      "workspacePanel.actions.openFiles": "Open files",
+      "workspacePanel.actions.closeFiles": "Close files",
+      "workspacePanel.actions.openArtifacts": "Open artifacts",
+      "workspacePanel.actions.closeArtifacts": "Close artifacts",
+      "workspacePanel.actions.openDag": "Open DAG",
+      "workspacePanel.actions.closeDag": "Close DAG",
     })[key] ?? key,
 }))
 
@@ -92,7 +100,9 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
   }) => (
     <div data-testid="live-deck" data-has-collapse={Boolean(onCollapse)}>
       tab:{activeTab}|run:{runId ?? "none"}|artifact:{selectedArtifactId ?? "none"}
-      {onCollapse ? <button type="button" onClick={onCollapse}>close</button> : null}
+      {onCollapse ? (
+        <button type="button" onClick={onCollapse}>close</button>
+      ) : null}
     </div>
   ),
 }))
@@ -141,41 +151,54 @@ describe("Agent pages", () => {
     )
   })
 
-  it("registers an icon-only desktop Workspace action in the global navbar", () => {
+  it("registers independent desktop actions for every workspace surface", () => {
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
     })
 
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Open workspace panel" })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "Open workspace panel" }),
+    ).not.toBeInTheDocument()
     expect(mocks.setNavbarActions).toHaveBeenCalled()
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    const workspaceButton = screen.getByRole("button", {
-      name: "Open workspace panel",
-    })
-    expect(workspaceButton).toHaveTextContent("")
-    expect(workspaceButton).toHaveClass("h-8", "w-8")
-    fireEvent.click(
-      workspaceButton,
-    )
+    expect(screen.getByRole("button", { name: "Open browser" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Open files" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Open artifacts" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Open DAG" })).toBeVisible()
+    expect(screen.queryByText("Subagents")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open browser" }))
     expect(screen.getByTestId("live-deck")).toHaveAttribute(
       "data-has-collapse",
       "false",
     )
-    fireEvent.click(workspaceButton)
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:browser")
+
+    fireEvent.click(screen.getByRole("button", { name: "Open files" }))
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:workspace")
+    fireEvent.click(screen.getByRole("button", { name: "Open artifacts" }))
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:artifacts")
+    fireEvent.click(screen.getByRole("button", { name: "Open DAG" }))
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:dag")
+
+    fireEvent.keyDown(window, { key: "Escape" })
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
   })
 
-  it("restores an open desktop LiveDeck after reload", () => {
+  it("clamps a restored desktop rail to the supported width range", () => {
+    localStorage.setItem("right-sidebar-width", "900")
     localStorage.setItem("right-sidebar-collapsed", "false")
 
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
     })
 
-    expect(screen.getByTestId("live-deck")).toBeInTheDocument()
+    const rail = screen.getByTestId("agent-live-deck-rail")
+    expect(rail).toHaveAttribute("data-width", "600")
+    expect(rail).toHaveStyle({ width: "600px" })
     expect(screen.getByTestId("live-deck")).toHaveAttribute(
       "data-has-collapse",
       "false",
@@ -191,7 +214,7 @@ describe("Agent pages", () => {
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+    fireEvent.click(screen.getByRole("button", { name: "Open files" }))
     expect(screen.getByTestId("live-deck")).toBeInTheDocument()
     expect(screen.getByTestId("live-deck")).toHaveAttribute(
       "data-has-collapse",
