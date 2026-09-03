@@ -1,6 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -45,8 +52,16 @@ export function WorkspacePanel({
   const [query, setQuery] = useState("")
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading")
   const [previewStatus, setPreviewStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
+  const requestGenerationRef = useRef(0)
+  const rootControllerRef = useRef<AbortController | null>(null)
+  const previewControllerRef = useRef<AbortController | null>(null)
+  const childControllersRef = useRef(new Map<string, AbortController>())
 
   const loadRoot = useCallback(async () => {
+    rootControllerRef.current?.abort()
+    const controller = new AbortController()
+    rootControllerRef.current = controller
+    const generation = requestGenerationRef.current
     if (!projectId) {
       setNodes([])
       setStatus("ready")
@@ -54,12 +69,20 @@ export function WorkspacePanel({
     }
     setStatus("loading")
     try {
-      const next = await adapter.listFiles({ projectId, path: ROOT_PATH })
+      const next = await adapter.listFiles({
+        projectId,
+        path: ROOT_PATH,
+        signal: controller.signal,
+      })
+      if (controller.signal.aborted || generation !== requestGenerationRef.current) return
       setNodes(sortNodes(next))
       setStatus("ready")
     } catch {
+      if (controller.signal.aborted || generation !== requestGenerationRef.current) return
       setNodes([])
       setStatus("error")
+    } finally {
+      if (rootControllerRef.current === controller) rootControllerRef.current = null
     }
   }, [adapter, projectId])
 
@@ -69,17 +92,38 @@ export function WorkspacePanel({
     setPreviewStatus("idle")
     setExpandedPaths(new Set())
     void loadRoot()
+    const childControllers = childControllersRef.current
+    return () => {
+      requestGenerationRef.current += 1
+      rootControllerRef.current?.abort()
+      previewControllerRef.current?.abort()
+      childControllers.forEach((controller) => controller.abort())
+      childControllers.clear()
+    }
   }, [loadRoot])
 
   const loadChildren = useCallback(
     async (node: WorkspaceFileNode) => {
       if (!projectId || node.type !== "directory" || node.children) return
+      childControllersRef.current.get(node.path)?.abort()
+      const controller = new AbortController()
+      childControllersRef.current.set(node.path, controller)
+      const generation = requestGenerationRef.current
       setLoadingPaths((current) => new Set(current).add(node.path))
       try {
-        const children = await adapter.listFiles({ projectId, path: node.path })
+        const children = await adapter.listFiles({
+          projectId,
+          path: node.path,
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted || generation !== requestGenerationRef.current) return
         setNodes((current) => replaceChildren(current, node.path, sortNodes(children)))
       } finally {
+        if (childControllersRef.current.get(node.path) === controller) {
+          childControllersRef.current.delete(node.path)
+        }
         setLoadingPaths((current) => {
+          if (generation !== requestGenerationRef.current) return current
           const next = new Set(current)
           next.delete(node.path)
           return next
@@ -92,15 +136,29 @@ export function WorkspacePanel({
   const selectFile = useCallback(
     async (node: WorkspaceFileNode) => {
       if (!projectId || node.type !== "file") return
+      previewControllerRef.current?.abort()
+      const controller = new AbortController()
+      previewControllerRef.current = controller
+      const generation = requestGenerationRef.current
       setSelectedFile(node)
       setPreview(null)
       setPreviewStatus("loading")
       try {
-        const next = await adapter.readFile({ projectId, path: node.path })
+        const next = await adapter.readFile({
+          projectId,
+          path: node.path,
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted || generation !== requestGenerationRef.current) return
         setPreview(next)
         setPreviewStatus("ready")
       } catch {
+        if (controller.signal.aborted || generation !== requestGenerationRef.current) return
         setPreviewStatus("error")
+      } finally {
+        if (previewControllerRef.current === controller) {
+          previewControllerRef.current = null
+        }
       }
     },
     [adapter, projectId],

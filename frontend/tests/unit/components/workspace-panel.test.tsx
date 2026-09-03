@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -53,6 +53,14 @@ function createAdapter(): AgentWorkspaceAdapter {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return { promise, resolve }
+}
+
 describe("WorkspacePanel", () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -85,6 +93,7 @@ describe("WorkspacePanel", () => {
     expect(adapter.listFiles).toHaveBeenLastCalledWith({
       projectId: "project-1",
       path: "results",
+      signal: expect.any(AbortSignal),
     })
   })
 
@@ -115,6 +124,7 @@ describe("WorkspacePanel", () => {
     expect(adapter.readFile).toHaveBeenCalledWith({
       projectId: "project-1",
       path: "results/report.json",
+      signal: expect.any(AbortSignal),
     })
   })
 
@@ -145,5 +155,61 @@ describe("WorkspacePanel", () => {
     const codeButton = screen.getByRole("button", { name: /pipeline.nf/i })
     expect(jsonButton.querySelector("svg")).toHaveClass("text-amber-500")
     expect(codeButton.querySelector("svg")).toHaveClass("text-sky-500")
+  })
+
+  it("ignores a stale tree response after the project changes", async () => {
+    const adapter = createAdapter()
+    const projectA = deferred<WorkspaceFileNode[]>()
+    const projectB = deferred<WorkspaceFileNode[]>()
+    vi.mocked(adapter.listFiles)
+      .mockImplementationOnce(() => projectA.promise)
+      .mockImplementationOnce(() => projectB.promise)
+
+    const view = render(<WorkspacePanel projectId="project-a" adapter={adapter} />)
+    await waitFor(() => expect(adapter.listFiles).toHaveBeenCalledTimes(1))
+    view.rerender(<WorkspacePanel projectId="project-b" adapter={adapter} />)
+    await waitFor(() => expect(adapter.listFiles).toHaveBeenCalledTimes(2))
+
+    projectA.resolve([
+      { name: "a.txt", path: "a.txt", type: "file", sizeBytes: 1, modifiedAt: null },
+    ])
+    projectB.resolve([
+      { name: "b.txt", path: "b.txt", type: "file", sizeBytes: 1, modifiedAt: null },
+    ])
+
+    expect(await screen.findByText("b.txt")).toBeInTheDocument()
+    expect(screen.queryByText("a.txt")).not.toBeInTheDocument()
+    expect(vi.mocked(adapter.listFiles).mock.calls[0][0].signal?.aborted).toBe(true)
+  })
+
+  it("ignores a stale preview response after project replacement", async () => {
+    const adapter = createAdapter()
+    const preview = deferred<WorkspaceFilePreview>()
+    vi.mocked(adapter.listFiles).mockImplementation(async ({ projectId }) => [
+      {
+        name: `${projectId}.txt`,
+        path: `${projectId}.txt`,
+        type: "file",
+        sizeBytes: 1,
+        modifiedAt: null,
+      },
+    ])
+    vi.mocked(adapter.readFile).mockReturnValueOnce(preview.promise)
+
+    const view = render(<WorkspacePanel projectId="project-a" adapter={adapter} />)
+    await userEvent.click(await screen.findByRole("button", { name: /project-a.txt/i }))
+    view.rerender(<WorkspacePanel projectId="project-b" adapter={adapter} />)
+
+    preview.resolve({
+      path: "project-a.txt",
+      content: "stale project A content",
+      totalLines: 1,
+      truncated: false,
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText("stale project A content")).not.toBeInTheDocument()
+    })
+    expect(vi.mocked(adapter.readFile).mock.calls[0][0].signal?.aborted).toBe(true)
   })
 })
