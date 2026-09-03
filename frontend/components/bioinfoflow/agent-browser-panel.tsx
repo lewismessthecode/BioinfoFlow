@@ -9,8 +9,18 @@ import { ArrowLeft, ArrowRight, ExternalLink, Globe, RefreshCw } from "@/lib/ico
 export function resolveEmbeddedBrowserUrl(raw: string, origin: string) {
   const value = raw.trim()
   if (!value) return ""
+  if (/\s/u.test(value)) return ""
   const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?([/?#].*)?$/iu.test(value)
-  const host = /^[\w-]+(\.[\w-]+)+(\/.*)?$/u.test(value)
+  const host =
+    /^(?:[\w-]+\.)+[\w-]+(?::\d{1,5})?(?:[/?#].*)?$/u.test(value)
+  if (
+    /^[a-z][a-z\d+.-]*:/iu.test(value) &&
+    !/^https?:\/\//iu.test(value) &&
+    !local &&
+    !host
+  ) {
+    return ""
+  }
   try {
     const url = local
       ? new URL(`http://${value}`)
