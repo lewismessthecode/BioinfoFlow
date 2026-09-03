@@ -62,6 +62,8 @@ test.describe("Agent workspace shell", () => {
       {
         animations: "disabled",
         caret: "hide",
+        maxDiffPixels: 0,
+        maxDiffPixelRatio: 0,
         mask: [
           page.locator("#sidebar-workspace-tree"),
           page.getByText(project.name, { exact: true }),

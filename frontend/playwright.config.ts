@@ -6,8 +6,12 @@ const modelPort = Number(process.env.PLAYWRIGHT_MODEL_PORT || 9100)
 const baseURL = process.env.BASE_URL || `http://127.0.0.1:${frontendPort}`
 const apiBaseUrl = `http://127.0.0.1:${backendPort}/api/v1`
 const browserApiBaseUrl = `http://localhost:${backendPort}/api/v1`
+const terminalFixtureEnvironment =
+  "NEXT_PUBLIC_BIOINFOFLOW_E2E_TERMINAL_FIXTURE=1"
 const viewportWidth = Number(process.env.PLAYWRIGHT_VIEWPORT_WIDTH)
 const viewportHeight = Number(process.env.PLAYWRIGHT_VIEWPORT_HEIGHT)
+const artifactDirectory =
+  process.env.PLAYWRIGHT_ARTIFACT_DIRECTORY || ".playwright-e2e/artifacts"
 const configuredViewport =
   Number.isInteger(viewportWidth) &&
   viewportWidth > 0 &&
@@ -26,17 +30,21 @@ export default defineConfig({
   expect: {
     timeout: 10_000,
     toHaveScreenshot: {
-      // Keep the Chromium baseline shared by the local and Ubuntu CI runners.
+      // Keep browser and operating-system baselines explicit.
       pathTemplate:
-        "{testDir}/{testFilePath}-snapshots/{arg}{-projectName}{ext}",
+        "{testDir}/{testFilePath}-snapshots/{arg}{-projectName}{-snapshotSuffix}{ext}",
     },
   },
   retries: process.env.CI ? 2 : 1,
   reporter: [
     ["list"],
-    ["html", { outputFolder: "playwright-report", open: "never" }],
-    ["junit", { outputFile: "playwright-report/results.xml" }],
+    [
+      "html",
+      { outputFolder: `${artifactDirectory}/playwright-report`, open: "never" },
+    ],
+    ["junit", { outputFile: `${artifactDirectory}/results.xml` }],
   ],
+  outputDir: `${artifactDirectory}/test-results`,
   use: {
     baseURL,
     trace: "on-first-retry",
@@ -68,7 +76,7 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: `AUTH_MODE=dev NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=${browserApiBaseUrl} bun run build && cp -R .next/static .next/standalone/.next/static && AUTH_MODE=dev NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=${browserApiBaseUrl} HOSTNAME=127.0.0.1 PORT=${frontendPort} node .next/standalone/server.js`,
+      command: `${terminalFixtureEnvironment} AUTH_MODE=dev NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=${browserApiBaseUrl} bun run build && cp -R .next/static .next/standalone/.next/static && ${terminalFixtureEnvironment} AUTH_MODE=dev NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=${browserApiBaseUrl} HOSTNAME=127.0.0.1 PORT=${frontendPort} node .next/standalone/server.js`,
       url: `${baseURL}/runs`,
       reuseExistingServer: false,
       timeout: 240_000,
