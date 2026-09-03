@@ -23,7 +23,14 @@ export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 60_000,
   workers: 1,
-  expect: { timeout: 10_000 },
+  expect: {
+    timeout: 10_000,
+    toHaveScreenshot: {
+      // Keep the Chromium baseline shared by the local and Ubuntu CI runners.
+      pathTemplate:
+        "{testDir}/{testFilePath}-snapshots/{arg}{-projectName}{ext}",
+    },
+  },
   retries: process.env.CI ? 2 : 1,
   reporter: [
     ["list"],
