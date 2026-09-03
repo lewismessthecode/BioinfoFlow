@@ -353,15 +353,15 @@ function filterNodes(nodes: WorkspaceFileNode[], query: string): WorkspaceFileNo
 
 function FileGlyph({ name }: { name: string }) {
   const extension = name.split(".").pop()?.toLowerCase()
-  const className = "h-3.5 w-3.5 shrink-0 text-muted-foreground"
+  const baseClassName = "h-3.5 w-3.5 shrink-0"
   if (["json", "jsonl", "yaml", "yml", "toml"].includes(extension ?? "")) {
-    return <FileJson className={className} />
+    return <FileJson className={cn(baseClassName, "text-amber-500 dark:text-amber-400")} />
   }
   if (["zip", "tar", "gz", "bz2", "xz"].includes(extension ?? "")) {
-    return <FileArchive className={className} />
+    return <FileArchive className={cn(baseClassName, "text-violet-500 dark:text-violet-400")} />
   }
   if (["js", "jsx", "ts", "tsx", "py", "r", "go", "rs", "java", "c", "cpp", "nf", "wdl", "sh"].includes(extension ?? "")) {
-    return <FileCode className={className} />
+    return <FileCode className={cn(baseClassName, "text-sky-500 dark:text-sky-400")} />
   }
-  return <FileText className={className} />
+  return <FileText className={cn(baseClassName, "text-muted-foreground")} />
 }

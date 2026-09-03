@@ -131,4 +131,19 @@ describe("WorkspacePanel", () => {
     expect(screen.queryByText("alpha.py")).not.toBeInTheDocument()
     expect(screen.getByText("beta.md")).toBeInTheDocument()
   })
+
+  it("uses visible file-type colors for tree glyphs", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.listFiles).mockResolvedValueOnce([
+      { name: "config.json", path: "config.json", type: "file", sizeBytes: 1, modifiedAt: null },
+      { name: "pipeline.nf", path: "pipeline.nf", type: "file", sizeBytes: 1, modifiedAt: null },
+    ])
+
+    render(<WorkspacePanel projectId="project-1" adapter={adapter} />)
+
+    const jsonButton = await screen.findByRole("button", { name: /config.json/i })
+    const codeButton = screen.getByRole("button", { name: /pipeline.nf/i })
+    expect(jsonButton.querySelector("svg")).toHaveClass("text-amber-500")
+    expect(codeButton.querySelector("svg")).toHaveClass("text-sky-500")
+  })
 })
