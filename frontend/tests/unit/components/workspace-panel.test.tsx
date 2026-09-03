@@ -126,6 +126,33 @@ describe("WorkspacePanel", () => {
       path: "results/report.json",
       signal: expect.any(AbortSignal),
     })
+
+    const selectedRow = screen.getByRole("button", { name: /report.json/i })
+    expect(selectedRow).toHaveAttribute("aria-current", "true")
+    expect(selectedRow.querySelector('[data-file-accent="data"]')).not.toBeNull()
+  })
+
+  it("uses a workbench header and keeps the editor wider than the file tree", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.listFiles).mockResolvedValueOnce([
+      { name: "pipeline.nf", path: "pipeline.nf", type: "file", sizeBytes: 24, modifiedAt: null },
+    ])
+
+    render(<WorkspacePanel projectId="project-1" adapter={adapter} />)
+
+    expect(await screen.findByText("pipeline.nf")).toBeInTheDocument()
+    expect(screen.getByTestId("workspace-panel-header")).toBeInTheDocument()
+    expect(screen.getByTestId("workspace-editor-pane")).toBeInTheDocument()
+    expect(screen.getByTestId("workspace-file-tree")).toBeInTheDocument()
+    expect(screen.getByTestId("workspace-split-view")).toHaveAttribute(
+      "data-layout",
+      "editor-dominant",
+    )
+    expect(
+      screen.getByRole("button", { name: /pipeline.nf/i }).querySelector(
+        '[data-file-accent="code"]',
+      ),
+    ).not.toBeNull()
   })
 
   it("filters the visible tree without adding extra panels", async () => {
