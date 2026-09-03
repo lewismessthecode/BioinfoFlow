@@ -114,12 +114,14 @@ export function AgentPageContent({
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null)
   const [dag, setDag] = useState<DagData | null>(null)
   const sessionScope = routeSessionId || "draft"
-  const [stateSessionScope, setStateSessionScope] = useState(sessionScope)
-  const hasCurrentSessionState = stateSessionScope === sessionScope
-  const visibleSelectedRun = hasCurrentSessionState ? selectedRun : null
-  const visibleFocusedRunId = hasCurrentSessionState ? focusedRunId : null
-  const visibleFocusedArtifactId = hasCurrentSessionState ? focusedArtifactId : null
-  const visibleDag = hasCurrentSessionState ? dag : null
+  const projectScope = selectedProjectId || "none"
+  const stateIdentity = `${projectScope}:${sessionScope}`
+  const [activeStateIdentity, setActiveStateIdentity] = useState(stateIdentity)
+  const hasCurrentState = activeStateIdentity === stateIdentity
+  const visibleSelectedRun = hasCurrentState ? selectedRun : null
+  const visibleFocusedRunId = hasCurrentState ? focusedRunId : null
+  const visibleFocusedArtifactId = hasCurrentState ? focusedArtifactId : null
+  const visibleDag = hasCurrentState ? dag : null
 
   useEffect(() => {
     setActiveConversationId(routeSessionId ?? "")
@@ -268,32 +270,32 @@ export function AgentPageContent({
   ])
 
   const handleRunSelect = useCallback((run: Run | null) => {
-    setStateSessionScope(sessionScope)
+    setActiveStateIdentity(stateIdentity)
     setSelectedRun(run)
     setFocusedRunId(run?.run_id ?? null)
     setDag(null)
-  }, [sessionScope])
+  }, [stateIdentity])
 
   const openReferencedRun = useCallback(
     (runId: string) => {
       recordFocusReturn(null)
-      setStateSessionScope(sessionScope)
+      setActiveStateIdentity(stateIdentity)
       setSelectedRun(null)
       setFocusedRunId(runId)
       setDag(null)
       updatePanelPreferences({ activeTab: "dag", open: true })
     },
-    [recordFocusReturn, sessionScope, updatePanelPreferences],
+    [recordFocusReturn, stateIdentity, updatePanelPreferences],
   )
 
   const openReferencedArtifact = useCallback(
     (artifactId: string) => {
       recordFocusReturn(null)
-      setStateSessionScope(sessionScope)
+      setActiveStateIdentity(stateIdentity)
       setFocusedArtifactId(artifactId)
       updatePanelPreferences({ activeTab: "artifacts", open: true })
     },
-    [recordFocusReturn, sessionScope, updatePanelPreferences],
+    [recordFocusReturn, stateIdentity, updatePanelPreferences],
   )
 
   const [showShortcuts, setShowShortcuts] = useState(false)
