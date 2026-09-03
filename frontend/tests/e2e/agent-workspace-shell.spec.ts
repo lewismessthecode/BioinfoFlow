@@ -6,6 +6,54 @@ import { disableKeylessAgentProviders } from "./support/keyless-agent"
 const backendPort = Number(process.env.PLAYWRIGHT_BACKEND_PORT || 8100)
 const apiBaseUrl = `http://127.0.0.1:${backendPort}/api/v1`
 
+const SHELL_WORKSPACE_FILES = [
+  {
+    path: "analysis/rnaseq.wdl",
+    content: [
+      "version 1.0",
+      "",
+      "workflow rnaseq {",
+      "  input {",
+      "    String sample_id",
+      "  }",
+      "",
+      "  call quantify {",
+      "    input:",
+      "      sample_id = sample_id",
+      "  }",
+      "}",
+      "",
+      "task quantify {",
+      "  input {",
+      "    String sample_id",
+      "  }",
+      "",
+      "  command {",
+      "    echo sample_id",
+      "  }",
+      "",
+      "  output {",
+      "    String result = stdout()",
+      "  }",
+      "}",
+    ].join("\n"),
+  },
+  {
+    path: "results/qc-report.json",
+    content: [
+      "{",
+      '  "sample_id": "SAMPLE-001",',
+      '  "qc_pass": true,',
+      '  "reads": 12840',
+      "}",
+    ].join("\n"),
+  },
+  {
+    path: "README.md",
+    content: "# RNA-seq analysis\n\nSeeded browser evidence workspace.\n",
+  },
+] as const
+
 async function createShellProject(
   request: APIRequestContext,
   testInfo: TestInfo,
@@ -28,6 +76,22 @@ async function createShellProject(
   return { id: payload.data.id, name }
 }
 
+async function seedShellWorkspace(
+  request: APIRequestContext,
+  projectId: string,
+): Promise<void> {
+  for (const file of SHELL_WORKSPACE_FILES) {
+    const response = await request.post(`${apiBaseUrl}/files/write`, {
+      data: {
+        project_id: projectId,
+        path: file.path,
+        content: file.content,
+      },
+    })
+    await expect(response).toBeOK()
+  }
+}
+
 async function openAgentShell(page: Page, projectId: string): Promise<void> {
   await page.addInitScript((id) => {
     window.localStorage.setItem("bioinfoflow:last-used-project", id)
@@ -39,6 +103,53 @@ async function openAgentShell(page: Page, projectId: string): Promise<void> {
   ).toBeVisible()
 }
 
+async function selectSeededWorkspaceFile(page: Page): Promise<void> {
+  const liveDeck = page.getByRole("complementary", {
+    name: "Live workspace information",
+  })
+  const analysisDirectory = liveDeck.getByRole("button", {
+    name: "analysis",
+    exact: true,
+  })
+  await expect(analysisDirectory).toBeVisible()
+  await analysisDirectory.click()
+
+  const workflowFile = liveDeck.getByRole("button", {
+    name: "rnaseq.wdl",
+    exact: true,
+  })
+  await expect(workflowFile).toBeVisible()
+  await workflowFile.click()
+
+  const preview = liveDeck.getByTestId("workspace-code-preview")
+  await expect(preview).toHaveAttribute("data-language", "wdl")
+  await expect(preview).toHaveAttribute("data-highlight-language", "scala")
+  await expect(preview.locator(".shiki")).toBeVisible()
+  await expect(preview.locator(".shiki")).toContainText("workflow rnaseq")
+
+  const resultsDirectory = liveDeck.getByRole("button", {
+    name: "results",
+    exact: true,
+  })
+  await resultsDirectory.click()
+  await expect(
+    liveDeck.getByRole("button", { name: "qc-report.json", exact: true }),
+  ).toBeVisible()
+}
+
+async function resizeDock(page: Page): Promise<void> {
+  const dock = page.locator("section[aria-hidden='false']").filter({
+    has: page.getByTestId("terminal-dock-tab"),
+  })
+  const resizeHandle = page.getByRole("separator", {
+    name: "Resize terminal",
+    exact: true,
+  })
+  await expect(dock).toHaveCSS("height", "300px")
+  await resizeHandle.press("Shift+ArrowUp")
+  await expect(dock).toHaveCSS("height", "340px")
+}
+
 test.describe("Agent workspace shell", () => {
   test("keeps navigation, panel, terminal, and responsive contracts stable", async ({
     page,
@@ -46,6 +157,7 @@ test.describe("Agent workspace shell", () => {
   }, testInfo) => {
     await disableKeylessAgentProviders(request)
     const project = await createShellProject(request, testInfo)
+    await seedShellWorkspace(request, project.id)
     await openAgentShell(page, project.id)
 
     await expect(page.getByTestId("navbar-action-row")).toBeVisible()
@@ -94,6 +206,19 @@ test.describe("Agent workspace shell", () => {
     const openSurface = isCompact
       ? page.getByRole("dialog")
       : page.getByTestId("agent-live-deck-rail")
+    await selectSeededWorkspaceFile(page)
+    await expect(page).toHaveScreenshot(
+      `agent-workspace-shell-${viewport.width}x${viewport.height}-populated.png`,
+      {
+        animations: "disabled",
+        caret: "hide",
+        mask: [
+          page.locator("#sidebar-workspace-tree"),
+          page.getByText(project.name, { exact: true }),
+        ],
+        maskColor: "#ff00ff",
+      },
+    )
     await expect(openSurface).toHaveScreenshot(
       `agent-workspace-shell-${viewport.width}x${viewport.height}-open.png`,
       {
@@ -124,6 +249,26 @@ test.describe("Agent workspace shell", () => {
     }
     await expect(page.getByTestId("agent-live-deck-rail")).toHaveCount(0)
     await expect(page.getByRole("dialog")).toHaveCount(0)
+    if (isCompact) {
+      await page.getByRole("button", { name: "Open terminal", exact: true }).click()
+      await expect(page.getByTestId("terminal-dock-fixture")).toBeVisible()
+      const terminalSheet = page.locator('[data-slot="sheet-content"]').filter({
+        has: page.getByTestId("terminal-dock-tab"),
+      })
+      await expect(terminalSheet).toBeVisible()
+      await expect(terminalSheet).toHaveClass(/inset-x-0/)
+      await expect(terminalSheet).toHaveClass(/bottom-0/)
+      await expect(terminalSheet).toHaveClass(/h-\[72vh\]/)
+      await expect(terminalSheet).toHaveScreenshot(
+        `agent-workspace-shell-${viewport.width}x${viewport.height}-open-terminal.png`,
+        {
+          animations: "disabled",
+          caret: "hide",
+        },
+      )
+      await page.getByRole("button", { name: "Close terminal", exact: true }).click()
+      await expect(page.getByTestId("terminal-dock-tab")).toHaveCount(0)
+    }
     const filesBox = await filesButton.boundingBox()
     expect(filesBox).not.toBeNull()
     if (isCompact) {
@@ -220,6 +365,26 @@ test.describe("Agent workspace shell", () => {
       await page.keyboard.press("Control+Shift+b")
       await expect(page.getByRole("dialog")).toHaveCount(0)
       await expect(filesButton).toBeFocused()
+
+      await filesButton.click()
+      const compactPanel = page.getByRole("dialog")
+      await expect(compactPanel).toBeVisible()
+      await compactPanel.getByRole("tab", { name: "Artifacts" }).click()
+      await expect(
+        compactPanel.getByRole("tab", { name: "Artifacts" }),
+      ).toHaveAttribute("data-state", "active")
+      await page.reload()
+      const reloadedCompactPanel = page.getByRole("dialog")
+      await expect(reloadedCompactPanel).toBeVisible()
+      await expect(
+        reloadedCompactPanel.getByRole("tab", { name: "Artifacts" }),
+      ).toHaveAttribute("data-state", "active")
+      await expect(page.getByTestId("agent-action-artifacts")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      )
+      await page.keyboard.press("Escape")
+      await expect(page.getByRole("dialog")).toHaveCount(0)
     } else {
       await filesButton.click()
       const rail = page.getByTestId("agent-live-deck-rail")
@@ -281,6 +446,17 @@ test.describe("Agent workspace shell", () => {
     }
     await expect(page.getByTestId("terminal-dock-tab")).toBeVisible()
     await expect(page.getByTestId("terminal-dock-fixture")).toBeVisible()
+    if (!isCompact) {
+      await resizeDock(page)
+      await page.reload()
+      await expect(page.getByTestId("terminal-dock-tab")).toHaveCount(0)
+      await page.getByRole("button", { name: "Open terminal", exact: true }).click()
+      await expect(page.getByTestId("terminal-dock-tab")).toBeVisible()
+      const reloadedDock = page.locator("section[aria-hidden='false']").filter({
+        has: page.getByTestId("terminal-dock-tab"),
+      })
+      await expect(reloadedDock).toHaveCSS("height", "340px")
+    }
     await page.getByRole("button", { name: "Close terminal", exact: true }).click()
     await expect(page.getByTestId("terminal-dock-tab")).toHaveCount(0)
 
