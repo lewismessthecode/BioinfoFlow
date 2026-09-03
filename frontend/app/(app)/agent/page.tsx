@@ -83,7 +83,6 @@ export function AgentPageContent({
     conversationProjectId,
     setSelectedProjectId,
     setConversationProjectId,
-    activeConversationId,
     setActiveConversationId,
     setActiveConversationTitle,
   } = useProjectContext()
@@ -464,7 +463,7 @@ export function AgentPageContent({
               onTabChange={(activeTab) => updatePanelPreferences({ activeTab })}
               onCollapse={closeLiveDeck}
               projectId={selectedProjectId}
-              sessionId={activeConversationId || routeSessionId}
+              sessionId={routeSessionId}
               selectedArtifactId={visibleFocusedArtifactId}
               onSelectedArtifactIdChange={handleSelectedArtifactIdChange}
               runId={visibleSelectedRun?.run_id ?? visibleFocusedRunId}
@@ -497,7 +496,7 @@ export function AgentPageContent({
             onTabChange={(activeTab) => updatePanelPreferences({ activeTab })}
             onCollapse={closeLiveDeck}
             projectId={selectedProjectId}
-            sessionId={activeConversationId || routeSessionId}
+            sessionId={routeSessionId}
             selectedArtifactId={visibleFocusedArtifactId}
             onSelectedArtifactIdChange={handleSelectedArtifactIdChange}
             runId={visibleSelectedRun?.run_id ?? visibleFocusedRunId}

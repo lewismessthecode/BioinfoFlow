@@ -238,6 +238,9 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
 
   const handleSelectProject = (project: Project) => {
     selectWorkspaceProject(project.id)
+    if (pathname.startsWith("/agent/")) {
+      router.replace("/agent")
+    }
     if (!expandedProjects.has(project.id)) {
       toggleProjectExpanded(project.id)
     }
