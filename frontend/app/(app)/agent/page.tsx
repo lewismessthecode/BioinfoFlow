@@ -170,9 +170,8 @@ export function AgentPageContent({
     setActiveConversationId,
     setActiveConversationTitle,
   } = useProjectContext()
-  const [panelSessionId, setPanelSessionId] = useState(
-    () => routeSessionId ?? "draft",
-  )
+  const [resolvedPanelSessionId, setPanelSessionId] = useState("draft")
+  const panelSessionId = routeSessionId ?? resolvedPanelSessionId
   const panelKey = panelPreferenceKey(selectedProjectId, panelSessionId)
   const subscribePanelPreferences = useCallback(
     (listener: () => void) => subscribeToPanelPreferences(panelKey, listener),
@@ -266,18 +265,41 @@ export function AgentPageContent({
     }
   }, [liveDeckTab])
 
+  const closeLiveDeck = useCallback(() => {
+    ensurePanelFocusReturn()
+    focusRestorePendingRef.current = true
+    updatePanelPreferences({ open: false })
+  }, [ensurePanelFocusReturn, updatePanelPreferences])
+
   const toggleRightSidebar = useCallback(() => {
     const nextCollapsed = !rightSidebarCollapsed
+    if (nextCollapsed) {
+      closeLiveDeck()
+      return
+    }
     ensurePanelFocusReturn()
-    if (nextCollapsed) focusRestorePendingRef.current = true
     updatePanelPreferences({ open: !nextCollapsed })
-  }, [ensurePanelFocusReturn, rightSidebarCollapsed, updatePanelPreferences])
+  }, [
+    closeLiveDeck,
+    ensurePanelFocusReturn,
+    rightSidebarCollapsed,
+    updatePanelPreferences,
+  ])
 
   const toggleMobileLiveDeck = useCallback(() => {
     const nextOpen = !mobileLiveDeckOpen
+    if (!nextOpen) {
+      closeLiveDeck()
+      return
+    }
     ensurePanelFocusReturn()
     updatePanelPreferences({ open: nextOpen })
-  }, [ensurePanelFocusReturn, mobileLiveDeckOpen, updatePanelPreferences])
+  }, [
+    closeLiveDeck,
+    ensurePanelFocusReturn,
+    mobileLiveDeckOpen,
+    updatePanelPreferences,
+  ])
 
   const toggleAction = useCallback(
     (actionId: AgentActionId) => {
@@ -288,7 +310,7 @@ export function AgentPageContent({
         (isMobile ? mobileLiveDeckOpen : !rightSidebarCollapsed)
 
       if (isActive) {
-        updatePanelPreferences({ open: false })
+        closeLiveDeck()
         return
       }
 
@@ -301,6 +323,7 @@ export function AgentPageContent({
       recordFocusReturn,
       rightSidebarCollapsed,
       updatePanelPreferences,
+      closeLiveDeck,
     ],
   )
 
@@ -481,13 +504,11 @@ export function AgentPageContent({
           return
         }
         if (isMobile && mobileLiveDeckOpen) {
-          updatePanelPreferences({ open: false })
+          closeLiveDeck()
           return
         }
         if (!isMobile && !rightSidebarCollapsed) {
-          ensurePanelFocusReturn()
-          focusRestorePendingRef.current = true
-          updatePanelPreferences({ open: false })
+          closeLiveDeck()
         }
       }
     }
@@ -495,15 +516,13 @@ export function AgentPageContent({
     return () => window.removeEventListener("keydown", handler)
   }, [
     isMobile,
-    liveDeckTab,
     mobileLiveDeckOpen,
-    ensurePanelFocusReturn,
+    closeLiveDeck,
     rightSidebarCollapsed,
     restoreFocusReturn,
     showShortcuts,
     toggleMobileLiveDeck,
     toggleRightSidebar,
-    updatePanelPreferences,
   ])
 
   return (
@@ -532,7 +551,10 @@ export function AgentPageContent({
       {isMobile && selectedProjectId ? (
         <Sheet
           open={mobileLiveDeckOpen}
-          onOpenChange={(open) => updatePanelPreferences({ open })}
+          onOpenChange={(open) => {
+            if (open) updatePanelPreferences({ open: true })
+            else closeLiveDeck()
+          }}
         >
           <SheetContent
             side="right"
@@ -551,7 +573,7 @@ export function AgentPageContent({
             <LiveDeck
               activeTab={liveDeckTab}
               onTabChange={(activeTab) => updatePanelPreferences({ activeTab })}
-              onCollapse={() => updatePanelPreferences({ open: false })}
+              onCollapse={closeLiveDeck}
               projectId={selectedProjectId}
               sessionId={activeConversationId || routeSessionId}
               selectedArtifactId={focusedArtifactId}
@@ -581,6 +603,7 @@ export function AgentPageContent({
           <LiveDeck
             activeTab={liveDeckTab}
             onTabChange={(activeTab) => updatePanelPreferences({ activeTab })}
+            onCollapse={closeLiveDeck}
             projectId={selectedProjectId}
             sessionId={activeConversationId || routeSessionId}
             selectedArtifactId={focusedArtifactId}
