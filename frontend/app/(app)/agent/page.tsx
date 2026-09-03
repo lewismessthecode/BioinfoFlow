@@ -1,6 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react"
 import { useTranslations } from "next-intl"
 import {
   AgentWorkbench,
@@ -59,6 +66,85 @@ const ACTION_BY_LIVE_DECK_TAB: Partial<Record<LiveDeckTab, AgentActionId>> = {
   artifacts: "artifacts",
   dag: "dag",
 }
+type AgentPanelPreferences = {
+  activeTab: LiveDeckTab
+  open: boolean
+  width: number
+}
+
+const DEFAULT_PANEL_PREFERENCES: AgentPanelPreferences = {
+  activeTab: "workspace",
+  open: false,
+  width: RIGHT_SIDEBAR_DEFAULT,
+}
+const panelPreferenceListeners = new Map<string, Set<() => void>>()
+
+function readPanelPreferences(key: string | null): string | null {
+  if (!key || typeof window === "undefined") return null
+  return window.localStorage.getItem(key)
+}
+
+function subscribeToPanelPreferences(
+  key: string | null,
+  listener: () => void,
+): () => void {
+  if (!key || typeof window === "undefined") return () => {}
+  const listeners = panelPreferenceListeners.get(key) ?? new Set()
+  listeners.add(listener)
+  panelPreferenceListeners.set(key, listeners)
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === key) listener()
+  }
+  window.addEventListener("storage", handleStorage)
+  return () => {
+    listeners.delete(listener)
+    window.removeEventListener("storage", handleStorage)
+    if (listeners.size === 0) panelPreferenceListeners.delete(key)
+  }
+}
+
+function writePanelPreferences(
+  key: string | null,
+  updates: Partial<AgentPanelPreferences>,
+): void {
+  if (!key || typeof window === "undefined") return
+  const current = parsePanelPreferences(readPanelPreferences(key))
+  window.localStorage.setItem(key, JSON.stringify({ ...current, ...updates }))
+  panelPreferenceListeners.get(key)?.forEach((listener) => listener())
+}
+
+function parsePanelPreferences(raw: string | null): AgentPanelPreferences {
+  if (!raw) return DEFAULT_PANEL_PREFERENCES
+  try {
+    const parsed = JSON.parse(raw) as Partial<AgentPanelPreferences>
+    const activeTab =
+      parsed.activeTab === "workspace" ||
+      parsed.activeTab === "dag" ||
+      parsed.activeTab === "artifacts" ||
+      parsed.activeTab === "browser"
+        ? parsed.activeTab
+        : DEFAULT_PANEL_PREFERENCES.activeTab
+    return {
+      activeTab,
+      open: typeof parsed.open === "boolean" ? parsed.open : DEFAULT_PANEL_PREFERENCES.open,
+      width:
+        typeof parsed.width === "number"
+          ? clampRightSidebarWidth(parsed.width)
+          : DEFAULT_PANEL_PREFERENCES.width,
+    }
+  } catch {
+    return DEFAULT_PANEL_PREFERENCES
+  }
+}
+
+function panelPreferenceKey(
+  projectId: string | null,
+  routeSessionId: string | null,
+): string | null {
+  return projectId
+    ? `agent-panel:${projectId}:${routeSessionId ?? "draft"}`
+    : null
+}
 
 export default function AgentPage() {
   return <AgentPageContent routeSessionId={null} />
@@ -82,13 +168,29 @@ export function AgentPageContent({
     setActiveConversationId,
     setActiveConversationTitle,
   } = useProjectContext()
-  const [liveDeckTab, setLiveDeckTab] = useState<LiveDeckTab>("workspace")
-  const [rightSidebarWidth, setRightSidebarWidth] = useState(RIGHT_SIDEBAR_DEFAULT)
-  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(true)
-  const [mobileLiveDeckOpen, setMobileLiveDeckOpen] = useState(false)
-  const [liveDeckStorageProjectId, setLiveDeckStorageProjectId] = useState<
-    string | null
-  >(null)
+  const [panelSessionId, setPanelSessionId] = useState(
+    () => routeSessionId ?? "draft",
+  )
+  const panelKey = panelPreferenceKey(selectedProjectId, panelSessionId)
+  const panelSnapshot = useSyncExternalStore(
+    (listener) => subscribeToPanelPreferences(panelKey, listener),
+    () => readPanelPreferences(panelKey),
+    () => null,
+  )
+  const panelPreferences = useMemo(
+    () => parsePanelPreferences(panelSnapshot),
+    [panelSnapshot],
+  )
+  const liveDeckTab = panelPreferences.activeTab
+  const rightSidebarWidth = panelPreferences.width
+  const rightSidebarCollapsed = !panelPreferences.open
+  const mobileLiveDeckOpen = panelPreferences.open
+  const updatePanelPreferences = useCallback(
+    (updates: Partial<AgentPanelPreferences>) => {
+      writePanelPreferences(panelKey, updates)
+    },
+    [panelKey],
+  )
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
   const [focusedRunId, setFocusedRunId] = useState<string | null>(null)
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null)
@@ -103,82 +205,21 @@ export function AgentPageContent({
     setActiveConversationId(routeSessionId ?? "")
   }, [routeSessionId, setActiveConversationId])
 
-  useEffect(() => {
-    const savedWidth = localStorage.getItem("right-sidebar-width")
-    const savedCollapsed = localStorage.getItem("right-sidebar-collapsed")
-    /* eslint-disable react-hooks/set-state-in-effect */
-    if (savedWidth) setRightSidebarWidth(clampRightSidebarWidth(Number(savedWidth)))
-    if (savedCollapsed) setRightSidebarCollapsed(savedCollapsed === "true")
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, [])
-
-  useEffect(() => {
-    if (!selectedProjectId) {
-      /* eslint-disable react-hooks/set-state-in-effect */
-      setLiveDeckStorageProjectId(null)
-      /* eslint-enable react-hooks/set-state-in-effect */
-      return
-    }
-
-    const storedTab = localStorage.getItem(
-      liveDeckStorageKey(selectedProjectId, "tab"),
-    )
-    const storedOpen =
-      localStorage.getItem(liveDeckStorageKey(selectedProjectId, "open")) ===
-      "true"
-
-    if (isLiveDeckTab(storedTab)) setLiveDeckTab(storedTab)
-    setMobileLiveDeckOpen(isMobile && storedOpen)
-    setLiveDeckStorageProjectId(selectedProjectId)
-  }, [isMobile, selectedProjectId])
-
-  useEffect(() => {
-    if (
-      !selectedProjectId ||
-      liveDeckStorageProjectId !== selectedProjectId
-    ) {
-      return
-    }
-    localStorage.setItem(
-      liveDeckStorageKey(selectedProjectId, "tab"),
-      liveDeckTab,
-    )
-    localStorage.setItem(
-      liveDeckStorageKey(selectedProjectId, "open"),
-      String(isMobile && mobileLiveDeckOpen),
-    )
-  }, [
-    isMobile,
-    liveDeckStorageProjectId,
-    liveDeckTab,
-    mobileLiveDeckOpen,
-    selectedProjectId,
-  ])
-
-  // Persist state
-  useEffect(() => {
-    localStorage.setItem("right-sidebar-width", String(rightSidebarWidth))
-  }, [rightSidebarWidth])
-
-  useEffect(() => {
-    localStorage.setItem("right-sidebar-collapsed", String(rightSidebarCollapsed))
-  }, [rightSidebarCollapsed])
-
   useEvents({
     projectId: selectedProjectId,
     onRunDag: (envelope) => {
       if (!selectedRun) return
       if (envelope.data.run_id !== selectedRun.run_id) return
       setDag(envelope.data.dag)
-      if (envelope.data.dag) setLiveDeckTab("dag")
+      if (envelope.data.dag) updatePanelPreferences({ activeTab: "dag" })
     },
   })
 
   const handleRightResize = useCallback((delta: number) => {
-    setRightSidebarWidth((prev) => {
-      return clampRightSidebarWidth(prev + delta)
+    updatePanelPreferences({
+      width: clampRightSidebarWidth(rightSidebarWidth + delta),
     })
-  }, [])
+  }, [rightSidebarWidth, updatePanelPreferences])
 
   const recordFocusReturn = useCallback((actionId: AgentActionId | null) => {
     const activeElement = document.activeElement
@@ -219,14 +260,14 @@ export function AgentPageContent({
     const nextCollapsed = !rightSidebarCollapsed
     ensurePanelFocusReturn()
     if (nextCollapsed) focusRestorePendingRef.current = true
-    setRightSidebarCollapsed(nextCollapsed)
-  }, [ensurePanelFocusReturn, rightSidebarCollapsed])
+    updatePanelPreferences({ open: !nextCollapsed })
+  }, [ensurePanelFocusReturn, rightSidebarCollapsed, updatePanelPreferences])
 
   const toggleMobileLiveDeck = useCallback(() => {
     const nextOpen = !mobileLiveDeckOpen
     ensurePanelFocusReturn()
-    setMobileLiveDeckOpen(nextOpen)
-  }, [ensurePanelFocusReturn, mobileLiveDeckOpen])
+    updatePanelPreferences({ open: nextOpen })
+  }, [ensurePanelFocusReturn, mobileLiveDeckOpen, updatePanelPreferences])
 
   const toggleAction = useCallback(
     (actionId: AgentActionId) => {
@@ -237,14 +278,11 @@ export function AgentPageContent({
         (isMobile ? mobileLiveDeckOpen : !rightSidebarCollapsed)
 
       if (isActive) {
-        if (isMobile) setMobileLiveDeckOpen(false)
-        else setRightSidebarCollapsed(true)
+        updatePanelPreferences({ open: false })
         return
       }
 
-      setLiveDeckTab(nextTab)
-      if (isMobile) setMobileLiveDeckOpen(true)
-      else setRightSidebarCollapsed(false)
+      updatePanelPreferences({ activeTab: nextTab, open: true })
     },
     [
       isMobile,
@@ -252,6 +290,7 @@ export function AgentPageContent({
       mobileLiveDeckOpen,
       recordFocusReturn,
       rightSidebarCollapsed,
+      updatePanelPreferences,
     ],
   )
 
@@ -348,22 +387,18 @@ export function AgentPageContent({
       setSelectedRun(null)
       setFocusedRunId(runId)
       setDag(null)
-      setLiveDeckTab("dag")
-      if (isMobile) setMobileLiveDeckOpen(true)
-      else setRightSidebarCollapsed(false)
+      updatePanelPreferences({ activeTab: "dag", open: true })
     },
-    [isMobile, recordFocusReturn],
+    [recordFocusReturn, updatePanelPreferences],
   )
 
   const openReferencedArtifact = useCallback(
     (artifactId: string) => {
       recordFocusReturn(null)
       setFocusedArtifactId(artifactId)
-      setLiveDeckTab("artifacts")
-      if (isMobile) setMobileLiveDeckOpen(true)
-      else setRightSidebarCollapsed(false)
+      updatePanelPreferences({ activeTab: "artifacts", open: true })
     },
-    [isMobile, recordFocusReturn],
+    [recordFocusReturn, updatePanelPreferences],
   )
 
   const [showShortcuts, setShowShortcuts] = useState(false)
@@ -372,6 +407,7 @@ export function AgentPageContent({
     (session: ConversationSummary) => {
       const projectId = session.projectId ?? ""
       setActiveConversationId(session.id)
+      setPanelSessionId(session.id)
       setActiveConversationTitle(session.title ?? "")
       setConversationProjectId(projectId)
       setSelectedProjectId(projectId)
@@ -382,6 +418,13 @@ export function AgentPageContent({
       setConversationProjectId,
       setSelectedProjectId,
     ],
+  )
+  const handleActiveSessionIdChange = useCallback(
+    (sessionId: string) => {
+      setActiveConversationId(sessionId)
+      setPanelSessionId(sessionId || "draft")
+    },
+    [setActiveConversationId],
   )
 
   // Keyboard shortcuts
@@ -426,13 +469,13 @@ export function AgentPageContent({
           return
         }
         if (isMobile && mobileLiveDeckOpen) {
-          setMobileLiveDeckOpen(false)
+          updatePanelPreferences({ open: false })
           return
         }
         if (!isMobile && !rightSidebarCollapsed) {
           ensurePanelFocusReturn()
           focusRestorePendingRef.current = true
-          setRightSidebarCollapsed(true)
+          updatePanelPreferences({ open: false })
         }
       }
     }
@@ -448,6 +491,7 @@ export function AgentPageContent({
     showShortcuts,
     toggleMobileLiveDeck,
     toggleRightSidebar,
+    updatePanelPreferences,
   ])
 
   return (
@@ -460,7 +504,7 @@ export function AgentPageContent({
         ref={chatRef}
         projectId={conversationProjectId || selectedProjectId || null}
         sessionId={routeSessionId}
-        onActiveSessionIdChange={setActiveConversationId}
+        onActiveSessionIdChange={handleActiveSessionIdChange}
         onSessionResolved={handleSessionResolved}
         onOpenRun={openReferencedRun}
         onOpenArtifact={openReferencedArtifact}
@@ -474,7 +518,10 @@ export function AgentPageContent({
       )}
 
       {isMobile && selectedProjectId ? (
-        <Sheet open={mobileLiveDeckOpen} onOpenChange={setMobileLiveDeckOpen}>
+        <Sheet
+          open={mobileLiveDeckOpen}
+          onOpenChange={(open) => updatePanelPreferences({ open })}
+        >
           <SheetContent
             side="right"
             closeLabel={t("workspacePanel.close")}
@@ -491,8 +538,8 @@ export function AgentPageContent({
             </SheetHeader>
             <LiveDeck
               activeTab={liveDeckTab}
-              onTabChange={setLiveDeckTab}
-              onCollapse={() => setMobileLiveDeckOpen(false)}
+              onTabChange={(activeTab) => updatePanelPreferences({ activeTab })}
+              onCollapse={() => updatePanelPreferences({ open: false })}
               projectId={selectedProjectId}
               sessionId={activeConversationId || routeSessionId}
               selectedArtifactId={focusedArtifactId}
@@ -521,7 +568,7 @@ export function AgentPageContent({
           />
           <LiveDeck
             activeTab={liveDeckTab}
-            onTabChange={setLiveDeckTab}
+            onTabChange={(activeTab) => updatePanelPreferences({ activeTab })}
             projectId={selectedProjectId}
             sessionId={activeConversationId || routeSessionId}
             selectedArtifactId={focusedArtifactId}
