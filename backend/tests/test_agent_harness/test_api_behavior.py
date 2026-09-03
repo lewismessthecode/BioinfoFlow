@@ -489,6 +489,98 @@ async def test_delete_active_session_prevents_stale_worker_from_writing_back(
             await repository.snapshot(session_id)
 
 
+@pytest.mark.asyncio
+async def test_follow_up_returns_202_and_queues_while_background_run_is_active(
+    async_client, monkeypatch, install_api_harness
+) -> None:
+    install_api_harness(BlockingModel())
+    _stub_session_configuration(monkeypatch)
+    session_id = await _create_session(async_client)
+
+    started = await async_client.post(
+        f"/api/v1/agent/sessions/{session_id}/commands",
+        json={
+            "type": "message",
+            "command_id": "message-1",
+            "parts": [{"type": "text", "text": "start"}],
+        },
+    )
+    assert started.status_code == 202
+    active_run_id = started.json()["data"]["active_run"]["run"]["id"]
+
+    queued = await async_client.post(
+        f"/api/v1/agent/sessions/{session_id}/commands",
+        json={
+            "type": "follow_up",
+            "command_id": "follow-up-1",
+            "parts": [{"type": "text", "text": "continue later"}],
+        },
+    )
+
+    assert queued.status_code == 202
+    assert queued.json()["data"]["active_run"]["run"]["id"] == active_run_id
+    async with app_database.async_session_maker() as db:
+        stored = await AgentHarnessRepository(db).get_session(session_id)
+        assert stored is not None
+        assert [item["type"] for item in stored.command_queue] == ["follow_up"]
+        assert stored.command_ids == ["message-1", "follow-up-1"]
+
+
+@pytest.mark.asyncio
+async def test_message_returns_409_while_background_run_is_active(
+    async_client, monkeypatch, install_api_harness
+) -> None:
+    install_api_harness(BlockingModel())
+    _stub_session_configuration(monkeypatch)
+    session_id = await _create_session(async_client)
+
+    started = await async_client.post(
+        f"/api/v1/agent/sessions/{session_id}/commands",
+        json={
+            "type": "message",
+            "command_id": "message-1",
+            "parts": [{"type": "text", "text": "start"}],
+        },
+    )
+    assert started.status_code == 202
+    assert started.json()["data"]["active_run"] is not None
+
+    rejected = await async_client.post(
+        f"/api/v1/agent/sessions/{session_id}/commands",
+        json={
+            "type": "message",
+            "command_id": "message-2",
+            "parts": [{"type": "text", "text": "start another run"}],
+        },
+    )
+
+    assert rejected.status_code == 409
+    assert "follow_up" in rejected.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_follow_up_returns_202_and_starts_run_when_session_is_idle(
+    async_client, monkeypatch, install_api_harness
+) -> None:
+    model = InstructionCapturingModel()
+    install_api_harness(model)
+    _stub_session_configuration(monkeypatch)
+    session_id = await _create_session(async_client)
+
+    response = await async_client.post(
+        f"/api/v1/agent/sessions/{session_id}/commands",
+        json={
+            "type": "follow_up",
+            "command_id": "follow-up-idle",
+            "parts": [{"type": "text", "text": "start from follow_up"}],
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["data"]["active_run"] is not None
+    await asyncio.wait_for(model.invoked.wait(), timeout=1)
+
+
 def _stub_session_configuration(monkeypatch) -> None:
     async def workspace(*_args, **_kwargs):
         return {"root": "/workspace", "runtime": "local"}

@@ -99,6 +99,38 @@ def test_follow_up_dispatches_follow_up_command(runner: CliRunner) -> None:
     assert payload["parts"] == [{"type": "text", "text": "Continue after this run"}]
 
 
+def test_follow_up_does_not_leak_agent_token_in_cli_output(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, str | None] = {}
+    token = "short-lived-secret"
+
+    def fake_transport_init(
+        self, base_url: str, *, bearer_token: str | None = None
+    ) -> None:
+        captured["bearer_token"] = bearer_token
+        self._base_url = base_url
+        self._client = None
+
+    monkeypatch.setenv("BIOFLOW_AGENT_TOKEN", token)
+    monkeypatch.setattr(
+        "app.cli.transport.RemoteTransport.__init__",
+        fake_transport_init,
+    )
+    response = make_envelope({"session": {"id": "session-1"}})
+    with patch(
+        f"{_COMMAND}.api_post", new_callable=AsyncMock, return_value=response
+    ):
+        result = runner.invoke(
+            app,
+            ["agent", "follow-up", "session-1", "Continue after this run"],
+        )
+
+    assert result.exit_code == 0
+    assert captured["bearer_token"] == token
+    assert token not in result.output
+
+
 def test_respond_requires_a_json_object(runner: CliRunner) -> None:
     result = runner.invoke(
         app,

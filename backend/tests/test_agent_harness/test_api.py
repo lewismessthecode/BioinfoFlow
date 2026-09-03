@@ -676,6 +676,128 @@ async def test_command_body_validation_and_state_conflicts_are_client_errors(
 
 
 @pytest.mark.asyncio
+async def test_message_while_run_active_returns_409(async_client) -> None:
+    from app.repositories.agent_harness_repo import AgentHarnessRepository
+    import app.database as app_database
+
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["session"]["id"]
+    async with app_database.async_session_maker() as db:
+        await create_agent_run(AgentHarnessRepository(db), session_id)
+
+    response = await async_client.post(
+        f"/api/v1/agent/sessions/{session_id}/commands",
+        json={
+            "type": "message",
+            "command_id": "message-during-run",
+            "parts": [{"type": "text", "text": "start another run"}],
+        },
+    )
+
+    assert response.status_code == 409
+    assert "follow_up" in response.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_follow_up_while_run_active_returns_202_and_queues_command(
+    async_client,
+) -> None:
+    from app.repositories.agent_harness_repo import AgentHarnessRepository
+    import app.database as app_database
+
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["session"]["id"]
+    async with app_database.async_session_maker() as db:
+        repository = AgentHarnessRepository(db)
+        active_run = await create_agent_run(repository, session_id)
+
+    before = await async_client.get(f"/api/v1/agent/sessions/{session_id}/snapshot")
+    assert before.status_code == 200
+    active_run_id = before.json()["data"]["active_run"]["run"]["id"]
+
+    response = await async_client.post(
+        f"/api/v1/agent/sessions/{session_id}/commands",
+        json={
+            "type": "follow_up",
+            "command_id": "follow-up-during-run",
+            "parts": [{"type": "text", "text": "continue later"}],
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()["data"]
+    assert payload["active_run"]["run"]["id"] == active_run_id
+    assert payload["active_run"]["run"]["id"] == str(active_run.id)
+    assert len(payload["runs"]) == 1
+
+    async with app_database.async_session_maker() as db:
+        stored = await AgentHarnessRepository(db).get_session(session_id)
+        assert stored is not None
+        assert [item["type"] for item in stored.command_queue] == ["follow_up"]
+        assert stored.command_ids == ["follow-up-during-run"]
+
+
+@pytest.mark.asyncio
+async def test_follow_up_while_idle_returns_202_and_starts_run(async_client) -> None:
+    from app.repositories.agent_harness_repo import AgentHarnessRepository
+    import app.database as app_database
+
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["session"]["id"]
+
+    response = await async_client.post(
+        f"/api/v1/agent/sessions/{session_id}/commands",
+        json={
+            "type": "follow_up",
+            "command_id": "follow-up-idle",
+            "parts": [{"type": "text", "text": "start from follow_up"}],
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()["data"]
+    assert payload["active_run"] is not None
+    assert payload["active_run"]["run"]["status"] == "queued"
+    assert len(payload["entries"]) == 1
+    assert payload["entries"][0]["payload"]["parts"][0]["text"] == "start from follow_up"
+
+    async with app_database.async_session_maker() as db:
+        stored = await AgentHarnessRepository(db).get_session(session_id)
+        assert stored is not None
+        assert stored.command_queue == []
+        assert stored.command_ids == ["follow-up-idle"]
+
+
+@pytest.mark.asyncio
+async def test_follow_up_command_requires_parts(async_client) -> None:
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["session"]["id"]
+
+    response = await async_client.post(
+        f"/api/v1/agent/sessions/{session_id}/commands",
+        json={"type": "follow_up", "command_id": "invalid-follow-up"},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_sse_releases_request_database_before_streaming(
     app,
     async_client,
