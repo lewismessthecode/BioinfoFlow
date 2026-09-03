@@ -37,9 +37,9 @@ export function AgentActionGroup({
             key={action.id}
             type="button"
             variant="ghost"
-            size="icon"
+            size="icon-responsive"
             className={cn(
-              "size-11 rounded-[8px] border border-transparent text-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent lg:size-8",
+              "rounded-[8px] border border-transparent text-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent",
               action.active &&
                 "bg-accent text-foreground ring-1 ring-inset ring-foreground/15",
             )}
