@@ -153,16 +153,21 @@ export function AgentPageContent({
     updatePanelPreferences,
   ])
 
+  const closeMobileLiveDeck = useCallback(() => {
+    ensurePanelFocusReturn()
+    setMobileOpen(false)
+  }, [ensurePanelFocusReturn, setMobileOpen])
+
   const toggleMobileLiveDeck = useCallback(() => {
     const nextOpen = !mobileLiveDeckOpen
     if (!nextOpen) {
-      ensurePanelFocusReturn()
-      setMobileOpen(false)
+      closeMobileLiveDeck()
       return
     }
     ensurePanelFocusReturn()
     setMobileOpen(true)
   }, [
+    closeMobileLiveDeck,
     ensurePanelFocusReturn,
     mobileLiveDeckOpen,
     setMobileOpen,
@@ -178,8 +183,7 @@ export function AgentPageContent({
 
       if (isActive) {
         if (isMobile) {
-          ensurePanelFocusReturn()
-          setMobileOpen(false)
+          closeMobileLiveDeck()
         } else {
           closeLiveDeck()
         }
@@ -202,7 +206,7 @@ export function AgentPageContent({
       rightSidebarCollapsed,
       updatePanelPreferences,
       closeLiveDeck,
-      ensurePanelFocusReturn,
+      closeMobileLiveDeck,
     ],
   )
 
@@ -415,8 +419,7 @@ export function AgentPageContent({
           return
         }
         if (isMobile && mobileLiveDeckOpen) {
-          ensurePanelFocusReturn()
-          setMobileOpen(false)
+          closeMobileLiveDeck()
           return
         }
         if (!isMobile && !rightSidebarCollapsed) {
@@ -437,6 +440,7 @@ export function AgentPageContent({
     toggleRightSidebar,
     setMobileOpen,
     closeLiveDeck,
+    closeMobileLiveDeck,
   ])
 
   return (
@@ -468,10 +472,7 @@ export function AgentPageContent({
           open={mobileLiveDeckOpen}
           onOpenChange={(open) => {
             if (open) setMobileOpen(true)
-            else {
-              ensurePanelFocusReturn()
-              setMobileOpen(false)
-            }
+            else closeMobileLiveDeck()
           }}
         >
           <SheetContent
@@ -491,7 +492,7 @@ export function AgentPageContent({
             <LiveDeck
               activeTab={liveDeckTab}
               onTabChange={(activeTab) => updatePanelPreferences({ activeTab })}
-              onCollapse={closeLiveDeck}
+              onCollapse={closeMobileLiveDeck}
               projectId={selectedProjectId}
               sessionId={routeSessionId}
               selectedArtifactId={visibleFocusedArtifactId}
