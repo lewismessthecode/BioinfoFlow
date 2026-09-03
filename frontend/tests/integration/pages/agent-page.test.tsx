@@ -276,6 +276,27 @@ describe("Agent pages", () => {
     expect(localStorage.getItem("agent-panel:project-1:draft")).toBeNull()
   })
 
+  it("keeps draft preferences when the active session resets to an empty id", () => {
+    const draftPreferences = { activeTab: "dag", open: true, width: 560 }
+    localStorage.setItem(
+      "agent-panel:project-1:draft",
+      JSON.stringify(draftPreferences),
+    )
+    renderAppPage(<AgentPageContent routeSessionId={null} />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+    const workbenchProps = mocks.workbench.mock.calls.at(-1)?.[0] as {
+      onActiveSessionIdChange?: (sessionId: string) => void
+    }
+
+    act(() => workbenchProps.onActiveSessionIdChange?.(""))
+
+    expect(localStorage.getItem("agent-panel:project-1:draft")).toBe(
+      JSON.stringify(draftPreferences),
+    )
+    expect(localStorage.getItem("agent-panel:project-1:")).toBeNull()
+  })
+
   it("registers independent desktop actions for every workspace surface", () => {
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
