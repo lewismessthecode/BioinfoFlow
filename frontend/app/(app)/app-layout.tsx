@@ -43,6 +43,7 @@ import {
   LAST_USED_PROJECT_STORAGE_KEY,
 } from "@/lib/first-run"
 import { RuntimeProvider, getActiveRuntime, type RuntimeMode } from "@/lib/runtime"
+import { isTerminalScreenshotFixtureEnabled } from "@/lib/terminal/screenshot-fixture"
 
 const LEFT_SIDEBAR_MIN = 240
 const LEFT_SIDEBAR_MAX = 420
@@ -74,8 +75,7 @@ export default function AppLayout({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const tAccessibility = useTranslations("accessibility")
-  const terminalScreenshotFixture =
-    searchParams?.get("e2eTerminalFixture") === "1"
+  const terminalScreenshotFixture = isTerminalScreenshotFixtureEnabled()
   const isSettingsRoute =
     pathname === "/settings" || pathname.startsWith("/settings/")
   const canManageMembersFlag = viewer

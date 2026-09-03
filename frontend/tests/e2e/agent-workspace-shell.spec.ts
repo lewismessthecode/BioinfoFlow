@@ -96,7 +96,7 @@ async function openAgentShell(page: Page, projectId: string): Promise<void> {
   await page.addInitScript((id) => {
     window.localStorage.setItem("bioinfoflow:last-used-project", id)
   }, projectId)
-  await page.goto("/agent?e2eTerminalFixture=1")
+  await page.goto("/agent")
   await expect(page.getByTestId("agent-page-shell")).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Open terminal", exact: true }),
