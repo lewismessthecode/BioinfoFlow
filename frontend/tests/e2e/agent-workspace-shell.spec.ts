@@ -183,6 +183,22 @@ test.describe("Agent workspace shell", () => {
       })
       await expect(rail).toHaveAttribute("data-width", "400")
       await expect(resizeHandle).toHaveAttribute("aria-valuenow", "400")
+      await expect(resizeHandle).toHaveClass(/focus-visible:ring-2/)
+      const handleBox = await resizeHandle.boundingBox()
+      expect(handleBox).not.toBeNull()
+      await page.mouse.move(
+        (handleBox?.x ?? 0) + (handleBox?.width ?? 0) / 2,
+        (handleBox?.y ?? 0) + 12,
+      )
+      await page.mouse.down()
+      await page.mouse.move(
+        (handleBox?.x ?? 0) - 40,
+        (handleBox?.y ?? 0) + 12,
+      )
+      await page.mouse.up()
+      await expect
+        .poll(async () => Number(await rail.getAttribute("data-width")))
+        .toBeGreaterThan(400)
       for (let index = 0; index < 6; index += 1) {
         await resizeHandle.press("Shift+ArrowLeft")
       }
@@ -201,6 +217,11 @@ test.describe("Agent workspace shell", () => {
       await expect(
         page.getByRole("separator", { name: "Resize right sidebar" }),
       ).toHaveAttribute("aria-valuenow", "300")
+      await expect(liveDeck.getByRole("tab", { name: "Files" })).toHaveAttribute(
+        "data-state",
+        "active",
+      )
+      await expect(filesButton).toHaveAttribute("aria-pressed", "true")
       await liveDeck.getByRole("tab", { name: "Files" }).focus()
       await page.keyboard.press("Control+Shift+b")
       await expect(page.getByTestId("agent-live-deck-rail")).toHaveCount(0)
