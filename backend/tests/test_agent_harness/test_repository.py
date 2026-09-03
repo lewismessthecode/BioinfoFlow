@@ -26,7 +26,6 @@ from tests.test_agent_harness.run_test_helpers import (
 
 WORKSPACE_ID = UUID("30000000-0000-0000-0000-000000000001")
 
-
 def _message(command_id: str, text: str) -> MessageCommand:
     return MessageCommand(
         command_id=command_id,

@@ -43,6 +43,6 @@ def test_agent_loop_does_not_depend_on_agent_trace_implementation() -> None:
     loop_path = BACKEND_ROOT / "app/services/agent_harness/loop.py"
 
     assert not any(
-        module.startswith("app.services.agent_trace")
-        for module in _imports(loop_path)
+        module.startswith("app.services.agent_trace") for module in _imports(loop_path)
     )
+
