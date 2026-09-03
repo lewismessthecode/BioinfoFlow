@@ -2455,6 +2455,7 @@
     "title": "Terminal",
     "newTerminal": "New terminal",
     "startingSession": "Starting terminal...",
+    "screenshotFixture": "Deterministic terminal fixture",
     "targets": {
       "local": "local"
     },

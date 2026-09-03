@@ -74,6 +74,8 @@ export default function AppLayout({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const tAccessibility = useTranslations("accessibility")
+  const terminalScreenshotFixture =
+    searchParams?.get("e2eTerminalFixture") === "1"
   const isSettingsRoute =
     pathname === "/settings" || pathname.startsWith("/settings/")
   const canManageMembersFlag = viewer
@@ -346,7 +348,9 @@ export default function AppLayout({
                   <main id="main-content" className="min-h-0 flex-1 overflow-hidden" role="main">
                     {children}
                   </main>
-                  {terminalEnabled ? <LazyTerminalDock /> : null}
+                  {terminalEnabled ? (
+                    <LazyTerminalDock screenshotFixture={terminalScreenshotFixture} />
+                  ) : null}
                 </div>
               </div>
               {commandPaletteMounted ? (

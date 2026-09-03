@@ -32,7 +32,7 @@ async function openAgentShell(page: Page, projectId: string): Promise<void> {
   await page.addInitScript((id) => {
     window.localStorage.setItem("bioinfoflow:last-used-project", id)
   }, projectId)
-  await page.goto("/agent")
+  await page.goto("/agent?e2eTerminalFixture=1")
   await expect(page.getByTestId("agent-page-shell")).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Open terminal", exact: true }),
@@ -103,7 +103,7 @@ test.describe("Agent workspace shell", () => {
     )
     if (!isCompact) {
       await page.getByRole("button", { name: "Open terminal", exact: true }).click()
-      await expect(page.getByTestId("terminal-dock-viewport")).toBeVisible()
+      await expect(page.getByTestId("terminal-dock-fixture")).toBeVisible()
       await expect(page).toHaveScreenshot(
         `agent-workspace-shell-${viewport.width}x${viewport.height}-open-terminal.png`,
         {
@@ -280,7 +280,7 @@ test.describe("Agent workspace shell", () => {
       await page.getByRole("button", { name: "Open terminal", exact: true }).click()
     }
     await expect(page.getByTestId("terminal-dock-tab")).toBeVisible()
-    await expect(page.getByTestId("terminal-dock-viewport")).toBeVisible()
+    await expect(page.getByTestId("terminal-dock-fixture")).toBeVisible()
     await page.getByRole("button", { name: "Close terminal", exact: true }).click()
     await expect(page.getByTestId("terminal-dock-tab")).toHaveCount(0)
 
