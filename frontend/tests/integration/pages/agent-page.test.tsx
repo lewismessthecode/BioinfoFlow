@@ -70,6 +70,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-workbench", () => ({
     props: {
       sessionId: string | null
       projectId: string | null
+      onBeforeSessionRoute?: (sessionId: string) => void
       onSessionResolved?: (session: unknown) => void
       headerActions?: ReactNode
       onOpenRun?: (runId: string) => void
@@ -87,6 +88,13 @@ vi.mock("@/components/bioinfoflow/agent/agent-workbench", () => ({
       <div data-testid="agent-workbench">
         session:{props.sessionId ?? "draft"}|project:{props.projectId ?? "none"}
         {props.headerActions}
+        <button
+          type="button"
+          data-testid="route-to-session"
+          onClick={() => props.onBeforeSessionRoute?.("session-raced")}
+        >
+          route to session
+        </button>
         <button type="button" onClick={() => props.onOpenRun?.("run-42")}>
           Open referenced run
         </button>
@@ -275,6 +283,27 @@ describe("Agent pages", () => {
     expect(localStorage.getItem("agent-panel:project-1:draft")).toBeNull()
   })
 
+  it("persists draft handoff before route replacement", () => {
+    const draftPreferences = { activeTab: "browser", open: true, width: 460 }
+    localStorage.setItem(
+      "agent-panel:project-1:draft",
+      JSON.stringify(draftPreferences),
+    )
+    const view = renderAppPage(<AgentPageContent routeSessionId={null} />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    fireEvent.click(screen.getByTestId("route-to-session"))
+
+    expect(localStorage.getItem("agent-panel:project-1:session-raced")).toBe(
+      JSON.stringify(draftPreferences),
+    )
+    expect(localStorage.getItem("agent-panel:project-1:draft")).toBeNull()
+
+    view.rerender(<AgentPageContent routeSessionId="session-raced" />)
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:browser")
+  })
+
   it("does not migrate draft preferences when opening an existing route", async () => {
     localStorage.setItem(
       "agent-panel:project-1:draft",
@@ -308,7 +337,7 @@ describe("Agent pages", () => {
 
     fireEvent.click(screen.getByTestId("select-run"))
     fireEvent.click(screen.getByText("Open referenced artifact"))
-    expect(screen.getByTestId("live-deck")).toHaveTextContent("run:run-a")
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("run:none")
     expect(screen.getByTestId("live-deck")).toHaveTextContent("artifact:artifact-42")
 
     view.rerender(<AgentPageContent routeSessionId="session-b" />)
@@ -340,7 +369,7 @@ describe("Agent pages", () => {
 
     fireEvent.click(screen.getByTestId("select-run"))
     fireEvent.click(screen.getByText("Open referenced artifact"))
-    expect(screen.getByTestId("live-deck")).toHaveTextContent("run:run-a")
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("run:none")
     expect(screen.getByTestId("live-deck")).toHaveTextContent("artifact:artifact-42")
 
     fireEvent.click(screen.getByRole("button", { name: "switch project" }))

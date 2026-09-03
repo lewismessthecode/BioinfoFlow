@@ -80,6 +80,7 @@ type AgentWorkbenchProps = {
   sessionState?: AgentSessionState
   interactive?: boolean
   onActiveSessionIdChange?: (sessionId: string) => void
+  onBeforeSessionRoute?: (sessionId: string) => void
   onSessionResolved?: (session: ConversationSummary) => void
   onOpenRun?: (runId: string) => void
   onOpenArtifact?: (artifactId: string) => void
@@ -106,6 +107,7 @@ export const AgentWorkbench = forwardRef<
     sessionState,
     interactive = true,
     onActiveSessionIdChange,
+    onBeforeSessionRoute,
     onSessionResolved,
     onOpenRun,
     onOpenArtifact,
@@ -125,6 +127,7 @@ export const AgentWorkbench = forwardRef<
     sessionId,
     projectId,
     onActiveSessionIdChange,
+    onBeforeSessionRoute,
     environmentTargets,
     requestedEnvironmentSelection,
     effectiveEnvironmentSelection,
