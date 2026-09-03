@@ -291,6 +291,9 @@ export function AgentPageContent({
   const openReferencedArtifact = useCallback(
     (artifactId: string) => {
       recordFocusReturn(null)
+      setSelectedRun(null)
+      setFocusedRunId(null)
+      setDag(null)
       setActiveStateIdentity(stateIdentity)
       setFocusedArtifactId(artifactId)
       updatePanelPreferences({ activeTab: "artifacts", open: true })
@@ -299,6 +302,9 @@ export function AgentPageContent({
   )
   const handleSelectedArtifactIdChange = useCallback(
     (artifactId: string | null) => {
+      setSelectedRun(null)
+      setFocusedRunId(null)
+      setDag(null)
       setActiveStateIdentity(stateIdentity)
       setFocusedArtifactId(artifactId)
     },
@@ -306,6 +312,13 @@ export function AgentPageContent({
   )
 
   const [showShortcuts, setShowShortcuts] = useState(false)
+
+  const handleBeforeSessionRoute = useCallback(
+    (sessionId: string) => {
+      if (!routeSessionId) handoffDraftToSession(sessionId)
+    },
+    [handoffDraftToSession, routeSessionId],
+  )
 
   const handleSessionResolved = useCallback(
     (session: ConversationSummary) => {
@@ -410,6 +423,7 @@ export function AgentPageContent({
         ref={chatRef}
         projectId={conversationProjectId || selectedProjectId || null}
         sessionId={routeSessionId}
+        onBeforeSessionRoute={handleBeforeSessionRoute}
         onActiveSessionIdChange={handleActiveSessionIdChange}
         onSessionResolved={handleSessionResolved}
         onOpenRun={openReferencedRun}

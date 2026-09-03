@@ -46,6 +46,7 @@ type AgentWorkbenchControllerOptions = {
   sessionId: string | null
   projectId: string | null
   onActiveSessionIdChange?: (sessionId: string) => void
+  onBeforeSessionRoute?: (sessionId: string) => void
   environmentTargets?: readonly AgentEnvironmentTarget[]
   requestedEnvironmentSelection?: AgentEnvironmentSelection
   effectiveEnvironmentSelection?: AgentEnvironmentSelection
@@ -59,6 +60,7 @@ export function useAgentWorkbenchController({
   sessionId,
   projectId,
   onActiveSessionIdChange,
+  onBeforeSessionRoute,
   environmentTargets,
   requestedEnvironmentSelection,
   effectiveEnvironmentSelection,
@@ -211,11 +213,12 @@ export function useAgentWorkbenchController({
     (id: string) => {
       if (!needsRouteSyncRef.current) return
       needsRouteSyncRef.current = false
+      onBeforeSessionRoute?.(id)
       setLocalSessionId(id)
       onActiveSessionIdChange?.(id)
       router.replace(`/agent/${id}`)
     },
-    [onActiveSessionIdChange, router],
+    [onActiveSessionIdChange, onBeforeSessionRoute, router],
   )
 
   const addContextInput = useCallback((input: AgentContextInput) => {
