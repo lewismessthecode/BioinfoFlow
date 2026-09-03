@@ -64,7 +64,10 @@ describe("AgentActionGroup", () => {
     )
 
     expect(screen.getByRole("button", { name: "Open browser" })).toBeVisible()
-    expect(screen.getByRole("button", { name: "Open files" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Open files" })).toHaveClass(
+      "size-11",
+      "lg:size-8",
+    )
     expect(screen.getByRole("button", { name: "Open artifacts" })).toBeVisible()
     expect(screen.getByRole("button", { name: "Open DAG" })).toBeVisible()
   })
@@ -94,5 +97,10 @@ describe("AgentActionGroup", () => {
     expect(filesButton).toHaveAttribute("aria-pressed", "true")
     expect(filesButton).toHaveAttribute("data-state", "active")
     expect(filesButton).toHaveAttribute("title", "Files")
+    expect(filesButton).toHaveClass(
+      "bg-accent",
+      "text-foreground",
+      "ring-1",
+    )
   })
 })

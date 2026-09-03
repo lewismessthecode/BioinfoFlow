@@ -4,6 +4,7 @@ import { act, renderHook } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 // Must import the named export (useIsMobile) — useMediaQuery is not exported
+import { COMPACT_MEDIA_QUERY, COMPACT_VIEWPORT_MAX } from "@/lib/layout-breakpoints"
 import { useIsMobile } from "@/hooks/use-media-query"
 
 type ChangeHandler = (event: MediaQueryListEvent) => void
@@ -95,7 +96,8 @@ describe("useIsMobile (useMediaQuery)", () => {
   it("passes the correct media query string", () => {
     renderHook(() => useIsMobile())
 
-    expect(window.matchMedia).toHaveBeenCalledWith("(max-width: 1023px)")
+    expect(window.matchMedia).toHaveBeenCalledWith(COMPACT_MEDIA_QUERY)
+    expect(COMPACT_VIEWPORT_MAX).toBe(1023)
   })
 
   it("keeps the first client render aligned with the server snapshot", () => {

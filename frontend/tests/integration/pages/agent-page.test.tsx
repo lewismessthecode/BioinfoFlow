@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, type ReactNode } from "react"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import AgentSessionPage from "@/app/(app)/agent/[sessionId]/page"
@@ -108,7 +108,22 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
 }))
 
 vi.mock("@/components/ui/resize-handle", () => ({
-  ResizeHandle: () => <div data-testid="resize-handle" />,
+  ResizeHandle: ({
+    valueNow,
+    valueMin,
+    valueMax,
+  }: {
+    valueNow?: number
+    valueMin?: number
+    valueMax?: number
+  }) => (
+    <div
+      data-testid="resize-handle"
+      data-value-now={valueNow}
+      data-value-min={valueMin}
+      data-value-max={valueMax}
+    />
+  ),
 }))
 
 describe("Agent pages", () => {
@@ -224,6 +239,22 @@ describe("Agent pages", () => {
     expect(screen.getByRole("dialog")).toHaveClass(
       "pb-[env(safe-area-inset-bottom)]",
     )
+  })
+
+  it("restores focus to the mobile action after Escape closes the sheet", async () => {
+    mocks.isMobile.mockReturnValue(true)
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
+    render(<>{navbarAction}</>)
+    const filesButton = screen.getByRole("button", { name: "Open files" })
+    fireEvent.click(filesButton)
+    fireEvent.blur(filesButton)
+    fireEvent.keyDown(window, { key: "Escape" })
+
+    await waitFor(() => expect(filesButton).toHaveFocus())
   })
 
   it("clears the global Workspace action when the Agent page unmounts", () => {
