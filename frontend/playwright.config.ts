@@ -6,6 +6,8 @@ const modelPort = Number(process.env.PLAYWRIGHT_MODEL_PORT || 9100)
 const baseURL = process.env.BASE_URL || `http://127.0.0.1:${frontendPort}`
 const apiBaseUrl = `http://127.0.0.1:${backendPort}/api/v1`
 const browserApiBaseUrl = `http://localhost:${backendPort}/api/v1`
+const terminalFixtureEnvironment =
+  "NEXT_PUBLIC_BIOINFOFLOW_E2E_TERMINAL_FIXTURE=1"
 const viewportWidth = Number(process.env.PLAYWRIGHT_VIEWPORT_WIDTH)
 const viewportHeight = Number(process.env.PLAYWRIGHT_VIEWPORT_HEIGHT)
 const artifactDirectory =
@@ -74,7 +76,7 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: `AUTH_MODE=dev NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=${browserApiBaseUrl} bun run build && cp -R .next/static .next/standalone/.next/static && AUTH_MODE=dev NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=${browserApiBaseUrl} HOSTNAME=127.0.0.1 PORT=${frontendPort} node .next/standalone/server.js`,
+      command: `${terminalFixtureEnvironment} AUTH_MODE=dev NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=${browserApiBaseUrl} bun run build && cp -R .next/static .next/standalone/.next/static && ${terminalFixtureEnvironment} AUTH_MODE=dev NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=${browserApiBaseUrl} HOSTNAME=127.0.0.1 PORT=${frontendPort} node .next/standalone/server.js`,
       url: `${baseURL}/runs`,
       reuseExistingServer: false,
       timeout: 240_000,

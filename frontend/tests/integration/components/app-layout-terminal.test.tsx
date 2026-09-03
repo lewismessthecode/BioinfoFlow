@@ -16,6 +16,7 @@ const searchParamsState = {
 }
 
 let workspaceNavbarActions: React.ReactNode = null
+let terminalDockProps: Record<string, unknown> | null = null
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathnameState.value,
@@ -35,6 +36,7 @@ vi.mock("next/dynamic", () => ({
         )
       }
 
+      terminalDockProps = props
       return <div data-testid="terminal-dock">{isOpen ? "open" : "closed"}</div>
     }
   },
@@ -107,6 +109,7 @@ function ProjectSeeder({ projectId }: { projectId: string }) {
 describe("AppLayout terminal integration", () => {
   beforeEach(() => {
     workspaceNavbarActions = null
+    terminalDockProps = null
     searchParamsState.value = new URLSearchParams()
     localStorage.clear()
   })
@@ -157,6 +160,22 @@ describe("AppLayout terminal integration", () => {
     await screen.findByRole("button", { name: "accessibility.openTerminal" })
     expect(screen.getByTestId("terminal-dock")).toHaveTextContent("closed")
     expect(localStorage.getItem("terminal-dock:project-1:open")).toBeNull()
+  })
+
+  it("does not let a user-controlled query enable the screenshot fixture", async () => {
+    pathnameState.value = "/agent"
+    searchParamsState.value = new URLSearchParams("e2eTerminalFixture=1")
+
+    renderAppPage(
+      <AppLayout>
+        <ProjectSeeder projectId="project-1" />
+      </AppLayout>,
+    )
+
+    await screen.findByRole("button", { name: "accessibility.openTerminal" })
+    await waitFor(() => {
+      expect(terminalDockProps).toEqual({ screenshotFixture: false })
+    })
   })
 
   it("does not open the terminal dock from the old keyboard shortcut", async () => {
