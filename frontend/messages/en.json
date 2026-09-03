@@ -1472,6 +1472,7 @@
     "closeSidebar": "Close sidebar",
     "hidePanel": "Hide panel",
     "resizePanel": "Resize workspace panel",
+    "resizeSidebar": "Resize sidebar",
     "resizeTerminal": "Resize terminal",
     "refreshWorkspace": "Refresh workspace",
     "userMenu": "User menu",

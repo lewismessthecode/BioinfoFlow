@@ -97,6 +97,7 @@ vi.mock("next-intl", () => ({
     const labels: Record<string, Record<string, string>> = {
       accessibility: {
         openTerminal: "Open terminal",
+        resizeSidebar: "Resize sidebar",
       },
       nav: {
         dashboard: "Dashboard",
@@ -161,10 +162,6 @@ vi.mock("@/components/bioinfoflow/command-palette", () => ({
 
 vi.mock("@/components/ui/sonner", () => ({
   Toaster: () => null,
-}))
-
-vi.mock("@/components/ui/resize-handle", () => ({
-  ResizeHandle: () => null,
 }))
 
 vi.mock("@/hooks/use-media-query", () => ({
@@ -403,6 +400,9 @@ describe("AppLayout coordination", () => {
     expect(screen.getByText("Initial analysis")).toBeInTheDocument()
     expect(screen.getByTestId("sidebar-state")).toHaveTextContent("expanded")
     expect(screen.getByTestId("terminal-dock")).toHaveTextContent("closed")
+    expect(
+      screen.getByRole("separator", { name: "Resize sidebar" }),
+    ).toHaveAttribute("aria-orientation", "vertical")
 
     fireEvent.click(screen.getByRole("button", { name: "Open terminal" }))
     await waitFor(() => {
