@@ -6,6 +6,18 @@ const modelPort = Number(process.env.PLAYWRIGHT_MODEL_PORT || 9100)
 const baseURL = process.env.BASE_URL || `http://127.0.0.1:${frontendPort}`
 const apiBaseUrl = `http://127.0.0.1:${backendPort}/api/v1`
 const browserApiBaseUrl = `http://localhost:${backendPort}/api/v1`
+const viewportWidth = Number(process.env.PLAYWRIGHT_VIEWPORT_WIDTH)
+const viewportHeight = Number(process.env.PLAYWRIGHT_VIEWPORT_HEIGHT)
+const configuredViewport =
+  Number.isInteger(viewportWidth) &&
+  viewportWidth > 0 &&
+  Number.isInteger(viewportHeight) &&
+  viewportHeight > 0
+    ? {
+        width: viewportWidth,
+        height: viewportHeight,
+      }
+    : undefined
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -25,7 +37,13 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        ...(configuredViewport ? { viewport: configuredViewport } : {}),
+      },
+    },
     { name: "firefox", use: { ...devices["Desktop Firefox"] } },
     { name: "webkit", use: { ...devices["Desktop Safari"] } },
   ],
