@@ -41,23 +41,6 @@ import {
 } from "@/components/ui/sheet"
 import { FileCode2, Globe, Network, Package } from "@/lib/icons"
 
-const RIGHT_SIDEBAR_MIN = 300
-const RIGHT_SIDEBAR_MAX = 600
-const RIGHT_SIDEBAR_DEFAULT = 400
-const LIVE_DECK_TABS: readonly LiveDeckTab[] = [
-  "workspace",
-  "browser",
-  "artifacts",
-  "dag",
-]
-
-const liveDeckStorageKey = (projectId: string, key: "open" | "tab") =>
-  `agent-live-deck:${projectId}:${key}`
-
-function isLiveDeckTab(value: string | null): value is LiveDeckTab {
-  return value !== null && LIVE_DECK_TABS.includes(value as LiveDeckTab)
-}
-
 const LIVE_DECK_TAB_BY_ACTION: Record<AgentActionId, LiveDeckTab> = {
   browser: "browser",
   files: "workspace",

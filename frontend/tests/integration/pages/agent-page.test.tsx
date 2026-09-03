@@ -560,6 +560,43 @@ describe("Agent pages", () => {
     expect(localStorage.getItem("agent-panel:project-1:draft:mobile-open")).toBe("true")
   })
 
+  it("keeps an unscoped session out of the default project workspace", async () => {
+    localStorage.setItem(
+      "agent-panel:project-default:draft",
+      JSON.stringify({ activeTab: "artifacts", open: true, width: 500 }),
+    )
+    renderAppPage(<AgentPageContent routeSessionId={null} />, {
+      projectContext: {
+        selectedProjectId: "",
+        conversationProjectId: "project-default",
+      },
+    })
+    const workbenchProps = mocks.workbench.mock.calls.at(-1)?.[0] as {
+      onSessionResolved?: (session: {
+        id: string
+        projectId?: string | null
+        title: string
+      }) => void
+    }
+
+    act(() => {
+      workbenchProps.onSessionResolved?.({
+        id: "inbox-session",
+        projectId: null,
+        title: "Inbox session",
+      })
+    })
+
+    await waitFor(() => {
+      const currentProps = mocks.workbench.mock.calls.at(-1)?.[0] as {
+        projectId?: string | null
+      }
+      expect(currentProps.projectId).toBeNull()
+    })
+    expect(localStorage.getItem("agent-panel:project-default:inbox-session")).toBeNull()
+    expect(screen.queryByTestId("agent-live-deck-rail")).not.toBeInTheDocument()
+  })
+
   it("keeps the panel storage listener bound across panel updates", async () => {
     const addEventListener = vi.spyOn(window, "addEventListener")
     renderAppPage(<AgentPage />, {
