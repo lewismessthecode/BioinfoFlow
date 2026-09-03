@@ -94,11 +94,15 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
     activeTab,
     runId,
     selectedArtifactId,
+    dag,
+    onRunSelect,
   }: {
     onCollapse?: () => void
     activeTab: string
     runId?: string | null
     selectedArtifactId?: string | null
+    dag?: unknown
+    onRunSelect?: (run: { run_id: string } | null) => void
   }) => (
     <div
       data-testid="live-deck"
@@ -106,7 +110,8 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
       data-live-deck-focus-target
       tabIndex={0}
     >
-      tab:{activeTab}|run:{runId ?? "none"}|artifact:{selectedArtifactId ?? "none"}
+      tab:{activeTab}|run:{runId ?? "none"}|artifact:{selectedArtifactId ?? "none"}|dag:
+      {dag ? "present" : "none"}
       {onCollapse ? (
         <button type="button" onClick={onCollapse}>close</button>
       ) : null}
@@ -118,6 +123,9 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
         }}
       >
         nested control
+      </button>
+      <button type="button" data-testid="select-run" onClick={() => onRunSelect?.({ run_id: "run-a" })}>
+        select run
       </button>
     </div>
   ),
@@ -252,7 +260,7 @@ describe("Agent pages", () => {
     expect(localStorage.getItem("agent-panel:project-1:draft")).toBeNull()
   })
 
-  it("preserves draft panel preferences across the real route transition", async () => {
+  it("does not migrate draft preferences when opening an existing route", async () => {
     localStorage.setItem(
       "agent-panel:project-1:draft",
       JSON.stringify({ activeTab: "browser", open: true, width: 480 }),
@@ -263,17 +271,36 @@ describe("Agent pages", () => {
 
     view.rerender(<AgentPageContent routeSessionId="session-routed" />)
 
-    await waitFor(() => {
-      expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:browser")
-      expect(screen.getByTestId("agent-live-deck-rail")).toHaveAttribute(
-        "data-width",
-        "480",
-      )
-      expect(
-        localStorage.getItem("agent-panel:project-1:session-routed"),
-      ).toBe(JSON.stringify({ activeTab: "browser", open: true, width: 480 }))
-    })
-    expect(localStorage.getItem("agent-panel:project-1:draft")).toBeNull()
+    expect(localStorage.getItem("agent-panel:project-1:session-routed")).toBeNull()
+    expect(localStorage.getItem("agent-panel:project-1:draft")).toBe(
+      JSON.stringify({ activeTab: "browser", open: true, width: 480 }),
+    )
+  })
+
+  it("isolates run, artifact, and DAG state across session navigation", () => {
+    localStorage.setItem(
+      "agent-panel:project-1:session-a",
+      JSON.stringify({ activeTab: "dag", open: true, width: 400 }),
+    )
+    localStorage.setItem(
+      "agent-panel:project-1:session-b",
+      JSON.stringify({ activeTab: "dag", open: true, width: 400 }),
+    )
+    const view = renderAppPage(
+      <AgentPageContent routeSessionId="session-a" />,
+      { projectContext: { selectedProjectId: "project-1" } },
+    )
+
+    fireEvent.click(screen.getByTestId("select-run"))
+    fireEvent.click(screen.getByText("Open referenced artifact"))
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("run:run-a")
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("artifact:artifact-42")
+
+    view.rerender(<AgentPageContent routeSessionId="session-b" />)
+
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("run:none")
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("artifact:none")
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("dag:none")
   })
 
   it("keeps draft preferences when the active session resets to an empty id", () => {
