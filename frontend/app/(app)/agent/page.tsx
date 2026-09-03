@@ -113,6 +113,13 @@ export function AgentPageContent({
   const [focusedRunId, setFocusedRunId] = useState<string | null>(null)
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null)
   const [dag, setDag] = useState<DagData | null>(null)
+  const sessionScope = routeSessionId || "draft"
+  const [stateSessionScope, setStateSessionScope] = useState(sessionScope)
+  const hasCurrentSessionState = stateSessionScope === sessionScope
+  const visibleSelectedRun = hasCurrentSessionState ? selectedRun : null
+  const visibleFocusedRunId = hasCurrentSessionState ? focusedRunId : null
+  const visibleFocusedArtifactId = hasCurrentSessionState ? focusedArtifactId : null
+  const visibleDag = hasCurrentSessionState ? dag : null
 
   useEffect(() => {
     setActiveConversationId(routeSessionId ?? "")
@@ -121,8 +128,8 @@ export function AgentPageContent({
   useEvents({
     projectId: selectedProjectId,
     onRunDag: (envelope) => {
-      if (!selectedRun) return
-      if (envelope.data.run_id !== selectedRun.run_id) return
+      if (!visibleSelectedRun) return
+      if (envelope.data.run_id !== visibleSelectedRun.run_id) return
       setDag(envelope.data.dag)
       if (envelope.data.dag) updatePanelPreferences({ activeTab: "dag" })
     },
@@ -261,29 +268,32 @@ export function AgentPageContent({
   ])
 
   const handleRunSelect = useCallback((run: Run | null) => {
+    setStateSessionScope(sessionScope)
     setSelectedRun(run)
     setFocusedRunId(run?.run_id ?? null)
     setDag(null)
-  }, [])
+  }, [sessionScope])
 
   const openReferencedRun = useCallback(
     (runId: string) => {
       recordFocusReturn(null)
+      setStateSessionScope(sessionScope)
       setSelectedRun(null)
       setFocusedRunId(runId)
       setDag(null)
       updatePanelPreferences({ activeTab: "dag", open: true })
     },
-    [recordFocusReturn, updatePanelPreferences],
+    [recordFocusReturn, sessionScope, updatePanelPreferences],
   )
 
   const openReferencedArtifact = useCallback(
     (artifactId: string) => {
       recordFocusReturn(null)
+      setStateSessionScope(sessionScope)
       setFocusedArtifactId(artifactId)
       updatePanelPreferences({ activeTab: "artifacts", open: true })
     },
-    [recordFocusReturn, updatePanelPreferences],
+    [recordFocusReturn, sessionScope, updatePanelPreferences],
   )
 
   const [showShortcuts, setShowShortcuts] = useState(false)
@@ -291,7 +301,7 @@ export function AgentPageContent({
   const handleSessionResolved = useCallback(
     (session: ConversationSummary) => {
       const projectId = session.projectId ?? ""
-      handoffDraftToSession(session.id, projectId)
+      if (!routeSessionId) handoffDraftToSession(session.id, projectId)
       setActiveConversationId(session.id)
       setPanelSessionId(session.id)
       setActiveConversationTitle(session.title ?? "")
@@ -305,15 +315,15 @@ export function AgentPageContent({
       setSelectedProjectId,
       setPanelSessionId,
       handoffDraftToSession,
+      routeSessionId,
     ],
   )
   const handleActiveSessionIdChange = useCallback(
     (sessionId: string) => {
-      handoffDraftToSession(sessionId)
       setActiveConversationId(sessionId)
       setPanelSessionId(sessionId || "draft")
     },
-    [handoffDraftToSession, setActiveConversationId, setPanelSessionId],
+    [setActiveConversationId, setPanelSessionId],
   )
 
   // Keyboard shortcuts
@@ -432,10 +442,10 @@ export function AgentPageContent({
               onCollapse={closeLiveDeck}
               projectId={selectedProjectId}
               sessionId={activeConversationId || routeSessionId}
-              selectedArtifactId={focusedArtifactId}
+              selectedArtifactId={visibleFocusedArtifactId}
               onSelectedArtifactIdChange={setFocusedArtifactId}
-              runId={selectedRun?.run_id ?? focusedRunId}
-              dag={dag}
+              runId={visibleSelectedRun?.run_id ?? visibleFocusedRunId}
+              dag={visibleDag}
               onRunSelect={handleRunSelect}
             />
           </SheetContent>
@@ -465,10 +475,10 @@ export function AgentPageContent({
             onCollapse={closeLiveDeck}
             projectId={selectedProjectId}
             sessionId={activeConversationId || routeSessionId}
-            selectedArtifactId={focusedArtifactId}
+            selectedArtifactId={visibleFocusedArtifactId}
             onSelectedArtifactIdChange={setFocusedArtifactId}
-            runId={selectedRun?.run_id ?? focusedRunId}
-            dag={dag}
+            runId={visibleSelectedRun?.run_id ?? visibleFocusedRunId}
+            dag={visibleDag}
             onRunSelect={handleRunSelect}
           />
         </div>

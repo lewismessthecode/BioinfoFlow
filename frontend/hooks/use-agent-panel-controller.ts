@@ -145,14 +145,11 @@ export function useAgentPanelController({
   const [resolvedPanelSessionId, setPanelSessionId] = useState("draft")
   const panelSessionId = routeSessionId ?? resolvedPanelSessionId
   const key = panelPreferenceKey(projectId, panelSessionId)
-  const draftKey = panelPreferenceKey(projectId, null)
   const subscribe = useCallback(
     (listener: () => void) => subscribeToPanelPreferences(key, listener),
     [key],
   )
-  const getSnapshot = useCallback(() => {
-    return readPanelPreferences(key) ?? (routeSessionId ? readPanelPreferences(draftKey) : null)
-  }, [draftKey, key, routeSessionId])
+  const getSnapshot = useCallback(() => readPanelPreferences(key), [key])
   const panelSnapshot = useSyncExternalStore(
     subscribe,
     getSnapshot,
@@ -163,10 +160,6 @@ export function useAgentPanelController({
     (updates: Partial<AgentPanelPreferences>) => writePanelPreferences(key, updates),
     [key],
   )
-  useEffect(() => {
-    if (!routeSessionId) return
-    migratePanelPreferences(projectId, null, routeSessionId)
-  }, [projectId, routeSessionId])
   const handoffDraftToSession = useCallback(
     (sessionId: string, sessionProjectId = projectId) => {
       migratePanelPreferences(sessionProjectId, null, sessionId)
