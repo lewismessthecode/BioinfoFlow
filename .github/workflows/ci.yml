@@ -368,8 +368,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: agent-shell-${{ matrix.viewport.name }}-diagnostics
-          path: frontend/.playwright-e2e/artifacts
-          if-no-files-found: warn
+          path: |
+            frontend/.playwright-e2e/artifacts/playwright-report
+            frontend/.playwright-e2e/artifacts/results.xml
+            frontend/.playwright-e2e/artifacts/test-results/**/*.png
+            frontend/.playwright-e2e/artifacts/test-results/**/*.webm
+            frontend/.playwright-e2e/artifacts/test-results/**/*.zip
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 14
 
   docker-build:
