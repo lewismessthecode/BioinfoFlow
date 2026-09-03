@@ -449,7 +449,7 @@ export function AgentPageContent({
       data-testid="agent-page-shell"
     >
       <AgentWorkbench
-        key={routeSessionId ?? "draft"}
+        key={`${selectedProjectId ?? "none"}:${routeSessionId ?? "draft"}`}
         ref={chatRef}
         projectId={conversationProjectId || selectedProjectId || null}
         sessionId={routeSessionId}
