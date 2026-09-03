@@ -16,7 +16,7 @@
     "prestart": "node scripts/ensure-better-sqlite3-node-abi.mjs",
     "start": "node scripts/with-root-env.mjs start",
     "test": "vitest run",
-    "test:e2e:agent-shell": "playwright test tests/e2e/agent-workspace-shell.spec.ts --project=chromium",
+    "test:e2e:agent-shell": "playwright test tests/e2e/agent-first-analysis.spec.ts tests/e2e/agent-workflow-run.spec.ts tests/e2e/agent-workspace-shell.spec.ts --project=chromium",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "verify:landing-visual": "bun scripts/verify-landing-visual.mjs"
