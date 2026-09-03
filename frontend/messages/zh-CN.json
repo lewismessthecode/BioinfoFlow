@@ -1471,6 +1471,8 @@
     "openSidebar": "打开侧边栏",
     "closeSidebar": "关闭侧边栏",
     "hidePanel": "隐藏面板",
+    "resizePanel": "调整工作区面板大小",
+    "resizeTerminal": "调整终端大小",
     "refreshWorkspace": "刷新工作区",
     "userMenu": "用户菜单",
     "message": "消息",

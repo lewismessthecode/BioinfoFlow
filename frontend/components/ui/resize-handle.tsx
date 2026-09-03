@@ -52,8 +52,9 @@ export function ResizeHandle({
         delta = event.key === "ArrowRight" ? step * direction : -step * direction
       }
       onResize(delta)
+      onResizeEnd?.()
     },
-    [onResize, side]
+    [onResize, onResizeEnd, side]
   )
 
   useEffect(() => {
@@ -104,7 +105,7 @@ export function ResizeHandle({
       aria-valuenow={valueNow}
       aria-valuemin={valueNow === undefined ? undefined : valueMin}
       aria-valuemax={valueNow === undefined ? undefined : valueMax}
-      aria-label={ariaLabel ?? `Resize ${side} sidebar`}
+      aria-label={ariaLabel}
       tabIndex={0}
     >
       <div
