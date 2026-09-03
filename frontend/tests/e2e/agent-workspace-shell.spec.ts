@@ -97,6 +97,11 @@ test.describe("Agent workspace shell", () => {
 
     if (isMobile) {
       await expect(page.getByRole("dialog")).toBeVisible()
+      await page.reload()
+      await expect(liveDeck).toBeVisible()
+      await expect(
+        liveDeck.getByRole("tab", { name: "Artifacts" }),
+      ).toHaveAttribute("data-state", "active")
       await page.getByRole("button", { name: "Hide panel", exact: true }).click()
       await expect(liveDeck).toHaveCount(0)
     } else {
