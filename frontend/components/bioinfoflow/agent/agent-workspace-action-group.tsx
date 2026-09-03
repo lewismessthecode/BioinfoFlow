@@ -7,9 +7,7 @@ import {
   Box,
   FileCode2,
   Globe,
-  MoreHorizontal,
   PanelRightClose,
-  TerminalSquare,
   Workflow,
   X,
   type AppIcon,
@@ -21,11 +19,8 @@ export type AgentWorkspaceTab = "artifacts" | "files" | "dag" | "browser"
 export type AgentWorkspaceActionGroupProps = {
   activeTab: AgentWorkspaceTab | null
   panelOpen: boolean
-  terminalOpen?: boolean
   labels: {
     group: string
-    more: string
-    terminal: string
     artifacts: string
     files: string
     dag: string
@@ -34,8 +29,6 @@ export type AgentWorkspaceActionGroupProps = {
     closePanel: string
     closeTab: string
   }
-  onMore: () => void
-  onToggleTerminal: () => void
   onOpenTab: (tab: AgentWorkspaceTab) => void
   onTogglePanel: () => void
   onCloseTab: () => void
@@ -61,10 +54,7 @@ const iconButtonClassName =
 export function AgentWorkspaceActionGroup({
   activeTab,
   panelOpen,
-  terminalOpen = false,
   labels,
-  onMore,
-  onToggleTerminal,
   onOpenTab,
   onTogglePanel,
   onCloseTab,
@@ -76,22 +66,6 @@ export function AgentWorkspaceActionGroup({
       role="group"
       aria-label={labels.group}
     >
-      <ActionIconButton
-        label={labels.more}
-        action="more"
-        onClick={onMore}
-        icon={<MoreHorizontal aria-hidden="true" className="h-4 w-4" />}
-      />
-      <ActionIconButton
-        label={labels.terminal}
-        action="terminal"
-        active={terminalOpen}
-        onClick={onToggleTerminal}
-        icon={<TerminalSquare aria-hidden="true" className="h-4 w-4" />}
-      />
-
-      <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-border/65" />
-
       <div className="flex min-w-0 items-center gap-0.5">
         {workspaceTabs.map(({ key, label, Icon }) => {
           const active = panelOpen && activeTab === key
@@ -159,7 +133,7 @@ function ActionIconButton({
   onClick,
 }: {
   label: string
-  action: "more" | "terminal" | "panel"
+  action: "panel"
   active?: boolean
   icon: ReactNode
   onClick: () => void
@@ -171,7 +145,7 @@ function ActionIconButton({
       size="icon"
       className={cn(iconButtonClassName, active && "bg-accent text-foreground")}
       aria-label={label}
-      aria-pressed={action === "more" ? undefined : active}
+      aria-pressed={active}
       data-workspace-action={action}
       onClick={onClick}
     >
