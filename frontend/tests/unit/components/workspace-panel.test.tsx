@@ -212,4 +212,34 @@ describe("WorkspacePanel", () => {
     })
     expect(vi.mocked(adapter.readFile).mock.calls[0][0].signal?.aborted).toBe(true)
   })
+
+  it("clears the child loading spinner when its request is aborted", async () => {
+    const adapter = createAdapter()
+    const child = deferred<WorkspaceFileNode[]>()
+    vi.mocked(adapter.listFiles).mockImplementation(async ({ path }) => {
+      if (path === "results") return child.promise
+      return [
+        { name: "results", path: "results", type: "directory", sizeBytes: null, modifiedAt: null },
+      ]
+    })
+
+    const view = render(<WorkspacePanel projectId="project-a" adapter={adapter} />)
+    const results = await screen.findByRole("button", { name: /results/i })
+    await userEvent.click(results)
+    await waitFor(() =>
+      expect(vi.mocked(adapter.listFiles)).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: "project-a", path: "results" }),
+      ),
+    )
+
+    view.rerender(<WorkspacePanel projectId="project-b" adapter={adapter} />)
+    const nextResults = await screen.findByRole("button", { name: /results/i })
+    expect(nextResults).toHaveAttribute("aria-expanded", "false")
+    expect(nextResults.querySelector(".animate-spin")).not.toBeInTheDocument()
+    expect(
+      vi.mocked(adapter.listFiles).mock.calls.find(
+        ([input]) => input.path === "results",
+      )?.[0].signal?.aborted,
+    ).toBe(true)
+  })
 })
