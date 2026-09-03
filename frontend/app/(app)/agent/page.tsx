@@ -53,6 +53,12 @@ const LIVE_DECK_TAB_BY_ACTION: Record<AgentActionId, LiveDeckTab> = {
   artifacts: "artifacts",
   dag: "dag",
 }
+const ACTION_BY_LIVE_DECK_TAB: Partial<Record<LiveDeckTab, AgentActionId>> = {
+  browser: "browser",
+  workspace: "files",
+  artifacts: "artifacts",
+  dag: "dag",
+}
 
 export default function AgentPage() {
   return <AgentPageContent routeSessionId={null} />
@@ -87,7 +93,10 @@ export function AgentPageContent({
   const [focusedRunId, setFocusedRunId] = useState<string | null>(null)
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null)
   const [dag, setDag] = useState<DagData | null>(null)
-  const lastActionIdRef = useRef<AgentActionId | null>(null)
+  const focusReturnRef = useRef<{
+    element: HTMLElement | null
+    actionId: AgentActionId | null
+  }>({ element: null, actionId: null })
 
   useEffect(() => {
     setActiveConversationId(routeSessionId ?? "")
@@ -170,13 +179,53 @@ export function AgentPageContent({
     })
   }, [])
 
-  const toggleRightSidebar = useCallback(() => {
-    setRightSidebarCollapsed((prev) => !prev)
+  const recordFocusReturn = useCallback((actionId: AgentActionId | null) => {
+    const activeElement = document.activeElement
+    focusReturnRef.current = {
+      element:
+        activeElement instanceof HTMLElement && activeElement !== document.body
+          ? activeElement
+          : null,
+      actionId,
+    }
   }, [])
+
+  const restoreFocusReturn = useCallback(() => {
+    const { element, actionId } = focusReturnRef.current
+    if (element?.isConnected) {
+      element.focus()
+      return true
+    }
+    if (!actionId) return false
+    const action = document.querySelector<HTMLButtonElement>(
+      `[data-action-id="${actionId}"]`,
+    )
+    if (!action?.isConnected) return false
+    action.focus()
+    return true
+  }, [])
+
+  const toggleRightSidebar = useCallback(() => {
+    setRightSidebarCollapsed((prev) => {
+      if (prev) {
+        focusReturnRef.current = {
+          element: null,
+          actionId: ACTION_BY_LIVE_DECK_TAB[liveDeckTab] ?? null,
+        }
+        return false
+      }
+      focusReturnRef.current = {
+        element: null,
+        actionId: ACTION_BY_LIVE_DECK_TAB[liveDeckTab] ?? null,
+      }
+      queueMicrotask(restoreFocusReturn)
+      return true
+    })
+  }, [liveDeckTab, restoreFocusReturn])
 
   const toggleAction = useCallback(
     (actionId: AgentActionId) => {
-      lastActionIdRef.current = actionId
+      recordFocusReturn(actionId)
       const nextTab = LIVE_DECK_TAB_BY_ACTION[actionId]
       const isActive =
         liveDeckTab === nextTab &&
@@ -196,17 +245,10 @@ export function AgentPageContent({
       isMobile,
       liveDeckTab,
       mobileLiveDeckOpen,
+      recordFocusReturn,
       rightSidebarCollapsed,
     ],
   )
-
-  const restoreActionFocus = useCallback(() => {
-    const actionId = lastActionIdRef.current
-    if (!actionId) return
-    document
-      .querySelector<HTMLButtonElement>(`[data-action-id="${actionId}"]`)
-      ?.focus()
-  }, [])
 
   const actionCommandPort = useMemo<AgentActionCommandPort>(
     () => ({ toggle: toggleAction }),
@@ -291,6 +333,7 @@ export function AgentPageContent({
 
   const openReferencedRun = useCallback(
     (runId: string) => {
+      recordFocusReturn(null)
       setSelectedRun(null)
       setFocusedRunId(runId)
       setDag(null)
@@ -298,17 +341,18 @@ export function AgentPageContent({
       if (isMobile) setMobileLiveDeckOpen(true)
       else setRightSidebarCollapsed(false)
     },
-    [isMobile],
+    [isMobile, recordFocusReturn],
   )
 
   const openReferencedArtifact = useCallback(
     (artifactId: string) => {
+      recordFocusReturn(null)
       setFocusedArtifactId(artifactId)
       setLiveDeckTab("artifacts")
       if (isMobile) setMobileLiveDeckOpen(true)
       else setRightSidebarCollapsed(false)
     },
-    [isMobile],
+    [isMobile, recordFocusReturn],
   )
 
   const [showShortcuts, setShowShortcuts] = useState(false)
@@ -371,11 +415,16 @@ export function AgentPageContent({
         }
         if (isMobile && mobileLiveDeckOpen) {
           setMobileLiveDeckOpen(false)
-          queueMicrotask(restoreActionFocus)
+          queueMicrotask(restoreFocusReturn)
           return
         }
         if (!isMobile && !rightSidebarCollapsed) {
+          focusReturnRef.current = {
+            element: null,
+            actionId: ACTION_BY_LIVE_DECK_TAB[liveDeckTab] ?? null,
+          }
           setRightSidebarCollapsed(true)
+          queueMicrotask(restoreFocusReturn)
         }
       }
     }
@@ -383,9 +432,10 @@ export function AgentPageContent({
     return () => window.removeEventListener("keydown", handler)
   }, [
     isMobile,
+    liveDeckTab,
     mobileLiveDeckOpen,
     rightSidebarCollapsed,
-    restoreActionFocus,
+    restoreFocusReturn,
     showShortcuts,
     toggleRightSidebar,
   ])
@@ -419,8 +469,7 @@ export function AgentPageContent({
             side="right"
             closeLabel={t("workspacePanel.close")}
             onCloseAutoFocus={(event) => {
-              event.preventDefault()
-              restoreActionFocus()
+              if (restoreFocusReturn()) event.preventDefault()
             }}
             className="w-full max-w-none gap-0 overflow-hidden overscroll-contain p-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:max-w-[32rem]"
           >
