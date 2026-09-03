@@ -101,6 +101,22 @@ function writePanelPreferences(
   panelPreferenceListeners.get(key)?.forEach((listener) => listener())
 }
 
+function migratePanelPreferences(
+  projectId: string | null,
+  fromSessionId: string | null,
+  toSessionId: string | null,
+) {
+  const sourceKey = panelPreferenceKey(projectId, fromSessionId)
+  const targetKey = panelPreferenceKey(projectId, toSessionId)
+  if (!sourceKey || !targetKey || sourceKey === targetKey) return
+  const source = readPanelPreferences(sourceKey)
+  if (!source || readPanelPreferences(targetKey)) return
+  window.localStorage.setItem(targetKey, source)
+  window.localStorage.removeItem(sourceKey)
+  panelPreferenceListeners.get(targetKey)?.forEach((listener) => listener())
+  panelPreferenceListeners.get(sourceKey)?.forEach((listener) => listener())
+}
+
 const getServerPanelPreferences = () => null
 
 const ACTION_BY_TAB: Partial<Record<LiveDeckTab, AgentActionId>> = {
@@ -129,11 +145,14 @@ export function useAgentPanelController({
   const [resolvedPanelSessionId, setPanelSessionId] = useState("draft")
   const panelSessionId = routeSessionId ?? resolvedPanelSessionId
   const key = panelPreferenceKey(projectId, panelSessionId)
+  const draftKey = panelPreferenceKey(projectId, null)
   const subscribe = useCallback(
     (listener: () => void) => subscribeToPanelPreferences(key, listener),
     [key],
   )
-  const getSnapshot = useCallback(() => readPanelPreferences(key), [key])
+  const getSnapshot = useCallback(() => {
+    return readPanelPreferences(key) ?? (routeSessionId ? readPanelPreferences(draftKey) : null)
+  }, [draftKey, key, routeSessionId])
   const panelSnapshot = useSyncExternalStore(
     subscribe,
     getSnapshot,
@@ -143,6 +162,16 @@ export function useAgentPanelController({
   const update = useCallback(
     (updates: Partial<AgentPanelPreferences>) => writePanelPreferences(key, updates),
     [key],
+  )
+  useEffect(() => {
+    if (!routeSessionId) return
+    migratePanelPreferences(projectId, null, routeSessionId)
+  }, [projectId, routeSessionId])
+  const handoffDraftToSession = useCallback(
+    (sessionId: string, sessionProjectId = projectId) => {
+      migratePanelPreferences(sessionProjectId, null, sessionId)
+    },
+    [projectId],
   )
 
   const focusReturnRef = useRef<FocusReturn>({ element: null, actionId: null })
@@ -224,6 +253,7 @@ export function useAgentPanelController({
   return {
     panelSessionId,
     setPanelSessionId,
+    handoffDraftToSession,
     preferences,
     update,
     close,

@@ -98,6 +98,7 @@ export function AgentPageContent({
     resize: handleRightResize,
     resizeEnd: handleRightResizeEnd,
     setPanelSessionId,
+    handoffDraftToSession,
   } = useAgentPanelController({
     projectId: selectedProjectId,
     routeSessionId,
@@ -290,6 +291,7 @@ export function AgentPageContent({
   const handleSessionResolved = useCallback(
     (session: ConversationSummary) => {
       const projectId = session.projectId ?? ""
+      handoffDraftToSession(session.id, projectId)
       setActiveConversationId(session.id)
       setPanelSessionId(session.id)
       setActiveConversationTitle(session.title ?? "")
@@ -302,14 +304,16 @@ export function AgentPageContent({
       setConversationProjectId,
       setSelectedProjectId,
       setPanelSessionId,
+      handoffDraftToSession,
     ],
   )
   const handleActiveSessionIdChange = useCallback(
     (sessionId: string) => {
+      handoffDraftToSession(sessionId)
       setActiveConversationId(sessionId)
       setPanelSessionId(sessionId || "draft")
     },
-    [setActiveConversationId, setPanelSessionId],
+    [handoffDraftToSession, setActiveConversationId, setPanelSessionId],
   )
 
   // Keyboard shortcuts
