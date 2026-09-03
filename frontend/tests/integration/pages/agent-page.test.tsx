@@ -1,4 +1,10 @@
-import { act, forwardRef, useImperativeHandle, type ReactNode } from "react"
+import {
+  act,
+  forwardRef,
+  useImperativeHandle,
+  useState,
+  type ReactNode,
+} from "react"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -79,6 +85,7 @@ vi.mock("@/components/bioinfoflow/agent/agent-workbench", () => ({
     ref,
   ) {
     mocks.workbench(props)
+    const [draftSessionId, setDraftSessionId] = useState<string | null>(null)
     useImperativeHandle(ref, () => ({
       focusInput: vi.fn(),
       stop: vi.fn(),
@@ -95,6 +102,16 @@ vi.mock("@/components/bioinfoflow/agent/agent-workbench", () => ({
         >
           route to session
         </button>
+        <button
+          type="button"
+          data-testid="send-draft-message"
+          onClick={() =>
+            setDraftSessionId((current) => current ?? `draft-for-${props.projectId}`)
+          }
+        >
+          send draft message
+        </button>
+        <span data-testid="draft-session-id">{draftSessionId ?? "none"}</span>
         <button type="button" onClick={() => props.onOpenRun?.("run-42")}>
           Open referenced run
         </button>
@@ -258,6 +275,7 @@ describe("Agent pages", () => {
       "agent-panel:project-1:draft",
       JSON.stringify(draftPreferences),
     )
+    localStorage.setItem("agent-panel:project-1:draft:mobile-open", "true")
 
     renderAppPage(<AgentPageContent routeSessionId={null} />, {
       projectContext: { selectedProjectId: "project-1" },
@@ -284,6 +302,10 @@ describe("Agent pages", () => {
       )
     })
     expect(localStorage.getItem("agent-panel:project-1:draft")).toBeNull()
+    expect(
+      localStorage.getItem("agent-panel:project-1:session-new:mobile-open"),
+    ).toBe("true")
+    expect(localStorage.getItem("agent-panel:project-1:draft:mobile-open")).toBeNull()
   })
 
   it("persists draft handoff before route replacement", () => {
@@ -292,6 +314,7 @@ describe("Agent pages", () => {
       "agent-panel:project-1:draft",
       JSON.stringify(draftPreferences),
     )
+    localStorage.setItem("agent-panel:project-1:draft:mobile-open", "false")
     const view = renderAppPage(<AgentPageContent routeSessionId={null} />, {
       projectContext: { selectedProjectId: "project-1" },
     })
@@ -302,6 +325,10 @@ describe("Agent pages", () => {
       JSON.stringify(draftPreferences),
     )
     expect(localStorage.getItem("agent-panel:project-1:draft")).toBeNull()
+    expect(localStorage.getItem("agent-panel:project-1:session-raced:mobile-open")).toBe(
+      "false",
+    )
+    expect(localStorage.getItem("agent-panel:project-1:draft:mobile-open")).toBeNull()
 
     view.rerender(<AgentPageContent routeSessionId="session-raced" />)
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:browser")
@@ -312,6 +339,7 @@ describe("Agent pages", () => {
       "agent-panel:project-1:draft",
       JSON.stringify({ activeTab: "browser", open: true, width: 480 }),
     )
+    localStorage.setItem("agent-panel:project-1:draft:mobile-open", "true")
     const view = renderAppPage(<AgentPageContent routeSessionId={null} />, {
       projectContext: { selectedProjectId: "project-1" },
     })
@@ -322,6 +350,8 @@ describe("Agent pages", () => {
     expect(localStorage.getItem("agent-panel:project-1:draft")).toBe(
       JSON.stringify({ activeTab: "browser", open: true, width: 480 }),
     )
+    expect(localStorage.getItem("agent-panel:project-1:session-routed:mobile-open")).toBeNull()
+    expect(localStorage.getItem("agent-panel:project-1:draft:mobile-open")).toBe("true")
   })
 
   it("isolates run, artifact, and DAG state across session navigation", () => {
@@ -388,6 +418,31 @@ describe("Agent pages", () => {
     expect(screen.getByTestId("live-deck")).toHaveTextContent("run:run-a")
     fireEvent.click(screen.getByTestId("select-artifact"))
     expect(screen.getByTestId("live-deck")).toHaveTextContent("artifact:artifact-99")
+  })
+
+  it("remounts the draft workbench when the project changes", () => {
+    renderAppPage(
+      <>
+        <ProjectSwitcher />
+        <AgentPageContent routeSessionId={null} />
+      </>,
+      { projectContext: { selectedProjectId: "project-a" } },
+    )
+
+    fireEvent.click(screen.getByTestId("send-draft-message"))
+    expect(screen.getByTestId("draft-session-id")).toHaveTextContent(
+      "draft-for-project-a",
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "switch project" }))
+    fireEvent.click(screen.getByTestId("send-draft-message"))
+
+    expect(screen.getByTestId("agent-workbench")).toHaveTextContent(
+      "project:project-b",
+    )
+    expect(screen.getByTestId("draft-session-id")).toHaveTextContent(
+      "draft-for-project-b",
+    )
   })
 
   it("keeps draft preferences when the active session resets to an empty id", () => {
