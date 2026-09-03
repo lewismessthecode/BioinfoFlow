@@ -141,7 +141,7 @@ async def auth_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         async with fastapi_app.router.lifespan_context(fastapi_app):
             transport = ASGITransport(app=fastapi_app)
             async with AsyncClient(
-                transport=transport, base_url="http://test"
+                transport=transport, base_url="http://localhost"
             ) as client:
                 yield client
     finally:
