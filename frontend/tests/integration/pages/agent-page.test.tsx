@@ -3,7 +3,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import AgentSessionPage from "@/app/(app)/agent/[sessionId]/page"
-import AgentPage from "@/app/(app)/agent/page"
+import AgentPage, {
+  AgentPageContent,
+} from "@/app/(app)/agent/page"
 import { renderAppPage } from "@/tests/app-test-utils"
 
 const mocks = vi.hoisted(() => ({
@@ -180,6 +182,38 @@ describe("Agent pages", () => {
     )
   })
 
+  it("switches panel preferences when the session route changes", async () => {
+    localStorage.setItem(
+      "agent-panel:project-1:session-a",
+      JSON.stringify({ activeTab: "artifacts", open: true, width: 500 }),
+    )
+    localStorage.setItem(
+      "agent-panel:project-1:session-b",
+      JSON.stringify({ activeTab: "browser", open: true, width: 350 }),
+    )
+    const view = renderAppPage(
+      <AgentPageContent routeSessionId="session-a" />,
+      { projectContext: { selectedProjectId: "project-1" } },
+    )
+
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:artifacts")
+    expect(screen.getByTestId("agent-live-deck-rail")).toHaveAttribute(
+      "data-width",
+      "500",
+    )
+
+    view.rerender(
+      <AgentPageContent routeSessionId="session-b" />,
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:browser")
+      expect(screen.getByTestId("agent-live-deck-rail")).toHaveAttribute(
+        "data-width",
+        "350",
+      )
+    })
+  })
+
   it("registers independent desktop actions for every workspace surface", () => {
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
@@ -202,7 +236,7 @@ describe("Agent pages", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open browser" }))
     expect(screen.getByTestId("live-deck")).toHaveAttribute(
       "data-has-collapse",
-      "false",
+      "true",
     )
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:browser")
 
@@ -283,7 +317,7 @@ describe("Agent pages", () => {
     expect(rail).toHaveStyle({ width: "600px" })
     expect(screen.getByTestId("live-deck")).toHaveAttribute(
       "data-has-collapse",
-      "false",
+      "true",
     )
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:artifacts")
   })
