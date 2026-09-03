@@ -732,10 +732,10 @@ async def test_sse_releases_request_database_before_streaming(
         "root_path": "",
         "headers": [
             (b"accept", b"text/event-stream"),
-            (b"host", b"test"),
+            (b"host", b"localhost"),
         ],
         "client": ("127.0.0.1", 12345),
-        "server": ("test", 80),
+        "server": ("localhost", 80),
     }
     request_messages: list[asyncio.Queue[dict]] = []
     first_events = [asyncio.Event() for _ in range(3)]
