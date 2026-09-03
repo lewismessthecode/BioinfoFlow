@@ -459,13 +459,41 @@ function FileGlyph({ name }: { name: string }) {
   const extension = name.split(".").pop()?.toLowerCase()
   const baseClassName = "h-3.5 w-3.5 shrink-0"
   if (["json", "jsonl", "yaml", "yml", "toml"].includes(extension ?? "")) {
-    return <FileJson className={cn(baseClassName, "text-amber-500 dark:text-amber-400")} />
+    return (
+      <FileJson
+        data-file-accent="data"
+        className={cn(baseClassName, "text-amber-500 dark:text-amber-400")}
+      />
+    )
   }
   if (["zip", "tar", "gz", "bz2", "xz"].includes(extension ?? "")) {
-    return <FileArchive className={cn(baseClassName, "text-violet-500 dark:text-violet-400")} />
+    return (
+      <FileArchive
+        data-file-accent="archive"
+        className={cn(baseClassName, "text-violet-500 dark:text-violet-400")}
+      />
+    )
   }
   if (["js", "jsx", "ts", "tsx", "py", "r", "go", "rs", "java", "c", "cpp", "nf", "wdl", "sh"].includes(extension ?? "")) {
-    return <FileCode className={cn(baseClassName, "text-sky-500 dark:text-sky-400")} />
+    return (
+      <FileCode
+        data-file-accent="code"
+        className={cn(baseClassName, "text-sky-500 dark:text-sky-400")}
+      />
+    )
   }
-  return <FileText className={cn(baseClassName, "text-muted-foreground")} />
+  if (["md", "mdx", "txt", "log"].includes(extension ?? "")) {
+    return (
+      <FileText
+        data-file-accent="text"
+        className={cn(baseClassName, "text-blue-500 dark:text-blue-400")}
+      />
+    )
+  }
+  return (
+    <FileText
+      data-file-accent="file"
+      className={cn(baseClassName, "text-muted-foreground")}
+    />
+  )
 }
