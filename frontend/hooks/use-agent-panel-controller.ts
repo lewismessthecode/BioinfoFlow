@@ -101,6 +101,17 @@ function writePanelPreferences(
   panelPreferenceListeners.get(key)?.forEach((listener) => listener())
 }
 
+function mobilePreferenceKey(key: string | null) {
+  return key ? `${key}:mobile-open` : null
+}
+
+function writeMobileOpenPreference(key: string | null, open: boolean) {
+  const mobileKey = mobilePreferenceKey(key)
+  if (!mobileKey || typeof window === "undefined") return
+  window.localStorage.setItem(mobileKey, String(open))
+  panelPreferenceListeners.get(mobileKey)?.forEach((listener) => listener())
+}
+
 function migratePanelPreferences(
   projectId: string | null,
   fromSessionId: string | null,
@@ -156,6 +167,26 @@ export function useAgentPanelController({
     getServerPanelPreferences,
   )
   const preferences = parsePanelPreferences(panelSnapshot)
+  const mobileKey = mobilePreferenceKey(key)
+  const subscribeMobile = useCallback(
+    (listener: () => void) => subscribeToPanelPreferences(mobileKey, listener),
+    [mobileKey],
+  )
+  const getMobileSnapshot = useCallback(
+    () => readPanelPreferences(mobileKey),
+    [mobileKey],
+  )
+  const mobileSnapshot = useSyncExternalStore(
+    subscribeMobile,
+    getMobileSnapshot,
+    getServerPanelPreferences,
+  )
+  const mobileOpen =
+    mobileSnapshot === null ? preferences.open : mobileSnapshot === "true"
+  const setMobileOpen = useCallback(
+    (open: boolean) => writeMobileOpenPreference(key, open),
+    [key],
+  )
   const update = useCallback(
     (updates: Partial<AgentPanelPreferences>) => writePanelPreferences(key, updates),
     [key],
@@ -247,6 +278,8 @@ export function useAgentPanelController({
     panelSessionId,
     setPanelSessionId,
     handoffDraftToSession,
+    mobileOpen,
+    setMobileOpen,
     preferences,
     update,
     close,
