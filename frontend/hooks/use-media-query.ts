@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { COMPACT_MEDIA_QUERY } from "@/lib/layout-breakpoints"
 
 export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(false)
@@ -19,5 +20,5 @@ export function useMediaQuery(query: string): boolean {
 }
 
 export function useIsMobile(): boolean {
-  return useMediaQuery("(max-width: 1023px)")
+  return useMediaQuery(COMPACT_MEDIA_QUERY)
 }
