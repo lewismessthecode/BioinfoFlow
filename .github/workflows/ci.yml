@@ -107,7 +107,7 @@ jobs:
               workflows_changed="true"
             fi
 
-            if grep -Eq '^(backend/|frontend/)' "$changed_files"; then
+            if grep -Eq '^(backend/|frontend/|\.env\.example$)' "$changed_files"; then
               agent_browser_changed="true"
             fi
 
