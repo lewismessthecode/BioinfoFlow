@@ -204,46 +204,49 @@ test.describe("Agent workbench live run journey", () => {
     const filesButton = page.getByRole("button", {
       name: "Open files",
     })
-    const terminalButton = page.getByRole("button", { name: "Open terminal" })
     await expect(filesButton).toBeVisible()
-    await expect(terminalButton).toBeVisible()
+    await expect(page.getByRole("button", { name: "Open terminal" })).toBeVisible()
     const navbarActionGeometry = await page.evaluate(() => {
       const row = document.querySelector<HTMLElement>(
         '[data-testid="navbar-action-row"]',
       )
-      const terminal = document.querySelector<HTMLElement>(
-        'button[aria-label="Open terminal"]',
-      )
-      const files = document.querySelector<HTMLElement>(
-        'button[aria-label="Open files"]',
-      )
       const canvas = document.querySelector<HTMLElement>(
         '[data-testid="agent-workbench"]',
       )
-      if (!row || !terminal || !files || !canvas) return null
-      const terminalBox = terminal.getBoundingClientRect()
-      const filesBox = files.getBoundingClientRect()
+      if (!row || !canvas) return null
+      const actionButtons = Array.from(
+        row.querySelectorAll<HTMLElement>("[data-action-id]"),
+      )
+      const boxes = actionButtons.map((button) => button.getBoundingClientRect())
       return {
-        sameActionRow:
-          terminal.parentElement === row && files.parentElement === row,
-        terminalHeight: terminalBox.height,
-        filesHeight: filesBox.height,
-        verticalDelta: Math.abs(terminalBox.top - filesBox.top),
-        horizontalGap: filesBox.left - terminalBox.right,
-        filesAfterTerminal: filesBox.left > terminalBox.left,
-        filesInsideCanvas: canvas.contains(files),
+        actionIds: actionButtons.map((button) => button.dataset.actionId),
+        actionOwnedByNavbar: actionButtons.every(
+          (button) => button.parentElement === row,
+        ),
+        actionSizes: boxes.map(({ width, height }) => [width, height]),
+        actionGaps: boxes.slice(1).map(
+          (box, index) => box.left - boxes[index].right,
+        ),
+        navbarGap: Number.parseFloat(getComputedStyle(row).columnGap),
+        actionsInsideCanvas: actionButtons.some((button) => canvas.contains(button)),
       }
     })
-    expect(navbarActionGeometry?.sameActionRow).toBe(true)
-    expect(navbarActionGeometry?.terminalHeight).toBe(
-      navbarActionGeometry?.filesHeight,
-    )
-    expect(navbarActionGeometry?.terminalHeight).toBeGreaterThanOrEqual(32)
-    expect(navbarActionGeometry?.terminalHeight).toBeLessThanOrEqual(36)
-    expect(navbarActionGeometry?.verticalDelta).toBe(0)
-    expect(navbarActionGeometry?.horizontalGap).toBe(6)
-    expect(navbarActionGeometry?.filesAfterTerminal).toBe(true)
-    expect(navbarActionGeometry?.filesInsideCanvas).toBe(false)
+    expect(navbarActionGeometry?.actionIds).toEqual([
+      "browser",
+      "files",
+      "artifacts",
+      "dag",
+    ])
+    expect(navbarActionGeometry?.actionOwnedByNavbar).toBe(true)
+    expect(navbarActionGeometry?.actionSizes).toEqual([
+      [36, 36],
+      [36, 36],
+      [36, 36],
+      [36, 36],
+    ])
+    expect(navbarActionGeometry?.actionGaps).toEqual([6, 6, 6])
+    expect(navbarActionGeometry?.navbarGap).toBe(6)
+    expect(navbarActionGeometry?.actionsInsideCanvas).toBe(false)
     await filesButton.click()
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible()
     await expect(page.getByRole("tab", { name: "Workflow" })).toBeVisible()
