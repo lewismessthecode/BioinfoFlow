@@ -1,27 +1,30 @@
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test"
 
+import { disableKeylessAgentProviders } from "./support/keyless-agent"
+
 const backendPort = Number(process.env.PLAYWRIGHT_BACKEND_PORT || 8100)
 const apiBaseUrl = `http://127.0.0.1:${backendPort}/api/v1`
 
 async function createShellProject(
   request: APIRequestContext,
   testInfo: TestInfo,
-): Promise<string> {
+): Promise<{ id: string; name: string }> {
   const suffix = [
     testInfo.project.name,
     testInfo.workerIndex,
     testInfo.retry,
     Date.now(),
   ].join("-")
+  const name = `Agent shell ${suffix}`
   const response = await request.post(`${apiBaseUrl}/projects`, {
     data: {
-      name: `Agent shell ${suffix}`,
+      name,
       description: "Project created for agent shell characterization",
     },
   })
   await expect(response).toBeOK()
   const payload = (await response.json()) as { data: { id: string } }
-  return payload.data.id
+  return { id: payload.data.id, name }
 }
 
 async function openAgentShell(page: Page, projectId: string): Promise<void> {
@@ -40,8 +43,9 @@ test.describe("Agent workspace shell", () => {
     page,
     request,
   }, testInfo) => {
-    const projectId = await createShellProject(request, testInfo)
-    await openAgentShell(page, projectId)
+    await disableKeylessAgentProviders(request)
+    const project = await createShellProject(request, testInfo)
+    await openAgentShell(page, project.id)
 
     await expect(page.getByTestId("navbar-action-row")).toBeVisible()
     await expect(
@@ -51,6 +55,20 @@ test.describe("Agent workspace shell", () => {
       page.getByRole("button", { name: "Open workspace panel", exact: true }),
     ).toBeVisible()
     await expect(page.getByText(/Subagents/i)).toHaveCount(0)
+    const viewport = page.viewportSize()
+    if (!viewport) throw new Error("Agent shell screenshot requires a viewport")
+    await expect(page).toHaveScreenshot(
+      `agent-workspace-shell-${viewport.width}x${viewport.height}.png`,
+      {
+        animations: "disabled",
+        caret: "hide",
+        mask: [
+          page.locator("#sidebar-workspace-tree"),
+          page.getByText(project.name, { exact: true }),
+        ],
+        maskColor: "#ff00ff",
+      },
+    )
 
     const isMobile = (page.viewportSize()?.width ?? 0) < 768
     const workspaceButton = page.getByRole("button", {
