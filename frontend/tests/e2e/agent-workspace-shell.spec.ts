@@ -101,7 +101,27 @@ test.describe("Agent workspace shell", () => {
         caret: "hide",
       },
     )
-    await page.keyboard.press("Escape")
+    if (!isCompact) {
+      await page.getByRole("button", { name: "Open terminal", exact: true }).click()
+      await expect(page.getByTestId("terminal-dock-viewport")).toBeVisible()
+      await expect(page).toHaveScreenshot(
+        `agent-workspace-shell-${viewport.width}x${viewport.height}-open-terminal.png`,
+        {
+          animations: "disabled",
+          caret: "hide",
+          mask: [
+            page.locator("#sidebar-workspace-tree"),
+            page.getByText(project.name, { exact: true }),
+          ],
+          maskColor: "#ff00ff",
+        },
+      )
+    }
+    if (isCompact) {
+      await page.keyboard.press("Escape")
+    } else {
+      await filesButton.click()
+    }
     await expect(page.getByTestId("agent-live-deck-rail")).toHaveCount(0)
     await expect(page.getByRole("dialog")).toHaveCount(0)
     const filesBox = await filesButton.boundingBox()
@@ -243,7 +263,7 @@ test.describe("Agent workspace shell", () => {
         "300",
       )
       await expect(
-        page.getByRole("separator", { name: "Resize right sidebar" }),
+        page.getByRole("separator", { name: "Resize workspace panel" }),
       ).toHaveAttribute("aria-valuenow", "300")
       await expect(liveDeck.getByRole("tab", { name: "Files" })).toHaveAttribute(
         "data-state",
@@ -256,7 +276,9 @@ test.describe("Agent workspace shell", () => {
       await expect(filesButton).toBeFocused()
     }
 
-    await page.getByRole("button", { name: "Open terminal", exact: true }).click()
+    if (isCompact || (await page.getByTestId("terminal-dock-tab").count()) === 0) {
+      await page.getByRole("button", { name: "Open terminal", exact: true }).click()
+    }
     await expect(page.getByTestId("terminal-dock-tab")).toBeVisible()
     await expect(page.getByTestId("terminal-dock-viewport")).toBeVisible()
     await page.getByRole("button", { name: "Close terminal", exact: true }).click()
