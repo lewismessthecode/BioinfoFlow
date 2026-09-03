@@ -141,7 +141,11 @@ def terminal_test_client(
     fastapi_app.dependency_overrides[get_db] = override_get_db
 
     try:
-        with TestClient(fastapi_app) as client:
+        with TestClient(
+            fastapi_app,
+            base_url="http://localhost",
+            headers={"host": "localhost"},
+        ) as client:
             yield client, session_maker
     finally:
         fastapi_app.dependency_overrides.clear()
@@ -176,7 +180,8 @@ def test_terminal_websocket_streams_io_and_single_cwd_event(
     session_id = created.json()["data"]["id"]
 
     with client.websocket_connect(
-        f"/api/v1/terminal/sessions/{session_id}/ws"
+        f"/api/v1/terminal/sessions/{session_id}/ws",
+        headers={"host": "localhost"},
     ) as websocket:
         ready = websocket.receive_json()
         assert ready["type"] == "ready"
@@ -335,7 +340,8 @@ def test_remote_terminal_websocket_streams_io_and_client_actions(
     session_id = created.json()["data"]["id"]
 
     with client.websocket_connect(
-        f"/api/v1/terminal/sessions/{session_id}/ws"
+        f"/api/v1/terminal/sessions/{session_id}/ws",
+        headers={"host": "localhost"},
     ) as websocket:
         ready = websocket.receive_json()
         assert ready["type"] == "ready"
@@ -373,7 +379,8 @@ def test_terminal_websocket_rejects_missing_session(terminal_test_client):
     client, _ = terminal_test_client
 
     with client.websocket_connect(
-        f"/api/v1/terminal/sessions/{uuid4()}/ws"
+        f"/api/v1/terminal/sessions/{uuid4()}/ws",
+        headers={"host": "localhost"},
     ) as websocket:
         with pytest.raises(WebSocketDisconnect) as exc_info:
             websocket.receive_json()
@@ -412,7 +419,8 @@ def test_terminal_websocket_requires_auth_when_enabled(
     client.cookies.clear()
 
     with client.websocket_connect(
-        f"/api/v1/terminal/sessions/{session_id}/ws"
+        f"/api/v1/terminal/sessions/{session_id}/ws",
+        headers={"host": "localhost"},
     ) as websocket:
         with pytest.raises(WebSocketDisconnect) as exc_info:
             websocket.send_json({"type": "ping"})
