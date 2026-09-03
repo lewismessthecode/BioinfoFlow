@@ -98,6 +98,8 @@ export function AgentPageContent({
     resizeEnd: handleRightResizeEnd,
     setPanelSessionId,
     handoffDraftToSession,
+    mobileOpen,
+    setMobileOpen,
   } = useAgentPanelController({
     projectId: selectedProjectId,
     routeSessionId,
@@ -107,7 +109,7 @@ export function AgentPageContent({
   const liveDeckTab = panelPreferences.activeTab
   const rightSidebarWidth = panelPreferences.width
   const rightSidebarCollapsed = !panelPreferences.open
-  const mobileLiveDeckOpen = panelPreferences.open
+  const mobileLiveDeckOpen = mobileOpen
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
   const [focusedRunId, setFocusedRunId] = useState<string | null>(null)
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null)
@@ -154,16 +156,16 @@ export function AgentPageContent({
   const toggleMobileLiveDeck = useCallback(() => {
     const nextOpen = !mobileLiveDeckOpen
     if (!nextOpen) {
-      closeLiveDeck()
+      ensurePanelFocusReturn()
+      setMobileOpen(false)
       return
     }
     ensurePanelFocusReturn()
-    updatePanelPreferences({ open: nextOpen })
+    setMobileOpen(true)
   }, [
-    closeLiveDeck,
     ensurePanelFocusReturn,
     mobileLiveDeckOpen,
-    updatePanelPreferences,
+    setMobileOpen,
   ])
 
   const toggleAction = useCallback(
@@ -175,20 +177,32 @@ export function AgentPageContent({
         (isMobile ? mobileLiveDeckOpen : !rightSidebarCollapsed)
 
       if (isActive) {
-        closeLiveDeck()
+        if (isMobile) {
+          ensurePanelFocusReturn()
+          setMobileOpen(false)
+        } else {
+          closeLiveDeck()
+        }
         return
       }
 
-      updatePanelPreferences({ activeTab: nextTab, open: true })
+      if (isMobile) {
+        setMobileOpen(true)
+        updatePanelPreferences({ activeTab: nextTab })
+      } else {
+        updatePanelPreferences({ activeTab: nextTab, open: true })
+      }
     },
     [
       isMobile,
       liveDeckTab,
       mobileLiveDeckOpen,
+      setMobileOpen,
       recordFocusReturn,
       rightSidebarCollapsed,
       updatePanelPreferences,
       closeLiveDeck,
+      ensurePanelFocusReturn,
     ],
   )
 
@@ -282,9 +296,14 @@ export function AgentPageContent({
       setSelectedRun(null)
       setFocusedRunId(runId)
       setDag(null)
-      updatePanelPreferences({ activeTab: "dag", open: true })
+      if (isMobile) {
+        setMobileOpen(true)
+        updatePanelPreferences({ activeTab: "dag" })
+      } else {
+        updatePanelPreferences({ activeTab: "dag", open: true })
+      }
     },
-    [recordFocusReturn, stateIdentity, updatePanelPreferences],
+    [isMobile, recordFocusReturn, setMobileOpen, stateIdentity, updatePanelPreferences],
   )
 
   const openReferencedArtifact = useCallback(
@@ -295,9 +314,14 @@ export function AgentPageContent({
       setDag(null)
       setActiveStateIdentity(stateIdentity)
       setFocusedArtifactId(artifactId)
-      updatePanelPreferences({ activeTab: "artifacts", open: true })
+      if (isMobile) {
+        setMobileOpen(true)
+        updatePanelPreferences({ activeTab: "artifacts" })
+      } else {
+        updatePanelPreferences({ activeTab: "artifacts", open: true })
+      }
     },
-    [recordFocusReturn, stateIdentity, updatePanelPreferences],
+    [isMobile, recordFocusReturn, setMobileOpen, stateIdentity, updatePanelPreferences],
   )
   const handleSelectedArtifactIdChange = useCallback(
     (artifactId: string | null) => {
@@ -391,7 +415,8 @@ export function AgentPageContent({
           return
         }
         if (isMobile && mobileLiveDeckOpen) {
-          closeLiveDeck()
+          ensurePanelFocusReturn()
+          setMobileOpen(false)
           return
         }
         if (!isMobile && !rightSidebarCollapsed) {
@@ -404,12 +429,14 @@ export function AgentPageContent({
   }, [
     isMobile,
     mobileLiveDeckOpen,
-    closeLiveDeck,
+    ensurePanelFocusReturn,
     rightSidebarCollapsed,
     restoreFocusReturn,
     showShortcuts,
     toggleMobileLiveDeck,
     toggleRightSidebar,
+    setMobileOpen,
+    closeLiveDeck,
   ])
 
   return (
@@ -440,8 +467,11 @@ export function AgentPageContent({
         <Sheet
           open={mobileLiveDeckOpen}
           onOpenChange={(open) => {
-            if (open) updatePanelPreferences({ open: true })
-            else closeLiveDeck()
+            if (open) setMobileOpen(true)
+            else {
+              ensurePanelFocusReturn()
+              setMobileOpen(false)
+            }
           }}
         >
           <SheetContent

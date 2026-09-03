@@ -462,6 +462,49 @@ describe("Agent pages", () => {
     )
   })
 
+  it("defaults an invalid tab to workspace when switching projects", () => {
+    localStorage.setItem(
+      "agent-panel:project-a:draft",
+      JSON.stringify({ activeTab: "artifacts", open: true, width: 400 }),
+    )
+    localStorage.setItem(
+      "agent-panel:project-b:draft",
+      JSON.stringify({ activeTab: "not-a-live-deck-tab", open: true, width: 400 }),
+    )
+    renderAppPage(
+      <>
+        <ProjectSwitcher />
+        <AgentPageContent routeSessionId={null} />
+      </>,
+      { projectContext: { selectedProjectId: "project-a" } },
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "switch project" }))
+
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:workspace")
+    expect(localStorage.getItem("agent-panel:project-b:draft")).toBe(
+      JSON.stringify({ activeTab: "not-a-live-deck-tab", open: true, width: 400 }),
+    )
+  })
+
+  it("does not let desktop panel state overwrite mobile-open persistence", () => {
+    localStorage.setItem(
+      "agent-panel:project-1:draft",
+      JSON.stringify({ activeTab: "artifacts", open: true, width: 400 }),
+    )
+    localStorage.setItem("agent-panel:project-1:draft:mobile-open", "true")
+    const view = renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    expect(localStorage.getItem("agent-panel:project-1:draft:mobile-open")).toBe("true")
+    mocks.isMobile.mockReturnValue(true)
+    view.rerender(<AgentPage />)
+
+    expect(screen.getByTestId("live-deck")).toBeInTheDocument()
+    expect(localStorage.getItem("agent-panel:project-1:draft:mobile-open")).toBe("true")
+  })
+
   it("keeps the panel storage listener bound across panel updates", async () => {
     const addEventListener = vi.spyOn(window, "addEventListener")
     renderAppPage(<AgentPage />, {
@@ -473,14 +516,14 @@ describe("Agent pages", () => {
     await waitFor(() => {
       expect(
         addEventListener.mock.calls.filter(([type]) => type === "storage"),
-      ).toHaveLength(1)
+      ).toHaveLength(2)
     })
 
     fireEvent.click(screen.getByRole("button", { name: "Open artifacts" }))
     fireEvent.click(screen.getByTestId("agent-action-artifacts"))
     expect(
       addEventListener.mock.calls.filter(([type]) => type === "storage"),
-    ).toHaveLength(1)
+    ).toHaveLength(2)
     addEventListener.mockRestore()
   })
 
