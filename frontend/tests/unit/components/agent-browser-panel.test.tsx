@@ -28,7 +28,20 @@ import {
 describe("AgentBrowserPanel", () => {
   it("normalizes hostnames and rejects unsafe protocols", () => {
     expect(resolveEmbeddedBrowserUrl("example.com", "http://localhost")).toBe("https://example.com/")
+    expect(resolveEmbeddedBrowserUrl("example.com:8080", "http://localhost")).toBe(
+      "https://example.com:8080/",
+    )
+    expect(resolveEmbeddedBrowserUrl("example.com?x=1", "http://localhost")).toBe(
+      "https://example.com/?x=1",
+    )
+    expect(resolveEmbeddedBrowserUrl("example.com#section", "http://localhost")).toBe(
+      "https://example.com/#section",
+    )
+    expect(resolveEmbeddedBrowserUrl("/runs/1", "http://localhost:3000")).toBe(
+      "http://localhost:3000/runs/1",
+    )
     expect(resolveEmbeddedBrowserUrl("javascript:alert(1)", "http://localhost")).toBe("")
+    expect(resolveEmbeddedBrowserUrl("not a url", "http://localhost")).toBe("")
   })
 
   it("navigates inside a sandboxed iframe", async () => {
