@@ -11,6 +11,7 @@ from app.services.remote_execution import RemoteConnectionConfig
 from app.services.terminal_service import (
     DefaultRemoteTerminalFactory,
     TerminalSessionManager,
+    TerminalSubscriberQueue,
 )
 from app.utils.exceptions import BadRequestError
 
@@ -61,6 +62,18 @@ class FakeRemoteTerminalTransport:
 class HangingTerminateRemoteTerminalTransport(FakeRemoteTerminalTransport):
     async def terminate(self) -> None:
         await asyncio.Event().wait()
+
+
+class BlockingTerminateRemoteTerminalTransport(FakeRemoteTerminalTransport):
+    def __init__(self) -> None:
+        super().__init__()
+        self.terminate_started = asyncio.Event()
+        self.release_terminate = asyncio.Event()
+
+    async def terminate(self) -> None:
+        self.terminate_started.set()
+        await self.release_terminate.wait()
+        await super().terminate()
 
 
 class _FakeAsyncSshProcess:
@@ -222,6 +235,79 @@ async def test_remote_terminal_factory_uses_system_ssh_jump_for_outer_transport(
 
 
 @pytest.mark.asyncio
+async def test_reopen_waits_for_project_transport_teardown():
+    transports: list[FakeRemoteTerminalTransport] = []
+
+    async def fake_remote_factory(**_kwargs):
+        transport = (
+            BlockingTerminateRemoteTerminalTransport()
+            if not transports
+            else FakeRemoteTerminalTransport()
+        )
+        transports.append(transport)
+        return transport
+
+    manager = TerminalSessionManager(
+        shell="/bin/sh",
+        idle_timeout_seconds=30,
+        remote_terminal_factory=fake_remote_factory,
+    )
+    connection = RemoteConnectionConfig(
+        id="conn-1",
+        name="Phoenix login",
+        host="login.example.org",
+        username="alice",
+    )
+    first = await manager.create_or_get_remote(
+        project_id="project-reopen-during-close",
+        connection=connection,
+        remote_root_path="/data/phoenix",
+        target_label="remote · Phoenix login",
+    )
+    close_task = asyncio.create_task(manager.close_session(first.id))
+
+    try:
+        transport = transports[0]
+        assert isinstance(transport, BlockingTerminateRemoteTerminalTransport)
+        await asyncio.wait_for(transport.terminate_started.wait(), timeout=1)
+
+        reopen_task = asyncio.create_task(
+            manager.create_or_get_remote(
+                project_id=first.project_id,
+                connection=connection,
+                remote_root_path="/data/phoenix",
+                target_label="remote · Phoenix login",
+            )
+        )
+        await asyncio.sleep(0)
+
+        assert not reopen_task.done()
+        assert len(transports) == 1
+
+        transport.release_terminate.set()
+        assert await asyncio.wait_for(close_task, timeout=1) is True
+        reopened = await asyncio.wait_for(reopen_task, timeout=1)
+
+        assert reopened.id != first.id
+        assert len(transports) == 2
+        assert transports[0].terminated is True
+    finally:
+        if not close_task.done():
+            if transports and isinstance(
+                transports[0], BlockingTerminateRemoteTerminalTransport
+            ):
+                transports[0].release_terminate.set()
+            close_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await close_task
+        if "reopen_task" in locals() and not reopen_task.done():
+            reopen_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reopen_task
+        await manager.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_remote_terminal_factory_rejects_nested_jump_connections():
     nested_jump = RemoteConnectionConfig(
         id="nested-jump",
@@ -287,6 +373,7 @@ async def test_terminal_session_manager_streams_output_and_reports_cwd(tmp_path:
         assert cwd["cwd"] == str(nested.resolve())
     finally:
         await manager.close_session(session.id)
+        assert queue.closed.is_set()
         await manager.shutdown()
 
 
@@ -564,6 +651,69 @@ async def test_terminal_session_manager_replays_initial_output_to_late_subscribe
 
 
 @pytest.mark.asyncio
+async def test_terminal_session_manager_bounds_slow_subscriber_queue(tmp_path: Path):
+    manager = TerminalSessionManager(shell="/bin/sh", idle_timeout_seconds=30)
+    snapshot = await manager.create_or_get(project_id="project-overflow", root_path=tmp_path)
+
+    try:
+        queue = await manager.attach(snapshot.id)
+        session = manager._sessions_by_id[snapshot.id]
+
+        for index in range(manager._SUBSCRIBER_QUEUE_MAXSIZE + 20):
+            await manager._broadcast(
+                session,
+                {"type": "output", "data": f"chunk-{index}"},
+            )
+        await manager._broadcast(session, {"type": "error", "message": "important"})
+        await manager._broadcast(session, {"type": "exit", "exit_code": 1})
+
+        assert queue.qsize() == manager._SUBSCRIBER_QUEUE_MAXSIZE
+        messages = [queue.get_nowait() for _ in range(queue.qsize())]
+        output_messages = [message for message in messages if message["type"] == "output"]
+        assert messages[0]["type"] == "ready"
+        assert messages[1]["type"] == "cwd"
+        assert output_messages[0]["data"] == "chunk-24"
+        assert [message["type"] for message in messages[-2:]] == ["error", "exit"]
+    finally:
+        await manager.close_session(snapshot.id)
+        await manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_terminal_session_manager_closes_queue_without_output_capacity():
+    manager = TerminalSessionManager(shell="/bin/sh", idle_timeout_seconds=30)
+
+    try:
+        queue = TerminalSubscriberQueue(maxsize=manager._SUBSCRIBER_QUEUE_MAXSIZE)
+        assert manager.enqueue_subscriber_message(queue, {"type": "ready"})
+        assert manager.enqueue_subscriber_message(queue, {"type": "cwd", "cwd": "/tmp"})
+        for _ in range(manager._SUBSCRIBER_QUEUE_MAXSIZE - 2):
+            assert manager.enqueue_subscriber_message(
+                queue, {"type": "error", "message": "diagnostic"}
+            )
+        assert queue.qsize() == manager._SUBSCRIBER_QUEUE_MAXSIZE
+        assert not manager.enqueue_subscriber_message(
+            queue, {"type": "exit", "exit_code": 1}
+        )
+        assert queue.closed.is_set()
+        assert queue.get_nowait()["type"] == "ready"
+        assert queue.get_nowait()["type"] == "cwd"
+    finally:
+        await manager.shutdown()
+
+
+def test_terminal_subscriber_close_reason_is_immutable():
+    queue = TerminalSubscriberQueue(maxsize=2)
+
+    queue.close("slow")
+    queue.close("exit")
+    queue.close("shutdown")
+
+    assert queue.closed.is_set()
+    assert queue.close_reason == "slow"
+
+
+@pytest.mark.asyncio
 async def test_terminal_session_manager_rejects_paths_outside_project_root(
     tmp_path: Path,
 ):
@@ -602,6 +752,8 @@ async def test_terminal_session_manager_evicts_exited_sessions(tmp_path: Path):
     try:
         await manager.send_input(session.id, "exit\n")
         await _next_message(queue, "exit")
+        assert queue.closed.is_set()
+        assert queue.close_reason == "exit"
 
         deadline = asyncio.get_running_loop().time() + 5
         while asyncio.get_running_loop().time() < deadline:
@@ -613,6 +765,12 @@ async def test_terminal_session_manager_evicts_exited_sessions(tmp_path: Path):
             await asyncio.sleep(0.05)
         else:
             raise AssertionError("Exited session was not evicted from the manager")
+        with pytest.raises(KeyError):
+            await manager.send_input(session.id, "late input")
+        with pytest.raises(KeyError):
+            await manager.resize(session.id, cols=80, rows=24)
+        with pytest.raises(KeyError):
+            await manager.change_directory(session.id, ".")
     finally:
         await manager.shutdown()
 

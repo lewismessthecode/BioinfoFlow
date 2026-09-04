@@ -225,13 +225,29 @@ class _TerminalSession:
     status: str = "running"
     exit_code: int | None = None
     subscribers: set[asyncio.Queue[dict]] = field(default_factory=set)
-    output_backlog: list[str] = field(default_factory=list)
+    output_backlog: list[dict[str, object]] = field(default_factory=list)
+    next_output_event_id: int = 0
     reader_task: asyncio.Task | None = None
     last_touched: float = 0.0
 
 
+class TerminalSubscriberQueue(asyncio.Queue[dict]):
+    """Bounded subscriber queue with an explicit slow-consumer close signal."""
+
+    def __init__(self, *, maxsize: int) -> None:
+        super().__init__(maxsize=maxsize)
+        self.closed = asyncio.Event()
+        self.close_reason: str | None = None
+
+    def close(self, reason: str) -> None:
+        if self.close_reason is None:
+            self.close_reason = reason
+        self.closed.set()
+
+
 class TerminalSessionManager:
     _MAX_OUTPUT_BACKLOG_CHUNKS = 64
+    _SUBSCRIBER_QUEUE_MAXSIZE = 128
 
     def __init__(
         self,
@@ -251,6 +267,7 @@ class TerminalSessionManager:
         )
         self._sessions_by_id: dict[str, _TerminalSession] = {}
         self._project_index: dict[str, str] = {}
+        self._closing_projects: dict[str, asyncio.Future[None]] = {}
         self._lock = asyncio.Lock()
         self._cleanup_task: asyncio.Task | None = None
 
@@ -285,29 +302,37 @@ class TerminalSessionManager:
         root_path: Path,
         shell: str | None = None,
     ) -> TerminalSessionSnapshot:
-        async with self._lock:
-            existing_id = self._project_index.get(project_id)
-            existing = self._sessions_by_id.get(existing_id) if existing_id else None
-            if existing and existing.status == "running":
-                existing.last_touched = asyncio.get_running_loop().time()
-                return self._snapshot(existing)
-            if existing:
-                self._evict_session_locked(existing)
+        while True:
+            async with self._lock:
+                closing = self._closing_projects.get(project_id)
+                if closing is None:
+                    existing_id = self._project_index.get(project_id)
+                    existing = (
+                        self._sessions_by_id.get(existing_id) if existing_id else None
+                    )
+                    if existing and existing.status == "running":
+                        existing.last_touched = asyncio.get_running_loop().time()
+                        return self._snapshot(existing)
+                    if existing:
+                        self._evict_session_locked(existing)
 
-            root = root_path.expanduser().resolve()
-            root.mkdir(parents=True, exist_ok=True)
-            session = await asyncio.to_thread(
-                self._spawn_session,
-                project_id=project_id,
-                root_path=root,
-                shell=shell or self._default_shell,
-            )
-            session.last_touched = asyncio.get_running_loop().time()
-            session.reader_task = asyncio.create_task(self._read_output(session))
-            self._sessions_by_id[session.id] = session
-            self._project_index[project_id] = session.id
-            self._ensure_cleanup_task()
-            return self._snapshot(session)
+                    root = root_path.expanduser().resolve()
+                    root.mkdir(parents=True, exist_ok=True)
+                    session = await asyncio.to_thread(
+                        self._spawn_session,
+                        project_id=project_id,
+                        root_path=root,
+                        shell=shell or self._default_shell,
+                    )
+                    session.last_touched = asyncio.get_running_loop().time()
+                    session.reader_task = asyncio.create_task(
+                        self._read_output(session)
+                    )
+                    self._sessions_by_id[session.id] = session
+                    self._project_index[project_id] = session.id
+                    self._ensure_cleanup_task()
+                    return self._snapshot(session)
+            await asyncio.shield(closing)
 
     async def create_or_get_remote(
         self,
@@ -320,83 +345,142 @@ class TerminalSessionManager:
         cols: int = 80,
         rows: int = 24,
     ) -> TerminalSessionSnapshot:
-        async with self._lock:
-            existing_id = self._project_index.get(project_id)
-            existing = self._sessions_by_id.get(existing_id) if existing_id else None
-            if existing and self._is_live_session(existing):
-                existing.last_touched = asyncio.get_running_loop().time()
-                return self._snapshot(existing)
-            if existing:
-                self._evict_session_locked(existing)
-
         remote_root = _normalize_remote_root(remote_root_path)
         resolved_shell = shell or self._default_shell
-        transport: TerminalTransport | None = None
-        try:
-            transport = await self._remote_terminal_factory(
-                connection=connection,
-                remote_root_path=remote_root,
-                cols=cols,
-                rows=rows,
-                env=self._build_terminal_environment(shell=resolved_shell),
-            )
-            session = _TerminalSession(
-                id=str(uuid.uuid4()),
-                project_id=project_id,
-                shell=resolved_shell,
-                root_path=None,
-                remote_root_path=remote_root,
-                cwd=remote_root,
-                transport=transport,
-                target_type="remote",
-                target_label=target_label,
-                remote_connection_id=connection.id,
-            )
-            session.last_touched = asyncio.get_running_loop().time()
-
+        while True:
             async with self._lock:
-                existing_id = self._project_index.get(project_id)
-                existing = (
-                    self._sessions_by_id.get(existing_id) if existing_id else None
-                )
-                if existing and self._is_live_session(existing):
-                    existing.last_touched = asyncio.get_running_loop().time()
-                    snapshot = self._snapshot(existing)
-                    transport_to_close = transport
-                    transport = None
-                else:
+                closing = self._closing_projects.get(project_id)
+                if closing is None:
+                    existing_id = self._project_index.get(project_id)
+                    existing = (
+                        self._sessions_by_id.get(existing_id) if existing_id else None
+                    )
+                    if existing and self._is_live_session(existing):
+                        existing.last_touched = asyncio.get_running_loop().time()
+                        return self._snapshot(existing)
                     if existing:
                         self._evict_session_locked(existing)
-                    session.reader_task = asyncio.create_task(
-                        self._read_output(session)
-                    )
-                    self._sessions_by_id[session.id] = session
-                    self._project_index[project_id] = session.id
-                    self._ensure_cleanup_task()
-                    return self._snapshot(session)
+            if closing is not None:
+                await asyncio.shield(closing)
+                continue
 
-            await self._terminate_transport(transport_to_close)
-            return snapshot
-        except BaseException:
-            if transport is not None:
-                await self._terminate_transport(transport)
-            raise
+            transport: TerminalTransport | None = None
+            try:
+                transport = await self._remote_terminal_factory(
+                    connection=connection,
+                    remote_root_path=remote_root,
+                    cols=cols,
+                    rows=rows,
+                    env=self._build_terminal_environment(shell=resolved_shell),
+                )
+                session = _TerminalSession(
+                    id=str(uuid.uuid4()),
+                    project_id=project_id,
+                    shell=resolved_shell,
+                    root_path=None,
+                    remote_root_path=remote_root,
+                    cwd=remote_root,
+                    transport=transport,
+                    target_type="remote",
+                    target_label=target_label,
+                    remote_connection_id=connection.id,
+                )
+                session.last_touched = asyncio.get_running_loop().time()
+                closing_to_wait: asyncio.Future[None] | None = None
+                transport_to_close: TerminalTransport | None = None
+                snapshot: TerminalSessionSnapshot | None = None
 
-    async def attach(self, session_id: str) -> asyncio.Queue[dict]:
+                async with self._lock:
+                    closing_to_wait = self._closing_projects.get(project_id)
+                    if closing_to_wait is None:
+                        existing_id = self._project_index.get(project_id)
+                        existing = (
+                            self._sessions_by_id.get(existing_id)
+                            if existing_id
+                            else None
+                        )
+                        if existing and self._is_live_session(existing):
+                            existing.last_touched = asyncio.get_running_loop().time()
+                            snapshot = self._snapshot(existing)
+                            transport_to_close = transport
+                            transport = None
+                        else:
+                            if existing:
+                                self._evict_session_locked(existing)
+                            session.reader_task = asyncio.create_task(
+                                self._read_output(session)
+                            )
+                            self._sessions_by_id[session.id] = session
+                            self._project_index[project_id] = session.id
+                            self._ensure_cleanup_task()
+                            return self._snapshot(session)
+                    else:
+                        transport_to_close = transport
+                        transport = None
+
+                if transport_to_close is not None:
+                    await self._terminate_transport(transport_to_close)
+                if closing_to_wait is not None:
+                    await asyncio.shield(closing_to_wait)
+                    continue
+                assert snapshot is not None
+                return snapshot
+            except BaseException:
+                if transport is not None:
+                    await self._terminate_transport(transport)
+                raise
+
+    async def attach(self, session_id: str) -> TerminalSubscriberQueue:
         async with self._lock:
             session = self._require_session(session_id)
-            queue: asyncio.Queue[dict] = asyncio.Queue()
+            queue = TerminalSubscriberQueue(maxsize=self._SUBSCRIBER_QUEUE_MAXSIZE)
             session.subscribers.add(queue)
             session.last_touched = asyncio.get_running_loop().time()
-            queue.put_nowait(
-                {"type": "ready", "session": asdict(self._snapshot(session))}
+            self.enqueue_subscriber_message(
+                queue, {"type": "ready", "session": asdict(self._snapshot(session))}
             )
-            queue.put_nowait({"type": "cwd", "cwd": session.cwd})
-            for chunk in session.output_backlog:
-                queue.put_nowait({"type": "output", "data": chunk})
+            self.enqueue_subscriber_message(queue, {"type": "cwd", "cwd": session.cwd})
+            for event in session.output_backlog:
+                self.enqueue_subscriber_message(queue, event)
             return queue
 
+    def enqueue_subscriber_message(
+        self, queue: TerminalSubscriberQueue, message: dict
+    ) -> bool:
+        """Enqueue with bounded drop-oldest backpressure.
+
+        Output is disposable under pressure; lifecycle messages remain FIFO and
+        are admitted after the oldest output is removed.
+        """
+        try:
+            if queue.full():
+                queued_items: list[dict] = []
+                while not queue.empty():
+                    queued_items.append(queue.get_nowait())
+                drop_index = next(
+                    (
+                        index
+                        for index, queued in enumerate(queued_items)
+                        if queued.get("type") == "output"
+                    ),
+                    None,
+                )
+                if drop_index is None:
+                    for queued in queued_items:
+                        queue.put_nowait(queued)
+                    queue.close("slow")
+                    return False
+                del queued_items[drop_index]
+                for queued in queued_items:
+                    queue.put_nowait(queued)
+            queue.put_nowait(message)
+            return True
+        except (asyncio.QueueFull, RuntimeError):
+            return False
+
     async def detach(self, session_id: str, queue: asyncio.Queue[dict]) -> None:
+        if isinstance(queue, TerminalSubscriberQueue):
+            queue.close("teardown")
         async with self._lock:
             session = self._sessions_by_id.get(session_id)
             if not session:
@@ -435,15 +519,25 @@ class TerminalSessionManager:
         await self._broadcast(session, {"type": "cwd", "cwd": session.cwd})
         return session.cwd
 
-    async def close_session(self, session_id: str) -> bool:
+    async def close_session(self, session_id: str, *, reason: str = "teardown") -> bool:
         session: _TerminalSession | None
+        closing: asyncio.Future[None]
         async with self._lock:
             session = self._sessions_by_id.pop(session_id, None)
             if not session:
                 return False
+            closing = asyncio.get_running_loop().create_future()
+            self._closing_projects[session.project_id] = closing
             self._project_index.pop(session.project_id, None)
             session.status = "closed"
-        await self._terminate_session(session)
+            self._close_subscribers(session, reason)
+        try:
+            await self._terminate_session(session)
+        finally:
+            async with self._lock:
+                if self._closing_projects.get(session.project_id) is closing:
+                    self._closing_projects.pop(session.project_id, None)
+                    closing.set_result(None)
         return True
 
     async def shutdown(self) -> None:
@@ -461,6 +555,7 @@ class TerminalSessionManager:
 
         for session in sessions:
             session.status = "closed"
+            self._close_subscribers(session, "shutdown")
             await self._terminate_session(session)
 
     def _spawn_session(
@@ -559,14 +654,21 @@ class TerminalSessionManager:
                     break
                 session.last_touched = asyncio.get_running_loop().time()
                 decoded = chunk.decode("utf-8", errors="replace")
-                session.output_backlog.append(decoded)
+                event = {
+                    "type": "output",
+                    "data": decoded,
+                    "session_id": session.id,
+                    "event_id": session.next_output_event_id,
+                }
+                session.next_output_event_id += 1
+                session.output_backlog.append(event)
                 if len(session.output_backlog) > self._MAX_OUTPUT_BACKLOG_CHUNKS:
                     del session.output_backlog[
                         : len(session.output_backlog) - self._MAX_OUTPUT_BACKLOG_CHUNKS
                     ]
                 await self._broadcast(
                     session,
-                    {"type": "output", "data": decoded},
+                    event,
                 )
         except OSError:
             pass
@@ -580,6 +682,7 @@ class TerminalSessionManager:
                     session,
                     {"type": "exit", "exit_code": exit_code},
                 )
+                self._close_subscribers(session, "exit")
                 async with self._lock:
                     self._evict_session_locked(session)
 
@@ -599,9 +702,7 @@ class TerminalSessionManager:
     async def _broadcast(self, session: _TerminalSession, message: dict) -> None:
         stale: list[asyncio.Queue[dict]] = []
         for queue in session.subscribers:
-            try:
-                queue.put_nowait(message)
-            except RuntimeError:
+            if not self.enqueue_subscriber_message(queue, message):
                 stale.append(queue)
         if stale:
             async with self._lock:
@@ -617,6 +718,11 @@ class TerminalSessionManager:
         if session.reader_task:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._await_task_with_timeout(session.reader_task)
+
+    @staticmethod
+    def _close_subscribers(session: _TerminalSession, reason: str) -> None:
+        for queue in session.subscribers:
+            queue.close(reason)
 
     async def _wait_transport(self, transport: TerminalTransport) -> int:
         return await self._await_task_with_timeout(transport.wait(), default=-9)
@@ -664,7 +770,7 @@ class TerminalSessionManager:
                         if now - session.last_touched >= self._idle_timeout_seconds:
                             stale_ids.append(session_id)
                 for session_id in stale_ids:
-                    await self.close_session(session_id)
+                    await self.close_session(session_id, reason="idle")
         except asyncio.CancelledError:
             raise
 

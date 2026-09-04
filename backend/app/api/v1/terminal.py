@@ -27,6 +27,7 @@ from app.services.remote_connection_service import RemoteConnectionService
 from app.services.project_service import ProjectService
 from app.services.terminal_service import (
     TerminalNotInteractiveError,
+    TerminalSubscriberQueue,
     terminal_manager,
 )
 from app.utils.exceptions import NotFoundError, PermissionDeniedError
@@ -36,6 +37,95 @@ from app.utils.responses import success_response
 router = APIRouter(prefix="/terminal", tags=["terminal"])
 
 TERMINAL_NOT_INTERACTIVE_MESSAGE = "Terminal target is not interactive yet."
+TERMINAL_SESSION_CLOSED_MESSAGE = "Terminal session is no longer available."
+
+
+async def _send_terminal_messages(
+    websocket: WebSocket, queue: TerminalSubscriberQueue
+) -> None:
+    children: set[asyncio.Task] = set()
+
+    async def close_for_queue_reason() -> None:
+        reason = queue.close_reason
+        code = {"slow": 1013, "shutdown": 1001, "idle": 1001}.get(reason, 1000)
+        text = "Terminal subscriber too slow" if reason == "slow" else "Terminal closed"
+        await websocket.close(code=code, reason=text)
+
+    async def deliver_natural_exit() -> bool:
+        if queue.close_reason != "exit":
+            return False
+        with contextlib.suppress(asyncio.QueueEmpty):
+            while True:
+                message = queue.get_nowait()
+                if message.get("type") == "exit":
+                    await websocket.send_json(message)
+                    await websocket.close(code=1000, reason="Terminal exited")
+                    return True
+        return False
+
+    def child(awaitable) -> asyncio.Task:
+        task = asyncio.create_task(awaitable)
+        children.add(task)
+        task.add_done_callback(children.discard)
+        return task
+
+    try:
+        while True:
+            get_message = child(queue.get())
+            wait_closed = child(queue.closed.wait())
+            done, pending = await asyncio.wait(
+                {get_message, wait_closed},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+            if queue.closed.is_set():
+                if queue.close_reason == "exit":
+                    if get_message in done:
+                        message = get_message.result()
+                        if message.get("type") == "exit":
+                            await websocket.send_json(message)
+                            await websocket.close(code=1000, reason="Terminal exited")
+                            return
+                    if await deliver_natural_exit():
+                        return
+                await close_for_queue_reason()
+                return
+            message = get_message.result()
+            send_message = child(websocket.send_json(message))
+            closed_during_send = child(queue.closed.wait())
+            await asyncio.wait(
+                {send_message, closed_during_send},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if queue.closed.is_set() and not (
+                queue.close_reason == "exit" and message.get("type") == "exit"
+            ):
+                if not send_message.done():
+                    send_message.cancel()
+                await asyncio.gather(send_message, return_exceptions=True)
+                if await deliver_natural_exit():
+                    return
+                await close_for_queue_reason()
+                return
+            closed_during_send.cancel()
+            await asyncio.gather(closed_during_send, return_exceptions=True)
+            await send_message
+            if message.get("type") == "exit":
+                await websocket.close(code=1000, reason="Terminal exited")
+                return
+    except Exception:
+        with contextlib.suppress(Exception):
+            await websocket.close(code=1011, reason="Terminal send failed")
+        raise
+    finally:
+        for task in children:
+            if not task.done():
+                task.cancel()
+        if children:
+            await asyncio.gather(*children, return_exceptions=True)
 
 
 @router.post("/sessions")
@@ -152,12 +242,10 @@ async def terminal_socket(
         await websocket.close(code=4404, reason="Terminal session not found")
         return
 
-    async def send_messages() -> None:
-        while True:
-            message = await queue.get()
-            await websocket.send_json(message)
+    def safe_enqueue(message: dict) -> None:
+        terminal_manager.enqueue_subscriber_message(queue, message)
 
-    sender = asyncio.create_task(send_messages())
+    sender = asyncio.create_task(_send_terminal_messages(websocket, queue))
 
     try:
         while True:
@@ -168,9 +256,19 @@ async def terminal_socket(
                     await terminal_manager.send_input(
                         session_id, str(payload.get("data", ""))
                     )
+                except KeyError:
+                    safe_enqueue(
+                        {
+                            "type": "error",
+                            "message": TERMINAL_SESSION_CLOSED_MESSAGE,
+                        }
+                    )
                 except TerminalNotInteractiveError:
-                    queue.put_nowait(
-                        {"type": "error", "message": TERMINAL_NOT_INTERACTIVE_MESSAGE}
+                    safe_enqueue(
+                        {
+                            "type": "error",
+                            "message": TERMINAL_NOT_INTERACTIVE_MESSAGE,
+                        }
                     )
             elif event_type == "resize":
                 try:
@@ -179,9 +277,19 @@ async def terminal_socket(
                         cols=int(payload.get("cols", 80)),
                         rows=int(payload.get("rows", 24)),
                     )
+                except KeyError:
+                    safe_enqueue(
+                        {
+                            "type": "error",
+                            "message": TERMINAL_SESSION_CLOSED_MESSAGE,
+                        }
+                    )
                 except TerminalNotInteractiveError:
-                    queue.put_nowait(
-                        {"type": "error", "message": TERMINAL_NOT_INTERACTIVE_MESSAGE}
+                    safe_enqueue(
+                        {
+                            "type": "error",
+                            "message": TERMINAL_NOT_INTERACTIVE_MESSAGE,
+                        }
                     )
             elif event_type == "chdir":
                 try:
@@ -193,29 +301,39 @@ async def terminal_socket(
                         "Path escapes project workspace"
                     ) from exc
                 except FileNotFoundError as exc:
-                    queue.put_nowait(
+                    safe_enqueue(
                         {"type": "error", "message": f"Directory not found: {exc}"}
                     )
                 except TerminalNotInteractiveError:
-                    queue.put_nowait(
+                    safe_enqueue(
                         {"type": "error", "message": TERMINAL_NOT_INTERACTIVE_MESSAGE}
                     )
+                except KeyError:
+                    safe_enqueue(
+                        {"type": "error", "message": TERMINAL_SESSION_CLOSED_MESSAGE}
+                    )
             elif event_type == "ping":
-                queue.put_nowait({"type": "pong"})
+                safe_enqueue({"type": "pong"})
             else:
-                queue.put_nowait(
+                safe_enqueue(
                     {
                         "type": "error",
                         "message": f"Unsupported message type: {event_type}",
                     }
                 )
     except PermissionDeniedError as exc:
-        queue.put_nowait({"type": "error", "message": exc.message})
+        sender.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sender
+        sender = None
+        with contextlib.suppress(WebSocketDisconnect):
+            await websocket.send_json({"type": "error", "message": exc.message})
+            await websocket.close(code=1008, reason="Terminal path denied")
     except WebSocketDisconnect:
         pass
     finally:
         if sender:
             sender.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await sender
         await terminal_manager.detach(session_id, queue)
