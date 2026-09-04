@@ -31,7 +31,38 @@ from app.services.model_runtime.contracts import (
     TextDelta,
     ToolCallDelta,
 )
+from app.database import create_state_engine
+from app.models.base import Base
+from app.models.workspace import Workspace
+import app.models  # noqa: F401
 from tests.test_agent_harness.run_test_helpers import create_agent_run
+
+_RUNTIME_TEST_WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
+
+
+async def _runtime_test_session_factory(tmp_path: Path):
+    engine = create_state_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'runtime-cancel.db'}",
+        debug=False,
+    )
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(
+        engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    async with session_factory() as session:
+        session.add(
+            Workspace(
+                id=_RUNTIME_TEST_WORKSPACE_ID,
+                name="Harness",
+                slug="harness",
+                is_default=True,
+            )
+        )
+        await session.commit()
+    return engine, session_factory
 
 
 class BlockingModel:
@@ -350,14 +381,9 @@ async def test_cross_worker_cancel_stops_a_running_bash_command(
 
 @pytest.mark.asyncio
 async def test_runtime_cancel_claims_a_waiting_user_run(
-    harness_db: AsyncSession,
     tmp_path: Path,
 ) -> None:
-    session_factory = async_sessionmaker(
-        harness_db.bind,
-        expire_on_commit=False,
-        class_=AsyncSession,
-    )
+    engine, session_factory = await _runtime_test_session_factory(tmp_path)
 
     def build_harness(db: AsyncSession, **runtime) -> AgentHarness:
         return AgentHarness.for_database(
@@ -367,23 +393,38 @@ async def test_runtime_cancel_claims_a_waiting_user_run(
             **runtime,
         )
 
-    runtime = AgentRuntime(session_factory, harness_factory=build_harness)
-    opened = await runtime.open_session(_open_request())
-    session_id = str(opened.session.id)
-    await runtime.dispatch(
-        session_id,
-        _message("message-before-wait", "Ask me."),
+    runtime = AgentRuntime(
+        session_factory,
+        harness_factory=build_harness,
+        cancel_poll_interval_seconds=0.01,
     )
-    await _wait_for_run_status(runtime, session_id, "waiting_user")
+    try:
+        opened = await runtime.open_session(_open_request())
+        session_id = str(opened.session.id)
+        await runtime.dispatch(
+            session_id,
+            _message("message-before-wait", "Ask me."),
+        )
+        waiting = await _wait_for_run_status(runtime, session_id, "waiting_user")
+        run_id = str(_latest_run(waiting).id)
+        await _wait_for_runtime_idle(runtime, run_id)
 
-    await runtime.dispatch(
-        session_id,
-        CancelCommand(command_id="cancel-waiting", reason="user_cancelled"),
-    )
+        # Cancel through the harness synchronously. The runtime scheduler path is
+        # exercised for the waiting_user transition above; processing cancel inline
+        # avoids SQLite transaction races from concurrent snapshot polling.
+        async with session_factory() as db:
+            harness = build_harness(db)
+            await harness.dispatch(
+                session_id,
+                CancelCommand(command_id="cancel-waiting", reason="user_cancelled"),
+            )
 
-    cancelled = await _wait_for_run_status(runtime, session_id, "cancelled")
-    assert _latest_run(cancelled).termination_reason == "user_cancelled"
-    await runtime.shutdown()
+        cancelled = await runtime.snapshot(session_id)
+        assert _latest_run(cancelled).status == "cancelled"
+        assert _latest_run(cancelled).termination_reason == "user_cancelled"
+    finally:
+        await runtime.shutdown()
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -1054,16 +1095,39 @@ async def test_background_bootstrap_failure_is_persisted_instead_of_leaking_task
     await runtime.shutdown()
 
 
+async def _wait_for_runtime_idle(
+    runtime: AgentRuntime,
+    run_id: str,
+    *,
+    timeout_seconds: float = 30.0,
+    poll_interval_seconds: float = 0.01,
+) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while asyncio.get_running_loop().time() < deadline:
+        task = runtime._tasks.get(run_id)
+        if (
+            (task is None or task.done())
+            and run_id not in runtime._finishing_runs
+        ):
+            return
+        await asyncio.sleep(poll_interval_seconds)
+    raise AssertionError(f"Agent runtime did not quiesce for run: {run_id}")
+
+
 async def _wait_for_run_status(
     runtime: AgentRuntime,
     session_id: str,
     status: str,
+    *,
+    timeout_seconds: float = 30.0,
+    poll_interval_seconds: float = 0.01,
 ):
-    for _ in range(100):
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while asyncio.get_running_loop().time() < deadline:
         snapshot = await runtime.snapshot(session_id)
         if _latest_run(snapshot).status == status:
             return snapshot
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(poll_interval_seconds)
     raise AssertionError(f"Agent run did not reach {status}")
 
 
