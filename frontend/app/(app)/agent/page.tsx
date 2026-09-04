@@ -33,6 +33,10 @@ import { useIsMobile } from "@/hooks/use-media-query"
 import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard-shortcuts-overlay"
 import type { ConversationSummary } from "@/lib/agent/conversation-model/types"
 import {
+  listAgentSessions,
+  type AgentSessionSummary,
+} from "@/lib/agent/client"
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -62,7 +66,6 @@ export function AgentPageContent({
   const {
     setNavbarActions,
     projectConversations,
-    isLoading: sidebarIsLoading,
   } = useWorkspaceShell()
   const chatRef = useRef<AgentWorkbenchHandle>(null)
   const {
@@ -74,23 +77,30 @@ export function AgentPageContent({
     setActiveConversationTitle,
   } = useProjectContext()
   const railRef = useRef<HTMLDivElement>(null)
-  const routeSession = routeSessionId
-    ? Array.from(projectConversations?.values() ?? [])
-        .flat()
-        .find((session) => session.id === routeSessionId)
-    : null
+  const [routeResolution, setRouteResolution] = useState<{
+    sessionId: string | null
+    status: "ready" | "loading" | "unavailable" | "error"
+    session: AgentSessionSummary | null
+  }>({
+    sessionId: routeSessionId,
+    status: routeSessionId && projectConversations !== undefined ? "loading" : "ready",
+    session: null,
+  })
+  const resolvedRouteSession =
+    routeResolution.sessionId === routeSessionId
+      ? routeResolution.session
+      : null
   const routeResolutionState =
-    routeSessionId && projectConversations !== undefined
-      ? sidebarIsLoading
+    !routeSessionId ||
+    projectConversations === undefined
+      ? "ready"
+      : routeResolution.sessionId !== routeSessionId
         ? "loading"
-        : routeSession
-          ? "ready"
-          : "unavailable"
-      : "ready"
+      : routeResolution.status
   const effectiveProjectId = routeSessionId
     ? projectConversations === undefined
       ? conversationProjectId || selectedProjectId
-      : routeSession?.project_id ?? null
+      : resolvedRouteSession?.project_id ?? null
     : selectedProjectId
   const {
     preferences: panelPreferences,
@@ -128,6 +138,32 @@ export function AgentPageContent({
   const visibleFocusedRunId = hasCurrentState ? focusedRunId : null
   const visibleFocusedArtifactId = hasCurrentState ? focusedArtifactId : null
   const visibleDag = hasCurrentState ? dag : null
+
+  useEffect(() => {
+    if (!routeSessionId || projectConversations === undefined) return
+    let cancelled = false
+    void listAgentSessions({ includeArchived: true })
+      .then((sessions) => {
+        if (cancelled) return
+        const session = sessions.find((item) => item.id === routeSessionId)
+        setRouteResolution({
+          sessionId: routeSessionId,
+          status: session ? "ready" : "unavailable",
+          session: session ?? null,
+        })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setRouteResolution({
+          sessionId: routeSessionId,
+          status: "error",
+          session: null,
+        })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectConversations, routeSessionId])
 
   useEffect(() => {
     setActiveConversationId(routeSessionId ?? "")
