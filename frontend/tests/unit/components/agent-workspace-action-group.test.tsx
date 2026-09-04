@@ -47,8 +47,10 @@ describe("AgentWorkspaceActionGroup", () => {
         .map((node) => node.dataset.workspaceAction),
     ).toEqual(["artifacts", "files", "dag", "browser", "panel"])
     expect(group.querySelector("[data-workspace-divider]")).toBeTruthy()
+    expect(group.querySelector("[data-workspace-divider]")?.previousElementSibling)
+      .toBe(group.querySelector("[data-workspace-tabs]"))
     expect(group.querySelector("[data-workspace-divider]")?.nextElementSibling)
-      .toBe(group.querySelector('[data-workspace-action="artifacts"]')?.parentElement?.parentElement)
+      .toBe(group.querySelector('[data-workspace-action="panel"]'))
     expect(screen.queryByRole("button", { name: /subagent/i })).not.toBeInTheDocument()
   })
 

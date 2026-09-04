@@ -99,11 +99,6 @@ export function AgentWorkspaceActionGroup({
       role="group"
       aria-label={labels.group}
     >
-      <span
-        aria-hidden="true"
-        className="mx-0.5 h-5 w-px shrink-0 bg-border/65"
-        data-workspace-divider="true"
-      />
       <div
         className="flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden"
         data-workspace-tabs="true"
@@ -158,6 +153,12 @@ export function AgentWorkspaceActionGroup({
           )
         })}
       </div>
+
+      <span
+        aria-hidden="true"
+        className="mx-0.5 h-5 w-px shrink-0 bg-border/65"
+        data-workspace-divider="true"
+      />
 
       <ActionIconButton
         label={panelOpen ? labels.closePanel : labels.openPanel}
