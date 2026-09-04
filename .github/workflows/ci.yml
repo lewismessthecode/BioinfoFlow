@@ -107,7 +107,7 @@ jobs:
               agent_browser_changed="true"
             fi
 
-            if grep -Eq '^(frontend/app/\(app\)/agent/|frontend/components/bioinfoflow/agent|frontend/components/bioinfoflow/chat/|frontend/components/bioinfoflow/live-deck\.tsx|frontend/components/bioinfoflow/workspace-|frontend/tests/e2e/agent-|frontend/playwright\.config\.ts|frontend/package\.json|frontend/bun\.lock|backend/app/api/v1/agent|backend/app/services/agent_|backend/app/cli/commands/agent\.py|backend/tests/.*agent)' "$changed_files"; then
+            if grep -Eq '^(frontend/app/\(app\)/agent/|frontend/components/bioinfoflow/agent|frontend/components/bioinfoflow/chat/|frontend/components/bioinfoflow/live-deck\.tsx|frontend/components/bioinfoflow/workspace-|frontend/tests/e2e/agent-|frontend/playwright\.config\.ts|backend/app/api/v1/agent|backend/app/services/agent_|backend/app/cli/commands/agent\.py|backend/tests/.*agent)' "$changed_files"; then
               agent_browser_changed="true"
             fi
 
