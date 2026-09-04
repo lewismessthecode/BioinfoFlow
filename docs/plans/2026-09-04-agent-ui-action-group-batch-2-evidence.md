@@ -3,9 +3,8 @@
 ## Current state
 
 The rebased worktree is `codex/agent-ui-action-group`. The latest code commit
-is `0c859b9` (`fix: resolve archived agent deep links`); this document is
-committed separately. The current verification pass added no business-code
-changes.
+are `1a34f5f` (`fix: localize route loading state`) and `2862b3a`
+(`fix: guard terminal route metadata`); this document is committed separately.
 
 The implementation retains the four-action group (Browser, Files, Artifacts,
 and DAG), project/session/draft isolation, route-authoritative session panels,
@@ -24,6 +23,9 @@ Subagents are not exposed.
   indefinitely. Direct resolution queries include archived sessions, which
   render through the existing read-only AgentWorkbench path without adding
   archived sessions to the sidebar.
+- Route loading uses dedicated localized loading title/description copy in both
+  English and Chinese; failure copy is reserved for unavailable/error states.
+  Terminal route metadata reads tolerate an undefined workspace collection.
 - The global terminal action is disabled while a direct route is unresolved or
   unavailable. Once resolved, its identity follows the route session's project;
   unscoped inbox sessions remain disabled and stale project terminal state is
@@ -53,7 +55,7 @@ No screenshot was updated at runtime during validation, and no
 
 Passing in this worktree:
 
-- Focused route/sidebar/terminal suite: 39 tests.
+- Focused route/sidebar/terminal suite: 40 tests.
 - Full frontend Vitest parallel run: 183 of 187 files passed; these 8 tests
   timed out at five seconds: `workspace-shell-sidebar` project deletion,
   four `connections-page` save/verification tests,
