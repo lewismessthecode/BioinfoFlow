@@ -345,7 +345,7 @@ function environmentSelectionFromSession(
     : { mode: "auto" }
 }
 
-export function environmentScopeFromSelection(
+function environmentScopeFromSelection(
   selection: AgentEnvironmentSelection,
 ) {
   return selection.mode === "manual"
