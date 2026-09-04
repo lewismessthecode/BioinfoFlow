@@ -282,6 +282,11 @@ export default function AppLayout({
               projectId={selectedProjectId || undefined}
               enabled={terminalEnabled}
               isMobile={isMobile}
+              routeSessionId={
+                pathname.startsWith("/agent/")
+                  ? pathname.slice("/agent/".length)
+                  : null
+              }
             >
               {/* Skip-to-content link */}
               <a
@@ -372,7 +377,9 @@ function WorkspaceNavbarActions() {
 }
 
 function TerminalNavbarAction({ label }: { label: string }) {
-  const { toggleTerminal } = useTerminalDock()
+  const { enabled, toggleTerminal } = useTerminalDock()
+
+  if (!enabled) return null
 
   return (
     <Button
