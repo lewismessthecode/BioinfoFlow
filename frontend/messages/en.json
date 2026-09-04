@@ -2901,6 +2901,23 @@
       "expand": "Expand {title}",
       "collapse": "Collapse {title}"
     },
+    "eventTitles": {
+      "system": "System",
+      "modelRequest": "Model request",
+      "compaction": "Compaction",
+      "contextUpdate": "Context update",
+      "interactionRequest": "Interaction request",
+      "interactionResponse": "Interaction response",
+      "notice": "Notice",
+      "plan": "Plan",
+      "context": "Context",
+      "toolCall": "{display_name}",
+      "toolResult": "Tool result",
+      "reasoning": "Reasoning",
+      "user": "User",
+      "assistant": "Assistant",
+      "tool": "Tool"
+    },
     "inspector": {
       "label": "Event inspector",
       "close": "Close inspector",

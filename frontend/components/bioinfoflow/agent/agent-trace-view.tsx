@@ -287,7 +287,9 @@ export function AgentTraceView({ view, onLoadDetail }: AgentTraceViewProps) {
             <SheetHeader className="sr-only">
               <SheetTitle>{t("inspector.label")}</SheetTitle>
               <SheetDescription>
-                {selectedEvent?.title ?? t("inspector.label")}
+                {selectedEvent
+                  ? localizedTraceEventTitle(selectedEvent, t)
+                  : t("inspector.label")}
               </SheetDescription>
             </SheetHeader>
             {inspector}
@@ -637,6 +639,7 @@ function TraceEventRow({
   onToggleExpanded: () => void
 }) {
   const t = useTranslations("agentTrace")
+  const eventTitle = localizedTraceEventTitle(event, t)
   const selectable =
     event.hasDetail || event.category === "assistant" || event.category === "tool"
   const expandable = event.summary.includes("\n") || event.summary.length > 120
@@ -658,7 +661,7 @@ function TraceEventRow({
           className="absolute inset-0 z-0 rounded-[6px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/55"
           aria-label={t(
             event.hasDetail ? "event.openDetail" : "event.select",
-            { title: event.title },
+            { title: eventTitle },
           )}
           onClick={onSelect}
         />
@@ -707,7 +710,7 @@ function TraceEventRow({
             size="icon-sm"
             className="pointer-events-auto size-7 text-muted-foreground/60 hover:bg-muted/55 hover:text-foreground"
             aria-label={t(expanded ? "event.collapse" : "event.expand", {
-              title: event.title,
+              title: eventTitle,
             })}
             aria-expanded={expanded}
             onClick={(clickEvent) => {
@@ -788,6 +791,7 @@ function TraceInspector({
   onRetry: () => void
 }) {
   const t = useTranslations("agentTrace")
+  const eventTitle = localizedTraceEventTitle(event, t)
   const [activeTab, setActiveTab] = useState<InspectorTab>("summary")
   const failed = isFailedStatus(event.status)
   const diagnostic =
@@ -811,7 +815,7 @@ function TraceInspector({
               {t(`category.${event.category}`)}
             </span>
             <strong className="truncate text-[12px] font-semibold text-foreground/85">
-              {event.title}
+              {eventTitle}
             </strong>
           </div>
           <code
@@ -915,6 +919,41 @@ function TraceInspector({
     </div>
   )
 }
+
+const TRACE_TITLE_PREFIX = "agentTrace.event."
+
+function localizedTraceEventTitle(
+  event: AgentTraceEvent,
+  translate: (key: string, values?: Record<string, unknown>) => string,
+) {
+  const code = event.titleCode
+  if (!code || !code.startsWith(TRACE_TITLE_PREFIX)) return event.title
+  const key = code.slice(TRACE_TITLE_PREFIX.length)
+  if (!TRACE_TITLE_KEYS.has(key)) return event.title
+  const params = event.titleParams
+  return translate(
+    `eventTitles.${key}`,
+    params && Object.keys(params).length > 0 ? params : undefined,
+  )
+}
+
+const TRACE_TITLE_KEYS = new Set([
+  "system",
+  "modelRequest",
+  "compaction",
+  "contextUpdate",
+  "interactionRequest",
+  "interactionResponse",
+  "notice",
+  "plan",
+  "context",
+  "toolCall",
+  "toolResult",
+  "reasoning",
+  "user",
+  "assistant",
+  "tool",
+])
 
 function SummaryPane({
   value,

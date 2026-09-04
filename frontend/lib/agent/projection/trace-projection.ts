@@ -123,6 +123,8 @@ function projectEvent(
     turnId: event.turn_id,
     category,
     title: event.title,
+    titleCode: event.title_code ?? null,
+    titleParams: event.title_params ?? {},
     summary: event.summary,
     firstLine: event.summary.split(/\r?\n/, 1)[0] ?? "",
     status: event.status,

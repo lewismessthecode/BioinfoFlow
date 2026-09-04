@@ -2901,6 +2901,23 @@
       "expand": "展开 {title}",
       "collapse": "收起 {title}"
     },
+    "eventTitles": {
+      "system": "系统",
+      "modelRequest": "模型请求",
+      "compaction": "上下文压缩",
+      "contextUpdate": "上下文更新",
+      "interactionRequest": "交互请求",
+      "interactionResponse": "交互响应",
+      "notice": "通知",
+      "plan": "计划",
+      "context": "上下文",
+      "toolCall": "{display_name}",
+      "toolResult": "工具结果",
+      "reasoning": "推理",
+      "user": "用户",
+      "assistant": "助手",
+      "tool": "工具"
+    },
     "inspector": {
       "label": "事件检查器",
       "close": "关闭检查器",
