@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import json
-from pathlib import PurePosixPath
+import os
+from pathlib import Path, PurePosixPath
 import shlex
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.path_layout import agent_user_workspace_root, project_home
+from app.path_layout import (
+    agent_user_workspace_root,
+    agent_workspaces_root,
+    project_home,
+)
 from app.repositories.llm_repo import (
     LlmModelProfileRepository,
     LlmModelRepository,
@@ -56,8 +61,13 @@ async def open_session_request_workspace(
     remote_executor: RemoteExecutor | None = None,
 ) -> dict[str, Any]:
     if project_id is None:
-        root = agent_user_workspace_root(workspace_id, user_id).resolve()
-        root.mkdir(parents=True, exist_ok=True)
+        workspace_root = os.path.realpath(str(agent_workspaces_root()))
+        root = os.path.realpath(
+            str(agent_user_workspace_root(workspace_id, user_id))
+        )
+        if root != workspace_root and not root.startswith(workspace_root + os.sep):
+            raise ValueError("agent workspace escapes managed root")
+        Path(root).mkdir(parents=True, exist_ok=True)
         return {
             "api_url": _workspace_api_url("local"),
             "root": str(root),

@@ -259,6 +259,27 @@ async def test_open_session_workspace_rejects_unsafe_projectless_scope_ids(
 
 
 @pytest.mark.asyncio
+async def test_open_session_workspace_rejects_root_escape_from_workspace_layout(
+    db_session, monkeypatch, tmp_path
+) -> None:
+    workspace = await _workspace(db_session)
+    escaped_root = tmp_path / "escaped-agent-workspace"
+    monkeypatch.setattr(
+        "app.services.agent_harness.factory.agent_user_workspace_root",
+        lambda _workspace_id, _user_id: escaped_root,
+    )
+
+    with pytest.raises(ValueError, match="escapes managed root"):
+        await open_session_request_workspace(
+            db_session,
+            project_id=None,
+            workspace_id=str(workspace.id),
+            user_id="user-1",
+        )
+    assert not escaped_root.exists()
+
+
+@pytest.mark.asyncio
 async def test_open_session_workspace_describes_local_project(
     db_session, tmp_path, monkeypatch
 ) -> None:
