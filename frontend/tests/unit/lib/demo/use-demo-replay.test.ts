@@ -154,25 +154,24 @@ describe("useDemoReplay", () => {
 
     const { result } = renderHook(() => useDemoReplay(recording, false))
 
-    expect(result.current.sessionState.session).toEqual(sessionSnapshot.session)
+    expect(result.current.sessionState.view?.conversation.id).toBe(
+      sessionSnapshot.session.id,
+    )
     act(() => result.current.play())
     await act(async () => vi.runAllTimersAsync())
 
     expect(result.current.status).toBe("finished")
-    expect(result.current.sessionState.activeRun).toBeNull()
-    expect(result.current.sessionState.runs[0]).toMatchObject({
+    expect(result.current.sessionState.view?.activeWork).toBeNull()
+    expect(result.current.sessionState.view?.runs[0]).toMatchObject({
       status: "completed",
-      termination_reason: "completed",
+      completedAt: "2026-04-24T09:00:05Z",
     })
-    expect(result.current.sessionState.entries[0]).toMatchObject({
-      type: "message",
-      payload: {
-        role: "assistant",
-        parts: expect.arrayContaining([
-          expect.objectContaining({ type: "tool_call", category: "workflow" }),
-        ]),
-      },
-    })
+    expect(result.current.sessionState.view?.transcript).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "message", text: "Starting the workflow." }),
+        expect.objectContaining({ type: "activity_group" }),
+      ]),
+    )
   })
 
   it("does not autoplay when the user prefers reduced motion", async () => {
