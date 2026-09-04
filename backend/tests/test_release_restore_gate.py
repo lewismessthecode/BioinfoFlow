@@ -10,10 +10,11 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 
+from app.database import get_alembic_head_revision
+
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 RELEASE_020_HEAD = "0058_remove_container_registry_default"
-RELEASE_HEAD = "0063_agent_session_project_delete_cascade"
 
 
 def _run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -139,6 +140,10 @@ def test_representative_020_sqlite_clone_upgrades_to_head(tmp_path: Path) -> Non
             "SELECT type, payload FROM agent_entries WHERE session_id = ?",
             (ids["session"],),
         ).fetchone()
+        run = connection.execute(
+            "SELECT status FROM agent_runs WHERE id = ?",
+            (ids["turn"],),
+        ).fetchone()
         attachment = connection.execute(
             "SELECT filename FROM agent_attachments WHERE id = ?",
             (ids["attachment"],),
@@ -162,16 +167,17 @@ def test_representative_020_sqlite_clone_upgrades_to_head(tmp_path: Path) -> Non
     assert entry is not None
     assert entry["type"] == "message"
     assert json.loads(entry["payload"])["parts"][0]["text"] == ("preserve this history")
+    assert tuple(run) == ("completed",)
     assert tuple(attachment) == ("reads.fastq.gz",)
     assert tuple(artifact) == (ids["turn"], "0.2 report")
     assert {"agent_sessions", "agent_runs", "agent_entries"} <= tables
     assert {"agent_attachments", "agent_artifacts"} <= tables
     assert "agent_turns" not in tables
-    assert tuple(revision) == (RELEASE_HEAD,)
+    assert tuple(revision) == (get_alembic_head_revision(),)
     assert deleted_session is None
 
 
-def _seed_current_home(home: Path) -> dict[str, str | bytes]:
+def _seed_current_home(home: Path) -> dict[str, str | bytes | Path]:
     state = home / "state"
     platform_db = state / "bioinfoflow.db"
     auth_db = state / "auth" / "better-auth.db"
@@ -181,6 +187,7 @@ def _seed_current_home(home: Path) -> dict[str, str | bytes]:
     ids = {
         "workspace": "10000000-0000-0000-0000-000000000011",
         "project": "10000000-0000-0000-0000-000000000012",
+        "external_project": "10000000-0000-0000-0000-000000000020",
         "session": "10000000-0000-0000-0000-000000000013",
         "run": "10000000-0000-0000-0000-000000000014",
         "entry": "10000000-0000-0000-0000-000000000015",
@@ -196,10 +203,17 @@ def _seed_current_home(home: Path) -> dict[str, str | bytes]:
     key_path.write_bytes(key)
 
     project_root = home / "projects" / "restore-project"
+    external_project_root = home.parent / "external-restore-project"
     workflow_root = state / "workflows" / "local" / "restore-workflow" / "bundle"
     source_files = {
         project_root / "data" / "reads.fastq": "project input",
         project_root / "runs" / "run-restore" / "results" / "report.txt": "run result",
+        external_project_root / "data" / "external.fastq": "external project input",
+        external_project_root
+        / "runs"
+        / "external-run"
+        / "results"
+        / "external-report.txt": "external run result",
         workflow_root / "main.wdl": "version 1.0",
         home / "sources" / "deliveries" / "delivery.fastq": "delivery",
         home / "sources" / "reference" / "reference.fa": ">reference",
@@ -235,6 +249,18 @@ def _seed_current_home(home: Path) -> dict[str, str | bytes]:
             "(?, 'Restore project', 'restore-project', 'managed', 'restore-test', "
             "?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
             (ids["project"], ids["workspace"]),
+        )
+        connection.execute(
+            "INSERT INTO projects "
+            "(id, name, storage_mode, external_root_path, user_id, workspace_id, "
+            "is_default, created_at, updated_at) VALUES "
+            "(?, 'External restore project', 'external', ?, 'restore-test', ?, 0, "
+            "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            (
+                ids["external_project"],
+                str(external_project_root),
+                ids["workspace"],
+            ),
         )
         connection.execute(
             "INSERT INTO agent_sessions "
@@ -342,6 +368,7 @@ def _seed_current_home(home: Path) -> dict[str, str | bytes]:
         **ids,
         "key": key,
         "credential_token": credential,
+        "external_project_root": external_project_root,
     }
 
 
@@ -353,13 +380,19 @@ def test_stopped_home_backup_restore_retains_state_and_credentials(
     platform_db = home / "state" / "bioinfoflow.db"
     auth_db = home / "state" / "auth" / "better-auth.db"
     backup = tmp_path / "bioinfoflow-home-backup"
+    external_project_root = records["external_project_root"]
+    assert isinstance(external_project_root, Path)
+    external_backup = tmp_path / "external-restore-project-backup"
 
     # The fixture has no open application/database handles: this models the
     # stopped or quiesced service precondition for a filesystem-level backup.
     shutil.copytree(home, backup)
+    shutil.copytree(external_project_root, external_backup)
 
     shutil.rmtree(home)
+    shutil.rmtree(external_project_root)
     shutil.copytree(backup, home)
+    shutil.copytree(external_backup, external_project_root)
 
     expected_files = {
         home / "projects" / "restore-project" / "data" / "reads.fastq": "project input",
@@ -380,6 +413,12 @@ def test_stopped_home_backup_restore_retains_state_and_credentials(
         home / "sources" / "deliveries" / "delivery.fastq": "delivery",
         home / "sources" / "reference" / "reference.fa": ">reference",
         home / "sources" / "database" / "annotation.db": "annotation",
+        external_project_root / "data" / "external.fastq": "external project input",
+        external_project_root
+        / "runs"
+        / "external-run"
+        / "results"
+        / "external-report.txt": "external run result",
         home
         / "state"
         / "agent_harness"
@@ -408,6 +447,7 @@ def test_stopped_home_backup_restore_retains_state_and_credentials(
     )
 
     with sqlite3.connect(platform_db) as connection:
+        assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
         history = connection.execute(
             "SELECT history_revision FROM agent_sessions WHERE id = ?",
             (records["session"],),
@@ -415,6 +455,10 @@ def test_stopped_home_backup_restore_retains_state_and_credentials(
         history_entry = connection.execute(
             "SELECT payload FROM agent_entries WHERE id = ?",
             (records["entry"],),
+        ).fetchone()
+        run = connection.execute(
+            "SELECT status, phase FROM agent_runs WHERE id = ?",
+            (records["run"],),
         ).fetchone()
         attachment = connection.execute(
             "SELECT storage_path FROM agent_attachments WHERE id = ?",
@@ -428,14 +472,21 @@ def test_stopped_home_backup_restore_retains_state_and_credentials(
             "SELECT encrypted_secret FROM llm_provider_credentials WHERE id = ?",
             (records["credential"],),
         ).fetchone()
+        external_project = connection.execute(
+            "SELECT storage_mode, external_root_path FROM projects WHERE id = ?",
+            (records["external_project"],),
+        ).fetchone()
     with sqlite3.connect(auth_db) as connection:
+        assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
         auth_user = connection.execute(
             "SELECT email FROM user WHERE id = 'restore-user'"
         ).fetchone()
 
     assert history == (2,)
     assert json.loads(history_entry[0])["parts"][0]["text"] == "done"
+    assert run == ("completed", "final")
     assert Path(attachment[0]).read_text() == "attachment"
     assert Path(artifact[0]).read_text() == "artifact"
     assert credential == (records["credential_token"],)
+    assert external_project == ("external", str(external_project_root))
     assert auth_user == ("restore@example.test",)
