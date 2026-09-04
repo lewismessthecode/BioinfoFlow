@@ -17,23 +17,15 @@ from app.models.agent_harness import (
 from app.repositories.base import BaseRepository
 from app.services.agent_harness.contracts import (
     ENTRY_PAYLOAD_TYPES,
-    ActiveRunView,
     AgentCommand,
-    AssistantDraftView,
     MessageCommand,
     OpenSessionRequest,
-    PendingInteractionView,
     SessionSnapshot,
-    SessionView,
     ToolProgressView,
 )
 from app.services.agent_harness.projection import (
-    entry_contract,
-    pending_interaction_entry_view,
     public_interaction_request,
     public_interaction_response,
-    public_model_summary,
-    run_view,
 )
 from app.services.agent_harness.tool_projection import (
     public_error_message,
@@ -2294,93 +2286,9 @@ class AgentHarnessRepository:
         return list(result.scalars().all())
 
     async def snapshot(self, session_id: str) -> SessionSnapshot:
-        session = await self.get_session(session_id)
-        if session is None:
-            raise LookupError(f"agent session not found: {session_id}")
-        runs = await self.list_runs(session_id)
-        run = next(
-            (item for item in reversed(runs) if item.status in ACTIVE_RUN_STATUSES),
-            None,
-        )
-        entries = await self.list_entries(session_id)
-        active_run = (
-            ActiveRunView(
-                run=run_view(run),
-                assistant_draft=self._assistant_draft(run),
-                tool_progress=self._tool_progress(run),
-                pending_interaction=self._pending_interaction(run, entries),
-            )
-            if run is not None
-            else None
-        )
-        return SessionSnapshot(
-            session=SessionView.model_validate(
-                {
-                    "id": session.id,
-                    "user_id": session.user_id,
-                    "workspace_id": session.workspace_id,
-                    "project_id": session.project_id,
-                    "title": session.title,
-                    "model": public_model_summary(session.model_snapshot),
-                    "permission_mode": session.permission_mode,
-                    "workspace_access": session.workspace_access,
-                    "settings_revision": session.settings_revision,
-                    "environment_scope": session.environment_scope or {"mode": "auto"},
-                    "status": session.status,
-                    "created_at": session.created_at,
-                    "updated_at": session.updated_at,
-                }
-            ),
-            runs=[run_view(item) for item in runs],
-            entries=[
-                entry_contract(entry)
-                for entry in entries
-                if entry.type not in {"compaction", "context_update"}
-            ],
-            active_run=active_run,
-        )
+        from app.services.agent_harness.snapshot import AgentHarnessSnapshotService
 
-    @staticmethod
-    def _assistant_draft(run: AgentHarnessRun | None) -> AssistantDraftView | None:
-        if run is None or not run.draft:
-            return None
-        return AssistantDraftView.model_validate(run.draft)
-
-    @staticmethod
-    def _tool_progress(run: AgentHarnessRun | None) -> list[ToolProgressView]:
-        if run is None or not run.tool_progress:
-            return []
-        return [
-            AgentHarnessRepository._public_tool_progress(item)
-            for item in run.tool_progress
-        ]
-
-    @staticmethod
-    def _public_tool_progress(item: Any) -> ToolProgressView:
-        return public_tool_progress_view(item)
-
-    @staticmethod
-    def _pending_interaction(
-        run: AgentHarnessRun | None,
-        entries: list[AgentHarnessEntry],
-    ) -> PendingInteractionView | None:
-        if run is None or run.status != "waiting_user":
-            return None
-        pending: dict[str, AgentHarnessEntry] = {}
-        for entry in entries:
-            if str(entry.run_id) != str(run.id):
-                continue
-            interaction_id = str(entry.payload.get("interaction_id") or "")
-            if not interaction_id:
-                continue
-            if entry.type == "interaction_request":
-                pending[interaction_id] = entry
-            elif entry.type == "interaction_response":
-                pending.pop(interaction_id, None)
-        if not pending:
-            return None
-        request = max(pending.values(), key=lambda item: item.sequence)
-        return pending_interaction_entry_view(request)
+        return await AgentHarnessSnapshotService(self).build(session_id)
 
 
 __all__ = [
