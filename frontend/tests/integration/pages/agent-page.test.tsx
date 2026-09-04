@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   workbench: vi.fn(),
   setNavbarActions: vi.fn(),
   projectConversations: undefined as Map<string, Array<{ id: string; project_id: string | null }>> | undefined,
+  sidebarIsLoading: undefined as boolean | undefined,
 }))
 
 function ProjectSwitcher() {
@@ -70,6 +71,7 @@ vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
   useWorkspaceShell: () => ({
     setNavbarActions: mocks.setNavbarActions,
     projectConversations: mocks.projectConversations,
+    isLoading: mocks.sidebarIsLoading,
   }),
 }))
 
@@ -202,6 +204,7 @@ describe("Agent pages", () => {
     mocks.workbench.mockReset()
     mocks.setNavbarActions.mockReset()
     mocks.projectConversations = undefined
+    mocks.sidebarIsLoading = undefined
     mocks.isMobile.mockReturnValue(false)
   })
 
@@ -237,12 +240,17 @@ describe("Agent pages", () => {
 
   it("waits for direct route scope before mounting session workbench", () => {
     mocks.projectConversations = new Map()
+    mocks.sidebarIsLoading = true
     const view = renderAppPage(
       <AgentPageContent routeSessionId="session-bound" />,
       { projectContext: { selectedProjectId: "stale-project" } },
     )
 
     expect(screen.getByTestId("agent-route-resolution")).toBeInTheDocument()
+    expect(screen.getByTestId("agent-route-resolution")).toHaveAttribute(
+      "data-route-state",
+      "loading",
+    )
     expect(screen.queryByTestId("agent-workbench")).not.toBeInTheDocument()
     expect(mocks.useEvents.mock.calls.at(-1)?.[0]).toEqual(
       expect.objectContaining({ projectId: null }),
@@ -251,12 +259,31 @@ describe("Agent pages", () => {
     mocks.projectConversations = new Map([
       ["project-bound", [{ id: "session-bound", project_id: "project-bound" }]],
     ])
+    mocks.sidebarIsLoading = false
     view.rerender(<AgentPageContent routeSessionId="session-bound" />)
 
     expect(screen.queryByTestId("agent-route-resolution")).not.toBeInTheDocument()
     expect(screen.getByTestId("agent-workbench")).toHaveTextContent(
       "project:project-bound",
     )
+  })
+
+  it("shows a visible unavailable state for missing or archived routes", () => {
+    mocks.projectConversations = new Map()
+    mocks.sidebarIsLoading = false
+
+    renderAppPage(<AgentPageContent routeSessionId="missing-session" />, {
+      projectContext: { selectedProjectId: "stale-project" },
+    })
+
+    expect(screen.getByTestId("agent-route-resolution")).toHaveAttribute(
+      "data-route-state",
+      "unavailable",
+    )
+    expect(screen.getByTestId("agent-route-resolution")).toHaveTextContent(
+      "loadErrorTitle",
+    )
+    expect(screen.queryByTestId("agent-workbench")).not.toBeInTheDocument()
   })
 
   it("switches panel preferences when the session route changes", async () => {

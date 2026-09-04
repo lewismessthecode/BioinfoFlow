@@ -59,7 +59,11 @@ export function AgentPageContent({
   const t = useTranslations("agentWorkbench")
   const tAccessibility = useTranslations("accessibility")
   const isMobile = useIsMobile()
-  const { setNavbarActions, projectConversations } = useWorkspaceShell()
+  const {
+    setNavbarActions,
+    projectConversations,
+    isLoading: sidebarIsLoading,
+  } = useWorkspaceShell()
   const chatRef = useRef<AgentWorkbenchHandle>(null)
   const {
     selectedProjectId,
@@ -75,8 +79,14 @@ export function AgentPageContent({
         .flat()
         .find((session) => session.id === routeSessionId)
     : null
-  const routeScopeReady =
-    !routeSessionId || projectConversations === undefined || routeSession !== undefined
+  const routeResolutionState =
+    routeSessionId && projectConversations !== undefined
+      ? sidebarIsLoading
+        ? "loading"
+        : routeSession
+          ? "ready"
+          : "unavailable"
+      : "ready"
   const effectiveProjectId = routeSessionId
     ? projectConversations === undefined
       ? conversationProjectId || selectedProjectId
@@ -438,12 +448,18 @@ export function AgentPageContent({
     closeMobileLiveDeck,
   ])
 
-  if (routeSessionId && !routeScopeReady) {
+  if (routeSessionId && routeResolutionState !== "ready") {
     return (
       <div
         className="flex h-full min-h-0 min-w-0 items-center justify-center bg-background"
         data-testid="agent-route-resolution"
-      />
+        data-route-state={routeResolutionState}
+        role="status"
+      >
+        {routeResolutionState === "loading"
+          ? t("loadErrorDescription")
+          : t("loadErrorTitle")}
+      </div>
     )
   }
 
