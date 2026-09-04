@@ -256,11 +256,11 @@ describe("Navbar", () => {
     ).toEqual([
       "more",
       "terminal",
-      "divider",
       "artifacts",
       "files",
       "dag",
       "browser",
+      "divider",
       "panel",
     ])
   })
