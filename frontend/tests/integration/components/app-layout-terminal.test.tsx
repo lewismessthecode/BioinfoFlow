@@ -17,6 +17,7 @@ const searchParamsState = {
 
 let workspaceNavbarActions: React.ReactNode = null
 let terminalDockProps: Record<string, unknown> | null = null
+let workspaceSessionScope: Map<string, Array<{ id: string; project_id: string | null }>> | null = null
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathnameState.value,
@@ -63,6 +64,10 @@ vi.mock("@/components/bioinfoflow/sidebar/index", () => ({
 vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
   WorkspaceShellProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useWorkspaceShell: () => ({ navbarActions: workspaceNavbarActions }),
+  useOptionalWorkspaceShell: () =>
+    workspaceSessionScope === null
+      ? null
+      : { projectConversations: workspaceSessionScope },
 }))
 
 vi.mock("@/components/bioinfoflow/sidebar/sidebar-drawer", () => ({
@@ -106,12 +111,51 @@ function ProjectSeeder({ projectId }: { projectId: string }) {
   return <div>page</div>
 }
 
+function TerminalIdentityProbe() {
+  const { projectId, enabled } = useTerminalDock()
+  return (
+    <span data-testid="terminal-identity">
+      {enabled ? projectId ?? "none" : "disabled"}
+    </span>
+  )
+}
+
 describe("AppLayout terminal integration", () => {
   beforeEach(() => {
     workspaceNavbarActions = null
     terminalDockProps = null
+    workspaceSessionScope = null
     searchParamsState.value = new URLSearchParams()
     localStorage.clear()
+  })
+
+  it("does not expose a stale terminal during direct route resolution", async () => {
+    pathnameState.value = "/agent/session-b"
+    workspaceSessionScope = new Map()
+
+    const view = renderAppPage(
+      <AppLayout>
+        <ProjectSeeder projectId="project-a" />
+        <TerminalIdentityProbe />
+      </AppLayout>,
+    )
+
+    expect(screen.getByTestId("terminal-identity")).toHaveTextContent("disabled")
+    expect(screen.queryByRole("button", { name: "accessibility.openTerminal" })).not.toBeInTheDocument()
+
+    workspaceSessionScope = new Map([
+      ["project-b", [{ id: "session-b", project_id: "project-b" }]],
+    ])
+    view.rerender(
+      <AppLayout>
+        <TerminalIdentityProbe />
+      </AppLayout>,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByTestId("terminal-identity")).toHaveTextContent("project-b"),
+    )
+    expect(screen.getByRole("button", { name: "accessibility.openTerminal" })).toBeInTheDocument()
   })
 
   it("shows the terminal toggle on terminal-enabled routes when a project is active", async () => {
