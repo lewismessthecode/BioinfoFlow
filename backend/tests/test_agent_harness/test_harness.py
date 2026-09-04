@@ -14,9 +14,13 @@ from uuid import uuid4
 import pytest
 from fastapi import UploadFile
 
-from app.services.agent_harness.assets import AgentHarnessAttachmentService
+from app.services.agent_harness.assets import (
+    AgentHarnessArtifactService,
+    AgentHarnessAttachmentService,
+)
 from app.services.agent_harness.contracts import (
     CancelCommand,
+    EntryCommittedEvent,
     InputAttachmentRefPart,
     InputTextPart,
     MessageCommand,
@@ -37,6 +41,8 @@ from app.services.agent_harness.workspace_runtime import (
     LocalWorkspaceBackend,
     WorkspaceRuntime,
 )
+from app.services.agent_harness.projection import entry_contract
+from app.repositories.agent_harness_repo import RunFence
 from tests.test_agent_harness.run_test_helpers import create_agent_run
 from app.services.model_runtime.contracts import (
     canonical_input_prefix_digest,
@@ -1052,6 +1058,70 @@ async def test_tool_call_result_is_committed_before_model_continues(
         harness, str(opened.session.id), "read-1"
     )
     assert len(model.invocations) == 2
+
+
+@pytest.mark.asyncio
+async def test_declared_artifact_has_one_history_snapshot_and_sse_reference(
+    harness_db,
+) -> None:
+    harness = AgentHarness.for_database(
+        harness_db,
+        model_gateway=TextModel("unused"),
+        workspace_factory=lambda _session: _workspace(Path("/tmp")),
+    )
+    opened = await harness.open_session(_open_request())
+    session_id = str(opened.session.id)
+    run = await create_agent_run(harness.repository, session_id)
+    generation = await harness.repository.claim_run(
+        str(run.id),
+        owner="artifact-worker",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    assert generation == 1
+    fence = RunFence(owner="artifact-worker", generation=generation)
+    harness.bind_run_fence(str(run.id), owner=fence.owner, generation=fence.generation)
+    artifact = await AgentHarnessArtifactService(harness_db).writer(
+        session_id=session_id,
+        run_id=str(run.id),
+        fence=fence,
+    )(
+        {
+            "type": "published_file",
+            "declaration_id": "tool:publish-1",
+            "filename": "report.tsv",
+            "title": "Final report",
+            "mime_type": "text/tab-separated-values",
+            "content": b"gene\tcount\nTP53\t4\n",
+        }
+    )
+
+    entry = await harness.loop._append_message(
+        session_id,
+        str(run.id),
+        role="tool",
+        content=json.dumps({"artifact": artifact}),
+        call_id="publish-1",
+        tool_name="publish_artifact",
+    )
+    snapshot = await harness.snapshot(session_id)
+    event = EntryCommittedEvent(entry=entry_contract(entry))
+    expected = {
+        "type": "artifact_ref",
+        "artifact_id": artifact["artifact_id"],
+        "title": "Final report",
+        "media_type": "text/tab-separated-values",
+    }
+    snapshot_part = next(
+        part
+        for part in snapshot.entries[-1].payload.parts
+        if part.type == "artifact_ref"
+    )
+    event_part = next(
+        part for part in event.entry.payload.parts if part.type == "artifact_ref"
+    )
+
+    assert snapshot_part.model_dump(mode="json", exclude={"id"}) == expected
+    assert event_part.model_dump(mode="json", exclude={"id"}) == expected
 
 
 @pytest.mark.asyncio

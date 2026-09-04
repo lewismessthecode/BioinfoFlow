@@ -11,7 +11,10 @@ from uuid import uuid4
 
 from app.config import settings
 from app.repositories.agent_harness_repo import AgentHarnessRepository
-from app.services.agent_harness.assets import AgentHarnessAttachmentService
+from app.services.agent_harness.assets import (
+    AgentHarnessAttachmentService,
+    artifact_reference_part,
+)
 from app.services.agent_harness.compression import (
     DeterministicCompactor,
     is_context_overflow,
@@ -1414,6 +1417,9 @@ class AgentLoop:
                     "error": content if is_error else None,
                 }
             )
+            artifact_part = artifact_reference_part(private_output)
+            if artifact_part is not None:
+                parts.append(artifact_part)
         else:
             completed_at = datetime.now(timezone.utc)
             parts.extend(
