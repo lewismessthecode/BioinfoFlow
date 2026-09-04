@@ -141,12 +141,13 @@ export function AgentPageContent({
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
+    setActiveStateIdentity(stateIdentity)
     setSelectedRun(null)
     setFocusedRunId(null)
     setFocusedArtifactId(null)
     setDag(null)
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [routeSessionId])
+  }, [stateIdentity])
 
   useEffect(() => {
     if (!routeSessionId || projectConversations === undefined) return

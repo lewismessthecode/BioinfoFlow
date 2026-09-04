@@ -32,9 +32,16 @@ vi.mock("@/lib/agent/client", () => ({
 }))
 
 function ProjectSwitcher() {
-  const { selectWorkspaceProject } = useProjectContext()
+  const { selectWorkspaceProject, selectedProjectId } = useProjectContext()
   return (
-    <button type="button" onClick={() => selectWorkspaceProject("project-b")}>
+    <button
+      type="button"
+      onClick={() =>
+        selectWorkspaceProject(
+          selectedProjectId === "project-a" ? "project-b" : "project-a",
+        )
+      }
+    >
       switch project
     </button>
   )
@@ -511,6 +518,12 @@ describe("Agent pages", () => {
     expect(screen.getByTestId("live-deck")).toHaveTextContent("run:run-a")
     fireEvent.click(screen.getByTestId("select-artifact"))
     expect(screen.getByTestId("live-deck")).toHaveTextContent("artifact:artifact-99")
+
+    fireEvent.click(screen.getByRole("button", { name: "switch project" }))
+
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("run:none")
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("artifact:none")
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("dag:none")
   })
 
   it("remounts the draft workbench when the project changes", () => {

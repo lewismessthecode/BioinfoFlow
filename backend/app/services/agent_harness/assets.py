@@ -850,11 +850,15 @@ class AgentHarnessArtifactService:
             )
             staging_root.rename(root)
             await self.repo.session.commit()
-            await self.repo.session.refresh(artifact)
         except Exception:
             await self.repo.session.rollback()
             shutil.rmtree(staging_root, ignore_errors=True)
             shutil.rmtree(root, ignore_errors=True)
+            raise
+        try:
+            await self.repo.session.refresh(artifact)
+        except Exception:
+            # The database row and file are already durable; keep both for retry.
             raise
         return {"artifact_id": str(artifact.id)}
 
@@ -945,14 +949,18 @@ class AgentHarnessArtifactService:
             staging_root.rename(root)
             moved_to_final_root = True
             await self.repo.session.commit()
-            await self.repo.session.refresh(artifact)
-            return _artifact_reference(artifact)
         except Exception:
             await self.repo.session.rollback()
             shutil.rmtree(staging_root, ignore_errors=True)
             if moved_to_final_root:
                 shutil.rmtree(root, ignore_errors=True)
             raise
+        try:
+            await self.repo.session.refresh(artifact)
+        except Exception:
+            # The database row and file are already durable; keep both for retry.
+            raise
+        return _artifact_reference(artifact)
 
 
 def artifact_reference_part(output: Any) -> dict[str, Any] | None:

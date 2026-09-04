@@ -572,7 +572,7 @@ function sortNodes(nodes: WorkspaceFileNode[]) {
 }
 
 function safeFileUrl(value: string) {
-  if (value.startsWith("/")) return value
+  if (value.startsWith("/") && !value.startsWith("//")) return value
   try {
     const url = new URL(value)
     return url.protocol === "http:" || url.protocol === "https:" ? value : null
