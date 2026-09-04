@@ -1540,6 +1540,7 @@ def test_local_runtime_respects_the_frozen_root_and_uses_the_default_tool_contra
         "bash",
         "edit",
         "write",
+        "publish_artifact",
         "ask_user",
         "update_plan",
     ]

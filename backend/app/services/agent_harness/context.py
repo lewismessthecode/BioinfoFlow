@@ -226,6 +226,7 @@ def _default_tool_descriptions() -> dict[str, str]:
     from app.services.agent_harness.tools.ask_user import AskUserTool
     from app.services.agent_harness.tools.bash import BashTool
     from app.services.agent_harness.tools.edit import EditTool
+    from app.services.agent_harness.tools.publish_artifact import PublishArtifactTool
     from app.services.agent_harness.tools.read import ReadTool
     from app.services.agent_harness.tools.update_plan import UpdatePlanTool
     from app.services.agent_harness.tools.write import WriteTool
@@ -235,6 +236,7 @@ def _default_tool_descriptions() -> dict[str, str]:
         BashTool(),
         EditTool(),
         WriteTool(),
+        PublishArtifactTool(),
         AskUserTool(),
         UpdatePlanTool(),
     )
