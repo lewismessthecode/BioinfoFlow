@@ -1039,11 +1039,19 @@ async def test_agent_api_preserves_attachment_and_artifact_frontend_contracts(
 
     assert artifacts.status_code == 200
     assert artifacts.json()["data"][0]["id"] == artifact_id
+    assert artifacts.json()["data"][0]["artifact_id"] == artifact_id
+    assert artifacts.json()["data"][0]["run_id"] == str(run.id)
+    assert artifacts.json()["data"][0]["location"].endswith(
+        f"/agent/artifacts/{artifact_id}/download"
+    )
+    assert artifacts.json()["data"][0]["media_type"] == "application/json"
+    assert artifacts.json()["data"][0]["status"] == "ready"
     assert "turn_id" not in artifacts.json()["data"][0]
     assert "action_id" not in artifacts.json()["data"][0]
     assert "file_path" not in artifacts.json()["data"][0]
     assert detail.status_code == 200
     assert detail.json()["data"]["run_id"] == str(run.id)
+    assert detail.json()["data"]["artifact_id"] == artifact_id
     assert "file_path" not in detail.json()["data"]
     assert download.status_code == 200
     assert download.headers["content-type"] == "application/json"

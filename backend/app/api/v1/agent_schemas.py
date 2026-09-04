@@ -19,6 +19,7 @@ from app.services.agent_harness.contracts import (
     PermissionMode,
     WorkspaceAccess,
 )
+from app.services.agent_harness.projection import artifact_view
 
 
 class AgentSessionCreate(BaseModel):
@@ -158,6 +159,7 @@ class AgentAttachmentView(BaseModel):
 class AgentArtifactView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    artifact_id: UUID
     id: UUID
     session_id: UUID
     run_id: UUID | None = None
@@ -165,6 +167,9 @@ class AgentArtifactView(BaseModel):
     title: str
     summary: str | None = None
     payload: dict | None = None
+    location: str | None = None
+    media_type: str | None = None
+    status: Literal["ready", "metadata_only"]
     resource_ref: dict | None = None
     created_at: datetime
     updated_at: datetime
@@ -213,19 +218,7 @@ def attachment_data(attachment: AgentHarnessAttachment) -> dict:
 
 
 def artifact_data(artifact: AgentHarnessArtifact) -> dict:
-    run_id = str(artifact.run_id) if artifact.run_id else None
-    return {
-        "id": str(artifact.id),
-        "session_id": str(artifact.session_id),
-        "run_id": run_id,
-        "type": artifact.type,
-        "title": artifact.title,
-        "summary": artifact.summary,
-        "payload": artifact.payload,
-        "resource_ref": artifact.resource_ref,
-        "created_at": artifact.created_at.isoformat(),
-        "updated_at": artifact.updated_at.isoformat(),
-    }
+    return artifact_view(artifact)
 
 
 __all__ = [

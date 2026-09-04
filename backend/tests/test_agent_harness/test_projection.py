@@ -3,8 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
 
-from app.models.agent_harness import AgentHarnessEntry, AgentHarnessRun
+from app.models.agent_harness import (
+    AgentHarnessArtifact,
+    AgentHarnessEntry,
+    AgentHarnessRun,
+)
 from app.services.agent_harness.projection import (
+    artifact_view,
     entry_contract,
     pending_interaction_entry_view,
     public_interaction_request,
@@ -26,6 +31,94 @@ from app.services.agent_harness.tools.write import WriteTool
 SESSION_ID = UUID("10000000-0000-0000-0000-000000000001")
 RUN_ID = UUID("20000000-0000-0000-0000-000000000001")
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
+
+
+def test_artifact_projection_exposes_stable_download_contract() -> None:
+    artifact = AgentHarnessArtifact(
+        id="30000000-0000-0000-0000-000000000001",
+        session_id=SESSION_ID,
+        run_id=RUN_ID,
+        type="published_file",
+        title="QC report",
+        summary="All samples passed.",
+        payload={"declaration_id": "qc-report"},
+        file_path=(
+            "10000000-0000-0000-0000-000000000001/"
+            "30000000-0000-0000-0000-000000000001/qc-report.html"
+        ),
+        resource_ref={
+            "kind": "stored_file",
+            "filename": "qc-report.html",
+            "mime_type": "text/html",
+            "size_bytes": 2048,
+            "sha256": "abc123",
+        },
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    projected = artifact_view(artifact)
+
+    assert projected == {
+        "artifact_id": "30000000-0000-0000-0000-000000000001",
+        "id": "30000000-0000-0000-0000-000000000001",
+        "session_id": "10000000-0000-0000-0000-000000000001",
+        "run_id": "20000000-0000-0000-0000-000000000001",
+        "type": "published_file",
+        "title": "QC report",
+        "summary": "All samples passed.",
+        "payload": {"declaration_id": "qc-report"},
+        "location": (
+            "/api/v1/agent/artifacts/"
+            "30000000-0000-0000-0000-000000000001/download"
+        ),
+        "media_type": "text/html",
+        "status": "ready",
+        "resource_ref": {
+            "kind": "stored_file",
+            "filename": "qc-report.html",
+            "mime_type": "text/html",
+            "size_bytes": 2048,
+            "sha256": "abc123",
+        },
+        "created_at": "2026-08-15T00:00:00+00:00",
+        "updated_at": "2026-08-15T00:00:00+00:00",
+    }
+    assert "file_path" not in projected
+
+
+def test_artifact_projection_adapts_legacy_rows_without_managed_resources() -> None:
+    downloadable = AgentHarnessArtifact(
+        id="30000000-0000-0000-0000-000000000002",
+        session_id=SESSION_ID,
+        run_id=RUN_ID,
+        type="file",
+        title="Legacy report",
+        file_path="legacy/report.tsv",
+        resource_ref=None,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    metadata_only = AgentHarnessArtifact(
+        id="30000000-0000-0000-0000-000000000003",
+        session_id=SESSION_ID,
+        run_id=None,
+        type="workflow",
+        title="Legacy workflow record",
+        file_path=None,
+        resource_ref=None,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    assert artifact_view(downloadable)["media_type"] == "text/tab-separated-values"
+    assert artifact_view(downloadable)["status"] == "ready"
+    assert artifact_view(downloadable)["location"].endswith(
+        "/30000000-0000-0000-0000-000000000002/download"
+    )
+    assert artifact_view(metadata_only)["media_type"] is None
+    assert artifact_view(metadata_only)["location"] is None
+    assert artifact_view(metadata_only)["status"] == "metadata_only"
 
 
 def _run(**changes: object) -> AgentHarnessRun:

@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import mimetypes
+from pathlib import Path
 from typing import Any
 
 from pydantic import TypeAdapter
 
-from app.models.agent_harness import AgentHarnessEntry, AgentHarnessRun
+from app.models.agent_harness import (
+    AgentHarnessArtifact,
+    AgentHarnessEntry,
+    AgentHarnessRun,
+)
 from app.services.agent_harness.contracts import (
     HistoryEntry,
     PendingInteractionView,
@@ -47,6 +53,48 @@ _REASONING_TEXT_FIELDS = {
     "thinking": "thinking",
     "thinking_content": "thinking_content",
 }
+
+
+def artifact_view(artifact: AgentHarnessArtifact) -> dict[str, Any]:
+    """Build the stable public Artifact projection without exposing storage paths."""
+
+    artifact_id = str(artifact.id)
+    raw_file_path = str(artifact.file_path or "").strip()
+    resource_ref = artifact.resource_ref
+    resource = resource_ref if isinstance(resource_ref, dict) else None
+    filename = str((resource or {}).get("filename") or "").strip()
+    if not filename and raw_file_path:
+        filename = Path(raw_file_path).name
+    declared_media_type = (resource or {}).get("mime_type")
+    media_type = (
+        str(declared_media_type)
+        if declared_media_type is not None
+        else mimetypes.guess_type(filename)[0]
+        if filename
+        else None
+    )
+
+    return {
+        # ``id`` remains for 0.2 clients; ``artifact_id`` is the canonical 0.3 name.
+        "artifact_id": artifact_id,
+        "id": artifact_id,
+        "session_id": str(artifact.session_id),
+        "run_id": str(artifact.run_id) if artifact.run_id else None,
+        "type": artifact.type,
+        "title": artifact.title,
+        "summary": artifact.summary,
+        "payload": artifact.payload,
+        "location": (
+            f"/api/v1/agent/artifacts/{artifact_id}/download"
+            if raw_file_path
+            else None
+        ),
+        "media_type": media_type,
+        "status": "ready" if raw_file_path else "metadata_only",
+        "resource_ref": resource_ref,
+        "created_at": artifact.created_at.isoformat(),
+        "updated_at": artifact.updated_at.isoformat(),
+    }
 
 
 def _public_interaction_options(values: Any) -> list[dict[str, Any]]:
@@ -566,6 +614,7 @@ def pending_interaction_entry_view(
 
 
 __all__ = [
+    "artifact_view",
     "entry_contract",
     "pending_interaction_entry_view",
     "public_interaction_request",
