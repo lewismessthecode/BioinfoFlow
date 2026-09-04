@@ -2,9 +2,10 @@
 
 ## Current state
 
-The rebased worktree is `codex/agent-ui-action-group`. The latest code commit
-before this evidence update is `ff8991a` (`fix: preserve replacement retry
-state`); this document is committed separately.
+The rebased worktree is `codex/agent-ui-action-group`. The latest code commits
+are `40d1bfc` (`fix: scope unresolved agent routes`) and `ae45106`
+(`test: cover unresolved terminal scope`); this document is committed
+separately.
 
 The implementation retains the four-action group (Browser, Files, Artifacts,
 and DAG), project/session/draft isolation, route-authoritative session panels,
@@ -18,7 +19,13 @@ Subagents are not exposed.
   collection resolves that ID. A resolved project-bound session supplies its
   own project; an unscoped inbox session supplies `null`. Until then,
   AgentWorkbench, LiveDeck, workspace requests, events, and project-scoped
-  terminal wiring are not mounted against stale context.
+  terminal wiring are not mounted against stale context. Loading and
+  missing/archived states are visible rather than leaving an empty resolution
+  shell indefinitely.
+- The global terminal action is disabled while a direct route is unresolved or
+  unavailable. Once resolved, its identity follows the route session's project;
+  unscoped inbox sessions remain disabled and stale project terminal state is
+  cleared on scope changes.
 - WorkspacePanel root, child-directory, and preview requests carry abort
   signals and request-generation guards. A project change or unmount cancels
   old work. Child failures stay local to the directory, preserve the root and
@@ -45,7 +52,7 @@ No screenshot was updated at runtime during validation, and no
 Passing in this worktree:
 
 - Focused route/workspace suite: 54 tests.
-- Full frontend Vitest: 187 files, 1047 tests.
+- Full frontend Vitest: 187 files, 1049 tests.
 - `rtk bun run lint`
 - `rtk bun run lint:i18n`
 - `rtk bun run lint:dead-code`
