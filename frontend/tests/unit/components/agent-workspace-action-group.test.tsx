@@ -46,7 +46,29 @@ describe("AgentWorkspaceActionGroup", () => {
       Array.from(group.querySelectorAll<HTMLElement>("[data-workspace-action]"))
         .map((node) => node.dataset.workspaceAction),
     ).toEqual(["artifacts", "files", "dag", "browser", "panel"])
+    expect(group.querySelector("[data-workspace-divider]")).toBeTruthy()
+    expect(group.querySelector("[data-workspace-divider]")?.nextElementSibling)
+      .toBe(group.querySelector('[data-workspace-action="artifacts"]')?.parentElement?.parentElement)
     expect(screen.queryByRole("button", { name: /subagent/i })).not.toBeInTheDocument()
+  })
+
+  it("keeps compact labels discoverable without allowing the action row to overflow", () => {
+    renderActions()
+
+    const group = screen.getByRole("group", { name: "Agent workspace" })
+    expect(group).toHaveClass("max-w-full", "overflow-hidden", "flex-nowrap")
+    expect(group.querySelector("[data-workspace-tabs]")).toHaveClass(
+      "min-w-0",
+      "overflow-hidden",
+      "flex-nowrap",
+    )
+
+    for (const label of ["Artifacts", "Open file", "DAG", "Browser"]) {
+      const button = screen.getByRole("button", { name: label })
+      expect(button).toHaveAttribute("title", label)
+      expect(button).toHaveClass("min-w-0", "shrink-0")
+      expect(button.querySelector("span")).toHaveClass("hidden", "xl:inline")
+    }
   })
 
   it("marks the active tab and exposes a close affordance", () => {

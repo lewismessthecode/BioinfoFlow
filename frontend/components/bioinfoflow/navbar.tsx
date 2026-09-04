@@ -92,7 +92,10 @@ export function Navbar({
       <div className="flex-1" />
 
       {/* Right Actions */}
-      <div className="flex items-center gap-1.5" data-testid="navbar-action-row">
+      <div
+        className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden"
+        data-testid="navbar-action-row"
+      >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -101,6 +104,7 @@ export function Navbar({
               className={actionButtonClassName}
               disabled={localePending}
               aria-label={tAccessibility("morePreferences")}
+              data-navbar-action="more"
             >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
