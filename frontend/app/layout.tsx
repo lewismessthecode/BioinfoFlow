@@ -104,7 +104,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           {tA11y("skipToContent")}
         </a>
         <NextIntlClientProvider messages={messages}>
-          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
             <AppearanceProvider>{children}</AppearanceProvider>
           </ThemeProvider>
         </NextIntlClientProvider>

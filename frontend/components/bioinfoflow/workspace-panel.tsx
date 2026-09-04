@@ -1,6 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -40,13 +47,22 @@ export function WorkspacePanel({
   const [nodes, setNodes] = useState<WorkspaceFileNode[]>([])
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set())
+  const [childErrors, setChildErrors] = useState<Set<string>>(new Set())
   const [selectedFile, setSelectedFile] = useState<WorkspaceFileNode | null>(null)
   const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null)
   const [query, setQuery] = useState("")
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading")
   const [previewStatus, setPreviewStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
+  const requestGenerationRef = useRef(0)
+  const rootControllerRef = useRef<AbortController | null>(null)
+  const previewControllerRef = useRef<AbortController | null>(null)
+  const childControllersRef = useRef(new Map<string, AbortController>())
 
   const loadRoot = useCallback(async () => {
+    rootControllerRef.current?.abort()
+    const controller = new AbortController()
+    rootControllerRef.current = controller
+    const generation = requestGenerationRef.current
     if (!projectId) {
       setNodes([])
       setStatus("ready")
@@ -54,12 +70,20 @@ export function WorkspacePanel({
     }
     setStatus("loading")
     try {
-      const next = await adapter.listFiles({ projectId, path: ROOT_PATH })
+      const next = await adapter.listFiles({
+        projectId,
+        path: ROOT_PATH,
+        signal: controller.signal,
+      })
+      if (controller.signal.aborted || generation !== requestGenerationRef.current) return
       setNodes(sortNodes(next))
       setStatus("ready")
     } catch {
+      if (controller.signal.aborted || generation !== requestGenerationRef.current) return
       setNodes([])
       setStatus("error")
+    } finally {
+      if (rootControllerRef.current === controller) rootControllerRef.current = null
     }
   }, [adapter, projectId])
 
@@ -68,22 +92,57 @@ export function WorkspacePanel({
     setPreview(null)
     setPreviewStatus("idle")
     setExpandedPaths(new Set())
+    setChildErrors(new Set())
     void loadRoot()
+    const childControllers = childControllersRef.current
+    return () => {
+      requestGenerationRef.current += 1
+      rootControllerRef.current?.abort()
+      previewControllerRef.current?.abort()
+      childControllers.forEach((controller) => controller.abort())
+      childControllers.clear()
+      setLoadingPaths(new Set())
+    }
   }, [loadRoot])
 
   const loadChildren = useCallback(
     async (node: WorkspaceFileNode) => {
       if (!projectId || node.type !== "directory" || node.children) return
+      childControllersRef.current.get(node.path)?.abort()
+      const controller = new AbortController()
+      childControllersRef.current.set(node.path, controller)
+      const generation = requestGenerationRef.current
       setLoadingPaths((current) => new Set(current).add(node.path))
       try {
-        const children = await adapter.listFiles({ projectId, path: node.path })
-        setNodes((current) => replaceChildren(current, node.path, sortNodes(children)))
-      } finally {
-        setLoadingPaths((current) => {
+        const children = await adapter.listFiles({
+          projectId,
+          path: node.path,
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted || generation !== requestGenerationRef.current) return
+        setChildErrors((current) => {
           const next = new Set(current)
           next.delete(node.path)
           return next
         })
+        setNodes((current) => replaceChildren(current, node.path, sortNodes(children)))
+      } catch (error) {
+        if (!controller.signal.aborted && generation === requestGenerationRef.current) {
+          setChildErrors((current) => new Set(current).add(node.path))
+          throw error
+        }
+      } finally {
+        if (
+          childControllersRef.current.get(node.path) === controller &&
+          generation === requestGenerationRef.current
+        ) {
+          childControllersRef.current.delete(node.path)
+          setLoadingPaths((current) => {
+            const next = new Set(current)
+            next.delete(node.path)
+            return next
+          })
+        }
       }
     },
     [adapter, projectId],
@@ -92,15 +151,29 @@ export function WorkspacePanel({
   const selectFile = useCallback(
     async (node: WorkspaceFileNode) => {
       if (!projectId || node.type !== "file") return
+      previewControllerRef.current?.abort()
+      const controller = new AbortController()
+      previewControllerRef.current = controller
+      const generation = requestGenerationRef.current
       setSelectedFile(node)
       setPreview(null)
       setPreviewStatus("loading")
       try {
-        const next = await adapter.readFile({ projectId, path: node.path })
+        const next = await adapter.readFile({
+          projectId,
+          path: node.path,
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted || generation !== requestGenerationRef.current) return
         setPreview(next)
         setPreviewStatus("ready")
       } catch {
+        if (controller.signal.aborted || generation !== requestGenerationRef.current) return
         setPreviewStatus("error")
+      } finally {
+        if (previewControllerRef.current === controller) {
+          previewControllerRef.current = null
+        }
       }
     },
     [adapter, projectId],
@@ -216,6 +289,9 @@ export function WorkspacePanel({
                   selectedPath={selectedFile?.path ?? null}
                   expandedPaths={expandedPaths}
                   loadingPaths={loadingPaths}
+                  childErrors={childErrors}
+                  childErrorLabel={t("errors.loadFilesFailed")}
+                  retryLabel={t("files.refresh")}
                   queryActive={Boolean(query)}
                   onToggle={(directory) => {
                     const expanded = expandedPaths.has(directory.path)
@@ -225,8 +301,11 @@ export function WorkspacePanel({
                       else next.add(directory.path)
                       return next
                     })
-                    if (!expanded) void loadChildren(directory)
+                    if (!expanded) {
+                      void loadChildren(directory).catch(() => undefined)
+                    }
                   }}
+                  onRetry={(directory) => void loadChildren(directory).catch(() => undefined)}
                   onSelect={(file) => void selectFile(file)}
                 />
               ))
@@ -244,8 +323,12 @@ function FileTreeRow({
   selectedPath,
   expandedPaths,
   loadingPaths,
+  childErrors,
+  childErrorLabel,
+  retryLabel,
   queryActive,
   onToggle,
+  onRetry,
   onSelect,
 }: {
   node: WorkspaceFileNode
@@ -253,8 +336,12 @@ function FileTreeRow({
   selectedPath: string | null
   expandedPaths: Set<string>
   loadingPaths: Set<string>
+  childErrors: Set<string>
+  childErrorLabel: string
+  retryLabel: string
   queryActive: boolean
   onToggle: (node: WorkspaceFileNode) => void
+  onRetry: (node: WorkspaceFileNode) => void
   onSelect: (node: WorkspaceFileNode) => void
 }) {
   const directory = node.type === "directory"
@@ -262,7 +349,7 @@ function FileTreeRow({
   const loading = loadingPaths.has(node.path)
 
   return (
-    <div>
+    <div className="min-w-0">
       <button
         type="button"
         onClick={() => (directory ? onToggle(node) : onSelect(node))}
@@ -296,6 +383,19 @@ function FileTreeRow({
         )}
         <span className="min-w-0 flex-1 truncate">{node.name}</span>
       </button>
+      {childErrors.has(node.path) ? (
+        <span className="ml-7 inline-flex items-center gap-1 text-[10px] text-destructive">
+          <span role="status">{childErrorLabel}</span>
+          <button
+            type="button"
+            className="underline underline-offset-2"
+            aria-label={retryLabel}
+            onClick={() => onRetry(node)}
+          >
+            {retryLabel}
+          </button>
+        </span>
+      ) : null}
       {directory && expanded
         ? node.children?.map((child) => (
             <FileTreeRow
@@ -305,8 +405,12 @@ function FileTreeRow({
               selectedPath={selectedPath}
               expandedPaths={expandedPaths}
               loadingPaths={loadingPaths}
+              childErrors={childErrors}
+              childErrorLabel={childErrorLabel}
+              retryLabel={retryLabel}
               queryActive={queryActive}
               onToggle={onToggle}
+              onRetry={onRetry}
               onSelect={onSelect}
             />
           ))
@@ -353,15 +457,15 @@ function filterNodes(nodes: WorkspaceFileNode[], query: string): WorkspaceFileNo
 
 function FileGlyph({ name }: { name: string }) {
   const extension = name.split(".").pop()?.toLowerCase()
-  const className = "h-3.5 w-3.5 shrink-0 text-muted-foreground"
+  const baseClassName = "h-3.5 w-3.5 shrink-0"
   if (["json", "jsonl", "yaml", "yml", "toml"].includes(extension ?? "")) {
-    return <FileJson className={className} />
+    return <FileJson className={cn(baseClassName, "text-amber-500 dark:text-amber-400")} />
   }
   if (["zip", "tar", "gz", "bz2", "xz"].includes(extension ?? "")) {
-    return <FileArchive className={className} />
+    return <FileArchive className={cn(baseClassName, "text-violet-500 dark:text-violet-400")} />
   }
   if (["js", "jsx", "ts", "tsx", "py", "r", "go", "rs", "java", "c", "cpp", "nf", "wdl", "sh"].includes(extension ?? "")) {
-    return <FileCode className={className} />
+    return <FileCode className={cn(baseClassName, "text-sky-500 dark:text-sky-400")} />
   }
-  return <FileText className={className} />
+  return <FileText className={cn(baseClassName, "text-muted-foreground")} />
 }

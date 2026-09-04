@@ -11,7 +11,19 @@ await mkdir(outputDir, { recursive: true })
 
 const browser = await chromium.launch({ headless: true })
 
-async function capture({ name, locale, theme, viewport, scrollY = 0, scrollToBottom = false, reducedMotion = "no-preference", fullPage = false }) {
+async function capture({
+  name,
+  locale,
+  theme,
+  viewport,
+  scrollY = 0,
+  scrollToBottom = false,
+  selector,
+  openMenu = false,
+  checkHardware = false,
+  reducedMotion = "no-preference",
+  fullPage = false,
+}) {
   const context = await browser.newContext({
     viewport,
     deviceScaleFactor: 1,
@@ -46,12 +58,23 @@ async function capture({ name, locale, theme, viewport, scrollY = 0, scrollToBot
       }
     })
   })
-  if (scrollToBottom) {
+  if (selector) {
+    await page.locator(selector).scrollIntoViewIfNeeded()
+    await page.waitForTimeout(500)
+  } else if (scrollToBottom) {
     await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }))
     await page.waitForTimeout(500)
   } else if (scrollY) {
     await page.evaluate((y) => window.scrollTo({ top: y, behavior: "instant" }), scrollY)
     await page.waitForTimeout(500)
+  }
+  if (openMenu) {
+    await page.locator('button[aria-controls="landing-navigation-menu"]').click()
+    await page.waitForTimeout(300)
+  }
+  if (checkHardware) {
+    await page.locator('button[aria-describedby="hardware-diagnostic-status"]').click()
+    await page.waitForTimeout(800)
   }
   await page.screenshot({
     path: path.join(outputDir, `${name}.png`),
@@ -72,7 +95,17 @@ try {
   await capture({ name: "desktop-dark-product", locale: "en", theme: "dark", viewport: { width: 1440, height: 900 }, scrollY: 1050 })
   await capture({ name: "desktop-light-footer", locale: "zh-CN", theme: "light", viewport: { width: 1440, height: 900 }, scrollToBottom: true })
   await capture({ name: "desktop-dark-footer", locale: "zh-CN", theme: "dark", viewport: { width: 1440, height: 900 }, scrollToBottom: true })
+  await capture({ name: "desktop-light-cta-endpoint", locale: "en", theme: "light", viewport: { width: 1440, height: 900 }, selector: ".landing-final-cta" })
+  await capture({ name: "desktop-dark-cta-endpoint", locale: "zh-CN", theme: "dark", viewport: { width: 1440, height: 900 }, selector: ".landing-final-cta" })
+  await capture({ name: "desktop-1024-hardware", locale: "en", theme: "light", viewport: { width: 1024, height: 900 }, selector: "#hardware" })
+  await capture({ name: "desktop-1280-hardware", locale: "en", theme: "light", viewport: { width: 1280, height: 900 }, selector: "#hardware" })
+  await capture({ name: "desktop-1024-security", locale: "zh-CN", theme: "dark", viewport: { width: 1024, height: 900 }, selector: "#security" })
+  await capture({ name: "desktop-1280-security", locale: "zh-CN", theme: "dark", viewport: { width: 1280, height: 900 }, selector: "#security" })
   await capture({ name: "desktop-zh-hero", locale: "zh-CN", theme: "light", viewport: { width: 1440, height: 900 } })
+  await capture({ name: "desktop-light-hardware-result", locale: "en", theme: "light", viewport: { width: 1440, height: 900 }, selector: "#hardware", checkHardware: true })
+  await capture({ name: "desktop-dark-security", locale: "zh-CN", theme: "dark", viewport: { width: 1440, height: 900 }, selector: "#security" })
+  await capture({ name: "tablet-light-menu", locale: "en", theme: "light", viewport: { width: 768, height: 900 }, openMenu: true })
+  await capture({ name: "tablet-dark-menu", locale: "zh-CN", theme: "dark", viewport: { width: 768, height: 900 }, openMenu: true })
   await capture({ name: "mobile-light", locale: "en", theme: "light", viewport: { width: 390, height: 844 }, reducedMotion: "reduce", fullPage: true })
   await capture({ name: "mobile-dark", locale: "zh-CN", theme: "dark", viewport: { width: 390, height: 844 }, reducedMotion: "reduce", fullPage: true })
 } finally {

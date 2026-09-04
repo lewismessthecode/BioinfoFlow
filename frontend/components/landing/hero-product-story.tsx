@@ -1,13 +1,13 @@
 "use client"
 
-import Image from "next/image"
 import Link from "next/link"
-import { useRef } from "react"
-import { useTranslations } from "next-intl"
+import Image from "next/image"
+import { useEffect, useRef } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import gsap from "gsap"
 import { ScrollTrigger } from "gsap/ScrollTrigger"
 import { useGSAP } from "@gsap/react"
-import { ArrowRight, Check } from "@/lib/icons"
+import { ArrowRight } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 
 const stages = [
@@ -19,6 +19,7 @@ const stages = [
 
 export function HeroProductStory() {
   const t = useTranslations("landing.story")
+  const locale = useLocale()
   const root = useRef<HTMLElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const heroCopy = useRef<HTMLDivElement>(null)
@@ -26,6 +27,11 @@ export function HeroProductStory() {
   const screenRefs = useRef<Array<HTMLDivElement | null>>([])
   const copyRefs = useRef<Array<HTMLDivElement | null>>([])
   const progressRefs = useRef<Array<HTMLSpanElement | null>>([])
+
+  useEffect(() => {
+    const refreshFrame = window.requestAnimationFrame(() => ScrollTrigger.refresh())
+    return () => window.cancelAnimationFrame(refreshFrame)
+  }, [locale])
 
   useGSAP(
     () => {
@@ -112,11 +118,8 @@ export function HeroProductStory() {
   return (
     <section ref={root} id="product" className="landing-story-root relative">
       <div ref={stage} className="landing-story-stage">
-        <div ref={heroCopy} className="landing-hero-copy mx-auto max-w-7xl px-5 text-center">
-          <p className="mb-5 text-[0.68rem] font-medium uppercase tracking-[0.24em] text-[var(--brand-accent)]">
-            {t("eyebrow")}
-          </p>
-          <h1 className="text-balance text-[clamp(2.7rem,5.2vw,5rem)] font-medium leading-[0.98] tracking-[-0.06em]">
+        <div ref={heroCopy} className="landing-hero-copy mx-auto max-w-7xl px-5 text-center md:px-8">
+          <h1 className="text-balance text-[clamp(2.7rem,5.2vw,5rem)] font-medium leading-[0.98] tracking-[-0.065em]">
             <span className="block">{t("titleSuffix")}</span>
           </h1>
           <p className="mx-auto mt-7 max-w-xl text-balance text-base leading-7 text-muted-foreground md:text-lg">
@@ -133,14 +136,18 @@ export function HeroProductStory() {
               <Link href="#features">{t("secondaryAction")}</Link>
             </Button>
           </div>
-          <p className="mt-5 inline-flex items-center gap-2 text-xs text-muted-foreground">
-            <Check className="size-3.5 text-[var(--brand-accent)]" />
-            {t("reassurance")}
-          </p>
         </div>
 
-        <div ref={productFrame} className="landing-product-frame">
-          <div className="landing-product-meta" aria-hidden="true">
+        <ol className="landing-product-summary sr-only">
+          {stages.map((stageItem) => (
+            <li key={stageItem.id}>
+              {t(`stages.${stageItem.id}.label`)}: {t(`stages.${stageItem.id}.description`)}
+            </li>
+          ))}
+        </ol>
+
+        <div ref={productFrame} className="landing-product-frame" aria-hidden="true">
+          <div className="landing-product-meta">
             <span className="landing-window-controls">
               <span className="landing-window-control bg-[var(--landing-window-close)]" />
               <span className="landing-window-control bg-[var(--landing-window-minimize)]" />
@@ -154,7 +161,6 @@ export function HeroProductStory() {
                 key={stageItem.id}
                 ref={(node) => { screenRefs.current[index] = node }}
                 className="landing-product-screen"
-                aria-hidden={index === 0 ? undefined : true}
               >
                 <Image
                   src={`/landing/product/${stageItem.id}-light.webp`}
@@ -193,7 +199,7 @@ export function HeroProductStory() {
                 </div>
               ))}
             </div>
-            <div className="hidden w-60 grid-cols-4 gap-2 md:grid" aria-hidden="true">
+            <div className="hidden w-60 grid-cols-4 gap-2 md:grid">
               {stages.map((stageItem, index) => (
                 <span key={stageItem.id} className="h-0.5 overflow-hidden rounded-full bg-border">
                   <span
@@ -205,40 +211,40 @@ export function HeroProductStory() {
             </div>
           </div>
         </div>
-
       </div>
 
-      <div className="landing-static-story px-5 pb-20 pt-12">
-        <div className="mx-auto max-w-5xl space-y-12">
+      <div className="landing-static-story px-5 pb-24 pt-8 md:px-8 md:pb-28">
+        <ol className="landing-static-story-list mx-auto max-w-5xl">
           {stages.map((stageItem) => (
-            <article key={stageItem.id} className="space-y-4">
-              <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--landing-shadow)]">
-                <Image
-                  src={`/landing/product/${stageItem.id}-light.webp`}
-                  alt={t(`stages.${stageItem.id}.alt`)}
-                  width={2560}
-                  height={1154}
-                  className="h-auto w-full dark:hidden"
-                />
-                <Image
-                  src={`/landing/product/${stageItem.id}-dark.webp`}
-                  alt=""
-                  width={2560}
-                  height={1154}
-                  className="hidden h-auto w-full dark:block"
-                />
-              </div>
-              <div className="grid gap-2 border-t border-border pt-4 sm:grid-cols-[7rem_1fr]">
-                <p className="font-mono text-xs text-[var(--brand-accent)]">
-                  {stageItem.number} / {t(`stages.${stageItem.id}.label`)}
-                </p>
-                <p className="text-sm leading-6 text-muted-foreground">
-                  {t(`stages.${stageItem.id}.description`)}
-                </p>
-              </div>
-            </article>
+            <li key={stageItem.id}>
+              <article className="landing-static-stage">
+                <header className="landing-static-stage-header">
+                  <p className="landing-static-stage-number">{stageItem.number}</p>
+                  <h2 className="landing-static-stage-label">{t(`stages.${stageItem.id}.label`)}</h2>
+                </header>
+                <div className="landing-static-capture overflow-hidden rounded-lg border border-border bg-card">
+                  <Image
+                    src={`/landing/product/${stageItem.id}-light.webp`}
+                    alt={t(`stages.${stageItem.id}.alt`)}
+                    width={2560}
+                    height={1154}
+                    className="h-auto w-full dark:hidden"
+                  />
+                  <Image
+                    src={`/landing/product/${stageItem.id}-dark.webp`}
+                    alt=""
+                    width={2560}
+                    height={1154}
+                    className="hidden h-auto w-full dark:block"
+                  />
+                </div>
+                <div className="landing-static-copy">
+                  <p>{t(`stages.${stageItem.id}.description`)}</p>
+                </div>
+              </article>
+            </li>
           ))}
-        </div>
+        </ol>
       </div>
     </section>
   )

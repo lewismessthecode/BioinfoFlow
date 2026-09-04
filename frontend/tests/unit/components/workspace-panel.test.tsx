@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -53,6 +53,14 @@ function createAdapter(): AgentWorkspaceAdapter {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return { promise, resolve }
+}
+
 describe("WorkspacePanel", () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -85,6 +93,7 @@ describe("WorkspacePanel", () => {
     expect(adapter.listFiles).toHaveBeenLastCalledWith({
       projectId: "project-1",
       path: "results",
+      signal: expect.any(AbortSignal),
     })
   })
 
@@ -115,6 +124,7 @@ describe("WorkspacePanel", () => {
     expect(adapter.readFile).toHaveBeenCalledWith({
       projectId: "project-1",
       path: "results/report.json",
+      signal: expect.any(AbortSignal),
     })
   })
 
@@ -130,5 +140,160 @@ describe("WorkspacePanel", () => {
     await userEvent.type(screen.getByRole("textbox", { name: "Filter files" }), "beta")
     expect(screen.queryByText("alpha.py")).not.toBeInTheDocument()
     expect(screen.getByText("beta.md")).toBeInTheDocument()
+  })
+
+  it("uses visible file-type colors for tree glyphs", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.listFiles).mockResolvedValueOnce([
+      { name: "config.json", path: "config.json", type: "file", sizeBytes: 1, modifiedAt: null },
+      { name: "pipeline.nf", path: "pipeline.nf", type: "file", sizeBytes: 1, modifiedAt: null },
+    ])
+
+    render(<WorkspacePanel projectId="project-1" adapter={adapter} />)
+
+    const jsonButton = await screen.findByRole("button", { name: /config.json/i })
+    const codeButton = screen.getByRole("button", { name: /pipeline.nf/i })
+    expect(jsonButton.querySelector("svg")).toHaveClass("text-amber-500")
+    expect(codeButton.querySelector("svg")).toHaveClass("text-sky-500")
+  })
+
+  it("ignores a stale tree response after the project changes", async () => {
+    const adapter = createAdapter()
+    const projectA = deferred<WorkspaceFileNode[]>()
+    const projectB = deferred<WorkspaceFileNode[]>()
+    vi.mocked(adapter.listFiles)
+      .mockImplementationOnce(() => projectA.promise)
+      .mockImplementationOnce(() => projectB.promise)
+
+    const view = render(<WorkspacePanel projectId="project-a" adapter={adapter} />)
+    await waitFor(() => expect(adapter.listFiles).toHaveBeenCalledTimes(1))
+    view.rerender(<WorkspacePanel projectId="project-b" adapter={adapter} />)
+    await waitFor(() => expect(adapter.listFiles).toHaveBeenCalledTimes(2))
+
+    projectA.resolve([
+      { name: "a.txt", path: "a.txt", type: "file", sizeBytes: 1, modifiedAt: null },
+    ])
+    projectB.resolve([
+      { name: "b.txt", path: "b.txt", type: "file", sizeBytes: 1, modifiedAt: null },
+    ])
+
+    expect(await screen.findByText("b.txt")).toBeInTheDocument()
+    expect(screen.queryByText("a.txt")).not.toBeInTheDocument()
+    expect(vi.mocked(adapter.listFiles).mock.calls[0][0].signal?.aborted).toBe(true)
+  })
+
+  it("ignores a stale preview response after project replacement", async () => {
+    const adapter = createAdapter()
+    const preview = deferred<WorkspaceFilePreview>()
+    vi.mocked(adapter.listFiles).mockImplementation(async ({ projectId }) => [
+      {
+        name: `${projectId}.txt`,
+        path: `${projectId}.txt`,
+        type: "file",
+        sizeBytes: 1,
+        modifiedAt: null,
+      },
+    ])
+    vi.mocked(adapter.readFile).mockReturnValueOnce(preview.promise)
+
+    const view = render(<WorkspacePanel projectId="project-a" adapter={adapter} />)
+    await userEvent.click(await screen.findByRole("button", { name: /project-a.txt/i }))
+    view.rerender(<WorkspacePanel projectId="project-b" adapter={adapter} />)
+
+    preview.resolve({
+      path: "project-a.txt",
+      content: "stale project A content",
+      totalLines: 1,
+      truncated: false,
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText("stale project A content")).not.toBeInTheDocument()
+    })
+    expect(vi.mocked(adapter.readFile).mock.calls[0][0].signal?.aborted).toBe(true)
+  })
+
+  it("clears the child loading spinner when its request is aborted", async () => {
+    const adapter = createAdapter()
+    const child = deferred<WorkspaceFileNode[]>()
+    vi.mocked(adapter.listFiles).mockImplementation(async ({ path }) => {
+      if (path === "results") return child.promise
+      return [
+        { name: "results", path: "results", type: "directory", sizeBytes: null, modifiedAt: null },
+      ]
+    })
+
+    const view = render(<WorkspacePanel projectId="project-a" adapter={adapter} />)
+    const results = await screen.findByRole("button", { name: /results/i })
+    await userEvent.click(results)
+    await waitFor(() =>
+      expect(vi.mocked(adapter.listFiles)).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: "project-a", path: "results" }),
+      ),
+    )
+
+    view.rerender(<WorkspacePanel projectId="project-b" adapter={adapter} />)
+    const nextResults = await screen.findByRole("button", { name: /results/i })
+    expect(nextResults).toHaveAttribute("aria-expanded", "false")
+    expect(nextResults.querySelector(".animate-spin")).not.toBeInTheDocument()
+    expect(
+      vi.mocked(adapter.listFiles).mock.calls.find(
+        ([input]) => input.path === "results",
+      )?.[0].signal?.aborted,
+    ).toBe(true)
+  })
+
+  it("keeps the root tree visible when a child directory fails", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.listFiles).mockImplementation(async ({ path }) => {
+      if (path === "results") throw new Error("child unavailable")
+      return [
+        { name: "results", path: "results", type: "directory", sizeBytes: null, modifiedAt: null },
+        { name: "README.md", path: "README.md", type: "file", sizeBytes: 1, modifiedAt: null },
+      ]
+    })
+
+    render(<WorkspacePanel projectId="project-a" adapter={adapter} />)
+    await userEvent.click(await screen.findByRole("button", { name: /results/i }))
+
+    expect(await screen.findByText("Load files failed")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /README.md/i })).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Refresh files" })).toHaveLength(2)
+  })
+
+  it("keeps the spinner for a replacement child request", async () => {
+    const adapter = createAdapter()
+    const first = deferred<WorkspaceFileNode[]>()
+    const replacement = deferred<WorkspaceFileNode[]>()
+    let childRequest = 0
+    vi.mocked(adapter.listFiles).mockImplementation(async ({ path }) => {
+      if (path === "results") {
+        childRequest += 1
+        return childRequest === 1 ? first.promise : replacement.promise
+      }
+      return [
+        { name: "results", path: "results", type: "directory", sizeBytes: null, modifiedAt: null },
+      ]
+    })
+
+    render(<WorkspacePanel projectId="project-a" adapter={adapter} />)
+    const results = await screen.findByRole("button", { name: /results/i })
+    await userEvent.click(results)
+    await waitFor(() => expect(childRequest).toBe(1))
+    await userEvent.click(results)
+    await userEvent.click(results)
+    await waitFor(() => expect(childRequest).toBe(2))
+
+    first.resolve([])
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /results/i }).querySelector(".animate-spin"))
+        .toBeInTheDocument(),
+    )
+
+    replacement.resolve([])
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /results/i }).querySelector(".animate-spin"))
+        .not.toBeInTheDocument(),
+    )
   })
 })

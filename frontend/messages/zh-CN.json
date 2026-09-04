@@ -1471,6 +1471,9 @@
     "openSidebar": "打开侧边栏",
     "closeSidebar": "关闭侧边栏",
     "hidePanel": "隐藏面板",
+    "resizePanel": "调整工作区面板大小",
+    "resizeSidebar": "调整侧边栏大小",
+    "resizeTerminal": "调整终端大小",
     "refreshWorkspace": "刷新工作区",
     "userMenu": "用户菜单",
     "message": "消息",
@@ -1507,18 +1510,19 @@
       "dark": "深色",
       "light": "浅色",
       "toggleMenu": "菜单",
+      "menu": "导航",
+      "menuDescription": "落地页导航和控制项。",
+      "closeMenu": "关闭菜单",
       "toggleTheme": "主题",
       "selectLanguage": "语言",
       "github": "GitHub"
     },
     "story": {
-      "eyebrow": "本地运行的生物信息学 Agent",
       "title": "Bioinfoflow",
       "titleSuffix": "用自然语言分析生物信息学",
-      "description": "说出你的分析目标，Agent 会准备工作流和参数，确认后即可运行。",
+      "description": "说出你的分析目标，剩下的交给 Agent。",
       "primaryAction": "用 Agent 开始分析",
       "secondaryAction": "看看如何运行",
-      "reassurance": "运行前由你确认，数据留在自己的环境里。",
       "stages": {
         "dashboard": {
           "label": "仪表盘",
@@ -1579,7 +1583,8 @@
     },
     "hardware": {
       "badge": "本机检查",
-      "title": "这台电脑，能跑 WGS 吗？",
+      "titleLead": "这台电脑，",
+      "titleRest": "能跑 WGS 吗？",
       "subtitle": "检查显卡、内存和存储是否满足本地分析需求。",
       "gpu": {
         "title": "显卡",
@@ -1609,12 +1614,14 @@
         "partial": "可能有限制",
         "notCompatible": "需要 NVIDIA GPU",
         "noGpu": "未检测到 GPU",
-        "cannotDetect": "请手动检查 NVIDIA GPU"
+        "cannotDetect": "请手动检查 NVIDIA GPU",
+        "unknownGpu": "未知 GPU"
       }
     },
     "security": {
       "badge": "数据与权限",
-      "title": "数据留在你的环境里",
+      "titleLead": "数据始终留在",
+      "titleRest": "你的环境里。",
       "subtitle": "在本机或自己的服务器上运行。数据放在哪里，始终由你决定。",
       "boundaryLabel": "运行边界",
       "boundaryStatus": "由你控制",
@@ -1635,14 +1642,15 @@
       }
     },
     "cta": {
-      "eyebrow": "从一个分析目标开始",
-      "title": "说出你的目标，Agent 接着做",
-      "subtitle": "工作流、参数和运行位置准备好后，再由你确认。",
+      "titleLead": "说出分析目标。",
+      "titleRest": "Agent 接着处理。",
+      "subtitle": "工作流、运行和结果都沉淀为一条可复现的记录。",
       "getStarted": "开始一次分析",
       "contactUs": "联系我们"
     },
     "footer": {
       "tagline": "本地运行，Agent 协作，结果可复现。",
+      "navigationLabel": "页脚导航",
       "copyright": "© {year} Bioinfoflow",
       "bottomTagline": "本地优先的生物信息学平台",
       "product": {
@@ -2452,6 +2460,7 @@
     "title": "终端",
     "newTerminal": "新建终端",
     "startingSession": "正在启动终端...",
+    "screenshotFixture": "确定性终端测试夹具",
     "targets": {
       "local": "本地"
     },
@@ -2569,6 +2578,10 @@
     },
     "loadErrorTitle": "无法打开对话",
     "loadErrorDescription": "当前对话暂时无法加载。",
+    "routeLoading": {
+      "title": "正在加载对话",
+      "description": "正在解析对话访问权限和工作区范围。"
+    },
     "retry": "重试",
     "readOnly": {
       "archived": "该对话已归档，目前只能查看。",
@@ -2580,7 +2593,24 @@
       "description": "查看工作区文件和工作流。",
       "action": "工作区",
       "open": "打开工作区面板",
-      "close": "关闭工作区面板"
+      "close": "关闭工作区面板",
+      "codePreview": {
+        "wdlFallback": "WDL 语法高亮使用 Scala 降级方案"
+      },
+      "actions": {
+        "browser": "浏览器",
+        "files": "文件",
+        "artifacts": "产物",
+        "dag": "DAG",
+        "openBrowser": "打开浏览器",
+        "closeBrowser": "关闭浏览器",
+        "openFiles": "打开文件",
+        "closeFiles": "关闭文件",
+        "openArtifacts": "打开产物",
+        "closeArtifacts": "关闭产物",
+        "openDag": "打开 DAG",
+        "closeDag": "关闭 DAG"
+      }
     },
     "connection": {
       "connecting": "正在连接",

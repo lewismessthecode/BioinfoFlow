@@ -52,8 +52,9 @@ export function ResizeHandle({
         delta = event.key === "ArrowRight" ? step * direction : -step * direction
       }
       onResize(delta)
+      onResizeEnd?.()
     },
-    [onResize, side]
+    [onResize, onResizeEnd, side]
   )
 
   useEffect(() => {
@@ -94,6 +95,7 @@ export function ResizeHandle({
           ? "absolute left-0 right-0 top-0 z-10 h-2 cursor-row-resize group"
           : "absolute top-0 bottom-0 z-10 w-2 cursor-col-resize group",
         side === "left" ? "right-0" : side === "right" ? "left-0" : "",
+        "rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-1",
         className
       )}
       onMouseDown={handleMouseDown}
@@ -103,7 +105,7 @@ export function ResizeHandle({
       aria-valuenow={valueNow}
       aria-valuemin={valueNow === undefined ? undefined : valueMin}
       aria-valuemax={valueNow === undefined ? undefined : valueMax}
-      aria-label={ariaLabel ?? `Resize ${side} sidebar`}
+      aria-label={ariaLabel}
       tabIndex={0}
     >
       <div

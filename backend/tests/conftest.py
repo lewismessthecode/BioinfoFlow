@@ -123,7 +123,7 @@ async def async_client(app, db_session, monkeypatch):
         async with app.router.lifespan_context(app):
             transport = ASGITransport(app=app)
             async with AsyncClient(
-                transport=transport, base_url="http://test"
+                transport=transport, base_url="http://localhost"
             ) as client:
                 yield client
     finally:
