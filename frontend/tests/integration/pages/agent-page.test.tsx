@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   isMobile: vi.fn(() => false),
   workbench: vi.fn(),
   setNavbarActions: vi.fn(),
+  projectConversations: undefined as Map<string, Array<{ id: string; project_id: string | null }>> | undefined,
 }))
 
 function ProjectSwitcher() {
@@ -68,6 +69,7 @@ vi.mock("@/hooks/use-media-query", () => ({
 vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
   useWorkspaceShell: () => ({
     setNavbarActions: mocks.setNavbarActions,
+    projectConversations: mocks.projectConversations,
   }),
 }))
 
@@ -199,6 +201,7 @@ describe("Agent pages", () => {
     mocks.useEvents.mockReset()
     mocks.workbench.mockReset()
     mocks.setNavbarActions.mockReset()
+    mocks.projectConversations = undefined
     mocks.isMobile.mockReturnValue(false)
   })
 
@@ -229,6 +232,30 @@ describe("Agent pages", () => {
 
     expect(screen.getByTestId("agent-workbench")).toHaveTextContent(
       "session:session-9|project:project-2",
+    )
+  })
+
+  it("waits for direct route scope before mounting session workbench", () => {
+    mocks.projectConversations = new Map()
+    const view = renderAppPage(
+      <AgentPageContent routeSessionId="session-bound" />,
+      { projectContext: { selectedProjectId: "stale-project" } },
+    )
+
+    expect(screen.getByTestId("agent-route-resolution")).toBeInTheDocument()
+    expect(screen.queryByTestId("agent-workbench")).not.toBeInTheDocument()
+    expect(mocks.useEvents.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ projectId: null }),
+    )
+
+    mocks.projectConversations = new Map([
+      ["project-bound", [{ id: "session-bound", project_id: "project-bound" }]],
+    ])
+    view.rerender(<AgentPageContent routeSessionId="session-bound" />)
+
+    expect(screen.queryByTestId("agent-route-resolution")).not.toBeInTheDocument()
+    expect(screen.getByTestId("agent-workbench")).toHaveTextContent(
+      "project:project-bound",
     )
   })
 

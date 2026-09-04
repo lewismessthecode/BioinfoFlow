@@ -59,7 +59,7 @@ export function AgentPageContent({
   const t = useTranslations("agentWorkbench")
   const tAccessibility = useTranslations("accessibility")
   const isMobile = useIsMobile()
-  const { setNavbarActions } = useWorkspaceShell()
+  const { setNavbarActions, projectConversations } = useWorkspaceShell()
   const chatRef = useRef<AgentWorkbenchHandle>(null)
   const {
     selectedProjectId,
@@ -70,6 +70,18 @@ export function AgentPageContent({
     setActiveConversationTitle,
   } = useProjectContext()
   const railRef = useRef<HTMLDivElement>(null)
+  const routeSession = routeSessionId
+    ? Array.from(projectConversations?.values() ?? [])
+        .flat()
+        .find((session) => session.id === routeSessionId)
+    : null
+  const routeScopeReady =
+    !routeSessionId || projectConversations === undefined || routeSession !== undefined
+  const effectiveProjectId = routeSessionId
+    ? projectConversations === undefined
+      ? conversationProjectId || selectedProjectId
+      : routeSession?.project_id ?? null
+    : selectedProjectId
   const {
     preferences: panelPreferences,
     update: updatePanelPreferences,
@@ -84,7 +96,7 @@ export function AgentPageContent({
     mobileOpen,
     setMobileOpen,
   } = useAgentPanelController({
-    projectId: selectedProjectId,
+    projectId: effectiveProjectId,
     routeSessionId,
     isMobile,
     railRef,
@@ -98,7 +110,7 @@ export function AgentPageContent({
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null)
   const [dag, setDag] = useState<DagData | null>(null)
   const sessionScope = routeSessionId || "draft"
-  const projectScope = selectedProjectId || "none"
+  const projectScope = effectiveProjectId || "none"
   const stateIdentity = `${projectScope}:${sessionScope}`
   const [activeStateIdentity, setActiveStateIdentity] = useState(stateIdentity)
   const hasCurrentState = activeStateIdentity === stateIdentity
@@ -112,7 +124,7 @@ export function AgentPageContent({
   }, [routeSessionId, setActiveConversationId])
 
   useEvents({
-    projectId: selectedProjectId,
+    projectId: effectiveProjectId,
     onRunDag: (envelope) => {
       if (!visibleSelectedRun) return
       if (envelope.data.run_id !== visibleSelectedRun.run_id) return
@@ -249,7 +261,7 @@ export function AgentPageContent({
   ])
 
   useEffect(() => {
-    if (!selectedProjectId) {
+    if (!effectiveProjectId) {
       setNavbarActions(null)
       return () => setNavbarActions(null)
     }
@@ -265,7 +277,7 @@ export function AgentPageContent({
   }, [
     actionCommandPort,
     actionModels,
-    selectedProjectId,
+    effectiveProjectId,
     setNavbarActions,
   ])
 
@@ -426,15 +438,24 @@ export function AgentPageContent({
     closeMobileLiveDeck,
   ])
 
+  if (routeSessionId && !routeScopeReady) {
+    return (
+      <div
+        className="flex h-full min-h-0 min-w-0 items-center justify-center bg-background"
+        data-testid="agent-route-resolution"
+      />
+    )
+  }
+
   return (
     <div
       className="flex h-full min-h-0 min-w-0 overflow-hidden bg-background"
       data-testid="agent-page-shell"
     >
       <AgentWorkbench
-        key={`${selectedProjectId ?? "none"}:${routeSessionId ?? "draft"}`}
+        key={`${effectiveProjectId ?? "none"}:${routeSessionId ?? "draft"}`}
         ref={chatRef}
-        projectId={conversationProjectId || selectedProjectId || null}
+        projectId={routeSessionId ? effectiveProjectId : conversationProjectId || effectiveProjectId || null}
         sessionId={routeSessionId}
         onBeforeSessionRoute={handleBeforeSessionRoute}
         onActiveSessionIdChange={handleActiveSessionIdChange}
@@ -450,7 +471,7 @@ export function AgentPageContent({
         />
       )}
 
-      {isMobile && selectedProjectId ? (
+      {isMobile && effectiveProjectId ? (
         <Sheet
           open={mobileLiveDeckOpen}
           onOpenChange={(open) => {
@@ -476,7 +497,7 @@ export function AgentPageContent({
               activeTab={liveDeckTab}
               onTabChange={(activeTab) => updatePanelPreferences({ activeTab })}
               onCollapse={closeMobileLiveDeck}
-              projectId={selectedProjectId}
+          projectId={effectiveProjectId}
               sessionId={routeSessionId}
               selectedArtifactId={visibleFocusedArtifactId}
               onSelectedArtifactIdChange={handleSelectedArtifactIdChange}
@@ -488,7 +509,7 @@ export function AgentPageContent({
         </Sheet>
       ) : null}
 
-      {!isMobile && selectedProjectId && !rightSidebarCollapsed ? (
+      {!isMobile && effectiveProjectId && !rightSidebarCollapsed ? (
         <div
           ref={railRef}
           data-testid="agent-live-deck-rail"
@@ -509,7 +530,7 @@ export function AgentPageContent({
             activeTab={liveDeckTab}
             onTabChange={(activeTab) => updatePanelPreferences({ activeTab })}
             onCollapse={closeLiveDeck}
-            projectId={selectedProjectId}
+        projectId={effectiveProjectId}
             sessionId={routeSessionId}
             selectedArtifactId={visibleFocusedArtifactId}
             onSelectedArtifactIdChange={handleSelectedArtifactIdChange}
