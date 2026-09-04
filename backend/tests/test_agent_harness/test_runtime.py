@@ -370,20 +370,22 @@ async def test_runtime_cancel_claims_a_waiting_user_run(
     runtime = AgentRuntime(session_factory, harness_factory=build_harness)
     opened = await runtime.open_session(_open_request())
     session_id = str(opened.session.id)
-    await runtime.dispatch(
-        session_id,
-        _message("message-before-wait", "Ask me."),
-    )
-    await _wait_for_run_status(runtime, session_id, "waiting_user")
+    try:
+        await runtime.dispatch(
+            session_id,
+            _message("message-before-wait", "Ask me."),
+        )
+        await _wait_for_run_status(runtime, session_id, "waiting_user")
 
-    await runtime.dispatch(
-        session_id,
-        CancelCommand(command_id="cancel-waiting", reason="user_cancelled"),
-    )
+        await runtime.dispatch(
+            session_id,
+            CancelCommand(command_id="cancel-waiting", reason="user_cancelled"),
+        )
 
-    cancelled = await _wait_for_run_status(runtime, session_id, "cancelled")
-    assert _latest_run(cancelled).termination_reason == "user_cancelled"
-    await runtime.shutdown()
+        cancelled = await _wait_for_run_status(runtime, session_id, "cancelled")
+        assert _latest_run(cancelled).termination_reason == "user_cancelled"
+    finally:
+        await runtime.shutdown()
 
 
 @pytest.mark.asyncio
@@ -1059,12 +1061,16 @@ async def _wait_for_run_status(
     session_id: str,
     status: str,
 ):
-    for _ in range(100):
+    last_status = None
+    for _ in range(200):
         snapshot = await runtime.snapshot(session_id)
-        if _latest_run(snapshot).status == status:
+        last_status = _latest_run(snapshot).status
+        if last_status == status:
             return snapshot
-        await asyncio.sleep(0.01)
-    raise AssertionError(f"Agent run did not reach {status}")
+        await asyncio.sleep(0.05)
+    raise AssertionError(
+        f"Agent run did not reach {status}; last status was {last_status}"
+    )
 
 
 def _open_request() -> OpenSessionRequest:

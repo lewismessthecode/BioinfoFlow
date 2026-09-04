@@ -227,6 +227,7 @@ class AgentRuntime:
                                 f"unsupported Agent execution operation: {operation}"
                             )
                     except asyncio.CancelledError:
+                        await asyncio.shield(db.rollback())
                         db.expire_all()
                         reason = await harness.repository.get_run_cancellation(run_id)
                         if reason is not None:
