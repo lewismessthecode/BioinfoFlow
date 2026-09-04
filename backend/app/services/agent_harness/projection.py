@@ -81,6 +81,10 @@ def _public_interaction_options(values: Any) -> list[dict[str, Any]]:
     ]
 
 
+def _public_interaction_text(value: Any) -> str:
+    return public_error_message(str(value)) or ""
+
+
 def public_interaction_request(value: dict[str, Any]) -> dict[str, Any]:
     kind = value.get("kind")
     call_id = str(value.get("call_id") or "interaction")
@@ -112,8 +116,14 @@ def public_interaction_request(value: dict[str, Any]) -> dict[str, Any]:
             "type": "approval",
             "call_id": call_id,
             "tool_name": str(value.get("tool_name") or "tool"),
-            "summary": str(value.get("summary") or "Allow this tool to run?"),
-            "input_preview": value.get("input_preview"),
+            "summary": _public_interaction_text(
+                value.get("summary") or "Allow this tool to run?"
+            ),
+            "input_preview": (
+                _public_interaction_text(value["input_preview"])
+                if isinstance(value.get("input_preview"), str)
+                else None
+            ),
             "allowed_responses": allowed_responses,
             "target": {
                 "environment_id": str(target.get("environment_id") or "local"),
@@ -128,18 +138,20 @@ def public_interaction_request(value: dict[str, Any]) -> dict[str, Any]:
             "risk": {
                 "level": str(risk.get("level") or "unknown"),
                 "effects": [str(item) for item in risk.get("effects") or []],
-                "reasons": [str(item) for item in risk.get("reasons") or []],
-                "reason_codes": [
-                    str(item) for item in risk.get("reason_codes") or []
+                "reasons": [
+                    _public_interaction_text(item) for item in risk.get("reasons") or []
                 ],
+                "reason_codes": [str(item) for item in risk.get("reason_codes") or []],
                 "justification": (
-                    str(risk["justification"])
+                    _public_interaction_text(risk["justification"])
                     if isinstance(risk.get("justification"), str)
                     and risk["justification"]
                     else None
                 ),
                 "affected_resources": [
-                    str(item.get("id") if isinstance(item, dict) else item)
+                    _public_interaction_text(
+                        item.get("id") if isinstance(item, dict) else item
+                    )
                     for item in resources
                 ],
             },

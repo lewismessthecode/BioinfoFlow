@@ -93,7 +93,7 @@ async def test_mutation_service_projects_interaction_payloads_before_persistence
             "type": "approval",
             "call_id": "bash-1",
             "tool_name": "bash",
-            "summary": "Run OPENAI_API_KEY=sk-private-value",
+            "summary": "Run OPENAI_API_KEY=[REDACTED]",
             "input_preview": None,
             "allowed_responses": ["approve", "reject"],
             "target": {
@@ -107,10 +107,65 @@ async def test_mutation_service_projects_interaction_payloads_before_persistence
                 "reasons": [],
                 "reason_codes": [],
                 "justification": None,
-                "affected_resources": ["/private/a"],
+                "affected_resources": ["…/private/a"],
             },
         },
     }
+
+
+@pytest.mark.asyncio
+async def test_mutation_service_redacts_approval_text_before_persistence() -> None:
+    repository = CapturingRepository()
+    service = AgentPresentationMutationService(repository)  # type: ignore[arg-type]
+
+    await service.commit_waiting_interaction(
+        "session-1",
+        run_id="run-1",
+        request_payload={
+            "interaction_id": "approval-1",
+            "request": {
+                "kind": "confirmation",
+                "call_id": "bash-1",
+                "tool_name": "bash",
+                "summary": (
+                    "Run OPENAI_API_KEY=sk-private-value in /Users/private/workspace"
+                ),
+                "input_preview": "cat /Users/private/workspace/input.txt",
+                "risk": {
+                    "level": "high",
+                    "reasons": [
+                        "Uses ghp_privatevalue1234567890 from /Users/private/.env"
+                    ],
+                    "justification": (
+                        "Read token=ghp_privatevalue1234567890 from /Users/private/.env"
+                    ),
+                    "affected_resources": [
+                        "/Users/private/workspace/output.txt",
+                        {"id": "file:///Users/private/workspace/report.txt"},
+                    ],
+                },
+            },
+        },
+        checkpoint={"phase": "interaction"},
+        tool_progress=[],
+    )
+
+    _, values = repository.calls[0]
+    persisted = str(values["request_payload"])
+    assert "sk-private-value" not in persisted
+    assert "ghp_privatevalue" not in persisted
+    assert "/Users/private" not in persisted
+    request = values["request_payload"]["request"]
+    assert request["summary"] == "Run OPENAI_API_KEY=[REDACTED] in …/private/workspace"
+    assert request["input_preview"] == "cat …/workspace/input.txt"
+    assert request["risk"]["reasons"] == ["Uses [REDACTED] from …/private/.env"]
+    assert (
+        request["risk"]["justification"] == "Read token=[REDACTED] from …/private/.env"
+    )
+    assert request["risk"]["affected_resources"] == [
+        "…/workspace/output.txt",
+        "file://…/workspace/report.txt",
+    ]
 
 
 @pytest.mark.asyncio
