@@ -3,7 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react"
@@ -13,11 +12,12 @@ import {
   type AgentWorkbenchHandle,
 } from "@/components/bioinfoflow/agent/agent-workbench"
 import {
-  AgentActionGroup,
-  type AgentActionCommandPort,
   type AgentActionId,
-  type AgentActionModel,
 } from "@/components/bioinfoflow/agent-action-group"
+import {
+  AgentWorkspaceActionGroup,
+  type AgentWorkspaceTab,
+} from "@/components/bioinfoflow/agent/agent-workspace-action-group"
 import { LiveDeck, type LiveDeckTab } from "@/components/bioinfoflow/live-deck"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
@@ -29,7 +29,7 @@ import {
 } from "@/hooks/use-agent-panel-controller"
 import type { DagData, Run } from "@/lib/types"
 import { ResizeHandle } from "@/components/ui/resize-handle"
-import { useIsMobile } from "@/hooks/use-media-query"
+import { useIsMobile, useMediaQuery } from "@/hooks/use-media-query"
 import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard-shortcuts-overlay"
 import type { ConversationSummary } from "@/lib/agent/conversation-model/types"
 import {
@@ -43,8 +43,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { FileCode2, Globe, Network, Package } from "@/lib/icons"
-
 const LIVE_DECK_TAB_BY_ACTION: Record<AgentActionId, LiveDeckTab> = {
   browser: "browser",
   files: "workspace",
@@ -63,6 +61,8 @@ export function AgentPageContent({
   const t = useTranslations("agentWorkbench")
   const tAccessibility = useTranslations("accessibility")
   const isMobile = useIsMobile()
+  const viewportUsesSheet = useMediaQuery("(max-width: 1279px)")
+  const workspaceUsesSheet = isMobile || viewportUsesSheet
   const {
     setNavbarActions,
     projectConversations,
@@ -229,10 +229,10 @@ export function AgentPageContent({
       const nextTab = LIVE_DECK_TAB_BY_ACTION[actionId]
       const isActive =
         liveDeckTab === nextTab &&
-        (isMobile ? mobileLiveDeckOpen : !rightSidebarCollapsed)
+        (workspaceUsesSheet ? mobileLiveDeckOpen : !rightSidebarCollapsed)
 
       if (isActive) {
-        if (isMobile) {
+        if (workspaceUsesSheet) {
           closeMobileLiveDeck()
         } else {
           closeLiveDeck()
@@ -240,7 +240,7 @@ export function AgentPageContent({
         return
       }
 
-      if (isMobile) {
+      if (workspaceUsesSheet) {
         setMobileOpen(true)
         updatePanelPreferences({ activeTab: nextTab })
       } else {
@@ -248,7 +248,6 @@ export function AgentPageContent({
       }
     },
     [
-      isMobile,
       liveDeckTab,
       mobileLiveDeckOpen,
       setMobileOpen,
@@ -257,63 +256,27 @@ export function AgentPageContent({
       updatePanelPreferences,
       closeLiveDeck,
       closeMobileLiveDeck,
+      workspaceUsesSheet,
     ],
   )
 
-  const actionCommandPort = useMemo<AgentActionCommandPort>(
-    () => ({ toggle: toggleAction }),
+  const openWorkspaceTab = useCallback(
+    (tab: AgentWorkspaceTab) => {
+      toggleAction(tab as AgentActionId)
+    },
     [toggleAction],
   )
-
-  const actionModels = useMemo<AgentActionModel[]>(() => {
-    const isLiveDeckOpen = isMobile
-      ? mobileLiveDeckOpen
-      : !rightSidebarCollapsed
-    return [
-      {
-        id: "browser",
-        label: t("workspacePanel.actions.browser"),
-        openLabel: t("workspacePanel.actions.openBrowser"),
-        closeLabel: t("workspacePanel.actions.closeBrowser"),
-        icon: Globe,
-        active: isLiveDeckOpen && liveDeckTab === "browser",
-        pressed: isLiveDeckOpen && liveDeckTab === "browser",
-      },
-      {
-        id: "files",
-        label: t("workspacePanel.actions.files"),
-        openLabel: t("workspacePanel.actions.openFiles"),
-        closeLabel: t("workspacePanel.actions.closeFiles"),
-        icon: FileCode2,
-        active: isLiveDeckOpen && liveDeckTab === "workspace",
-        pressed: isLiveDeckOpen && liveDeckTab === "workspace",
-      },
-      {
-        id: "artifacts",
-        label: t("workspacePanel.actions.artifacts"),
-        openLabel: t("workspacePanel.actions.openArtifacts"),
-        closeLabel: t("workspacePanel.actions.closeArtifacts"),
-        icon: Package,
-        active: isLiveDeckOpen && liveDeckTab === "artifacts",
-        pressed: isLiveDeckOpen && liveDeckTab === "artifacts",
-      },
-      {
-        id: "dag",
-        label: t("workspacePanel.actions.dag"),
-        openLabel: t("workspacePanel.actions.openDag"),
-        closeLabel: t("workspacePanel.actions.closeDag"),
-        icon: Network,
-        active: isLiveDeckOpen && liveDeckTab === "dag",
-        pressed: isLiveDeckOpen && liveDeckTab === "dag",
-      },
-    ]
-  }, [
-    isMobile,
-    liveDeckTab,
-    mobileLiveDeckOpen,
-    rightSidebarCollapsed,
-    t,
-  ])
+  const toggleWorkspacePanel = useCallback(() => {
+    if (workspaceUsesSheet) toggleMobileLiveDeck()
+    else toggleRightSidebar()
+  }, [toggleMobileLiveDeck, toggleRightSidebar, workspaceUsesSheet])
+  const closeWorkspacePanel = useCallback(() => {
+    if (workspaceUsesSheet) closeMobileLiveDeck()
+    else closeLiveDeck()
+  }, [closeLiveDeck, closeMobileLiveDeck, workspaceUsesSheet])
+  const workspacePanelOpen = workspaceUsesSheet
+    ? mobileLiveDeckOpen
+    : !rightSidebarCollapsed
 
   useEffect(() => {
     if (!effectiveProjectId) {
@@ -322,18 +285,36 @@ export function AgentPageContent({
     }
 
     setNavbarActions(
-      <AgentActionGroup
-        actions={actionModels}
-        commandPort={actionCommandPort}
+      <AgentWorkspaceActionGroup
+        activeTab={liveDeckTab === "workspace" ? "files" : liveDeckTab}
+        panelOpen={workspacePanelOpen}
+        labels={{
+          group: t("workspacePanel.action"),
+          artifacts: t("workspacePanel.actions.openArtifacts"),
+          files: t("workspacePanel.actions.openFiles"),
+          dag: t("workspacePanel.actions.openDag"),
+          browser: t("workspacePanel.actions.openBrowser"),
+          openPanel: t("workspacePanel.open"),
+          closePanel: t("workspacePanel.close"),
+          closeTab: tAccessibility("hidePanel"),
+        }}
+        onOpenTab={openWorkspaceTab}
+        onTogglePanel={toggleWorkspacePanel}
+        onCloseTab={closeWorkspacePanel}
       />,
     )
 
     return () => setNavbarActions(null)
   }, [
-    actionCommandPort,
-    actionModels,
+    closeWorkspacePanel,
     effectiveProjectId,
+    liveDeckTab,
+    openWorkspaceTab,
     setNavbarActions,
+    t,
+    tAccessibility,
+    toggleWorkspacePanel,
+    workspacePanelOpen,
   ])
 
   const handleRunSelect = useCallback((run: Run | null) => {
@@ -350,14 +331,20 @@ export function AgentPageContent({
       setSelectedRun(null)
       setFocusedRunId(runId)
       setDag(null)
-      if (isMobile) {
+      if (workspaceUsesSheet) {
         setMobileOpen(true)
         updatePanelPreferences({ activeTab: "dag" })
       } else {
         updatePanelPreferences({ activeTab: "dag", open: true })
       }
     },
-    [isMobile, recordFocusReturn, setMobileOpen, stateIdentity, updatePanelPreferences],
+    [
+      recordFocusReturn,
+      setMobileOpen,
+      stateIdentity,
+      updatePanelPreferences,
+      workspaceUsesSheet,
+    ],
   )
 
   const openReferencedArtifact = useCallback(
@@ -368,14 +355,20 @@ export function AgentPageContent({
       setDag(null)
       setActiveStateIdentity(stateIdentity)
       setFocusedArtifactId(artifactId)
-      if (isMobile) {
+      if (workspaceUsesSheet) {
         setMobileOpen(true)
         updatePanelPreferences({ activeTab: "artifacts" })
       } else {
         updatePanelPreferences({ activeTab: "artifacts", open: true })
       }
     },
-    [isMobile, recordFocusReturn, setMobileOpen, stateIdentity, updatePanelPreferences],
+    [
+      recordFocusReturn,
+      setMobileOpen,
+      stateIdentity,
+      updatePanelPreferences,
+      workspaceUsesSheet,
+    ],
   )
   const handleSelectedArtifactIdChange = useCallback(
     (artifactId: string | null) => {
@@ -434,7 +427,7 @@ export function AgentPageContent({
 
       if (mod && event.shiftKey && event.key.toLowerCase() === "b") {
         event.preventDefault()
-        if (isMobile) toggleMobileLiveDeck()
+        if (workspaceUsesSheet) toggleMobileLiveDeck()
         else toggleRightSidebar()
         return
       }
@@ -468,11 +461,11 @@ export function AgentPageContent({
           setShowShortcuts(false)
           return
         }
-        if (isMobile && mobileLiveDeckOpen) {
+        if (workspaceUsesSheet && mobileLiveDeckOpen) {
           closeMobileLiveDeck()
           return
         }
-        if (!isMobile && !rightSidebarCollapsed) {
+        if (!workspaceUsesSheet && !rightSidebarCollapsed) {
           closeLiveDeck()
         }
       }
@@ -480,7 +473,6 @@ export function AgentPageContent({
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
   }, [
-    isMobile,
     mobileLiveDeckOpen,
     ensurePanelFocusReturn,
     rightSidebarCollapsed,
@@ -491,6 +483,7 @@ export function AgentPageContent({
     setMobileOpen,
     closeLiveDeck,
     closeMobileLiveDeck,
+    workspaceUsesSheet,
   ])
 
   if (routeSessionId && routeResolutionState !== "ready") {
@@ -537,7 +530,7 @@ export function AgentPageContent({
         />
       )}
 
-      {isMobile && effectiveProjectId ? (
+      {workspaceUsesSheet && effectiveProjectId ? (
         <Sheet
           open={mobileLiveDeckOpen}
           onOpenChange={(open) => {
@@ -575,7 +568,7 @@ export function AgentPageContent({
         </Sheet>
       ) : null}
 
-      {!isMobile && effectiveProjectId && !rightSidebarCollapsed ? (
+      {!workspaceUsesSheet && effectiveProjectId && !rightSidebarCollapsed ? (
         <div
           ref={railRef}
           data-testid="agent-live-deck-rail"

@@ -132,6 +132,8 @@ export function AgentWorkspaceActionGroup({
                   actionRefs.current[key] = node
                 }}
                 data-workspace-action={key}
+                data-action-id={key}
+                data-testid={`agent-action-${key}`}
                 onKeyDown={handleActionKeyDown}
                 onClick={() => onOpenTab(key)}
               >

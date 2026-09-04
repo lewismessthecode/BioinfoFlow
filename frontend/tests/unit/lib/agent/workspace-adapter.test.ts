@@ -95,6 +95,7 @@ describe("bioinfoFlowAgentWorkspaceAdapter", () => {
       artifact: {
         id: "workspace:project-1:index.html",
         source: "workspace",
+        runId: null,
         title: "index.html",
         summary: null,
         kind: "html",

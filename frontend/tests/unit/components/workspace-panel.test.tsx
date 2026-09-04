@@ -2,7 +2,11 @@ import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { AgentWorkspaceAdapter } from "@/lib/agent/workspace-adapter"
+import type {
+  AgentWorkspaceAdapter,
+  WorkspaceFileNode,
+  WorkspaceFilePreview,
+} from "@/lib/agent/workspace-adapter"
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, number>) => {
@@ -48,9 +52,6 @@ function createAdapter(): AgentWorkspaceAdapter {
     })),
     fileDownloadUrl: vi.fn(() => "https://download.test/file"),
     listArtifacts: vi.fn(async () => []),
-    getArtifact: vi.fn(async () => {
-      throw new Error("unused")
-    }),
     fetchArtifactContent: vi.fn(async () => {
       throw new Error("unused")
     }),
