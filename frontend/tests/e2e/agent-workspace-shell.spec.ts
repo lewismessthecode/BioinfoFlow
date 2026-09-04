@@ -227,6 +227,19 @@ test.describe("Agent workspace shell", () => {
       },
     )
     if (!isCompact) {
+      const rail = page.getByTestId("agent-live-deck-rail")
+      const tabBar = page.getByTestId("live-deck-tab-bar")
+      const workspaceHeader = page.getByTestId("workspace-panel-header")
+      const fileTree = page.getByTestId("workspace-file-tree")
+      await expect(rail).toHaveAttribute("data-width", "400")
+      expect((await tabBar.boundingBox())?.height).toBe(44)
+      expect((await workspaceHeader.boundingBox())?.height).toBe(40)
+      const railBox = await rail.boundingBox()
+      const treeBox = await fileTree.boundingBox()
+      expect(railBox).not.toBeNull()
+      expect(treeBox).not.toBeNull()
+      expect((treeBox?.width ?? 0) / (railBox?.width ?? 1)).toBeGreaterThan(0.3)
+      expect((treeBox?.width ?? 0) / (railBox?.width ?? 1)).toBeLessThan(0.35)
       await page.getByRole("button", { name: "Open terminal", exact: true }).click()
       await expect(page.getByTestId("terminal-dock-fixture")).toBeVisible()
       await expect(page).toHaveScreenshot(

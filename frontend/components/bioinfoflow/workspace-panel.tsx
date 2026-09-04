@@ -272,7 +272,7 @@ export function WorkspacePanel({
       </div>
 
       <div
-        className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(13rem,32%)]"
+        className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(8rem,32%)]"
         data-layout="editor-dominant"
         data-testid="workspace-split-view"
       >
