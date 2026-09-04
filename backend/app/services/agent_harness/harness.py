@@ -43,6 +43,7 @@ from app.services.agent_harness.projection import (
 )
 from app.services.agent_harness.recovery import RecoveryPlanner, create_checkpoint
 from app.services.agent_harness.run_submission import AgentRunSubmissionService
+from app.services.agent_harness.snapshot import AgentHarnessSnapshotService
 from app.services.agent_harness.presentation_mutation_service import (
     AgentPresentationMutationService,
 )
@@ -82,6 +83,7 @@ class AgentHarness:
         self.repository = repository
         self.presentation_mutations = AgentPresentationMutationService(repository)
         self.run_submission = AgentRunSubmissionService(repository)
+        self.snapshots = AgentHarnessSnapshotService(repository)
         self.event_hub = event_hub or AgentEventHub()
         self._tasks = tasks if tasks is not None else {}
         self._cancellations = cancellations if cancellations is not None else {}
@@ -175,7 +177,7 @@ class AgentHarness:
 
     async def open_session(self, request: OpenSessionRequest) -> SessionSnapshot:
         session = await self.repository.open_session(request)
-        return await self.repository.snapshot(str(session.id))
+        return await self.snapshots.build(str(session.id))
 
     async def dispatch(self, session_id: str, command: AgentCommand) -> None:
         session = await self.repository.get_session(session_id)
@@ -260,7 +262,7 @@ class AgentHarness:
         ]
 
     async def snapshot(self, session_id: str) -> SessionSnapshot:
-        return await self.repository.snapshot(session_id)
+        return await self.snapshots.build(session_id)
 
     async def delete_session(self, session_id: str) -> None:
         session = await self.repository.get_session(session_id)
@@ -282,7 +284,7 @@ class AgentHarness:
 
         return self.event_hub.stream(
             session_id,
-            lambda: self.repository.snapshot(session_id),
+            lambda: self.snapshots.build(session_id),
             exists,
         )
 

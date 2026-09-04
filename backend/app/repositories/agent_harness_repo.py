@@ -21,7 +21,6 @@ from app.services.agent_harness.contracts import (
     AgentCommand,
     MessageCommand,
     OpenSessionRequest,
-    SessionSnapshot,
 )
 
 
@@ -2200,12 +2199,6 @@ class AgentHarnessRepository:
             stmt = stmt.limit(limit)
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
-
-    async def snapshot(self, session_id: str) -> SessionSnapshot:
-        from app.services.agent_harness.snapshot import AgentHarnessSnapshotService
-
-        return await AgentHarnessSnapshotService(self).build(session_id)
-
 
 __all__ = [
     "AgentHarnessArtifactRepository",

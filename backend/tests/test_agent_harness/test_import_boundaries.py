@@ -54,6 +54,24 @@ def test_agent_harness_repository_does_not_import_presentation_projectors() -> N
 
     assert "app.services.agent_harness.projection" not in imported_modules
     assert "app.services.agent_harness.tool_projection" not in imported_modules
+    assert "app.services.agent_harness.snapshot" not in imported_modules
+
+    tree = ast.parse(repository_path.read_text(encoding="utf-8"))
+    imported_contract_names = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "app.services.agent_harness.contracts"
+        for alias in node.names
+    }
+    repository_methods = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    assert "SessionSnapshot" not in imported_contract_names
+    assert "snapshot" not in repository_methods
 
 
 def test_only_presentation_mutation_service_calls_presentation_mutations() -> None:

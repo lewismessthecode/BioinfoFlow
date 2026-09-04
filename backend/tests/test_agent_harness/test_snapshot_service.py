@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
 import pytest
@@ -116,21 +115,3 @@ async def test_snapshot_service_projects_repository_state_to_public_contract(
     assert snapshot.active_run is not None
     assert snapshot.active_run.run.id == run.id
 
-
-@pytest.mark.asyncio
-async def test_repository_snapshot_delegates_to_application_service(
-    harness_db,
-) -> None:
-    repository = AgentHarnessRepository(harness_db)
-    expected = object()
-
-    with patch.object(
-        AgentHarnessSnapshotService,
-        "build",
-        new_callable=AsyncMock,
-        return_value=expected,
-    ) as build:
-        actual = await repository.snapshot("session-id")
-
-    assert actual is expected
-    build.assert_awaited_once_with("session-id")

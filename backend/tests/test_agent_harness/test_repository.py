@@ -21,6 +21,7 @@ from app.services.agent_harness.projection import entry_contract
 from app.services.agent_harness.presentation_mutation_service import (
     AgentPresentationMutationService,
 )
+from app.services.agent_harness.snapshot import AgentHarnessSnapshotService
 from tests.test_agent_harness.run_test_helpers import (
     agent_turn_execution_config,
     create_agent_run,
@@ -33,6 +34,10 @@ def _mutations(
     repository: AgentHarnessRepository,
 ) -> AgentPresentationMutationService:
     return AgentPresentationMutationService(repository)
+
+
+async def _snapshot(repository: AgentHarnessRepository, session_id: str):
+    return await AgentHarnessSnapshotService(repository).build(session_id)
 
 def _message(command_id: str, text: str) -> MessageCommand:
     return MessageCommand(
@@ -83,7 +88,7 @@ async def test_repository_opens_session_and_appends_strictly_ordered_history(
     )
 
     assert (first.sequence, compaction.sequence, second.sequence) == (1, 2, 3)
-    snapshot = await repository.snapshot(str(session.id))
+    snapshot = await _snapshot(repository, str(session.id))
     assert [entry.type for entry in snapshot.entries] == ["message", "notice"]
     assert "history_revision" not in snapshot.model_dump(mode="json")
     assert [entry.type for entry in await repository.list_entries(str(session.id))] == [
@@ -131,7 +136,7 @@ async def test_session_setting_update_appends_private_public_safe_context_diff(
     }
     assert "private.example" not in str(entries[0].payload)
     assert "secret-revision" not in str(entries[0].payload)
-    assert (await repository.snapshot(str(session.id))).entries == []
+    assert (await _snapshot(repository, str(session.id))).entries == []
 
 
 @pytest.mark.asyncio
@@ -154,7 +159,7 @@ async def test_snapshot_projects_failed_run_error_without_private_diagnostics(
         },
     )
 
-    snapshot = await repository.snapshot(str(session.id))
+    snapshot = await _snapshot(repository, str(session.id))
 
     public_run = snapshot.runs[0]
     assert public_run.status == "failed"
@@ -195,7 +200,7 @@ async def test_snapshot_replaces_unknown_or_malformed_run_errors(
         error=private_error,
     )
 
-    snapshot = await repository.snapshot(str(session.id))
+    snapshot = await _snapshot(repository, str(session.id))
 
     assert snapshot.runs[0].error is not None
     assert snapshot.runs[0].error.model_dump() == {
@@ -315,7 +320,7 @@ async def test_legacy_tool_progress_is_reprojected_for_snapshot_and_updates(
         ],
     )
 
-    snapshot = await repository.snapshot(str(session.id))
+    snapshot = await _snapshot(repository, str(session.id))
     assert snapshot.active_run is not None
     snapshot_progress = snapshot.active_run.tool_progress[0].model_dump(mode="json")
     assert "sk-private-value" not in str(snapshot_progress)
@@ -425,7 +430,7 @@ async def test_snapshot_is_authoritative_for_active_run_ui_state(
         },
     )
 
-    snapshot = await repository.snapshot(str(session.id))
+    snapshot = await _snapshot(repository, str(session.id))
 
     assert snapshot.active_run is not None
     assert snapshot.active_run.assistant_draft is not None
@@ -459,7 +464,7 @@ async def test_snapshot_is_authoritative_for_active_run_ui_state(
         },
     )
 
-    resumed = await repository.snapshot(str(session.id))
+    resumed = await _snapshot(repository, str(session.id))
     assert resumed.active_run is not None
     assert resumed.active_run.pending_interaction is None
 
@@ -555,7 +560,7 @@ async def test_message_submission_atomically_creates_run_and_user_history(
     assert entry is not None
     assert inserted is True
     assert run.turn_execution_config == turn_execution_config
-    snapshot = await repository.snapshot(session_id)
+    snapshot = await _snapshot(repository, session_id)
     assert snapshot.active_run is not None
     assert snapshot.active_run.run.id == run.id
     assert snapshot.entries == [entry_contract(entry)]
@@ -585,7 +590,7 @@ async def test_message_submission_persists_a_precomputed_conversation_title(
         turn_execution_config=turn_execution_config,
     )
 
-    snapshot = await repository.snapshot(session_id)
+    snapshot = await _snapshot(repository, session_id)
     assert snapshot.session.title == "Summarize this very long"
     assert len(snapshot.entries) == 1
     assert snapshot.entries[0].payload.parts[0].text == prompt
@@ -613,7 +618,7 @@ async def test_message_submission_preserves_an_existing_conversation_title(
         turn_execution_config=turn_execution_config,
     )
 
-    snapshot = await repository.snapshot(session_id)
+    snapshot = await _snapshot(repository, session_id)
     assert snapshot.session.title == "Manual title"
 
 
@@ -637,7 +642,7 @@ async def test_first_user_message_sets_title_after_setting_changes(
         turn_execution_config=turn_execution_config,
     )
 
-    snapshot = await repository.snapshot(session_id)
+    snapshot = await _snapshot(repository, session_id)
     assert snapshot.session.title == "Review the configured workflow"
 
 
@@ -656,7 +661,7 @@ async def test_empty_user_text_does_not_create_a_conversation_title(
         turn_execution_config=turn_execution_config,
     )
 
-    snapshot = await repository.snapshot(session_id)
+    snapshot = await _snapshot(repository, session_id)
     assert snapshot.session.title is None
 
 
@@ -740,7 +745,7 @@ async def test_concurrent_messages_start_one_run_and_queue_the_other(
     assert all(result[2] is True for result in results)
     async with factory() as verification_db:
         verification = AgentHarnessRepository(verification_db)
-        snapshot = await verification.snapshot(session_id)
+        snapshot = await _snapshot(verification, session_id)
         assert snapshot.active_run is not None
         assert len(snapshot.runs) == 1
         assert len(snapshot.entries) == 1
@@ -1403,7 +1408,7 @@ async def test_approved_tool_execution_preserves_complete_progress_in_snapshot(
         command_id="approve-1",
     )
 
-    snapshot = await repository.snapshot(session_id)
+    snapshot = await _snapshot(repository, session_id)
     assert snapshot.active_run is not None
     progress = snapshot.active_run.tool_progress[0]
     assert snapshot.active_run.run.revision == 2
@@ -1782,7 +1787,7 @@ async def test_snapshot_keeps_latest_completed_run_and_delete_cascades(
     run = await create_agent_run(repository, str(session.id))
     await repository.update_run(str(run.id), status="completed")
 
-    snapshot = await repository.snapshot(str(session.id))
+    snapshot = await _snapshot(repository, str(session.id))
     assert snapshot.active_run is None
     assert len(snapshot.runs) == 1
     assert snapshot.runs[0].status == "completed"

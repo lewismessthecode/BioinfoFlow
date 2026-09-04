@@ -44,6 +44,7 @@ from app.services.agent_harness.session_deletion import (
     delete_agent_session,
     session_mutation_lock,
 )
+from app.services.agent_harness.snapshot import AgentHarnessSnapshotService
 from app.services.agent_harness.system_prompt import default_system_prompt_snapshot
 from app.services.agent_trace.adapter import CompleteHarnessTraceAdapter
 from app.services.agent_trace.contracts import (
@@ -494,7 +495,7 @@ async def update_session(
             await repository.update_session_settings(session_id, **values)
         except ValueError as exc:
             raise ConflictError(str(exc)) from exc
-        snapshot = await repository.snapshot(session_id)
+        snapshot = await AgentHarnessSnapshotService(repository).build(session_id)
         await agent_runtime.publish_snapshot(session_id, snapshot)
     return success_response(_dump(snapshot), request=request)
 
@@ -512,7 +513,7 @@ async def get_snapshot(
     repository = AgentHarnessRepository(db)
     await _owned_session(repository, session_id=session_id, user=user)
     return success_response(
-        _dump(await repository.snapshot(session_id)),
+        _dump(await AgentHarnessSnapshotService(repository).build(session_id)),
         request=request,
     )
 
