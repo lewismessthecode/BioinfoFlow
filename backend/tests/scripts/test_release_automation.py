@@ -162,9 +162,15 @@ def test_ci_delivery_gate_fails_closed_and_covers_release_inputs() -> None:
     assert 'require_result "$BACKEND_CHANGED" "$BACKEND_RESULT"' in workflow
     assert 'require_result "$FRONTEND_CHANGED" "$FRONTEND_LINT_RESULT"' in workflow
     assert 'require_result "$FRONTEND_CHANGED" "$FRONTEND_BUILD_RESULT"' in workflow
+    assert 'require_result "$AGENT_BROWSER_CHANGED" "$AGENT_SHELL_RESULT"' in workflow
     assert 'require_result "$DOCKER_CHANGED" "$DOCKER_RESULT"' in workflow
     assert 'require_result "$INSTALLER_CHANGED" "$INSTALLER_RESULT"' in workflow
     assert 'require_result "$WORKFLOWS_CHANGED" "$WORKFLOWS_RESULT"' in workflow
+    assert "frontend/components/bioinfoflow/terminal/" in workflow
+    assert "frontend/components/ui/resize-handle\\.tsx" in workflow
+    assert "frontend/app/\\(app\\)/layout\\.tsx" in workflow
+    assert "backend/app/services/terminal" in workflow
+    assert "Upload Agent shell Playwright report and diagnostics" in workflow
 
 
 def test_installer_release_uses_only_the_immutable_numeric_tag() -> None:
