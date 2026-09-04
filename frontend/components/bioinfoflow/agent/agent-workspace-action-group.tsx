@@ -49,7 +49,7 @@ const workspaceTabs: Array<{
 ]
 
 const iconButtonClassName =
-  "h-8 w-8 shrink-0 rounded-[8px] border border-transparent bg-transparent text-foreground/70 shadow-none transition-colors hover:bg-accent/70 hover:text-foreground focus-visible:bg-accent"
+  "h-8 w-8 shrink-0 rounded-[8px] border border-transparent bg-transparent text-foreground/70 shadow-none transition-colors hover:bg-accent/70 hover:text-foreground focus-visible:bg-accent max-xl:h-11 max-xl:w-11"
 
 export function AgentWorkspaceActionGroup({
   activeTab,
@@ -115,7 +115,7 @@ export function AgentWorkspaceActionGroup({
             <div
               key={key}
               className={cn(
-                "flex h-8 min-w-0 items-center rounded-[8px] text-muted-foreground transition-colors duration-200",
+                "flex h-8 min-w-0 items-center rounded-[8px] text-muted-foreground transition-colors duration-200 max-xl:h-11",
                 active
                   ? "bg-muted/65 text-foreground"
                   : "hover:bg-muted/35 hover:text-foreground",
@@ -124,7 +124,7 @@ export function AgentWorkspaceActionGroup({
             >
               <button
                 type="button"
-                className="flex h-full min-w-0 shrink-0 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                className="flex h-full min-w-0 shrink-0 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background max-xl:min-w-11 max-xl:justify-center max-xl:px-0"
                 aria-label={actionLabel}
                 aria-pressed={active}
                 title={actionLabel}
