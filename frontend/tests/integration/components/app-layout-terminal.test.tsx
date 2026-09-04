@@ -17,7 +17,10 @@ const searchParamsState = {
 
 let workspaceNavbarActions: React.ReactNode = null
 let terminalDockProps: Record<string, unknown> | null = null
-let workspaceSessionScope: Map<string, Array<{ id: string; project_id: string | null }>> | null = null
+let workspaceSessionScope:
+  | Map<string, Array<{ id: string; project_id: string | null }>>
+  | null
+  | undefined = null
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathnameState.value,
@@ -156,6 +159,21 @@ describe("AppLayout terminal integration", () => {
       expect(screen.getByTestId("terminal-identity")).toHaveTextContent("project-b"),
     )
     expect(screen.getByRole("button", { name: "accessibility.openTerminal" })).toBeInTheDocument()
+  })
+
+  it("handles an unresolved workspace session collection safely", () => {
+    pathnameState.value = "/agent/session-loading"
+    workspaceSessionScope = undefined
+
+    expect(() =>
+      renderAppPage(
+        <AppLayout>
+          <ProjectSeeder projectId="project-a" />
+          <TerminalIdentityProbe />
+        </AppLayout>,
+      ),
+    ).not.toThrow()
+    expect(screen.getByTestId("terminal-identity")).toHaveTextContent("disabled")
   })
 
   it("shows the terminal toggle on terminal-enabled routes when a project is active", async () => {

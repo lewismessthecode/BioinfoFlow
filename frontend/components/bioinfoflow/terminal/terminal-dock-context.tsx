@@ -59,7 +59,7 @@ export function TerminalDockProvider({
 }) {
   const workspaceShell = useOptionalWorkspaceShell()
   const routeSession = routeSessionId
-    ? Array.from(workspaceShell?.projectConversations.values() ?? [])
+    ? Array.from(workspaceShell?.projectConversations?.values() ?? [])
         .flat()
         .find((session) => session.id === routeSessionId)
     : null
