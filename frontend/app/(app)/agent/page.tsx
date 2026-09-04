@@ -33,9 +33,9 @@ import { useIsMobile, useMediaQuery } from "@/hooks/use-media-query"
 import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard-shortcuts-overlay"
 import type { ConversationSummary } from "@/lib/agent/conversation-model/types"
 import {
-  listAgentSessions,
-  type AgentSessionSummary,
-} from "@/lib/agent/client"
+  listConversationRouteSummaries,
+  type ConversationRouteSummary,
+} from "@/lib/agent/conversation-model/session-directory"
 import {
   Sheet,
   SheetContent,
@@ -80,7 +80,7 @@ export function AgentPageContent({
   const [routeResolution, setRouteResolution] = useState<{
     sessionId: string | null
     status: "ready" | "loading" | "unavailable" | "error"
-    session: AgentSessionSummary | null
+    session: ConversationRouteSummary | null
   }>({
     sessionId: routeSessionId,
     status: routeSessionId && projectConversations !== undefined ? "loading" : "ready",
@@ -100,7 +100,7 @@ export function AgentPageContent({
   const effectiveProjectId = routeSessionId
     ? projectConversations === undefined
       ? conversationProjectId || selectedProjectId
-      : resolvedRouteSession?.project_id ?? null
+      : resolvedRouteSession?.projectId ?? null
     : selectedProjectId
   const {
     preferences: panelPreferences,
@@ -151,7 +151,7 @@ export function AgentPageContent({
   useEffect(() => {
     if (!routeSessionId || projectConversations === undefined) return
     let cancelled = false
-    void listAgentSessions({ includeArchived: true })
+    void listConversationRouteSummaries({ includeArchived: true })
       .then((sessions) => {
         if (cancelled) return
         const session = sessions.find((item) => item.id === routeSessionId)
