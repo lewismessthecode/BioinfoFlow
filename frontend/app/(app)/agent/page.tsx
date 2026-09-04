@@ -301,10 +301,10 @@ export function AgentPageContent({
         panelOpen={workspacePanelOpen}
         labels={{
           group: t("workspacePanel.action"),
-          artifacts: t("workspacePanel.actions.openArtifacts"),
-          files: t("workspacePanel.actions.openFiles"),
-          dag: t("workspacePanel.actions.openDag"),
-          browser: t("workspacePanel.actions.openBrowser"),
+          artifacts: t("workspacePanel.actions.artifacts"),
+          files: t("workspacePanel.actions.files"),
+          dag: t("workspacePanel.actions.dag"),
+          browser: t("workspacePanel.actions.browser"),
           openPanel: t("workspacePanel.open"),
           closePanel: t("workspacePanel.close"),
           closeTab: tAccessibility("hidePanel"),

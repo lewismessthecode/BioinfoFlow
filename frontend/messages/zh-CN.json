@@ -2597,13 +2597,13 @@
         "files": "文件",
         "artifacts": "产物",
         "dag": "DAG",
-        "openBrowser": "浏览器",
+        "openBrowser": "打开浏览器",
         "closeBrowser": "关闭浏览器",
-        "openFiles": "文件",
+        "openFiles": "打开文件",
         "closeFiles": "关闭文件",
-        "openArtifacts": "产物",
+        "openArtifacts": "打开产物",
         "closeArtifacts": "关闭产物",
-        "openDag": "DAG",
+        "openDag": "打开 DAG",
         "closeDag": "关闭 DAG"
       }
     },
