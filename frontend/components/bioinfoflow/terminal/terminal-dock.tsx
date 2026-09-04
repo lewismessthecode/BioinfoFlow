@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, type ReactNode } from "react"
 import { Plus, TerminalSquare, X } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
-import { Sheet, SheetContent } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { readTerminalTheme } from "@/lib/appearance/terminal-theme"
 import { useAppearance } from "@/lib/appearance/use-appearance"
@@ -63,6 +63,18 @@ type FontStatusDocument = Document & {
   }
 }
 
+type TerminalDockHeaderProps = {
+  title: string
+  targetLabel: string
+  sessionMeta: string
+  connectionState: string
+  connectionLabel: string
+  connectionAriaLabel: string
+  newTerminalLabel: string
+  closeTerminalLabel: string
+  closeTerminal: () => void
+}
+
 function TerminalDockHeader({
   title,
   targetLabel,
@@ -73,17 +85,7 @@ function TerminalDockHeader({
   newTerminalLabel,
   closeTerminalLabel,
   closeTerminal,
-}: {
-  title: string
-  targetLabel: string
-  sessionMeta: string
-  connectionState: string
-  connectionLabel: string
-  connectionAriaLabel: string
-  newTerminalLabel: string
-  closeTerminalLabel: string
-  closeTerminal: () => void
-}) {
+}: TerminalDockHeaderProps) {
   return (
     <div
       className="flex h-8 items-center justify-between gap-2 border-b border-border/45 bg-background px-2"
@@ -163,7 +165,7 @@ function TerminalDockShell({
   closeTerminal: () => void
   setDockHeight: (height: number) => void
   resizeTerminalLabel: string
-  header: ReactNode
+  header: TerminalDockHeaderProps
   children: ReactNode
 }) {
   const content = (
@@ -171,8 +173,49 @@ function TerminalDockShell({
       className="flex h-full min-h-0 flex-col"
       data-testid="terminal-dock-shell"
     >
-      {header}
+      <TerminalDockHeader {...header} />
       {children}
+      <style>{`
+        .terminal-dock-scroll .xterm,
+        .terminal-dock-scroll .xterm-viewport {
+          background: transparent !important;
+        }
+
+        .terminal-dock-scroll .xterm-viewport {
+          scrollbar-width: thin;
+          scrollbar-color: color-mix(in srgb, var(--muted-foreground) 30%, transparent)
+            transparent;
+        }
+
+        .terminal-dock-scroll .xterm-viewport::-webkit-scrollbar {
+          width: 10px;
+        }
+
+        .terminal-dock-scroll .xterm-viewport::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        .terminal-dock-scroll .xterm-viewport::-webkit-scrollbar-thumb {
+          min-height: 24px;
+          border: 3px solid transparent;
+          border-radius: 999px;
+          background: color-mix(
+            in srgb,
+            var(--muted-foreground) 28%,
+            transparent
+          );
+          background-clip: padding-box;
+        }
+
+        .terminal-dock-scroll .xterm-viewport::-webkit-scrollbar-thumb:hover {
+          background: color-mix(
+            in srgb,
+            var(--muted-foreground) 42%,
+            transparent
+          );
+          background-clip: padding-box;
+        }
+      `}</style>
     </div>
   )
 
@@ -185,7 +228,9 @@ function TerminalDockShell({
         <SheetContent
           side="bottom"
           className="h-[72vh] !gap-0 rounded-none p-0 [&>button.absolute]:hidden"
+          aria-describedby={undefined}
         >
+          <SheetTitle className="sr-only">{header.title}</SheetTitle>
           {content}
         </SheetContent>
       </Sheet>
@@ -455,19 +500,17 @@ function LiveTerminalDock() {
     ? translatedConnectionState
     : connectionLabel
 
-  const header = (
-    <TerminalDockHeader
-      title={tTerminal("title")}
-      targetLabel={targetLabel}
-      sessionMeta={sessionMeta}
-      connectionState={connectionState}
-      connectionLabel={connectionLabel}
-      connectionAriaLabel={connectionAriaLabel}
-      newTerminalLabel={tTerminal("newTerminal")}
-      closeTerminalLabel={tAccessibility("closeTerminal")}
-      closeTerminal={closeTerminal}
-    />
-  )
+  const header: TerminalDockHeaderProps = {
+    title: tTerminal("title"),
+    targetLabel,
+    sessionMeta,
+    connectionState,
+    connectionLabel,
+    connectionAriaLabel,
+    newTerminalLabel: tTerminal("newTerminal"),
+    closeTerminalLabel: tAccessibility("closeTerminal"),
+    closeTerminal,
+  }
 
   const body = (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--terminal-background)]">
@@ -501,47 +544,6 @@ function LiveTerminalDock() {
       header={header}
     >
       {body}
-      <style>{`
-        .terminal-dock-scroll .xterm,
-        .terminal-dock-scroll .xterm-viewport {
-          background: transparent !important;
-        }
-
-        .terminal-dock-scroll .xterm-viewport {
-          scrollbar-width: thin;
-          scrollbar-color: color-mix(in srgb, var(--muted-foreground) 30%, transparent)
-            transparent;
-        }
-
-        .terminal-dock-scroll .xterm-viewport::-webkit-scrollbar {
-          width: 10px;
-        }
-
-        .terminal-dock-scroll .xterm-viewport::-webkit-scrollbar-track {
-          background: transparent;
-        }
-
-        .terminal-dock-scroll .xterm-viewport::-webkit-scrollbar-thumb {
-          min-height: 24px;
-          border: 3px solid transparent;
-          border-radius: 999px;
-          background: color-mix(
-            in srgb,
-            var(--muted-foreground) 28%,
-            transparent
-          );
-          background-clip: padding-box;
-        }
-
-        .terminal-dock-scroll .xterm-viewport::-webkit-scrollbar-thumb:hover {
-          background: color-mix(
-            in srgb,
-            var(--muted-foreground) 42%,
-            transparent
-          );
-          background-clip: padding-box;
-        }
-      `}</style>
     </TerminalDockShell>
   )
 }
@@ -563,19 +565,17 @@ function TerminalDockFixture() {
 
   const connectionState = "connected"
   const connectionAriaLabel = tTerminal("connectionStates.connected")
-  const header = (
-    <TerminalDockHeader
-      title={tTerminal("title")}
-      targetLabel={tTerminal("targets.local")}
-      sessionMeta={tTerminal("screenshotFixture")}
-      connectionState={connectionState}
-      connectionLabel=""
-      connectionAriaLabel={connectionAriaLabel}
-      newTerminalLabel={tTerminal("newTerminal")}
-      closeTerminalLabel={tAccessibility("closeTerminal")}
-      closeTerminal={closeTerminal}
-    />
-  )
+  const header: TerminalDockHeaderProps = {
+    title: tTerminal("title"),
+    targetLabel: tTerminal("targets.local"),
+    sessionMeta: tTerminal("screenshotFixture"),
+    connectionState,
+    connectionLabel: "",
+    connectionAriaLabel,
+    newTerminalLabel: tTerminal("newTerminal"),
+    closeTerminalLabel: tAccessibility("closeTerminal"),
+    closeTerminal,
+  }
 
   const body = (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--terminal-background)]">
