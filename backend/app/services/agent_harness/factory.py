@@ -61,12 +61,14 @@ async def open_session_request_workspace(
     remote_executor: RemoteExecutor | None = None,
 ) -> dict[str, Any]:
     if project_id is None:
+        requested_root = agent_user_workspace_root(workspace_id, user_id)
         workspace_root = os.path.realpath(str(agent_workspaces_root()))
-        root = os.path.realpath(
-            str(agent_user_workspace_root(workspace_id, user_id))
-        )
-        if root != workspace_root and not root.startswith(workspace_root + os.sep):
+        root = os.path.realpath(str(requested_root))
+        if not root.startswith(workspace_root + os.sep):
             raise ValueError("agent workspace escapes managed root")
+        expected_root = os.path.join(workspace_root, workspace_id, user_id)
+        if root != expected_root:
+            raise ValueError("agent workspace does not match requested scope")
         Path(root).mkdir(parents=True, exist_ok=True)
         return {
             "api_url": _workspace_api_url("local"),
