@@ -56,12 +56,15 @@ export function LiveDeck({
         onValueChange={(value) => onTabChange(value as LiveDeckTab)}
         className="flex flex-col h-full"
       >
-        <div className="flex min-h-11 items-center gap-1 border-b border-border/60 px-2">
+        <div
+          data-testid="live-deck-tab-bar"
+          className="flex min-h-11 items-center gap-1 border-b border-border/60 px-2"
+        >
           {onCollapse && (
             <Button
               variant="ghost"
-              size="icon"
-              className="size-11 shrink-0 rounded-[8px] text-muted-foreground hover:bg-muted/60 hover:text-foreground lg:size-8"
+              size="icon-responsive"
+              className="shrink-0 rounded-[8px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
               onClick={onCollapse}
               title={tAccessibility("hidePanel")}
               aria-label={tAccessibility("hidePanel")}

@@ -7,8 +7,10 @@ import {
   AgentWorkbench,
   type AgentWorkbenchHandle,
 } from "@/components/bioinfoflow/agent/agent-workbench"
-import type { AgentSessionState } from "@/hooks/use-agent-session"
-import type { ConversationViewModel } from "@/lib/agent/conversation-model/types"
+import type {
+  ConversationSessionBinding,
+  ConversationViewModel,
+} from "@/lib/agent/conversation-model/types"
 import type { SessionSnapshot } from "@/lib/agent/contracts"
 import { ApiError } from "@/lib/api"
 import { renderWithProviders } from "@/tests/test-utils"
@@ -313,25 +315,23 @@ function snapshot(): SessionSnapshot {
 }
 
 function sessionState(
-  overrides: Partial<AgentSessionState> = {},
-): AgentSessionState {
+  overrides: Partial<ConversationSessionBinding> = {},
+): ConversationSessionBinding {
   return {
-    session: snapshot().session,
-    runs: [],
-    entries: [],
-    activeRun: null,
-    conversationView: conversationView([]),
+    view: conversationView([]),
     connectionStatus: "connected",
     error: null,
     isLoading: false,
-    sendMessage: vi.fn().mockResolvedValue(undefined),
-    steer: vi.fn().mockResolvedValue(undefined),
-    respond: vi.fn().mockResolvedValue(undefined),
-    cancel: vi.fn().mockResolvedValue(undefined),
-    updatePermissionMode: vi.fn().mockResolvedValue(undefined),
-    updateModel: vi.fn().mockResolvedValue(undefined),
-    updateEnvironmentScope: vi.fn().mockResolvedValue(undefined),
-    retry: vi.fn(),
+    commands: {
+      sendMessage: vi.fn().mockResolvedValue(undefined),
+      steer: vi.fn().mockResolvedValue(undefined),
+      respond: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn().mockResolvedValue(undefined),
+      updatePermissionMode: vi.fn().mockResolvedValue(undefined),
+      updateModel: vi.fn().mockResolvedValue(undefined),
+      updateEnvironmentScope: vi.fn().mockResolvedValue(undefined),
+      retry: vi.fn(),
+    },
     ...overrides,
   }
 }
@@ -563,12 +563,15 @@ describe("AgentWorkbench v2", () => {
     async (method, buttonName) => {
       const user = userEvent.setup()
       const state = sessionState({
-        [method]: vi.fn().mockRejectedValue(
-          new ApiError("Configuration required", {
-            code: "AGENT_MODEL_REQUIRED",
-            status: 422,
-          }),
-        ),
+        commands: {
+          ...sessionState().commands,
+          [method]: vi.fn().mockRejectedValue(
+            new ApiError("Configuration required", {
+              code: "AGENT_MODEL_REQUIRED",
+              status: 422,
+            }),
+          ),
+        },
       })
       mocks.useSession.mockReturnValue(state)
 
@@ -695,7 +698,7 @@ describe("AgentWorkbench v2", () => {
   it("does not show next-run helper copy while an active run is using earlier settings", () => {
     mocks.useSession.mockReturnValue(
       sessionState({
-        conversationView: conversationView([], {
+        view: conversationView([], {
           runId: "run-active",
           status: "running",
           phase: "model",
@@ -717,22 +720,7 @@ describe("AgentWorkbench v2", () => {
 
   it("does not rebuild an injected session from legacy transport state when its stable view is unavailable", () => {
     const injectedState = sessionState({
-      conversationView: null,
-      entries: [
-        {
-          id: "assistant-demo",
-          session_id: "session-1",
-          run_id: null,
-          sequence: 1,
-          schema_version: 2,
-          created_at: timestamp,
-          type: "message",
-          payload: {
-            role: "assistant",
-            parts: [{ id: "text-demo", type: "text", text: "Demo replay" }],
-          },
-        },
-      ],
+      view: null,
     })
 
     renderWithProviders(
@@ -757,8 +745,7 @@ describe("AgentWorkbench v2", () => {
   it("renders live transcript content only from the stable conversation view", () => {
     mocks.useSession.mockReturnValue(
       sessionState({
-        entries: [],
-        conversationView: conversationView([
+        view: conversationView([
           {
             type: "message",
             id: "stable-message",
@@ -787,7 +774,7 @@ describe("AgentWorkbench v2", () => {
     const user = userEvent.setup()
     mocks.useSession.mockReturnValue(
       sessionState({
-        conversationView: conversationView([
+        view: conversationView([
           {
             type: "message",
             id: "stable-message",
@@ -828,22 +815,7 @@ describe("AgentWorkbench v2", () => {
   it("derives the empty state from the stable conversation view", () => {
     mocks.useSession.mockReturnValue(
       sessionState({
-        entries: [
-          {
-            id: "stale-entry",
-            session_id: "session-1",
-            run_id: null,
-            sequence: 1,
-            schema_version: 2,
-            created_at: timestamp,
-            type: "message",
-            payload: {
-              role: "assistant",
-              parts: [{ id: "text", type: "text", text: "Stale transport" }],
-            },
-          },
-        ],
-        conversationView: conversationView([]),
+        view: conversationView([]),
       }),
     )
 
@@ -873,7 +845,7 @@ describe("AgentWorkbench v2", () => {
     const user = userEvent.setup()
     mocks.useSession.mockReturnValue(
       sessionState({
-        conversationView: conversationView([], null, {
+        view: conversationView([], null, {
           id: "plan-entry-1",
           runId: "run-1",
           planId: "plan-1",
@@ -908,7 +880,7 @@ describe("AgentWorkbench v2", () => {
   })
 
   it("publishes refreshed session titles for the sidebar without rendering them in the canvas", () => {
-    const initial = sessionState({ session: null })
+    const initial = sessionState()
     mocks.useSession.mockReturnValue(initial)
     const view = renderWithProviders(
       <AgentWorkbench sessionId="session-1" projectId="project-1" />,
@@ -927,7 +899,7 @@ describe("AgentWorkbench v2", () => {
       },
     }
     mocks.useSession.mockReturnValue(
-      sessionState({ session: null, conversationView: refreshedView }),
+      sessionState({ view: refreshedView }),
     )
     view.rerender(
       <AgentWorkbench sessionId="session-1" projectId="project-1" />,
@@ -999,13 +971,13 @@ describe("AgentWorkbench v2", () => {
       screen.getByRole("button", { name: "Choose manual environments" }),
     )
 
-    expect(state.updateModel).toHaveBeenCalledWith({
+    expect(state.commands.updateModel).toHaveBeenCalledWith({
       modelId: "model-record-2",
     })
-    expect(state.updatePermissionMode).toHaveBeenCalledWith("full_access")
-    expect(state.updateEnvironmentScope).toHaveBeenCalledWith({
+    expect(state.commands.updatePermissionMode).toHaveBeenCalledWith("full_access")
+    expect(state.commands.updateEnvironmentScope).toHaveBeenCalledWith({
       mode: "manual",
-      selected_environment_ids: ["local", "gpu-01"],
+      environmentIds: ["local", "gpu-01"],
     })
     expect(screen.getByText("Environment pending: true")).toBeInTheDocument()
   })
@@ -1016,7 +988,11 @@ describe("AgentWorkbench v2", () => {
       .fn()
       .mockRejectedValueOnce(new Error("model update failed"))
       .mockResolvedValueOnce(undefined)
-    mocks.useSession.mockReturnValue(sessionState({ updateModel }))
+    mocks.useSession.mockReturnValue(
+      sessionState({
+        commands: { ...sessionState().commands, updateModel },
+      }),
+    )
 
     renderWithProviders(
       <AgentWorkbench sessionId="session-1" projectId="project-1" />,
@@ -1043,8 +1019,7 @@ describe("AgentWorkbench v2", () => {
     (status) => {
       mocks.useSession.mockReturnValue(
         sessionState({
-          session: { ...snapshot().session, status },
-          conversationView: {
+          view: {
             ...conversationView([]),
             conversation: { ...conversationView([]).conversation, status },
           },
@@ -1072,7 +1047,7 @@ describe("AgentWorkbench v2", () => {
     )
 
     act(() => ref.current?.stop())
-    await waitFor(() => expect(state.cancel).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(state.commands.cancel).toHaveBeenCalledTimes(1))
   })
 
   it("starts a new conversation through the workbench imperative handle", () => {

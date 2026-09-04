@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
-import type { AgentSessionState } from "@/hooks/use-agent-session"
+import type { ConversationSessionBinding } from "@/lib/agent/conversation-model/types"
 import {
   applyConversationProjectionEvent,
   createConversationProjection,
@@ -83,21 +83,22 @@ export function useDemoReplay(recording: string, autoPlay = true) {
 
   useEffect(() => () => cancelRef.current?.(), [])
 
-  const sessionState = useMemo<AgentSessionState>(
+  const sessionState = useMemo<ConversationSessionBinding>(
     () => ({
-      ...projection.state.transportState,
-      conversationView: projection.view,
+      view: projection.view,
       connectionStatus: "connected",
       error: null,
       isLoading: false,
-      sendMessage: async () => {},
-      steer: async () => {},
-      respond: async () => {},
-      cancel: async () => {},
-      updatePermissionMode: async () => {},
-      updateModel: async () => {},
-      updateEnvironmentScope: async () => {},
-      retry: play,
+      commands: {
+        sendMessage: async () => {},
+        steer: async () => {},
+        respond: async () => {},
+        cancel: async () => {},
+        updatePermissionMode: async () => {},
+        updateModel: async () => {},
+        updateEnvironmentScope: async () => {},
+        retry: play,
+      },
     }),
     [play, projection],
   )

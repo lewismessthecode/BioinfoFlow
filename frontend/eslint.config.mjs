@@ -8,6 +8,8 @@ const config = [
       ".vercel/**",
       "node_modules/**",
       "playwright-report/**",
+      ".playwright-report/**",
+      ".playwright-e2e/**",
       "test-results/**",
     ],
   },

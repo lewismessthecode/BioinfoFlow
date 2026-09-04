@@ -18,6 +18,9 @@ from app.services.agent_harness.contracts import (
     SteerCommand,
 )
 from app.services.agent_harness.projection import entry_contract
+from app.services.agent_harness.presentation_mutation_service import (
+    AgentPresentationMutationService,
+)
 from tests.test_agent_harness.run_test_helpers import (
     agent_turn_execution_config,
     create_agent_run,
@@ -26,6 +29,10 @@ from tests.test_agent_harness.run_test_helpers import (
 
 WORKSPACE_ID = UUID("30000000-0000-0000-0000-000000000001")
 
+def _mutations(
+    repository: AgentHarnessRepository,
+) -> AgentPresentationMutationService:
+    return AgentPresentationMutationService(repository)
 
 def _message(command_id: str, text: str) -> MessageCommand:
     return MessageCommand(
@@ -235,7 +242,7 @@ async def test_tool_progress_revisions_are_local_to_each_call(
             },
         ],
     )
-    running = await repository.update_tool_progress(
+    running = await _mutations(repository).update_tool_progress(
         str(run.id),
         call_id="read-1",
         name="read",
@@ -244,7 +251,7 @@ async def test_tool_progress_revisions_are_local_to_each_call(
         execution_mode="parallel",
         arguments={"path": "README.md"},
     )
-    completed = await repository.update_tool_progress(
+    completed = await _mutations(repository).update_tool_progress(
         str(run.id),
         call_id="read-1",
         name="read",
@@ -252,7 +259,7 @@ async def test_tool_progress_revisions_are_local_to_each_call(
         group_id="inconsistent-group",
         execution_mode="serial",
     )
-    other = await repository.update_tool_progress(
+    other = await _mutations(repository).update_tool_progress(
         str(run.id),
         call_id="read-2",
         name="read",
@@ -315,7 +322,7 @@ async def test_legacy_tool_progress_is_reprojected_for_snapshot_and_updates(
     assert "AKIAIOSFODNN7EXAMPLE" not in str(snapshot_progress)
     assert "/Users/private" not in str(snapshot_progress)
 
-    updated = await repository.update_tool_progress(
+    updated = await _mutations(repository).update_tool_progress(
         str(run.id),
         call_id="bash-legacy",
         name="bash",
@@ -1093,7 +1100,7 @@ async def test_waiting_interaction_rolls_back_history_and_run_state_together(
 
     monkeypatch.setattr(harness_db, "commit", fail_commit)
     with pytest.raises(RuntimeError, match="simulated process loss"):
-        await repository.commit_waiting_interaction(
+        await _mutations(repository).commit_waiting_interaction(
             session_id,
             run_id=run_id,
             notice_payload={
@@ -1133,7 +1140,7 @@ async def test_waiting_interaction_advances_the_public_run_revision(
     run = await create_agent_run(repository, str(session.id))
     before_waiting = run.revision
 
-    _, _, waiting = await repository.commit_waiting_interaction(
+    _, _, waiting = await _mutations(repository).commit_waiting_interaction(
         str(session.id),
         run_id=str(run.id),
         request_payload={
@@ -1219,7 +1226,7 @@ async def test_respond_ack_rolls_back_with_interaction_response_history(
 
     monkeypatch.setattr(harness_db, "commit", fail_commit)
     with pytest.raises(RuntimeError, match="before response commit"):
-        await repository.commit_interaction_response(
+        await _mutations(repository).commit_interaction_response(
             session_id,
             run_id=run_id,
             command_id="answer-1",
@@ -1312,7 +1319,7 @@ async def test_approved_bash_ack_rolls_back_with_the_execution_fence(
 
     monkeypatch.setattr(harness_db, "commit", fail_commit)
     with pytest.raises(RuntimeError, match="before approval fence commit"):
-        await repository.begin_approved_tool_execution(
+        await _mutations(repository).begin_approved_tool_execution(
             session_id,
             run_id=run_id,
             interaction_id="tool:bash-1",
@@ -1386,7 +1393,7 @@ async def test_approved_tool_execution_preserves_complete_progress_in_snapshot(
         ),
     )
 
-    await repository.begin_approved_tool_execution(
+    await _mutations(repository).begin_approved_tool_execution(
         session_id,
         run_id=run_id,
         interaction_id="tool:bash-1",
@@ -1455,7 +1462,7 @@ async def test_respond_ack_preserves_a_command_enqueued_after_the_worker_peek(
                 parts=[InputTextPart(text="Keep this input.")],
             ),
         )
-        await worker.commit_interaction_response(
+        await _mutations(worker).commit_interaction_response(
             session_id,
             run_id=run_id,
             command_id="answer-1",

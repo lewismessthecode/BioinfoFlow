@@ -21,6 +21,14 @@ async def test_session_create_reports_a_stable_code_when_no_model_is_available(
 
 
 @pytest.mark.asyncio
+async def test_agent_api_client_uses_a_trusted_host(async_client) -> None:
+    response = await async_client.get("/api/v1/agent/sessions")
+
+    assert response.status_code == 200
+    assert async_client.base_url.host == "localhost"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "payload",
     [
@@ -724,10 +732,10 @@ async def test_sse_releases_request_database_before_streaming(
         "root_path": "",
         "headers": [
             (b"accept", b"text/event-stream"),
-            (b"host", b"test"),
+            (b"host", b"localhost"),
         ],
         "client": ("127.0.0.1", 12345),
-        "server": ("test", 80),
+        "server": ("localhost", 80),
     }
     request_messages: list[asyncio.Queue[dict]] = []
     first_events = [asyncio.Event() for _ in range(3)]

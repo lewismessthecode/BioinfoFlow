@@ -11,7 +11,10 @@ from uuid import uuid4
 
 from app.config import settings
 from app.repositories.agent_harness_repo import AgentHarnessRepository
-from app.services.agent_harness.assets import AgentHarnessAttachmentService
+from app.services.agent_harness.assets import (
+    AgentHarnessAttachmentService,
+    artifact_reference_part,
+)
 from app.services.agent_harness.compression import (
     DeterministicCompactor,
     is_context_overflow,
@@ -39,6 +42,9 @@ from app.services.agent_harness.projection import (
     entry_contract,
     pending_interaction_entry_view,
     run_view,
+)
+from app.services.agent_harness.presentation_mutation_service import (
+    AgentPresentationMutationService,
 )
 from app.services.agent_harness.recovery import (
     create_checkpoint,
@@ -116,6 +122,7 @@ class AgentLoop:
         model_exchange_recorder: ModelExchangeLifecycle | None = None,
     ) -> None:
         self.repository = repository
+        self.presentation_mutations = AgentPresentationMutationService(repository)
         self.model_gateway = model_gateway
         self.workspace_factory = workspace_factory
         self.model_runtime_resolver = model_runtime_resolver
@@ -371,7 +378,7 @@ class AgentLoop:
                             _,
                             entry,
                             waiting_run,
-                        ) = await self.repository.commit_waiting_interaction(
+                        ) = await self.presentation_mutations.commit_waiting_interaction(
                             str(session.id),
                             run_id=run_id,
                             request_payload={
@@ -424,7 +431,10 @@ class AgentLoop:
                             )
                         )
                         return
-                    if result.tool_name == "update_plan" and result.status == "completed":
+                    if (
+                        result.tool_name == "update_plan"
+                        and result.status == "completed"
+                    ):
                         plan = await self.repository.commit_plan(
                             str(session.id),
                             run_id=run_id,
@@ -434,7 +444,9 @@ class AgentLoop:
                         await self.publish(
                             EntryCommittedEvent(entry=entry_contract(plan))
                         )
-                        payload = plan.payload if isinstance(plan.payload, Mapping) else {}
+                        payload = (
+                            plan.payload if isinstance(plan.payload, Mapping) else {}
+                        )
                         result = replace(
                             result,
                             output={
@@ -587,7 +599,7 @@ class AgentLoop:
             (
                 response_entry,
                 durable_run,
-            ) = await self.repository.begin_approved_tool_execution(
+            ) = await self.presentation_mutations.begin_approved_tool_execution(
                 str(session.id),
                 run_id=run_id,
                 interaction_id=str(
@@ -638,14 +650,16 @@ class AgentLoop:
             error=result.error,
         )
         if response_entry is None:
-            response_entry = await self.repository.commit_interaction_response(
-                str(session.id),
-                run_id=run_id,
-                command_id=command_id,
-                interaction_id=str(
-                    response.get("request_id") or f"tool:{call.call_id}"
-                ),
-                response=response,
+            response_entry = (
+                await self.presentation_mutations.commit_interaction_response(
+                    str(session.id),
+                    run_id=run_id,
+                    command_id=command_id,
+                    interaction_id=str(
+                        response.get("request_id") or f"tool:{call.call_id}"
+                    ),
+                    response=response,
+                )
             )
             await self.publish(
                 EntryCommittedEvent(entry=entry_contract(response_entry))
@@ -711,7 +725,7 @@ class AgentLoop:
                         _,
                         request_entry,
                         waiting_run,
-                    ) = await self.repository.commit_waiting_interaction(
+                    ) = await self.presentation_mutations.commit_waiting_interaction(
                         str(session.id),
                         run_id=run_id,
                         request_payload={
@@ -814,7 +828,7 @@ class AgentLoop:
             (
                 response_entry,
                 durable_run,
-            ) = await self.repository.begin_approved_tool_execution(
+            ) = await self.presentation_mutations.begin_approved_tool_execution(
                 str(session.id),
                 run_id=str(run.id),
                 interaction_id=interaction_id,
@@ -832,12 +846,14 @@ class AgentLoop:
                 )
             )
         else:
-            response_entry = await self.repository.commit_interaction_response(
-                str(session.id),
-                run_id=str(run.id),
-                command_id=command_id,
-                interaction_id=interaction_id,
-                response=response,
+            response_entry = (
+                await self.presentation_mutations.commit_interaction_response(
+                    str(session.id),
+                    run_id=str(run.id),
+                    command_id=command_id,
+                    interaction_id=interaction_id,
+                    response=response,
+                )
             )
         await self.publish(EntryCommittedEvent(entry=entry_contract(response_entry)))
         if choice == "cancel":
@@ -1015,7 +1031,11 @@ class AgentLoop:
             "waiting_call": _tool_call_dict(call),
             "recovery_interaction": request,
         }
-        notice, request_entry, _ = await self.repository.commit_waiting_interaction(
+        (
+            notice,
+            request_entry,
+            _,
+        ) = await self.presentation_mutations.commit_waiting_interaction(
             str(session.id),
             run_id=run_id,
             notice_payload={
@@ -1397,6 +1417,9 @@ class AgentLoop:
                     "error": content if is_error else None,
                 }
             )
+            artifact_part = artifact_reference_part(private_output)
+            if artifact_part is not None:
+                parts.append(artifact_part)
         else:
             completed_at = datetime.now(timezone.utc)
             parts.extend(
@@ -1456,7 +1479,7 @@ class AgentLoop:
         output_summary: str | None = None,
         error: str | None = None,
     ) -> ToolProgressView:
-        view = await self.repository.update_tool_progress(
+        view = await self.presentation_mutations.update_tool_progress(
             run_id,
             call_id=call_id,
             name=name,

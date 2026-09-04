@@ -276,6 +276,16 @@ class LocalWorkspaceBackend:
         )
         return result.path, result.data
 
+    async def read_publishable_file(self, raw_path: Any) -> tuple[str, bytes]:
+        """Read an existing file only after proving it sits in a writable root."""
+
+        path = self.resolve_write_path(
+            raw_path,
+            must_exist=True,
+            create_parents=False,
+        )
+        return await self.read_bytes(str(path))
+
     def resolve_write_path(
         self,
         raw_path: Any,
@@ -391,9 +401,7 @@ class LocalWorkspaceBackend:
 
     def assess_command(self, command: str, *, cwd: Any = None):
         working_directory = self.policy.require_allowed_dir(
-            self.canonical_path(cwd)
-            if isinstance(cwd, str)
-            else self.working_directory
+            self.canonical_path(cwd) if isinstance(cwd, str) else self.working_directory
         )
         adapter = self.sandbox_runner.available_adapter()
         return assess_command_risk(
@@ -416,9 +424,7 @@ class LocalWorkspaceBackend:
 
     async def command_cwd_binding(self, cwd: Any) -> dict[str, Any]:
         working_directory = self.policy.require_allowed_dir(
-            self.canonical_path(cwd)
-            if isinstance(cwd, str)
-            else self.working_directory
+            self.canonical_path(cwd) if isinstance(cwd, str) else self.working_directory
         )
         return _local_cwd_binding(working_directory)
 
@@ -437,9 +443,7 @@ class LocalWorkspaceBackend:
         expected_cwd_binding: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         working_directory = self.policy.require_allowed_dir(
-            self.canonical_path(cwd)
-            if isinstance(cwd, str)
-            else self.working_directory
+            self.canonical_path(cwd) if isinstance(cwd, str) else self.working_directory
         )
         if not self.sandbox_runner.enabled:
             raise RuntimeError("agent bash requires operating-system sandboxing")
@@ -461,9 +465,7 @@ class LocalWorkspaceBackend:
         try:
             if self.container_executor is not None:
                 cwd_identity = (
-                    os.fstat(cwd_fd)
-                    if cwd_fd is not None
-                    else working_directory.stat()
+                    os.fstat(cwd_fd) if cwd_fd is not None else working_directory.stat()
                 )
                 workspace_root = self.policy.write_roots[0]
                 workspace_identity = workspace_root.stat()
@@ -685,9 +687,7 @@ class LocalWorkspaceBackend:
                 "execution": "disposable-container",
             },
         }
-        if self.artifact_writer is not None and (
-            stdout_truncated or stderr_truncated
-        ):
+        if self.artifact_writer is not None and (stdout_truncated or stderr_truncated):
             result["artifact"] = await self.artifact_writer(
                 {
                     "type": "command_output",
@@ -814,6 +814,11 @@ class RemoteWorkspaceBackend:
             allow_truncated=False,
         )
         return result.path, result.data
+
+    async def read_publishable_file(self, raw_path: Any) -> tuple[str, bytes]:
+        path = self.canonical_path(raw_path)
+        self._require_remote_root(path, self.write_roots)
+        return await self.read_bytes(str(path))
 
     async def edit_text(
         self,
@@ -1469,8 +1474,7 @@ def _sandbox_runner_failed(
             str(line).casefold() for line in rule.get("informational_lines", ())
         }
         fatal = tuple(
-            str(signature).casefold()
-            for signature in rule.get("fatal_signatures", ())
+            str(signature).casefold() for signature in rule.get("fatal_signatures", ())
         )
         for line in lines:
             folded = line.casefold()

@@ -1471,6 +1471,9 @@
     "openSidebar": "打开侧边栏",
     "closeSidebar": "关闭侧边栏",
     "hidePanel": "隐藏面板",
+    "resizePanel": "调整工作区面板大小",
+    "resizeSidebar": "调整侧边栏大小",
+    "resizeTerminal": "调整终端大小",
     "refreshWorkspace": "刷新工作区",
     "userMenu": "用户菜单",
     "message": "消息",
@@ -2452,6 +2455,7 @@
     "title": "终端",
     "newTerminal": "新建终端",
     "startingSession": "正在启动终端...",
+    "screenshotFixture": "确定性终端测试夹具",
     "targets": {
       "local": "本地"
     },
@@ -2569,6 +2573,10 @@
     },
     "loadErrorTitle": "无法打开对话",
     "loadErrorDescription": "当前对话暂时无法加载。",
+    "routeLoading": {
+      "title": "正在加载对话",
+      "description": "正在解析对话访问权限和工作区范围。"
+    },
     "retry": "重试",
     "readOnly": {
       "archived": "该对话已归档，目前只能查看。",
@@ -2580,7 +2588,24 @@
       "description": "查看工作区文件和工作流。",
       "action": "工作区",
       "open": "打开工作区面板",
-      "close": "关闭工作区面板"
+      "close": "关闭工作区面板",
+      "codePreview": {
+        "wdlFallback": "WDL 语法高亮使用 Scala 降级方案"
+      },
+      "actions": {
+        "browser": "浏览器",
+        "files": "文件",
+        "artifacts": "产物",
+        "dag": "DAG",
+        "openBrowser": "打开浏览器",
+        "closeBrowser": "关闭浏览器",
+        "openFiles": "打开文件",
+        "closeFiles": "关闭文件",
+        "openArtifacts": "打开产物",
+        "closeArtifacts": "关闭产物",
+        "openDag": "打开 DAG",
+        "closeDag": "关闭 DAG"
+      }
     },
     "connection": {
       "connecting": "正在连接",

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import {
   dispatchAgentCommand,
@@ -13,9 +13,12 @@ import { ApiError } from "@/lib/api"
 import { subscribeAgentEvents } from "@/lib/agent/stream"
 import {
   initialAgentStoreState,
-  type AgentStoreState,
 } from "@/lib/agent/store"
-import type { ConversationViewModel } from "@/lib/agent/conversation-model/types"
+import type {
+  ConversationEnvironmentScope,
+  ConversationSessionBinding,
+  ConversationViewModel,
+} from "@/lib/agent/conversation-model/types"
 import {
   applyConversationProjectionDiagnostic,
   applyConversationProjectionEvent,
@@ -35,34 +38,23 @@ import type {
 import type { AgentConnectionStatus } from "@/lib/agent/stream"
 import type { PresentationDiagnostic } from "@/lib/agent/transport/presentation-contract"
 
-export type AgentSessionState = AgentStoreState & {
-  conversationView: ConversationViewModel | null
-  connectionStatus: AgentConnectionStatus
-  error: Error | null
-  isLoading: boolean
-  sendMessage: (parts: InputPart[]) => Promise<void>
-  steer: (parts: InputPart[]) => Promise<void>
-  respond: (
-    interactionId: string,
-    response: InteractionResponse,
-  ) => Promise<void>
-  cancel: () => Promise<void>
-  updatePermissionMode: (mode: AgentPermissionMode) => Promise<void>
-  updateModel: (selection: AgentModelSelection) => Promise<void>
-  updateEnvironmentScope: (scope: AgentEnvironmentScope) => Promise<void>
-  retry: () => void
-}
-
+/**
+ * The live adapter exposed to Conversation UI.
+ *
+ * Keep the transport store and wire-shaped commands private to this hook. UI
+ * consumers must use the stable `view` and `commands` ports instead.
+ */
 type AgentSessionViewState = {
   sessionId: string
-  store: AgentStoreState
-  conversationView: ConversationViewModel | null
+  view: ConversationViewModel | null
   connectionStatus: AgentConnectionStatus
   error: Error | null
   isLoading: boolean
 }
 
-export function useAgentSession(sessionId: string): AgentSessionState {
+export function useAgentSession(
+  sessionId: string,
+): ConversationSessionBinding {
   const [retryRevision, setRetryRevision] = useState(0)
   const [view, setView] = useState<AgentSessionViewState>(() =>
     initialView(sessionId),
@@ -97,8 +89,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
         ...(current.sessionId === expectedSessionId
           ? current
           : initialView(expectedSessionId)),
-        store: projection.state.transportState,
-        conversationView: projection.view,
+        view: projection.view,
         error: null,
         isLoading: false,
       }))
@@ -131,15 +122,13 @@ export function useAgentSession(sessionId: string): AgentSessionState {
 
     const publishStore = (eventType?: AgentEvent["type"]) => {
       if (!active || generationRef.current !== generation) return
-      const store = storeRef.current
       const conversationView = conversationViewRef.current
       setView((current) => {
         const base =
           current.sessionId === sessionId ? current : initialView(sessionId)
         return {
           ...base,
-          store,
-          conversationView,
+          view: conversationView,
           error: eventType === "snapshot" ? null : base.error,
           isLoading: eventType === "snapshot" ? false : base.isLoading,
         }
@@ -345,8 +334,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
           current.sessionId === sessionId
             ? {
                 ...current,
-                store: application.state.transportState,
-                conversationView: application.view,
+                view: application.view,
               }
             : current,
         )
@@ -449,24 +437,52 @@ export function useAgentSession(sessionId: string): AgentSessionState {
     [updateSessionSettings],
   )
 
+  const retry = useCallback(
+    () => setRetryRevision((revision) => revision + 1),
+    [],
+  )
+  const commands = useMemo(
+    () => ({
+      sendMessage,
+      steer,
+      respond,
+      cancel,
+      updatePermissionMode,
+      updateModel: (selection: AgentModelSelection) => updateModel(selection),
+      updateEnvironmentScope: (scope: ConversationEnvironmentScope) =>
+        updateEnvironmentScope(environmentScopeFromConversation(scope)),
+      retry,
+    }),
+    [
+      cancel,
+      respond,
+      retry,
+      sendMessage,
+      steer,
+      updateEnvironmentScope,
+      updateModel,
+      updatePermissionMode,
+    ],
+  )
+
   const currentView =
     view.sessionId === sessionId ? view : initialView(sessionId)
 
   return {
-    ...currentView.store,
-    conversationView: currentView.conversationView,
+    view: currentView.view,
     connectionStatus: currentView.connectionStatus,
     error: currentView.error,
     isLoading: currentView.isLoading,
-    sendMessage,
-    steer,
-    respond,
-    cancel,
-    updatePermissionMode,
-    updateModel,
-    updateEnvironmentScope,
-    retry: () => setRetryRevision((revision) => revision + 1),
+    commands,
   }
+}
+
+function environmentScopeFromConversation(
+  scope: ConversationEnvironmentScope,
+): AgentEnvironmentScope {
+  return scope.mode === "manual"
+    ? { mode: "manual", selected_environment_ids: scope.environmentIds }
+    : { mode: "auto" }
 }
 
 function asError(value: unknown, fallback: string) {
@@ -484,8 +500,7 @@ function createCommandId() {
 function initialView(sessionId: string): AgentSessionViewState {
   return {
     sessionId,
-    store: initialAgentStoreState,
-    conversationView: null,
+    view: null,
     connectionStatus: "connecting",
     error: null,
     isLoading: true,

@@ -173,6 +173,7 @@ async def test_scheduler_requeues_failed_run_when_retry_policy_matches(
                 and retried.state == TaskState.QUEUED.value
                 and retried.attempt == 2
                 and getattr(run.status, "value", run.status) == RunStatus.QUEUED.value
+                and run.started_at is None
             ):
                 break
             await asyncio.sleep(0.02)

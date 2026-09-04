@@ -11,8 +11,6 @@ from app.services.agent_harness.contracts import (
     OpenSessionRequest,
 )
 from app.services.agent_harness.run_submission import AgentRunSubmissionService
-
-
 @pytest.mark.asyncio
 async def test_run_submission_prepares_title_and_effective_turn_config(
     harness_db,

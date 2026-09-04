@@ -28,6 +28,7 @@ from app.services.agent_harness.contracts import (
     ToolProgressView,
     ToolUpdatedEvent,
 )
+from app.services.agent_harness.assets import artifact_reference_part
 from app.services.agent_harness.events import AgentEventHub
 from app.services.agent_harness.loop import (
     AgentLoop,
@@ -42,6 +43,9 @@ from app.services.agent_harness.projection import (
 )
 from app.services.agent_harness.recovery import RecoveryPlanner, create_checkpoint
 from app.services.agent_harness.run_submission import AgentRunSubmissionService
+from app.services.agent_harness.presentation_mutation_service import (
+    AgentPresentationMutationService,
+)
 from app.services.agent_harness.tool_projection import (
     project_tool_view,
     public_output_summary as _public_output_summary,
@@ -76,6 +80,7 @@ class AgentHarness:
         model_exchange_recorder: ModelExchangeLifecycle | None = None,
     ) -> None:
         self.repository = repository
+        self.presentation_mutations = AgentPresentationMutationService(repository)
         self.run_submission = AgentRunSubmissionService(repository)
         self.event_hub = event_hub or AgentEventHub()
         self._tasks = tasks if tasks is not None else {}
@@ -725,7 +730,7 @@ class AgentHarness:
             )
             for item in [waiting_call, *pending_calls]
         ]
-        await self.repository.commit_waiting_interaction(
+        await self.presentation_mutations.commit_waiting_interaction(
             session_id,
             run_id=run_id,
             request_payload={
@@ -865,7 +870,11 @@ class AgentHarness:
                         "recovery_interaction": recovery_request,
                     }
                 )
-                _, entry, _ = await self.repository.commit_waiting_interaction(
+                (
+                    _,
+                    entry,
+                    _,
+                ) = await self.presentation_mutations.commit_waiting_interaction(
                     str(session.id),
                     run_id=str(run.id),
                     request_payload={
@@ -932,7 +941,13 @@ class AgentHarness:
                                 "text": _recovered_tool_output(result),
                             },
                             "error": result.error,
-                        }
+                        },
+                        *(
+                            [artifact_part]
+                            if (artifact_part := artifact_reference_part(result.output))
+                            is not None
+                            else []
+                        ),
                     ],
                 },
             )
@@ -980,7 +995,11 @@ class AgentHarness:
         )
         waiting_call = checkpoint["waiting_call"]
         workspace = self.loop.workspace_factory(session, str(run.id))
-        notice, request, waiting_run = await self.repository.commit_waiting_interaction(
+        (
+            notice,
+            request,
+            waiting_run,
+        ) = await self.presentation_mutations.commit_waiting_interaction(
             str(session.id),
             run_id=str(run.id),
             notice_payload=notice_payload,
@@ -1176,7 +1195,7 @@ class AgentHarness:
         run = await self.repository.get_run(run_id)
         if run is None:
             raise LookupError(f"agent run not found: {run_id}")
-        view = await self.repository.update_tool_progress(
+        view = await self.presentation_mutations.update_tool_progress(
             run_id,
             call_id=call_id,
             name=name,

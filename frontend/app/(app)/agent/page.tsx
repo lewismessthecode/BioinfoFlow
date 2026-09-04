@@ -1,21 +1,41 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 import { useTranslations } from "next-intl"
 import {
   AgentWorkbench,
   type AgentWorkbenchHandle,
 } from "@/components/bioinfoflow/agent/agent-workbench"
+import {
+  type AgentActionId,
+} from "@/components/bioinfoflow/agent-action-group"
+import {
+  AgentWorkspaceActionGroup,
+  type AgentWorkspaceTab,
+} from "@/components/bioinfoflow/agent/agent-workspace-action-group"
 import { LiveDeck, type LiveDeckTab } from "@/components/bioinfoflow/live-deck"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useEvents } from "@/hooks/use-events"
+import {
+  RIGHT_SIDEBAR_MAX,
+  RIGHT_SIDEBAR_MIN,
+  useAgentPanelController,
+} from "@/hooks/use-agent-panel-controller"
 import type { DagData, Run } from "@/lib/types"
 import { ResizeHandle } from "@/components/ui/resize-handle"
-import { useIsMobile } from "@/hooks/use-media-query"
+import { useIsMobile, useMediaQuery } from "@/hooks/use-media-query"
 import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard-shortcuts-overlay"
 import type { ConversationSummary } from "@/lib/agent/conversation-model/types"
-import { Button } from "@/components/ui/button"
+import {
+  listConversationRouteSummaries,
+  type ConversationRouteSummary,
+} from "@/lib/agent/conversation-model/session-directory"
 import {
   Sheet,
   SheetContent,
@@ -23,12 +43,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { PanelRightClose } from "@/lib/icons"
-
-const RIGHT_SIDEBAR_MIN = 300
-const RIGHT_SIDEBAR_MAX = 600
-const RIGHT_SIDEBAR_DEFAULT = 400
-
+const LIVE_DECK_TAB_BY_ACTION: Record<AgentActionId, LiveDeckTab> = {
+  browser: "browser",
+  files: "workspace",
+  artifacts: "artifacts",
+  dag: "dag",
+}
 export default function AgentPage() {
   return <AgentPageContent routeSessionId={null} />
 }
@@ -39,144 +59,344 @@ export function AgentPageContent({
   routeSessionId: string | null
 }) {
   const t = useTranslations("agentWorkbench")
+  const tAccessibility = useTranslations("accessibility")
   const isMobile = useIsMobile()
-  const { setNavbarActions } = useWorkspaceShell()
+  const viewportUsesSheet = useMediaQuery("(max-width: 1279px)")
+  const workspaceUsesSheet = isMobile || viewportUsesSheet
+  const {
+    setNavbarActions,
+    projectConversations,
+  } = useWorkspaceShell()
   const chatRef = useRef<AgentWorkbenchHandle>(null)
   const {
     selectedProjectId,
     conversationProjectId,
     setSelectedProjectId,
     setConversationProjectId,
-    activeConversationId,
     setActiveConversationId,
     setActiveConversationTitle,
   } = useProjectContext()
-  const [liveDeckTab, setLiveDeckTab] = useState<LiveDeckTab>("workspace")
-  const [rightSidebarWidth, setRightSidebarWidth] = useState(RIGHT_SIDEBAR_DEFAULT)
-  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(true)
-  const [mobileLiveDeckOpen, setMobileLiveDeckOpen] = useState(false)
+  const railRef = useRef<HTMLDivElement>(null)
+  const [routeResolution, setRouteResolution] = useState<{
+    sessionId: string | null
+    status: "ready" | "loading" | "unavailable" | "error"
+    session: ConversationRouteSummary | null
+  }>({
+    sessionId: routeSessionId,
+    status: routeSessionId && projectConversations !== undefined ? "loading" : "ready",
+    session: null,
+  })
+  const resolvedRouteSession =
+    routeResolution.sessionId === routeSessionId
+      ? routeResolution.session
+      : null
+  const routeResolutionState =
+    !routeSessionId ||
+    projectConversations === undefined
+      ? "ready"
+      : routeResolution.sessionId !== routeSessionId
+        ? "loading"
+      : routeResolution.status
+  const effectiveProjectId = routeSessionId
+    ? projectConversations === undefined
+      ? conversationProjectId || selectedProjectId
+      : resolvedRouteSession?.projectId ?? null
+    : selectedProjectId
+  const {
+    preferences: panelPreferences,
+    update: updatePanelPreferences,
+    close: closeLiveDeck,
+    recordFocusReturn,
+    restoreFocusReturn,
+    ensurePanelFocusReturn,
+    resize: handleRightResize,
+    resizeEnd: handleRightResizeEnd,
+    setPanelSessionId,
+    handoffDraftToSession,
+    mobileOpen,
+    setMobileOpen,
+  } = useAgentPanelController({
+    projectId: effectiveProjectId,
+    routeSessionId,
+    isMobile,
+    railRef,
+  })
+  const liveDeckTab = panelPreferences.activeTab
+  const rightSidebarWidth = panelPreferences.width
+  const rightSidebarCollapsed = !panelPreferences.open
+  const mobileLiveDeckOpen = mobileOpen
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
   const [focusedRunId, setFocusedRunId] = useState<string | null>(null)
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null)
   const [dag, setDag] = useState<DagData | null>(null)
+  const sessionScope = routeSessionId || "draft"
+  const projectScope = effectiveProjectId || "none"
+  const stateIdentity = `${projectScope}:${sessionScope}`
+  const [activeStateIdentity, setActiveStateIdentity] = useState(stateIdentity)
+  const hasCurrentState = activeStateIdentity === stateIdentity
+  const visibleSelectedRun = hasCurrentState ? selectedRun : null
+  const visibleFocusedRunId = hasCurrentState ? focusedRunId : null
+  const visibleFocusedArtifactId = hasCurrentState ? focusedArtifactId : null
+  const visibleDag = hasCurrentState ? dag : null
+
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setActiveStateIdentity(stateIdentity)
+    setSelectedRun(null)
+    setFocusedRunId(null)
+    setFocusedArtifactId(null)
+    setDag(null)
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [stateIdentity])
+
+  useEffect(() => {
+    if (!routeSessionId || projectConversations === undefined) return
+    let cancelled = false
+    void listConversationRouteSummaries({ includeArchived: true })
+      .then((sessions) => {
+        if (cancelled) return
+        const session = sessions.find((item) => item.id === routeSessionId)
+        setRouteResolution({
+          sessionId: routeSessionId,
+          status: session ? "ready" : "unavailable",
+          session: session ?? null,
+        })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setRouteResolution({
+          sessionId: routeSessionId,
+          status: "error",
+          session: null,
+        })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectConversations, routeSessionId])
 
   useEffect(() => {
     setActiveConversationId(routeSessionId ?? "")
   }, [routeSessionId, setActiveConversationId])
 
-  useEffect(() => {
-    const savedWidth = localStorage.getItem("right-sidebar-width")
-    const savedCollapsed = localStorage.getItem("right-sidebar-collapsed")
-    /* eslint-disable react-hooks/set-state-in-effect */
-    if (savedWidth) setRightSidebarWidth(Number(savedWidth))
-    if (savedCollapsed) setRightSidebarCollapsed(savedCollapsed === "true")
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, [])
-
-  // Persist state
-  useEffect(() => {
-    localStorage.setItem("right-sidebar-width", String(rightSidebarWidth))
-  }, [rightSidebarWidth])
-
-  useEffect(() => {
-    localStorage.setItem("right-sidebar-collapsed", String(rightSidebarCollapsed))
-  }, [rightSidebarCollapsed])
-
   useEvents({
-    projectId: selectedProjectId,
+    projectId: effectiveProjectId,
     onRunDag: (envelope) => {
-      if (!selectedRun) return
-      if (envelope.data.run_id !== selectedRun.run_id) return
+      if (!visibleSelectedRun) return
+      if (envelope.data.run_id !== visibleSelectedRun.run_id) return
       setDag(envelope.data.dag)
-      if (envelope.data.dag) setLiveDeckTab("dag")
+      if (envelope.data.dag) updatePanelPreferences({ activeTab: "dag" })
     },
   })
 
-  const handleRightResize = useCallback((delta: number) => {
-    setRightSidebarWidth((prev) => {
-      const next = prev + delta
-      return Math.min(RIGHT_SIDEBAR_MAX, Math.max(RIGHT_SIDEBAR_MIN, next))
-    })
-  }, [])
-
   const toggleRightSidebar = useCallback(() => {
-    setRightSidebarCollapsed((prev) => !prev)
-  }, [])
-  const workspaceActionLabel = t(
-    !isMobile && !rightSidebarCollapsed
-      ? "workspacePanel.close"
-      : "workspacePanel.open",
+    const nextCollapsed = !rightSidebarCollapsed
+    if (nextCollapsed) {
+      closeLiveDeck()
+      return
+    }
+    ensurePanelFocusReturn()
+    updatePanelPreferences({ open: !nextCollapsed })
+  }, [
+    closeLiveDeck,
+    ensurePanelFocusReturn,
+    rightSidebarCollapsed,
+    updatePanelPreferences,
+  ])
+
+  const closeMobileLiveDeck = useCallback(() => {
+    ensurePanelFocusReturn()
+    setMobileOpen(false)
+  }, [ensurePanelFocusReturn, setMobileOpen])
+
+  const toggleMobileLiveDeck = useCallback(() => {
+    const nextOpen = !mobileLiveDeckOpen
+    if (!nextOpen) {
+      closeMobileLiveDeck()
+      return
+    }
+    ensurePanelFocusReturn()
+    setMobileOpen(true)
+  }, [
+    closeMobileLiveDeck,
+    ensurePanelFocusReturn,
+    mobileLiveDeckOpen,
+    setMobileOpen,
+  ])
+
+  const toggleAction = useCallback(
+    (actionId: AgentActionId) => {
+      recordFocusReturn(actionId)
+      const nextTab = LIVE_DECK_TAB_BY_ACTION[actionId]
+      const isActive =
+        liveDeckTab === nextTab &&
+        (workspaceUsesSheet ? mobileLiveDeckOpen : !rightSidebarCollapsed)
+
+      if (isActive) {
+        if (workspaceUsesSheet) {
+          closeMobileLiveDeck()
+        } else {
+          closeLiveDeck()
+        }
+        return
+      }
+
+      if (workspaceUsesSheet) {
+        setMobileOpen(true)
+        updatePanelPreferences({ activeTab: nextTab })
+      } else {
+        updatePanelPreferences({ activeTab: nextTab, open: true })
+      }
+    },
+    [
+      liveDeckTab,
+      mobileLiveDeckOpen,
+      setMobileOpen,
+      recordFocusReturn,
+      rightSidebarCollapsed,
+      updatePanelPreferences,
+      closeLiveDeck,
+      closeMobileLiveDeck,
+      workspaceUsesSheet,
+    ],
   )
 
+  const openWorkspaceTab = useCallback(
+    (tab: AgentWorkspaceTab) => {
+      toggleAction(tab as AgentActionId)
+    },
+    [toggleAction],
+  )
+  const toggleWorkspacePanel = useCallback(() => {
+    if (workspaceUsesSheet) toggleMobileLiveDeck()
+    else toggleRightSidebar()
+  }, [toggleMobileLiveDeck, toggleRightSidebar, workspaceUsesSheet])
+  const closeWorkspacePanel = useCallback(() => {
+    if (workspaceUsesSheet) closeMobileLiveDeck()
+    else closeLiveDeck()
+  }, [closeLiveDeck, closeMobileLiveDeck, workspaceUsesSheet])
+  const workspacePanelOpen = workspaceUsesSheet
+    ? mobileLiveDeckOpen
+    : !rightSidebarCollapsed
+
   useEffect(() => {
-    if (!selectedProjectId) {
+    if (!effectiveProjectId) {
       setNavbarActions(null)
       return () => setNavbarActions(null)
     }
 
     setNavbarActions(
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 rounded-lg border border-transparent bg-transparent text-foreground/78 transition-colors hover:bg-accent/70 hover:text-foreground"
-        aria-label={workspaceActionLabel}
-        onClick={() => {
-          if (isMobile) setMobileLiveDeckOpen(true)
-          else toggleRightSidebar()
+      <AgentWorkspaceActionGroup
+        activeTab={liveDeckTab === "workspace" ? "files" : liveDeckTab}
+        panelOpen={workspacePanelOpen}
+        labels={{
+          group: t("workspacePanel.action"),
+          artifacts: t("workspacePanel.actions.openArtifacts"),
+          files: t("workspacePanel.actions.openFiles"),
+          dag: t("workspacePanel.actions.openDag"),
+          browser: t("workspacePanel.actions.openBrowser"),
+          openPanel: t("workspacePanel.open"),
+          closePanel: t("workspacePanel.close"),
+          closeTab: tAccessibility("hidePanel"),
         }}
-      >
-        <PanelRightClose
-          aria-hidden="true"
-          className={rightSidebarCollapsed || isMobile ? "rotate-180" : undefined}
-        />
-      </Button>,
+        onOpenTab={openWorkspaceTab}
+        onTogglePanel={toggleWorkspacePanel}
+        onCloseTab={closeWorkspacePanel}
+      />,
     )
 
     return () => setNavbarActions(null)
   }, [
-    isMobile,
-    rightSidebarCollapsed,
-    selectedProjectId,
+    closeWorkspacePanel,
+    effectiveProjectId,
+    liveDeckTab,
+    openWorkspaceTab,
     setNavbarActions,
-    toggleRightSidebar,
-    workspaceActionLabel,
+    t,
+    tAccessibility,
+    toggleWorkspacePanel,
+    workspacePanelOpen,
   ])
 
   const handleRunSelect = useCallback((run: Run | null) => {
+    setActiveStateIdentity(stateIdentity)
     setSelectedRun(run)
     setFocusedRunId(run?.run_id ?? null)
     setDag(null)
-  }, [])
+  }, [stateIdentity])
 
   const openReferencedRun = useCallback(
     (runId: string) => {
+      recordFocusReturn(null)
+      setActiveStateIdentity(stateIdentity)
       setSelectedRun(null)
       setFocusedRunId(runId)
       setDag(null)
-      setLiveDeckTab("dag")
-      if (isMobile) setMobileLiveDeckOpen(true)
-      else setRightSidebarCollapsed(false)
+      if (workspaceUsesSheet) {
+        setMobileOpen(true)
+        updatePanelPreferences({ activeTab: "dag" })
+      } else {
+        updatePanelPreferences({ activeTab: "dag", open: true })
+      }
     },
-    [isMobile],
+    [
+      recordFocusReturn,
+      setMobileOpen,
+      stateIdentity,
+      updatePanelPreferences,
+      workspaceUsesSheet,
+    ],
   )
 
   const openReferencedArtifact = useCallback(
     (artifactId: string) => {
+      recordFocusReturn(null)
+      setSelectedRun(null)
+      setFocusedRunId(null)
+      setDag(null)
+      setActiveStateIdentity(stateIdentity)
       setFocusedArtifactId(artifactId)
-      setLiveDeckTab("artifacts")
-      if (isMobile) setMobileLiveDeckOpen(true)
-      else setRightSidebarCollapsed(false)
+      if (workspaceUsesSheet) {
+        setMobileOpen(true)
+        updatePanelPreferences({ activeTab: "artifacts" })
+      } else {
+        updatePanelPreferences({ activeTab: "artifacts", open: true })
+      }
     },
-    [isMobile],
+    [
+      recordFocusReturn,
+      setMobileOpen,
+      stateIdentity,
+      updatePanelPreferences,
+      workspaceUsesSheet,
+    ],
+  )
+  const handleSelectedArtifactIdChange = useCallback(
+    (artifactId: string | null) => {
+      setSelectedRun(null)
+      setFocusedRunId(null)
+      setDag(null)
+      setActiveStateIdentity(stateIdentity)
+      setFocusedArtifactId(artifactId)
+    },
+    [stateIdentity],
   )
 
   const [showShortcuts, setShowShortcuts] = useState(false)
 
+  const handleBeforeSessionRoute = useCallback(
+    (sessionId: string) => {
+      if (!routeSessionId) handoffDraftToSession(sessionId)
+    },
+    [handoffDraftToSession, routeSessionId],
+  )
+
   const handleSessionResolved = useCallback(
     (session: ConversationSummary) => {
       const projectId = session.projectId ?? ""
+      if (!routeSessionId) handoffDraftToSession(session.id, projectId)
       setActiveConversationId(session.id)
+      setPanelSessionId(session.id)
       setActiveConversationTitle(session.title ?? "")
       setConversationProjectId(projectId)
       setSelectedProjectId(projectId)
@@ -186,7 +406,17 @@ export function AgentPageContent({
       setActiveConversationTitle,
       setConversationProjectId,
       setSelectedProjectId,
+      setPanelSessionId,
+      handoffDraftToSession,
+      routeSessionId,
     ],
+  )
+  const handleActiveSessionIdChange = useCallback(
+    (sessionId: string) => {
+      setActiveConversationId(sessionId)
+      setPanelSessionId(sessionId || "draft")
+    },
+    [setActiveConversationId, setPanelSessionId],
   )
 
   // Keyboard shortcuts
@@ -194,9 +424,12 @@ export function AgentPageContent({
     const handler = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey
 
+      if (event.defaultPrevented) return
+
       if (mod && event.shiftKey && event.key.toLowerCase() === "b") {
         event.preventDefault()
-        toggleRightSidebar()
+        if (workspaceUsesSheet) toggleMobileLiveDeck()
+        else toggleRightSidebar()
         return
       }
 
@@ -224,13 +457,55 @@ export function AgentPageContent({
         return
       }
 
-      if (event.key === "Escape" && showShortcuts) {
-        setShowShortcuts(false)
+      if (event.key === "Escape") {
+        if (showShortcuts) {
+          setShowShortcuts(false)
+          return
+        }
+        if (workspaceUsesSheet && mobileLiveDeckOpen) {
+          closeMobileLiveDeck()
+          return
+        }
+        if (!workspaceUsesSheet && !rightSidebarCollapsed) {
+          closeLiveDeck()
+        }
       }
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
-  }, [toggleRightSidebar, showShortcuts])
+  }, [
+    mobileLiveDeckOpen,
+    ensurePanelFocusReturn,
+    rightSidebarCollapsed,
+    restoreFocusReturn,
+    showShortcuts,
+    toggleMobileLiveDeck,
+    toggleRightSidebar,
+    setMobileOpen,
+    closeLiveDeck,
+    closeMobileLiveDeck,
+    workspaceUsesSheet,
+  ])
+
+  if (routeSessionId && routeResolutionState !== "ready") {
+    return (
+      <div
+        className="flex h-full min-h-0 min-w-0 items-center justify-center bg-background"
+        data-testid="agent-route-resolution"
+        data-route-state={routeResolutionState}
+        role="status"
+      >
+        {routeResolutionState === "loading"
+          ? (
+              <>
+                <span>{t("routeLoading.title")}</span>
+                <span>{t("routeLoading.description")}</span>
+              </>
+            )
+          : t("loadErrorTitle")}
+      </div>
+    )
+  }
 
   return (
     <div
@@ -238,11 +513,12 @@ export function AgentPageContent({
       data-testid="agent-page-shell"
     >
       <AgentWorkbench
-        key={routeSessionId ?? "draft"}
+        key={`${effectiveProjectId ?? "none"}:${routeSessionId ?? "draft"}`}
         ref={chatRef}
-        projectId={conversationProjectId || selectedProjectId || null}
+        projectId={routeSessionId ? effectiveProjectId : conversationProjectId || effectiveProjectId || null}
         sessionId={routeSessionId}
-        onActiveSessionIdChange={setActiveConversationId}
+        onBeforeSessionRoute={handleBeforeSessionRoute}
+        onActiveSessionIdChange={handleActiveSessionIdChange}
         onSessionResolved={handleSessionResolved}
         onOpenRun={openReferencedRun}
         onOpenArtifact={openReferencedArtifact}
@@ -255,11 +531,20 @@ export function AgentPageContent({
         />
       )}
 
-      {isMobile && selectedProjectId ? (
-        <Sheet open={mobileLiveDeckOpen} onOpenChange={setMobileLiveDeckOpen}>
+      {workspaceUsesSheet && effectiveProjectId ? (
+        <Sheet
+          open={mobileLiveDeckOpen}
+          onOpenChange={(open) => {
+            if (open) setMobileOpen(true)
+            else closeMobileLiveDeck()
+          }}
+        >
           <SheetContent
             side="right"
             closeLabel={t("workspacePanel.close")}
+            onCloseAutoFocus={(event) => {
+              if (restoreFocusReturn()) event.preventDefault()
+            }}
             className="w-full max-w-none gap-0 overflow-hidden overscroll-contain p-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:max-w-[32rem]"
           >
             <SheetHeader className="sr-only">
@@ -270,35 +555,47 @@ export function AgentPageContent({
             </SheetHeader>
             <LiveDeck
               activeTab={liveDeckTab}
-              onTabChange={setLiveDeckTab}
-              onCollapse={() => setMobileLiveDeckOpen(false)}
-              projectId={selectedProjectId}
-              sessionId={activeConversationId || routeSessionId}
-              selectedArtifactId={focusedArtifactId}
-              onSelectedArtifactIdChange={setFocusedArtifactId}
-              runId={selectedRun?.run_id ?? focusedRunId}
-              dag={dag}
+              onTabChange={(activeTab) => updatePanelPreferences({ activeTab })}
+              onCollapse={closeMobileLiveDeck}
+          projectId={effectiveProjectId}
+              sessionId={routeSessionId}
+              selectedArtifactId={visibleFocusedArtifactId}
+              onSelectedArtifactIdChange={handleSelectedArtifactIdChange}
+              runId={visibleSelectedRun?.run_id ?? visibleFocusedRunId}
+              dag={visibleDag}
               onRunSelect={handleRunSelect}
             />
           </SheetContent>
         </Sheet>
       ) : null}
 
-      {!isMobile && selectedProjectId && !rightSidebarCollapsed ? (
+      {!workspaceUsesSheet && effectiveProjectId && !rightSidebarCollapsed ? (
         <div
+          ref={railRef}
+          data-testid="agent-live-deck-rail"
+          data-width={rightSidebarWidth}
           className="relative flex-shrink-0 animate-in slide-in-from-right-2 fade-in duration-200 motion-reduce:animate-none"
           style={{ width: rightSidebarWidth }}
         >
-          <ResizeHandle side="right" onResize={handleRightResize} />
+          <ResizeHandle
+            side="right"
+            onResize={handleRightResize}
+            onResizeEnd={handleRightResizeEnd}
+            valueNow={rightSidebarWidth}
+            valueMin={RIGHT_SIDEBAR_MIN}
+            valueMax={RIGHT_SIDEBAR_MAX}
+            ariaLabel={tAccessibility("resizePanel")}
+          />
           <LiveDeck
             activeTab={liveDeckTab}
-            onTabChange={setLiveDeckTab}
-            projectId={selectedProjectId}
-            sessionId={activeConversationId || routeSessionId}
-            selectedArtifactId={focusedArtifactId}
-            onSelectedArtifactIdChange={setFocusedArtifactId}
-            runId={selectedRun?.run_id ?? focusedRunId}
-            dag={dag}
+            onTabChange={(activeTab) => updatePanelPreferences({ activeTab })}
+            onCollapse={closeLiveDeck}
+        projectId={effectiveProjectId}
+            sessionId={routeSessionId}
+            selectedArtifactId={visibleFocusedArtifactId}
+            onSelectedArtifactIdChange={handleSelectedArtifactIdChange}
+            runId={visibleSelectedRun?.run_id ?? visibleFocusedRunId}
+            dag={visibleDag}
             onRunSelect={handleRunSelect}
           />
         </div>
@@ -306,3 +603,4 @@ export function AgentPageContent({
     </div>
   )
 }
+

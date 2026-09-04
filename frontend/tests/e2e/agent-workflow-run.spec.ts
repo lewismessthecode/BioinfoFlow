@@ -194,18 +194,18 @@ test.describe("Agent interaction journey", () => {
 
     await context.setOffline(true)
     await expect(
-      page.getByText(
-        "You are offline. The conversation will resume when the connection returns.",
-        { exact: true },
-      ).first(),
+      page.getByRole("status", {
+        name: "You are offline. The conversation will resume when the connection returns.",
+        exact: true,
+      }),
     ).toBeVisible({ timeout: 10_000 })
 
     await context.setOffline(false)
     await expect(
-      page.getByText(
-        "You are offline. The conversation will resume when the connection returns.",
-        { exact: true },
-      ),
+      page.getByRole("status", {
+        name: "You are offline. The conversation will resume when the connection returns.",
+        exact: true,
+      }),
     ).toHaveCount(0, { timeout: 20_000 })
   })
 
