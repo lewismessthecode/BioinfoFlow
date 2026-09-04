@@ -28,6 +28,7 @@ from app.services.agent_harness.contracts import (
     ToolProgressView,
     ToolUpdatedEvent,
 )
+from app.services.agent_harness.assets import artifact_reference_part
 from app.services.agent_harness.events import AgentEventHub
 from app.services.agent_harness.loop import (
     AgentLoop,
@@ -940,7 +941,13 @@ class AgentHarness:
                                 "text": _recovered_tool_output(result),
                             },
                             "error": result.error,
-                        }
+                        },
+                        *(
+                            [artifact_part]
+                            if (artifact_part := artifact_reference_part(result.output))
+                            is not None
+                            else []
+                        ),
                     ],
                 },
             )
