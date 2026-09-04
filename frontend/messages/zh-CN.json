@@ -2573,6 +2573,10 @@
     },
     "loadErrorTitle": "无法打开对话",
     "loadErrorDescription": "当前对话暂时无法加载。",
+    "routeLoading": {
+      "title": "正在加载对话",
+      "description": "正在解析对话访问权限和工作区范围。"
+    },
     "retry": "重试",
     "readOnly": {
       "archived": "该对话已归档，目前只能查看。",

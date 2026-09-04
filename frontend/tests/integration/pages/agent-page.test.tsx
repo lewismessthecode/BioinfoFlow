@@ -61,6 +61,8 @@ vi.mock("next-intl", () => ({
       "workspacePanel.actions.closeArtifacts": "Close artifacts",
       "workspacePanel.actions.openDag": "Open DAG",
       "workspacePanel.actions.closeDag": "Close DAG",
+      "routeLoading.title": "Loading conversation",
+      "routeLoading.description": "Resolving conversation access and workspace scope.",
     })[key] ?? key,
 }))
 
@@ -257,6 +259,12 @@ describe("Agent pages", () => {
     expect(screen.getByTestId("agent-route-resolution")).toHaveAttribute(
       "data-route-state",
       "loading",
+    )
+    expect(screen.getByTestId("agent-route-resolution")).toHaveTextContent(
+      "Loading conversation",
+    )
+    expect(screen.getByTestId("agent-route-resolution")).not.toHaveTextContent(
+      "The conversation could not be loaded.",
     )
     expect(screen.queryByTestId("agent-workbench")).not.toBeInTheDocument()
     expect(mocks.useEvents.mock.calls.at(-1)?.[0]).toEqual(
