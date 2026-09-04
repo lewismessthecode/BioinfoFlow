@@ -118,10 +118,8 @@ export function AgentWorkspaceActionGroup({
         data-workspace-tabs="true"
       >
         {workspaceTabs.map(({ key, label, Icon }) => {
-          const active =
-            panelOpen &&
-            activeTab === key &&
-            !(key === "files" && selectedFile)
+          const panelActive = panelOpen && activeTab === key
+          const active = panelActive && !(key === "files" && selectedFile)
           const actionLabel = labels[label]
           return (
             <Fragment key={key}>
@@ -138,7 +136,7 @@ export function AgentWorkspaceActionGroup({
                   type="button"
                   className="flex h-full min-w-0 shrink-0 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background max-xl:min-w-11 max-xl:justify-center max-xl:px-0"
                   aria-label={actionLabel}
-                  aria-pressed={active}
+                  aria-pressed={panelActive}
                   title={actionLabel}
                   ref={(node) => {
                     actionRefs.current[key] = node
@@ -179,8 +177,8 @@ export function AgentWorkspaceActionGroup({
                 >
                   <button
                     type="button"
-                    role="tab"
-                    aria-selected={panelOpen && activeTab === "files"}
+                    aria-pressed={panelOpen && activeTab === "files"}
+                    aria-label={selectedFile.name}
                     title={selectedFile.path}
                     className="flex h-full min-w-0 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
                     data-workspace-action="file"

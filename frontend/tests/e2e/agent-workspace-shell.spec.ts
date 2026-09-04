@@ -209,9 +209,20 @@ test.describe("Agent workspace shell", () => {
     await selectSeededWorkspaceFile(page)
     const workspaceActions = page.getByTestId("agent-workspace-action-group")
     const selectedFileTab = workspaceActions.getByTestId("agent-action-file")
-    await expect(selectedFileTab).toHaveRole("tab")
-    await expect(selectedFileTab).toHaveAccessibleName("rnaseq.wdl")
-    await expect(selectedFileTab).toHaveAttribute("aria-selected", "true")
+    await expect(selectedFileTab).toHaveRole("button")
+    if (isCompact) {
+      await expect(selectedFileTab).toHaveAttribute("aria-label", "rnaseq.wdl")
+    } else {
+      await expect(selectedFileTab).toHaveAccessibleName("rnaseq.wdl")
+    }
+    await expect(selectedFileTab).toHaveAttribute("aria-pressed", "true")
+    await expect(workspaceActions.getByTestId("agent-action-files")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+    await expect(
+      workspaceActions.getByTestId("agent-action-files").locator(".."),
+    ).toHaveAttribute("data-active", "false")
     expect(
       await workspaceActions
         .locator("[data-workspace-action]")

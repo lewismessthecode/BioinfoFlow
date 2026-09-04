@@ -64,8 +64,8 @@ describe("AgentWorkspaceActionGroup", () => {
       onCloseSelectedFile,
     })
 
-    const fileTab = screen.getByRole("tab", { name: "rnaseq.wdl" })
-    expect(fileTab).toHaveAttribute("aria-selected", "true")
+    const fileTab = screen.getByRole("button", { name: "rnaseq.wdl" })
+    expect(fileTab).toHaveAttribute("aria-pressed", "true")
     expect(fileTab).toHaveAttribute("title", "workflows/rnaseq.wdl")
     const actionOrder = Array.from(
       screen
@@ -82,8 +82,13 @@ describe("AgentWorkspaceActionGroup", () => {
     ])
     expect(screen.getByRole("button", { name: "Files" })).toHaveAttribute(
       "aria-pressed",
+      "true",
+    )
+    expect(screen.getByRole("button", { name: "Files" }).parentElement).toHaveAttribute(
+      "data-active",
       "false",
     )
+    expect(fileTab.parentElement).toHaveAttribute("data-active", "true")
     await user.click(fileTab)
     expect(onOpenSelectedFile).toHaveBeenCalledTimes(1)
 
@@ -167,6 +172,25 @@ describe("AgentWorkspaceActionGroup", () => {
     expect(artifacts).toHaveFocus()
     await user.keyboard("{ArrowLeft}")
     expect(panel).toHaveFocus()
+  })
+
+  it("includes the selected file in the keyboard action order", async () => {
+    const user = userEvent.setup()
+    renderActions({
+      selectedFile: { name: "rnaseq.wdl", path: "workflows/rnaseq.wdl" },
+    })
+
+    const files = screen.getByRole("button", { name: "Files" })
+    const file = screen.getByRole("button", { name: "rnaseq.wdl" })
+    const dag = screen.getByRole("button", { name: "DAG" })
+
+    files.focus()
+    await user.keyboard("{ArrowRight}")
+    expect(file).toHaveFocus()
+    await user.keyboard("{ArrowRight}")
+    expect(dag).toHaveFocus()
+    await user.keyboard("{ArrowLeft}")
+    expect(file).toHaveFocus()
   })
 
   it("returns focus to the active surface after closing it", async () => {
