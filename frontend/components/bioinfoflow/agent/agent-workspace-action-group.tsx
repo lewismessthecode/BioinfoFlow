@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef, type KeyboardEvent, type ReactNode } from "react"
+import { Fragment, useCallback, useRef, type KeyboardEvent, type ReactNode } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -13,6 +13,7 @@ import {
   type AppIcon,
 } from "@/lib/icons"
 import { cn } from "@/lib/utils"
+import type { WorkspaceFileNode } from "@/lib/agent/workspace-adapter"
 
 export type AgentWorkspaceTab = "artifacts" | "files" | "dag" | "browser"
 
@@ -32,6 +33,9 @@ export type AgentWorkspaceActionGroupProps = {
   onOpenTab: (tab: AgentWorkspaceTab) => void
   onTogglePanel: () => void
   onCloseTab: () => void
+  selectedFile?: Pick<WorkspaceFileNode, "name" | "path"> | null
+  onOpenSelectedFile?: () => void
+  onCloseSelectedFile?: () => void
 }
 
 const workspaceTabs: Array<{
@@ -58,6 +62,9 @@ export function AgentWorkspaceActionGroup({
   onOpenTab,
   onTogglePanel,
   onCloseTab,
+  selectedFile,
+  onOpenSelectedFile,
+  onCloseSelectedFile,
 }: AgentWorkspaceActionGroupProps) {
   const actionRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
@@ -67,7 +74,14 @@ export function AgentWorkspaceActionGroup({
 
   const handleActionKeyDown = useCallback(
     (event: KeyboardEvent<HTMLButtonElement>) => {
-      const actions = ["artifacts", "files", "dag", "browser", "panel"]
+      const actions = [
+        "artifacts",
+        "files",
+        ...(selectedFile ? ["file"] : []),
+        "dag",
+        "browser",
+        "panel",
+      ]
       const current = event.currentTarget.dataset.workspaceAction
       if (!current) return
       const currentIndex = actions.indexOf(current)
@@ -89,7 +103,7 @@ export function AgentWorkspaceActionGroup({
       const nextAction = actions[nextIndex]
       focusAction(nextAction)
     },
-    [focusAction],
+    [focusAction, selectedFile],
   )
 
   return (
@@ -104,52 +118,94 @@ export function AgentWorkspaceActionGroup({
         data-workspace-tabs="true"
       >
         {workspaceTabs.map(({ key, label, Icon }) => {
-          const active = panelOpen && activeTab === key
+          const active =
+            panelOpen &&
+            activeTab === key &&
+            !(key === "files" && selectedFile)
           const actionLabel = labels[label]
           return (
-            <div
-              key={key}
-              className={cn(
-                "flex h-8 min-w-0 items-center rounded-[8px] text-muted-foreground transition-colors duration-200 max-xl:h-11",
-                active
-                  ? "bg-muted/65 text-foreground"
-                  : "hover:bg-muted/35 hover:text-foreground",
-              )}
-              data-active={active ? "true" : "false"}
-            >
-              <button
-                type="button"
-                className="flex h-full min-w-0 shrink-0 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background max-xl:min-w-11 max-xl:justify-center max-xl:px-0"
-                aria-label={actionLabel}
-                aria-pressed={active}
-                title={actionLabel}
-                ref={(node) => {
-                  actionRefs.current[key] = node
-                }}
-                data-workspace-action={key}
-                data-action-id={key}
-                data-testid={`agent-action-${key}`}
-                onKeyDown={handleActionKeyDown}
-                onClick={() => onOpenTab(key)}
+            <Fragment key={key}>
+              <div
+                className={cn(
+                  "flex h-8 min-w-0 items-center rounded-[8px] text-muted-foreground transition-colors duration-200 max-xl:h-11",
+                  active
+                    ? "bg-muted/65 text-foreground"
+                    : "hover:bg-muted/35 hover:text-foreground",
+                )}
+                data-active={active ? "true" : "false"}
               >
-                <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                <span className="hidden max-w-20 truncate xl:inline">{actionLabel}</span>
-              </button>
-              {active ? (
                 <button
                   type="button"
-                  className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
-                  aria-label={labels.closeTab}
-                  title={labels.closeTab}
-                  onClick={() => {
-                    onCloseTab()
-                    actionRefs.current[key]?.focus()
+                  className="flex h-full min-w-0 shrink-0 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background max-xl:min-w-11 max-xl:justify-center max-xl:px-0"
+                  aria-label={actionLabel}
+                  aria-pressed={active}
+                  title={actionLabel}
+                  ref={(node) => {
+                    actionRefs.current[key] = node
                   }}
+                  data-workspace-action={key}
+                  data-action-id={key}
+                  data-testid={`agent-action-${key}`}
+                  onKeyDown={handleActionKeyDown}
+                  onClick={() => onOpenTab(key)}
                 >
-                  <X aria-hidden="true" className="h-3 w-3" />
+                  <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden max-w-20 truncate xl:inline">{actionLabel}</span>
                 </button>
+                {active ? (
+                  <button
+                    type="button"
+                    className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+                    aria-label={labels.closeTab}
+                    title={labels.closeTab}
+                    onClick={() => {
+                      onCloseTab()
+                      actionRefs.current[key]?.focus()
+                    }}
+                  >
+                    <X aria-hidden="true" className="h-3 w-3" />
+                  </button>
+                ) : null}
+              </div>
+              {key === "files" && selectedFile ? (
+                <div
+                  className={cn(
+                    "flex h-8 min-w-0 max-w-40 items-center rounded-[8px] text-muted-foreground transition-colors duration-200",
+                    panelOpen && activeTab === "files"
+                      ? "bg-muted/65 text-foreground"
+                      : "hover:bg-muted/35 hover:text-foreground",
+                  )}
+                  data-active={panelOpen && activeTab === "files" ? "true" : "false"}
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={panelOpen && activeTab === "files"}
+                    title={selectedFile.path}
+                    className="flex h-full min-w-0 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+                    data-workspace-action="file"
+                    data-testid="agent-action-file"
+                    ref={(node) => {
+                      actionRefs.current.file = node
+                    }}
+                    onKeyDown={handleActionKeyDown}
+                    onClick={onOpenSelectedFile}
+                  >
+                    <FileCode2 aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                    <span className="min-w-0 truncate">{selectedFile.name}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground hover:bg-background/70 hover:text-foreground"
+                    aria-label={`Close ${selectedFile.name}`}
+                    title={`Close ${selectedFile.name}`}
+                    onClick={onCloseSelectedFile}
+                  >
+                    <X aria-hidden="true" className="h-3 w-3" />
+                  </button>
+                </div>
               ) : null}
-            </div>
+            </Fragment>
           )
         })}
       </div>

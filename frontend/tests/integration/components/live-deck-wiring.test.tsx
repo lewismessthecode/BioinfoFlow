@@ -1,6 +1,5 @@
 import * as React from "react"
 import { render, screen } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
 import type { AgentWorkspaceAdapter } from "@/lib/agent/workspace-adapter"
@@ -154,11 +153,10 @@ const fixtureDag: DagData = {
 }
 
 function FixtureLiveDeck({ adapter }: { adapter: AgentWorkspaceAdapter }) {
-  const [activeTab, setActiveTab] = React.useState<"workspace" | "dag" | "artifacts" | "browser">("workspace")
+  const [activeTab] = React.useState<"workspace" | "dag" | "artifacts" | "browser">("workspace")
   return (
     <LiveDeck
       activeTab={activeTab}
-      onTabChange={setActiveTab}
       projectId="project-1"
       sessionId="session-1"
       runId="run-1"
@@ -169,20 +167,13 @@ function FixtureLiveDeck({ adapter }: { adapter: AgentWorkspaceAdapter }) {
 }
 
 describe("LiveDeck wiring", () => {
-  it("connects real panel implementations to tabs and fixture data", async () => {
-    const user = userEvent.setup()
+  it("connects the active workspace surface to fixture data without nested tabs", async () => {
     const adapter = fixtureAdapter()
     render(<FixtureLiveDeck adapter={adapter} />)
 
     expect(await screen.findByText("pipeline.nf")).toBeInTheDocument()
-    await user.click(screen.getByRole("tab", { name: "Browser" }))
-    await user.type(screen.getByRole("textbox", { name: "Browser address" }), "example.com:8080")
-    await user.click(screen.getByRole("button", { name: "Open address" }))
-    expect(screen.getByTitle("Browser")).toHaveAttribute("src", "https://example.com:8080/")
-
-    await user.click(screen.getByRole("tab", { name: "Artifacts" }))
-    expect(await screen.findByRole("article", { name: "qc-report.json" })).toBeInTheDocument()
-    await user.click(screen.getByRole("tab", { name: "Workflow" }))
-    expect(await screen.findByTestId("fixture-dag")).toHaveTextContent("FASTQC")
+    expect(screen.queryByRole("tab", { name: "Browser" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("tab", { name: "Artifacts" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("tab", { name: "Workflow" })).not.toBeInTheDocument()
   })
 })

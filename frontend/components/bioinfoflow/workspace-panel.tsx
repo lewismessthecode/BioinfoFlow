@@ -27,7 +27,6 @@ import {
   Loader2,
   RefreshCw,
   Search,
-  X,
 } from "@/lib/icons"
 import {
   bioinfoFlowAgentWorkspaceAdapter,
@@ -39,13 +38,18 @@ import { cn } from "@/lib/utils"
 import { WorkspaceCodePreview } from "./workspace-code-preview"
 
 const ROOT_PATH = "."
+export type WorkspaceFileSelection = Pick<WorkspaceFileNode, "name" | "path">
 
 export function WorkspacePanel({
   projectId,
   adapter = bioinfoFlowAgentWorkspaceAdapter,
+  selectedFilePath,
+  onSelectedFileChange,
 }: {
   projectId?: string | null
   adapter?: AgentWorkspaceAdapter
+  selectedFilePath?: string | null
+  onSelectedFileChange?: (file: WorkspaceFileSelection | null) => void
 }) {
   const t = useTranslations("workspace")
   const tCommon = useTranslations("common")
@@ -116,6 +120,14 @@ export function WorkspacePanel({
     }
   }, [loadRoot])
 
+  useEffect(() => {
+    if (selectedFilePath !== null || !selectedFile) return
+    setSelectedFile(null)
+    setPreview(null)
+    setCopied(false)
+    setPreviewStatus("idle")
+  }, [selectedFile, selectedFilePath])
+
   const loadChildren = useCallback(
     async (node: WorkspaceFileNode) => {
       if (!projectId || node.type !== "directory" || node.children) return
@@ -167,6 +179,7 @@ export function WorkspacePanel({
       previewControllerRef.current = controller
       const generation = requestGenerationRef.current
       setSelectedFile(node)
+      onSelectedFileChange?.({ name: node.name, path: node.path })
       setPreview(null)
       setCopied(false)
       setPreviewStatus("loading")
@@ -188,14 +201,14 @@ export function WorkspacePanel({
         }
       }
     },
-    [adapter, projectId],
+    [adapter, onSelectedFileChange, projectId],
   )
 
   const visibleNodes = useMemo(
     () => filterNodes(nodes, query.trim().toLowerCase()),
     [nodes, query],
   )
-  const crumbs = selectedFile?.path.split("/").filter(Boolean) ?? []
+  const crumbs = selectedFile?.path.split("/").filter(Boolean).slice(0, -1) ?? []
   const selectedFileUrl = useMemo(
     () => {
       if (!selectedFile || !projectId) return null
@@ -205,10 +218,11 @@ export function WorkspacePanel({
   )
   const closeSelectedFile = useCallback(() => {
     setSelectedFile(null)
+    onSelectedFileChange?.(null)
     setPreview(null)
     setCopied(false)
     setPreviewStatus("idle")
-  }, [])
+  }, [onSelectedFileChange])
   const copyPreview = useCallback(async () => {
     if (!preview || !clipboardAvailable || !navigator.clipboard?.writeText) return
     try {
@@ -246,7 +260,7 @@ export function WorkspacePanel({
             </span>
           </span>
         ))}
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        <div className="ml-auto flex shrink-0 items-center gap-0.5" data-testid="workspace-file-actions">
           {selectedFileUrl ? (
             <Button variant="ghost" size="icon" className="size-8 rounded-md" asChild>
               <a
@@ -256,6 +270,44 @@ export function WorkspacePanel({
               >
                 <Download aria-hidden="true" className="h-3.5 w-3.5" />
               </a>
+            </Button>
+          ) : null}
+          {selectedFile ? (
+            selectedFileUrl ? (
+              <Button variant="ghost" size="icon" className="size-8 rounded-md" asChild>
+                <a
+                  href={selectedFileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={t("browser.openExternal")}
+                >
+                  <ExternalLink aria-hidden="true" className="size-3.5" />
+                </a>
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-8 rounded-md"
+                disabled
+                aria-label={t("browser.openExternal")}
+              >
+                <ExternalLink aria-hidden="true" className="size-3.5" />
+              </Button>
+            )
+          ) : null}
+          {selectedFile ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8 rounded-md"
+              onClick={() => void copyPreview()}
+              disabled={!preview || previewStatus !== "ready" || !clipboardAvailable}
+              aria-label={copied ? tCommon("copiedToClipboard") : tCommon("copy")}
+            >
+              {copied ? <Check aria-hidden="true" className="size-3.5" /> : <Copy aria-hidden="true" className="size-3.5" />}
             </Button>
           ) : null}
           <Button
@@ -280,77 +332,6 @@ export function WorkspacePanel({
           className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background"
           data-testid="workspace-editor-pane"
         >
-          {selectedFile ? (
-            <div
-              className="flex h-9 shrink-0 items-end border-b border-border/70 bg-muted/[0.08] px-1.5"
-              data-testid="workspace-editor-file-header"
-            >
-              <div
-                className="flex h-8 min-w-0 flex-1 items-center"
-              >
-                <div
-                  className="flex h-8 min-w-0 max-w-[min(18rem,70%)] items-center gap-1.5 border-x border-t border-border/65 bg-background px-2.5 text-xs text-foreground shadow-[0_1px_0_hsl(var(--background))]"
-                  data-testid="workspace-editor-file-tab"
-                  title={selectedFile.path}
-                >
-                  <FileGlyph name={selectedFile.name} />
-                  <span className="min-w-0 flex-1 truncate">{selectedFile.name}</span>
-                  <button
-                    type="button"
-                    onClick={closeSelectedFile}
-                    className="-mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-                    aria-label={`${tCommon("close")} ${selectedFile.name}`}
-                  >
-                    <X aria-hidden="true" className="size-3" />
-                  </button>
-                </div>
-                <div className="ml-auto flex shrink-0 items-center gap-0.5 pb-0.5 pr-0.5">
-                  {selectedFileUrl ? (
-                    <Button variant="ghost" size="icon" className="size-7 rounded-md" asChild>
-                      <a
-                        href={selectedFileUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label={t("browser.openExternal")}
-                      >
-                        <ExternalLink aria-hidden="true" className="size-3.5" />
-                      </a>
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 rounded-md"
-                      disabled
-                      aria-label={t("browser.openExternal")}
-                    >
-                      <ExternalLink aria-hidden="true" className="size-3.5" />
-                    </Button>
-                  )}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 rounded-md"
-                    onClick={() => void copyPreview()}
-                    disabled={
-                      !preview ||
-                      previewStatus !== "ready" ||
-                      !clipboardAvailable
-                    }
-                    aria-label={copied ? tCommon("copiedToClipboard") : tCommon("copy")}
-                  >
-                    {copied ? (
-                      <Check aria-hidden="true" className="size-3.5" />
-                    ) : (
-                      <Copy aria-hidden="true" className="size-3.5" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ) : null}
           {!selectedFile ? (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
               {t("files.select")}

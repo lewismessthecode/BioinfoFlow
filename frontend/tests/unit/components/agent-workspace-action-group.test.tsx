@@ -10,12 +10,12 @@ import {
 const labels: NonNullable<AgentWorkspaceActionGroupProps["labels"]> = {
   group: "Agent workspace",
   artifacts: "Artifacts",
-  files: "Open file",
+  files: "Files",
   dag: "DAG",
   browser: "Browser",
   openPanel: "Open workspace panel",
   closePanel: "Close workspace panel",
-  closeTab: "Close Open file",
+  closeTab: "Close Files",
 }
 
 function renderActions(
@@ -54,6 +54,43 @@ describe("AgentWorkspaceActionGroup", () => {
     expect(screen.queryByRole("button", { name: /subagent/i })).not.toBeInTheDocument()
   })
 
+  it("places the selected workspace file in the global action row", async () => {
+    const user = userEvent.setup()
+    const onOpenSelectedFile = vi.fn()
+    const onCloseSelectedFile = vi.fn()
+    renderActions({
+      selectedFile: { name: "rnaseq.wdl", path: "workflows/rnaseq.wdl" },
+      onOpenSelectedFile,
+      onCloseSelectedFile,
+    })
+
+    const fileTab = screen.getByRole("tab", { name: "rnaseq.wdl" })
+    expect(fileTab).toHaveAttribute("aria-selected", "true")
+    expect(fileTab).toHaveAttribute("title", "workflows/rnaseq.wdl")
+    const actionOrder = Array.from(
+      screen
+        .getByRole("group", { name: "Agent workspace" })
+        .querySelectorAll<HTMLElement>("[data-workspace-action]"),
+    ).map((node) => node.dataset.workspaceAction)
+    expect(actionOrder).toEqual([
+      "artifacts",
+      "files",
+      "file",
+      "dag",
+      "browser",
+      "panel",
+    ])
+    expect(screen.getByRole("button", { name: "Files" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    )
+    await user.click(fileTab)
+    expect(onOpenSelectedFile).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole("button", { name: "Close rnaseq.wdl" }))
+    expect(onCloseSelectedFile).toHaveBeenCalledTimes(1)
+  })
+
   it("keeps compact labels discoverable without allowing the action row to overflow", () => {
     renderActions()
 
@@ -65,7 +102,7 @@ describe("AgentWorkspaceActionGroup", () => {
       "flex-nowrap",
     )
 
-    for (const label of ["Artifacts", "Open file", "DAG", "Browser"]) {
+    for (const label of ["Artifacts", "Files", "DAG", "Browser"]) {
       const button = screen.getByRole("button", { name: label })
       expect(button).toHaveAttribute("title", label)
       expect(button).toHaveClass("min-w-0", "shrink-0")
@@ -76,10 +113,10 @@ describe("AgentWorkspaceActionGroup", () => {
   it("marks the active tab and exposes a close affordance", () => {
     renderActions()
 
-    const files = screen.getByRole("button", { name: "Open file" })
+    const files = screen.getByRole("button", { name: "Files" })
     expect(files).toHaveAttribute("aria-pressed", "true")
     expect(files.parentElement).toHaveAttribute("data-active", "true")
-    expect(screen.getByRole("button", { name: "Close Open file" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Close Files" })).toBeInTheDocument()
   })
 
   it("dispatches surface actions and closes the active tab", async () => {
@@ -93,7 +130,7 @@ describe("AgentWorkspaceActionGroup", () => {
     await user.click(screen.getByRole("button", { name: "DAG" }))
     await user.click(screen.getByRole("button", { name: "Browser" }))
     await user.click(screen.getByRole("button", { name: "Close workspace panel" }))
-    await user.click(screen.getByRole("button", { name: "Close Open file" }))
+    await user.click(screen.getByRole("button", { name: "Close Files" }))
 
     expect(onOpenTab).toHaveBeenNthCalledWith(1, "artifacts")
     expect(onOpenTab).toHaveBeenNthCalledWith(2, "dag")
@@ -106,7 +143,7 @@ describe("AgentWorkspaceActionGroup", () => {
     renderActions({ panelOpen: false, activeTab: null })
 
     expect(screen.getByRole("button", { name: "Open workspace panel" })).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Close Open file" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Close Files" })).not.toBeInTheDocument()
   })
 
   it("moves across workspace actions with arrows and Home/End", async () => {
@@ -114,7 +151,7 @@ describe("AgentWorkspaceActionGroup", () => {
     renderActions()
 
     const artifacts = screen.getByRole("button", { name: "Artifacts" })
-    const files = screen.getByRole("button", { name: "Open file" })
+    const files = screen.getByRole("button", { name: "Files" })
     const browser = screen.getByRole("button", { name: "Browser" })
     const panel = screen.getByRole("button", { name: "Close workspace panel" })
 
@@ -137,8 +174,8 @@ describe("AgentWorkspaceActionGroup", () => {
     const onCloseTab = vi.fn()
     renderActions({ onCloseTab })
 
-    const files = screen.getByRole("button", { name: "Open file" })
-    const close = screen.getByRole("button", { name: "Close Open file" })
+    const files = screen.getByRole("button", { name: "Files" })
+    const close = screen.getByRole("button", { name: "Close Files" })
     files.focus()
     await user.click(close)
 

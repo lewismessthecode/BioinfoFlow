@@ -2597,13 +2597,13 @@
         "files": "Files",
         "artifacts": "Artifacts",
         "dag": "DAG",
-        "openBrowser": "Open browser",
+        "openBrowser": "Browser",
         "closeBrowser": "Close browser",
-        "openFiles": "Open files",
+        "openFiles": "Files",
         "closeFiles": "Close files",
-        "openArtifacts": "Open artifacts",
+        "openArtifacts": "Artifacts",
         "closeArtifacts": "Close artifacts",
-        "openDag": "Open DAG",
+        "openDag": "DAG",
         "closeDag": "Close DAG"
       }
     },

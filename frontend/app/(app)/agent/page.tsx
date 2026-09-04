@@ -25,6 +25,7 @@ import {
   useAgentPanelController,
 } from "@/hooks/use-agent-panel-controller"
 import type { DagData, Run } from "@/lib/types"
+import type { WorkspaceFileSelection } from "@/components/bioinfoflow/workspace-panel"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useIsMobile, useMediaQuery } from "@/hooks/use-media-query"
 import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard-shortcuts-overlay"
@@ -126,6 +127,7 @@ export function AgentPageContent({
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
   const [focusedRunId, setFocusedRunId] = useState<string | null>(null)
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null)
+  const [selectedWorkspaceFile, setSelectedWorkspaceFile] = useState<WorkspaceFileSelection | null>(null)
   const [dag, setDag] = useState<DagData | null>(null)
   const sessionScope = routeSessionId || "draft"
   const projectScope = effectiveProjectId || "none"
@@ -143,6 +145,7 @@ export function AgentPageContent({
     setSelectedRun(null)
     setFocusedRunId(null)
     setFocusedArtifactId(null)
+    setSelectedWorkspaceFile(null)
     setDag(null)
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [stateIdentity])
@@ -276,6 +279,15 @@ export function AgentPageContent({
   const workspacePanelOpen = workspaceUsesSheet
     ? mobileLiveDeckOpen
     : !rightSidebarCollapsed
+  const openSelectedWorkspaceFile = useCallback(() => {
+    recordFocusReturn("files")
+    if (workspaceUsesSheet) {
+      setMobileOpen(true)
+      updatePanelPreferences({ activeTab: "workspace" })
+    } else {
+      updatePanelPreferences({ activeTab: "workspace", open: true })
+    }
+  }, [recordFocusReturn, setMobileOpen, updatePanelPreferences, workspaceUsesSheet])
 
   useEffect(() => {
     if (!effectiveProjectId) {
@@ -300,6 +312,9 @@ export function AgentPageContent({
         onOpenTab={openWorkspaceTab}
         onTogglePanel={toggleWorkspacePanel}
         onCloseTab={closeWorkspacePanel}
+        selectedFile={selectedWorkspaceFile}
+        onOpenSelectedFile={openSelectedWorkspaceFile}
+        onCloseSelectedFile={() => setSelectedWorkspaceFile(null)}
       />,
     )
 
@@ -309,6 +324,8 @@ export function AgentPageContent({
     effectiveProjectId,
     liveDeckTab,
     openWorkspaceTab,
+    openSelectedWorkspaceFile,
+    selectedWorkspaceFile,
     setNavbarActions,
     t,
     tAccessibility,
@@ -553,15 +570,15 @@ export function AgentPageContent({
             </SheetHeader>
             <LiveDeck
               activeTab={liveDeckTab}
-              onTabChange={(activeTab) => updatePanelPreferences({ activeTab })}
-              onCollapse={closeMobileLiveDeck}
-          projectId={effectiveProjectId}
+              projectId={effectiveProjectId}
               sessionId={routeSessionId}
               selectedArtifactId={visibleFocusedArtifactId}
               onSelectedArtifactIdChange={handleSelectedArtifactIdChange}
               runId={visibleSelectedRun?.run_id ?? visibleFocusedRunId}
               dag={visibleDag}
               onRunSelect={handleRunSelect}
+              selectedFilePath={selectedWorkspaceFile?.path ?? null}
+              onSelectedFileChange={setSelectedWorkspaceFile}
             />
           </SheetContent>
         </Sheet>
@@ -586,15 +603,15 @@ export function AgentPageContent({
           />
           <LiveDeck
             activeTab={liveDeckTab}
-            onTabChange={(activeTab) => updatePanelPreferences({ activeTab })}
-            onCollapse={closeLiveDeck}
-        projectId={effectiveProjectId}
+            projectId={effectiveProjectId}
             sessionId={routeSessionId}
             selectedArtifactId={visibleFocusedArtifactId}
             onSelectedArtifactIdChange={handleSelectedArtifactIdChange}
             runId={visibleSelectedRun?.run_id ?? visibleFocusedRunId}
             dag={visibleDag}
             onRunSelect={handleRunSelect}
+            selectedFilePath={selectedWorkspaceFile?.path ?? null}
+            onSelectedFileChange={setSelectedWorkspaceFile}
           />
         </div>
       ) : null}

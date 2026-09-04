@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
+import { useState } from "react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -121,7 +122,7 @@ describe("WorkspacePanel", () => {
       '{"status":"ok"}',
     )
     expect(screen.getByText("results")).toBeInTheDocument()
-    expect(screen.getAllByText("report.json")).toHaveLength(3)
+    expect(screen.getAllByText("report.json")).toHaveLength(1)
     expect(screen.getByRole("link", { name: "Download file" })).toHaveAttribute(
       "href",
       "https://download.test/file",
@@ -154,14 +155,17 @@ describe("WorkspacePanel", () => {
     render(<WorkspacePanel projectId="project-1" adapter={adapter} />)
 
     await userEvent.click(await screen.findByRole("button", { name: /notes.txt/i }))
-    expect(await screen.findByTestId("workspace-editor-file-header")).toBeInTheDocument()
+    await screen.findByTestId("workspace-code-preview")
+    expect(screen.queryByRole("tab", { name: "notes.txt" })).not.toBeInTheDocument()
+    expect(screen.queryByTestId("workspace-editor-file-header")).not.toBeInTheDocument()
+    const topActions = screen.getByTestId("workspace-file-actions")
 
-    const externalLink = screen.getByRole("link", { name: "Open in a new tab" })
+    const externalLink = within(topActions).getByRole("link", { name: "Open in a new tab" })
     expect(externalLink).toHaveAttribute("href", "https://download.test/file")
     expect(externalLink).toHaveAttribute("target", "_blank")
     expect(externalLink).toHaveAttribute("rel", "noreferrer")
 
-    await userEvent.click(screen.getByRole("button", { name: "Copy" }))
+    await userEvent.click(within(topActions).getByRole("button", { name: "Copy" }))
     expect(writeText).toHaveBeenCalledWith("hello from the workspace")
     expect(screen.getByRole("button", { name: "Copied to clipboard" })).toBeInTheDocument()
   })
@@ -196,7 +200,7 @@ describe("WorkspacePanel", () => {
     expect(screen.getByRole("button", { name: "Open in a new tab" })).toBeDisabled()
   })
 
-  it("shows the selected file as an editor tab that can be closed", async () => {
+  it("reports the selected file so the shell can render and close its global tab", async () => {
     const adapter = createAdapter()
     vi.mocked(adapter.listFiles).mockResolvedValueOnce([
       { name: "report.json", path: "results/report.json", type: "file", sizeBytes: 24, modifiedAt: null },
@@ -208,15 +212,38 @@ describe("WorkspacePanel", () => {
       truncated: false,
     })
 
-    render(<WorkspacePanel projectId="project-1" adapter={adapter} />)
+    const onSelectedFileChange = vi.fn()
+    function ControlledWorkspacePanel() {
+      const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null)
+      return (
+        <>
+          <button type="button" onClick={() => setSelectedFilePath(null)}>
+            Close global file tab
+          </button>
+          <WorkspacePanel
+            projectId="project-1"
+            adapter={adapter}
+            selectedFilePath={selectedFilePath}
+            onSelectedFileChange={(file) => {
+              onSelectedFileChange(file)
+              setSelectedFilePath(file?.path ?? null)
+            }}
+          />
+        </>
+      )
+    }
+    render(<ControlledWorkspacePanel />)
 
     await userEvent.click(await screen.findByRole("button", { name: /report.json/i }))
-    expect(await screen.findByTestId("workspace-editor-file-header")).toBeInTheDocument()
-    expect(screen.getByTestId("workspace-editor-file-tab")).toHaveTextContent("report.json")
-
-    await userEvent.click(screen.getByRole("button", { name: "Close report.json" }))
-
+    expect(onSelectedFileChange).toHaveBeenLastCalledWith({
+      name: "report.json",
+      path: "results/report.json",
+    })
+    expect(screen.queryByRole("tab", { name: "report.json" })).not.toBeInTheDocument()
     expect(screen.queryByTestId("workspace-editor-file-header")).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole("button", { name: "Close global file tab" }))
+
     expect(screen.queryByTestId("workspace-code-preview")).not.toBeInTheDocument()
     expect(screen.getByText("Select a file")).toBeInTheDocument()
   })

@@ -61,13 +61,13 @@ vi.mock("next-intl", () => ({
       "workspacePanel.action": "Workspace",
       "workspacePanel.title": "Workspace panel",
       "workspacePanel.description": "Workspace details",
-      "workspacePanel.actions.openBrowser": "Open browser",
+      "workspacePanel.actions.openBrowser": "Browser",
       "workspacePanel.actions.closeBrowser": "Close browser",
-      "workspacePanel.actions.openFiles": "Open files",
+      "workspacePanel.actions.openFiles": "Files",
       "workspacePanel.actions.closeFiles": "Close files",
-      "workspacePanel.actions.openArtifacts": "Open artifacts",
+      "workspacePanel.actions.openArtifacts": "Artifacts",
       "workspacePanel.actions.closeArtifacts": "Close artifacts",
-      "workspacePanel.actions.openDag": "Open DAG",
+      "workspacePanel.actions.openDag": "DAG",
       "workspacePanel.actions.closeDag": "Close DAG",
       "routeLoading.title": "Loading conversation",
       "routeLoading.description": "Resolving conversation access and workspace scope.",
@@ -146,7 +146,6 @@ vi.mock("@/components/bioinfoflow/agent/agent-workbench", () => ({
 vi.mock("@/components/bioinfoflow/live-deck", () => ({
   LiveDeck: ({
     sessionId,
-    onCollapse,
     activeTab,
     runId,
     selectedArtifactId,
@@ -155,7 +154,6 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
     onRunSelect,
   }: {
     sessionId?: string | null
-    onCollapse?: () => void
     activeTab: string
     runId?: string | null
     selectedArtifactId?: string | null
@@ -165,15 +163,11 @@ vi.mock("@/components/bioinfoflow/live-deck", () => ({
   }) => (
     <div
       data-testid="live-deck"
-      data-has-collapse={Boolean(onCollapse)}
       data-live-deck-focus-target
       tabIndex={0}
     >
       session:{sessionId ?? "draft"}|tab:{activeTab}|run:{runId ?? "none"}|artifact:{selectedArtifactId ?? "none"}|dag:
       {dag ? "present" : "none"}
-      {onCollapse ? (
-        <button type="button" onClick={onCollapse}>close</button>
-      ) : null}
       <button
         type="button"
         data-testid="nested-escape-control"
@@ -585,24 +579,20 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    expect(screen.getByRole("button", { name: "Open browser" })).toBeVisible()
-    expect(screen.getByRole("button", { name: "Open files" })).toBeVisible()
-    expect(screen.getByRole("button", { name: "Open artifacts" })).toBeVisible()
-    expect(screen.getByRole("button", { name: "Open DAG" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Browser" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Files" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Artifacts" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "DAG" })).toBeVisible()
     expect(screen.queryByText("Subagents")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Open browser" }))
-    expect(screen.getByTestId("live-deck")).toHaveAttribute(
-      "data-has-collapse",
-      "true",
-    )
+    fireEvent.click(screen.getByRole("button", { name: "Browser" }))
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:browser")
 
-    fireEvent.click(screen.getByRole("button", { name: "Open files" }))
+    fireEvent.click(screen.getByRole("button", { name: "Files" }))
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:workspace")
-    fireEvent.click(screen.getByRole("button", { name: "Open artifacts" }))
+    fireEvent.click(screen.getByRole("button", { name: "Artifacts" }))
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:artifacts")
-    fireEvent.click(screen.getByRole("button", { name: "Open DAG" }))
+    fireEvent.click(screen.getByRole("button", { name: "DAG" }))
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:dag")
 
     fireEvent.keyDown(window, { key: "Escape" })
@@ -616,7 +606,7 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    fireEvent.click(screen.getByRole("button", { name: "Open artifacts" }))
+    fireEvent.click(screen.getByRole("button", { name: "Artifacts" }))
 
     expect(localStorage.getItem("agent-panel:project-1:draft")).toBe(
       JSON.stringify({ activeTab: "artifacts", open: true, width: 400 }),
@@ -717,7 +707,7 @@ describe("Agent pages", () => {
       ).toHaveLength(2)
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Open artifacts" }))
+    fireEvent.click(screen.getByRole("button", { name: "Artifacts" }))
     fireEvent.click(screen.getByTestId("agent-action-artifacts"))
     expect(
       addEventListener.mock.calls.filter(([type]) => type === "storage"),
@@ -732,7 +722,7 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    fireEvent.click(screen.getByRole("button", { name: "Open files" }))
+    fireEvent.click(screen.getByRole("button", { name: "Files" }))
     fireEvent.keyDown(screen.getByTestId("nested-escape-control"), {
       key: "Escape",
     })
@@ -753,10 +743,6 @@ describe("Agent pages", () => {
     const rail = screen.getByTestId("agent-live-deck-rail")
     expect(rail).toHaveAttribute("data-width", "600")
     expect(rail).toHaveStyle({ width: "600px" })
-    expect(screen.getByTestId("live-deck")).toHaveAttribute(
-      "data-has-collapse",
-      "true",
-    )
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:artifacts")
   })
 
@@ -769,12 +755,8 @@ describe("Agent pages", () => {
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    fireEvent.click(screen.getByRole("button", { name: "Open files" }))
+    fireEvent.click(screen.getByRole("button", { name: "Files" }))
     expect(screen.getByTestId("live-deck")).toBeInTheDocument()
-    expect(screen.getByTestId("live-deck")).toHaveAttribute(
-      "data-has-collapse",
-      "true",
-    )
     expect(screen.getByRole("dialog")).toHaveClass("overscroll-contain")
     expect(screen.getByRole("dialog")).toHaveClass(
       "pb-[env(safe-area-inset-bottom)]",
@@ -789,7 +771,7 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    fireEvent.click(screen.getByRole("button", { name: "Open files" }))
+    fireEvent.click(screen.getByRole("button", { name: "Files" }))
 
     expect(screen.getByRole("dialog")).toBeInTheDocument()
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:workspace")
@@ -803,7 +785,7 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    const filesButton = screen.getByRole("button", { name: "Open files" })
+    const filesButton = screen.getByRole("button", { name: "Files" })
     fireEvent.click(filesButton)
     fireEvent.blur(filesButton)
     fireEvent.keyDown(window, { key: "Escape" })
@@ -819,7 +801,7 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    const filesButton = screen.getByRole("button", { name: "Open files" })
+    const filesButton = screen.getByRole("button", { name: "Files" })
     fireEvent.keyDown(window, {
       key: "b",
       ctrlKey: true,
@@ -839,7 +821,7 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    const filesButton = screen.getByRole("button", { name: "Open files" })
+    const filesButton = screen.getByRole("button", { name: "Files" })
     fireEvent.click(filesButton)
     const focusTarget = screen.getByTestId("live-deck")
     focusTarget.focus()
@@ -864,7 +846,7 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    const staleAction = screen.getByRole("button", { name: "Open files" })
+    const staleAction = screen.getByRole("button", { name: "Files" })
     fireEvent.click(staleAction)
     fireEvent.keyDown(window, { key: "Escape" })
     await waitFor(() => expect(staleAction).toHaveFocus())
@@ -886,7 +868,7 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    const staleAction = screen.getByRole("button", { name: "Open files" })
+    const staleAction = screen.getByRole("button", { name: "Files" })
     fireEvent.click(staleAction)
     fireEvent.keyDown(window, { key: "Escape" })
     await waitFor(() => expect(staleAction).toHaveFocus())
