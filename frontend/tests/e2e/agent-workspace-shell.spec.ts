@@ -123,7 +123,7 @@ async function selectSeededWorkspaceFile(page: Page): Promise<void> {
 
   const preview = liveDeck.getByTestId("workspace-code-preview")
   await expect(preview).toHaveAttribute("data-language", "wdl")
-  await expect(preview).toHaveAttribute("data-highlight-language", "scala")
+  await expect(preview).toHaveAttribute("data-highlight-language", "wdl")
   await expect(preview.locator(".shiki")).toBeVisible()
   await expect(preview.locator(".shiki")).toContainText("workflow rnaseq")
 
