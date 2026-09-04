@@ -186,7 +186,8 @@ describe("AppLayout terminal integration", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "accessibility.openTerminal" })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "accessibility.openTerminal" }))
+        .toHaveAttribute("data-navbar-action", "terminal")
     })
   })
 

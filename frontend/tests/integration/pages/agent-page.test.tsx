@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   params: vi.fn(() => ({ sessionId: "session-9" })),
   useEvents: vi.fn(),
   isMobile: vi.fn(() => false),
+  compactWorkspace: vi.fn(() => false),
   workbench: vi.fn(),
   setNavbarActions: vi.fn(),
   projectConversations: undefined as Map<string, Array<{ id: string; project_id: string | null }>> | undefined,
@@ -72,6 +73,7 @@ vi.mock("@/hooks/use-events", () => ({
 
 vi.mock("@/hooks/use-media-query", () => ({
   useIsMobile: () => mocks.isMobile(),
+  useMediaQuery: () => mocks.compactWorkspace(),
 }))
 
 vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
@@ -206,6 +208,7 @@ vi.mock("@/components/ui/resize-handle", () => ({
 describe("Agent pages", () => {
   beforeEach(() => {
     localStorage.clear()
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 })
     mocks.params.mockReturnValue({ sessionId: "session-9" })
     mocks.useEvents.mockReset()
     mocks.workbench.mockReset()
@@ -215,6 +218,7 @@ describe("Agent pages", () => {
     mocks.listAgentSessions.mockReset()
     mocks.listAgentSessions.mockResolvedValue([])
     mocks.isMobile.mockReturnValue(false)
+    mocks.compactWorkspace.mockReturnValue(false)
   })
 
   it("treats /agent as a new draft even when app context still names an old session", () => {
@@ -745,7 +749,9 @@ describe("Agent pages", () => {
   })
 
   it("offers the LiveDeck in a safe mobile sheet", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 })
     mocks.isMobile.mockReturnValue(true)
+    mocks.compactWorkspace.mockReturnValue(true)
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
     })
@@ -765,14 +771,22 @@ describe("Agent pages", () => {
     )
   })
 
+<<<<<<< HEAD
   it("restores focus to the mobile action after Escape closes the sheet", async () => {
     mocks.isMobile.mockReturnValue(true)
+=======
+  it("keeps every workspace capability discoverable in the 390px compact action row", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 })
+    mocks.isMobile.mockReturnValue(true)
+    mocks.compactWorkspace.mockReturnValue(true)
+>>>>>>> c894fc32b (fix: make agent workspace actions responsive)
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
     })
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
+<<<<<<< HEAD
     const filesButton = screen.getByRole("button", { name: "Open files" })
     fireEvent.click(filesButton)
     fireEvent.blur(filesButton)
@@ -850,12 +864,34 @@ describe("Agent pages", () => {
 
   it("returns a referenced artifact opener after closing its mobile sheet", async () => {
     mocks.isMobile.mockReturnValue(true)
+=======
+
+    for (const label of ["Artifacts", "Open file", "DAG", "Browser"]) {
+      const action = screen.getByRole("button", { name: label })
+      expect(action).toHaveAttribute("title", label)
+      expect(action.querySelector("span")).toHaveClass("hidden", "xl:inline")
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Browser" }))
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:browser")
+    expect(screen.getByTestId("live-deck")).toHaveAttribute(
+      "data-surface-picker",
+      "true",
+    )
+  })
+
+  it("uses compact workspace labels without duplicating LiveDeck tabs at 1024px", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 })
+    mocks.compactWorkspace.mockReturnValue(true)
+>>>>>>> c894fc32b (fix: make agent workspace actions responsive)
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
     })
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
+<<<<<<< HEAD
     const staleAction = screen.getByRole("button", { name: "Open files" })
     fireEvent.click(staleAction)
     fireEvent.keyDown(window, { key: "Escape" })
@@ -870,6 +906,17 @@ describe("Agent pages", () => {
     fireEvent.keyDown(window, { key: "Escape" })
 
     await waitFor(() => expect(opener).toHaveFocus())
+=======
+
+    expect(screen.getByRole("button", { name: "Artifacts" }).querySelector("span"))
+      .toHaveClass("hidden", "xl:inline")
+    fireEvent.click(screen.getByRole("button", { name: "Open file" }))
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+    expect(screen.getByTestId("live-deck")).toHaveAttribute(
+      "data-surface-picker",
+      "true",
+    )
+>>>>>>> c894fc32b (fix: make agent workspace actions responsive)
   })
 
   it("clears the global Workspace action when the Agent page unmounts", () => {
