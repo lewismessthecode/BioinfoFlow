@@ -18,6 +18,10 @@ vi.mock("next-intl", () => ({
       "files.noMatches": "No matching files",
       "files.download": "Download file",
       "files.refresh": "Refresh files",
+      close: "Close",
+      copy: "Copy",
+      copiedToClipboard: "Copied to clipboard",
+      "browser.openExternal": "Open in a new tab",
       "preview.loading": "Loading preview",
       "preview.unable": "Unable to preview",
       "errors.loadFilesFailed": "Load files failed",
@@ -116,7 +120,7 @@ describe("WorkspacePanel", () => {
       '{"status":"ok"}',
     )
     expect(screen.getByText("results")).toBeInTheDocument()
-    expect(screen.getAllByText("report.json")).toHaveLength(2)
+    expect(screen.getAllByText("report.json")).toHaveLength(3)
     expect(screen.getByRole("link", { name: "Download file" })).toHaveAttribute(
       "href",
       "https://download.test/file",
@@ -127,9 +131,78 @@ describe("WorkspacePanel", () => {
       signal: expect.any(AbortSignal),
     })
 
-    const selectedRow = screen.getByRole("button", { name: /report.json/i })
+    const selectedRow = screen.getByRole("button", { name: "report.json" })
     expect(selectedRow).toHaveAttribute("aria-current", "true")
     expect(selectedRow.querySelector('[data-file-accent="data"]')).not.toBeNull()
+  })
+
+  it("lets the selected file be opened externally and copied without changing the preview", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.listFiles).mockResolvedValueOnce([
+      { name: "notes.txt", path: "notes.txt", type: "file", sizeBytes: 24, modifiedAt: null },
+    ])
+    vi.mocked(adapter.readFile).mockResolvedValueOnce({
+      path: "notes.txt",
+      content: "hello from the workspace",
+      totalLines: 1,
+      truncated: false,
+    })
+    const writeText = vi.fn(async () => undefined)
+    vi.stubGlobal("navigator", { clipboard: { writeText } })
+
+    render(<WorkspacePanel projectId="project-1" adapter={adapter} />)
+
+    await userEvent.click(await screen.findByRole("button", { name: /notes.txt/i }))
+    expect(await screen.findByTestId("workspace-editor-file-header")).toBeInTheDocument()
+
+    const externalLink = screen.getByRole("link", { name: "Open in a new tab" })
+    expect(externalLink).toHaveAttribute("href", "https://download.test/file")
+    expect(externalLink).toHaveAttribute("target", "_blank")
+    expect(externalLink).toHaveAttribute("rel", "noreferrer")
+
+    await userEvent.click(screen.getByRole("button", { name: "Copy" }))
+    expect(writeText).toHaveBeenCalledWith("hello from the workspace")
+    expect(screen.getByRole("button", { name: "Copied to clipboard" })).toBeInTheDocument()
+  })
+
+  it("disables external open when the adapter does not provide a safe file URL", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.listFiles).mockResolvedValueOnce([
+      { name: "notes.txt", path: "notes.txt", type: "file", sizeBytes: 24, modifiedAt: null },
+    ])
+    vi.mocked(adapter.fileDownloadUrl).mockReturnValueOnce("javascript:alert(1)")
+
+    render(<WorkspacePanel projectId="project-1" adapter={adapter} />)
+
+    await userEvent.click(await screen.findByRole("button", { name: "notes.txt" }))
+
+    expect(screen.queryByRole("link", { name: "Open in a new tab" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open in a new tab" })).toBeDisabled()
+  })
+
+  it("shows the selected file as an editor tab that can be closed", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.listFiles).mockResolvedValueOnce([
+      { name: "report.json", path: "results/report.json", type: "file", sizeBytes: 24, modifiedAt: null },
+    ])
+    vi.mocked(adapter.readFile).mockResolvedValueOnce({
+      path: "results/report.json",
+      content: '{"status":"ok"}',
+      totalLines: 1,
+      truncated: false,
+    })
+
+    render(<WorkspacePanel projectId="project-1" adapter={adapter} />)
+
+    await userEvent.click(await screen.findByRole("button", { name: /report.json/i }))
+    expect(await screen.findByTestId("workspace-editor-file-header")).toBeInTheDocument()
+    expect(screen.getByTestId("workspace-editor-file-tab")).toHaveTextContent("report.json")
+
+    await userEvent.click(screen.getByRole("button", { name: "Close report.json" }))
+
+    expect(screen.queryByTestId("workspace-editor-file-header")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("workspace-code-preview")).not.toBeInTheDocument()
+    expect(screen.getByText("Select a file")).toBeInTheDocument()
   })
 
   it("uses a workbench header and keeps the editor wider than the file tree", async () => {

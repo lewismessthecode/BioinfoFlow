@@ -14,7 +14,10 @@ import { Button } from "@/components/ui/button"
 import {
   ChevronDown,
   ChevronRight,
+  Check,
+  Copy,
   Download,
+  ExternalLink,
   FileArchive,
   FileCode,
   FileJson,
@@ -24,6 +27,7 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  X,
 } from "@/lib/icons"
 import {
   bioinfoFlowAgentWorkspaceAdapter,
@@ -44,12 +48,15 @@ export function WorkspacePanel({
   adapter?: AgentWorkspaceAdapter
 }) {
   const t = useTranslations("workspace")
+  const tCommon = useTranslations("common")
   const [nodes, setNodes] = useState<WorkspaceFileNode[]>([])
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set())
   const [childErrors, setChildErrors] = useState<Set<string>>(new Set())
   const [selectedFile, setSelectedFile] = useState<WorkspaceFileNode | null>(null)
   const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [clipboardAvailable, setClipboardAvailable] = useState(false)
   const [query, setQuery] = useState("")
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading")
   const [previewStatus, setPreviewStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
@@ -57,6 +64,10 @@ export function WorkspacePanel({
   const rootControllerRef = useRef<AbortController | null>(null)
   const previewControllerRef = useRef<AbortController | null>(null)
   const childControllersRef = useRef(new Map<string, AbortController>())
+
+  useEffect(() => {
+    setClipboardAvailable(Boolean(navigator.clipboard?.writeText))
+  }, [])
 
   const loadRoot = useCallback(async () => {
     rootControllerRef.current?.abort()
@@ -157,6 +168,7 @@ export function WorkspacePanel({
       const generation = requestGenerationRef.current
       setSelectedFile(node)
       setPreview(null)
+      setCopied(false)
       setPreviewStatus("loading")
       try {
         const next = await adapter.readFile({
@@ -184,13 +196,38 @@ export function WorkspacePanel({
     [nodes, query],
   )
   const crumbs = selectedFile?.path.split("/").filter(Boolean) ?? []
+  const selectedFileUrl = useMemo(
+    () => {
+      if (!selectedFile || !projectId) return null
+      return safeFileUrl(adapter.fileDownloadUrl({ projectId, path: selectedFile.path }))
+    },
+    [adapter, projectId, selectedFile],
+  )
+  const closeSelectedFile = useCallback(() => {
+    setSelectedFile(null)
+    setPreview(null)
+    setCopied(false)
+    setPreviewStatus("idle")
+  }, [])
+  const copyPreview = useCallback(async () => {
+    if (!preview || !clipboardAvailable || !navigator.clipboard?.writeText) return
+    try {
+      await navigator.clipboard.writeText(preview.content)
+      setCopied(true)
+    } catch {
+      setCopied(false)
+    }
+  }, [clipboardAvailable, preview])
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-background" aria-label={t("files.label")}>
-      <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border/55 px-2.5">
+      <div
+        className="flex h-10 shrink-0 items-center gap-1 border-b border-border/70 bg-muted/[0.08] px-2.5"
+        data-testid="workspace-panel-header"
+      >
         <button
           type="button"
-          onClick={() => setSelectedFile(null)}
+          onClick={closeSelectedFile}
           className="min-w-0 truncate rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
         >
           {t("files.root")}
@@ -210,10 +247,10 @@ export function WorkspacePanel({
           </span>
         ))}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {selectedFile && projectId ? (
+          {selectedFileUrl ? (
             <Button variant="ghost" size="icon" className="size-8 rounded-md" asChild>
               <a
-                href={adapter.fileDownloadUrl({ projectId, path: selectedFile.path })}
+                href={selectedFileUrl}
                 download
                 aria-label={t("files.download")}
               >
@@ -234,8 +271,86 @@ export function WorkspacePanel({
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(10.5rem,38%)]">
-        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+      <div
+        className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(13rem,32%)]"
+        data-layout="editor-dominant"
+        data-testid="workspace-split-view"
+      >
+        <div
+          className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background"
+          data-testid="workspace-editor-pane"
+        >
+          {selectedFile ? (
+            <div
+              className="flex h-9 shrink-0 items-end border-b border-border/70 bg-muted/[0.08] px-1.5"
+              data-testid="workspace-editor-file-header"
+            >
+              <div
+                className="flex h-8 min-w-0 flex-1 items-center"
+              >
+                <div
+                  className="flex h-8 min-w-0 max-w-[min(18rem,70%)] items-center gap-1.5 border-x border-t border-border/65 bg-background px-2.5 text-xs text-foreground shadow-[0_1px_0_hsl(var(--background))]"
+                  data-testid="workspace-editor-file-tab"
+                  title={selectedFile.path}
+                >
+                  <FileGlyph name={selectedFile.name} />
+                  <span className="min-w-0 flex-1 truncate">{selectedFile.name}</span>
+                  <button
+                    type="button"
+                    onClick={closeSelectedFile}
+                    className="-mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                    aria-label={`${tCommon("close")} ${selectedFile.name}`}
+                  >
+                    <X aria-hidden="true" className="size-3" />
+                  </button>
+                </div>
+                <div className="ml-auto flex shrink-0 items-center gap-0.5 pb-0.5 pr-0.5">
+                  {selectedFileUrl ? (
+                    <Button variant="ghost" size="icon" className="size-7 rounded-md" asChild>
+                      <a
+                        href={selectedFileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={t("browser.openExternal")}
+                      >
+                        <ExternalLink aria-hidden="true" className="size-3.5" />
+                      </a>
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 rounded-md"
+                      disabled
+                      aria-label={t("browser.openExternal")}
+                    >
+                      <ExternalLink aria-hidden="true" className="size-3.5" />
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 rounded-md"
+                    onClick={() => void copyPreview()}
+                    disabled={
+                      !preview ||
+                      previewStatus !== "ready" ||
+                      !clipboardAvailable
+                    }
+                    aria-label={copied ? tCommon("copiedToClipboard") : tCommon("copy")}
+                  >
+                    {copied ? (
+                      <Check aria-hidden="true" className="size-3.5" />
+                    ) : (
+                      <Copy aria-hidden="true" className="size-3.5" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
           {!selectedFile ? (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
               {t("files.select")}
@@ -260,7 +375,11 @@ export function WorkspacePanel({
           ) : null}
         </div>
 
-        <aside className="flex min-h-0 min-w-0 flex-col border-l border-border/55 bg-muted/[0.08]" aria-label={t("files.tree")}>
+        <aside
+          className="flex min-h-0 min-w-0 flex-col border-l border-border/75 bg-muted/[0.12] shadow-[-1px_0_0_hsl(var(--border)/0.18)]"
+          aria-label={t("files.tree")}
+          data-testid="workspace-file-tree"
+        >
           <label className="relative mx-2.5 my-2 block">
             <Search aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
             <input
@@ -354,11 +473,13 @@ function FileTreeRow({
         type="button"
         onClick={() => (directory ? onToggle(node) : onSelect(node))}
         className={cn(
-          "flex h-7 w-full min-w-0 items-center gap-1 rounded-md pr-1.5 text-left text-xs transition-colors hover:bg-muted/55",
-          selectedPath === node.path && "bg-muted/70 text-foreground",
+          "flex h-7 w-full min-w-0 items-center gap-1 rounded-[5px] border border-transparent pr-1.5 text-left text-xs text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground",
+          selectedPath === node.path &&
+            "border-border/45 bg-accent/75 text-accent-foreground shadow-sm",
         )}
         style={{ paddingLeft: `${depth * 12 + 4}px` }}
         aria-expanded={directory ? expanded : undefined}
+        aria-current={selectedPath === node.path ? "true" : undefined}
         title={node.path}
       >
         {directory ? (
@@ -374,9 +495,15 @@ function FileTreeRow({
         )}
         {directory ? (
           expanded ? (
-            <FolderOpen className="h-3.5 w-3.5 shrink-0 text-sky-600/80 dark:text-sky-400/75" />
+            <FolderOpen
+              data-file-accent="folder"
+              className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400"
+            />
           ) : (
-            <Folder className="h-3.5 w-3.5 shrink-0 text-sky-600/80 dark:text-sky-400/75" />
+            <Folder
+              data-file-accent="folder"
+              className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400"
+            />
           )
         ) : (
           <FileGlyph name={node.name} />
@@ -442,6 +569,16 @@ function sortNodes(nodes: WorkspaceFileNode[]) {
     if (left.type !== right.type) return left.type === "directory" ? -1 : 1
     return left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
   })
+}
+
+function safeFileUrl(value: string) {
+  if (value.startsWith("/")) return value
+  try {
+    const url = new URL(value)
+    return url.protocol === "http:" || url.protocol === "https:" ? value : null
+  } catch {
+    return null
+  }
 }
 
 function filterNodes(nodes: WorkspaceFileNode[], query: string): WorkspaceFileNode[] {
