@@ -94,12 +94,20 @@ export function AgentWorkspaceActionGroup({
 
   return (
     <div
-      className="flex min-w-0 items-center gap-1"
+      className="flex min-w-0 max-w-full flex-nowrap items-center gap-1 overflow-hidden"
       data-testid="agent-workspace-action-group"
       role="group"
       aria-label={labels.group}
     >
-      <div className="flex min-w-0 items-center gap-0.5">
+      <span
+        aria-hidden="true"
+        className="mx-0.5 h-5 w-px shrink-0 bg-border/65"
+        data-workspace-divider="true"
+      />
+      <div
+        className="flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden"
+        data-workspace-tabs="true"
+      >
         {workspaceTabs.map(({ key, label, Icon }) => {
           const active = panelOpen && activeTab === key
           const actionLabel = labels[label]
@@ -116,9 +124,10 @@ export function AgentWorkspaceActionGroup({
             >
               <button
                 type="button"
-                className="flex h-full min-w-0 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                className="flex h-full min-w-0 shrink-0 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
                 aria-label={actionLabel}
                 aria-pressed={active}
+                title={actionLabel}
                 ref={(node) => {
                   actionRefs.current[key] = node
                 }}
@@ -127,13 +136,14 @@ export function AgentWorkspaceActionGroup({
                 onClick={() => onOpenTab(key)}
               >
                 <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                <span className="max-w-20 truncate">{actionLabel}</span>
+                <span className="hidden max-w-20 truncate xl:inline">{actionLabel}</span>
               </button>
               {active ? (
                 <button
                   type="button"
                   className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
                   aria-label={labels.closeTab}
+                  title={labels.closeTab}
                   onClick={() => {
                     onCloseTab()
                     actionRefs.current[key]?.focus()
@@ -146,8 +156,6 @@ export function AgentWorkspaceActionGroup({
           )
         })}
       </div>
-
-      <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-border/65" />
 
       <ActionIconButton
         label={panelOpen ? labels.closePanel : labels.openPanel}
@@ -193,6 +201,7 @@ function ActionIconButton({
       size="icon"
       className={cn(iconButtonClassName, active && "bg-accent text-foreground")}
       aria-label={label}
+      title={label}
       aria-pressed={active}
       data-workspace-action={action}
       ref={buttonRef}
