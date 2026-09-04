@@ -171,6 +171,15 @@ export function AgentPageContent({
   }, [projectConversations, routeSessionId])
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setSelectedRun(null)
+    setFocusedRunId(null)
+    setFocusedArtifactId(null)
+    setDag(null)
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [routeSessionId])
+
+  useEffect(() => {
     setActiveConversationId(routeSessionId ?? "")
   }, [routeSessionId, setActiveConversationId])
 
