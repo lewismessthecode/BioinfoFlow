@@ -242,4 +242,22 @@ describe("WorkspacePanel", () => {
       )?.[0].signal?.aborted,
     ).toBe(true)
   })
+
+  it("keeps the root tree visible when a child directory fails", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.listFiles).mockImplementation(async ({ path }) => {
+      if (path === "results") throw new Error("child unavailable")
+      return [
+        { name: "results", path: "results", type: "directory", sizeBytes: null, modifiedAt: null },
+        { name: "README.md", path: "README.md", type: "file", sizeBytes: 1, modifiedAt: null },
+      ]
+    })
+
+    render(<WorkspacePanel projectId="project-a" adapter={adapter} />)
+    await userEvent.click(await screen.findByRole("button", { name: /results/i }))
+
+    expect(await screen.findByText("Load files failed")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /README.md/i })).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Refresh files" })).toHaveLength(2)
+  })
 })
