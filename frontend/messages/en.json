@@ -2590,7 +2590,7 @@
       "open": "Open workspace panel",
       "close": "Close workspace panel",
       "codePreview": {
-        "wdlFallback": "WDL syntax highlighting uses Scala fallback"
+        "label": "Workspace code preview"
       },
       "actions": {
         "browser": "Browser",

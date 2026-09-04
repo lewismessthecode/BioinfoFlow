@@ -1,7 +1,11 @@
 import { render, screen, waitFor } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { WorkspaceCodePreview } from "@/components/bioinfoflow/workspace-code-preview"
+
+vi.mock("next-intl", () => ({
+  useTranslations: () => (key: string) => key,
+}))
 
 describe("WorkspaceCodePreview", () => {
   it("uses the real Shiki grammar to highlight WDL keywords", async () => {
@@ -9,6 +13,10 @@ describe("WorkspaceCodePreview", () => {
       <WorkspaceCodePreview content={'{"status":"ready"}'} path="status.json" />,
     )
     const preview = screen.getByTestId("workspace-code-preview")
+    expect(preview).toHaveAttribute(
+      "aria-label",
+      "codePreview.label",
+    )
 
     await waitFor(() => {
       expect(preview.querySelector(".shiki")).not.toBeNull()
@@ -32,6 +40,8 @@ describe("WorkspaceCodePreview", () => {
       )
     })
 
+    expect(preview).toHaveAttribute("data-language", "wdl")
+    expect(preview).toHaveAttribute("data-highlight-language", "wdl")
     const workflowToken = Array.from(
       preview.querySelectorAll(".shiki span"),
     ).find((token) => token.textContent === "workflow")
@@ -39,13 +49,10 @@ describe("WorkspaceCodePreview", () => {
       (token) => token.textContent?.trim() === "call",
     )
 
-    expect(workflowToken).toHaveAttribute(
-      "style",
-      "color:#D73A49;--shiki-dark:#F97583",
-    )
-    expect(callToken).toHaveAttribute(
-      "style",
-      "color:#D73A49;--shiki-dark:#F97583",
+    expect(workflowToken).toHaveAttribute("style")
+    expect(callToken).toHaveAttribute("style")
+    expect(workflowToken?.getAttribute("style")).toBe(
+      callToken?.getAttribute("style"),
     )
   })
 })

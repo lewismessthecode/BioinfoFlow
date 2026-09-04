@@ -63,7 +63,7 @@ function languageForPath(path: string) {
     tsv: "tsv",
     tsx: "tsx",
     txt: "text",
-    wdl: "scala",
+    wdl: "wdl",
     xml: "xml",
     yaml: "yaml",
     yml: "yaml",
@@ -130,15 +130,8 @@ export function WorkspaceCodePreview({
       data-testid="workspace-code-preview"
       data-language={path.split(".").pop()?.toLowerCase() ?? "text"}
       data-highlight-language={language}
-      aria-label={
-        language === "scala" && path.toLowerCase().endsWith(".wdl")
-          ? t("codePreview.wdlFallback")
-          : undefined
-      }
+      aria-label={t("codePreview.label")}
     >
-      {language === "scala" && path.toLowerCase().endsWith(".wdl") ? (
-        <span className="sr-only">{t("codePreview.wdlFallback")}</span>
-      ) : null}
       <div className="flex min-h-full min-w-max items-stretch">
         <pre
           aria-hidden="true"
