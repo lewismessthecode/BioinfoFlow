@@ -16,6 +16,7 @@ import type {
 } from "@/components/bioinfoflow/agent/environment-selector"
 import {
   createAgentSession,
+  dispatchAgentCommand,
   updateAgentSession,
 } from "@/lib/agent/client"
 import {
@@ -23,8 +24,12 @@ import {
   type AgentContextInput,
 } from "@/lib/agent/context"
 import type {
-  AgentPermissionMode,
-  AgentWorkspaceAccess,
+  ComposerInputPart,
+  ConversationModelSelection,
+  ConversationPermissionMode,
+  ConversationWorkspaceAccess,
+} from "@/lib/agent/conversation-model/types"
+import type {
   SessionView,
 } from "@/lib/agent/contracts"
 import {
@@ -72,8 +77,8 @@ export function useAgentWorkbenchController({
   const [localSessionId, setLocalSessionId] = useState<string | null>(null)
   const [draftSessionId, setDraftSessionId] = useState<string | null>(null)
   const [draftPermissionMode, setDraftPermissionMode] =
-    useState<AgentPermissionMode>("ask_dangerous")
-  const draftWorkspaceAccess: AgentWorkspaceAccess = "read_write"
+    useState<ConversationPermissionMode>("ask_dangerous")
+  const draftWorkspaceAccess: ConversationWorkspaceAccess = "read_write"
   const [contextInputs, setContextInputs] = useState<AgentContextInput[]>([])
   const [localEnvironmentSelection, setLocalEnvironmentSelection] =
     useState<AgentEnvironmentSelection>({ mode: "auto" })
@@ -240,7 +245,7 @@ export function useAgentWorkbenchController({
   }, [])
 
   const updateDraftPermissionMode = useCallback(
-    async (mode: AgentPermissionMode) => {
+    async (mode: ConversationPermissionMode) => {
       if (!draftSessionId) {
         setDraftPermissionMode(mode)
         return
@@ -253,6 +258,37 @@ export function useAgentWorkbenchController({
       setDraftPermissionMode(snapshot.session.permission_mode)
     },
     [draftSessionId],
+  )
+
+  const updateDraftModel = useCallback(
+    async (model: ConversationModelSelection | null) => {
+      if (!draftSessionId || !model) return
+      const snapshot = await updateAgentSession(draftSessionId, { model })
+      publishAgentSessionSummary(sessionSummaryFromView(snapshot.session))
+    },
+    [draftSessionId],
+  )
+
+  const sendDraftMessage = useCallback(
+    async (
+      parts: ComposerInputPart[],
+      model?: ConversationModelSelection,
+    ) => {
+      const id = await ensureSession(
+        model
+          ? "modelId" in model
+            ? { modelId: model.modelId }
+            : { provider: model.provider, model: model.model }
+          : undefined,
+      )
+      await dispatchAgentCommand(id, {
+        type: "message",
+        command_id: globalThis.crypto.randomUUID(),
+        parts,
+      })
+      return id
+    },
+    [ensureSession],
   )
 
   const stop = useCallback(() => void cancelRef.current?.(), [])
@@ -291,6 +327,8 @@ export function useAgentWorkbenchController({
       environmentSelectionPending || draftEnvironmentSelectionPending,
     updateEnvironmentSelection,
     updateDraftPermissionMode,
+    updateDraftModel,
+    sendDraftMessage,
     hasControlledEnvironmentSelection:
       requestedEnvironmentSelection !== undefined ||
       effectiveEnvironmentSelection !== undefined ||

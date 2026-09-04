@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import {
   dispatchAgentCommand,
@@ -39,43 +39,23 @@ import type {
 import type { AgentConnectionStatus } from "@/lib/agent/stream"
 import type { PresentationDiagnostic } from "@/lib/agent/transport/presentation-contract"
 
-export type AgentSessionState = ConversationSessionBinding & AgentStoreState & {
-  /** @deprecated Use `view`. */
-  conversationView: ConversationViewModel | null
-  connectionStatus: AgentConnectionStatus
-  error: Error | null
-  isLoading: boolean
-  /** @deprecated Use `commands.sendMessage`. */
-  sendMessage: (parts: InputPart[]) => Promise<void>
-  /** @deprecated Use `commands.steer`. */
-  steer: (parts: InputPart[]) => Promise<void>
-  /** @deprecated Use `commands.respond`. */
-  respond: (
-    interactionId: string,
-    response: InteractionResponse,
-  ) => Promise<void>
-  /** @deprecated Use `commands.cancel`. */
-  cancel: () => Promise<void>
-  /** @deprecated Use `commands.updatePermissionMode`. */
-  updatePermissionMode: (mode: AgentPermissionMode) => Promise<void>
-  /** @deprecated Use `commands.updateModel`. */
-  updateModel: (selection: AgentModelSelection) => Promise<void>
-  /** @deprecated Use `commands.updateEnvironmentScope`. */
-  updateEnvironmentScope: (scope: AgentEnvironmentScope) => Promise<void>
-  /** @deprecated Use `commands.retry`. */
-  retry: () => void
-}
-
+/**
+ * The live adapter exposed to Conversation UI.
+ *
+ * Keep the transport store and wire-shaped commands private to this hook. UI
+ * consumers must use the stable `view` and `commands` ports instead.
+ */
 type AgentSessionViewState = {
   sessionId: string
-  store: AgentStoreState
-  conversationView: ConversationViewModel | null
+  view: ConversationViewModel | null
   connectionStatus: AgentConnectionStatus
   error: Error | null
   isLoading: boolean
 }
 
-export function useAgentSession(sessionId: string): AgentSessionState {
+export function useAgentSession(
+  sessionId: string,
+): ConversationSessionBinding {
   const [retryRevision, setRetryRevision] = useState(0)
   const [view, setView] = useState<AgentSessionViewState>(() =>
     initialView(sessionId),
@@ -110,8 +90,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
         ...(current.sessionId === expectedSessionId
           ? current
           : initialView(expectedSessionId)),
-        store: projection.state.transportState,
-        conversationView: projection.view,
+        view: projection.view,
         error: null,
         isLoading: false,
       }))
@@ -151,8 +130,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
           current.sessionId === sessionId ? current : initialView(sessionId)
         return {
           ...base,
-          store,
-          conversationView,
+          view: conversationView,
           error: eventType === "snapshot" ? null : base.error,
           isLoading: eventType === "snapshot" ? false : base.isLoading,
         }
@@ -358,8 +336,7 @@ export function useAgentSession(sessionId: string): AgentSessionState {
           current.sessionId === sessionId
             ? {
                 ...current,
-                store: application.state.transportState,
-                conversationView: application.view,
+                view: application.view,
               }
             : current,
         )
@@ -462,35 +439,43 @@ export function useAgentSession(sessionId: string): AgentSessionState {
     [updateSessionSettings],
   )
 
+  const retry = useCallback(
+    () => setRetryRevision((revision) => revision + 1),
+    [],
+  )
+  const commands = useMemo(
+    () => ({
+      sendMessage,
+      steer,
+      respond,
+      cancel,
+      updatePermissionMode,
+      updateModel: (selection: AgentModelSelection) => updateModel(selection),
+      updateEnvironmentScope: (scope: ConversationEnvironmentScope) =>
+        updateEnvironmentScope(environmentScopeFromConversation(scope)),
+      retry,
+    }),
+    [
+      cancel,
+      respond,
+      retry,
+      sendMessage,
+      steer,
+      updateEnvironmentScope,
+      updateModel,
+      updatePermissionMode,
+    ],
+  )
+
   const currentView =
     view.sessionId === sessionId ? view : initialView(sessionId)
 
   return {
-    ...currentView.store,
-    conversationView: currentView.conversationView,
-    view: currentView.conversationView,
+    view: currentView.view,
     connectionStatus: currentView.connectionStatus,
     error: currentView.error,
     isLoading: currentView.isLoading,
-    sendMessage,
-    steer,
-    respond,
-    cancel,
-    updatePermissionMode,
-    updateModel,
-    updateEnvironmentScope,
-    retry: () => setRetryRevision((revision) => revision + 1),
-    commands: {
-      sendMessage: (parts) => sendMessage(parts),
-      steer: (parts) => steer(parts),
-      respond: (interactionId, response) => respond(interactionId, response),
-      cancel: () => cancel(),
-      updatePermissionMode: (mode) => updatePermissionMode(mode),
-      updateModel: (selection) => updateModel(selection),
-      updateEnvironmentScope: (scope) =>
-        updateEnvironmentScope(environmentScopeFromConversation(scope)),
-      retry: () => setRetryRevision((revision) => revision + 1),
-    },
+    commands,
   }
 }
 
@@ -517,8 +502,7 @@ function createCommandId() {
 function initialView(sessionId: string): AgentSessionViewState {
   return {
     sessionId,
-    store: initialAgentStoreState,
-    conversationView: null,
+    view: null,
     connectionStatus: "connecting",
     error: null,
     isLoading: true,
