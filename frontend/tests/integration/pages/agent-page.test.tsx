@@ -969,4 +969,25 @@ describe("Agent pages", () => {
       "tab:artifacts|run:none|artifact:artifact-42",
     )
   })
+
+  it("clears run and artifact focus when the conversation route changes", () => {
+    const view = renderAppPage(<AgentSessionPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Open referenced run" }))
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open referenced artifact" }),
+    )
+    expect(screen.getByTestId("live-deck")).toHaveTextContent(
+      "tab:artifacts|run:run-42|artifact:artifact-42",
+    )
+
+    mocks.params.mockReturnValue({ sessionId: "session-10" })
+    view.rerender(<AgentSessionPage />)
+
+    expect(screen.getByTestId("live-deck")).toHaveTextContent(
+      "run:none|artifact:none",
+    )
+  })
 })
