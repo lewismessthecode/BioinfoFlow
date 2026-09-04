@@ -23,6 +23,11 @@ const mocks = vi.hoisted(() => ({
   setNavbarActions: vi.fn(),
   projectConversations: undefined as Map<string, Array<{ id: string; project_id: string | null }>> | undefined,
   sidebarIsLoading: undefined as boolean | undefined,
+  listAgentSessions: vi.fn(),
+}))
+
+vi.mock("@/lib/agent/client", () => ({
+  listAgentSessions: (...args: unknown[]) => mocks.listAgentSessions(...args),
 }))
 
 function ProjectSwitcher() {
@@ -205,6 +210,8 @@ describe("Agent pages", () => {
     mocks.setNavbarActions.mockReset()
     mocks.projectConversations = undefined
     mocks.sidebarIsLoading = undefined
+    mocks.listAgentSessions.mockReset()
+    mocks.listAgentSessions.mockResolvedValue([])
     mocks.isMobile.mockReturnValue(false)
   })
 
@@ -238,7 +245,7 @@ describe("Agent pages", () => {
     )
   })
 
-  it("waits for direct route scope before mounting session workbench", () => {
+  it("waits for direct route scope before mounting session workbench", async () => {
     mocks.projectConversations = new Map()
     mocks.sidebarIsLoading = true
     const view = renderAppPage(
@@ -260,30 +267,51 @@ describe("Agent pages", () => {
       ["project-bound", [{ id: "session-bound", project_id: "project-bound" }]],
     ])
     mocks.sidebarIsLoading = false
+    mocks.listAgentSessions.mockResolvedValue([
+      { id: "session-bound", project_id: "project-bound" },
+    ])
     view.rerender(<AgentPageContent routeSessionId="session-bound" />)
 
-    expect(screen.queryByTestId("agent-route-resolution")).not.toBeInTheDocument()
-    expect(screen.getByTestId("agent-workbench")).toHaveTextContent(
-      "project:project-bound",
-    )
+    await waitFor(() => {
+      expect(screen.queryByTestId("agent-route-resolution")).not.toBeInTheDocument()
+      expect(screen.getByTestId("agent-workbench")).toHaveTextContent(
+        "project:project-bound",
+      )
+    })
   })
 
-  it("shows a visible unavailable state for missing or archived routes", () => {
+  it("shows a visible unavailable state for missing or archived routes", async () => {
     mocks.projectConversations = new Map()
     mocks.sidebarIsLoading = false
 
-    renderAppPage(<AgentPageContent routeSessionId="missing-session" />, {
+    const view = renderAppPage(<AgentPageContent routeSessionId="missing-session" />, {
       projectContext: { selectedProjectId: "stale-project" },
     })
 
-    expect(screen.getByTestId("agent-route-resolution")).toHaveAttribute(
-      "data-route-state",
-      "unavailable",
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-route-resolution")).toHaveAttribute(
+        "data-route-state",
+        "unavailable",
+      ),
     )
     expect(screen.getByTestId("agent-route-resolution")).toHaveTextContent(
       "loadErrorTitle",
     )
     expect(screen.queryByTestId("agent-workbench")).not.toBeInTheDocument()
+
+    mocks.projectConversations = new Map([
+      ["project-archived", [{ id: "archived-session", project_id: "project-archived" }]],
+    ])
+    mocks.listAgentSessions.mockResolvedValue([
+      { id: "archived-session", project_id: "project-archived", status: "archived" },
+    ])
+    view.rerender(<AgentPageContent routeSessionId="archived-session" />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-workbench")).toHaveTextContent(
+        "project:project-archived",
+      ),
+    )
   })
 
   it("switches panel preferences when the session route changes", async () => {
