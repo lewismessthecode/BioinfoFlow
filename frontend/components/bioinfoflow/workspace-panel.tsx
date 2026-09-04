@@ -47,6 +47,7 @@ export function WorkspacePanel({
   const [nodes, setNodes] = useState<WorkspaceFileNode[]>([])
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set())
+  const [childErrors, setChildErrors] = useState<Set<string>>(new Set())
   const [selectedFile, setSelectedFile] = useState<WorkspaceFileNode | null>(null)
   const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null)
   const [query, setQuery] = useState("")
@@ -91,6 +92,7 @@ export function WorkspacePanel({
     setPreview(null)
     setPreviewStatus("idle")
     setExpandedPaths(new Set())
+    setChildErrors(new Set())
     void loadRoot()
     const childControllers = childControllersRef.current
     return () => {
@@ -118,10 +120,15 @@ export function WorkspacePanel({
           signal: controller.signal,
         })
         if (controller.signal.aborted || generation !== requestGenerationRef.current) return
+        setChildErrors((current) => {
+          const next = new Set(current)
+          next.delete(node.path)
+          return next
+        })
         setNodes((current) => replaceChildren(current, node.path, sortNodes(children)))
       } catch (error) {
         if (!controller.signal.aborted && generation === requestGenerationRef.current) {
-          setStatus("error")
+          setChildErrors((current) => new Set(current).add(node.path))
           throw error
         }
       } finally {
@@ -280,6 +287,9 @@ export function WorkspacePanel({
                   selectedPath={selectedFile?.path ?? null}
                   expandedPaths={expandedPaths}
                   loadingPaths={loadingPaths}
+                  childErrors={childErrors}
+                  childErrorLabel={t("errors.loadFilesFailed")}
+                  retryLabel={t("files.refresh")}
                   queryActive={Boolean(query)}
                   onToggle={(directory) => {
                     const expanded = expandedPaths.has(directory.path)
@@ -293,6 +303,7 @@ export function WorkspacePanel({
                       void loadChildren(directory).catch(() => undefined)
                     }
                   }}
+                  onRetry={(directory) => void loadChildren(directory).catch(() => undefined)}
                   onSelect={(file) => void selectFile(file)}
                 />
               ))
@@ -310,8 +321,12 @@ function FileTreeRow({
   selectedPath,
   expandedPaths,
   loadingPaths,
+  childErrors,
+  childErrorLabel,
+  retryLabel,
   queryActive,
   onToggle,
+  onRetry,
   onSelect,
 }: {
   node: WorkspaceFileNode
@@ -319,8 +334,12 @@ function FileTreeRow({
   selectedPath: string | null
   expandedPaths: Set<string>
   loadingPaths: Set<string>
+  childErrors: Set<string>
+  childErrorLabel: string
+  retryLabel: string
   queryActive: boolean
   onToggle: (node: WorkspaceFileNode) => void
+  onRetry: (node: WorkspaceFileNode) => void
   onSelect: (node: WorkspaceFileNode) => void
 }) {
   const directory = node.type === "directory"
@@ -328,7 +347,7 @@ function FileTreeRow({
   const loading = loadingPaths.has(node.path)
 
   return (
-    <div>
+    <div className="min-w-0">
       <button
         type="button"
         onClick={() => (directory ? onToggle(node) : onSelect(node))}
@@ -362,6 +381,19 @@ function FileTreeRow({
         )}
         <span className="min-w-0 flex-1 truncate">{node.name}</span>
       </button>
+      {childErrors.has(node.path) ? (
+        <span className="ml-7 inline-flex items-center gap-1 text-[10px] text-destructive">
+          <span role="status">{childErrorLabel}</span>
+          <button
+            type="button"
+            className="underline underline-offset-2"
+            aria-label={retryLabel}
+            onClick={() => onRetry(node)}
+          >
+            {retryLabel}
+          </button>
+        </span>
+      ) : null}
       {directory && expanded
         ? node.children?.map((child) => (
             <FileTreeRow
@@ -371,8 +403,12 @@ function FileTreeRow({
               selectedPath={selectedPath}
               expandedPaths={expandedPaths}
               loadingPaths={loadingPaths}
+              childErrors={childErrors}
+              childErrorLabel={childErrorLabel}
+              retryLabel={retryLabel}
               queryActive={queryActive}
               onToggle={onToggle}
+              onRetry={onRetry}
               onSelect={onSelect}
             />
           ))
