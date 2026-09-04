@@ -3,9 +3,8 @@
 ## Current state
 
 The rebased worktree is `codex/agent-ui-action-group`. The latest code commits
-are `40d1bfc` (`fix: scope unresolved agent routes`) and `ae45106`
-(`test: cover unresolved terminal scope`); this document is committed
-separately.
+is `0c859b9` (`fix: resolve archived agent deep links`); this document is
+committed separately.
 
 The implementation retains the four-action group (Browser, Files, Artifacts,
 and DAG), project/session/draft isolation, route-authoritative session panels,
@@ -20,8 +19,10 @@ Subagents are not exposed.
   own project; an unscoped inbox session supplies `null`. Until then,
   AgentWorkbench, LiveDeck, workspace requests, events, and project-scoped
   terminal wiring are not mounted against stale context. Loading and
-  missing/archived states are visible rather than leaving an empty resolution
-  shell indefinitely.
+  missing states are visible rather than leaving an empty resolution shell
+  indefinitely. Direct resolution queries include archived sessions, which
+  render through the existing read-only AgentWorkbench path without adding
+  archived sessions to the sidebar.
 - The global terminal action is disabled while a direct route is unresolved or
   unavailable. Once resolved, its identity follows the route session's project;
   unscoped inbox sessions remain disabled and stale project terminal state is
@@ -51,8 +52,10 @@ No screenshot was updated at runtime during validation, and no
 
 Passing in this worktree:
 
-- Focused route/workspace suite: 54 tests.
-- Full frontend Vitest: 187 files, 1049 tests.
+- Focused route/sidebar/terminal suite: 39 tests.
+- Full frontend Vitest: 183 of 187 files passed; 8 unrelated tests timed out
+  at five seconds under the parallel run (connections, workspace-shell,
+  create-project, and members-panel suites), so the full gate is not green.
 - `rtk bun run lint`
 - `rtk bun run lint:i18n`
 - `rtk bun run lint:dead-code`
