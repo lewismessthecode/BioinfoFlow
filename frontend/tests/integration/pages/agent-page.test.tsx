@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   params: vi.fn(() => ({ sessionId: "session-9" })),
   useEvents: vi.fn(),
   isMobile: vi.fn(() => false),
+  compactWorkspace: vi.fn(() => false),
   workbench: vi.fn(),
   setNavbarActions: vi.fn(),
   projectConversations: undefined as Map<string, Array<{ id: string; project_id: string | null }>> | undefined,
@@ -72,6 +73,7 @@ vi.mock("@/hooks/use-events", () => ({
 
 vi.mock("@/hooks/use-media-query", () => ({
   useIsMobile: () => mocks.isMobile(),
+  useMediaQuery: () => mocks.compactWorkspace(),
 }))
 
 vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
@@ -215,6 +217,7 @@ describe("Agent pages", () => {
     mocks.listAgentSessions.mockReset()
     mocks.listAgentSessions.mockResolvedValue([])
     mocks.isMobile.mockReturnValue(false)
+    mocks.compactWorkspace.mockReturnValue(false)
   })
 
   it("treats /agent as a new draft even when app context still names an old session", () => {
@@ -765,6 +768,20 @@ describe("Agent pages", () => {
     )
   })
 
+  it("uses the compact workspace sheet below the desktop panel breakpoint", () => {
+    mocks.compactWorkspace.mockReturnValue(true)
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
+    render(<>{navbarAction}</>)
+    fireEvent.click(screen.getByRole("button", { name: "Open files" }))
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:workspace")
+  })
+
   it("restores focus to the mobile action after Escape closes the sheet", async () => {
     mocks.isMobile.mockReturnValue(true)
     renderAppPage(<AgentPage />, {
@@ -923,24 +940,39 @@ describe("Agent pages", () => {
     )
   })
 
-  it("clears run and artifact focus when the conversation route changes", () => {
-    const view = renderAppPage(<AgentSessionPage />, {
+  it("clears run and artifact focus when the conversation route changes", async () => {
+    localStorage.setItem(
+      "agent-panel:project-1:session-9",
+      JSON.stringify({ activeTab: "artifacts", open: true, width: 400 }),
+    )
+    localStorage.setItem(
+      "agent-panel:project-1:session-10",
+      JSON.stringify({ activeTab: "artifacts", open: true, width: 400 }),
+    )
+    const view = renderAppPage(
+      <AgentPageContent routeSessionId="session-9" />,
+      {
       projectContext: { selectedProjectId: "project-1" },
-    })
+      },
+    )
 
     fireEvent.click(screen.getByRole("button", { name: "Open referenced run" }))
+    expect(screen.getByTestId("live-deck")).toHaveTextContent(
+      "tab:dag|run:run-42",
+    )
     fireEvent.click(
       screen.getByRole("button", { name: "Open referenced artifact" }),
     )
     expect(screen.getByTestId("live-deck")).toHaveTextContent(
-      "tab:artifacts|run:run-42|artifact:artifact-42",
+      "tab:artifacts|run:none|artifact:artifact-42",
     )
 
-    mocks.params.mockReturnValue({ sessionId: "session-10" })
-    view.rerender(<AgentSessionPage />)
+    view.rerender(<AgentPageContent routeSessionId="session-10" />)
 
-    expect(screen.getByTestId("live-deck")).toHaveTextContent(
-      "run:none|artifact:none",
+    await waitFor(() =>
+      expect(screen.getByTestId("live-deck")).toHaveTextContent(
+        "run:none|artifact:none",
+      ),
     )
   })
 })
