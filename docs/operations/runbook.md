@@ -129,3 +129,35 @@ back up selected paths, include at minimum:
 - `state/auth/better-auth.db`
 - `state/credentials/fernet.key` when it exists
 - `state/workflows/`, `projects/`, and `sources/`
+- `state/agent_harness/attachments/` and `state/agent_harness/artifacts/`
+
+The platform database contains the Agent history and stored credential records;
+the Fernet key is required to decrypt those credentials after restore. Keep the
+database and key from the same stopped-state snapshot.
+
+### Release failure path
+
+If a release upgrade or its startup/health checks fail:
+
+1. Leave the failed services stopped.
+2. Do not run `alembic downgrade` to undo the release. Restore the
+   database/state backup (or the complete `BIOINFOFLOW_HOME`) instead; some
+   migrations intentionally have no safe downgrade.
+3. Restore the complete home and any external-local project roots at their
+   recorded absolute paths, then restart the previous release.
+4. For a bare-metal backend, run `uv run alembic upgrade head` only after the
+   restored state is in place and before starting that backend.
+
+The repeatable automated evidence gate uses only pytest temporary directories:
+
+```bash
+cd backend
+uv run pytest tests/test_release_restore_gate.py
+```
+
+It upgrades a representative 0.2.0 SQLite schema from
+`0058_remove_container_registry_default` through Alembic head `0063`, checks
+legacy Agent records and the project-delete cascade, and performs a stopped-home
+copy/restore drill covering both SQLite databases, the Fernet key, workflow and
+project files, shared sources, attachments, artifacts, history, and an
+encrypted credential.
