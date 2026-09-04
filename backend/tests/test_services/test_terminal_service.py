@@ -651,7 +651,19 @@ async def test_terminal_session_manager_replays_initial_output_to_late_subscribe
 
 
 @pytest.mark.asyncio
-async def test_terminal_session_manager_bounds_slow_subscriber_queue(tmp_path: Path):
+async def test_terminal_session_manager_bounds_slow_subscriber_queue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    transport = FakeRemoteTerminalTransport()
+
+    def fake_spawn_pty_process(**_kwargs):
+        return transport
+
+    monkeypatch.setattr(
+        "app.services.terminal_service._spawn_pty_process",
+        fake_spawn_pty_process,
+    )
+
     manager = TerminalSessionManager(shell="/bin/sh", idle_timeout_seconds=30)
     snapshot = await manager.create_or_get(project_id="project-overflow", root_path=tmp_path)
 
@@ -659,7 +671,8 @@ async def test_terminal_session_manager_bounds_slow_subscriber_queue(tmp_path: P
         queue = await manager.attach(snapshot.id)
         session = manager._sessions_by_id[snapshot.id]
 
-        for index in range(manager._SUBSCRIBER_QUEUE_MAXSIZE + 20):
+        total_chunks = manager._SUBSCRIBER_QUEUE_MAXSIZE + 20
+        for index in range(total_chunks):
             await manager._broadcast(
                 session,
                 {"type": "output", "data": f"chunk-{index}"},
@@ -672,7 +685,11 @@ async def test_terminal_session_manager_bounds_slow_subscriber_queue(tmp_path: P
         output_messages = [message for message in messages if message["type"] == "output"]
         assert messages[0]["type"] == "ready"
         assert messages[1]["type"] == "cwd"
-        assert output_messages[0]["data"] == "chunk-24"
+        assert all(message["data"].startswith("chunk-") for message in output_messages)
+        indices = [int(message["data"].split("-", 1)[1]) for message in output_messages]
+        assert indices == list(range(indices[0], indices[-1] + 1))
+        assert indices[-1] == total_chunks - 1
+        assert len(output_messages) == manager._SUBSCRIBER_QUEUE_MAXSIZE - 4
         assert [message["type"] for message in messages[-2:]] == ["error", "exit"]
     finally:
         await manager.close_session(snapshot.id)
