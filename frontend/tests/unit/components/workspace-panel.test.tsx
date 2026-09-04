@@ -181,6 +181,21 @@ describe("WorkspacePanel", () => {
     expect(screen.getByRole("button", { name: "Open in a new tab" })).toBeDisabled()
   })
 
+  it("rejects protocol-relative file URLs", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.listFiles).mockResolvedValueOnce([
+      { name: "notes.txt", path: "notes.txt", type: "file", sizeBytes: 24, modifiedAt: null },
+    ])
+    vi.mocked(adapter.fileDownloadUrl).mockReturnValueOnce("//download.test/file")
+
+    render(<WorkspacePanel projectId="project-1" adapter={adapter} />)
+
+    await userEvent.click(await screen.findByRole("button", { name: "notes.txt" }))
+
+    expect(screen.queryByRole("link", { name: "Open in a new tab" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open in a new tab" })).toBeDisabled()
+  })
+
   it("shows the selected file as an editor tab that can be closed", async () => {
     const adapter = createAdapter()
     vi.mocked(adapter.listFiles).mockResolvedValueOnce([
