@@ -114,7 +114,9 @@ vi.mock("@/lib/terminal/runtime", () => ({
 }))
 
 vi.mock("@/components/ui/resize-handle", () => ({
-  ResizeHandle: () => null,
+  ResizeHandle: ({ ariaLabel }: { ariaLabel: string }) => (
+    <div data-testid="terminal-dock-resize-handle" aria-label={ariaLabel} />
+  ),
 }))
 
 function createSession(): TerminalSession {
@@ -144,9 +146,10 @@ function TerminalDockTestOpener() {
 function renderDock({
   open = true,
   screenshotFixture = false,
-}: { open?: boolean; screenshotFixture?: boolean } = {}) {
+  isMobile = false,
+}: { open?: boolean; screenshotFixture?: boolean; isMobile?: boolean } = {}) {
   return renderAppPage(
-    <TerminalDockProvider projectId="project-1" enabled isMobile={false}>
+    <TerminalDockProvider projectId="project-1" enabled isMobile={isMobile}>
       {open ? <TerminalDockTestOpener /> : null}
       <TerminalDock screenshotFixture={screenshotFixture} />
     </TerminalDockProvider>
@@ -275,6 +278,35 @@ describe("TerminalDock", () => {
     expect(screen.getByTestId("terminal-dock-tab")).toHaveTextContent("local")
     expect(useTerminalSessionMock).not.toHaveBeenCalled()
     expect(view.container.querySelector("[data-testid='terminal-dock-viewport']")).toBeNull()
+  })
+
+  it.each([
+    ["desktop dock", false],
+    ["mobile sheet", true],
+  ])("keeps the live terminal and screenshot fixture on the same %s shell", async (_, isMobile) => {
+    const fixtureView = renderDock({ screenshotFixture: true, isMobile })
+    await screen.findByTestId("terminal-dock-fixture")
+
+    const fixtureShell = screen.getByTestId("terminal-dock-shell")
+    const fixtureHeader = screen.getByTestId("terminal-dock-header")
+    if (!isMobile) {
+      expect(screen.getByTestId("terminal-dock-resize-handle")).toBeInTheDocument()
+    }
+
+    const fixtureShellClassName = fixtureShell.className
+    const fixtureHeaderClassName = fixtureHeader.className
+    fixtureView.unmount()
+
+    renderDock({ isMobile })
+    await screen.findByTestId("terminal-dock-viewport")
+
+    const liveShell = screen.getByTestId("terminal-dock-shell")
+    const liveHeader = screen.getByTestId("terminal-dock-header")
+    expect(liveShell.className).toBe(fixtureShellClassName)
+    expect(liveHeader.className).toBe(fixtureHeaderClassName)
+    if (!isMobile) {
+      expect(screen.getByTestId("terminal-dock-resize-handle")).toBeInTheDocument()
+    }
   })
 
   it("clears queued directory changes when the project changes before opening", async () => {

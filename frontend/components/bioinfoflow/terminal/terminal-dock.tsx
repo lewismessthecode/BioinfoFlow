@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, type ReactNode } from "react"
 import { Plus, TerminalSquare, X } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
@@ -61,6 +61,158 @@ type FontStatusDocument = Document & {
   fonts?: {
     ready?: Promise<unknown>
   }
+}
+
+function TerminalDockHeader({
+  title,
+  targetLabel,
+  sessionMeta,
+  connectionState,
+  connectionLabel,
+  connectionAriaLabel,
+  newTerminalLabel,
+  closeTerminalLabel,
+  closeTerminal,
+}: {
+  title: string
+  targetLabel: string
+  sessionMeta: string
+  connectionState: string
+  connectionLabel: string
+  connectionAriaLabel: string
+  newTerminalLabel: string
+  closeTerminalLabel: string
+  closeTerminal: () => void
+}) {
+  return (
+    <div
+      className="flex h-8 items-center justify-between gap-2 border-b border-border/45 bg-background px-2"
+      data-testid="terminal-dock-header"
+    >
+      <div
+        className="flex min-w-0 flex-1 items-center gap-1"
+        data-testid="terminal-dock-tab-strip"
+      >
+        <div
+          className="inline-flex h-6 min-w-0 max-w-[320px] items-center gap-1.5 rounded-md bg-muted/55 px-2 text-xs dark:bg-muted/35"
+          data-testid="terminal-dock-tab"
+          title={sessionMeta}
+        >
+          <TerminalSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="shrink-0 text-xs font-medium text-foreground">{title}</span>
+          <span className="min-w-0 truncate text-xs text-muted-foreground">
+            {targetLabel}
+          </span>
+          <span
+            className={cn(
+              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+              connectionDotClassName(connectionState),
+            )}
+            aria-label={connectionAriaLabel}
+          />
+          {connectionLabel ? (
+            <span
+              className={cn(
+                "inline-flex shrink-0 rounded-[4px] px-1.5 py-0.5 text-[10px] font-medium",
+                connectionBadgeClassName(connectionState),
+              )}
+            >
+              {connectionLabel}
+            </span>
+          ) : null}
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 rounded-md text-muted-foreground/60 transition-colors disabled:cursor-default disabled:opacity-60"
+          disabled
+          aria-label={newTerminalLabel}
+          title={newTerminalLabel}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <div className="flex items-center gap-0.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted/55 hover:text-foreground"
+          onClick={closeTerminal}
+          aria-label={closeTerminalLabel}
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function TerminalDockShell({
+  isMobile,
+  isOpen,
+  dockHeight,
+  closeTerminal,
+  setDockHeight,
+  resizeTerminalLabel,
+  header,
+  children,
+}: {
+  isMobile: boolean
+  isOpen: boolean
+  dockHeight: number
+  closeTerminal: () => void
+  setDockHeight: (height: number) => void
+  resizeTerminalLabel: string
+  header: ReactNode
+  children: ReactNode
+}) {
+  const content = (
+    <div
+      className="flex h-full min-h-0 flex-col"
+      data-testid="terminal-dock-shell"
+    >
+      {header}
+      {children}
+    </div>
+  )
+
+  if (isMobile) {
+    return (
+      <Sheet
+        open={isOpen}
+        onOpenChange={(open) => (!open ? closeTerminal() : undefined)}
+      >
+        <SheetContent
+          side="bottom"
+          className="h-[72vh] !gap-0 rounded-none p-0 [&>button.absolute]:hidden"
+        >
+          {content}
+        </SheetContent>
+      </Sheet>
+    )
+  }
+
+  return (
+    <section
+      className={cn(
+        "relative border-t border-border/60 bg-background",
+        isOpen && "animate-in slide-in-from-bottom-2 fade-in duration-200 motion-reduce:animate-none",
+      )}
+      style={{ height: isOpen ? dockHeight : 0 }}
+      aria-hidden={!isOpen}
+    >
+      {isOpen ? (
+        <>
+          <ResizeHandle
+            side="top"
+            onResize={(delta) => setDockHeight(dockHeight + delta)}
+            ariaLabel={resizeTerminalLabel}
+          />
+          {content}
+        </>
+      ) : null}
+    </section>
+  )
 }
 
 export function TerminalDock({
@@ -304,62 +456,17 @@ function LiveTerminalDock() {
     : connectionLabel
 
   const header = (
-    <div className="flex h-8 items-center justify-between gap-2 border-b border-border/45 bg-background px-2">
-      <div
-        className="flex min-w-0 flex-1 items-center gap-1"
-        data-testid="terminal-dock-tab-strip"
-      >
-        <div
-          className="inline-flex h-6 min-w-0 max-w-[320px] items-center gap-1.5 rounded-md bg-muted/55 px-2 text-xs dark:bg-muted/35"
-          data-testid="terminal-dock-tab"
-          title={sessionMeta}
-        >
-          <TerminalSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="shrink-0 text-xs font-medium text-foreground">{tTerminal("title")}</span>
-          <span className="min-w-0 truncate text-xs text-muted-foreground">
-            {targetLabel}
-          </span>
-          <span
-            className={cn(
-              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-              connectionDotClassName(connectionState),
-            )}
-            aria-label={connectionAriaLabel}
-          />
-          {connectionLabel ? (
-            <span
-              className={cn(
-                "inline-flex shrink-0 rounded-[4px] px-1.5 py-0.5 text-[10px] font-medium",
-                connectionBadgeClassName(connectionState),
-              )}
-            >
-              {connectionLabel}
-            </span>
-          ) : null}
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 rounded-md text-muted-foreground/60 transition-colors disabled:cursor-default disabled:opacity-60"
-          disabled
-          aria-label={tTerminal("newTerminal")}
-          title={tTerminal("newTerminal")}
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-      <div className="flex items-center gap-0.5">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted/55 hover:text-foreground"
-          onClick={closeTerminal}
-          aria-label={tAccessibility("closeTerminal")}
-        >
-          <X className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    </div>
+    <TerminalDockHeader
+      title={tTerminal("title")}
+      targetLabel={targetLabel}
+      sessionMeta={sessionMeta}
+      connectionState={connectionState}
+      connectionLabel={connectionLabel}
+      connectionAriaLabel={connectionAriaLabel}
+      newTerminalLabel={tTerminal("newTerminal")}
+      closeTerminalLabel={tAccessibility("closeTerminal")}
+      closeTerminal={closeTerminal}
+    />
   )
 
   const body = (
@@ -383,47 +490,17 @@ function LiveTerminalDock() {
     </div>
   )
 
-  if (isMobile) {
-    return (
-      <Sheet
-        open={isOpen}
-        onOpenChange={(open) => (!open ? closeTerminal() : undefined)}
-      >
-        <SheetContent
-          side="bottom"
-          className="h-[72vh] !gap-0 rounded-none p-0 [&>button.absolute]:hidden"
-        >
-          <div className="flex h-full min-h-0 flex-col">
-            {header}
-            {body}
-          </div>
-        </SheetContent>
-      </Sheet>
-    )
-  }
-
   return (
-    <section
-      className={cn(
-        "relative border-t border-border/60 bg-background",
-        isOpen && "animate-in slide-in-from-bottom-2 fade-in duration-200 motion-reduce:animate-none"
-      )}
-      style={{ height: isOpen ? dockHeight : 0 }}
-      aria-hidden={!isOpen}
+    <TerminalDockShell
+      isMobile={isMobile}
+      isOpen={isOpen}
+      dockHeight={dockHeight}
+      closeTerminal={closeTerminal}
+      setDockHeight={setDockHeight}
+      resizeTerminalLabel={tAccessibility("resizeTerminal")}
+      header={header}
     >
-      {isOpen ? (
-        <>
-          <ResizeHandle
-            side="top"
-            onResize={(delta) => setDockHeight(dockHeight + delta)}
-            ariaLabel={tAccessibility("resizeTerminal")}
-          />
-          <div className="flex h-full min-h-0 flex-col">
-            {header}
-            {body}
-          </div>
-        </>
-      ) : null}
+      {body}
       <style>{`
         .terminal-dock-scroll .xterm,
         .terminal-dock-scroll .xterm-viewport {
@@ -465,7 +542,7 @@ function LiveTerminalDock() {
           background-clip: padding-box;
         }
       `}</style>
-    </section>
+    </TerminalDockShell>
   )
 }
 
@@ -484,46 +561,20 @@ function TerminalDockFixture() {
 
   if (!enabled || !projectId) return null
 
+  const connectionState = "connected"
+  const connectionAriaLabel = tTerminal("connectionStates.connected")
   const header = (
-    <div className="flex h-8 items-center justify-between gap-2 border-b border-border/45 bg-background px-2">
-      <div
-        className="flex min-w-0 flex-1 items-center gap-1"
-        data-testid="terminal-dock-tab-strip"
-      >
-        <div
-          className="inline-flex h-6 min-w-0 max-w-[320px] items-center gap-1.5 rounded-md bg-muted/55 px-2 text-xs dark:bg-muted/35"
-          data-testid="terminal-dock-tab"
-          title={tTerminal("screenshotFixture")}
-        >
-          <TerminalSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="shrink-0 text-xs font-medium text-foreground">
-            {tTerminal("title")}
-          </span>
-          <span className="min-w-0 truncate text-xs text-muted-foreground">
-            {tTerminal("targets.local")}
-          </span>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 rounded-md text-muted-foreground/60 transition-colors disabled:cursor-default disabled:opacity-60"
-          disabled
-          aria-label={tTerminal("newTerminal")}
-          title={tTerminal("newTerminal")}
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted/55 hover:text-foreground"
-        onClick={closeTerminal}
-        aria-label={tAccessibility("closeTerminal")}
-      >
-        <X className="h-3.5 w-3.5" />
-      </Button>
-    </div>
+    <TerminalDockHeader
+      title={tTerminal("title")}
+      targetLabel={tTerminal("targets.local")}
+      sessionMeta={tTerminal("screenshotFixture")}
+      connectionState={connectionState}
+      connectionLabel=""
+      connectionAriaLabel={connectionAriaLabel}
+      newTerminalLabel={tTerminal("newTerminal")}
+      closeTerminalLabel={tAccessibility("closeTerminal")}
+      closeTerminal={closeTerminal}
+    />
   )
 
   const body = (
@@ -539,47 +590,17 @@ function TerminalDockFixture() {
     </div>
   )
 
-  if (isMobile) {
-    return (
-      <Sheet
-        open={isOpen}
-        onOpenChange={(open) => (!open ? closeTerminal() : undefined)}
-      >
-        <SheetContent
-          side="bottom"
-          className="h-[72vh] !gap-0 rounded-none p-0 [&>button.absolute]:hidden"
-        >
-          <div className="flex h-full min-h-0 flex-col">
-            {header}
-            {body}
-          </div>
-        </SheetContent>
-      </Sheet>
-    )
-  }
-
   return (
-    <section
-      className={cn(
-        "relative border-t border-border/60 bg-background",
-        isOpen && "animate-in slide-in-from-bottom-2 fade-in duration-200 motion-reduce:animate-none",
-      )}
-      style={{ height: isOpen ? dockHeight : 0 }}
-      aria-hidden={!isOpen}
+    <TerminalDockShell
+      isMobile={isMobile}
+      isOpen={isOpen}
+      dockHeight={dockHeight}
+      closeTerminal={closeTerminal}
+      setDockHeight={setDockHeight}
+      resizeTerminalLabel={tAccessibility("resizeTerminal")}
+      header={header}
     >
-      {isOpen ? (
-        <>
-          <ResizeHandle
-            side="top"
-            onResize={(delta) => setDockHeight(dockHeight + delta)}
-            ariaLabel={tAccessibility("resizeTerminal")}
-          />
-          <div className="flex h-full min-h-0 flex-col">
-            {header}
-            {body}
-          </div>
-        </>
-      ) : null}
-    </section>
+      {body}
+    </TerminalDockShell>
   )
 }
