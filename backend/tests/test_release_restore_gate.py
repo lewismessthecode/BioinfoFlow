@@ -10,10 +10,11 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 
+from app.database import get_alembic_head_revision
+
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 RELEASE_020_HEAD = "0058_remove_container_registry_default"
-RELEASE_HEAD = "0063_agent_session_project_delete_cascade"
 
 
 def _run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -167,7 +168,7 @@ def test_representative_020_sqlite_clone_upgrades_to_head(tmp_path: Path) -> Non
     assert {"agent_sessions", "agent_runs", "agent_entries"} <= tables
     assert {"agent_attachments", "agent_artifacts"} <= tables
     assert "agent_turns" not in tables
-    assert tuple(revision) == (RELEASE_HEAD,)
+    assert tuple(revision) == (get_alembic_head_revision(),)
     assert deleted_session is None
 
 

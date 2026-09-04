@@ -156,7 +156,8 @@ uv run pytest tests/test_release_restore_gate.py
 ```
 
 It upgrades a representative 0.2.0 SQLite schema from
-`0058_remove_container_registry_default` through Alembic head `0063`, checks
+`0058_remove_container_registry_default` through the current Alembic head
+(`cd backend && uv run alembic heads`), checks
 legacy Agent records and the project-delete cascade, and performs a stopped-home
 copy/restore drill covering both SQLite databases, the Fernet key, workflow and
 project files, shared sources, attachments, artifacts, history, and an
