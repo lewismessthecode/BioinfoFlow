@@ -390,7 +390,9 @@ async def test_update_plan_stays_in_its_model_tool_round_and_persists_plan(
         for entry in snapshot.entries
         if entry.type == "message"
         and entry.payload.role == "assistant"
-        and any(getattr(part, "call_id", None) == "plan-1" for part in entry.payload.parts)
+        and any(
+            getattr(part, "call_id", None) == "plan-1" for part in entry.payload.parts
+        )
     )
     assert [
         part.call_id
@@ -1936,7 +1938,7 @@ async def test_recovery_reuses_an_acknowledged_answer_after_response_commit(
         owner="response-commit-worker",
         generation=generation,
     )
-    await first.repository.commit_interaction_response(
+    await first.presentation_mutations.commit_interaction_response(
         session_id,
         run_id=run_id,
         command_id="answer-committed-before-crash",

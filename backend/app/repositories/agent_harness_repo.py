@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from collections.abc import Callable
 from typing import Any, Iterable
 
 from sqlalchemy import delete, func, or_, select, update
@@ -21,17 +22,6 @@ from app.services.agent_harness.contracts import (
     MessageCommand,
     OpenSessionRequest,
     SessionSnapshot,
-    ToolProgressView,
-)
-from app.services.agent_harness.projection import (
-    public_interaction_request,
-    public_interaction_response,
-)
-from app.services.agent_harness.tool_projection import (
-    public_error_message,
-    public_result_details,
-    public_tool_progress_view,
-    public_tool_details,
 )
 
 
@@ -1018,14 +1008,10 @@ class AgentHarnessRepository:
         run_id: str,
         *,
         call_id: str,
-        name: str,
-        status: str,
-        group_id: str | None = None,
-        execution_mode: str | None = None,
-        arguments: dict[str, Any] | None = None,
-        output_summary: str | None = None,
-        error: str | None = None,
-    ) -> ToolProgressView:
+        progress_projector: Callable[[dict[str, Any], datetime], dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Persist a caller-projected tool update under the existing run fence."""
+
         run = await self.get_run(run_id)
         if run is None:
             raise LookupError(f"agent run not found: {run_id}")
@@ -1038,59 +1024,7 @@ class AgentHarnessRepository:
         )
         if existing is None:
             raise LookupError(f"tool progress not found: {call_id}")
-        now = datetime.now(timezone.utc)
-        source_arguments = (
-            arguments
-            if arguments is not None
-            else existing.get("arguments")
-            if isinstance(existing.get("arguments"), dict)
-            else {}
-        )
-        public_output = public_error_message(output_summary)
-        public_error = public_error_message(error)
-        existing_details = [
-            detail
-            for detail in existing.get("public_details") or []
-            if isinstance(detail, dict)
-            and detail.get("kind") not in {"output", "error"}
-        ]
-        input_details = existing_details or [
-            detail.model_dump(mode="json")
-            for detail in public_tool_details(name, source_arguments)
-        ]
-        raw: dict[str, Any] = {
-            **existing,
-            "call_id": call_id,
-            "group_id": existing["group_id"],
-            "execution_mode": existing["execution_mode"],
-            "name": name,
-            "display_name": existing["display_name"],
-            "category": existing["category"],
-            "summary": existing["summary"],
-            "arguments": {},
-            "status": status,
-            "revision": int(existing.get("revision") or 0) + 1,
-            "public_details": [
-                *input_details,
-                *[
-                    detail.model_dump(mode="json")
-                    for detail in public_result_details(
-                        output_summary=public_output,
-                        error=public_error,
-                    )
-                ],
-            ],
-        }
-        if public_output is not None:
-            raw["output_summary"] = public_output
-        if public_error is not None:
-            raw["error"] = public_error
-        if status == "running" and raw.get("started_at") is None:
-            raw["started_at"] = now
-        if status in {"completed", "failed", "blocked", "cancelled"}:
-            raw["completed_at"] = now
-        view = public_tool_progress_view(raw)
-        stored = view.model_dump(mode="json")
+        stored = progress_projector(existing, datetime.now(timezone.utc))
         for index, item in enumerate(progress):
             if item.get("call_id") == call_id:
                 progress[index] = stored
@@ -1098,7 +1032,7 @@ class AgentHarnessRepository:
         else:
             progress.append(stored)
         await self.update_run(run_id, tool_progress=progress)
-        return view
+        return stored
 
     async def terminalize_run(self, run_id: str, **changes: Any) -> AgentHarnessRun:
         status = changes.get("status")
@@ -1908,7 +1842,7 @@ class AgentHarnessRepository:
             .model_validate(
                 {
                     "interaction_id": interaction_id,
-                    "response": public_interaction_response(response),
+                    "response": response,
                 }
             )
             .model_dump(mode="json")
@@ -1981,13 +1915,12 @@ class AgentHarnessRepository:
     ) -> tuple[AgentHarnessEntry | None, AgentHarnessEntry, AgentHarnessRun]:
         """Atomically publish an interaction and make the Run wait for its answer."""
 
-        public_request = public_interaction_request(request_payload["request"])
         request = (
             ENTRY_PAYLOAD_TYPES["interaction_request"]
             .model_validate(
                 {
                     "interaction_id": request_payload["interaction_id"],
-                    "request": public_request,
+                    "request": request_payload["request"],
                 }
             )
             .model_dump(mode="json")
@@ -2080,6 +2013,7 @@ class AgentHarnessRepository:
         call: dict[str, Any],
         replay_policy: str,
         command_id: str | None = None,
+        progress_projector: Callable[[dict[str, Any], datetime], dict[str, Any]],
     ) -> tuple[AgentHarnessEntry, AgentHarnessRun]:
         """Persist the accepted response and tool-start fence before execution."""
 
@@ -2088,7 +2022,7 @@ class AgentHarnessRepository:
             .model_validate(
                 {
                     "interaction_id": interaction_id,
-                    "response": public_interaction_response(response),
+                    "response": response,
                 }
             )
             .model_dump(mode="json")
@@ -2171,25 +2105,7 @@ class AgentHarnessRepository:
                 raise LookupError(
                     f"tool progress not found: {call.get('call_id') or 'unknown'}"
                 )
-            call_id = str(call.get("call_id") or "")
-            name = str(call.get("name") or "unknown")
-            replacement = ToolProgressView.model_validate(
-                {
-                    **existing,
-                    "call_id": call_id,
-                    "group_id": existing["group_id"],
-                    "execution_mode": existing["execution_mode"],
-                    "name": name,
-                    "display_name": existing["display_name"],
-                    "category": existing["category"],
-                    "summary": existing["summary"],
-                    "arguments": existing.get("arguments") or {},
-                    "status": "running",
-                    "revision": int(existing.get("revision") or 0) + 1,
-                    "started_at": existing.get("started_at")
-                    or datetime.now(timezone.utc),
-                }
-            ).model_dump(mode="json")
+            replacement = progress_projector(existing, datetime.now(timezone.utc))
             for index, item in enumerate(progress):
                 if item.get("call_id") == call.get("call_id"):
                     progress[index] = replacement

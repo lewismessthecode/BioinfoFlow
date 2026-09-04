@@ -46,3 +46,11 @@ def test_agent_loop_does_not_depend_on_agent_trace_implementation() -> None:
         module.startswith("app.services.agent_trace") for module in _imports(loop_path)
     )
 
+def test_agent_harness_repository_does_not_import_presentation_projectors() -> None:
+    """Public redaction belongs to the application/presentation seam, not SQL."""
+
+    repository_path = BACKEND_ROOT / "app/repositories/agent_harness_repo.py"
+    imported_modules = _imports(repository_path)
+
+    assert "app.services.agent_harness.projection" not in imported_modules
+    assert "app.services.agent_harness.tool_projection" not in imported_modules
