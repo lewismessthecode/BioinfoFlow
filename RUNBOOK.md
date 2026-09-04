@@ -997,6 +997,13 @@ the platform root and external project roots at their recorded absolute paths,
 then apply Alembic migrations before starting a bare-metal backend. See the
 [operations supplement](docs/operations/runbook.md#backup-and-restore).
 
+If a release upgrade or its startup/health checks fail, leave services stopped
+and restore the database/state backup (or complete `BIOINFOFLOW_HOME`) rather
+than running `alembic downgrade`; some migrations are intentionally
+one-way. Keep the platform database and Fernet key from the same snapshot so
+stored credentials remain decryptable. The automated temporary-directory
+release evidence gate is documented in the [operations supplement](docs/operations/runbook.md#release-failure-path).
+
 ## 8. File Map
 
 - `README.md`
