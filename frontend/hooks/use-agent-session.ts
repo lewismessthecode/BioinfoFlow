@@ -13,7 +13,6 @@ import { ApiError } from "@/lib/api"
 import { subscribeAgentEvents } from "@/lib/agent/stream"
 import {
   initialAgentStoreState,
-  type AgentStoreState,
 } from "@/lib/agent/store"
 import type {
   ConversationEnvironmentScope,
@@ -123,7 +122,6 @@ export function useAgentSession(
 
     const publishStore = (eventType?: AgentEvent["type"]) => {
       if (!active || generationRef.current !== generation) return
-      const store = storeRef.current
       const conversationView = conversationViewRef.current
       setView((current) => {
         const base =
