@@ -613,6 +613,10 @@ async def test_message_command_rejects_attachment_reference_kind_mismatch(
         )
 
     assert response.status_code == 400
+    assert response.json()["error"]["code"] == "BAD_REQUEST"
+    assert response.json()["error"]["message"] == (
+        "directory_ref must reference a directory"
+    )
     dispatch.assert_not_awaited()
 
 
