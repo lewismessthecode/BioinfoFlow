@@ -493,7 +493,12 @@ export function AgentPageContent({
         role="status"
       >
         {routeResolutionState === "loading"
-          ? t("loadErrorDescription")
+          ? (
+              <>
+                <span>{t("routeLoading.title")}</span>
+                <span>{t("routeLoading.description")}</span>
+              </>
+            )
           : t("loadErrorTitle")}
       </div>
     )

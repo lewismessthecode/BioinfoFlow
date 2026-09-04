@@ -2573,6 +2573,10 @@
     },
     "loadErrorTitle": "Conversation unavailable",
     "loadErrorDescription": "The conversation could not be loaded.",
+    "routeLoading": {
+      "title": "Loading conversation",
+      "description": "Resolving conversation access and workspace scope."
+    },
     "retry": "Try again",
     "readOnly": {
       "archived": "This conversation is archived and can only be reviewed.",
