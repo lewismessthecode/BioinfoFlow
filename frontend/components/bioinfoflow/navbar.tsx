@@ -1,8 +1,9 @@
 "use client"
 
 import { useTransition } from "react"
-import { Globe, Menu, Moon, MoreHorizontal, PartyPopper, Sun } from "@/lib/icons"
+import { Globe, Menu, Moon, MoreHorizontal, PartyPopper, Settings, Sun } from "@/lib/icons"
 import { useLocale, useTranslations } from "next-intl"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { getNextAppearanceMode, useAppearance } from "@/lib/appearance/use-appearance"
 import {
@@ -48,12 +49,14 @@ export function Navbar({
   conversationTitle,
   connectionState,
 }: NavbarProps) {
+  const router = useRouter()
   const { mode, resolvedMode, setMode } = useAppearance()
   const locale = useLocale()
   const [localePending, startLocaleTransition] = useTransition()
   const tAccessibility = useTranslations("accessibility")
   const tCelebrations = useTranslations("celebrations")
   const tLanguage = useTranslations("language")
+  const tUserMenu = useTranslations("userMenu")
   const celebrationsEnabled = useCelebrationsEnabledPreference()
   const reducedMotion = useReducedMotionPreference()
   const handleLocaleChange = (nextLocale: Locale) => {
@@ -116,6 +119,10 @@ export function Navbar({
             <DropdownMenuLabel className="px-2 py-1 text-xs font-medium text-muted-foreground">
               {tAccessibility("morePreferences")}
             </DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => router.push("/settings")}>
+              <Settings className="h-4 w-4" />
+              {tUserMenu("settings")}
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setMode(getNextAppearanceMode(mode, resolvedMode))}>
               <span className="relative h-4 w-4 shrink-0">
                 <Sun className="absolute h-4 w-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />

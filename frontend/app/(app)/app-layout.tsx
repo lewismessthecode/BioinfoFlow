@@ -30,6 +30,7 @@ import {
   useTerminalDock,
 } from "@/components/bioinfoflow/terminal/terminal-dock-context"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { Toaster } from "@/components/ui/sonner"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useIsMobile } from "@/hooks/use-media-query"
@@ -377,7 +378,7 @@ function WorkspaceNavbarActions() {
 }
 
 function TerminalNavbarAction({ label }: { label: string }) {
-  const { enabled, toggleTerminal } = useTerminalDock()
+  const { enabled, isOpen, toggleTerminal } = useTerminalDock()
 
   if (!enabled) return null
 
@@ -385,9 +386,14 @@ function TerminalNavbarAction({ label }: { label: string }) {
     <Button
       variant="ghost"
       size="icon"
-      className="h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
+      className={cn(
+        "h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground",
+        isOpen && "bg-accent text-foreground",
+      )}
       onClick={toggleTerminal}
       aria-label={label}
+      aria-pressed={isOpen}
+      data-navbar-action="terminal"
     >
       <TerminalSquare className="h-4 w-4" />
     </Button>

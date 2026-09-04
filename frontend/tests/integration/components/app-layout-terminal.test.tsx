@@ -201,12 +201,17 @@ describe("AppLayout terminal integration", () => {
 
     const toggle = await screen.findByRole("button", { name: "accessibility.openTerminal" })
     expect(screen.getByTestId("terminal-dock")).toHaveTextContent("closed")
+    expect(toggle).toHaveAttribute("aria-pressed", "false")
+    expect(toggle).toHaveAttribute("data-navbar-action", "terminal")
+    expect(toggle).not.toHaveClass("bg-accent", "text-foreground")
 
     fireEvent.click(toggle)
 
     await waitFor(() => {
       expect(screen.getByTestId("terminal-dock")).toHaveTextContent("open")
     })
+    expect(toggle).toHaveAttribute("aria-pressed", "true")
+    expect(toggle).toHaveClass("bg-accent", "text-foreground")
   })
 
   it("does not restore a previously open terminal dock automatically", async () => {

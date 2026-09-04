@@ -58,6 +58,7 @@ vi.mock("next-intl", () => ({
         "toasts.keyboardShortcutsHint": "Keyboard shortcuts",
         keyboardShortcuts: "Keyboard Shortcuts",
         helpDocs: "Help Docs",
+        settings: "Settings",
         signOut: "Sign Out",
         "roles.owner": "Owner",
       },
@@ -194,6 +195,15 @@ describe("Navbar", () => {
     await user.click(screen.getByRole("button", { name: "Toggle theme" }))
 
     expect(setModeMock).toHaveBeenCalledWith("dark")
+  })
+
+  it("opens Settings from the More preferences menu", async () => {
+    const user = userEvent.setup()
+    render(<Navbar viewer={AUTH_VIEWER} />)
+
+    await user.click(screen.getByRole("button", { name: "Settings" }))
+
+    expect(pushMock).toHaveBeenCalledWith("/settings")
   })
 
   it("calls the sidebar toggle when the hamburger button is shown", async () => {
