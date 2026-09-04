@@ -61,7 +61,10 @@ Record every item below as passed for the same candidate commit:
 - [ ] managed project inputs/results, workflow sources, and shared sources are
   restored; and
 - [ ] every external-local project root has a separately verified backup at
-  its recorded absolute path.
+  its recorded absolute path; and
+- [ ] after a failed upgrade, restoring the 0.2.0 snapshot leaves the database
+  at `0058_remove_container_registry_default`, and the previous release can
+  start and read the restored data without running candidate migrations.
 
 The automated gate creates no release and changes no production data. After all
 automated checks pass, stop and wait for the maintainer's manual UI and data

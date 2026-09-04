@@ -145,8 +145,11 @@ If a release upgrade or its startup/health checks fail:
    migrations intentionally have no safe downgrade.
 3. Restore the complete home and any external-local project roots at their
    recorded absolute paths, then restart the previous release.
-4. For a bare-metal backend, run `uv run alembic upgrade head` only after the
-   restored state is in place and before starting that backend.
+4. For a bare-metal backend, use the previous release's checkout or binary for
+   any migration command. Do not run the current candidate's `alembic upgrade
+   head` against a restored 0.2.0 snapshot: the previous release must start from
+   its own schema revision (for 0.2.0, `0058_remove_container_registry_default`)
+   and must be able to read the restored data before any new upgrade is attempted.
 
 The repeatable automated evidence gate uses only pytest temporary directories:
 

@@ -177,6 +177,34 @@ def test_representative_020_sqlite_clone_upgrades_to_head(tmp_path: Path) -> Non
     assert deleted_session is None
 
 
+def test_restored_020_snapshot_stays_at_previous_release_revision(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "bioinfoflow-home"
+    db_path = home / "state" / "bioinfoflow.db"
+    ids = _seed_release_020_clone(db_path)
+    backup = tmp_path / "bioinfoflow-home-020-backup"
+    shutil.copytree(home, backup)
+
+    upgraded = _run_alembic(db_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr or upgraded.stdout
+
+    shutil.rmtree(home)
+    shutil.copytree(backup, home)
+
+    with sqlite3.connect(db_path) as connection:
+        revision = connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone()
+        session = connection.execute(
+            "SELECT title FROM agent_sessions WHERE id = ?",
+            (ids["session"],),
+        ).fetchone()
+
+    assert revision == (RELEASE_020_HEAD,)
+    assert session == ("0.2 session",)
+
+
 def _seed_current_home(home: Path) -> dict[str, str | bytes | Path]:
     state = home / "state"
     platform_db = state / "bioinfoflow.db"
