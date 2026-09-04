@@ -19,7 +19,11 @@ from app.database import Base, stamp_database_revision
 from app.main import app as fastapi_app
 from tests.support.path_contract import create_project
 from tests.support.auth import TEST_SESSION_COOKIE, create_better_auth_db
-from app.services.terminal_service import terminal_manager
+from app.services.terminal_service import (
+    TerminalSubscriberQueue,
+    terminal_manager,
+)
+from app.api.v1.terminal import _send_terminal_messages
 
 
 async def _prepare_database(engine) -> None:
@@ -91,6 +95,23 @@ class _ThreadsafeRemoteTerminalTransport:
         assert self.loop is not None
         assert self.output is not None
         self.loop.call_soon_threadsafe(self.output.put_nowait, data)
+
+
+class _DelayedWebSocket:
+    def __init__(self) -> None:
+        self.send_started = asyncio.Event()
+        self.release_send = asyncio.Event()
+        self.sent: list[dict] = []
+        self.close_calls: list[tuple[int, str]] = []
+
+    async def send_json(self, message: dict) -> None:
+        if message["type"] == "output":
+            self.send_started.set()
+            await self.release_send.wait()
+        self.sent.append(message)
+
+    async def close(self, *, code: int, reason: str) -> None:
+        self.close_calls.append((code, reason))
 
 
 @pytest.fixture
@@ -180,6 +201,87 @@ def test_terminal_websocket_streams_io_and_single_cwd_event(
                 break
 
         assert cwd_count == 1
+
+
+def test_terminal_websocket_closes_when_pty_exits(
+    terminal_test_client,
+    tmp_path: Path,
+):
+    client, session_maker = terminal_test_client
+    project = asyncio.run(
+        _create_project(
+            session_maker,
+            name="Terminal Exit Project",
+            storage_mode="external",
+            external_root_path=str(tmp_path),
+        )
+    )
+    created = client.post(
+        "/api/v1/terminal/sessions",
+        json={"project_id": str(project.id)},
+    )
+    session_id = created.json()["data"]["id"]
+
+    with client.websocket_connect(
+        f"/api/v1/terminal/sessions/{session_id}/ws"
+    ) as websocket:
+        assert websocket.receive_json()["type"] == "ready"
+        assert websocket.receive_json()["type"] == "cwd"
+        websocket.send_json({"type": "input", "data": "exit\n"})
+        assert _receive_until(websocket, "exit")["type"] == "exit"
+        with pytest.raises(WebSocketDisconnect) as disconnect:
+            websocket.receive_json()
+        assert disconnect.value.code == 1000
+
+
+def test_terminal_websocket_delivers_path_error_before_closing(
+    terminal_test_client,
+    tmp_path: Path,
+):
+    client, session_maker = terminal_test_client
+    project = asyncio.run(
+        _create_project(
+            session_maker,
+            name="Terminal Path Error Project",
+            storage_mode="external",
+            external_root_path=str(tmp_path),
+        )
+    )
+    created = client.post(
+        "/api/v1/terminal/sessions",
+        json={"project_id": str(project.id)},
+    )
+    session_id = created.json()["data"]["id"]
+
+    with client.websocket_connect(
+        f"/api/v1/terminal/sessions/{session_id}/ws"
+    ) as websocket:
+        assert websocket.receive_json()["type"] == "ready"
+        assert websocket.receive_json()["type"] == "cwd"
+        websocket.send_json({"type": "chdir", "path": "../outside"})
+        error = websocket.receive_json()
+        assert error == {"type": "error", "message": "Path escapes project workspace"}
+        with pytest.raises(WebSocketDisconnect) as disconnect:
+            websocket.receive_json()
+        assert disconnect.value.code == 1008
+
+
+@pytest.mark.asyncio
+async def test_terminal_websocket_delivers_exit_after_delayed_send_is_preempted():
+    queue = TerminalSubscriberQueue(maxsize=8)
+    websocket = _DelayedWebSocket()
+    queue.put_nowait({"type": "output", "data": "slow"})
+
+    sender = asyncio.create_task(_send_terminal_messages(websocket, queue))
+    await asyncio.wait_for(websocket.send_started.wait(), timeout=1)
+
+    queue.put_nowait({"type": "exit", "exit_code": 0})
+    queue.close("exit")
+
+    await asyncio.wait_for(sender, timeout=1)
+
+    assert websocket.sent == [{"type": "exit", "exit_code": 0}]
+    assert websocket.close_calls == [(1000, "Terminal exited")]
 
 
 def test_remote_terminal_websocket_streams_io_and_client_actions(
