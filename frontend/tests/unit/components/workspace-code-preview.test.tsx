@@ -1,43 +1,51 @@
 import { render, screen, waitFor } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
-
-const { codeToHtml } = vi.hoisted(() => ({
-  codeToHtml: vi.fn(
-    async (content: string, options: { lang: string }) =>
-      `<pre class="shiki" data-shiki-language="${options.lang}"><code>${content}</code></pre>`,
-  ),
-}))
-
-vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string) =>
-    key === "codePreview.wdlFallback"
-      ? "WDL syntax highlighting uses Scala fallback"
-      : key,
-}))
-vi.mock("shiki", () => ({ codeToHtml }))
+import { describe, expect, it } from "vitest"
 
 import { WorkspaceCodePreview } from "@/components/bioinfoflow/workspace-code-preview"
 
 describe("WorkspaceCodePreview", () => {
-  it("uses an explicit Scala fallback for WDL", async () => {
-    render(
+  it("uses the real Shiki grammar to highlight WDL keywords", async () => {
+    const { rerender } = render(
+      <WorkspaceCodePreview content={'{"status":"ready"}'} path="status.json" />,
+    )
+    const preview = screen.getByTestId("workspace-code-preview")
+
+    await waitFor(() => {
+      expect(preview.querySelector(".shiki")).not.toBeNull()
+    })
+
+    rerender(
       <WorkspaceCodePreview
-        path="workflows/main.wdl"
-        content="workflow hello {}"
+        content={[
+          "version 1.1",
+          "workflow align_reads {",
+          "  call bwa_mem",
+          "}",
+        ].join("\n")}
+        path="workflows/align_reads.wdl"
       />,
     )
 
-    const preview = screen.getByTestId("workspace-code-preview")
-    expect(preview).toHaveAttribute("data-language", "wdl")
-    expect(preview).toHaveAttribute("data-highlight-language", "scala")
-    expect(preview).toHaveAccessibleName(
-      "WDL syntax highlighting uses Scala fallback",
+    await waitFor(() => {
+      expect(preview.querySelector(".shiki")).toHaveTextContent(
+        "workflow align_reads",
+      )
+    })
+
+    const workflowToken = Array.from(
+      preview.querySelectorAll(".shiki span"),
+    ).find((token) => token.textContent === "workflow")
+    const callToken = Array.from(preview.querySelectorAll(".shiki span")).find(
+      (token) => token.textContent?.trim() === "call",
     )
-    await waitFor(() =>
-      expect(codeToHtml).toHaveBeenCalledWith(
-        "workflow hello {}",
-        expect.objectContaining({ lang: "scala" }),
-      ),
+
+    expect(workflowToken).toHaveAttribute(
+      "style",
+      "color:#D73A49;--shiki-dark:#F97583",
+    )
+    expect(callToken).toHaveAttribute(
+      "style",
+      "color:#D73A49;--shiki-dark:#F97583",
     )
   })
 })
