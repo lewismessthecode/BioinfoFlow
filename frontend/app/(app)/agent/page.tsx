@@ -29,7 +29,7 @@ import {
 } from "@/hooks/use-agent-panel-controller"
 import type { DagData, Run } from "@/lib/types"
 import { ResizeHandle } from "@/components/ui/resize-handle"
-import { useMediaQuery } from "@/hooks/use-media-query"
+import { useIsMobile } from "@/hooks/use-media-query"
 import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard-shortcuts-overlay"
 import type { ConversationSummary } from "@/lib/agent/conversation-model/types"
 import {
@@ -62,16 +62,11 @@ export function AgentPageContent({
 }) {
   const t = useTranslations("agentWorkbench")
   const tAccessibility = useTranslations("accessibility")
-<<<<<<< HEAD
   const isMobile = useIsMobile()
   const {
     setNavbarActions,
     projectConversations,
   } = useWorkspaceShell()
-=======
-  const workspaceUsesSheet = useMediaQuery("(max-width: 1279px)")
-  const { setNavbarActions } = useWorkspaceShell()
->>>>>>> c894fc32b (fix: make agent workspace actions responsive)
   const chatRef = useRef<AgentWorkbenchHandle>(null)
   const {
     selectedProjectId,
@@ -145,6 +140,15 @@ export function AgentPageContent({
   const visibleDag = hasCurrentState ? dag : null
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setSelectedRun(null)
+    setFocusedRunId(null)
+    setFocusedArtifactId(null)
+    setDag(null)
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [routeSessionId])
+
+  useEffect(() => {
     if (!routeSessionId || projectConversations === undefined) return
     let cancelled = false
     void listAgentSessions({ includeArchived: true })
@@ -169,15 +173,6 @@ export function AgentPageContent({
       cancelled = true
     }
   }, [projectConversations, routeSessionId])
-
-  useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect */
-    setSelectedRun(null)
-    setFocusedRunId(null)
-    setFocusedArtifactId(null)
-    setDag(null)
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, [routeSessionId])
 
   useEffect(() => {
     setActiveConversationId(routeSessionId ?? "")
@@ -208,7 +203,6 @@ export function AgentPageContent({
     updatePanelPreferences,
   ])
 
-<<<<<<< HEAD
   const closeMobileLiveDeck = useCallback(() => {
     ensurePanelFocusReturn()
     setMobileOpen(false)
@@ -320,25 +314,6 @@ export function AgentPageContent({
     rightSidebarCollapsed,
     t,
   ])
-=======
-  const toggleWorkspacePanel = useCallback(() => {
-    if (workspaceUsesSheet) setMobileLiveDeckOpen((prev) => !prev)
-    else setRightSidebarCollapsed((prev) => !prev)
-  }, [workspaceUsesSheet])
-  const panelOpen = workspaceUsesSheet ? mobileLiveDeckOpen : !rightSidebarCollapsed
-  const openWorkspaceTab = useCallback(
-    (tab: AgentWorkspaceTab) => {
-      setLiveDeckTab(tab)
-      if (workspaceUsesSheet) setMobileLiveDeckOpen(true)
-      else setRightSidebarCollapsed(false)
-    },
-    [workspaceUsesSheet],
-  )
-  const closeWorkspacePanel = useCallback(() => {
-    if (workspaceUsesSheet) setMobileLiveDeckOpen(false)
-    else setRightSidebarCollapsed(true)
-  }, [workspaceUsesSheet])
->>>>>>> c894fc32b (fix: make agent workspace actions responsive)
 
   useEffect(() => {
     if (!effectiveProjectId) {
@@ -355,25 +330,10 @@ export function AgentPageContent({
 
     return () => setNavbarActions(null)
   }, [
-<<<<<<< HEAD
     actionCommandPort,
     actionModels,
     effectiveProjectId,
     setNavbarActions,
-=======
-    liveDeckTab,
-    openWorkspaceTab,
-    closeWorkspacePanel,
-    panelOpen,
-    rightSidebarCollapsed,
-    selectedProjectId,
-    setNavbarActions,
-    toggleWorkspacePanel,
-    t,
-    tAccessibility,
-    tWorkspace,
-    workspaceUsesSheet,
->>>>>>> c894fc32b (fix: make agent workspace actions responsive)
   ])
 
   const handleRunSelect = useCallback((run: Run | null) => {
@@ -390,7 +350,6 @@ export function AgentPageContent({
       setSelectedRun(null)
       setFocusedRunId(runId)
       setDag(null)
-<<<<<<< HEAD
       if (isMobile) {
         setMobileOpen(true)
         updatePanelPreferences({ activeTab: "dag" })
@@ -399,13 +358,6 @@ export function AgentPageContent({
       }
     },
     [isMobile, recordFocusReturn, setMobileOpen, stateIdentity, updatePanelPreferences],
-=======
-      setLiveDeckTab("dag")
-      if (workspaceUsesSheet) setMobileLiveDeckOpen(true)
-      else setRightSidebarCollapsed(false)
-    },
-    [workspaceUsesSheet],
->>>>>>> c894fc32b (fix: make agent workspace actions responsive)
   )
 
   const openReferencedArtifact = useCallback(
@@ -416,7 +368,6 @@ export function AgentPageContent({
       setDag(null)
       setActiveStateIdentity(stateIdentity)
       setFocusedArtifactId(artifactId)
-<<<<<<< HEAD
       if (isMobile) {
         setMobileOpen(true)
         updatePanelPreferences({ activeTab: "artifacts" })
@@ -435,13 +386,6 @@ export function AgentPageContent({
       setFocusedArtifactId(artifactId)
     },
     [stateIdentity],
-=======
-      setLiveDeckTab("artifacts")
-      if (workspaceUsesSheet) setMobileLiveDeckOpen(true)
-      else setRightSidebarCollapsed(false)
-    },
-    [workspaceUsesSheet],
->>>>>>> c894fc32b (fix: make agent workspace actions responsive)
   )
 
   const [showShortcuts, setShowShortcuts] = useState(false)
@@ -593,7 +537,6 @@ export function AgentPageContent({
         />
       )}
 
-<<<<<<< HEAD
       {isMobile && effectiveProjectId ? (
         <Sheet
           open={mobileLiveDeckOpen}
@@ -602,10 +545,6 @@ export function AgentPageContent({
             else closeMobileLiveDeck()
           }}
         >
-=======
-      {workspaceUsesSheet && selectedProjectId ? (
-        <Sheet open={mobileLiveDeckOpen} onOpenChange={setMobileLiveDeckOpen}>
->>>>>>> c894fc32b (fix: make agent workspace actions responsive)
           <SheetContent
             side="right"
             closeLabel={t("workspacePanel.close")}
@@ -636,11 +575,7 @@ export function AgentPageContent({
         </Sheet>
       ) : null}
 
-<<<<<<< HEAD
       {!isMobile && effectiveProjectId && !rightSidebarCollapsed ? (
-=======
-      {!workspaceUsesSheet && selectedProjectId && !rightSidebarCollapsed ? (
->>>>>>> c894fc32b (fix: make agent workspace actions responsive)
         <div
           ref={railRef}
           data-testid="agent-live-deck-rail"
