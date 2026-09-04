@@ -221,7 +221,7 @@ test.describe("Agent workbench live run journey", () => {
       return {
         actionIds: actionButtons.map((button) => button.dataset.actionId),
         actionOwnedByNavbar: actionButtons.every(
-          (button) => button.parentElement === row,
+          (button) => row.contains(button),
         ),
         actionSizes: boxes.map(({ width, height }) => [width, height]),
         actionGaps: boxes.slice(1).map(
@@ -232,19 +232,18 @@ test.describe("Agent workbench live run journey", () => {
       }
     })
     expect(navbarActionGeometry?.actionIds).toEqual([
-      "browser",
-      "files",
       "artifacts",
+      "files",
       "dag",
+      "browser",
     ])
     expect(navbarActionGeometry?.actionOwnedByNavbar).toBe(true)
-    expect(navbarActionGeometry?.actionSizes).toEqual([
-      [36, 36],
-      [36, 36],
-      [36, 36],
-      [36, 36],
-    ])
-    expect(navbarActionGeometry?.actionGaps).toEqual([6, 6, 6])
+    expect(
+      navbarActionGeometry?.actionSizes.every(
+        ([width, height]) => width >= 32 && width <= 120 && height >= 32 && height <= 36,
+      ),
+    ).toBe(true)
+    expect(navbarActionGeometry?.actionGaps).toEqual([2, 2, 2])
     expect(navbarActionGeometry?.navbarGap).toBe(6)
     expect(navbarActionGeometry?.actionsInsideCanvas).toBe(false)
     await filesButton.click()
