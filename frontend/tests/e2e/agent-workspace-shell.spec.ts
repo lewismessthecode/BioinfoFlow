@@ -165,16 +165,16 @@ test.describe("Agent workspace shell", () => {
       page.getByRole("button", { name: "More preferences", exact: true }),
     ).toBeVisible()
     await expect(
-      page.getByRole("button", { name: "Open browser", exact: true }),
+      page.getByRole("button", { name: "Browser", exact: true }),
     ).toBeVisible()
     await expect(
-      page.getByRole("button", { name: "Open files", exact: true }),
+      page.getByRole("button", { name: "Files", exact: true }),
     ).toBeVisible()
     await expect(
-      page.getByRole("button", { name: "Open artifacts", exact: true }),
+      page.getByRole("button", { name: "Artifacts", exact: true }),
     ).toBeVisible()
     await expect(
-      page.getByRole("button", { name: "Open DAG", exact: true }),
+      page.getByRole("button", { name: "DAG", exact: true }),
     ).toBeVisible()
     await expect(page.getByText(/Subagents/i)).toHaveCount(0)
     const viewport = page.viewportSize()
@@ -207,6 +207,26 @@ test.describe("Agent workspace shell", () => {
       ? page.getByRole("dialog")
       : page.getByTestId("agent-live-deck-rail")
     await selectSeededWorkspaceFile(page)
+    const workspaceActions = page.getByTestId("agent-workspace-action-group")
+    const selectedFileTab = workspaceActions.getByTestId("agent-action-file")
+    await expect(selectedFileTab).toHaveRole("tab")
+    await expect(selectedFileTab).toHaveAccessibleName("rnaseq.wdl")
+    await expect(selectedFileTab).toHaveAttribute("aria-selected", "true")
+    expect(
+      await workspaceActions
+        .locator("[data-workspace-action]")
+        .evaluateAll((actions) =>
+          actions.map((action) => action.getAttribute("data-workspace-action")),
+        ),
+    ).toEqual(["artifacts", "files", "file", "dag", "browser", "panel"])
+    await expect(openSurface.getByTestId("live-deck-tab-bar")).toHaveCount(0)
+    await expect(openSurface.getByRole("tab")).toHaveCount(0)
+    await expect(
+      openSurface.getByRole("button", { name: "Hide panel", exact: true }),
+    ).toHaveCount(0)
+    await expect(openSurface.getByTestId("workspace-editor-file-header")).toHaveCount(
+      0,
+    )
     await expect(page).toHaveScreenshot(
       `agent-workspace-shell-${viewport.width}x${viewport.height}-populated.png`,
       {
@@ -228,11 +248,10 @@ test.describe("Agent workspace shell", () => {
     )
     if (!isCompact) {
       const rail = page.getByTestId("agent-live-deck-rail")
-      const tabBar = page.getByTestId("live-deck-tab-bar")
       const workspaceHeader = page.getByTestId("workspace-panel-header")
       const fileTree = page.getByTestId("workspace-file-tree")
       await expect(rail).toHaveAttribute("data-width", "400")
-      expect((await tabBar.boundingBox())?.height).toBe(44)
+      await expect(page.getByTestId("live-deck-tab-bar")).toHaveCount(0)
       expect((await workspaceHeader.boundingBox())?.height).toBe(40)
       const railBox = await rail.boundingBox()
       const treeBox = await fileTree.boundingBox()
@@ -306,20 +325,18 @@ test.describe("Agent workspace shell", () => {
       await expect(page.getByTestId("agent-live-deck-rail")).toBeVisible()
     }
     await expect(liveDeck).toBeVisible()
-    for (const tabName of ["Files", "Workflow", "Artifacts", "Browser"]) {
-      await expect(liveDeck.getByRole("tab", { name: tabName })).toBeVisible()
-    }
-    await expect(liveDeck.getByRole("tab", { name: "Files" })).toHaveAttribute(
-      "data-state",
-      "active",
-    )
+    await expect(liveDeck.getByTestId("live-deck-tab-bar")).toHaveCount(0)
+    await expect(liveDeck.getByRole("tab")).toHaveCount(0)
+    await expect(
+      liveDeck.getByRole("button", { name: "Hide panel", exact: true }),
+    ).toHaveCount(0)
     await expect(filesButton).toHaveAttribute("aria-pressed", "true")
 
-    for (const [actionId, tabName] of [
-      ["browser", "Browser"],
-      ["artifacts", "Artifacts"],
-      ["dag", "Workflow"],
-      ["files", "Files"],
+    for (const [actionId, surface] of [
+      ["browser", liveDeck.getByRole("region", { name: "Built-in browser" })],
+      ["artifacts", liveDeck.getByRole("region", { name: "Agent artifacts" })],
+      ["dag", liveDeck.locator(".react-flow")],
+      ["files", liveDeck.getByRole("region", { name: "Project file browser" })],
     ] as const) {
       if (isCompact) {
         await page.keyboard.press("Escape")
@@ -328,10 +345,8 @@ test.describe("Agent workspace shell", () => {
       const action = page.getByTestId(`agent-action-${actionId}`)
       await action.click()
       await expect(action).toHaveAttribute("aria-pressed", "true")
-      await expect(liveDeck.getByRole("tab", { name: tabName })).toHaveAttribute(
-        "data-state",
-        "active",
-      )
+      await expect(surface).toBeVisible()
+      await expect(liveDeck.getByRole("tab")).toHaveCount(0)
       for (const otherActionId of ["browser", "files", "artifacts", "dag"]) {
         if (otherActionId === actionId) continue
         await expect(page.getByTestId(`agent-action-${otherActionId}`)).toHaveAttribute(
@@ -353,14 +368,12 @@ test.describe("Agent workspace shell", () => {
       await filesButton.click()
       await expect(liveDeck).toBeVisible()
       await page
-        .getByTestId("live-deck-tab-bar")
-        .getByRole("button", { name: "Hide panel", exact: true })
+        .getByRole("button", { name: "Close workspace panel", exact: true })
         .click()
       await expect(liveDeck).toHaveCount(0)
-      await expect(filesButton).toBeFocused()
       await filesButton.click()
       await expect(liveDeck).toBeVisible()
-      await liveDeck.getByRole("tab", { name: "Files" }).focus()
+      await liveDeck.getByRole("textbox", { name: "Filter files..." }).focus()
       await page.keyboard.press("Escape")
       await expect(liveDeck).toHaveCount(0)
       await expect(filesButton).toBeFocused()
@@ -376,24 +389,27 @@ test.describe("Agent workspace shell", () => {
       await page.keyboard.press("Control+Shift+b")
       await expect(page.getByRole("dialog")).toBeVisible()
       await expect(filesButton).toHaveAttribute("aria-pressed", "true")
-      await liveDeck.getByRole("tab", { name: "Files" }).focus()
+      await liveDeck.getByRole("textbox", { name: "Filter files..." }).focus()
       await page.keyboard.press("Control+Shift+b")
       await expect(page.getByRole("dialog")).toHaveCount(0)
       await expect(filesButton).toBeFocused()
 
-      await filesButton.click()
+      const artifactsButton = page.getByTestId("agent-action-artifacts")
+      await artifactsButton.click()
       const compactPanel = page.getByRole("dialog")
       await expect(compactPanel).toBeVisible()
-      await compactPanel.getByRole("tab", { name: "Artifacts" }).click()
       await expect(
-        compactPanel.getByRole("tab", { name: "Artifacts" }),
-      ).toHaveAttribute("data-state", "active")
+        compactPanel.getByRole("region", { name: "Agent artifacts" }),
+      ).toBeVisible()
+      await expect(compactPanel.getByRole("tab")).toHaveCount(0)
+      await expect(artifactsButton).toHaveAttribute("aria-pressed", "true")
       await page.reload()
       const reloadedCompactPanel = page.getByRole("dialog")
       await expect(reloadedCompactPanel).toBeVisible()
       await expect(
-        reloadedCompactPanel.getByRole("tab", { name: "Artifacts" }),
-      ).toHaveAttribute("data-state", "active")
+        reloadedCompactPanel.getByRole("region", { name: "Agent artifacts" }),
+      ).toBeVisible()
+      await expect(reloadedCompactPanel.getByRole("tab")).toHaveCount(0)
       await expect(page.getByTestId("agent-action-artifacts")).toHaveAttribute(
         "aria-pressed",
         "true",
@@ -445,12 +461,12 @@ test.describe("Agent workspace shell", () => {
       await expect(
         page.getByRole("separator", { name: "Resize workspace panel" }),
       ).toHaveAttribute("aria-valuenow", "300")
-      await expect(liveDeck.getByRole("tab", { name: "Files" })).toHaveAttribute(
-        "data-state",
-        "active",
-      )
+      await expect(
+        liveDeck.getByRole("region", { name: "Project file browser" }),
+      ).toBeVisible()
+      await expect(liveDeck.getByRole("tab")).toHaveCount(0)
       await expect(filesButton).toHaveAttribute("aria-pressed", "true")
-      await liveDeck.getByRole("tab", { name: "Files" }).focus()
+      await liveDeck.getByRole("textbox", { name: "Filter files..." }).focus()
       await page.keyboard.press("Control+Shift+b")
       await expect(page.getByTestId("agent-live-deck-rail")).toHaveCount(0)
       await expect(filesButton).toBeFocused()
@@ -478,7 +494,10 @@ test.describe("Agent workspace shell", () => {
     if (isCompact) {
       await filesButton.click()
       await expect(liveDeck).toBeVisible()
-      await page.getByRole("button", { name: "Hide panel", exact: true }).click()
+      await page
+        .getByRole("dialog")
+        .getByRole("button", { name: "Close workspace panel", exact: true })
+        .click()
       await expect(liveDeck).toHaveCount(0)
     }
   })

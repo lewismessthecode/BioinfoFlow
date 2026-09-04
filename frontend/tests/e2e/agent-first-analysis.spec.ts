@@ -202,7 +202,7 @@ test.describe("Agent workbench live run journey", () => {
     await page.keyboard.press("Escape")
 
     const filesButton = page.getByRole("button", {
-      name: "Open files",
+      name: "Files",
     })
     await expect(filesButton).toBeVisible()
     await expect(page.getByRole("button", { name: "Open terminal" })).toBeVisible()
@@ -247,9 +247,18 @@ test.describe("Agent workbench live run journey", () => {
     expect(navbarActionGeometry?.navbarGap).toBe(6)
     expect(navbarActionGeometry?.actionsInsideCanvas).toBe(false)
     await filesButton.click()
-    await expect(page.getByRole("tab", { name: "Files" })).toBeVisible()
-    await expect(page.getByRole("tab", { name: "Workflow" })).toBeVisible()
-    await expect(page.getByRole("tab", { name: "Monitor" })).toHaveCount(0)
+    const liveDeck = page.getByRole("complementary", {
+      name: "Live workspace information",
+    })
+    await expect(liveDeck).toBeVisible()
+    await expect(
+      liveDeck.getByRole("region", { name: "Project file browser" }),
+    ).toBeVisible()
+    await expect(liveDeck.getByTestId("live-deck-tab-bar")).toHaveCount(0)
+    await expect(liveDeck.getByRole("tab")).toHaveCount(0)
+    await expect(
+      liveDeck.getByRole("button", { name: "Hide panel", exact: true }),
+    ).toHaveCount(0)
 
     await page.setViewportSize({ width: 390, height: 844 })
     await page.reload()
