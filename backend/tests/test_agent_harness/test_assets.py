@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.models.workspace import Workspace
 from app.path_layout import (
+    agent_artifact_root,
     agent_attachment_root,
     agent_attachments_root,
     agent_session_artifacts_root,
@@ -906,6 +907,51 @@ async def test_artifact_writer_publishes_a_declared_file_idempotently(
     assert media_type == "text/tab-separated-values"
     with pytest.raises(ConflictError, match="conflicts"):
         await writer({**declaration, "content": b"gene\tlog2fc\nTP53\t9.9\n"})
+
+
+@pytest.mark.asyncio
+async def test_declared_artifact_preserves_durable_state_when_refresh_fails(
+    db_session, monkeypatch
+) -> None:
+    session = await _session(db_session)
+    session_id = str(session.id)
+    repository = AgentHarnessRepository(db_session)
+    run = await create_agent_run(repository, session_id)
+    generation = await repository.claim_run(
+        str(run.id),
+        owner="worker-1",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    writer = AgentHarnessArtifactService(db_session).writer(
+        session_id=session_id,
+        run_id=str(run.id),
+        fence=RunFence(owner="worker-1", generation=generation),
+    )
+    declaration = {
+        "type": "published_file",
+        "declaration_id": "tool:refresh-fails",
+        "filename": "report.tsv",
+        "title": "Final report",
+        "mime_type": "text/tab-separated-values",
+        "content": b"gene\tcount\nTP53\t4\n",
+    }
+
+    async def fail_refresh(_artifact) -> None:
+        raise RuntimeError("refresh failed")
+
+    monkeypatch.setattr(db_session, "refresh", fail_refresh)
+
+    with pytest.raises(RuntimeError, match="refresh failed"):
+        await writer(declaration)
+
+    artifacts = await AgentHarnessArtifactRepository(db_session).list_for_session(
+        session_id
+    )
+    assert len(artifacts) == 1
+    artifact = artifacts[0]
+    assert (
+        agent_artifact_root(session_id, str(artifact.id)) / "report.tsv"
+    ).read_bytes() == declaration["content"]
 
 
 @pytest.mark.asyncio
