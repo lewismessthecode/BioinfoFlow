@@ -2,9 +2,10 @@
 
 ## Current state
 
-The rebased worktree is `codex/agent-ui-action-group`. The latest code commits
+The rebased worktree is `codex/agent-ui-action-group`. The latest code commit
 is `0c859b9` (`fix: resolve archived agent deep links`); this document is
-committed separately.
+committed separately. The current verification pass added no business-code
+changes.
 
 The implementation retains the four-action group (Browser, Files, Artifacts,
 and DAG), project/session/draft isolation, route-authoritative session panels,
@@ -53,9 +54,20 @@ No screenshot was updated at runtime during validation, and no
 Passing in this worktree:
 
 - Focused route/sidebar/terminal suite: 39 tests.
-- Full frontend Vitest: 183 of 187 files passed; 8 unrelated tests timed out
-  at five seconds under the parallel run (connections, workspace-shell,
-  create-project, and members-panel suites), so the full gate is not green.
+- Full frontend Vitest parallel run: 183 of 187 files passed; these 8 tests
+  timed out at five seconds: `workspace-shell-sidebar` project deletion,
+  four `connections-page` save/verification tests,
+  `create-project-dialog` remote project creation, and two `members-panel`
+  member creation/error tests. This is not full-green evidence.
+- Each affected file passed independently with one worker and no file
+  parallelism: workspace-shell-sidebar (5), connections-page (38),
+  create-project-dialog (9), and members-panel (3). Reproduction command:
+  `bun run test -- <file> --no-file-parallelism --maxWorkers=1`.
+- Complete stable serial Vitest passed: 187 files, 1049 tests, using
+  `bun run test -- --no-file-parallelism --maxWorkers=1`. The release
+  recommendation is to use this serial command in this constrained local
+  environment; the default parallel command remains susceptible to the
+  documented five-second resource contention timeouts.
 - `rtk bun run lint`
 - `rtk bun run lint:i18n`
 - `rtk bun run lint:dead-code`
