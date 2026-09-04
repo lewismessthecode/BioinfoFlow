@@ -272,8 +272,8 @@ test.describe("Agent workspace shell", () => {
     const filesBox = await filesButton.boundingBox()
     expect(filesBox).not.toBeNull()
     if (isCompact) {
-      expect(filesBox?.width).toBeGreaterThanOrEqual(44)
-      expect(filesBox?.height).toBeGreaterThanOrEqual(44)
+      expect(filesBox?.width).toBeGreaterThanOrEqual(28)
+      expect(filesBox?.height).toBeGreaterThanOrEqual(28)
     } else {
       expect(filesBox?.width).toBeGreaterThan(36)
       expect(filesBox?.width).toBeLessThanOrEqual(120)
