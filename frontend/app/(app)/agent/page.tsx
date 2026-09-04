@@ -12,9 +12,6 @@ import {
   type AgentWorkbenchHandle,
 } from "@/components/bioinfoflow/agent/agent-workbench"
 import {
-  type AgentActionId,
-} from "@/components/bioinfoflow/agent-action-group"
-import {
   AgentWorkspaceActionGroup,
   type AgentWorkspaceTab,
 } from "@/components/bioinfoflow/agent/agent-workspace-action-group"
@@ -43,12 +40,13 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-const LIVE_DECK_TAB_BY_ACTION: Record<AgentActionId, LiveDeckTab> = {
+const LIVE_DECK_TAB_BY_ACTION: Record<AgentWorkspaceTab, LiveDeckTab> = {
   browser: "browser",
   files: "workspace",
   artifacts: "artifacts",
   dag: "dag",
 }
+
 export default function AgentPage() {
   return <AgentPageContent routeSessionId={null} />
 }
@@ -225,7 +223,7 @@ export function AgentPageContent({
   ])
 
   const toggleAction = useCallback(
-    (actionId: AgentActionId) => {
+    (actionId: AgentWorkspaceTab) => {
       recordFocusReturn(actionId)
       const nextTab = LIVE_DECK_TAB_BY_ACTION[actionId]
       const isActive =
@@ -263,7 +261,7 @@ export function AgentPageContent({
 
   const openWorkspaceTab = useCallback(
     (tab: AgentWorkspaceTab) => {
-      toggleAction(tab as AgentActionId)
+      toggleAction(tab)
     },
     [toggleAction],
   )
@@ -603,4 +601,3 @@ export function AgentPageContent({
     </div>
   )
 }
-

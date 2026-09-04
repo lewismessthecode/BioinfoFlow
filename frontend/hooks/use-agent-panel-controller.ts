@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
 } from "react"
 import type { LiveDeckTab } from "@/components/bioinfoflow/live-deck"
-import type { AgentActionId } from "@/components/bioinfoflow/agent-action-group"
+import type { AgentWorkspaceTab } from "@/components/bioinfoflow/agent/agent-workspace-action-group"
 
 export const RIGHT_SIDEBAR_MIN = 300
 export const RIGHT_SIDEBAR_MAX = 600
@@ -148,7 +148,7 @@ function migratePanelPreferences(
 
 const getServerPanelPreferences = () => null
 
-const ACTION_BY_TAB: Partial<Record<LiveDeckTab, AgentActionId>> = {
+const ACTION_BY_TAB: Partial<Record<LiveDeckTab, AgentWorkspaceTab>> = {
   browser: "browser",
   workspace: "files",
   artifacts: "artifacts",
@@ -157,7 +157,7 @@ const ACTION_BY_TAB: Partial<Record<LiveDeckTab, AgentActionId>> = {
 
 type FocusReturn = {
   element: HTMLElement | null
-  actionId: AgentActionId | null
+  actionId: AgentWorkspaceTab | null
 }
 
 export function useAgentPanelController({
@@ -218,7 +218,7 @@ export function useAgentPanelController({
 
   const focusReturnRef = useRef<FocusReturn>({ element: null, actionId: null })
   const focusRestorePendingRef = useRef(false)
-  const recordFocusReturn = useCallback((actionId: AgentActionId | null) => {
+  const recordFocusReturn = useCallback((actionId: AgentWorkspaceTab | null) => {
     const activeElement = document.activeElement
     focusReturnRef.current = {
       element:
