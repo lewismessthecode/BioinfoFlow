@@ -21,7 +21,7 @@ def _imports(path: Path) -> set[str]:
 def test_production_harness_and_agent_api_do_not_import_agent_core() -> None:
     production_files = [
         *sorted((BACKEND_ROOT / "app/services/agent_harness").glob("*.py")),
-        BACKEND_ROOT / "app/api/v1/agent.py",
+        *sorted((BACKEND_ROOT / "app/api/v1").glob("agent*.py")),
     ]
 
     violations = {
@@ -45,6 +45,7 @@ def test_agent_loop_does_not_depend_on_agent_trace_implementation() -> None:
     assert not any(
         module.startswith("app.services.agent_trace") for module in _imports(loop_path)
     )
+
 
 def test_agent_harness_repository_does_not_import_presentation_projectors() -> None:
     """Public redaction belongs to the application/presentation seam, not SQL."""
@@ -110,3 +111,33 @@ def test_only_presentation_mutation_service_calls_presentation_mutations() -> No
             violations[str(path.relative_to(BACKEND_ROOT))] = calls
 
     assert violations == {}
+
+
+def test_artifact_storage_has_its_own_module_and_assets_is_compatibility_export() -> (
+    None
+):
+    """Attachment ingestion and artifact publication use separate seams."""
+
+    artifact_path = BACKEND_ROOT / "app/services/agent_harness/artifact_service.py"
+    assets_path = BACKEND_ROOT / "app/services/agent_harness/assets.py"
+    artifact_tree = ast.parse(artifact_path.read_text(encoding="utf-8"))
+    assets_tree = ast.parse(assets_path.read_text(encoding="utf-8"))
+
+    artifact_classes = {
+        node.name for node in artifact_tree.body if isinstance(node, ast.ClassDef)
+    }
+    assets_classes = {
+        node.name for node in assets_tree.body if isinstance(node, ast.ClassDef)
+    }
+
+    assert "AgentHarnessArtifactService" in artifact_classes
+    assert "AgentHarnessArtifactService" not in assets_classes
+
+    from app.services.agent_harness.artifact_service import (
+        AgentHarnessArtifactService as implementation,
+    )
+    from app.services.agent_harness.assets import (
+        AgentHarnessArtifactService as compatibility_export,
+    )
+
+    assert compatibility_export is implementation
