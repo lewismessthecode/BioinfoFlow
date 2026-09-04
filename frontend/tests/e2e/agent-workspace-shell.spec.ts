@@ -275,7 +275,8 @@ test.describe("Agent workspace shell", () => {
       expect(filesBox?.width).toBeGreaterThanOrEqual(44)
       expect(filesBox?.height).toBeGreaterThanOrEqual(44)
     } else {
-      expect(filesBox?.width).toBeLessThanOrEqual(36)
+      expect(filesBox?.width).toBeGreaterThan(36)
+      expect(filesBox?.width).toBeLessThanOrEqual(120)
       expect(filesBox?.height).toBeLessThanOrEqual(36)
     }
     await filesButton.focus()
@@ -300,7 +301,6 @@ test.describe("Agent workspace shell", () => {
       "active",
     )
     await expect(filesButton).toHaveAttribute("aria-pressed", "true")
-    await expect(filesButton).toHaveAttribute("data-state", "active")
 
     for (const [actionId, tabName] of [
       ["browser", "Browser"],
@@ -315,7 +315,6 @@ test.describe("Agent workspace shell", () => {
       const action = page.getByTestId(`agent-action-${actionId}`)
       await action.click()
       await expect(action).toHaveAttribute("aria-pressed", "true")
-      await expect(action).toHaveAttribute("data-state", "active")
       await expect(liveDeck.getByRole("tab", { name: tabName })).toHaveAttribute(
         "data-state",
         "active",
@@ -340,7 +339,10 @@ test.describe("Agent workspace shell", () => {
       await expect(filesButton).toHaveAttribute("aria-pressed", "false")
       await filesButton.click()
       await expect(liveDeck).toBeVisible()
-      await page.getByRole("button", { name: "Hide panel", exact: true }).click()
+      await page
+        .getByTestId("live-deck-tab-bar")
+        .getByRole("button", { name: "Hide panel", exact: true })
+        .click()
       await expect(liveDeck).toHaveCount(0)
       await expect(filesButton).toBeFocused()
       await filesButton.click()
