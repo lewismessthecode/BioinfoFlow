@@ -132,15 +132,17 @@ export function WorkspacePanel({
           throw error
         }
       } finally {
-        if (childControllersRef.current.get(node.path) === controller) {
+        if (
+          childControllersRef.current.get(node.path) === controller &&
+          generation === requestGenerationRef.current
+        ) {
           childControllersRef.current.delete(node.path)
+          setLoadingPaths((current) => {
+            const next = new Set(current)
+            next.delete(node.path)
+            return next
+          })
         }
-        setLoadingPaths((current) => {
-          if (generation !== requestGenerationRef.current) return current
-          const next = new Set(current)
-          next.delete(node.path)
-          return next
-        })
       }
     },
     [adapter, projectId],

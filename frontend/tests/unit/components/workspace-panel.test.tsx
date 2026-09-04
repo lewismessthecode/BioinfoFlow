@@ -260,4 +260,40 @@ describe("WorkspacePanel", () => {
     expect(screen.getByRole("button", { name: /README.md/i })).toBeInTheDocument()
     expect(screen.getAllByRole("button", { name: "Refresh files" })).toHaveLength(2)
   })
+
+  it("keeps the spinner for a replacement child request", async () => {
+    const adapter = createAdapter()
+    const first = deferred<WorkspaceFileNode[]>()
+    const replacement = deferred<WorkspaceFileNode[]>()
+    let childRequest = 0
+    vi.mocked(adapter.listFiles).mockImplementation(async ({ path }) => {
+      if (path === "results") {
+        childRequest += 1
+        return childRequest === 1 ? first.promise : replacement.promise
+      }
+      return [
+        { name: "results", path: "results", type: "directory", sizeBytes: null, modifiedAt: null },
+      ]
+    })
+
+    render(<WorkspacePanel projectId="project-a" adapter={adapter} />)
+    const results = await screen.findByRole("button", { name: /results/i })
+    await userEvent.click(results)
+    await waitFor(() => expect(childRequest).toBe(1))
+    await userEvent.click(results)
+    await userEvent.click(results)
+    await waitFor(() => expect(childRequest).toBe(2))
+
+    first.resolve([])
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /results/i }).querySelector(".animate-spin"))
+        .toBeInTheDocument(),
+    )
+
+    replacement.resolve([])
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /results/i }).querySelector(".animate-spin"))
+        .not.toBeInTheDocument(),
+    )
+  })
 })
