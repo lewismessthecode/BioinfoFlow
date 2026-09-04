@@ -27,6 +27,7 @@ vi.mock("@/lib/agent/stream", () => ({
 }))
 
 import { useAgentSession } from "@/hooks/use-agent-session"
+import type { ConversationViewModel } from "@/lib/agent/conversation-model/types"
 
 const timestamp = "2026-08-15T00:00:00Z"
 
@@ -99,6 +100,13 @@ function streamingSnapshot(): SessionSnapshot {
   }
 }
 
+function activeAssistantText(view: ConversationViewModel | null) {
+  const block = view?.transcript.find(
+    (item) => item.type === "message" && item.streaming,
+  )
+  return block?.type === "message" ? block.text : undefined
+}
+
 describe("useAgentSession", () => {
   beforeEach(() => {
     mocks.dispatchAgentCommand.mockReset()
@@ -132,16 +140,15 @@ describe("useAgentSession", () => {
       subscription.onConnectionChange("connected")
     })
 
-    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    await waitFor(() => expect(result.current.view?.conversation.id).toBe("session-1"))
     expect(result.current.isLoading).toBe(false)
     expect(result.current.connectionStatus).toBe("connected")
     expect(result.current.error).toBeNull()
-    expect(result.current.conversationView).toMatchObject({
+    expect(result.current.view).toMatchObject({
       conversation: { id: "session-1" },
       composer: { placement: "centered" },
       transcript: [],
     })
-    expect(result.current.view).toEqual(result.current.conversationView)
     expect(result.current.commands).toMatchObject({
       sendMessage: expect.any(Function),
       steer: expect.any(Function),
@@ -168,8 +175,8 @@ describe("useAgentSession", () => {
     })
 
     await waitFor(() => {
-      expect(result.current.session?.id).toBe("session-1")
-      expect(result.current.conversationView?.transcript).toEqual([
+      expect(result.current.view?.conversation.id).toBe("session-1")
+      expect(result.current.view?.transcript).toEqual([
         expect.objectContaining({
           type: "unknown",
           originalType: "harness.private",
@@ -218,7 +225,7 @@ describe("useAgentSession", () => {
     })
 
     await waitFor(() =>
-      expect(result.current.session?.title).toBe("Recovered live"),
+      expect(result.current.view?.conversation.title).toBe("Recovered live"),
     )
     expect(result.current.connectionStatus).toBe("connected")
     expect(result.current.error).toBeNull()
@@ -297,7 +304,7 @@ describe("useAgentSession", () => {
       expect(mocks.subscribeAgentEvents).toHaveBeenCalledTimes(2),
     )
     await waitFor(() =>
-      expect(result.current.session?.title).toBe("First recovery"),
+      expect(result.current.view?.conversation.title).toBe("First recovery"),
     )
   })
 
@@ -346,9 +353,7 @@ describe("useAgentSession", () => {
       })
     })
     await waitFor(() =>
-      expect(result.current.activeRun?.assistant_draft?.parts[0].text).toBe(
-        "Hello!",
-      ),
+      expect(activeAssistantText(result.current.view)).toBe("Hello!"),
     )
 
     act(() => {
@@ -366,7 +371,9 @@ describe("useAgentSession", () => {
 
     await waitFor(() => expect(mocks.getAgentSnapshot).toHaveBeenCalledTimes(2))
     expect(mocks.getAgentSnapshot).toHaveBeenLastCalledWith("session-1")
-    await waitFor(() => expect(result.current.session?.title).toBe("Recovered"))
+    await waitFor(() =>
+      expect(result.current.view?.conversation.title).toBe("Recovered"),
+    )
   })
 
   it("publishes a burst of assistant deltas once on the next animation frame", async () => {
@@ -418,15 +425,11 @@ describe("useAgentSession", () => {
     })
 
     expect(frames).toHaveLength(1)
-    expect(result.current.activeRun?.assistant_draft?.parts[0].text).toBe(
-      "Hello",
-    )
+    expect(activeAssistantText(result.current.view)).toBe("Hello")
 
     act(() => frames[0](16))
 
-    expect(result.current.activeRun?.assistant_draft?.parts[0].text).toBe(
-      "Hello!!!",
-    )
+    expect(activeAssistantText(result.current.view)).toBe("Hello!!!")
     vi.unstubAllGlobals()
   })
 
@@ -493,15 +496,15 @@ describe("useAgentSession", () => {
     })
     await waitFor(() => expect(result.current.isLoading).toBe(false))
 
-    const firstSendMessage = result.current.sendMessage
+    const firstSendMessage = result.current.commands.sendMessage
     rerender()
-    expect(result.current.sendMessage).toBe(firstSendMessage)
+    expect(result.current.commands.sendMessage).toBe(firstSendMessage)
 
     await act(async () => {
-      await result.current.sendMessage(parts)
-      await result.current.steer(parts)
-      await result.current.respond("interaction-1", response)
-      await result.current.cancel()
+      await result.current.commands.sendMessage(parts)
+      await result.current.commands.steer(parts)
+      await result.current.commands.respond("interaction-1", response)
+      await result.current.commands.cancel()
     })
 
     expect(mocks.dispatchAgentCommand).toHaveBeenNthCalledWith(
@@ -540,7 +543,7 @@ describe("useAgentSession", () => {
         command_id: expect.any(String),
       },
     )
-    expect(result.current.session?.title).toBe("Analysis")
+    expect(result.current.view?.conversation.title).toBe("Analysis")
   })
 
   it("applies an automatic command title without replacing newer live run state", async () => {
@@ -559,11 +562,11 @@ describe("useAgentSession", () => {
     act(() => {
       subscription.onEvent({ type: "snapshot", snapshot: liveSnapshot })
     })
-    await waitFor(() => expect(result.current.session?.title).toBeNull())
+    await waitFor(() => expect(result.current.view?.conversation.title).toBeNull())
 
     let pendingCommand!: Promise<void>
     act(() => {
-      pendingCommand = result.current.sendMessage([
+      pendingCommand = result.current.commands.sendMessage([
         { type: "text", text: "Inspect this workflow" },
       ])
       subscription.onEvent({
@@ -582,11 +585,8 @@ describe("useAgentSession", () => {
       await pendingCommand
     })
 
-    expect(result.current.session?.title).toBe("Workflow inspection")
-    expect(result.current.activeRun?.assistant_draft?.parts[0]).toMatchObject({
-      text: "Hello!",
-      end_offset: 6,
-    })
+    expect(result.current.view?.conversation.title).toBe("Workflow inspection")
+    expect(activeAssistantText(result.current.view)).toBe("Hello!")
   })
 
   it("waits for SSE authority after a permission update instead of applying the PATCH response", async () => {
@@ -602,20 +602,20 @@ describe("useAgentSession", () => {
     })
 
     await act(async () => {
-      await result.current.updatePermissionMode("full_access")
+      await result.current.commands.updatePermissionMode("full_access")
     })
 
     expect(mocks.updateAgentSession).toHaveBeenCalledWith("session-1", {
       permissionMode: "full_access",
     })
-    expect(result.current.session?.permission_mode).toBe("ask_dangerous")
+    expect(result.current.view?.composer.settings.permissionMode).toBe("ask_dangerous")
 
     const authoritative = snapshot("Authoritative")
     authoritative.session.permission_mode = "full_access"
     act(() => {
       subscription.onEvent({ type: "snapshot", snapshot: authoritative })
     })
-    expect(result.current.session?.permission_mode).toBe("full_access")
+    expect(result.current.view?.composer.settings.permissionMode).toBe("full_access")
   })
 
   it("patches sticky model and environment settings while retaining SSE as authority", async () => {
@@ -639,13 +639,13 @@ describe("useAgentSession", () => {
     const subscription = mocks.subscribeAgentEvents.mock.calls[0][0]
 
     await act(async () => {
-      await result.current.updateModel({
+      await result.current.commands.updateModel({
         provider: "provider-2",
         model: "claude-sonnet",
       })
-      await result.current.updateEnvironmentScope({
+      await result.current.commands.updateEnvironmentScope({
         mode: "manual",
-        selected_environment_ids: ["local", "gpu-01"],
+        environmentIds: ["local", "gpu-01"],
       })
     })
 
@@ -658,19 +658,19 @@ describe("useAgentSession", () => {
         selected_environment_ids: ["local", "gpu-01"],
       },
     })
-    expect(result.current.session?.model.model).toBe("gpt-5.6")
-    expect(result.current.session?.environment_scope).toEqual({
+    expect(result.current.view?.composer.settings.model.model).toBe("gpt-5.6")
+    expect(result.current.view?.composer.settings.environmentScope).toEqual({
       mode: "auto",
-      environment_ids: null,
+      environmentIds: [],
     })
 
     act(() => {
       subscription.onEvent({ type: "snapshot", snapshot: patchResponse })
     })
-    expect(result.current.session?.model.model).toBe("claude-sonnet")
-    expect(result.current.session?.environment_scope).toEqual({
+    expect(result.current.view?.composer.settings.model.model).toBe("claude-sonnet")
+    expect(result.current.view?.composer.settings.environmentScope).toEqual({
       mode: "manual",
-      environment_ids: ["local", "gpu-01"],
+      environmentIds: ["local", "gpu-01"],
     })
   })
 
@@ -738,8 +738,8 @@ describe("useAgentSession", () => {
       resolveSnapshot(snapshotFor("session-1", "Stale"))
     })
 
-    await waitFor(() => expect(result.current.session?.id).toBe("session-2"))
-    expect(result.current.session?.title).toBe("Current")
+    await waitFor(() => expect(result.current.view?.conversation.id).toBe("session-2"))
+    expect(result.current.view?.conversation.title).toBe("Current")
     expect(mocks.unsubscribe).toHaveBeenCalledOnce()
   })
 
@@ -767,7 +767,7 @@ describe("useAgentSession", () => {
     })
     let pendingCommand!: Promise<void>
     act(() => {
-      pendingCommand = result.current.sendMessage(parts)
+      pendingCommand = result.current.commands.sendMessage(parts)
     })
 
     rerender({ sessionId: "session-2" })
@@ -785,8 +785,8 @@ describe("useAgentSession", () => {
       await expect(pendingCommand).rejects.toThrow("Stale failure")
     })
 
-    expect(result.current.session?.id).toBe("session-2")
-    expect(result.current.session?.title).toBe("Current")
+    expect(result.current.view?.conversation.id).toBe("session-2")
+    expect(result.current.view?.conversation.title).toBe("Current")
     expect(result.current.error).toBeNull()
   })
 
