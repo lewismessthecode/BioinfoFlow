@@ -121,20 +121,21 @@ function mapFileNode(node: FileApiNode): WorkspaceFileNode {
 }
 
 function mapSessionArtifact(artifact: AgentArtifact): WorkspaceArtifact {
+  const artifactId = artifact.artifact_id
   return {
-    id: `session:${artifact.id}`,
+    id: `session:${artifactId}`,
     source: "session",
     runId: artifact.run_id,
     title: artifact.title,
     summary: artifact.summary,
     kind: artifact.type,
-    mediaType: artifact.resource_ref?.mime_type ?? null,
+    mediaType: artifact.media_type ?? artifact.resource_ref?.mime_type ?? null,
     sizeBytes: artifact.resource_ref?.size_bytes ?? null,
     createdAt: artifact.created_at,
     updatedAt: artifact.updated_at,
     payload: artifact.payload,
-    resource: artifact.resource_ref
-      ? { kind: "session", artifactId: artifact.id }
+    resource: artifact.status === "ready" && artifact.location
+      ? { kind: "session", artifactId }
       : null,
   }
 }

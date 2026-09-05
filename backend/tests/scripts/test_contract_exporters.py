@@ -242,6 +242,17 @@ def test_agent_openapi_contract_describes_the_harness_wire_protocol(
         method="get",
     ) == {"$ref": "#/components/schemas/AgentArtifactView"}
 
+    artifact_schema = contract["components"]["schemas"]["AgentArtifactView"]
+    assert {
+        "artifact_id",
+        "version_id",
+        "location",
+        "media_type",
+        "status",
+    } <= set(artifact_schema["properties"])
+    assert "file_path" not in artifact_schema["properties"]
+    assert "storage_path" not in artifact_schema["properties"]
+
     for binary_path in (
         "/api/v1/agent/attachments/{attachment_id}/preview",
         "/api/v1/agent/artifacts/{artifact_id}/download",

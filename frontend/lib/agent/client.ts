@@ -43,13 +43,19 @@ export type AgentArtifactResource = {
 }
 
 export type AgentArtifact = {
+  artifact_id: string
   id: string
+  version_id: string
+  version: number
   session_id: string
   run_id: string | null
   type: string
   title: string
   summary: string | null
   payload: JsonObject | null
+  location: string | null
+  media_type: string | null
+  status: "ready" | "metadata_only"
   resource_ref: AgentArtifactResource | null
   created_at: string
   updated_at: string
