@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from app.services.agent_harness.contracts import (
     AgentCommand,
@@ -10,6 +10,7 @@ from app.services.agent_harness.contracts import (
     OpenSessionRequest,
     SessionSnapshot,
 )
+from app.services.agent_harness.tools.specs import ToolCall, ToolResult
 
 
 BIOINFOFLOW_HOST_CAPABILITIES = frozenset(
@@ -25,6 +26,81 @@ BIOINFOFLOW_HOST_CAPABILITIES = frozenset(
         "workspace",
     }
 )
+HOST_OWNED_TOOLS = frozenset({"publish_artifact"})
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactPublication:
+    """Safe reference returned after the BioinfoFlow host publishes a file.
+
+    The engine receives metadata only. File bytes, storage paths and the
+    publication implementation remain inside the host boundary.
+    """
+
+    artifact_id: str
+    title: str
+    media_type: str | None = None
+    location: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RunExecutionRequest:
+    """The small input a replaceable run engine needs from the product host."""
+
+    session_id: str
+    run_id: str
+    command: AgentCommand
+
+
+@runtime_checkable
+class HarnessHostPort(Protocol):
+    """Host-owned capabilities exposed to a foreign run engine.
+
+    A foreign engine may request tool execution, but it cannot reach the
+    repository or storage directly. Artifact publication is intentionally a
+    separate method so it cannot be mistaken for ordinary command output.
+    """
+
+    async def execute_tool(
+        self, call: ToolCall, *, cancellation: Any | None = None
+    ) -> ToolResult: ...
+
+    async def publish_artifact(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+        call_id: str,
+        path: str,
+        title: str | None = None,
+        summary: str | None = None,
+    ) -> ArtifactPublication: ...
+
+
+@runtime_checkable
+class RunExecutionEngine(Protocol):
+    """Provider-neutral execution seam for an experimental harness adapter."""
+
+    def run(
+        self,
+        request: RunExecutionRequest,
+        *,
+        host: HarnessHostPort,
+    ) -> AsyncIterator[AgentEvent]: ...
+
+    async def cancel(self, *, session_id: str, run_id: str) -> None: ...
+
+
+def ensure_engine_tool_allowed(call: ToolCall) -> None:
+    """Reject generic engine execution of a host-owned tool.
+
+    An adapter may still expose the ``publish_artifact`` schema to its model,
+    but the resulting call must be routed to ``HarnessHostPort.publish_artifact``
+    instead of an engine-local implementation.
+    """
+
+    if call.name in HOST_OWNED_TOOLS:
+        raise ValueError(f"{call.name} is host-owned and must use the host port")
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +117,7 @@ class HarnessAdapterManifest:
     adapter_version: str
     unmediated_tools_enabled: bool
     host_capabilities: frozenset[str]
+    host_owned_tools: frozenset[str] = HOST_OWNED_TOOLS
 
     def __post_init__(self) -> None:
         validate_harness_adapter_manifest(self)
@@ -56,6 +133,12 @@ def validate_harness_adapter_manifest(manifest: HarnessAdapterManifest) -> None:
         raise ValueError(
             "Harness adapters must preserve all BioinfoFlow host capabilities: "
             + ", ".join(sorted(missing))
+        )
+    missing_tools = HOST_OWNED_TOOLS - manifest.host_owned_tools
+    if missing_tools:
+        raise ValueError(
+            "Harness adapters must keep these tools host-owned: "
+            + ", ".join(sorted(missing_tools))
         )
 
 
@@ -103,6 +186,12 @@ class AgentHarnessAdapter(Protocol):
 __all__ = [
     "BIOINFOFLOW_HOST_CAPABILITIES",
     "AgentHarnessAdapter",
+    "ArtifactPublication",
+    "HarnessHostPort",
     "HarnessAdapterManifest",
+    "HOST_OWNED_TOOLS",
+    "RunExecutionEngine",
+    "RunExecutionRequest",
+    "ensure_engine_tool_allowed",
     "validate_harness_adapter_manifest",
 ]
