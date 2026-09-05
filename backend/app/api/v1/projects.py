@@ -198,6 +198,12 @@ async def delete_project(
     )
     session_ids = [str(session.id) for session in sessions]
     for session_id in session_ids:
-        await delete_agent_session(session_id, db=db)
+        from app.api.v1 import agent as agent_api
+
+        await delete_agent_session(
+            session_id,
+            db=db,
+            runtime=agent_api.agent_runtime,
+        )
     await service.delete_project(project)
     return success_response(None, request=request, status_code=204)

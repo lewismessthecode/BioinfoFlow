@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from app.models.agent_harness import AgentHarnessSession
@@ -110,6 +112,52 @@ async def test_delete_project_removes_its_agent_sessions(async_client, db_sessio
     sessions_resp = await async_client.get("/api/v1/agent/sessions")
     assert sessions_resp.status_code == 200
     assert session_id not in {item["id"] for item in sessions_resp.json()["data"]}
+
+
+@pytest.mark.asyncio
+async def test_delete_project_resolves_the_current_agent_runtime(
+    async_client, db_session
+):
+    create_resp = await async_client.post(
+        "/api/v1/projects", json={"name": "Project with replaceable runtime"}
+    )
+    assert create_resp.status_code == 201
+    project_id = create_resp.json()["data"]["id"]
+    session = AgentHarnessSession(
+        project_id=project_id,
+        workspace_id="00000000-0000-0000-0000-000000000001",
+        title="Deleted through replacement runtime",
+        user_id="dev",
+        permission_mode="ask_dangerous",
+        prompt_snapshot={"content": "Test Agent session."},
+        model_snapshot=None,
+        workspace_snapshot={"runtime": "local", "root": "/tmp"},
+        command_queue=[],
+        command_ids=[],
+    )
+    db_session.add(session)
+    await db_session.commit()
+    await db_session.refresh(session)
+    session_id = str(session.id)
+
+    class ReplacementRuntime:
+        def __init__(self):
+            self.quiesced: list[str] = []
+            self.deleted: list[str] = []
+
+        async def quiesce_session(self, target_session_id: str) -> None:
+            self.quiesced.append(target_session_id)
+
+        async def delete_session(self, target_session_id: str) -> None:
+            self.deleted.append(target_session_id)
+
+    replacement = ReplacementRuntime()
+    with patch("app.api.v1.agent.agent_runtime", replacement):
+        delete_resp = await async_client.delete(f"/api/v1/projects/{project_id}")
+
+    assert delete_resp.status_code == 204
+    assert replacement.quiesced == [session_id]
+    assert replacement.deleted == [session_id]
 
 
 @pytest.mark.asyncio

@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.agent_harness_repo import AgentHarnessRepository
+from app.services.agent_harness.adapter import AgentHarnessAdapter
 from app.services.agent_harness.assets import stage_agent_session_files_for_delete
-from app.services.agent_harness.runtime import AgentRuntime, agent_runtime
 from app.utils.exceptions import ConflictError, NotFoundError
 
 
@@ -38,7 +38,7 @@ async def delete_agent_session(
     session_id: str,
     *,
     db: AsyncSession,
-    runtime: AgentRuntime = agent_runtime,
+    runtime: AgentHarnessAdapter,
 ) -> None:
     """Delete one session through the complete runtime and file lifecycle."""
 
@@ -65,6 +65,4 @@ async def delete_agent_session(
                 tombstone.restore()
             raise
         tombstone.purge_deleted_session_files()
-
-
 __all__ = ["delete_agent_session", "session_mutation_lock"]
