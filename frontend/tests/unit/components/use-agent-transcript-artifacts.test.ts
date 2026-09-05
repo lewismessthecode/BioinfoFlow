@@ -12,7 +12,7 @@ const baseArtifact: WorkspaceArtifact = {
   runId: "run-created",
   title: "report.xlsx",
   summary: null,
-  kind: "xlsx",
+  kind: "published_file",
   mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   sizeBytes: 128,
   createdAt: "2026-08-16T08:00:03.000Z",

@@ -50,7 +50,7 @@ function adapter(): AgentWorkspaceAdapter {
         source: "session" as const,
         title: "qc-report.json",
         summary: "QC report",
-        kind: "report",
+        kind: "published_file",
         mediaType: "application/json",
         sizeBytes: 17,
         createdAt: "2026-08-17T00:00:00Z",
@@ -115,12 +115,13 @@ describe("AgentArtifactsPanel", () => {
     })
   })
 
-  it("shows and previews an HTML file discovered directly in the project", async () => {
+  it("keeps workspace files and command output out of the Artifact list", async () => {
     const workspaceAdapter = adapter()
     vi.mocked(workspaceAdapter.listArtifacts).mockResolvedValueOnce([
       {
         id: "workspace:project-1:index.html",
         source: "workspace",
+        runId: null,
         title: "index.html",
         summary: null,
         kind: "html",
@@ -133,6 +134,55 @@ describe("AgentArtifactsPanel", () => {
           kind: "workspace",
           projectId: "project-1",
           path: "index.html",
+        },
+      },
+      {
+        id: "session:command-output-1",
+        source: "session",
+        runId: "run-1",
+        title: "pytest",
+        summary: "Long command output",
+        kind: "command_output",
+        mediaType: "application/json",
+        sizeBytes: 512,
+        createdAt: "2026-08-17T01:00:00Z",
+        updatedAt: "2026-08-17T01:00:00Z",
+        payload: null,
+        resource: { kind: "session", artifactId: "command-output-1" },
+      },
+    ])
+
+    render(
+      <AgentArtifactsPanel
+        sessionId="session-1"
+        projectId="project-1"
+        adapter={workspaceAdapter}
+      />,
+    )
+
+    expect(await screen.findByText("No artifacts yet")).toBeInTheDocument()
+    expect(screen.queryByRole("article")).not.toBeInTheDocument()
+    expect(workspaceAdapter.fetchArtifactContent).not.toHaveBeenCalled()
+  })
+
+  it("shows and previews a published HTML artifact", async () => {
+    const workspaceAdapter = adapter()
+    vi.mocked(workspaceAdapter.listArtifacts).mockResolvedValueOnce([
+      {
+        id: "session:artifact-html",
+        source: "session",
+        runId: "run-1",
+        title: "index.html",
+        summary: null,
+        kind: "published_file",
+        mediaType: "text/html",
+        sizeBytes: 42,
+        createdAt: "2026-08-17T01:00:00Z",
+        updatedAt: "2026-08-17T01:00:00Z",
+        payload: null,
+        resource: {
+          kind: "session",
+          artifactId: "artifact-html",
         },
       },
     ])
@@ -161,24 +211,24 @@ describe("AgentArtifactsPanel", () => {
     })
   })
 
-  it("routes Excel artifacts to the workbook preview instead of text", async () => {
+  it("routes published Excel artifacts to the workbook preview instead of text", async () => {
     const workspaceAdapter = adapter()
     vi.mocked(workspaceAdapter.listArtifacts).mockResolvedValueOnce([
       {
-        id: "workspace:project-1:report.xlsx",
-        source: "workspace",
+        id: "session:artifact-xlsx",
+        source: "session",
+        runId: "run-1",
         title: "report.xlsx",
         summary: "report.xlsx",
-        kind: "xlsx",
+        kind: "published_file",
         mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         sizeBytes: 512,
         createdAt: "2026-08-17T01:00:00Z",
         updatedAt: "2026-08-17T01:00:00Z",
         payload: null,
         resource: {
-          kind: "workspace",
-          projectId: "project-1",
-          path: "report.xlsx",
+          kind: "session",
+          artifactId: "artifact-xlsx",
         },
       },
     ])
@@ -190,7 +240,13 @@ describe("AgentArtifactsPanel", () => {
       mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     })
 
-    render(<AgentArtifactsPanel projectId="project-1" adapter={workspaceAdapter} />)
+    render(
+      <AgentArtifactsPanel
+        sessionId="session-1"
+        projectId="project-1"
+        adapter={workspaceAdapter}
+      />,
+    )
 
     await userEvent.click(await screen.findByRole("button", { name: "Preview report.xlsx" }))
     expect(await screen.findByTestId("workspace-spreadsheet-preview")).toHaveTextContent(
