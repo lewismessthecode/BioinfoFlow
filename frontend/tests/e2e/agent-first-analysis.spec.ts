@@ -201,10 +201,15 @@ test.describe("Agent workbench live run journey", () => {
       .toBe("244px")
     await page.keyboard.press("Escape")
 
-    const filesButton = page.getByRole("button", {
-      name: "Files",
-    })
-    await expect(filesButton).toBeVisible()
+    const workspaceActions = page.getByTestId("agent-workspace-action-group")
+    const addTabButton = workspaceActions.getByTestId("agent-action-add-tab")
+    await expect(addTabButton).toBeVisible()
+    await expect(
+      workspaceActions.getByRole("button", {
+        name: "Open workspace panel",
+        exact: true,
+      }),
+    ).toBeVisible()
     await expect(page.getByRole("button", { name: "Open terminal" })).toBeVisible()
     const navbarActionGeometry = await page.evaluate(() => {
       const row = document.querySelector<HTMLElement>(
@@ -231,22 +236,27 @@ test.describe("Agent workbench live run journey", () => {
         actionsInsideCanvas: actionButtons.some((button) => canvas.contains(button)),
       }
     })
-    expect(navbarActionGeometry?.actionIds).toEqual([
-      "artifacts",
-      "files",
-      "dag",
-      "browser",
-    ])
+    expect(navbarActionGeometry?.actionIds).toEqual(["panel"])
     expect(navbarActionGeometry?.actionOwnedByNavbar).toBe(true)
     expect(
       navbarActionGeometry?.actionSizes.every(
         ([width, height]) => width >= 32 && width <= 120 && height >= 32 && height <= 36,
       ),
     ).toBe(true)
-    expect(navbarActionGeometry?.actionGaps).toEqual([2, 2, 2])
+    expect(navbarActionGeometry?.actionGaps).toEqual([])
     expect(navbarActionGeometry?.navbarGap).toBe(6)
     expect(navbarActionGeometry?.actionsInsideCanvas).toBe(false)
-    await filesButton.click()
+
+    await addTabButton.press("Enter")
+    const workspaceMenu = page.locator('[role="menu"]:visible')
+    await expect(workspaceMenu).toBeVisible()
+    await expect(workspaceMenu.getByRole("menuitem")).toHaveText([
+      "Artifacts",
+      "Files",
+      "DAG",
+      "Browser",
+    ])
+    await workspaceMenu.getByRole("menuitem", { name: "Files", exact: true }).click()
     const liveDeck = page.getByRole("complementary", {
       name: "Live workspace information",
     })
@@ -254,11 +264,19 @@ test.describe("Agent workbench live run journey", () => {
     await expect(
       liveDeck.getByRole("region", { name: "Project file browser" }),
     ).toBeVisible()
-    await expect(liveDeck.getByTestId("live-deck-tab-bar")).toHaveCount(0)
-    await expect(liveDeck.getByRole("tab")).toHaveCount(0)
+    await expect(liveDeck.getByTestId("live-deck-tab-bar")).toBeVisible()
+    await expect(liveDeck.getByRole("tab")).toHaveText(["Files"])
     await expect(
-      liveDeck.getByRole("button", { name: "Hide panel", exact: true }),
-    ).toHaveCount(0)
+      liveDeck.getByRole("tab", { name: "Files", exact: true }),
+    ).toHaveAttribute("aria-selected", "true")
+    await expect(
+      liveDeck.getByRole("button", { name: "Close Files", exact: true }),
+    ).toBeVisible()
+
+    await workspaceActions
+      .getByRole("button", { name: "Close workspace panel", exact: true })
+      .click()
+    await expect(liveDeck).toHaveCount(0)
 
     await page.setViewportSize({ width: 390, height: 844 })
     await page.reload()
