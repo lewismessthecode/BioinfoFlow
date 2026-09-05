@@ -76,7 +76,7 @@ export function LiveDeck({
             return (
               <div key={tab.id} className={cn("flex h-7 min-w-0 items-center rounded-md text-xs", active ? "bg-muted text-foreground shadow-sm" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}>
                 <button type="button" role="tab" aria-selected={active} className="min-w-0 truncate px-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/30" title={tab.title} onClick={() => onSelectTab?.(tab.id)}>{tab.title}</button>
-                <Button type="button" variant="ghost" size="icon" className="mr-0.5 size-5 shrink-0 rounded-sm" aria-label={`Close ${tab.title}`} onClick={() => onCloseTab?.(tab.id)}><X aria-hidden="true" className="size-3" /></Button>
+                <Button type="button" variant="ghost" size="icon" className="mr-0.5 size-5 shrink-0 rounded-sm" aria-label={tWorkspace("liveDeck.closeTab", { title: tab.title })} title={tWorkspace("liveDeck.closeTab", { title: tab.title })} onClick={() => onCloseTab?.(tab.id)}><X aria-hidden="true" className="size-3" /></Button>
               </div>
             )
           })}
