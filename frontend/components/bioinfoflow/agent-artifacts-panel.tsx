@@ -26,7 +26,6 @@ import { WorkspaceCodePreview } from "./workspace-code-preview"
 import { WorkspaceSpreadsheetPreview } from "./workspace-spreadsheet-preview"
 
 const MAX_INLINE_PREVIEW_BYTES = 8 * 1024 * 1024
-const NON_DELIVERABLE_TYPES = new Set(["command", "log_summary", "todo_list"])
 
 type ArtifactPreview =
   | { kind: "idle" }
@@ -424,7 +423,9 @@ function ArtifactState({ children, loading = false }: { children: React.ReactNod
 }
 
 function isDeliverable(artifact: WorkspaceArtifact) {
-  return Boolean(artifact.resource) || !NON_DELIVERABLE_TYPES.has(artifact.kind)
+  return artifact.source === "session" &&
+    artifact.kind === "published_file" &&
+    artifact.resource?.kind === "session"
 }
 
 function artifactIcon(artifact: WorkspaceArtifact) {

@@ -2589,6 +2589,7 @@
       "action": "工作区",
       "open": "打开工作区面板",
       "close": "关闭工作区面板",
+      "addTab": "添加标签页",
       "codePreview": {
         "label": "工作区代码预览"
       },

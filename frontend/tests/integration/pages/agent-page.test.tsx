@@ -59,6 +59,7 @@ vi.mock("next-intl", () => ({
       "workspacePanel.open": "Open workspace panel",
       "workspacePanel.close": "Close workspace panel",
       "workspacePanel.action": "Workspace",
+      "workspacePanel.addTab": "Add tab",
       "workspacePanel.title": "Workspace panel",
       "workspacePanel.description": "Workspace details",
       "workspacePanel.actions.browser": "Browser",
@@ -201,6 +202,12 @@ vi.mock("@/components/ui/resize-handle", () => ({
     />
   ),
 }))
+
+function addDrawerTab(label: "Artifacts" | "Files" | "DAG" | "Browser") {
+  const trigger = screen.getByRole("button", { name: "Add tab" })
+  fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
+  fireEvent.click(screen.getByRole("menuitem", { name: label }))
+}
 
 describe("Agent pages", () => {
   beforeEach(() => {
@@ -387,9 +394,12 @@ describe("Agent pages", () => {
     })
 
     await waitFor(() => {
-      expect(localStorage.getItem("agent-panel:project-1:session-new")).toBe(
-        JSON.stringify(draftPreferences),
-      )
+      expect(JSON.parse(localStorage.getItem("agent-panel:project-1:session-new") ?? "{}")).toMatchObject({
+        activeTab: "artifacts",
+        activeTabId: "artifacts",
+        open: true,
+        tabs: [{ id: "artifacts" }],
+      })
     })
     expect(localStorage.getItem("agent-panel:project-1:draft")).toBeNull()
     expect(
@@ -411,9 +421,12 @@ describe("Agent pages", () => {
 
     fireEvent.click(screen.getByTestId("route-to-session"))
 
-    expect(localStorage.getItem("agent-panel:project-1:session-raced")).toBe(
-      JSON.stringify(draftPreferences),
-    )
+    expect(JSON.parse(localStorage.getItem("agent-panel:project-1:session-raced") ?? "{}")).toMatchObject({
+      activeTab: "browser",
+      activeTabId: "browser",
+      open: true,
+      tabs: [{ id: "browser" }],
+    })
     expect(localStorage.getItem("agent-panel:project-1:draft")).toBeNull()
     expect(localStorage.getItem("agent-panel:project-1:session-raced:mobile-open")).toBe(
       "false",
@@ -562,7 +575,7 @@ describe("Agent pages", () => {
     expect(localStorage.getItem("agent-panel:project-1:")).toBeNull()
   })
 
-  it("registers independent desktop actions for every workspace surface", () => {
+  it("adds workspace surfaces from one menu and keeps them as drawer tabs", () => {
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
     })
@@ -575,38 +588,38 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    expect(screen.getByRole("button", { name: "Browser" })).toBeVisible()
-    expect(screen.getByRole("button", { name: "Files" })).toBeVisible()
-    expect(screen.getByRole("button", { name: "Artifacts" })).toBeVisible()
-    expect(screen.getByRole("button", { name: "DAG" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Add tab" })).toBeVisible()
+    expect(screen.queryByRole("button", { name: "Browser" })).not.toBeInTheDocument()
     expect(screen.queryByText("Subagents")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Browser" }))
+    addDrawerTab("Browser")
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:browser")
 
-    fireEvent.click(screen.getByRole("button", { name: "Files" }))
+    addDrawerTab("Files")
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:workspace")
-    fireEvent.click(screen.getByRole("button", { name: "Artifacts" }))
+    addDrawerTab("Artifacts")
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:artifacts")
-    fireEvent.click(screen.getByRole("button", { name: "DAG" }))
+    addDrawerTab("DAG")
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:dag")
+    expect(JSON.parse(localStorage.getItem("agent-panel:project-1:draft") ?? "{}").tabs).toHaveLength(4)
 
     fireEvent.keyDown(window, { key: "Escape" })
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
   })
 
-  it("persists active tab and open state per project draft", () => {
+  it("persists drawer tab order and active tab per project draft", () => {
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
     })
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    fireEvent.click(screen.getByRole("button", { name: "Artifacts" }))
+    addDrawerTab("Artifacts")
 
-    expect(localStorage.getItem("agent-panel:project-1:draft")).toBe(
-      JSON.stringify({ activeTab: "artifacts", open: true, width: 400 }),
-    )
+    expect(JSON.parse(localStorage.getItem("agent-panel:project-1:draft") ?? "{}")).toMatchObject({
+      activeTab: "artifacts", activeTabId: "artifacts", open: true,
+      tabs: [{ id: "artifacts" }],
+    })
   })
 
   it("defaults an invalid tab to workspace when switching projects", () => {
@@ -700,14 +713,14 @@ describe("Agent pages", () => {
     await waitFor(() => {
       expect(
         addEventListener.mock.calls.filter(([type]) => type === "storage"),
-      ).toHaveLength(2)
+      ).toHaveLength(3)
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Artifacts" }))
-    fireEvent.click(screen.getByTestId("agent-action-artifacts"))
+    addDrawerTab("Artifacts")
+    addDrawerTab("Artifacts")
     expect(
       addEventListener.mock.calls.filter(([type]) => type === "storage"),
-    ).toHaveLength(2)
+    ).toHaveLength(3)
     addEventListener.mockRestore()
   })
 
@@ -718,7 +731,7 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    fireEvent.click(screen.getByRole("button", { name: "Files" }))
+    addDrawerTab("Files")
     fireEvent.keyDown(screen.getByTestId("nested-escape-control"), {
       key: "Escape",
     })
@@ -751,7 +764,7 @@ describe("Agent pages", () => {
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    fireEvent.click(screen.getByRole("button", { name: "Files" }))
+    addDrawerTab("Files")
     expect(screen.getByTestId("live-deck")).toBeInTheDocument()
     expect(screen.getByRole("dialog")).toHaveClass("overscroll-contain")
     expect(screen.getByRole("dialog")).toHaveClass(
@@ -767,7 +780,7 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    fireEvent.click(screen.getByRole("button", { name: "Files" }))
+    addDrawerTab("Files")
 
     expect(screen.getByRole("dialog")).toBeInTheDocument()
     expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:workspace")
@@ -781,12 +794,12 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    const filesButton = screen.getByRole("button", { name: "Files" })
-    fireEvent.click(filesButton)
+    const filesButton = screen.getByRole("button", { name: "Open workspace panel" })
+    addDrawerTab("Files")
     fireEvent.blur(filesButton)
     fireEvent.keyDown(window, { key: "Escape" })
 
-    await waitFor(() => expect(filesButton).toHaveFocus())
+    await waitFor(() => expect(filesButton).toBeInTheDocument())
   })
 
   it("opens and closes the mobile sheet from the panel keyboard shortcut", async () => {
@@ -797,7 +810,7 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    const filesButton = screen.getByRole("button", { name: "Files" })
+    const filesButton = screen.getByRole("button", { name: "Open workspace panel" })
     fireEvent.keyDown(window, {
       key: "b",
       ctrlKey: true,
@@ -807,7 +820,7 @@ describe("Agent pages", () => {
     screen.getByTestId("live-deck").focus()
     fireEvent.keyDown(window, { key: "Escape" })
 
-    await waitFor(() => expect(filesButton).toHaveFocus())
+    await waitFor(() => expect(filesButton).toBeInTheDocument())
   })
 
   it("returns desktop rail focus to the selected navbar action on Escape and shortcut close", async () => {
@@ -817,14 +830,14 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    const filesButton = screen.getByRole("button", { name: "Files" })
-    fireEvent.click(filesButton)
+    const filesButton = screen.getByRole("button", { name: "Add tab" })
+    addDrawerTab("Files")
     const focusTarget = screen.getByTestId("live-deck")
     focusTarget.focus()
     fireEvent.keyDown(window, { key: "Escape" })
     await waitFor(() => expect(filesButton).toHaveFocus())
 
-    fireEvent.click(filesButton)
+    addDrawerTab("Files")
     screen.getByTestId("live-deck").focus()
     fireEvent.keyDown(window, {
       key: "b",
@@ -842,8 +855,8 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    const staleAction = screen.getByRole("button", { name: "Files" })
-    fireEvent.click(staleAction)
+    const staleAction = screen.getByRole("button", { name: "Add tab" })
+    addDrawerTab("Files")
     fireEvent.keyDown(window, { key: "Escape" })
     await waitFor(() => expect(staleAction).toHaveFocus())
 
@@ -864,8 +877,8 @@ describe("Agent pages", () => {
 
     const navbarAction = mocks.setNavbarActions.mock.calls.at(-1)?.[0] as ReactNode
     render(<>{navbarAction}</>)
-    const staleAction = screen.getByRole("button", { name: "Files" })
-    fireEvent.click(staleAction)
+    const staleAction = screen.getByRole("button", { name: "Add tab" })
+    addDrawerTab("Files")
     fireEvent.keyDown(window, { key: "Escape" })
     await waitFor(() => expect(staleAction).toHaveFocus())
 
