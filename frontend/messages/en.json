@@ -279,7 +279,8 @@
       "files": "Files",
       "pipeline": "Workflow",
       "artifacts": "Artifacts",
-      "browser": "Browser"
+      "browser": "Browser",
+      "closeTab": "Close {title}"
     },
     "files": {
       "label": "Project file browser",

@@ -279,7 +279,8 @@
       "files": "文件",
       "pipeline": "工作流",
       "artifacts": "产物",
-      "browser": "浏览器"
+      "browser": "浏览器",
+      "closeTab": "关闭 {title}"
     },
     "files": {
       "label": "项目文件浏览器",

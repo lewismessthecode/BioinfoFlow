@@ -2,19 +2,24 @@ import { render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 vi.mock("next-intl", () => ({
-  useTranslations: (namespace: string) => (key: string) => {
+  useTranslations: (namespace: string) => (
+    key: string,
+    values?: Record<string, string>,
+  ) => {
     const copy: Record<string, Record<string, string>> = {
       workspace: {
         "liveDeck.files": "Files",
         "liveDeck.pipeline": "Workflow",
         "liveDeck.artifacts": "Artifacts",
         "liveDeck.browser": "Browser",
+        "liveDeck.closeTab": "关闭 {title}",
       },
       accessibility: {
         hidePanel: "Hide panel",
       },
     }
-    return copy[namespace]?.[key] ?? key
+    const template = copy[namespace]?.[key] ?? key
+    return template.replace(/\{(\w+)\}/g, (_, name: string) => values?.[name] ?? `{${name}}`)
   },
 }))
 
@@ -111,5 +116,25 @@ describe("LiveDeck", () => {
 
     expect(screen.getByTestId("artifacts-panel")).toBeInTheDocument()
     expect(screen.queryByTestId("workspace-panel")).not.toBeInTheDocument()
+  })
+
+  it("localizes the close action for a resource tab", () => {
+    render(
+      <LiveDeck
+        activeTab="workspace"
+        tabs={[
+          {
+            id: "file:report.html",
+            kind: "file",
+            title: "report.html",
+            filePath: "report.html",
+          },
+        ]}
+        activeTabId="file:report.html"
+        onCloseTab={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: "关闭 report.html" })).toBeInTheDocument()
   })
 })
