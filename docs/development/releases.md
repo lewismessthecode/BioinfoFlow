@@ -38,6 +38,39 @@ the next release entry.
 
 ## Normal Release Procedure
 
+For the `0.3.0` candidate, run the release data gate before asking for manual
+acceptance:
+
+```bash
+cd backend
+uv run pytest tests/test_release_restore_gate.py
+```
+
+Record every item below as passed for the same candidate commit:
+
+- [ ] a representative `0.2.0` database at revision
+  `0058_remove_container_registry_default` upgrades to the current Alembic head;
+- [ ] the migrated Conversation session remains linked to its project;
+- [ ] the migrated Run remains completed and addressable;
+- [ ] migrated history remains ordered and readable from `agent_entries`;
+- [ ] attachment metadata survives and its restored payload is readable;
+- [ ] Artifact ownership/title survive and its restored payload is readable;
+- [ ] the platform database, Better Auth database, and matching Fernet key
+  survive a stopped-home backup and restore;
+- [ ] the stored provider credential decrypts with the restored key;
+- [ ] managed project inputs/results, workflow sources, and shared sources are
+  restored; and
+- [ ] every external-local project root has a separately verified backup at
+  its recorded absolute path; and
+- [ ] after a failed upgrade, restoring the 0.2.0 snapshot leaves the database
+  at `0058_remove_container_registry_default`, and the previous release can
+  start and read the restored data without running candidate migrations.
+
+The automated gate creates no release and changes no production data. After all
+automated checks pass, stop and wait for the maintainer's manual UI and data
+acceptance. Do not merge the Release Please pull request, create `0.3.0`, or
+publish images before that confirmation.
+
 1. Open the Release Please pull request whose title looks like
    `chore(main): release bioinfoflow 0.2.0`.
 2. Confirm that the proposed version matches the merged work:

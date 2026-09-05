@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import mimetypes
+from pathlib import Path
 from typing import Any
 
 from pydantic import TypeAdapter
 
-from app.models.agent_harness import AgentHarnessEntry, AgentHarnessRun
+from app.models.agent_harness import (
+    AgentHarnessArtifact,
+    AgentHarnessEntry,
+    AgentHarnessRun,
+)
 from app.services.agent_harness.contracts import (
     HistoryEntry,
     PendingInteractionView,
@@ -49,6 +55,48 @@ _REASONING_TEXT_FIELDS = {
 }
 
 
+def artifact_view(artifact: AgentHarnessArtifact) -> dict[str, Any]:
+    """Build the stable public Artifact projection without exposing storage paths."""
+
+    artifact_id = str(artifact.id)
+    raw_file_path = str(artifact.file_path or "").strip()
+    resource_ref = artifact.resource_ref
+    resource = resource_ref if isinstance(resource_ref, dict) else None
+    filename = str((resource or {}).get("filename") or "").strip()
+    if not filename and raw_file_path:
+        filename = Path(raw_file_path).name
+    declared_media_type = (resource or {}).get("mime_type")
+    media_type = (
+        str(declared_media_type)
+        if declared_media_type is not None
+        else mimetypes.guess_type(filename)[0]
+        if filename
+        else None
+    )
+
+    return {
+        # ``id`` remains for 0.2 clients; ``artifact_id`` is the canonical 0.3 name.
+        "artifact_id": artifact_id,
+        "id": artifact_id,
+        "session_id": str(artifact.session_id),
+        "run_id": str(artifact.run_id) if artifact.run_id else None,
+        "type": artifact.type,
+        "title": artifact.title,
+        "summary": artifact.summary,
+        "payload": artifact.payload,
+        "location": (
+            f"/api/v1/agent/artifacts/{artifact_id}/download"
+            if raw_file_path
+            else None
+        ),
+        "media_type": media_type,
+        "status": "ready" if raw_file_path else "metadata_only",
+        "resource_ref": resource_ref,
+        "created_at": artifact.created_at.isoformat(),
+        "updated_at": artifact.updated_at.isoformat(),
+    }
+
+
 def _public_interaction_options(values: Any) -> list[dict[str, Any]]:
     options: list[dict[str, Any]] = []
     for index, raw in enumerate(values if isinstance(values, list) else []):
@@ -79,6 +127,10 @@ def _public_interaction_options(values: Any) -> list[dict[str, Any]]:
             "recommended": False,
         },
     ]
+
+
+def _public_interaction_text(value: Any) -> str:
+    return public_error_message(str(value)) or ""
 
 
 def public_interaction_request(value: dict[str, Any]) -> dict[str, Any]:
@@ -112,8 +164,14 @@ def public_interaction_request(value: dict[str, Any]) -> dict[str, Any]:
             "type": "approval",
             "call_id": call_id,
             "tool_name": str(value.get("tool_name") or "tool"),
-            "summary": str(value.get("summary") or "Allow this tool to run?"),
-            "input_preview": value.get("input_preview"),
+            "summary": _public_interaction_text(
+                value.get("summary") or "Allow this tool to run?"
+            ),
+            "input_preview": (
+                _public_interaction_text(value["input_preview"])
+                if isinstance(value.get("input_preview"), str)
+                else None
+            ),
             "allowed_responses": allowed_responses,
             "target": {
                 "environment_id": str(target.get("environment_id") or "local"),
@@ -128,18 +186,20 @@ def public_interaction_request(value: dict[str, Any]) -> dict[str, Any]:
             "risk": {
                 "level": str(risk.get("level") or "unknown"),
                 "effects": [str(item) for item in risk.get("effects") or []],
-                "reasons": [str(item) for item in risk.get("reasons") or []],
-                "reason_codes": [
-                    str(item) for item in risk.get("reason_codes") or []
+                "reasons": [
+                    _public_interaction_text(item) for item in risk.get("reasons") or []
                 ],
+                "reason_codes": [str(item) for item in risk.get("reason_codes") or []],
                 "justification": (
-                    str(risk["justification"])
+                    _public_interaction_text(risk["justification"])
                     if isinstance(risk.get("justification"), str)
                     and risk["justification"]
                     else None
                 ),
                 "affected_resources": [
-                    str(item.get("id") if isinstance(item, dict) else item)
+                    _public_interaction_text(
+                        item.get("id") if isinstance(item, dict) else item
+                    )
                     for item in resources
                 ],
             },
@@ -554,6 +614,7 @@ def pending_interaction_entry_view(
 
 
 __all__ = [
+    "artifact_view",
     "entry_contract",
     "pending_interaction_entry_view",
     "public_interaction_request",

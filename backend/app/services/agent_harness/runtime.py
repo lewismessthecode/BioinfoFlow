@@ -20,6 +20,7 @@ from app.services.agent_harness.contracts import (
 )
 from app.services.agent_harness.events import AgentEventHub
 from app.services.agent_harness.harness import AgentHarness
+from app.services.agent_harness.snapshot import AgentHarnessSnapshotService
 from app.services.agent_harness.projection import run_view
 from app.utils.logging import get_logger
 
@@ -63,7 +64,8 @@ class AgentRuntime:
 
     async def snapshot(self, session_id: str) -> SessionSnapshot:
         async with self._session_factory() as db:
-            return await self._harness(db).snapshot(session_id)
+            repository = AgentHarnessRepository(db)
+            return await AgentHarnessSnapshotService(repository).build(session_id)
 
     async def publish_snapshot(
         self, session_id: str, snapshot: SessionSnapshot

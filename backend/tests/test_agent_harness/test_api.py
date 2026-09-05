@@ -21,6 +21,14 @@ async def test_session_create_reports_a_stable_code_when_no_model_is_available(
 
 
 @pytest.mark.asyncio
+async def test_agent_api_client_uses_a_trusted_host(async_client) -> None:
+    response = await async_client.get("/api/v1/agent/sessions")
+
+    assert response.status_code == 200
+    assert async_client.base_url.host == "localhost"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "payload",
     [
@@ -605,6 +613,10 @@ async def test_message_command_rejects_attachment_reference_kind_mismatch(
         )
 
     assert response.status_code == 400
+    assert response.json()["error"]["code"] == "BAD_REQUEST"
+    assert response.json()["error"]["message"] == (
+        "directory_ref must reference a directory"
+    )
     dispatch.assert_not_awaited()
 
 
@@ -724,10 +736,10 @@ async def test_sse_releases_request_database_before_streaming(
         "root_path": "",
         "headers": [
             (b"accept", b"text/event-stream"),
-            (b"host", b"test"),
+            (b"host", b"localhost"),
         ],
         "client": ("127.0.0.1", 12345),
-        "server": ("test", 80),
+        "server": ("localhost", 80),
     }
     request_messages: list[asyncio.Queue[dict]] = []
     first_events = [asyncio.Event() for _ in range(3)]
@@ -1027,11 +1039,19 @@ async def test_agent_api_preserves_attachment_and_artifact_frontend_contracts(
 
     assert artifacts.status_code == 200
     assert artifacts.json()["data"][0]["id"] == artifact_id
+    assert artifacts.json()["data"][0]["artifact_id"] == artifact_id
+    assert artifacts.json()["data"][0]["run_id"] == str(run.id)
+    assert artifacts.json()["data"][0]["location"].endswith(
+        f"/agent/artifacts/{artifact_id}/download"
+    )
+    assert artifacts.json()["data"][0]["media_type"] == "application/json"
+    assert artifacts.json()["data"][0]["status"] == "ready"
     assert "turn_id" not in artifacts.json()["data"][0]
     assert "action_id" not in artifacts.json()["data"][0]
     assert "file_path" not in artifacts.json()["data"][0]
     assert detail.status_code == 200
     assert detail.json()["data"]["run_id"] == str(run.id)
+    assert detail.json()["data"]["artifact_id"] == artifact_id
     assert "file_path" not in detail.json()["data"]
     assert download.status_code == 200
     assert download.headers["content-type"] == "application/json"

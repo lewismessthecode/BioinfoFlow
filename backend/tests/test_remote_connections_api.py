@@ -90,7 +90,7 @@ def remote_connection_test_client(
     fastapi_app.dependency_overrides[get_db] = override_get_db
 
     try:
-        with TestClient(fastapi_app) as client:
+        with TestClient(fastapi_app, base_url="http://localhost") as client:
             yield client, session_maker
     finally:
         fastapi_app.dependency_overrides.clear()

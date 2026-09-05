@@ -21,6 +21,7 @@ from app.services.agent_harness.contracts import (
 )
 from app.services.agent_harness.harness import AgentHarness
 from app.services.agent_harness.runtime import agent_runtime
+from app.services.agent_harness.snapshot import AgentHarnessSnapshotService
 from app.services.agent_harness.workspace_runtime import (
     LocalWorkspaceBackend,
     WorkspaceRuntime,
@@ -486,7 +487,7 @@ async def test_delete_active_session_prevents_stale_worker_from_writing_back(
         repository = AgentHarnessRepository(db)
         assert await repository.get_session(session_id) is None
         with pytest.raises(LookupError, match="agent session not found"):
-            await repository.snapshot(session_id)
+            await AgentHarnessSnapshotService(repository).build(session_id)
 
 
 def _stub_session_configuration(monkeypatch) -> None:

@@ -1,5 +1,4 @@
 import { render, screen } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
 vi.mock("next-intl", () => ({
@@ -54,33 +53,34 @@ vi.mock("@/components/bioinfoflow/chat/chat-error-boundary", () => ({
 import { LiveDeck } from "@/components/bioinfoflow/live-deck"
 
 describe("LiveDeck", () => {
-  it("renders the active workspace tab and lets the user request a tab change", async () => {
-    const user = userEvent.setup()
-    const onTabChange = vi.fn()
-
-    render(
+  it("renders only the active workspace surface without a duplicate surface tab bar", () => {
+    const view = render(
       <LiveDeck
         activeTab="workspace"
-        onTabChange={onTabChange}
         projectId="project-1"
         runId="run-1"
       />,
     )
 
     expect(screen.getByTestId("workspace-panel")).toBeInTheDocument()
-    await user.click(screen.getByRole("tab", { name: "Workflow" }))
-    expect(onTabChange).toHaveBeenCalledWith("dag")
+    expect(screen.queryByTestId("live-deck-tab-bar")).not.toBeInTheDocument()
+    expect(screen.queryByRole("tab", { name: "Files" })).not.toBeInTheDocument()
+
+    view.rerender(
+      <LiveDeck
+        activeTab="dag"
+        projectId="project-1"
+        runId="run-1"
+      />,
+    )
+    expect(screen.queryByTestId("workspace-panel")).not.toBeInTheDocument()
+    expect(screen.getByTestId("dag-panel")).toBeInTheDocument()
   })
 
-  it("renders the dag tab content and forwards the collapse action", async () => {
-    const user = userEvent.setup()
-    const onCollapse = vi.fn()
-
+  it("renders the dag tab content without a duplicate collapse control", () => {
     render(
       <LiveDeck
         activeTab="dag"
-        onTabChange={vi.fn()}
-        onCollapse={onCollapse}
         projectId="project-7"
         runId="run-7"
         workflowName="RNASeq"
@@ -88,19 +88,28 @@ describe("LiveDeck", () => {
     )
 
     expect(screen.getByTestId("dag-panel")).toHaveTextContent("project-7:run-7:RNASeq")
-    await user.click(screen.getByRole("button", { name: "Hide panel" }))
-    expect(onCollapse).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole("button", { name: "Hide panel" })).not.toBeInTheDocument()
   })
 
-  it("offers files, workflow, artifacts, and browser tabs", () => {
+  it("does not repeat the navbar Files, Workflow, Artifacts, and Browser actions", () => {
     render(
-      <LiveDeck activeTab="workspace" onTabChange={vi.fn()} projectId="project-1" />,
+      <LiveDeck activeTab="workspace" projectId="project-1" />,
     )
 
-    expect(screen.getAllByRole("tab")).toHaveLength(4)
-    expect(screen.getByRole("tab", { name: "Files" })).toBeInTheDocument()
-    expect(screen.getByRole("tab", { name: "Workflow" })).toBeInTheDocument()
-    expect(screen.getByRole("tab", { name: "Artifacts" })).toBeInTheDocument()
-    expect(screen.getByRole("tab", { name: "Browser" })).toBeInTheDocument()
+    expect(screen.queryByText("Workflow")).not.toBeInTheDocument()
+    expect(screen.queryByText("Artifacts")).not.toBeInTheDocument()
+    expect(screen.queryByText("Browser")).not.toBeInTheDocument()
+  })
+
+  it("renders the requested surface directly", () => {
+    render(
+      <LiveDeck
+        activeTab="artifacts"
+        projectId="project-1"
+      />,
+    )
+
+    expect(screen.getByTestId("artifacts-panel")).toBeInTheDocument()
+    expect(screen.queryByTestId("workspace-panel")).not.toBeInTheDocument()
   })
 })

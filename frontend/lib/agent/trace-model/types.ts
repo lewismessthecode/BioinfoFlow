@@ -31,6 +31,8 @@ export type AgentTraceEvent = {
   turnId: string | null
   category: AgentTraceCategory
   title: string
+  titleCode?: string | null
+  titleParams?: { [key: string]: TraceJsonValue }
   summary: string
   firstLine: string
   status: string | null

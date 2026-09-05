@@ -1,15 +1,30 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { useTranslations } from "next-intl"
 
+import { wdlLanguage } from "@/lib/syntax/wdl-language"
 import { cn } from "@/lib/utils"
 
 const highlightedCodeCache = new Map<string, string>()
-let codeToHtmlPromise: Promise<typeof import("shiki").codeToHtml> | null = null
+type ShikiModule = typeof import("shiki")
+type WorkspaceHighlighter = Awaited<ReturnType<ShikiModule["getSingletonHighlighter"]>>
+let shikiModulePromise: Promise<ShikiModule> | null = null
+let wdlHighlighterPromise: Promise<WorkspaceHighlighter> | null = null
 
-function getCodeToHtml() {
-  codeToHtmlPromise ??= import("shiki").then((module) => module.codeToHtml)
-  return codeToHtmlPromise
+function getShikiModule() {
+  shikiModulePromise ??= import("shiki")
+  return shikiModulePromise
+}
+
+function getWdlHighlighter() {
+  wdlHighlighterPromise ??= getShikiModule().then(({ getSingletonHighlighter }) =>
+    getSingletonHighlighter({
+      langs: [wdlLanguage],
+      themes: ["github-light", "github-dark"],
+    }),
+  )
+  return wdlHighlighterPromise
 }
 
 function languageForPath(path: string) {
@@ -67,6 +82,7 @@ export function WorkspaceCodePreview({
   className?: string
 }) {
   const language = languageForPath(path)
+  const t = useTranslations("agentWorkbench.workspacePanel")
   const cacheKey = `${language}:${content}`
   const [highlightedState, setHighlightedState] = useState<{
     key: string
@@ -84,13 +100,13 @@ export function WorkspaceCodePreview({
     let cancelled = false
     const cached = highlightedCodeCache.get(cacheKey)
     if (cached) return
-    void getCodeToHtml()
-      .then((codeToHtml) =>
-        codeToHtml(content, {
-          lang: language === "text" ? "txt" : language,
-          themes: { light: "github-light", dark: "github-dark" },
-        }),
-      )
+    const options = {
+      lang: language === "text" ? "txt" : language,
+      themes: { light: "github-light", dark: "github-dark" },
+    } as const
+    void (language === "wdl"
+      ? getWdlHighlighter().then((highlighter) => highlighter.codeToHtml(content, options))
+      : getShikiModule().then(({ codeToHtml }) => codeToHtml(content, options)))
       .then((html) => {
         highlightedCodeCache.set(cacheKey, html)
         if (highlightedCodeCache.size > 100) {
@@ -112,6 +128,9 @@ export function WorkspaceCodePreview({
         className,
       )}
       data-testid="workspace-code-preview"
+      data-language={path.split(".").pop()?.toLowerCase() ?? "text"}
+      data-highlight-language={language}
+      aria-label={t("codePreview.label")}
     >
       <div className="flex min-h-full min-w-max items-stretch">
         <pre

@@ -47,6 +47,8 @@ export type TraceTransportEvent = {
   turn_id: string | null
   category: string
   title: string
+  title_code?: string | null
+  title_params?: { [key: string]: TraceJsonValue }
   summary: string
   status: string | null
   sequence: number
@@ -226,6 +228,8 @@ function isTraceEvent(value: unknown): value is TraceTransportEvent {
       "summary",
       "created_at",
     ]) &&
+    (value.title_code === undefined || isNullableString(value.title_code)) &&
+    (value.title_params === undefined || isJsonObject(value.title_params)) &&
     isNullableString(value.turn_id) &&
     isNullableString(value.status) &&
     isPositiveInteger(value.sequence) &&

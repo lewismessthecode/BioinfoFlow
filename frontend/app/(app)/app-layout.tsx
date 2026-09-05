@@ -30,6 +30,7 @@ import {
   useTerminalDock,
 } from "@/components/bioinfoflow/terminal/terminal-dock-context"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { Toaster } from "@/components/ui/sonner"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useIsMobile } from "@/hooks/use-media-query"
@@ -43,6 +44,7 @@ import {
   LAST_USED_PROJECT_STORAGE_KEY,
 } from "@/lib/first-run"
 import { RuntimeProvider, getActiveRuntime, type RuntimeMode } from "@/lib/runtime"
+import { isTerminalScreenshotFixtureEnabled } from "@/lib/terminal/screenshot-fixture"
 
 const LEFT_SIDEBAR_MIN = 240
 const LEFT_SIDEBAR_MAX = 420
@@ -74,6 +76,7 @@ export default function AppLayout({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const tAccessibility = useTranslations("accessibility")
+  const terminalScreenshotFixture = isTerminalScreenshotFixtureEnabled()
   const isSettingsRoute =
     pathname === "/settings" || pathname.startsWith("/settings/")
   const canManageMembersFlag = viewer
@@ -280,6 +283,11 @@ export default function AppLayout({
               projectId={selectedProjectId || undefined}
               enabled={terminalEnabled}
               isMobile={isMobile}
+              routeSessionId={
+                pathname.startsWith("/agent/")
+                  ? pathname.slice("/agent/".length)
+                  : null
+              }
             >
               {/* Skip-to-content link */}
               <a
@@ -304,7 +312,11 @@ export default function AppLayout({
                     >
                       {renderSidebar(false)}
                       {showResizeHandle && (
-                        <ResizeHandle side="left" onResize={handleLeftResize} />
+                        <ResizeHandle
+                          side="left"
+                          onResize={handleLeftResize}
+                          ariaLabel={tAccessibility("resizeSidebar")}
+                        />
                       )}
                     </div>
                   </nav>
@@ -342,7 +354,9 @@ export default function AppLayout({
                   <main id="main-content" className="min-h-0 flex-1 overflow-hidden" role="main">
                     {children}
                   </main>
-                  {terminalEnabled ? <LazyTerminalDock /> : null}
+                  {terminalEnabled ? (
+                    <LazyTerminalDock screenshotFixture={terminalScreenshotFixture} />
+                  ) : null}
                 </div>
               </div>
               {commandPaletteMounted ? (
@@ -364,15 +378,22 @@ function WorkspaceNavbarActions() {
 }
 
 function TerminalNavbarAction({ label }: { label: string }) {
-  const { toggleTerminal } = useTerminalDock()
+  const { enabled, isOpen, toggleTerminal } = useTerminalDock()
+
+  if (!enabled) return null
 
   return (
     <Button
       variant="ghost"
       size="icon"
-      className="h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
+      className={cn(
+        "h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground",
+        isOpen && "bg-accent text-foreground",
+      )}
       onClick={toggleTerminal}
       aria-label={label}
+      aria-pressed={isOpen}
+      data-navbar-action="terminal"
     >
       <TerminalSquare className="h-4 w-4" />
     </Button>

@@ -118,11 +118,12 @@ class ToolBatchResult:
 @dataclass(frozen=True, slots=True)
 class ToolExecutionContext:
     backend: Any
+    call_id: str = ""
     cancellation: Any | None = None
     environment: dict[str, str] = field(default_factory=dict)
-    sandbox_mode: Literal[
-        "read-only", "workspace-write", "danger-full-access"
-    ] = "workspace-write"
+    sandbox_mode: Literal["read-only", "workspace-write", "danger-full-access"] = (
+        "workspace-write"
+    )
 
 
 class HarnessTool(Protocol):

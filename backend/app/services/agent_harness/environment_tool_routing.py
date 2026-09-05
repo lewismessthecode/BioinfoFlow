@@ -19,7 +19,9 @@ from app.services.agent_harness.workspace_router import (
 
 
 WorkspaceT = TypeVar("WorkspaceT")
-ROUTED_WORKSPACE_TOOLS = frozenset({"read", "bash", "edit", "write"})
+ROUTED_WORKSPACE_TOOLS = frozenset(
+    {"read", "bash", "edit", "write", "publish_artifact"}
+)
 DEFAULT_ENVIRONMENT_ID = "local"
 
 
@@ -111,7 +113,7 @@ async def execute_routed_tool_call(
 
 
 def _replay_policy(tool_name: str) -> ReplayPolicy:
-    if tool_name == "read":
+    if tool_name in {"read", "publish_artifact"}:
         return "safe"
     if tool_name in {"edit", "write"}:
         return "verify"
