@@ -62,6 +62,8 @@ def test_artifact_projection_exposes_stable_download_contract() -> None:
     assert projected == {
         "artifact_id": "30000000-0000-0000-0000-000000000001",
         "id": "30000000-0000-0000-0000-000000000001",
+        "version_id": "30000000-0000-0000-0000-000000000001",
+        "version": 1,
         "session_id": "10000000-0000-0000-0000-000000000001",
         "run_id": "20000000-0000-0000-0000-000000000001",
         "type": "published_file",

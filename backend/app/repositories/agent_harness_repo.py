@@ -383,6 +383,80 @@ class AgentHarnessArtifactRepository(BaseRepository[AgentHarnessArtifact]):
         )
         return list(result.scalars().all())
 
+    async def list_latest_for_session(
+        self, session_id: str
+    ) -> list[AgentHarnessArtifact]:
+        """Return the newest immutable version for each logical Artifact."""
+
+        stable_id = func.coalesce(self.model.artifact_id, self.model.id)
+        version = func.coalesce(self.model.version, 1)
+        latest = (
+            select(stable_id.label("artifact_id"), func.max(version).label("version"))
+            .where(
+                self.model.session_id == session_id,
+                self.model.type != "command_output",
+            )
+            .group_by(stable_id)
+            .subquery()
+        )
+        result = await self.session.execute(
+            select(self.model)
+            .join(
+                latest,
+                (stable_id == latest.c.artifact_id) & (version == latest.c.version),
+            )
+            .where(
+                self.model.session_id == session_id,
+                self.model.type != "command_output",
+            )
+            .order_by(self.model.created_at.desc(), self.model.id.desc())
+        )
+        return list(result.scalars().all())
+
+    async def list_versions_owned(
+        self,
+        artifact_id: str,
+        *,
+        session_id: str,
+        workspace_id: str,
+        user_id: str,
+    ) -> list[AgentHarnessArtifact]:
+        result = await self.session.execute(
+            select(self.model)
+            .join(
+                AgentHarnessSession,
+                AgentHarnessSession.id == self.model.session_id,
+            )
+            .where(
+                func.coalesce(self.model.artifact_id, self.model.id) == artifact_id,
+                self.model.session_id == session_id,
+                self.model.type != "command_output",
+                AgentHarnessSession.workspace_id == workspace_id,
+                AgentHarnessSession.user_id == user_id,
+                AgentHarnessSession.status != "deleted",
+            )
+            .order_by(
+                func.coalesce(self.model.version, 1).desc(),
+                self.model.created_at.desc(),
+                self.model.id.desc(),
+            )
+        )
+        return list(result.scalars().all())
+
+    async def get_for_session_identity(
+        self, artifact_id: str, *, session_id: str
+    ) -> AgentHarnessArtifact | None:
+        return await self.session.scalar(
+            select(self.model)
+            .where(
+                func.coalesce(self.model.artifact_id, self.model.id) == artifact_id,
+                self.model.session_id == session_id,
+                self.model.type != "command_output",
+            )
+            .order_by(func.coalesce(self.model.version, 1).desc())
+            .limit(1)
+        )
+
     async def get_owned(
         self,
         artifact_id: str,
@@ -405,6 +479,61 @@ class AgentHarnessArtifactRepository(BaseRepository[AgentHarnessArtifact]):
             )
         )
         return result.scalar_one_or_none()
+
+    async def get_latest_owned(
+        self,
+        artifact_id: str,
+        *,
+        workspace_id: str,
+        user_id: str,
+    ) -> AgentHarnessArtifact | None:
+        result = await self.session.execute(
+            select(self.model)
+            .join(
+                AgentHarnessSession,
+                AgentHarnessSession.id == self.model.session_id,
+            )
+            .where(
+                func.coalesce(self.model.artifact_id, self.model.id) == artifact_id,
+                self.model.type != "command_output",
+                AgentHarnessSession.workspace_id == workspace_id,
+                AgentHarnessSession.user_id == user_id,
+                AgentHarnessSession.status != "deleted",
+            )
+            .order_by(
+                func.coalesce(self.model.version, 1).desc(),
+                self.model.created_at.desc(),
+                self.model.id.desc(),
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_version_owned(
+        self,
+        artifact_id: str,
+        version_id: str,
+        *,
+        session_id: str,
+        workspace_id: str,
+        user_id: str,
+    ) -> AgentHarnessArtifact | None:
+        return await self.session.scalar(
+            select(self.model)
+            .join(
+                AgentHarnessSession,
+                AgentHarnessSession.id == self.model.session_id,
+            )
+            .where(
+                self.model.id == version_id,
+                func.coalesce(self.model.artifact_id, self.model.id) == artifact_id,
+                self.model.session_id == session_id,
+                self.model.type != "command_output",
+                AgentHarnessSession.workspace_id == workspace_id,
+                AgentHarnessSession.user_id == user_id,
+                AgentHarnessSession.status != "deleted",
+            )
+        )
 
 
 class AgentHarnessToolOutputRepository(BaseRepository[AgentHarnessToolOutput]):

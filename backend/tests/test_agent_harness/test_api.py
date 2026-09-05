@@ -1042,14 +1042,39 @@ async def test_agent_api_preserves_attachment_and_artifact_frontend_contracts(
             }
         )
         artifact_id = artifact_result["artifact_id"]
+        updated_result = await AgentHarnessArtifactService(db).writer(
+            session_id=session_id,
+            run_id=str(run.id),
+            fence=RunFence(owner="api-test-worker", generation=generation),
+        )(
+            {
+                "type": "published_file",
+                "artifact_id": artifact_id,
+                "declaration_id": "tool:api-test-publish-v2",
+                "filename": "report.txt",
+                "title": "Final report",
+                "summary": None,
+                "mime_type": "text/plain",
+                "content": b"published result v2\n",
+            }
+        )
 
     artifacts = await async_client.get(f"/api/v1/agent/sessions/{session_id}/artifacts")
     detail = await async_client.get(f"/api/v1/agent/artifacts/{artifact_id}")
     download = await async_client.get(f"/api/v1/agent/artifacts/{artifact_id}/download")
+    versions = await async_client.get(
+        f"/api/v1/agent/artifacts/{artifact_id}/versions"
+    )
+    old_version = await async_client.get(
+        f"/api/v1/agent/artifacts/{artifact_id}/versions/"
+        f"{artifact_result['version_id']}"
+    )
 
     assert artifacts.status_code == 200
     assert artifacts.json()["data"][0]["id"] == artifact_id
     assert artifacts.json()["data"][0]["artifact_id"] == artifact_id
+    assert artifacts.json()["data"][0]["version"] == 2
+    assert artifacts.json()["data"][0]["version_id"] == updated_result["version_id"]
     assert artifacts.json()["data"][0]["run_id"] == str(run.id)
     assert artifacts.json()["data"][0]["location"].endswith(
         f"/agent/artifacts/{artifact_id}/download"
@@ -1065,7 +1090,11 @@ async def test_agent_api_preserves_attachment_and_artifact_frontend_contracts(
     assert "file_path" not in detail.json()["data"]
     assert download.status_code == 200
     assert download.headers["content-type"].startswith("text/plain")
-    assert download.content == b"published result\n"
+    assert download.content == b"published result v2\n"
+    assert versions.status_code == 200
+    assert [item["version"] for item in versions.json()["data"]] == [2, 1]
+    assert old_version.status_code == 200
+    assert old_version.json()["data"]["version"] == 1
 
     deleted = await async_client.delete(f"/api/v1/agent/attachments/{attachment['id']}")
     assert deleted.status_code == 200

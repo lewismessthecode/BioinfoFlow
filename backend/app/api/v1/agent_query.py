@@ -17,6 +17,7 @@ from app.repositories.agent_harness_repo import AgentHarnessRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.schemas.common import SuccessEnvelope
 from app.services.agent_harness.assets import AgentHarnessArtifactService
+from app.services.agent_harness.projection import artifact_view
 from app.services.agent_harness.tool_output_service import AgentHarnessToolOutputService
 from app.services.agent_harness.context_search import (
     AgentContextSearch,
@@ -190,6 +191,49 @@ async def get_artifact(
 
 
 @router.get(
+    "/artifacts/{artifact_id}/versions",
+    response_model=SuccessEnvelope[list[AgentArtifactView]],
+)
+async def list_artifact_versions(
+    artifact_id: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    versions = await AgentHarnessArtifactService(db).list_versions(
+        artifact_id=artifact_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    return success_response(
+        [artifact_view(version, version_specific=True) for version in versions],
+        request=request,
+    )
+
+
+@router.get(
+    "/artifacts/{artifact_id}/versions/{version_id}",
+    response_model=SuccessEnvelope[AgentArtifactView],
+)
+async def get_artifact_version(
+    artifact_id: str,
+    version_id: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    version = await AgentHarnessArtifactService(db).get_version(
+        artifact_id=artifact_id,
+        version_id=version_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    return success_response(
+        artifact_view(version, version_specific=True), request=request
+    )
+
+
+@router.get(
     "/artifacts/{artifact_id}/download",
     response_class=Response,
     responses={
@@ -210,6 +254,25 @@ async def download_artifact(
 ):
     path, filename, media_type = await AgentHarnessArtifactService(db).download_path(
         artifact_id=artifact_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    return FileResponse(path, media_type=media_type, filename=filename)
+
+
+@router.get(
+    "/artifacts/{artifact_id}/versions/{version_id}/download",
+    response_class=Response,
+)
+async def download_artifact_version(
+    artifact_id: str,
+    version_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    path, filename, media_type = await AgentHarnessArtifactService(db).download_path(
+        artifact_id=artifact_id,
+        version_id=version_id,
         workspace_id=user.workspace_id,
         user_id=user.id,
     )

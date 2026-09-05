@@ -43,7 +43,7 @@ class AgentHarnessArtifactService:
             or session.user_id != user_id
         ):
             raise NotFoundError(f"Agent session not found: {session_id}")
-        return await self.repo.list_for_session(session_id)
+        return await self.repo.list_latest_for_session(session_id)
 
     async def get(
         self,
@@ -52,13 +52,52 @@ class AgentHarnessArtifactService:
         workspace_id: str,
         user_id: str,
     ) -> AgentHarnessArtifact:
-        artifact = await self.repo.get_owned(
+        artifact = await self.repo.get_latest_owned(
             artifact_id,
             workspace_id=workspace_id,
             user_id=user_id,
         )
         if artifact is None:
             raise NotFoundError(f"Agent artifact not found: {artifact_id}")
+        return artifact
+
+    async def list_versions(
+        self,
+        *,
+        artifact_id: str,
+        workspace_id: str,
+        user_id: str,
+    ) -> list[AgentHarnessArtifact]:
+        latest = await self.get(
+            artifact_id=artifact_id, workspace_id=workspace_id, user_id=user_id
+        )
+        return await self.repo.list_versions_owned(
+            artifact_id,
+            session_id=str(latest.session_id),
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+
+    async def get_version(
+        self,
+        *,
+        artifact_id: str,
+        version_id: str,
+        workspace_id: str,
+        user_id: str,
+    ) -> AgentHarnessArtifact:
+        latest = await self.get(
+            artifact_id=artifact_id, workspace_id=workspace_id, user_id=user_id
+        )
+        artifact = await self.repo.get_version_owned(
+            artifact_id,
+            version_id,
+            session_id=str(latest.session_id),
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        if artifact is None:
+            raise NotFoundError(f"Agent artifact version not found: {version_id}")
         return artifact
 
     def delete_session_files(self, session_id: str) -> None:
@@ -70,11 +109,21 @@ class AgentHarnessArtifactService:
         artifact_id: str,
         workspace_id: str,
         user_id: str,
+        version_id: str | None = None,
     ) -> tuple[Path, str, str]:
-        artifact = await self.get(
-            artifact_id=artifact_id,
-            workspace_id=workspace_id,
-            user_id=user_id,
+        artifact = (
+            await self.get_version(
+                artifact_id=artifact_id,
+                version_id=version_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
+            if version_id is not None
+            else await self.get(
+                artifact_id=artifact_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
         )
         raw_path = str(artifact.file_path or "").strip()
         if not raw_path:
@@ -124,12 +173,14 @@ class AgentHarnessArtifactService:
         session_id: str,
         run_id: str,
         fence: RunFence,
+        version_conflict_retries: int = 1,
     ) -> dict[str, Any]:
         """Copy an explicitly declared workspace result into managed storage.
 
-        A Run plus declaration id is the idempotency key. This makes recovery
-        safe: retrying the same durable tool call returns the original Artifact,
-        while a conflicting retry is rejected instead of silently replacing it.
+        The logical identity is session-scoped and derived from the declaration
+        unless the Agent explicitly continues an existing Artifact. A run plus
+        declaration is the idempotency key for a version, so retries return the
+        original immutable row instead of replacing its content.
         """
 
         declaration_id = _required_artifact_text(
@@ -144,12 +195,18 @@ class AgentHarnessArtifactService:
         content = payload.get("content")
         if not isinstance(content, bytes):
             raise BadRequestError("Artifact declaration content must be bytes")
-        artifact_id = str(
+        requested_artifact_id = _optional_artifact_id(payload.get("artifact_id"))
+        artifact_id = requested_artifact_id or str(
             uuid5(
                 NAMESPACE_URL,
-                f"bioinfoflow:agent-artifact:{session_id}:{run_id}:{declaration_id}",
+                f"bioinfoflow:agent-artifact:{session_id}:{declaration_id}",
             )
         )
+        existing_identity = await self.repo.get_for_session_identity(
+            artifact_id, session_id=session_id
+        )
+        if requested_artifact_id is not None and existing_identity is None:
+            raise NotFoundError(f"Agent artifact not found: {artifact_id}")
         digest = hashlib.sha256(content).hexdigest()
         resource_ref = {
             "kind": "stored_file",
@@ -158,8 +215,48 @@ class AgentHarnessArtifactService:
             "size_bytes": len(content),
             "sha256": digest,
         }
-        root = agent_artifact_root(session_id, artifact_id)
-        staging_root = root.with_name(f".{artifact_id}.{uuid4()}.staging")
+        same_declaration_in_run = (
+            existing_identity is not None
+            and str(existing_identity.run_id) == run_id
+            and (
+                existing_identity.declaration_id
+                or (existing_identity.payload or {}).get("declaration_id")
+            )
+            == declaration_id
+        )
+        if (
+            same_declaration_in_run
+            and (
+                existing_identity.resource_ref != resource_ref
+                or existing_identity.title != title
+                or existing_identity.summary != summary
+            )
+        ):
+            raise ConflictError(
+                "Artifact declaration conflicts with an existing publication"
+            )
+        if (
+            existing_identity is not None
+            and existing_identity.resource_ref == resource_ref
+            and existing_identity.title == title
+            and existing_identity.summary == summary
+        ):
+            # Re-publishing unchanged bytes does not create a meaningless
+            # version. The existing row remains the durable source of truth.
+            return _artifact_reference(existing_identity)
+        version = (
+            (existing_identity.version or 1) + 1
+            if existing_identity is not None
+            else 1
+        )
+        version_id = artifact_id if existing_identity is None else str(
+            uuid5(
+                NAMESPACE_URL,
+                f"bioinfoflow:agent-artifact-version:{artifact_id}:{version}",
+            )
+        )
+        root = agent_artifact_root(session_id, version_id)
+        staging_root = root.with_name(f".{version_id}.{uuid4()}.staging")
         staging_root.mkdir(parents=True, exist_ok=False)
         output_path = staging_root / filename
         moved_to_final_root = False
@@ -168,35 +265,33 @@ class AgentHarnessArtifactService:
                 await output.write(content)
             try:
                 artifact = await self.repo.create_for_run(
-                    id=artifact_id,
+                    id=version_id,
                     session_id=session_id,
                     run_id=run_id,
                     fence=fence,
                     commit=False,
+                    artifact_id=artifact_id,
+                    version=version,
+                    declaration_id=declaration_id,
                     type="published_file",
                     title=title,
                     summary=summary,
                     payload={"declaration_id": declaration_id},
-                    file_path=f"{session_id}/{artifact_id}/{filename}",
+                    file_path=f"{session_id}/{version_id}/{filename}",
                     resource_ref=resource_ref,
                 )
             except IntegrityError:
                 await self.repo.session.rollback()
-                existing = await self.repo.get(artifact_id)
-                if existing is None:
-                    raise
-                _require_matching_artifact_declaration(
-                    existing,
-                    session_id=session_id,
-                    run_id=run_id,
-                    title=title,
-                    summary=summary,
-                    declaration_id=declaration_id,
-                    resource_ref=resource_ref,
-                )
-                _require_stored_artifact_content(root / filename, digest)
                 shutil.rmtree(staging_root, ignore_errors=True)
-                return _artifact_reference(existing)
+                if version_conflict_retries:
+                    return await self._publish_declared_file(
+                        payload,
+                        session_id=session_id,
+                        run_id=run_id,
+                        fence=fence,
+                        version_conflict_retries=version_conflict_retries - 1,
+                    )
+                raise ConflictError("Artifact version conflicts with another publication")
             if root.exists():
                 raise ConflictError(
                     "Artifact storage already exists for this declaration"
@@ -249,10 +344,21 @@ def artifact_reference_part(output: Any) -> dict[str, Any] | None:
 def _artifact_reference(artifact: AgentHarnessArtifact) -> dict[str, Any]:
     resource = artifact.resource_ref or {}
     return {
-        "artifact_id": str(artifact.id),
+        "artifact_id": str(artifact.artifact_id or artifact.id),
+        "version_id": str(artifact.id),
+        "version": artifact.version or 1,
         "title": artifact.title,
         "media_type": resource.get("mime_type"),
     }
+
+
+def _optional_artifact_id(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        return str(UUID(str(value)))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise BadRequestError("Artifact id must be a UUID") from exc
 
 
 def _required_artifact_text(value: Any, field: str) -> str:
@@ -272,30 +378,6 @@ def _artifact_filename(value: Any) -> str:
     if filename != Path(filename).name or filename in {".", ".."}:
         raise BadRequestError("Artifact filename must not include a path")
     return filename
-
-
-def _require_matching_artifact_declaration(
-    artifact: AgentHarnessArtifact,
-    *,
-    session_id: str,
-    run_id: str,
-    title: str,
-    summary: str | None,
-    declaration_id: str,
-    resource_ref: dict[str, Any],
-) -> None:
-    if (
-        str(artifact.session_id) != session_id
-        or str(artifact.run_id) != run_id
-        or artifact.type != "published_file"
-        or artifact.title != title
-        or artifact.summary != summary
-        or artifact.payload != {"declaration_id": declaration_id}
-        or artifact.resource_ref != resource_ref
-    ):
-        raise ConflictError(
-            "Artifact declaration conflicts with an existing publication"
-        )
 
 
 def _require_stored_artifact_content(path: Path, digest: str) -> None:

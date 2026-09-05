@@ -165,6 +165,8 @@ class AgentArtifactView(BaseModel):
 
     artifact_id: UUID
     id: UUID
+    version_id: UUID
+    version: int = Field(ge=1)
     session_id: UUID
     run_id: UUID | None = None
     type: str
