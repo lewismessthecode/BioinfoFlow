@@ -394,7 +394,7 @@ describe("TerminalDock", () => {
     expect(screen.getByText("local")).toBeInTheDocument()
     expect(screen.queryByText("sh • /workspace/project-1")).not.toBeInTheDocument()
     expect(screen.getByTitle("local • sh • /workspace/project-1")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "newTerminal" })).toBeDisabled()
+    expect(screen.queryByRole("button", { name: "newTerminal" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "clearTerminal" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "reconnectTerminal" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "closeTerminal" })).toBeInTheDocument()
@@ -403,16 +403,16 @@ describe("TerminalDock", () => {
     const tabStrip = screen.getByTestId("terminal-dock-tab-strip")
     const header = tabStrip.parentElement
     expect(header?.className).toContain("h-8")
-    expect(header?.className).toContain("border-b")
+    expect(header?.className).not.toContain("border-b")
+    expect(header?.className).toContain("bg-[var(--terminal-background)]")
     expect(tabStrip.className).toContain("items-center")
     expect(terminalTab).toHaveAttribute("data-testid", "terminal-dock-tab")
     expect(terminalTab).toHaveClass("h-6")
     expect(terminalTab).toHaveClass("rounded-md")
     expect(terminalTab.className).not.toContain("rounded-t-md")
-    expect(terminalTab.className).not.toContain("shadow")
+    expect(terminalTab.className).toContain("shadow")
     expect(terminalTab.className).not.toContain("border-b-[var(--terminal-background)]")
-    expect(terminalTab.className).toContain("bg-muted/55")
-    expect(screen.getByRole("button", { name: "newTerminal" })).toHaveClass("h-7")
+    expect(terminalTab.className).not.toContain("bg-muted/55")
     expect(screen.getByRole("button", { name: "closeTerminal" })).toHaveClass("h-7")
   })
 
@@ -459,6 +459,7 @@ describe("TerminalDock", () => {
     const errorMessage = await screen.findByText("Terminal connection failed")
     expect(errorMessage).toBeInTheDocument()
     expect(errorMessage.className).not.toContain("absolute")
+    expect(errorMessage).not.toHaveClass("border-b")
   })
 
   it("renders a flat terminal surface with the dock scrollbar hook", async () => {
@@ -471,8 +472,15 @@ describe("TerminalDock", () => {
     expect(viewport).toBeTruthy()
     expect(viewport?.className).toContain("terminal-dock-scroll")
     expect(viewport?.className).toContain("bg-transparent")
+    expect(body?.className).toContain("bg-[var(--terminal-background)]")
     expect(body?.className).toContain("px-5")
     expect(body?.className).toContain("pt-2")
+    expect(view.container.querySelector("[data-testid='terminal-dock-shell']")?.className).toContain(
+      "bg-[var(--terminal-background)]",
+    )
+    const dockSection = view.container.querySelector("section")
+    expect(dockSection).toHaveClass("border-t")
+    expect(dockSection).not.toHaveClass("border-b")
     expect(view.container.innerHTML).not.toContain("rounded-[18px]")
   })
 
