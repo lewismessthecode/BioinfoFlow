@@ -138,6 +138,54 @@ describe("WorkspacePanel", () => {
     expect(selectedRow.querySelector('[data-file-accent="data"]')).not.toBeNull()
   })
 
+  it("reloads the persisted file tab when its selection changes", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.readFile)
+      .mockResolvedValueOnce({
+        path: "reports/first.html",
+        content: "first file",
+        totalLines: 1,
+        truncated: false,
+      })
+      .mockResolvedValueOnce({
+        path: "reports/second.html",
+        content: "second file",
+        totalLines: 1,
+        truncated: false,
+      })
+
+    const view = render(
+      <WorkspacePanel
+        projectId="project-1"
+        adapter={adapter}
+        selectedFilePath="reports/first.html"
+        initialFile={{ name: "first.html", path: "reports/first.html" }}
+      />,
+    )
+
+    expect(await screen.findByTestId("workspace-code-preview")).toHaveTextContent(
+      "first file",
+    )
+
+    view.rerender(
+      <WorkspacePanel
+        projectId="project-1"
+        adapter={adapter}
+        selectedFilePath="reports/second.html"
+        initialFile={{ name: "second.html", path: "reports/second.html" }}
+      />,
+    )
+
+    expect(await screen.findByTestId("workspace-code-preview")).toHaveTextContent(
+      "second file",
+    )
+    expect(adapter.readFile).toHaveBeenLastCalledWith({
+      projectId: "project-1",
+      path: "reports/second.html",
+      signal: expect.any(AbortSignal),
+    })
+  })
+
   it("lets the selected file be opened externally and copied without changing the preview", async () => {
     const adapter = createAdapter()
     vi.mocked(adapter.listFiles).mockResolvedValueOnce([
@@ -246,6 +294,50 @@ describe("WorkspacePanel", () => {
 
     expect(screen.queryByTestId("workspace-code-preview")).not.toBeInTheDocument()
     expect(screen.getByText("Select a file")).toBeInTheDocument()
+  })
+
+  it("loads the preview when a saved file tab restores or switches its selected path", async () => {
+    const adapter = createAdapter()
+    vi.mocked(adapter.readFile).mockImplementation(async ({ path }) => ({
+      path,
+      content: `content for ${path}`,
+      totalLines: 1,
+      truncated: false,
+    }))
+
+    const view = render(
+      <WorkspacePanel
+        projectId="project-1"
+        adapter={adapter}
+        selectedFilePath="reports/report.html"
+      />,
+    )
+
+    expect(await screen.findByTestId("workspace-code-preview")).toHaveTextContent(
+      "content for reports/report.html",
+    )
+
+    view.rerender(
+      <WorkspacePanel
+        projectId="project-1"
+        adapter={adapter}
+        selectedFilePath="notes.txt"
+      />,
+    )
+
+    expect(await screen.findByTestId("workspace-code-preview")).toHaveTextContent(
+      "content for notes.txt",
+    )
+    expect(adapter.readFile).toHaveBeenNthCalledWith(1, {
+      projectId: "project-1",
+      path: "reports/report.html",
+      signal: expect.any(AbortSignal),
+    })
+    expect(adapter.readFile).toHaveBeenNthCalledWith(2, {
+      projectId: "project-1",
+      path: "notes.txt",
+      signal: expect.any(AbortSignal),
+    })
   })
 
   it("uses a workbench header and keeps the editor wider than the file tree", async () => {
