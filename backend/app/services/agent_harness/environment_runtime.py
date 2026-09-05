@@ -46,6 +46,7 @@ def workspace_runtime_for_session(
     *,
     remote_executor: RemoteExecutor | None = None,
     artifact_writer=None,
+    tool_output_writer=None,
 ) -> WorkspaceRuntime:
     snapshot = session.workspace_snapshot or {}
     runtime = str(snapshot.get("runtime") or "local")
@@ -66,6 +67,7 @@ def workspace_runtime_for_session(
             protected_roots=(),
             sandbox_runner=SandboxRunner.from_settings(),
             artifact_writer=artifact_writer,
+            tool_output_writer=tool_output_writer,
         )
     elif runtime == "remote_ssh":
         root = str(snapshot.get("root") or "")
@@ -82,6 +84,7 @@ def workspace_runtime_for_session(
             read_roots=(root,),
             write_roots=(root,),
             artifact_writer=artifact_writer,
+            tool_output_writer=tool_output_writer,
         )
     else:
         raise ValueError(f"unknown workspace runtime: {runtime}")
@@ -99,6 +102,7 @@ def routed_workspace_runtime_for_session(
     *,
     remote_executor: RemoteExecutor | None = None,
     artifact_writer=None,
+    tool_output_writer=None,
 ) -> RoutedWorkspaceRuntime:
     connection_repository = RemoteConnectionRepository(db)
     catalog = EnvironmentCatalog(connection_repository)
@@ -145,6 +149,7 @@ def routed_workspace_runtime_for_session(
     local_runtime = _local_workspace_runtime_for_session(
         session,
         artifact_writer=artifact_writer,
+        tool_output_writer=tool_output_writer,
     )
     allow_remote = _remote_environment_access_is_current(session)
 
@@ -164,6 +169,7 @@ def routed_workspace_runtime_for_session(
             environment_id=environment_id,
             remote_executor=remote_executor,
             artifact_writer=artifact_writer,
+            tool_output_writer=tool_output_writer,
         )
 
     async def visible_environments() -> tuple[EnvironmentDescriptor, ...]:
@@ -218,6 +224,7 @@ def _local_workspace_runtime_for_session(
     session: Any,
     *,
     artifact_writer=None,
+    tool_output_writer=None,
 ) -> WorkspaceRuntime:
     snapshot = session.workspace_snapshot or {}
     raw_root = snapshot.get("root") if snapshot.get("runtime") == "local" else None
@@ -238,6 +245,7 @@ def _local_workspace_runtime_for_session(
         protected_roots=(),
         sandbox_runner=SandboxRunner.from_settings(),
         artifact_writer=artifact_writer,
+        tool_output_writer=tool_output_writer,
     )
     return WorkspaceRuntime(
         backend,
@@ -258,6 +266,7 @@ async def _remote_environment_runtime(
     environment_id: str,
     remote_executor: RemoteExecutor | None,
     artifact_writer=None,
+    tool_output_writer=None,
 ) -> WorkspaceRuntime | None:
     connection_repository = RemoteConnectionRepository(db)
     service = RemoteConnectionService(db)
@@ -317,6 +326,7 @@ async def _remote_environment_runtime(
         read_roots=(root,),
         write_roots=(root,),
         artifact_writer=artifact_writer,
+        tool_output_writer=tool_output_writer,
     )
     return WorkspaceRuntime(
         backend,

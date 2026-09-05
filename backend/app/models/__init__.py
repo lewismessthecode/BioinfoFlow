@@ -6,6 +6,7 @@ from app.models.agent_harness import (
     AgentHarnessEntry,
     AgentHarnessRun,
     AgentHarnessSession,
+    AgentHarnessToolOutput,
 )
 from app.models.agent_trace import AgentModelTrace
 from app.models.agent_token import AgentToken
@@ -47,6 +48,7 @@ AgentRun = AgentHarnessRun
 AgentEntry = AgentHarnessEntry
 AgentAttachment = AgentHarnessAttachment
 AgentArtifact = AgentHarnessArtifact
+AgentToolOutput = AgentHarnessToolOutput
 
 __all__ = [
     "Base",
@@ -60,11 +62,13 @@ __all__ = [
     "AgentEntry",
     "AgentAttachment",
     "AgentArtifact",
+    "AgentToolOutput",
     "AgentHarnessSession",
     "AgentHarnessRun",
     "AgentHarnessEntry",
     "AgentHarnessAttachment",
     "AgentHarnessArtifact",
+    "AgentHarnessToolOutput",
     "AgentModelTrace",
     "LlmProvider",
     "LlmProviderCredential",

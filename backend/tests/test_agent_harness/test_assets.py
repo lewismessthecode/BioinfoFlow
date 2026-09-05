@@ -22,12 +22,14 @@ from app.path_layout import (
     agent_attachments_root,
     agent_session_artifacts_root,
     agent_session_attachments_root,
+    agent_session_tool_outputs_root,
     legacy_agent_attachments_root,
 )
 from app.repositories.agent_harness_repo import (
     AgentHarnessArtifactRepository,
     AgentHarnessAttachmentRepository,
     AgentHarnessRepository,
+    AgentHarnessToolOutputRepository,
     RunFence,
 )
 from app.services.agent_harness.assets import (
@@ -36,6 +38,7 @@ from app.services.agent_harness.assets import (
     migrate_legacy_agent_attachments,
     recover_agent_session_file_tombstones,
     stage_agent_session_files_for_delete,
+    artifact_reference_part,
 )
 from app.services.agent_harness.contracts import OpenSessionRequest
 from app.services.agent_harness.contracts import (
@@ -44,6 +47,10 @@ from app.services.agent_harness.contracts import (
     MessageCommand,
 )
 from app.services.agent_harness.message_payload import user_message_payload_builder
+from app.services.agent_harness.tool_output_service import (
+    AgentHarnessToolOutputService,
+    recover_agent_tool_output_storage,
+)
 from app.utils.exceptions import ConflictError, NotFoundError
 from app.workspace import DEFAULT_WORKSPACE_ID
 from tests.test_agent_harness.run_test_helpers import (
@@ -681,18 +688,23 @@ async def test_session_file_tombstone_restores_when_database_delete_did_not_comm
     session_id = str(session.id)
     attachments = agent_session_attachments_root(session_id)
     artifacts = agent_session_artifacts_root(session_id)
+    tool_outputs = agent_session_tool_outputs_root(session_id)
     attachments.mkdir(parents=True)
     artifacts.mkdir(parents=True)
+    tool_outputs.mkdir(parents=True)
     (attachments / "keep").write_text("attachment", encoding="utf-8")
     (artifacts / "keep").write_text("artifact", encoding="utf-8")
+    (tool_outputs / "keep").write_text("tool output", encoding="utf-8")
 
     tombstone = stage_agent_session_files_for_delete(session_id)
     assert not attachments.exists()
     assert not artifacts.exists()
+    assert not tool_outputs.exists()
 
     assert await recover_agent_session_file_tombstones(db_session) == 1
     assert (attachments / "keep").read_text(encoding="utf-8") == "attachment"
     assert (artifacts / "keep").read_text(encoding="utf-8") == "artifact"
+    assert (tool_outputs / "keep").read_text(encoding="utf-8") == "tool output"
     assert not tombstone.root.exists()
 
 
@@ -704,21 +716,27 @@ async def test_session_file_tombstone_purges_after_database_delete_commits(
     session_id = str(session.id)
     attachments = agent_session_attachments_root(session_id)
     artifacts = agent_session_artifacts_root(session_id)
+    tool_outputs = agent_session_tool_outputs_root(session_id)
     attachments.mkdir(parents=True)
     artifacts.mkdir(parents=True)
+    tool_outputs.mkdir(parents=True)
     (attachments / "remove").write_text("attachment", encoding="utf-8")
     (artifacts / "remove").write_text("artifact", encoding="utf-8")
+    (tool_outputs / "remove").write_text("tool output", encoding="utf-8")
 
     tombstone = stage_agent_session_files_for_delete(session_id)
     assert await AgentHarnessRepository(db_session).delete_session(session_id)
     attachments.mkdir(parents=True)
     artifacts.mkdir(parents=True)
+    tool_outputs.mkdir(parents=True)
     (attachments / "late").write_text("attachment", encoding="utf-8")
     (artifacts / "late").write_text("artifact", encoding="utf-8")
+    (tool_outputs / "late").write_text("tool output", encoding="utf-8")
 
     assert await recover_agent_session_file_tombstones(db_session) == 1
     assert not attachments.exists()
     assert not artifacts.exists()
+    assert not tool_outputs.exists()
     assert not tombstone.root.exists()
 
 
@@ -789,7 +807,7 @@ async def test_attachment_ids_must_be_ready_and_owned_by_prompt_session(
 
 
 @pytest.mark.asyncio
-async def test_artifact_writer_persists_large_output_and_enforces_ownership(
+async def test_command_output_is_persisted_outside_the_artifact_repository(
     db_session,
 ) -> None:
     session = await _session(db_session)
@@ -803,54 +821,135 @@ async def test_artifact_writer_persists_large_output_and_enforces_ownership(
         lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
     )
     assert generation == 1
-    service = AgentHarnessArtifactService(db_session)
+    service = AgentHarnessToolOutputService(db_session)
 
-    result = await service.writer(
+    writer = service.writer(
         session_id=session_id,
         run_id=run_id,
         fence=RunFence(owner="worker-1", generation=generation),
-    )(
-        {
-            "type": "command_output",
-            "command": "python large.py",
-            "cwd": "/workspace",
-            "stdout": "x" * 1000,
-            "stderr": "",
-        }
     )
-    artifact = await AgentHarnessArtifactRepository(db_session).get(
-        result["artifact_id"]
+    payload = {
+        "type": "command_output",
+        "tool_call_id": "call-large-output",
+        "command": "python large.py",
+        "cwd": "/workspace",
+        "stdout": "x" * 1000,
+        "stderr": "",
+    }
+    result = await writer(payload)
+    assert await writer(payload) == result
+    assert "artifact_id" not in result
+    assert result["tool_output_id"]
+    assert (
+        await AgentHarnessArtifactRepository(db_session).list_for_session(session_id)
+        == []
     )
-
-    assert artifact is not None
-    assert str(artifact.session_id) == session_id
-    assert str(artifact.run_id) == run_id
-    assert "stdout" not in artifact.payload
-    assert artifact.payload["stdout_bytes"] == 1000
     path, filename, media_type = await service.download_path(
-        artifact_id=str(artifact.id),
+        output_id=result["tool_output_id"],
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
     )
     stored = json.loads(path.read_text(encoding="utf-8"))
     assert stored["stdout"] == "x" * 1000
-    assert filename == "command-output.json"
+    assert stored["session_id"] == session_id
+    assert stored["run_id"] == run_id
+    assert filename == "tool-output.json"
     assert media_type == "application/json"
-    assert path.is_relative_to(agent_session_artifacts_root(str(session.id)))
-    assert (
-        await service.get(
-            artifact_id=str(artifact.id),
-            workspace_id=DEFAULT_WORKSPACE_ID,
-            user_id="dev",
-        )
-        is artifact
-    )
+    assert path.is_relative_to(agent_session_tool_outputs_root(session_id))
+    assert result["resource"]["session_id"] == session_id
+    assert result["resource"]["run_id"] == run_id
+
     with pytest.raises(NotFoundError):
         await service.get(
-            artifact_id=str(artifact.id),
+            output_id=result["tool_output_id"],
             workspace_id=DEFAULT_WORKSPACE_ID,
             user_id="other-user",
         )
+
+
+@pytest.mark.asyncio
+async def test_artifact_writer_rejects_command_output(db_session) -> None:
+    session = await _session(db_session)
+    repository = AgentHarnessRepository(db_session)
+    run = await create_agent_run(repository, str(session.id))
+    generation = await repository.claim_run(
+        str(run.id),
+        owner="worker-1",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+
+    writer = AgentHarnessArtifactService(db_session).writer(
+        session_id=str(session.id),
+        run_id=str(run.id),
+        fence=RunFence(owner="worker-1", generation=generation),
+    )
+    with pytest.raises(ValueError, match="only published_file"):
+        await writer(
+            {
+                "type": "command_output",
+                "tool_call_id": "call-artifact-reject",
+                "command": "pytest",
+                "stdout": "ok",
+                "stderr": "",
+            }
+        )
+
+    assert (
+        await AgentHarnessArtifactRepository(db_session).list_for_session(
+            str(session.id)
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_legacy_command_output_is_not_an_artifact_query_or_reference(
+    db_session,
+) -> None:
+    session = await _session(db_session)
+    repository = AgentHarnessRepository(db_session)
+    run = await create_agent_run(repository, str(session.id))
+    generation = await repository.claim_run(
+        str(run.id),
+        owner="worker-1",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    command_output = await AgentHarnessArtifactRepository(db_session).create_for_run(
+        session_id=str(session.id),
+        run_id=str(run.id),
+        fence=RunFence(owner="worker-1", generation=generation),
+        type="command_output",
+        title="pytest",
+        file_path=f"{session.id}/legacy/command-output.json",
+    )
+    service = AgentHarnessArtifactService(db_session)
+
+    assert (
+        await service.list_for_session(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+        == []
+    )
+    with pytest.raises(NotFoundError):
+        await service.get(
+            artifact_id=str(command_output.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+    with pytest.raises(NotFoundError):
+        await service.download_path(
+            artifact_id=str(command_output.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+    assert (
+        artifact_reference_part(
+            {"tool_output": {"tool_output_id": str(command_output.id)}}
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -1006,7 +1105,7 @@ async def test_declared_artifact_rejects_a_stale_run_fence(db_session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_stale_artifact_writer_leaves_no_database_row_or_file(
+async def test_stale_tool_output_writer_leaves_no_artifact_or_file(
     db_session,
 ) -> None:
     factory = async_sessionmaker(
@@ -1036,13 +1135,14 @@ async def test_stale_artifact_writer_leaves_no_database_row_or_file(
         assert second_generation == 2
 
     with pytest.raises(ValueError, match="stale Agent run fence"):
-        await AgentHarnessArtifactService(db_session).writer(
+        await AgentHarnessToolOutputService(db_session).writer(
             session_id=session_id,
             run_id=str(run.id),
             fence=stale_fence,
         )(
             {
                 "type": "command_output",
+                "tool_call_id": "call-stale-output",
                 "command": "python large.py",
                 "stdout": "x" * 1000,
                 "stderr": "",
@@ -1053,8 +1153,114 @@ async def test_stale_artifact_writer_leaves_no_database_row_or_file(
         await AgentHarnessArtifactRepository(db_session).list_for_session(session_id)
         == []
     )
-    artifact_root = agent_session_artifacts_root(session_id)
-    assert not artifact_root.exists() or list(artifact_root.iterdir()) == []
+    output_root = agent_session_tool_outputs_root(session_id)
+    assert not output_root.exists() or list(output_root.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_tool_output_database_failure_removes_staged_file(
+    db_session, monkeypatch
+) -> None:
+    session = await _session(db_session)
+    repository = AgentHarnessRepository(db_session)
+    run = await create_agent_run(repository, str(session.id))
+    generation = await repository.claim_run(
+        str(run.id),
+        owner="worker-1",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    service = AgentHarnessToolOutputService(db_session)
+
+    async def fail_create(**_kwargs):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(service.repo, "create_for_run", fail_create)
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        await service.writer(
+            session_id=str(session.id),
+            run_id=str(run.id),
+            fence=RunFence(owner="worker-1", generation=generation),
+        )(
+            {
+                "type": "command_output",
+                "tool_call_id": "call-db-failure",
+                "command": "pytest",
+                "stdout": "output",
+                "stderr": "",
+            }
+        )
+
+    root = agent_session_tool_outputs_root(str(session.id))
+    assert not root.exists() or list(root.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_tool_output_download_rejects_a_path_escape(db_session) -> None:
+    session = await _session(db_session)
+    repository = AgentHarnessRepository(db_session)
+    run = await create_agent_run(repository, str(session.id))
+    generation = await repository.claim_run(
+        str(run.id),
+        owner="worker-1",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    output = await AgentHarnessToolOutputRepository(db_session).create_for_run(
+        session_id=str(session.id),
+        run_id=str(run.id),
+        fence=RunFence(owner="worker-1", generation=generation),
+        tool_call_id="call-unsafe-output",
+        command="pytest",
+        cwd="/workspace",
+        exit_code=0,
+        file_path="../outside.json",
+        resource_ref={"filename": "outside.json"},
+    )
+
+    with pytest.raises(NotFoundError, match="invalid"):
+        await AgentHarnessToolOutputService(db_session).download_path(
+            output_id=str(output.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+
+
+@pytest.mark.asyncio
+async def test_tool_output_recovery_removes_only_unowned_storage(db_session) -> None:
+    session = await _session(db_session)
+    repository = AgentHarnessRepository(db_session)
+    run = await create_agent_run(repository, str(session.id))
+    generation = await repository.claim_run(
+        str(run.id),
+        owner="worker-1",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    service = AgentHarnessToolOutputService(db_session)
+    result = await service.writer(
+        session_id=str(session.id),
+        run_id=str(run.id),
+        fence=RunFence(owner="worker-1", generation=generation),
+    )(
+        {
+            "type": "command_output",
+            "tool_call_id": "call-owned-output",
+            "command": "pytest",
+            "stdout": "owned",
+            "stderr": "",
+        }
+    )
+    session_root = agent_session_tool_outputs_root(str(session.id))
+    orphan = session_root / "00000000-0000-0000-0000-000000000001"
+    staging = session_root / ".interrupted.staging"
+    orphan.mkdir()
+    staging.mkdir()
+    (orphan / "tool-output.json").write_text("{}", encoding="utf-8")
+
+    assert await recover_agent_tool_output_storage(db_session) == 2
+    assert not orphan.exists()
+    assert not staging.exists()
+    assert (session_root / result["tool_output_id"] / "tool-output.json").read_text(
+        encoding="utf-8"
+    )
 
 
 @pytest.mark.asyncio

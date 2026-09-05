@@ -75,6 +75,20 @@ def agent_artifact_root(session_id: str, artifact_id: str) -> Path:
     return agent_session_artifacts_root(session_id) / safe_artifact_id
 
 
+def agent_tool_outputs_root() -> Path:
+    return state_root() / "agent_harness" / "tool_outputs"
+
+
+def agent_session_tool_outputs_root(session_id: str) -> Path:
+    safe_session_id = safe_path_name(session_id, field_name="agent session id")
+    return agent_tool_outputs_root() / safe_session_id
+
+
+def agent_tool_output_root(session_id: str, output_id: str) -> Path:
+    safe_output_id = safe_path_name(output_id, field_name="agent tool output id")
+    return agent_session_tool_outputs_root(session_id) / safe_output_id
+
+
 def agent_workspaces_root() -> Path:
     return bioinfoflow_home() / "agent_workspaces"
 

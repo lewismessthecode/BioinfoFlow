@@ -9,6 +9,7 @@ from app.models.agent_harness import (
     AgentHarnessEntry,
     AgentHarnessRun,
     AgentHarnessSession,
+    AgentHarnessToolOutput,
 )
 from app.models.agent_token import AgentToken
 from app.models.base import Base
@@ -21,6 +22,7 @@ def test_harness_models_are_the_canonical_main_metadata_tables() -> None:
         "agent_entries": AgentHarnessEntry,
         "agent_attachments": AgentHarnessAttachment,
         "agent_artifacts": AgentHarnessArtifact,
+        "agent_tool_outputs": AgentHarnessToolOutput,
         "agent_tokens": AgentToken,
     }
 
@@ -33,6 +35,7 @@ def test_harness_models_are_the_canonical_main_metadata_tables() -> None:
     assert app.models.AgentEntry is AgentHarnessEntry
     assert app.models.AgentAttachment is AgentHarnessAttachment
     assert app.models.AgentArtifact is AgentHarnessArtifact
+    assert app.models.AgentToolOutput is AgentHarnessToolOutput
 
 
 def test_main_metadata_declares_real_harness_foreign_keys() -> None:
@@ -43,6 +46,8 @@ def test_main_metadata_declares_real_harness_foreign_keys() -> None:
         ("agent_attachments", "session_id"): ("agent_sessions.id", "CASCADE"),
         ("agent_artifacts", "session_id"): ("agent_sessions.id", "CASCADE"),
         ("agent_artifacts", "run_id"): ("agent_runs.id", "SET NULL"),
+        ("agent_tool_outputs", "session_id"): ("agent_sessions.id", "CASCADE"),
+        ("agent_tool_outputs", "run_id"): ("agent_runs.id", "SET NULL"),
         ("agent_tokens", "workspace_id"): ("workspaces.id", "CASCADE"),
         ("agent_tokens", "session_id"): ("agent_sessions.id", "CASCADE"),
         ("agent_tokens", "run_id"): ("agent_runs.id", "CASCADE"),

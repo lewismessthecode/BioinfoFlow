@@ -13,7 +13,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.agent_harness import AgentHarnessArtifact, AgentHarnessAttachment
+from app.models.agent_harness import (
+    AgentHarnessArtifact,
+    AgentHarnessAttachment,
+    AgentHarnessToolOutput,
+)
 from app.services.agent_harness.contracts import (
     EnvironmentScope,
     PermissionMode,
@@ -175,6 +179,22 @@ class AgentArtifactView(BaseModel):
     updated_at: datetime
 
 
+class AgentToolOutputView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    session_id: UUID
+    run_id: UUID | None = None
+    tool_call_id: str
+    command: str
+    cwd: str | None = None
+    exit_code: int | None = None
+    location: str | None = None
+    resource_ref: dict
+    created_at: datetime
+    updated_at: datetime
+
+
 class DeletedResource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -221,8 +241,25 @@ def artifact_data(artifact: AgentHarnessArtifact) -> dict:
     return artifact_view(artifact)
 
 
+def tool_output_data(output: AgentHarnessToolOutput) -> dict:
+    return {
+        "id": str(output.id),
+        "session_id": str(output.session_id),
+        "run_id": str(output.run_id) if output.run_id else None,
+        "tool_call_id": output.tool_call_id,
+        "command": output.command,
+        "cwd": output.cwd,
+        "exit_code": output.exit_code,
+        "location": f"/api/v1/agent/tool-outputs/{output.id}/download",
+        "resource_ref": output.resource_ref,
+        "created_at": output.created_at.isoformat(),
+        "updated_at": output.updated_at.isoformat(),
+    }
+
+
 __all__ = [
     "AgentArtifactView",
+    "AgentToolOutputView",
     "AgentAttachmentView",
     "AgentEnvironmentView",
     "AgentSessionCreate",
@@ -232,6 +269,7 @@ __all__ = [
     "AgentSettingsUpdate",
     "DeletedResource",
     "artifact_data",
+    "tool_output_data",
     "attachment_data",
     "model_selection",
 ]

@@ -197,10 +197,42 @@ class AgentHarnessArtifact(Base, UUIDMixin, TimestampMixin):
     resource_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
+class AgentHarnessToolOutput(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "agent_tool_outputs"
+    __table_args__ = (
+        UniqueConstraint(
+            "session_id",
+            "run_id",
+            "tool_call_id",
+            name="uq_agent_tool_outputs_session_run_tool_call",
+        ),
+    )
+
+    session_id: Mapped[str] = mapped_column(
+        GUID(),
+        ForeignKey("agent_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    run_id: Mapped[str | None] = mapped_column(
+        GUID(),
+        ForeignKey("agent_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    tool_call_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    command: Mapped[str] = mapped_column(Text, nullable=False)
+    cwd: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    file_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    resource_ref: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
 __all__ = [
     "AgentHarnessArtifact",
     "AgentHarnessAttachment",
     "AgentHarnessEntry",
     "AgentHarnessRun",
     "AgentHarnessSession",
+    "AgentHarnessToolOutput",
 ]

@@ -1692,14 +1692,14 @@ def test_long_lived_credentials_are_not_inherited_or_injected(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
-async def test_large_local_bash_output_is_spilled_after_secret_redaction(
+async def test_large_local_bash_output_is_spilled_as_tool_output_after_redaction(
     tmp_path: Path,
 ) -> None:
-    artifacts = []
+    outputs = []
 
-    async def write_artifact(payload):
-        artifacts.append(payload)
-        return {"artifact_id": "artifact-1"}
+    async def write_tool_output(payload):
+        outputs.append(payload)
+        return {"tool_output_id": "output-1"}
 
     class _Runner:
         enabled = True
@@ -1714,7 +1714,7 @@ async def test_large_local_bash_output_is_spilled_after_secret_redaction(
         write_roots=(tmp_path,),
         sandbox_runner=_Runner(),
         base_environment={"PATH": "/usr/bin:/bin"},
-        artifact_writer=write_artifact,
+        tool_output_writer=write_tool_output,
     )
 
     result = await backend.run_command(
@@ -1727,9 +1727,10 @@ async def test_large_local_bash_output_is_spilled_after_secret_redaction(
     )
 
     assert result["stdout"] == "[REDACTE\n[truncated]"
-    assert result["artifact"] == {"artifact_id": "artifact-1"}
-    assert artifacts[0]["stdout"] == "[REDACTED]-output-is-long"
-    assert "short-lived" not in json.dumps(artifacts)
+    assert result["tool_output"] == {"tool_output_id": "output-1"}
+    assert "artifact" not in result
+    assert outputs[0]["stdout"] == "[REDACTED]-output-is-long"
+    assert "short-lived" not in json.dumps(outputs)
 
 
 @pytest.mark.asyncio
@@ -1741,11 +1742,11 @@ async def test_unbounded_local_bash_output_hits_total_cap_and_kills_process_grou
         "_LOCAL_ARTIFACT_CAPTURE_LIMIT",
         64 * 1024,
     )
-    artifacts = []
+    outputs = []
 
-    async def write_artifact(payload):
-        artifacts.append(payload)
-        return {"artifact_id": "bounded-output"}
+    async def write_tool_output(payload):
+        outputs.append(payload)
+        return {"tool_output_id": "bounded-output"}
 
     marker = tmp_path / "child-survived.txt"
     backend = LocalWorkspaceBackend(
@@ -1754,7 +1755,7 @@ async def test_unbounded_local_bash_output_hits_total_cap_and_kills_process_grou
         write_roots=(tmp_path,),
         sandbox_runner=_ShellRunner(),
         base_environment={"PATH": "/usr/bin:/bin"},
-        artifact_writer=write_artifact,
+        tool_output_writer=write_tool_output,
     )
     command = (
         f"(sleep 0.3; printf survived > {marker}) & "
@@ -1777,13 +1778,14 @@ async def test_unbounded_local_bash_output_hits_total_cap_and_kills_process_grou
 
     assert result["output_limit_exceeded"] is True
     assert result["truncated"] is True
-    assert result["artifact"] == {"artifact_id": "bounded-output"}
-    assert len(artifacts) == 1
-    captured_bytes = len(artifacts[0]["stdout"].encode()) + len(
-        artifacts[0]["stderr"].encode()
+    assert result["tool_output"] == {"tool_output_id": "bounded-output"}
+    assert "artifact" not in result
+    assert len(outputs) == 1
+    captured_bytes = len(outputs[0]["stdout"].encode()) + len(
+        outputs[0]["stderr"].encode()
     )
     assert captured_bytes <= 64 * 1024
-    assert artifacts[0]["capture_truncated"] is True
+    assert outputs[0]["capture_truncated"] is True
     assert not marker.exists()
     assert _live_agent_bash_reader_tasks() == []
 
@@ -1853,12 +1855,12 @@ async def test_local_bash_termination_reaps_stream_readers(
 
 
 @pytest.mark.asyncio
-async def test_large_remote_bash_output_uses_the_same_artifact_writer() -> None:
-    artifacts = []
+async def test_large_remote_bash_output_uses_the_same_tool_output_writer() -> None:
+    outputs = []
 
-    async def write_artifact(payload):
-        artifacts.append(payload)
-        return {"artifact_id": "remote-artifact-1"}
+    async def write_tool_output(payload):
+        outputs.append(payload)
+        return {"tool_output_id": "remote-output-1"}
 
     class _LargeRemoteExecutor:
         async def run(self, connection, command, *, timeout_seconds, output_limit):
@@ -1902,7 +1904,7 @@ async def test_large_remote_bash_output_uses_the_same_artifact_writer() -> None:
         working_directory="/work/project",
         read_roots=("/work/project",),
         write_roots=("/work/project",),
-        artifact_writer=write_artifact,
+        tool_output_writer=write_tool_output,
     )
 
     result = await backend.run_command(
@@ -1915,9 +1917,10 @@ async def test_large_remote_bash_output_uses_the_same_artifact_writer() -> None:
     )
 
     assert result["stdout"].endswith("\n[truncated]")
-    assert result["artifact"] == {"artifact_id": "remote-artifact-1"}
-    assert len(artifacts[0]["stdout"]) > 100
-    assert "short-lived" not in json.dumps(artifacts)
+    assert result["tool_output"] == {"tool_output_id": "remote-output-1"}
+    assert "artifact" not in result
+    assert len(outputs[0]["stdout"]) > 100
+    assert "short-lived" not in json.dumps(outputs)
 
 
 @pytest.mark.asyncio

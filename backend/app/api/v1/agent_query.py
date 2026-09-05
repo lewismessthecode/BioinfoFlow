@@ -8,13 +8,16 @@ from app.api.v1.agent_api_common import dump_model, owned_session
 from app.api.v1.agent_schemas import (
     AgentArtifactView,
     AgentEnvironmentView,
+    AgentToolOutputView,
     artifact_data,
+    tool_output_data,
 )
 from app.auth.session import AuthUser
 from app.repositories.agent_harness_repo import AgentHarnessRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.schemas.common import SuccessEnvelope
 from app.services.agent_harness.assets import AgentHarnessArtifactService
+from app.services.agent_harness.tool_output_service import AgentHarnessToolOutputService
 from app.services.agent_harness.context_search import (
     AgentContextSearch,
     ContextSearchResult,
@@ -213,6 +216,60 @@ async def download_artifact(
     return FileResponse(path, media_type=media_type, filename=filename)
 
 
+@router.get(
+    "/sessions/{session_id}/tool-outputs",
+    response_model=SuccessEnvelope[list[AgentToolOutputView]],
+)
+async def list_session_tool_outputs(
+    session_id: str,
+    request: Request,
+    run_id: str | None = Query(default=None),
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    outputs = await AgentHarnessToolOutputService(db).list_for_session(
+        session_id=session_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+        run_id=run_id,
+    )
+    return success_response(
+        [tool_output_data(output) for output in outputs], request=request
+    )
+
+
+@router.get(
+    "/tool-outputs/{output_id}",
+    response_model=SuccessEnvelope[AgentToolOutputView],
+)
+async def get_tool_output(
+    output_id: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    output = await AgentHarnessToolOutputService(db).get(
+        output_id=output_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    return success_response(tool_output_data(output), request=request)
+
+
+@router.get("/tool-outputs/{output_id}/download", response_class=Response)
+async def download_tool_output(
+    output_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    path, filename, media_type = await AgentHarnessToolOutputService(db).download_path(
+        output_id=output_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    return FileResponse(path, media_type=media_type, filename=filename)
+
+
 __all__ = [
     "search_context",
     "list_agent_environments",
@@ -222,5 +279,8 @@ __all__ = [
     "list_session_artifacts",
     "get_artifact",
     "download_artifact",
+    "list_session_tool_outputs",
+    "get_tool_output",
+    "download_tool_output",
     "router",
 ]
