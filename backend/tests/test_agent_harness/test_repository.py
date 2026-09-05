@@ -21,6 +21,7 @@ from app.services.agent_harness.projection import entry_contract
 from app.services.agent_harness.presentation_mutation_service import (
     AgentPresentationMutationService,
 )
+from app.services.agent_harness.message_payload import user_message_payload_builder
 from app.services.agent_harness.snapshot import AgentHarnessSnapshotService
 from tests.test_agent_harness.run_test_helpers import (
     agent_turn_execution_config,
@@ -34,6 +35,10 @@ def _mutations(
     repository: AgentHarnessRepository,
 ) -> AgentPresentationMutationService:
     return AgentPresentationMutationService(repository)
+
+
+def _payloads(repository: AgentHarnessRepository):
+    return user_message_payload_builder(repository.db)
 
 
 async def _snapshot(repository: AgentHarnessRepository, session_id: str):
@@ -481,6 +486,7 @@ async def test_terminal_run_transitions_advance_the_public_revision(
     _, completed = await repository.commit_steers_or_complete_run(
         str(session.id),
         run_id=str(completed_run.id),
+        message_payload_builder=_payloads(repository),
     )
 
     cancelled_run = await create_agent_run(repository, str(session.id))
@@ -553,6 +559,7 @@ async def test_message_submission_atomically_creates_run_and_user_history(
     run, entry, inserted = await repository.submit_user_command(
         session_id,
         _message("message-1", "hello"),
+        message_payload_builder=_payloads(repository),
         turn_execution_config=turn_execution_config,
     )
 
@@ -586,6 +593,7 @@ async def test_message_submission_persists_a_precomputed_conversation_title(
     await repository.submit_user_command(
         session_id,
         _message("message-title", prompt),
+        message_payload_builder=_payloads(repository),
         automatic_title="Summarize this very long",
         turn_execution_config=turn_execution_config,
     )
@@ -614,6 +622,7 @@ async def test_message_submission_preserves_an_existing_conversation_title(
     await repository.submit_user_command(
         session_id,
         _message("message-title", "Generate a different title"),
+        message_payload_builder=_payloads(repository),
         automatic_title="Generated title",
         turn_execution_config=turn_execution_config,
     )
@@ -638,6 +647,7 @@ async def test_first_user_message_sets_title_after_setting_changes(
     await repository.submit_user_command(
         session_id,
         _message("message-title", "Review the configured workflow"),
+        message_payload_builder=_payloads(repository),
         automatic_title="Review the configured workflow",
         turn_execution_config=turn_execution_config,
     )
@@ -658,6 +668,7 @@ async def test_empty_user_text_does_not_create_a_conversation_title(
     await repository.submit_user_command(
         session_id,
         _message("message-title", "  \n  "),
+        message_payload_builder=_payloads(repository),
         turn_execution_config=turn_execution_config,
     )
 
@@ -690,6 +701,7 @@ async def test_message_submission_rolls_back_command_run_and_history_together(
         await repository.submit_user_command(
             session_id,
             _message("message-1", "hello"),
+            message_payload_builder=_payloads(repository),
             turn_execution_config=turn_execution_config,
         )
 
@@ -729,11 +741,13 @@ async def test_concurrent_messages_start_one_run_and_queue_the_other(
             first.submit_user_command(
                 session_id,
                 _message("message-1", "first"),
+                message_payload_builder=_payloads(first),
                 turn_execution_config=turn_execution_config,
             ),
             second.submit_user_command(
                 session_id,
                 _message("message-2", "second"),
+                message_payload_builder=_payloads(second),
                 turn_execution_config=turn_execution_config,
             ),
             return_exceptions=True,
@@ -1643,11 +1657,13 @@ async def test_concurrent_message_start_consumes_only_one_command(
                 session_id,
                 kind="message",
                 turn_execution_config=turn_execution_config,
+                message_payload_builder=_payloads(first),
             ),
             second.create_run_from_next_session_command(
                 session_id,
                 kind="message",
                 turn_execution_config=turn_execution_config,
+                message_payload_builder=_payloads(second),
             ),
         )
 
@@ -1700,6 +1716,7 @@ async def test_message_start_rolls_back_queue_run_and_history_together(
             session_id,
             kind="message",
             turn_execution_config=turn_execution_config,
+            message_payload_builder=_payloads(repository),
         )
 
     async with factory() as verification_db:

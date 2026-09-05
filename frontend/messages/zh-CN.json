@@ -2596,15 +2596,7 @@
         "browser": "浏览器",
         "files": "文件",
         "artifacts": "产物",
-        "dag": "DAG",
-        "openBrowser": "打开浏览器",
-        "closeBrowser": "关闭浏览器",
-        "openFiles": "打开文件",
-        "closeFiles": "关闭文件",
-        "openArtifacts": "打开产物",
-        "closeArtifacts": "关闭产物",
-        "openDag": "打开 DAG",
-        "closeDag": "关闭 DAG"
+        "dag": "DAG"
       }
     },
     "connection": {

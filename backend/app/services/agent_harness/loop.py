@@ -38,6 +38,7 @@ from app.services.agent_harness.model_target import (
     model_target_from_resolved,
     model_target_from_snapshot,
 )
+from app.services.agent_harness.message_payload import user_message_payload_builder
 from app.services.agent_harness.projection import (
     entry_contract,
     pending_interaction_entry_view,
@@ -133,6 +134,7 @@ class AgentLoop:
         self.compactor = DeterministicCompactor(
             preserve_recent_entries=self.limits.preserve_recent_entries
         )
+        self.message_payload_builder = user_message_payload_builder(repository.db)
 
     async def run(self, run_id: str, cancellation: asyncio.Event) -> None:
         run = await self.repository.get_run(run_id)
@@ -269,7 +271,9 @@ class AgentLoop:
                         steer_entries,
                         completed,
                     ) = await self.repository.commit_steers_or_complete_run(
-                        str(session.id), run_id=run_id
+                        str(session.id),
+                        run_id=run_id,
+                        message_payload_builder=self.message_payload_builder,
                     )
                     for entry in steer_entries:
                         await self.publish(
@@ -1456,7 +1460,9 @@ class AgentLoop:
 
     async def apply_steers(self, run_id: str, session_id: str) -> int:
         entries = await self.repository.commit_steers_to_history(
-            session_id, run_id=run_id
+            session_id,
+            run_id=run_id,
+            message_payload_builder=self.message_payload_builder,
         )
         for entry in entries:
             await self.publish(EntryCommittedEvent(entry=entry_contract(entry)))

@@ -43,6 +43,7 @@ from app.services.agent_harness.contracts import (
     InputTextPart,
     MessageCommand,
 )
+from app.services.agent_harness.message_payload import user_message_payload_builder
 from app.utils.exceptions import ConflictError, NotFoundError
 from app.workspace import DEFAULT_WORKSPACE_ID
 from tests.test_agent_harness.run_test_helpers import (
@@ -55,6 +56,10 @@ PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUB"
     "AScY42YAAAAASUVORK5CYII="
 )
+
+
+def _payloads(repository: AgentHarnessRepository):
+    return user_message_payload_builder(repository.db)
 
 
 def _upload(name: str, content: bytes) -> UploadFile:
@@ -362,6 +367,7 @@ async def test_orphan_cleanup_removes_unreferenced_attachment_from_existing_hist
     await repository.submit_user_command(
         session_id,
         _message("message-1", "existing history"),
+        message_payload_builder=_payloads(repository),
         turn_execution_config=await agent_turn_execution_config(repository, session_id),
     )
     service = AgentHarnessAttachmentService(db_session)
@@ -406,6 +412,7 @@ async def test_orphan_cleanup_preserves_attachment_referenced_by_history(
             "use attachment",
             attachment_ids=[attachment.id],
         ),
+        message_payload_builder=_payloads(repository),
         turn_execution_config=await agent_turn_execution_config(repository, session_id),
     )
     attachment_id = str(attachment.id)
@@ -440,6 +447,7 @@ async def test_explicit_delete_rejects_attachment_referenced_by_history(
             "keep this attachment in permanent history",
             attachment_ids=[attachment.id],
         ),
+        message_payload_builder=_payloads(repository),
         turn_execution_config=await agent_turn_execution_config(repository, session_id),
     )
     attachment_id = str(attachment.id)
@@ -530,6 +538,7 @@ async def test_cross_worker_prompt_and_delete_serialize_attachment_reference(
                     "Use the attachment if it still exists.",
                     attachment_ids=[attachment_id],
                 ),
+                message_payload_builder=_payloads(prompt_repository),
                 turn_execution_config=turn_execution_config,
             )
         )
@@ -623,6 +632,7 @@ async def test_cross_worker_delete_waits_for_prompt_history_commit(
                     "Commit this attachment permanently.",
                     attachment_ids=[attachment_id],
                 ),
+                message_payload_builder=_payloads(prompt_repository),
                 turn_execution_config=turn_execution_config,
             )
         )

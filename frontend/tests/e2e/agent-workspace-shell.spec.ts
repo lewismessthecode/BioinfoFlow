@@ -257,6 +257,74 @@ test.describe("Agent workspace shell", () => {
         caret: "hide",
       },
     )
+    if (isCompact) {
+      await page.keyboard.press("Escape")
+      await expect(openSurface).not.toBeVisible()
+      await expect(selectedFileTab).toBeVisible()
+      await expect(selectedFileTab).toHaveAccessibleName("rnaseq.wdl")
+      const selectedFileLabel = selectedFileTab.getByText("rnaseq.wdl", {
+        exact: true,
+      })
+      if (viewport.width < 640) {
+        await expect(selectedFileLabel).toBeHidden()
+        const closeSelectedFile = workspaceActions.getByRole("button", {
+          name: "Close rnaseq.wdl",
+        })
+        await expect(closeSelectedFile).toBeVisible()
+        await expect(closeSelectedFile).toBeEnabled()
+      } else {
+        await expect(selectedFileLabel).toBeVisible()
+        await expect(
+          workspaceActions.getByRole("button", { name: "Close rnaseq.wdl" }),
+        ).toBeVisible()
+      }
+
+      const actionGroupBox = await workspaceActions.boundingBox()
+      const selectedFileBox = await selectedFileTab.locator("..").boundingBox()
+      expect(actionGroupBox).not.toBeNull()
+      expect(selectedFileBox).not.toBeNull()
+      expect(selectedFileBox?.x ?? 0).toBeGreaterThanOrEqual(actionGroupBox?.x ?? 0)
+      expect(selectedFileBox?.y ?? 0).toBeGreaterThanOrEqual(actionGroupBox?.y ?? 0)
+      expect(
+        (selectedFileBox?.x ?? 0) + (selectedFileBox?.width ?? 0),
+      ).toBeLessThanOrEqual(
+        (actionGroupBox?.x ?? 0) + (actionGroupBox?.width ?? 0),
+      )
+      expect(
+        (selectedFileBox?.y ?? 0) + (selectedFileBox?.height ?? 0),
+      ).toBeLessThanOrEqual(
+        (actionGroupBox?.y ?? 0) + (actionGroupBox?.height ?? 0),
+      )
+      for (const action of await workspaceActions
+        .locator("[data-workspace-action]")
+        .all()) {
+        const actionBox = await action.boundingBox()
+        expect(actionBox).not.toBeNull()
+        expect(actionBox?.x ?? 0).toBeGreaterThanOrEqual(actionGroupBox?.x ?? 0)
+        expect(actionBox?.y ?? 0).toBeGreaterThanOrEqual(actionGroupBox?.y ?? 0)
+        expect((actionBox?.x ?? 0) + (actionBox?.width ?? 0)).toBeLessThanOrEqual(
+          (actionGroupBox?.x ?? 0) + (actionGroupBox?.width ?? 0),
+        )
+        expect((actionBox?.y ?? 0) + (actionBox?.height ?? 0)).toBeLessThanOrEqual(
+          (actionGroupBox?.y ?? 0) + (actionGroupBox?.height ?? 0),
+        )
+      }
+
+      await expect(page).toHaveScreenshot(
+        `agent-workspace-shell-${viewport.width}x${viewport.height}-file-tab.png`,
+        {
+          animations: "disabled",
+          caret: "hide",
+          mask: [
+            page.locator("#sidebar-workspace-tree"),
+            page.getByText(project.name, { exact: true }),
+          ],
+          maskColor: "#ff00ff",
+        },
+      )
+      await workspaceActions.getByRole("button", { name: "Close rnaseq.wdl" }).click()
+      await expect(selectedFileTab).toHaveCount(0)
+    }
     if (!isCompact) {
       const rail = page.getByTestId("agent-live-deck-rail")
       const workspaceHeader = page.getByTestId("workspace-panel-header")

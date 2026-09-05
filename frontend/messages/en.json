@@ -2596,15 +2596,7 @@
         "browser": "Browser",
         "files": "Files",
         "artifacts": "Artifacts",
-        "dag": "DAG",
-        "openBrowser": "Open browser",
-        "closeBrowser": "Close browser",
-        "openFiles": "Open files",
-        "closeFiles": "Close files",
-        "openArtifacts": "Open artifacts",
-        "closeArtifacts": "Close artifacts",
-        "openDag": "Open DAG",
-        "closeDag": "Close DAG"
+        "dag": "DAG"
       }
     },
     "connection": {
