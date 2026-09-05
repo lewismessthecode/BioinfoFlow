@@ -75,6 +75,51 @@ def test_agent_harness_repository_does_not_import_presentation_projectors() -> N
     assert "snapshot" not in repository_methods
 
 
+def test_agent_harness_repository_submission_does_not_assemble_user_message_payloads() -> (
+    None
+):
+    """The public submission path receives a canonical application payload."""
+
+    repository_path = BACKEND_ROOT / "app/repositories/agent_harness_repo.py"
+    tree = ast.parse(repository_path.read_text(encoding="utf-8"))
+    repository_class = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "AgentHarnessRepository"
+    )
+    submission = next(
+        node
+        for node in repository_class.body
+        if isinstance(node, ast.AsyncFunctionDef)
+        and node.name == "submit_user_command"
+    )
+    called_methods = {
+        node.func.attr
+        for node in ast.walk(submission)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    parameter_names = {argument.arg for argument in submission.args.args}
+    parameter_names.update(argument.arg for argument in submission.args.kwonlyargs)
+    builder_index = next(
+        index
+        for index, argument in enumerate(submission.args.kwonlyargs)
+        if argument.arg == "message_payload_builder"
+    )
+    repository_methods = {
+        node.name
+        for node in repository_class.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    assert "_user_message_payload" not in called_methods
+    assert "_user_message_payload" not in repository_methods
+    assert "message_payload_builder" in parameter_names
+    assert submission.args.kw_defaults[builder_index] is None
+    assert "app.services.agent_harness.message_payload" not in _imports(
+        repository_path
+    )
+
+
 def test_only_presentation_mutation_service_calls_presentation_mutations() -> None:
     """Keep all UI-facing durable writes behind the application seam."""
 

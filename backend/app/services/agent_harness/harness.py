@@ -36,6 +36,7 @@ from app.services.agent_harness.loop import (
     LoopLimits,
     checkpoint_interaction_id,
 )
+from app.services.agent_harness.message_payload import user_message_payload_builder
 from app.services.agent_harness.projection import (
     entry_contract,
     pending_interaction_entry_view,
@@ -130,6 +131,7 @@ class AgentHarness:
             model_exchange_recorder=model_exchange_recorder,
         )
         self._publishing_session_id: str | None = None
+        self.message_payload_builder = user_message_payload_builder(repository.db)
 
     @classmethod
     def for_database(
@@ -524,7 +526,9 @@ class AgentHarness:
         ):
             return False
         steer_entries, completed = await self.repository.commit_steers_or_complete_run(
-            session_id, run_id=run_id
+            session_id,
+            run_id=run_id,
+            message_payload_builder=self.message_payload_builder,
         )
         for entry in steer_entries:
             await self.event_hub.publish(

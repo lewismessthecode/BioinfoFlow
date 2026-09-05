@@ -3705,12 +3705,18 @@ async def test_recovery_final_answer_safe_point_atomically_commits_a_new_steer(
     )
     original_safe_point = restarted.repository.commit_steers_or_complete_run
 
-    async def enqueue_at_safe_point(target_session_id, *, run_id):
+    async def enqueue_at_safe_point(
+        target_session_id, *, run_id, message_payload_builder
+    ):
         await restarted.repository.enqueue_command(
             target_session_id,
             _steer("steer-at-recovery-safe-point", "Include the late metadata."),
         )
-        return await original_safe_point(target_session_id, run_id=run_id)
+        return await original_safe_point(
+            target_session_id,
+            run_id=run_id,
+            message_payload_builder=message_payload_builder,
+        )
 
     monkeypatch.setattr(
         restarted.repository,

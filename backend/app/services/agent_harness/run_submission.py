@@ -6,6 +6,7 @@ from app.repositories.agent_harness_repo import (
 )
 from app.services.agent_session_title import derive_automatic_session_title
 from app.services.agent_harness.contracts import MessageCommand
+from app.services.agent_harness.message_payload import user_message_payload_builder
 from app.services.agent_harness.turn_execution_config import (
     resolve_turn_execution_config,
 )
@@ -19,6 +20,7 @@ class AgentRunSubmissionService:
 
     def __init__(self, repository: AgentHarnessRepository) -> None:
         self.repository = repository
+        self._message_payload_builder = user_message_payload_builder(repository.db)
 
     async def submit_user_command(self, session_id: str, command: MessageCommand):
         automatic_title = derive_automatic_session_title(
@@ -41,6 +43,7 @@ class AgentRunSubmissionService:
                 return await self.repository.submit_user_command(
                     session_id,
                     command,
+                    message_payload_builder=self._message_payload_builder,
                     automatic_title=automatic_title,
                     turn_execution_config=turn_execution_config,
                     expected_settings_revision=int(session.settings_revision or 1),
@@ -72,6 +75,7 @@ class AgentRunSubmissionService:
                     session_id,
                     kind=kind,
                     turn_execution_config=turn_execution_config,
+                    message_payload_builder=self._message_payload_builder,
                     expected_settings_revision=int(session.settings_revision or 1),
                 )
             except SessionMutationConflict:

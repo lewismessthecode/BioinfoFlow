@@ -67,6 +67,11 @@ describe("AgentWorkspaceActionGroup", () => {
     const fileTab = screen.getByRole("button", { name: "rnaseq.wdl" })
     expect(fileTab).toHaveAttribute("aria-pressed", "true")
     expect(fileTab).toHaveAttribute("title", "workflows/rnaseq.wdl")
+    expect(fileTab).toHaveClass("max-sm:w-8", "max-sm:justify-center")
+    expect(fileTab.querySelector("span")).toHaveClass("max-sm:hidden")
+    expect(screen.getByRole("button", { name: "Close rnaseq.wdl" })).toHaveClass(
+      "max-sm:mr-0",
+    )
     const actionOrder = Array.from(
       screen
         .getByRole("group", { name: "Agent workspace" })

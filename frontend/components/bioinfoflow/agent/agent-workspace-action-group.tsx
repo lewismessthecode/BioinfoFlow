@@ -168,7 +168,7 @@ export function AgentWorkspaceActionGroup({
               {key === "files" && selectedFile ? (
                 <div
                   className={cn(
-                    "flex h-8 min-w-0 max-w-40 items-center rounded-[8px] text-muted-foreground transition-colors duration-200",
+                    "flex h-8 min-w-0 max-w-40 items-center rounded-[8px] text-muted-foreground transition-colors duration-200 max-sm:w-14 max-sm:shrink-0",
                     panelOpen && activeTab === "files"
                       ? "bg-muted/65 text-foreground"
                       : "hover:bg-muted/35 hover:text-foreground",
@@ -180,7 +180,7 @@ export function AgentWorkspaceActionGroup({
                     aria-pressed={panelOpen && activeTab === "files"}
                     aria-label={selectedFile.name}
                     title={selectedFile.path}
-                    className="flex h-full min-w-0 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+                    className="flex h-full min-w-0 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25 max-sm:w-8 max-sm:justify-center max-sm:px-0"
                     data-workspace-action="file"
                     data-testid="agent-action-file"
                     ref={(node) => {
@@ -190,11 +190,11 @@ export function AgentWorkspaceActionGroup({
                     onClick={onOpenSelectedFile}
                   >
                     <FileCode2 aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                    <span className="min-w-0 truncate">{selectedFile.name}</span>
+                    <span className="min-w-0 truncate max-sm:hidden">{selectedFile.name}</span>
                   </button>
                   <button
                     type="button"
-                    className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground hover:bg-background/70 hover:text-foreground"
+                    className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground hover:bg-background/70 hover:text-foreground max-sm:mr-0"
                     aria-label={`Close ${selectedFile.name}`}
                     title={`Close ${selectedFile.name}`}
                     onClick={onCloseSelectedFile}

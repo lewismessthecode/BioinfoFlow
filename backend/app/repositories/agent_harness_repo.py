@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any, Iterable
 
 from sqlalchemy import delete, func, or_, select, update
@@ -28,6 +28,10 @@ ACTIVE_RUN_STATUSES = ("queued", "running", "waiting_user")
 TERMINAL_RUN_STATUSES = ("completed", "failed", "cancelled")
 _SESSION_SETTING_UNSET = object()
 _EXPECTED_ACTIVE_RUN_UNSET = object()
+UserMessagePayloadBuilder = Callable[
+    [AgentHarnessSession, AgentCommand | dict[str, Any]],
+    Awaitable[dict[str, Any]],
+]
 
 
 class SessionMutationConflict(RuntimeError):
@@ -605,6 +609,7 @@ class AgentHarnessRepository:
         session_id: str,
         command: MessageCommand,
         *,
+        message_payload_builder: UserMessagePayloadBuilder,
         model_snapshot: dict | None = None,
         automatic_title: str | None = None,
         turn_execution_config: dict[str, Any] | None = None,
@@ -635,7 +640,7 @@ class AgentHarnessRepository:
                 await self.db.commit()
                 return None, None, False
 
-            payload = await self._user_message_payload(session, command)
+            message_payload = await message_payload_builder(session, command)
             current = await self.get_current_run(session_id)
             current_id = str(current.id) if current is not None else None
             if (
@@ -682,7 +687,7 @@ class AgentHarnessRepository:
                 sequence=sequence,
                 type="message",
                 schema_version=2,
-                payload=payload,
+                payload=message_payload,
             )
             session.history_revision = sequence
             session.command_ids = [*command_ids, command.command_id]
@@ -694,108 +699,6 @@ class AgentHarnessRepository:
         except Exception:
             await self.db.rollback()
             raise
-
-    async def _user_message_payload(
-        self,
-        session: AgentHarnessSession,
-        command: AgentCommand | dict[str, Any],
-    ) -> dict[str, Any]:
-        raw = command if isinstance(command, dict) else command.model_dump(mode="json")
-        raw_parts = raw.get("parts")
-        if not isinstance(raw_parts, list) or not raw_parts:
-            raise ValueError("message command requires parts")
-        attachment_ids = [
-            str(item.get("attachment_id"))
-            for item in raw_parts
-            if isinstance(item, dict)
-            and item.get("type") in {"attachment_ref", "file_ref", "directory_ref"}
-            and item.get("attachment_id") is not None
-        ]
-        attachments = await AgentHarnessAttachmentRepository(
-            self.db
-        ).require_ids_for_session(
-            attachment_ids,
-            session_id=str(session.id),
-            workspace_id=str(session.workspace_id),
-            user_id=session.user_id,
-        )
-        attachments_by_id = {str(item.id): item for item in attachments}
-        command_id = str(raw.get("command_id") or "message")
-        parts: list[dict[str, Any]] = []
-        for index, item in enumerate(raw_parts):
-            if not isinstance(item, dict):
-                raise ValueError("message command parts must be objects")
-            part_id = f"input:{command_id}:{index}"
-            part_type = item.get("type")
-            if part_type == "text":
-                parts.append({"id": part_id, "type": "text", "text": item["text"]})
-            elif part_type == "attachment_ref":
-                attachment_id = str(item["attachment_id"])
-                attachment = attachments_by_id[attachment_id]
-                parts.append(
-                    {
-                        "id": part_id,
-                        "type": "attachment_ref",
-                        "attachment_id": attachment_id,
-                        "filename": attachment.filename,
-                        "kind": attachment.kind,
-                        "mime_type": attachment.mime_type,
-                        "size_bytes": attachment.size_bytes,
-                    }
-                )
-            elif part_type in {"file_ref", "directory_ref"}:
-                attachment_id = item.get("attachment_id")
-                if attachment_id is not None:
-                    attachment = attachments_by_id[str(attachment_id)]
-                    parts.append(
-                        {
-                            "id": part_id,
-                            "type": part_type,
-                            "label": attachment.filename,
-                            "attachment_id": str(attachment.id),
-                        }
-                    )
-                else:
-                    parts.append(
-                        {
-                            "id": part_id,
-                            "type": part_type,
-                            "label": str(item["path"]),
-                            "project_id": item["project_id"],
-                            "path": item["path"],
-                        }
-                    )
-            elif part_type == "workflow_ref":
-                parts.append(
-                    {
-                        "id": part_id,
-                        "type": "workflow_ref",
-                        "workflow_id": item["workflow_id"],
-                        "label": str(item["workflow_id"]),
-                        "project_id": item.get("project_id"),
-                    }
-                )
-            elif part_type == "run_ref":
-                parts.append(
-                    {
-                        "id": part_id,
-                        "type": "run_ref",
-                        "run_id": item["run_id"],
-                        "label": str(item["run_id"]),
-                    }
-                )
-            else:
-                raise ValueError(f"unsupported message part: {part_type}")
-        return (
-            ENTRY_PAYLOAD_TYPES["message"]
-            .model_validate(
-                {
-                    "role": "user",
-                    "parts": parts,
-                }
-            )
-            .model_dump(mode="json")
-        )
 
     async def get_run(self, run_id: str) -> AgentHarnessRun | None:
         return await self.db.get(AgentHarnessRun, run_id)
@@ -1331,7 +1234,11 @@ class AgentHarnessRepository:
         ]
 
     async def commit_steers_to_history(
-        self, session_id: str, *, run_id: str
+        self,
+        session_id: str,
+        *,
+        run_id: str,
+        message_payload_builder: UserMessagePayloadBuilder,
     ) -> list[AgentHarnessEntry]:
         """Atomically move queued steers into canonical history at a safe point."""
 
@@ -1370,7 +1277,7 @@ class AgentHarnessRepository:
             sequence = int(session.history_revision)
             entries: list[AgentHarnessEntry] = []
             for command in selected:
-                payload = await self._user_message_payload(session, command)
+                payload = await message_payload_builder(session, command)
                 sequence += 1
                 entry = AgentHarnessEntry(
                     session_id=session_id,
@@ -1393,7 +1300,11 @@ class AgentHarnessRepository:
             raise
 
     async def commit_steers_or_complete_run(
-        self, session_id: str, *, run_id: str
+        self,
+        session_id: str,
+        *,
+        run_id: str,
+        message_payload_builder: UserMessagePayloadBuilder,
     ) -> tuple[list[AgentHarnessEntry], AgentHarnessRun]:
         """Commit queued steers or terminalize the Run in one fenced transaction."""
 
@@ -1435,7 +1346,7 @@ class AgentHarnessRepository:
             if selected:
                 sequence = int(session.history_revision)
                 for command in selected:
-                    payload = await self._user_message_payload(session, command)
+                    payload = await message_payload_builder(session, command)
                     sequence += 1
                     entry = AgentHarnessEntry(
                         session_id=session_id,
@@ -1516,6 +1427,7 @@ class AgentHarnessRepository:
         kind: str,
         model_snapshot: dict | None = None,
         turn_execution_config: dict[str, Any],
+        message_payload_builder: UserMessagePayloadBuilder,
         expected_settings_revision: int | None = None,
     ) -> tuple[AgentHarnessRun, AgentHarnessEntry] | None:
         """Atomically consume one queued command, create its Run, and publish input."""
@@ -1561,7 +1473,7 @@ class AgentHarnessRepository:
                 await self.db.commit()
                 return None
             command = queue.pop(index)
-            payload = await self._user_message_payload(session, command)
+            payload = await message_payload_builder(session, command)
             session.command_queue = queue
             run = AgentHarnessRun(
                 session_id=session_id,
