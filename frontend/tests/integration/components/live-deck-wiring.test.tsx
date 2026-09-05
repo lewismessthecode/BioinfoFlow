@@ -122,7 +122,7 @@ function fixtureAdapter(): AgentWorkspaceAdapter {
         source: "session",
         title: "qc-report.json",
         summary: "QC report",
-        kind: "report",
+        kind: "published_file",
         mediaType: "application/json",
         sizeBytes: 10,
         createdAt: "2026-09-04T00:00:00Z",

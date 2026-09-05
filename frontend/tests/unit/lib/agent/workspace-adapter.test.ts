@@ -35,7 +35,7 @@ describe("bioinfoFlowAgentWorkspaceAdapter", () => {
         id: "artifact-1",
         session_id: "session-1",
         run_id: "run-1",
-        type: "report",
+        type: "published_file",
         title: "report.json",
         summary: "QC report",
         payload: null,
