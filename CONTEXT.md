@@ -23,8 +23,9 @@ vocabulary is maintained in
 - **Decision / 决策**: the immutable resolution of a Decision Request.
 - **Approval / 审批**: a Decision whose subject is whether a governed action may
   proceed. Approval is not a synonym for authorization.
-- **Artifact / 产物**: a user-addressable output produced or published by a Turn
-  or Tool Action, such as a file, report, dataset, or structured result.
+- **Artifact / 产物**: a user-addressable, immutable delivery snapshot created only
+  when the Agent explicitly invokes `publish_artifact`. Workspace files, intermediate
+  files, test outputs, and command output are not Artifacts.
 - **Capability decision**: the current decision about whether a tool is
   exposed, callable, or resumable for a turn action, given the session policy,
   role, execution target, execution scope, and assessed risk.
