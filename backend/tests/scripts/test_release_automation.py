@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import tomllib
 from pathlib import Path
+
+import pytest
 
 from app.config import Settings
 
@@ -166,11 +169,51 @@ def test_ci_delivery_gate_fails_closed_and_covers_release_inputs() -> None:
     assert 'require_result "$DOCKER_CHANGED" "$DOCKER_RESULT"' in workflow
     assert 'require_result "$INSTALLER_CHANGED" "$INSTALLER_RESULT"' in workflow
     assert 'require_result "$WORKFLOWS_CHANGED" "$WORKFLOWS_RESULT"' in workflow
-    assert "frontend/components/bioinfoflow/terminal/" in workflow
-    assert "frontend/components/ui/resize-handle\\.tsx" in workflow
-    assert "frontend/app/\\(app\\)/layout\\.tsx" in workflow
+    assert "frontend/components/bioinfoflow/(agent|chat/|live-deck\\.tsx|navbar\\.tsx" in workflow
+    assert "frontend/components/ui/(dropdown-menu|resize-handle" in workflow
+    assert "frontend/app/\\(app\\)/(agent/|app-layout\\.tsx|layout\\.tsx)" in workflow
     assert "backend/app/services/terminal" in workflow
     assert "Upload Agent shell Playwright report and diagnostics" in workflow
+
+
+def _agent_browser_path_pattern() -> str:
+    workflow = read_repo_file(".github/workflows/ci.yml")
+    match = re.search(r"^\s*agent_browser_paths='([^']+)'$", workflow, re.MULTILINE)
+    assert match is not None, "CI must expose the Agent browser path contract"
+    return match.group(1)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "frontend/app/(app)/app-layout.tsx",
+        "frontend/components/bioinfoflow/navbar.tsx",
+        "frontend/hooks/use-agent-panel-controller.ts",
+        "frontend/lib/layout-breakpoints.ts",
+    ],
+)
+def test_ci_agent_browser_gate_covers_workspace_shell_paths(path: str) -> None:
+    result = subprocess.run(
+        ["grep", "-Eq", _agent_browser_path_pattern()],
+        input=f"{path}\n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, f"Agent browser checks do not cover {path}"
+
+
+def test_ci_agent_browser_gate_does_not_run_for_unrelated_frontend_files() -> None:
+    result = subprocess.run(
+        ["grep", "-Eq", _agent_browser_path_pattern()],
+        input="frontend/components/bioinfoflow/project-list.tsx\n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
 
 
 def test_installer_release_uses_only_the_immutable_numeric_tag() -> None:
