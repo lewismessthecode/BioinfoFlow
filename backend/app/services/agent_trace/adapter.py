@@ -6,6 +6,7 @@ import json
 from typing import Any, Protocol
 from uuid import UUID
 
+from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_harness import AgentHarnessEntry, AgentHarnessRun
@@ -72,6 +73,7 @@ class CompleteHarnessTraceAdapter:
                     turn_id=None,
                     category="system",
                     title="System",
+                    title_code="agentTrace.event.system",
                     summary=_first_line(_prompt_content(session.prompt_snapshot)),
                     status="completed",
                     sequence=1,
@@ -90,6 +92,7 @@ class CompleteHarnessTraceAdapter:
                         turn_id=turn_ids.get(str(trace.run_id)),
                         category="context",
                         title="Model request",
+                        title_code="agentTrace.event.modelRequest",
                         summary=_model_trace_summary(trace),
                         status=trace.status,
                         sequence=1,
@@ -258,6 +261,7 @@ def _entry_events(
                     turn_id=turn_id,
                     category="context",
                     title=_entry_title(entry.type),
+                    title_code=_entry_title_code(entry.type),
                     summary=_raw_first_line(entry.payload),
                     status="completed",
                     sequence=1,
@@ -279,6 +283,9 @@ def _entry_events(
         if category not in {"user", "assistant", "tool"}:
             category = "context"
         part_id = str(part.get("id") or f"part-{part_index}")
+        title, title_code, title_params = _part_title_metadata(
+            part_type, role=role, part=part
+        )
         candidates.append(
             _EventCandidate(
                 occurred_at=entry.created_at,
@@ -288,7 +295,9 @@ def _entry_events(
                     id=f"entry:{entry.id}:{part_id}",
                     turn_id=turn_id,
                     category=category,
-                    title=_part_title(part_type, role=role, part=part),
+                    title=title,
+                    title_code=title_code,
+                    title_params=title_params,
                     summary=_part_first_line(part),
                     status=(
                         str((tool_results.get(tool_result_key) or part).get("status"))
@@ -638,16 +647,41 @@ def _entry_title(entry_type: str) -> str:
     }.get(entry_type, "Context")
 
 
-def _part_title(part_type: str, *, role: str, part: Mapping[str, Any]) -> str:
+def _entry_title_code(entry_type: str) -> str:
+    return {
+        "compaction": "agentTrace.event.compaction",
+        "context_update": "agentTrace.event.contextUpdate",
+        "interaction_request": "agentTrace.event.interactionRequest",
+        "interaction_response": "agentTrace.event.interactionResponse",
+        "notice": "agentTrace.event.notice",
+        "plan": "agentTrace.event.plan",
+    }.get(entry_type, "agentTrace.event.context")
+
+
+def _part_title_metadata(
+    part_type: str, *, role: str, part: Mapping[str, Any]
+) -> tuple[str, str, dict[str, JsonValue]]:
     if part_type == "tool_call":
-        return str(part.get("display_name") or part.get("name") or "Tool")
+        name = str(part.get("name") or "Tool")
+        display_name = str(part.get("display_name") or name)
+        return (
+            display_name,
+            "agentTrace.event.toolCall",
+            {"name": name, "display_name": display_name},
+        )
     if part_type == "tool_result":
-        return "Tool result"
+        return "Tool result", "agentTrace.event.toolResult", {}
     if part_type == "reasoning_trace":
-        return "Reasoning"
-    return {"user": "User", "assistant": "Assistant", "tool": "Tool"}.get(
+        return "Reasoning", "agentTrace.event.reasoning", {}
+    role_title = {"user": "User", "assistant": "Assistant", "tool": "Tool"}.get(
         role, "Context"
     )
+    role_code = {
+        "user": "agentTrace.event.user",
+        "assistant": "agentTrace.event.assistant",
+        "tool": "agentTrace.event.tool",
+    }.get(role, "agentTrace.event.context")
+    return role_title, role_code, {}
 
 
 def _optional_int(value: Any) -> int | None:

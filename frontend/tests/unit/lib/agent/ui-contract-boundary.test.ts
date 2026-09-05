@@ -24,7 +24,11 @@ function productionConversationUiFiles() {
   const componentFiles = sourceFiles(agentComponentsDirectory).filter(
     (path) => !nonUiBoundaries.has(path),
   )
-  return ["app/(app)/agent/page.tsx", ...componentFiles]
+  return [
+    "app/(app)/agent/page.tsx",
+    "app/(demo)/demo/demo-page-client.tsx",
+    ...componentFiles,
+  ]
 }
 
 describe("Agent conversation UI contract boundary", () => {
@@ -32,10 +36,36 @@ describe("Agent conversation UI contract boundary", () => {
     const forbiddenImports = [
       "@/lib/agent/contracts",
       "@/lib/agent/transport/",
+      "@/lib/agent/store",
+      "@/lib/agent/client",
     ]
     const offenders = productionConversationUiFiles().filter((relativePath) => {
       const source = readFileSync(join(process.cwd(), relativePath), "utf8")
       return forbiddenImports.some((specifier) => source.includes(specifier))
+    })
+
+    expect(offenders).toEqual([])
+  })
+
+  it("keeps Workbench and demo replay on the Conversation binding ports", () => {
+    const entrypoints = [
+      "components/bioinfoflow/agent/agent-workbench.tsx",
+      "app/(demo)/demo/demo-page-client.tsx",
+    ]
+    const transportTerms = [
+      "AgentSessionState",
+      "conversationView",
+      "session_id",
+      "active_run",
+      "selected_environment_ids",
+      "command_id",
+      "interaction_id",
+      "model_id",
+      "provider_kind",
+    ]
+    const offenders = entrypoints.filter((relativePath) => {
+      const source = readFileSync(join(process.cwd(), relativePath), "utf8")
+      return transportTerms.some((term) => source.includes(term))
     })
 
     expect(offenders).toEqual([])

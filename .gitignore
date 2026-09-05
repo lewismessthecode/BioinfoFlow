@@ -150,6 +150,7 @@ data/
 !/docs/plans/2026-08-16-agent-conversation-stability-and-ui-restoration.md
 !/docs/plans/2026-08-17-agent-tool-and-adapter-stability.md
 !/docs/plans/2026-08-17-agent-orphan-tool-round-recovery.md
+!/docs/plans/2026-09-04-agent-0.3-six-phase-execution.md
 !/docs/adr/
 !/docs/adr/**
 docs/course-bioinfoflow-zh.html

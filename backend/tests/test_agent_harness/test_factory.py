@@ -259,6 +259,56 @@ async def test_open_session_workspace_rejects_unsafe_projectless_scope_ids(
 
 
 @pytest.mark.asyncio
+async def test_open_session_workspace_rejects_root_escape_from_workspace_layout(
+    db_session, monkeypatch, tmp_path
+) -> None:
+    workspace = await _workspace(db_session)
+    escaped_root = tmp_path / "escaped-agent-workspace"
+    monkeypatch.setattr(
+        "app.services.agent_harness.factory.agent_user_workspace_root",
+        lambda _workspace_id, _user_id: escaped_root,
+    )
+
+    with pytest.raises(ValueError, match="escapes managed root"):
+        await open_session_request_workspace(
+            db_session,
+            project_id=None,
+            workspace_id=str(workspace.id),
+            user_id="user-1",
+        )
+    assert not escaped_root.exists()
+
+
+@pytest.mark.asyncio
+async def test_open_session_workspace_rejects_cross_tenant_workspace_symlink(
+    db_session, monkeypatch, tmp_path
+) -> None:
+    workspace = await _workspace(db_session)
+    managed_root = tmp_path / "agent_workspaces"
+    other_tenant_root = managed_root / "other-workspace" / "other-user"
+    other_tenant_root.mkdir(parents=True)
+    requested_root = managed_root / str(workspace.id) / "user-1"
+    requested_root.parent.mkdir(parents=True)
+    requested_root.symlink_to(other_tenant_root, target_is_directory=True)
+    monkeypatch.setattr(
+        "app.services.agent_harness.factory.agent_workspaces_root",
+        lambda: managed_root,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_harness.factory.agent_user_workspace_root",
+        lambda _workspace_id, _user_id: requested_root,
+    )
+
+    with pytest.raises(ValueError, match="does not match requested scope"):
+        await open_session_request_workspace(
+            db_session,
+            project_id=None,
+            workspace_id=str(workspace.id),
+            user_id="user-1",
+        )
+
+
+@pytest.mark.asyncio
 async def test_open_session_workspace_describes_local_project(
     db_session, tmp_path, monkeypatch
 ) -> None:
@@ -1540,6 +1590,7 @@ def test_local_runtime_respects_the_frozen_root_and_uses_the_default_tool_contra
         "bash",
         "edit",
         "write",
+        "publish_artifact",
         "ask_user",
         "update_plan",
     ]

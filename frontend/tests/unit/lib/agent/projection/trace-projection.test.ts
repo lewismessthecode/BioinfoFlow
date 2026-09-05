@@ -18,6 +18,8 @@ function event(
     turn_id: "turn-1",
     category,
     title: category,
+    title_code: `agentTrace.event.${category}`,
+    title_params: {},
     summary,
     status: "completed",
     sequence,
@@ -101,6 +103,8 @@ describe("Agent Trace projection", () => {
         category: "system",
         status: null,
         phase: "pre_call",
+        titleCode: "agentTrace.event.system",
+        titleParams: {},
       }),
     ])
     expect(projected.view.turns[0].events.map((item) => item.id)).toEqual([
@@ -115,6 +119,10 @@ describe("Agent Trace projection", () => {
       "agent_work",
       "final_response",
     ])
+    expect(projected.view.turns[0].events[0]).toMatchObject({
+      titleCode: "agentTrace.event.user",
+      titleParams: {},
+    })
     expect(projected.view.turns[0].events.at(-1)?.firstLine).toBe(
       "Final answer",
     )

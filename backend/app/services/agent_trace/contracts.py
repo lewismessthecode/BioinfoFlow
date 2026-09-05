@@ -69,6 +69,9 @@ class TraceEvent(_StrictContract):
     turn_id: str | None = None
     category: TraceCategory
     title: str
+    # ``title`` remains for clients that predate the localized title contract.
+    title_code: str | None = None
+    title_params: dict[str, JsonValue] = Field(default_factory=dict)
     summary: str
     status: str | None = None
     sequence: int = Field(ge=1)

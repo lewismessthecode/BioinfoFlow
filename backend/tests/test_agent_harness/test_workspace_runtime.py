@@ -81,9 +81,74 @@ def test_runtime_exposes_only_the_default_tools(tmp_path: Path) -> None:
         "bash",
         "edit",
         "write",
+        "publish_artifact",
         "ask_user",
         "update_plan",
     ]
+
+
+@pytest.mark.asyncio
+async def test_publish_artifact_copies_only_a_workspace_file(tmp_path: Path) -> None:
+    report = tmp_path / "outputs" / "report.tsv"
+    report.parent.mkdir()
+    report.write_text("gene\tcount\nTP53\t4\n", encoding="utf-8")
+    received = []
+
+    async def write_artifact(payload):
+        received.append(payload)
+        return {
+            "artifact_id": "50000000-0000-0000-0000-000000000001",
+            "title": payload["title"],
+            "media_type": payload["mime_type"],
+        }
+
+    runtime = WorkspaceRuntime(
+        LocalWorkspaceBackend(
+            working_directory=tmp_path,
+            read_roots=(Path("/"),),
+            write_roots=(tmp_path,),
+            sandbox_runner=None,
+            artifact_writer=write_artifact,
+        )
+    )
+
+    result = await runtime.execute(
+        ToolCall(
+            "publish-1",
+            "publish_artifact",
+            {
+                "path": "outputs/report.tsv",
+                "title": "Differential expression",
+                "summary": "Approved results table",
+            },
+        )
+    )
+
+    assert result.status == "completed"
+    assert result.output["artifact"] == {
+        "artifact_id": "50000000-0000-0000-0000-000000000001",
+        "title": "Differential expression",
+        "media_type": "text/tab-separated-values",
+    }
+    assert received == [
+        {
+            "type": "published_file",
+            "declaration_id": "tool:publish-1",
+            "filename": "report.tsv",
+            "title": "Differential expression",
+            "summary": "Approved results table",
+            "mime_type": "text/tab-separated-values",
+            "content": b"gene\tcount\nTP53\t4\n",
+        }
+    ]
+
+    outside = tmp_path.parent / "private.txt"
+    outside.write_text("not publishable", encoding="utf-8")
+    rejected = await runtime.execute(
+        ToolCall("publish-2", "publish_artifact", {"path": str(outside)})
+    )
+    assert rejected.status == "failed"
+    assert "allowed roots" in (rejected.error or "")
 
 
 def test_harness_security_runtime_does_not_import_old_agent_core_modules() -> None:

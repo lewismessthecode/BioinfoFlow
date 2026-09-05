@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
 } from "react"
+import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 
 type TerminalDockCommand = {
   id: number
@@ -48,19 +49,37 @@ export function TerminalDockProvider({
   projectId,
   enabled,
   isMobile,
+  routeSessionId,
 }: {
   children: React.ReactNode
   projectId?: string
   enabled: boolean
   isMobile: boolean
+  routeSessionId?: string | null
 }) {
+  const workspaceShell = useOptionalWorkspaceShell()
+  const routeSession = routeSessionId
+    ? Array.from(workspaceShell?.projectConversations?.values() ?? [])
+        .flat()
+        .find((session) => session.id === routeSessionId)
+    : null
+  const routeScopeReady =
+    !routeSessionId ||
+    workspaceShell === null ||
+    routeSession !== undefined
+  const effectiveProjectId = routeSessionId
+    ? workspaceShell === null
+      ? projectId
+      : routeSession?.project_id ?? undefined
+    : projectId
+  const effectiveEnabled = enabled && routeScopeReady && Boolean(effectiveProjectId)
   const [isOpen, setIsOpen] = useState(false)
   const [dockHeight, setDockHeightState] = useState(DEFAULT_DOCK_HEIGHT)
   const [pendingCommand, setPendingCommand] =
     useState<TerminalDockCommand | null>(null)
 
   useEffect(() => {
-    if (!projectId) {
+    if (!effectiveProjectId) {
       /* eslint-disable react-hooks/set-state-in-effect */
       setIsOpen(false)
       setDockHeightState(DEFAULT_DOCK_HEIGHT)
@@ -68,9 +87,9 @@ export function TerminalDockProvider({
       /* eslint-enable react-hooks/set-state-in-effect */
       return
     }
-    const storedHeight = localStorage.getItem(storageKey(projectId, "height"))
+    const storedHeight = localStorage.getItem(storageKey(effectiveProjectId, "height"))
     const parsedHeight = storedHeight ? Number(storedHeight) : Number.NaN
-    localStorage.removeItem(storageKey(projectId, "open"))
+    localStorage.removeItem(storageKey(effectiveProjectId, "open"))
     setIsOpen(false)
     setPendingCommand(null)
     setDockHeightState(
@@ -78,35 +97,35 @@ export function TerminalDockProvider({
         ? clampDockHeight(parsedHeight)
         : DEFAULT_DOCK_HEIGHT
     )
-  }, [projectId])
+  }, [effectiveProjectId])
 
   useEffect(() => {
-    if (!projectId) return
-    localStorage.setItem(storageKey(projectId, "height"), String(dockHeight))
-  }, [dockHeight, projectId])
+    if (!effectiveProjectId) return
+    localStorage.setItem(storageKey(effectiveProjectId, "height"), String(dockHeight))
+  }, [dockHeight, effectiveProjectId])
 
   useEffect(() => {
-    if (!enabled) {
+    if (!effectiveEnabled) {
       /* eslint-disable react-hooks/set-state-in-effect */
       setIsOpen(false)
       setPendingCommand(null)
       /* eslint-enable react-hooks/set-state-in-effect */
     }
-  }, [enabled])
+  }, [effectiveEnabled])
 
   const openTerminal = useCallback(() => {
-    if (!enabled || !projectId) return
+    if (!effectiveEnabled || !effectiveProjectId) return
     setIsOpen(true)
-  }, [enabled, projectId])
+  }, [effectiveEnabled, effectiveProjectId])
 
   const closeTerminal = useCallback(() => {
     setIsOpen(false)
   }, [])
 
   const toggleTerminal = useCallback(() => {
-    if (!enabled || !projectId) return
+    if (!effectiveEnabled || !effectiveProjectId) return
     setIsOpen((prev) => !prev)
-  }, [enabled, projectId])
+  }, [effectiveEnabled, effectiveProjectId])
 
   const setDockHeight = useCallback((height: number) => {
     setDockHeightState(clampDockHeight(height))
@@ -118,22 +137,22 @@ export function TerminalDockProvider({
 
   const chdir = useCallback(
     (path: string) => {
-      if (!enabled || !projectId || !isOpen) return
+      if (!effectiveEnabled || !effectiveProjectId || !isOpen) return
       setPendingCommand({
         id: Date.now(),
-        projectId,
+        projectId: effectiveProjectId,
         type: "chdir",
         path,
       })
     },
-    [enabled, isOpen, projectId]
+    [effectiveEnabled, effectiveProjectId, isOpen]
   )
 
   const value = useMemo(
     () => ({
-      enabled,
+      enabled: effectiveEnabled,
       isMobile,
-      projectId,
+      projectId: effectiveProjectId,
       isOpen,
       dockHeight,
       pendingCommand,
@@ -145,9 +164,9 @@ export function TerminalDockProvider({
       chdir,
     }),
     [
-      enabled,
+      effectiveEnabled,
       isMobile,
-      projectId,
+      effectiveProjectId,
       isOpen,
       dockHeight,
       pendingCommand,

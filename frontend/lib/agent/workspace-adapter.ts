@@ -109,65 +109,6 @@ type FileReadResponse = {
   truncated: boolean
 }
 
-const DELIVERABLE_EXTENSIONS = new Set([
-  "csv",
-  "gif",
-  "htm",
-  "html",
-  "jpeg",
-  "jpg",
-  "json",
-  "md",
-  "markdown",
-  "pdf",
-  "png",
-  "svg",
-  "tsv",
-  "txt",
-  "webp",
-  "xml",
-  "xls",
-  "xlsx",
-  "yaml",
-  "yml",
-])
-
-const MEDIA_TYPES: Record<string, string> = {
-  csv: "text/csv",
-  gif: "image/gif",
-  htm: "text/html",
-  html: "text/html",
-  jpeg: "image/jpeg",
-  jpg: "image/jpeg",
-  json: "application/json",
-  md: "text/markdown",
-  markdown: "text/markdown",
-  pdf: "application/pdf",
-  png: "image/png",
-  svg: "image/svg+xml",
-  tsv: "text/tab-separated-values",
-  txt: "text/plain",
-  webp: "image/webp",
-  xml: "application/xml",
-  xls: "application/vnd.ms-excel",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  yaml: "application/yaml",
-  yml: "application/yaml",
-}
-
-const ARTIFACT_SCAN_BATCH_SIZE = 6
-const ARTIFACT_SCAN_MAX_DEPTH = 6
-const ARTIFACT_SCAN_MAX_NODES = 800
-const SKIPPED_ARTIFACT_DIRECTORIES = new Set([
-  ".git",
-  ".next",
-  ".turbo",
-  ".venv",
-  "__pycache__",
-  "node_modules",
-  "venv",
-])
-
 function mapFileNode(node: FileApiNode): WorkspaceFileNode {
   return {
     name: node.name,
@@ -198,78 +139,10 @@ function mapSessionArtifact(artifact: AgentArtifact): WorkspaceArtifact {
   }
 }
 
-function workspaceDeliverable(
-  node: FileApiNode,
-  projectId: string,
-): WorkspaceArtifact | null {
-  if (node.type !== "file") return null
-  const extension = node.name.split(".").pop()?.toLowerCase() ?? ""
-  if (!DELIVERABLE_EXTENSIONS.has(extension)) return null
-  const timestamp = node.modified_at ?? new Date(0).toISOString()
-  return {
-    id: `workspace:${projectId}:${node.path}`,
-    source: "workspace",
-    runId: null,
-    title: node.name,
-    summary: node.path === node.name ? null : node.path,
-    kind: extension || "file",
-    mediaType: MEDIA_TYPES[extension] ?? null,
-    sizeBytes: node.size_bytes ?? null,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    payload: null,
-    resource: { kind: "workspace", projectId, path: node.path },
-  }
-}
-
 export function workspaceArtifactSelectionId(artifact: WorkspaceArtifact) {
   return artifact.resource?.kind === "session"
     ? artifact.resource.artifactId
     : artifact.id
-}
-
-async function discoverWorkspaceDeliverables(input: {
-  projectId: string
-  signal?: AbortSignal
-}) {
-  const queue: Array<{ path: string; depth: number }> = [{ path: ".", depth: 0 }]
-  const deliverables: WorkspaceArtifact[] = []
-  let visitedNodes = 0
-
-  while (queue.length > 0 && visitedNodes < ARTIFACT_SCAN_MAX_NODES) {
-    const batch = queue.splice(0, ARTIFACT_SCAN_BATCH_SIZE)
-    const responses = await Promise.allSettled(
-      batch.map(({ path }) =>
-        apiRequest<FileListResponse>("/files", {
-          params: { project_id: input.projectId, path, recursive: false },
-          signal: input.signal,
-        }),
-      ),
-    )
-    for (let index = 0; index < responses.length; index += 1) {
-      const response = responses[index]
-      if (response.status !== "fulfilled") continue
-      const depth = batch[index].depth
-      for (const node of response.value.data.files) {
-        visitedNodes += 1
-        if (visitedNodes > ARTIFACT_SCAN_MAX_NODES) break
-        if (node.type === "directory") {
-          if (
-            depth < ARTIFACT_SCAN_MAX_DEPTH &&
-            !node.name.startsWith(".") &&
-            !SKIPPED_ARTIFACT_DIRECTORIES.has(node.name)
-          ) {
-            queue.push({ path: node.path, depth: depth + 1 })
-          }
-          continue
-        }
-        const artifact = workspaceDeliverable(node, input.projectId)
-        if (artifact) deliverables.push(artifact)
-      }
-    }
-  }
-
-  return deliverables
 }
 
 export const bioinfoFlowAgentWorkspaceAdapter: AgentWorkspaceAdapter = {
@@ -301,26 +174,9 @@ export const bioinfoFlowAgentWorkspaceAdapter: AgentWorkspaceAdapter = {
     })
   },
 
-  async listArtifacts({ sessionId, projectId, signal }) {
-    const [sessionArtifacts, projectFiles] = await Promise.all([
-      sessionId
-        ? listAgentArtifacts(sessionId, { signal }).then((items) =>
-            items.map(mapSessionArtifact),
-          )
-        : Promise.resolve([]),
-      projectId
-        ? discoverWorkspaceDeliverables({ projectId, signal })
-        : Promise.resolve([]),
-    ])
-    const sessionPaths = new Set(
-      sessionArtifacts
-        .map((artifact) => artifact.summary)
-        .filter((value): value is string => Boolean(value)),
-    )
-    return [
-      ...sessionArtifacts,
-      ...projectFiles.filter((artifact) => !artifact.summary || !sessionPaths.has(artifact.summary)),
-    ]
+  async listArtifacts({ sessionId, signal }) {
+    if (!sessionId) return []
+    return (await listAgentArtifacts(sessionId, { signal })).map(mapSessionArtifact)
   },
 
   async fetchArtifactContent({ artifact, signal }) {

@@ -31,6 +31,12 @@ fails closed. Internal work is selected by changed area:
 - `installer checks`: installer shell tests and localhost Compose rendering;
 - `workflow checks`: Actionlint over every workflow.
 
+Changes to the Agent shell include the protected Agent route, app layout,
+workspace and terminal panels, resize handle, terminal transport/runtime,
+related integration and E2E tests, and the matching backend Agent/terminal API
+or service paths. These changes select the macOS multi-viewport browser gate;
+the final `CI` job fails closed if that selected gate does not pass.
+
 Do not add workflow-level path filters to `CI`. A completely skipped required
 workflow can remain Pending forever. Docs-only changes instead skip the leaf
 jobs and receive a successful final gate.

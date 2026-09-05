@@ -29,7 +29,7 @@ describe("bioinfoFlowAgentWorkspaceAdapter", () => {
     mocks.fetchAgentArtifactContent.mockReset()
   })
 
-  it("merges session artifacts with recursively discovered HTML deliverables", async () => {
+  it("lists only server-owned session artifacts without scanning project files", async () => {
     mocks.listAgentArtifacts.mockResolvedValueOnce([
       {
         id: "artifact-1",
@@ -50,60 +50,34 @@ describe("bioinfoFlowAgentWorkspaceAdapter", () => {
         updated_at: "2026-08-17T00:00:00Z",
       },
     ])
-    mocks.apiRequest.mockResolvedValueOnce({
-      data: {
-        path: ".",
-        files: [
-          {
-            name: "site",
-            path: "site",
-            type: "directory",
-          },
-        ],
-      },
-    })
-    mocks.apiRequest.mockResolvedValueOnce({
-      data: {
-        path: "site",
-        files: [
-          {
-            name: "index.html",
-            path: "site/index.html",
-            type: "file",
-            size_bytes: 42,
-            modified_at: "2026-08-17T01:00:00Z",
-          },
-          {
-            name: "app.tsx",
-            path: "site/app.tsx",
-            type: "file",
-          },
-        ],
-      },
-    })
-
     const artifacts = await bioinfoFlowAgentWorkspaceAdapter.listArtifacts({
       sessionId: "session-1",
       projectId: "project-1",
     })
 
-    expect(mocks.apiRequest).toHaveBeenNthCalledWith(1, "/files", {
-      params: { project_id: "project-1", path: ".", recursive: false },
+    expect(mocks.listAgentArtifacts).toHaveBeenCalledWith("session-1", {
       signal: undefined,
     })
-    expect(mocks.apiRequest).toHaveBeenNthCalledWith(2, "/files", {
-      params: { project_id: "project-1", path: "site", recursive: false },
-      signal: undefined,
-    })
-    expect(artifacts.map((artifact) => artifact.id)).toEqual([
-      "session:artifact-1",
-      "workspace:project-1:site/index.html",
+    expect(mocks.apiRequest).not.toHaveBeenCalled()
+    expect(artifacts).toEqual([
+      expect.objectContaining({
+        id: "session:artifact-1",
+        source: "session",
+        runId: "run-1",
+        title: "report.json",
+        mediaType: "application/json",
+      }),
     ])
-    expect(artifacts[1]).toMatchObject({
-      title: "index.html",
-      mediaType: "text/html",
-      summary: "site/index.html",
+  })
+
+  it("returns no artifacts when a session is unavailable", async () => {
+    const artifacts = await bioinfoFlowAgentWorkspaceAdapter.listArtifacts({
+      projectId: "project-1",
     })
+
+    expect(artifacts).toEqual([])
+    expect(mocks.listAgentArtifacts).not.toHaveBeenCalled()
+    expect(mocks.apiRequest).not.toHaveBeenCalled()
   })
 
   it("keeps the inferred HTML media type when file downloads are octet streams", async () => {
@@ -121,6 +95,7 @@ describe("bioinfoFlowAgentWorkspaceAdapter", () => {
       artifact: {
         id: "workspace:project-1:index.html",
         source: "workspace",
+        runId: null,
         title: "index.html",
         summary: null,
         kind: "html",

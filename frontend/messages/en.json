@@ -1471,6 +1471,9 @@
     "openSidebar": "Open sidebar",
     "closeSidebar": "Close sidebar",
     "hidePanel": "Hide panel",
+    "resizePanel": "Resize workspace panel",
+    "resizeSidebar": "Resize sidebar",
+    "resizeTerminal": "Resize terminal",
     "refreshWorkspace": "Refresh workspace",
     "userMenu": "User menu",
     "message": "Message",
@@ -2452,6 +2455,7 @@
     "title": "Terminal",
     "newTerminal": "New terminal",
     "startingSession": "Starting terminal...",
+    "screenshotFixture": "Deterministic terminal fixture",
     "targets": {
       "local": "local"
     },
@@ -2569,6 +2573,10 @@
     },
     "loadErrorTitle": "Conversation unavailable",
     "loadErrorDescription": "The conversation could not be loaded.",
+    "routeLoading": {
+      "title": "Loading conversation",
+      "description": "Resolving conversation access and workspace scope."
+    },
     "retry": "Try again",
     "readOnly": {
       "archived": "This conversation is archived and can only be reviewed.",
@@ -2580,7 +2588,24 @@
       "description": "Inspect workspace files and workflows.",
       "action": "Workspace",
       "open": "Open workspace panel",
-      "close": "Close workspace panel"
+      "close": "Close workspace panel",
+      "codePreview": {
+        "label": "Workspace code preview"
+      },
+      "actions": {
+        "browser": "Browser",
+        "files": "Files",
+        "artifacts": "Artifacts",
+        "dag": "DAG",
+        "openBrowser": "Open browser",
+        "closeBrowser": "Close browser",
+        "openFiles": "Open files",
+        "closeFiles": "Close files",
+        "openArtifacts": "Open artifacts",
+        "closeArtifacts": "Close artifacts",
+        "openDag": "Open DAG",
+        "closeDag": "Close DAG"
+      }
     },
     "connection": {
       "connecting": "Connecting",
@@ -2875,6 +2900,23 @@
       "select": "Select {title}",
       "expand": "Expand {title}",
       "collapse": "Collapse {title}"
+    },
+    "eventTitles": {
+      "system": "System",
+      "modelRequest": "Model request",
+      "compaction": "Compaction",
+      "contextUpdate": "Context update",
+      "interactionRequest": "Interaction request",
+      "interactionResponse": "Interaction response",
+      "notice": "Notice",
+      "plan": "Plan",
+      "context": "Context",
+      "toolCall": "{display_name}",
+      "toolResult": "Tool result",
+      "reasoning": "Reasoning",
+      "user": "User",
+      "assistant": "Assistant",
+      "tool": "Tool"
     },
     "inspector": {
       "label": "Event inspector",
