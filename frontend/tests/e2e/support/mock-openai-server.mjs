@@ -7,6 +7,7 @@ const host = process.env.PLAYWRIGHT_MODEL_HOST || "127.0.0.1"
 const advertisedModels = [
   "e2e-workflow-run",
   "e2e-reasoning-stream",
+  "e2e-scroll-stream",
   "e2e-plan",
   "e2e-parallel-tools",
   "e2e-serial-tools",
@@ -70,6 +71,20 @@ async function streamCompletion(response, body) {
       reasoning: "Checking the keyless request.",
       chunks: ["Keyless model ", "stream completed."],
       delayMilliseconds: 1_000,
+    })
+    return
+  }
+
+  if (scenarioModel.startsWith("e2e-scroll-stream")) {
+    await streamText(response, model, {
+      chunks: [
+        "The streamed response is starting.",
+        Array.from(
+          { length: 100 },
+          (_, index) => `This streamed line ${index + 1} extends the response.`,
+        ).join(" "),
+      ],
+      delayMilliseconds: 3_000,
     })
     return
   }
