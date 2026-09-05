@@ -2,6 +2,7 @@ import type { APIRequestContext, TestInfo } from "@playwright/test"
 
 export type KeylessAgentScenario =
   | "streaming"
+  | "streaming-scroll"
   | "plan"
   | "parallel-tools"
   | "serial-tools"
@@ -50,6 +51,7 @@ const apiBaseUrl = `http://127.0.0.1:${backendPort}/api/v1`
 
 const scenarioModelPrefix: Record<KeylessAgentScenario, string> = {
   streaming: "e2e-reasoning-stream",
+  "streaming-scroll": "e2e-scroll-stream",
   plan: "e2e-plan",
   "parallel-tools": "e2e-parallel-tools",
   "serial-tools": "e2e-serial-tools",

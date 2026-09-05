@@ -1,7 +1,6 @@
 "use client"
 
 import {
-  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
@@ -72,7 +71,10 @@ export function ConversationTranscript({
   const contentRevision = useMemo(
     () =>
       transcript
-        .map((block) => `${block.id}:${block.type}:${block.createdAt ?? ""}`)
+        .map(
+          (block) =>
+            `${block.id}:${block.type}:${block.createdAt ?? ""}:${streamingTextRevision(block)}`,
+        )
         .join("|"),
     [transcript],
   )
@@ -107,13 +109,13 @@ export function ConversationTranscript({
     scrollElement.scrollTop += currentOffset - anchor.offset
   }, [contentRevision, followingBottom])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const scrollElement = scrollRef.current
     if (!scrollElement) return
     const contentChanged = contentRevisionRef.current !== contentRevision
     contentRevisionRef.current = contentRevision
     if (followingBottom && (!initializedRef.current || contentChanged)) {
-      scrollToBottom(scrollElement, "follow")
+      scrollToBottom(scrollElement)
     } else if (!followingBottom && initializedRef.current && contentChanged) {
       const frame = window.requestAnimationFrame(() => setHasNewContent(true))
       return () => window.cancelAnimationFrame(frame)
@@ -140,7 +142,7 @@ export function ConversationTranscript({
     setFollowingBottom(true)
     readAnchorRef.current = null
     setHasNewContent(false)
-    scrollToBottom(scrollElement, "jump")
+    scrollToBottom(scrollElement)
   }
 
   return (
@@ -237,6 +239,16 @@ function mergeSupplementalArtifacts(
     }
     return [block, ...(artifactsByRun.get(block.runId) ?? [])]
   })
+}
+
+function streamingTextRevision(block: TranscriptBlock) {
+  if (
+    (block.type === "message" || block.type === "reasoning") &&
+    block.streaming
+  ) {
+    return block.text.length
+  }
+  return 0
 }
 
 function TranscriptBlockView({
@@ -611,19 +623,10 @@ function findReadAnchor(element: HTMLElement, id: string) {
   ).find((candidate) => candidate.getAttribute(READ_ANCHOR_ATTRIBUTE) === id)
 }
 
-function scrollToBottom(element: HTMLElement, mode: "follow" | "jump") {
-  const behavior =
-    mode === "follow" || prefersReducedMotion() ? "auto" : "smooth"
+function scrollToBottom(element: HTMLElement) {
   if (typeof element.scrollTo === "function") {
-    element.scrollTo({ top: element.scrollHeight, behavior })
+    element.scrollTo({ top: element.scrollHeight, behavior: "auto" })
     return
   }
   element.scrollTop = element.scrollHeight
-}
-
-function prefersReducedMotion() {
-  return (
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  )
 }

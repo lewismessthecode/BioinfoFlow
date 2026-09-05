@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react"
+import { fireEvent, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
@@ -14,6 +14,7 @@ vi.mock("next-intl", () => ({
         "agentTranscript.title": "Agent transcript",
         "agentTranscript.copy": "Copy response",
         "agentTranscript.copied": "Copied response",
+        "agentTranscript.scroll_to_bottom": "Jump to latest",
         "agentHistory.plan.title": "Plan",
         "agentHistory.plan.progress": `${values?.completed ?? 0}/${values?.total ?? 0} complete`,
         "agentHistory.plan.status.pending": "Pending",
@@ -97,6 +98,108 @@ const planView: ConversationViewModel = {
 }
 
 describe("ConversationTranscript", () => {
+  it("jumps to the latest content and resumes following streamed output", async () => {
+    const user = userEvent.setup()
+    const firstMessage = {
+      type: "message" as const,
+      id: "message-1",
+      runId: "run-1",
+      createdAt: "2026-08-16T08:00:00.000Z",
+      role: "assistant" as const,
+      text: "First response.",
+      references: [],
+      streaming: false,
+    }
+    const streamingMessage = {
+      ...firstMessage,
+      id: "streaming-message",
+      createdAt: "2026-08-16T08:00:01.000Z",
+      text: "A streamed response is starting.",
+      streaming: true,
+    }
+    const grownStreamingMessage = {
+      ...streamingMessage,
+      text: "A streamed response has grown with more content.",
+    }
+    const { rerender } = renderWithProviders(
+      <ConversationTranscript
+        view={{ ...planView, transcript: [firstMessage] }}
+      />,
+    )
+    const transcript = screen.getByTestId("agent-transcript")
+    let scrollTop = 0
+    let scrollHeight = 1_000
+    Object.defineProperties(transcript, {
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: {
+        configurable: true,
+        get: () => scrollHeight,
+      },
+      scrollTop: {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => {
+          scrollTop = value
+        },
+      },
+    })
+    const scrollTo = vi.fn((options: ScrollToOptions) => {
+      if (options.behavior === "auto") {
+        scrollTop = Math.max(
+          0,
+          Math.min(Number(options.top), scrollHeight - transcript.clientHeight),
+        )
+      }
+    })
+    Object.defineProperty(transcript, "scrollTo", {
+      configurable: true,
+      value: scrollTo,
+    })
+
+    fireEvent.scroll(transcript)
+    rerender(
+      <ConversationTranscript
+        view={{ ...planView, transcript: [firstMessage, streamingMessage] }}
+      />,
+    )
+
+    const jumpToLatest = await screen.findByRole("button", {
+      name: "Jump to latest",
+    })
+    await user.click(jumpToLatest)
+
+    expect(scrollTo).toHaveBeenLastCalledWith({
+      top: 1_000,
+      behavior: "auto",
+    })
+    expect(scrollTop).toBe(900)
+    expect(
+      screen.queryByRole("button", { name: "Jump to latest" }),
+    ).toBeNull()
+
+    scrollTo.mockClear()
+    scrollHeight = 1_200
+    rerender(
+      <ConversationTranscript
+        view={{
+          ...planView,
+          transcript: [firstMessage, grownStreamingMessage],
+        }}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(scrollTo).toHaveBeenCalledWith({
+        top: 1_200,
+        behavior: "auto",
+      })
+    })
+    expect(scrollTop).toBe(1_100)
+    expect(
+      screen.queryByRole("button", { name: "Jump to latest" }),
+    ).toBeNull()
+  })
+
   it("delegates transcript artifact previews through the stable artifact block", async () => {
     const onOpenArtifact = vi.fn()
     renderWithProviders(
