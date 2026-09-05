@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, type ReactNode } from "react"
-import { Plus, TerminalSquare, X } from "@/lib/icons"
+import { TerminalSquare, X } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
@@ -70,7 +70,6 @@ type TerminalDockHeaderProps = {
   connectionState: string
   connectionLabel: string
   connectionAriaLabel: string
-  newTerminalLabel: string
   closeTerminalLabel: string
   closeTerminal: () => void
 }
@@ -82,13 +81,12 @@ function TerminalDockHeader({
   connectionState,
   connectionLabel,
   connectionAriaLabel,
-  newTerminalLabel,
   closeTerminalLabel,
   closeTerminal,
 }: TerminalDockHeaderProps) {
   return (
     <div
-      className="flex h-8 items-center justify-between gap-2 border-b border-border/45 bg-background px-2"
+      className="flex h-8 items-center justify-between gap-2 bg-[var(--terminal-background)] px-2"
       data-testid="terminal-dock-header"
     >
       <div
@@ -96,7 +94,7 @@ function TerminalDockHeader({
         data-testid="terminal-dock-tab-strip"
       >
         <div
-          className="inline-flex h-6 min-w-0 max-w-[320px] items-center gap-1.5 rounded-md bg-muted/55 px-2 text-xs dark:bg-muted/35"
+          className="inline-flex h-6 min-w-0 max-w-[320px] items-center gap-1.5 rounded-md bg-[var(--terminal-background)] px-2 text-xs shadow-sm shadow-black/10"
           data-testid="terminal-dock-tab"
           title={sessionMeta}
         >
@@ -123,16 +121,6 @@ function TerminalDockHeader({
             </span>
           ) : null}
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 rounded-md text-muted-foreground/60 transition-colors disabled:cursor-default disabled:opacity-60"
-          disabled
-          aria-label={newTerminalLabel}
-          title={newTerminalLabel}
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
       </div>
       <div className="flex items-center gap-0.5">
         <Button
@@ -170,7 +158,7 @@ function TerminalDockShell({
 }) {
   const content = (
     <div
-      className="flex h-full min-h-0 flex-col"
+      className="flex h-full min-h-0 flex-col bg-[var(--terminal-background)]"
       data-testid="terminal-dock-shell"
     >
       <TerminalDockHeader {...header} />
@@ -227,7 +215,7 @@ function TerminalDockShell({
       >
         <SheetContent
           side="bottom"
-          className="h-[72vh] !gap-0 rounded-none p-0 [&>button.absolute]:hidden"
+          className="h-[72vh] !gap-0 rounded-none !bg-[var(--terminal-background)] p-0 [&>button.absolute]:hidden"
           aria-describedby={undefined}
         >
           <SheetTitle className="sr-only">{header.title}</SheetTitle>
@@ -240,7 +228,7 @@ function TerminalDockShell({
   return (
     <section
       className={cn(
-        "relative border-t border-border/60 bg-background",
+        "relative border-t border-border/60 bg-[var(--terminal-background)]",
         isOpen && "animate-in slide-in-from-bottom-2 fade-in duration-200 motion-reduce:animate-none",
       )}
       style={{ height: isOpen ? dockHeight : 0 }}
@@ -507,7 +495,6 @@ function LiveTerminalDock() {
     connectionState,
     connectionLabel,
     connectionAriaLabel,
-    newTerminalLabel: tTerminal("newTerminal"),
     closeTerminalLabel: tAccessibility("closeTerminal"),
     closeTerminal,
   }
@@ -515,7 +502,7 @@ function LiveTerminalDock() {
   const body = (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--terminal-background)]">
       {error ? (
-        <div className="border-b border-destructive/15 bg-destructive/4 px-4 py-2 text-xs text-destructive">
+        <div className="bg-destructive/4 px-4 py-2 text-xs text-destructive">
           {error}
         </div>
       ) : null}
@@ -572,7 +559,6 @@ function TerminalDockFixture() {
     connectionState,
     connectionLabel: "",
     connectionAriaLabel,
-    newTerminalLabel: tTerminal("newTerminal"),
     closeTerminalLabel: tAccessibility("closeTerminal"),
     closeTerminal,
   }
