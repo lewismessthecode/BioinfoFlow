@@ -58,6 +58,7 @@ vi.mock("next-intl", () => ({
         "toasts.keyboardShortcutsHint": "Keyboard shortcuts",
         keyboardShortcuts: "Keyboard Shortcuts",
         helpDocs: "Help Docs",
+        settings: "Settings",
         signOut: "Sign Out",
         "roles.owner": "Owner",
       },
@@ -155,6 +156,7 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
 }))
 
 import { Navbar } from "@/components/bioinfoflow/navbar"
+import { AgentWorkspaceActionGroup } from "@/components/bioinfoflow/agent/agent-workspace-action-group"
 
 const AUTH_VIEWER: ViewerIdentity = {
   id: "viewer-1",
@@ -195,6 +197,15 @@ describe("Navbar", () => {
     expect(setModeMock).toHaveBeenCalledWith("dark")
   })
 
+  it("opens Settings from the More preferences menu", async () => {
+    const user = userEvent.setup()
+    render(<Navbar viewer={AUTH_VIEWER} />)
+
+    await user.click(screen.getByRole("button", { name: "Settings" }))
+
+    expect(pushMock).toHaveBeenCalledWith("/settings")
+  })
+
   it("calls the sidebar toggle when the hamburger button is shown", async () => {
     const user = userEvent.setup()
     const onSidebarToggle = vi.fn()
@@ -216,6 +227,52 @@ describe("Navbar", () => {
     const buttons = Array.from(actionRow.querySelectorAll("button"))
 
     expect(buttons.at(-1)).toHaveTextContent("Open run panel")
+  })
+
+  it("keeps More, Terminal, divider, workspace surfaces, and Panel Close in contract order", () => {
+    render(
+      <Navbar viewer={AUTH_VIEWER}>
+        <button type="button" data-navbar-action="terminal">Terminal</button>
+        <AgentWorkspaceActionGroup
+          activeTab="files"
+          panelOpen
+          labels={{
+            group: "Agent workspace",
+            artifacts: "Artifacts",
+            files: "Files",
+            dag: "DAG",
+            browser: "Browser",
+            openPanel: "Open workspace panel",
+            closePanel: "Close workspace panel",
+            closeTab: "Close Files",
+          }}
+          onOpenTab={vi.fn()}
+          onTogglePanel={vi.fn()}
+          onCloseTab={vi.fn()}
+        />
+      </Navbar>,
+    )
+
+    const actionRow = screen.getByTestId("navbar-action-row")
+    expect(
+      Array.from(
+        actionRow.querySelectorAll<HTMLElement>(
+          "[data-navbar-action], [data-workspace-divider], [data-workspace-action]",
+        ),
+      ).map((node) =>
+        node.dataset.navbarAction ??
+        (node.dataset.workspaceDivider ? "divider" : node.dataset.workspaceAction),
+      ),
+    ).toEqual([
+      "more",
+      "terminal",
+      "artifacts",
+      "files",
+      "dag",
+      "browser",
+      "divider",
+      "panel",
+    ])
   })
 
   it("removes the redundant top-right user menu trigger", () => {

@@ -26,7 +26,6 @@ import { ConversationTranscript } from "@/components/bioinfoflow/agent/conversat
 import { AgentPlanCard } from "@/components/bioinfoflow/agent/plan-entry"
 import { useAgentTranscriptArtifacts } from "@/components/bioinfoflow/agent/use-agent-transcript-artifacts"
 import {
-  environmentScopeFromSelection,
   environmentSelectionEquals,
   useAgentWorkbenchController,
   type DraftModelSelector,
@@ -38,27 +37,28 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   useAgentSession,
-  type AgentSessionState,
 } from "@/hooks/use-agent-session"
 import { useAgentStarterPrompts } from "@/hooks/use-agent-starter-prompts"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
 import type { ModelSelection } from "@/hooks/use-llm-settings"
 import {
-  dispatchAgentCommand,
-  updateAgentSession,
-} from "@/lib/agent/client"
+  catalogModelSelectionEquals,
+  catalogModelSelectionFromConversation,
+  conversationModelSelectionFromCatalog,
+} from "@/lib/agent/conversation-model/model-catalog-adapter"
 import type { AgentContextInput } from "@/lib/agent/context"
 import type {
   ComposerInputPart,
+  ConversationCommandPorts,
+  ConversationModelSelection,
   ConversationPermissionMode,
+  ConversationSessionBinding,
   ConversationSettings,
   ConversationSummary,
   ConversationWorkspaceAccess,
 } from "@/lib/agent/conversation-model/types"
 import {
-  publishAgentSessionSummary,
   publishConversationSummary,
-  sessionSummaryFromView,
 } from "@/lib/agent/session-preferences"
 import { ApiError } from "@/lib/api"
 import {
@@ -77,9 +77,11 @@ export type AgentWorkbenchHandle = {
 type AgentWorkbenchProps = {
   sessionId: string | null
   projectId: string | null
-  sessionState?: AgentSessionState
+  /** Stable Conversation binding injected by demo adapters and tests. */
+  sessionState?: ConversationSessionBinding
   interactive?: boolean
   onActiveSessionIdChange?: (sessionId: string) => void
+  onBeforeSessionRoute?: (sessionId: string) => void
   onSessionResolved?: (session: ConversationSummary) => void
   onOpenRun?: (runId: string) => void
   onOpenArtifact?: (artifactId: string) => void
@@ -106,6 +108,7 @@ export const AgentWorkbench = forwardRef<
     sessionState,
     interactive = true,
     onActiveSessionIdChange,
+    onBeforeSessionRoute,
     onSessionResolved,
     onOpenRun,
     onOpenArtifact,
@@ -125,6 +128,7 @@ export const AgentWorkbench = forwardRef<
     sessionId,
     projectId,
     onActiveSessionIdChange,
+    onBeforeSessionRoute,
     environmentTargets,
     requestedEnvironmentSelection,
     effectiveEnvironmentSelection,
@@ -153,6 +157,8 @@ export const AgentWorkbench = forwardRef<
     textareaRef: controller.textareaRef,
     setCancelHandler: controller.setCancelHandler,
     setModelConnectionOpen: controller.setModelConnectionOpen,
+    updateDraftModel: controller.updateDraftModel,
+    sendDraftMessage: controller.sendDraftMessage,
     onOpenRun,
     onOpenArtifact,
     workspaceAdapter,
@@ -179,7 +185,7 @@ export const AgentWorkbench = forwardRef<
           <SessionWorkbench
             key={controller.effectiveSessionId}
             sessionId={controller.effectiveSessionId}
-            state={sessionState}
+            binding={sessionState}
             interactive={interactive}
             onSessionResolved={onSessionResolved}
             {...common}
@@ -218,6 +224,11 @@ type SharedWorkbenchProps = {
   addContextInput: (input: AgentContextInput) => void
   removeContextInput: (inputId: string) => void
   ensureSession: (modelSelector?: DraftModelSelector) => Promise<string>
+  sendDraftMessage: (
+    parts: ComposerInputPart[],
+    model?: ConversationModelSelection,
+  ) => Promise<string>
+  updateDraftModel: (model: ConversationModelSelection | null) => Promise<void>
   routeToSession: (sessionId: string) => void
   textareaRef: RefObject<HTMLTextAreaElement | null>
   setCancelHandler: (handler: (() => Promise<void>) | null) => void
@@ -266,46 +277,35 @@ function DraftWorkbench({
     t("starterPrompts.checkWorkflow"),
   ]
   const ensureSession = shared.ensureSession
+  const updateDraftModel = shared.updateDraftModel
+  const sendDraftMessage = shared.sendDraftMessage
   const ensureDraftSession = useCallback(() => {
-    const modelSelector: DraftModelSelector | undefined = selectedModel
-      ? selectedModel.model_id
-        ? { modelId: selectedModel.model_id }
-        : selectedModel.provider && selectedModel.model
-          ? { provider: selectedModel.provider, model: selectedModel.model }
-          : undefined
-      : undefined
-    return ensureSession(modelSelector)
+    const modelSelector = conversationModelSelectionFromCatalog(selectedModel)
+  return ensureSession(
+      modelSelector
+        ? "modelId" in modelSelector
+          ? { modelId: modelSelector.modelId }
+          : { provider: modelSelector.provider, model: modelSelector.model }
+        : undefined,
+    )
   }, [ensureSession, selectedModel])
 
   const updateDraftModelSelection = useCallback(
     async (selection: ModelSelection | null) => {
       await setSelectedModel(selection)
-      if (!draftSessionId || !selection) return
-      const model = selection.model_id
-        ? { modelId: selection.model_id }
-        : selection.provider && selection.model
-          ? { provider: selection.provider, model: selection.model }
-          : null
-      if (!model) return
-
-      const snapshot = await updateAgentSession(draftSessionId, {
-        model,
-      })
-      publishAgentSessionSummary(sessionSummaryFromView(snapshot.session))
+      await updateDraftModel(conversationModelSelectionFromCatalog(selection))
     },
-    [draftSessionId, setSelectedModel],
+    [setSelectedModel, updateDraftModel],
   )
 
   const send = async (parts: ComposerInputPart[]) => {
     setError(null)
     shared.setModelConnectionOpen(false)
     try {
-      const sessionId = await ensureDraftSession()
-      await dispatchAgentCommand(sessionId, {
-        type: "message",
-        command_id: globalThis.crypto.randomUUID(),
+      const sessionId = await sendDraftMessage(
         parts,
-      })
+        conversationModelSelectionFromCatalog(selectedModel) ?? undefined,
+      )
       shared.setContextInputs([])
       shared.routeToSession(sessionId)
     } catch (caught) {
@@ -392,18 +392,18 @@ function LiveSessionWorkbench({
   onSessionResolved?: (session: ConversationSummary) => void
 }) {
   const state = useAgentSession(sessionId)
-  return <SessionWorkbench sessionId={sessionId} state={state} {...props} />
+  return <SessionWorkbench sessionId={sessionId} binding={state} {...props} />
 }
 
 function SessionWorkbench({
   sessionId,
-  state,
+  binding,
   interactive,
   onSessionResolved,
   ...shared
 }: SharedWorkbenchProps & {
   sessionId: string
-  state: AgentSessionState
+  binding: ConversationSessionBinding
   interactive: boolean
   onSessionResolved?: (session: ConversationSummary) => void
 }) {
@@ -417,26 +417,26 @@ function SessionWorkbench({
   )
 
   useEffect(() => {
-    setCancelHandler(interactive ? state.cancel : null)
+    setCancelHandler(interactive ? binding.commands.cancel : null)
     return () => {
       setCancelHandler(null)
     }
-  }, [interactive, setCancelHandler, state.cancel])
+  }, [interactive, setCancelHandler, binding.commands.cancel])
 
-  const conversationView = state.conversationView ?? null
+  const view = binding.view ?? null
 
   const supplementalArtifacts = useAgentTranscriptArtifacts({
     adapter: shared.workspaceAdapter,
     sessionId,
     projectId: shared.projectId,
-    view: conversationView,
+    view,
   })
 
   useEffect(() => {
-    if (!conversationView) return
-    publishConversationSummary(conversationView.conversation)
-    onSessionResolved?.(conversationView.conversation)
-  }, [conversationView, onSessionResolved])
+    if (!view) return
+    publishConversationSummary(view.conversation)
+    onSessionResolved?.(view.conversation)
+  }, [view, onSessionResolved])
 
   const runSessionCommand = async (command: () => Promise<void>) => {
     shared.setModelConnectionOpen(false)
@@ -451,19 +451,19 @@ function SessionWorkbench({
   }
 
   const sendMessage = async (parts: ComposerInputPart[]) => {
-    await runSessionCommand(() => state.sendMessage(parts))
+    await runSessionCommand(() => binding.commands.sendMessage(parts))
     shared.setContextInputs([])
     shared.routeToSession(sessionId)
   }
   const steer = async (parts: ComposerInputPart[]) => {
-    await runSessionCommand(() => state.steer(parts))
+    await runSessionCommand(() => binding.commands.steer(parts))
     shared.setContextInputs([])
   }
 
-  if (state.isLoading && !conversationView) return <WorkbenchSkeleton />
+  if (binding.isLoading && !view) return <WorkbenchSkeleton />
 
-  const effectiveEnvironmentSelection = conversationView
-    ? environmentSelectionFromSettings(conversationView.composer.settings)
+  const effectiveEnvironmentSelection = view
+    ? environmentSelectionFromSettings(view.composer.settings)
     : { mode: "auto" as const }
   const visibleEnvironmentUpdate =
     environmentUpdate &&
@@ -492,7 +492,9 @@ function SessionWorkbench({
     }
     setEnvironmentUpdate({ selection })
     try {
-      await state.updateEnvironmentScope(environmentScopeFromSelection(selection))
+      await binding.commands.updateEnvironmentScope(
+        conversationEnvironmentScopeFromSelection(selection),
+      )
     } catch (error) {
       setEnvironmentUpdate(null)
       throw error
@@ -500,12 +502,12 @@ function SessionWorkbench({
   }
 
   const isEmpty =
-    conversationView !== null &&
-    conversationView.transcript.length === 0 &&
-    conversationView.activeWork === null
+    view !== null &&
+    view.transcript.length === 0 &&
+    view.activeWork === null
   return (
     <>
-      <ConversationConnectionStatus connectionStatus={state.connectionStatus} />
+      <ConversationConnectionStatus connectionStatus={binding.connectionStatus} />
       <Tabs
         value={activeView}
         onValueChange={(value) =>
@@ -537,66 +539,65 @@ function SessionWorkbench({
         >
           {isEmpty ? (
             <AgentEmptyState />
-          ) : conversationView ? (
+          ) : view ? (
             <ConversationTranscript
               className="flex-1"
-              view={conversationView}
-              onRespond={interactive ? state.respond : undefined}
+              view={view}
+              onRespond={interactive ? binding.commands.respond : undefined}
               onOpenRun={shared.onOpenRun}
               onOpenArtifact={shared.onOpenArtifact}
               supplementalArtifacts={supplementalArtifacts}
             />
-          ) : state.isLoading ? (
+          ) : binding.isLoading ? (
             <WorkbenchSkeleton />
           ) : (
             <ConversationViewUnavailable
-              message={state.error?.message}
-              onRetry={state.retry}
+              message={binding.error?.message}
+              onRetry={binding.commands.retry}
             />
           )}
-          {conversationView &&
-          conversationView.conversation.status !== "active" ? (
+          {view && view.conversation.status !== "active" ? (
             <p
               role="status"
               className="border-t border-border/70 bg-muted/25 px-4 py-2 text-center text-xs leading-5 text-muted-foreground"
             >
-              {t(`readOnly.${conversationView.conversation.status}`)}
+              {t(`readOnly.${view.conversation.status}`)}
             </p>
           ) : null}
-          {conversationView?.currentPlan ? (
+          {view?.currentPlan ? (
             <div className="relative z-10 flex shrink-0 justify-center px-4 pb-2">
-              <AgentPlanCard plan={conversationView.currentPlan} />
+              <AgentPlanCard plan={view.currentPlan} />
             </div>
           ) : null}
           <AgentComposer
             placement="dock"
-            permissionMode={conversationView?.composer.settings.permissionMode ?? "ask_dangerous"}
-            workspaceAccess={conversationView?.composer.settings.workspaceAccess ?? "read_write"}
-            activeRun={conversationView?.activeWork ?? null}
+            permissionMode={view?.composer.settings.permissionMode ?? "ask_dangerous"}
+            workspaceAccess={view?.composer.settings.workspaceAccess ?? "read_write"}
+            activeRun={view?.activeWork ?? null}
             onSendMessage={sendMessage}
             onSteer={steer}
-            onCancel={state.cancel}
-            onPermissionModeChange={state.updatePermissionMode}
+            onCancel={binding.commands.cancel}
+            onPermissionModeChange={binding.commands.updatePermissionMode}
             contextInputs={shared.contextInputs}
             onRemoveContextInput={shared.removeContextInput}
             onContextSubmitted={() => shared.setContextInputs([])}
             textareaRef={shared.textareaRef}
-            disabled={!interactive || conversationView?.conversation.status !== "active"}
+            disabled={!interactive || view?.conversation.status !== "active"}
             contextControls={
               <AgentContextPicker
-                projectId={conversationView?.conversation.projectId ?? null}
+                projectId={view?.conversation.projectId ?? null}
                 sessionId={sessionId}
                 ensureSession={shared.ensureSession}
                 onAdd={shared.addContextInput}
-                disabled={!interactive || conversationView?.conversation.status !== "active"}
+                disabled={!interactive || view?.conversation.status !== "active"}
               />
             }
             modelControls={
               shared.conversationModelControls ?? (
                 <SessionModelSelector
-                  model={conversationView?.composer.settings.model ?? null}
-                  disabled={!interactive || conversationView?.conversation.status !== "active"}
-                  onChange={state.updateModel}
+                  model={view?.composer.settings.model ?? null}
+                  disabled={!interactive || view?.conversation.status !== "active"}
+                  onChange={binding.commands.updateModel}
                 />
               )
             }
@@ -734,17 +735,17 @@ function SessionModelSelector({
 }: {
   model: ConversationSettings["model"] | null
   disabled: boolean
-  onChange: AgentSessionState["updateModel"]
+  onChange: ConversationCommandPorts["updateModel"]
 }) {
   const t = useTranslations("agentComposer")
   const { models, isLoading } = useLlmSettings()
-  const effectiveSelection = modelSelectionFromConversation(model, models)
+  const effectiveSelection = catalogModelSelectionFromConversation(model, models)
   const [update, setUpdate] = useState<{
     selection: ModelSelection
     state: "pending" | "error"
   } | null>(null)
   const visibleUpdate =
-    update && !modelSelectionEquals(update.selection, effectiveSelection)
+    update && !catalogModelSelectionEquals(update.selection, effectiveSelection)
       ? update
       : null
   const selectedModel =
@@ -754,14 +755,11 @@ function SessionModelSelector({
   const pending = visibleUpdate?.state === "pending"
 
   const requestChange = async (selection: ModelSelection | null) => {
-    if (!selection?.model_id && (!selection?.provider || !selection.model)) return
+    const modelSelection = conversationModelSelectionFromCatalog(selection)
+    if (!selection || !modelSelection) return
     setUpdate({ selection, state: "pending" })
     try {
-      await onChange(
-        selection.model_id
-          ? { modelId: selection.model_id }
-          : { provider: selection.provider!, model: selection.model! },
-      )
+      await onChange(modelSelection)
     } catch {
       setUpdate({ selection, state: "error" })
     }
@@ -796,40 +794,6 @@ function SessionModelSelector({
   )
 }
 
-function modelSelectionFromConversation(
-  conversationModel: ConversationSettings["model"] | null,
-  models: ReturnType<typeof useLlmSettings>["models"],
-): ModelSelection {
-  const directProvider = models.find(
-    (group) =>
-      group.provider === conversationModel?.provider &&
-      group.models.some((candidate) => candidate.id === conversationModel?.model),
-  )
-  const compatibleProviders = models.filter(
-    (group) =>
-      group.provider_kind === conversationModel?.provider &&
-      group.models.some((candidate) => candidate.id === conversationModel?.model),
-  )
-  const provider =
-    directProvider ??
-    (compatibleProviders.length === 1 ? compatibleProviders[0] : undefined)
-  const selectedModel = provider?.models.find(
-    (candidate) => candidate.id === conversationModel?.model,
-  )
-  return {
-    provider: provider?.provider ?? conversationModel?.provider ?? "",
-    model: conversationModel?.model ?? "",
-    model_id: selectedModel?.model_id ?? null,
-  }
-}
-
-function modelSelectionEquals(
-  left: ModelSelection,
-  right: ModelSelection,
-) {
-  if (left.model_id && right.model_id) return left.model_id === right.model_id
-  return left.provider === right.provider && left.model === right.model
-}
 
 function environmentSelectionFromSettings(
   settings: ConversationSettings,
@@ -840,6 +804,14 @@ function environmentSelectionFromSettings(
         targetIds: settings.environmentScope.environmentIds,
       }
     : { mode: "auto" }
+}
+
+function conversationEnvironmentScopeFromSelection(
+  selection: AgentEnvironmentSelection,
+) {
+  return selection.mode === "manual"
+    ? { mode: "manual" as const, environmentIds: selection.targetIds }
+    : { mode: "auto" as const }
 }
 
 function isModelConfigurationError(error: unknown) {

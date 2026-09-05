@@ -4,7 +4,6 @@ import base64
 from dataclasses import dataclass
 import hashlib
 import json
-import mimetypes
 import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
@@ -15,30 +14,27 @@ import aiofiles
 from fastapi import UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pypdf import PdfReader
-
 from app.config import settings
 from app.models.agent_harness import (
-    AgentHarnessArtifact,
     AgentHarnessAttachment,
     AgentHarnessSession,
 )
 from app.path_layout import (
-    agent_artifact_root,
-    agent_artifacts_root,
     agent_attachment_root,
     agent_attachments_root,
     agent_harness_tombstones_root,
     agent_session_artifacts_root,
     agent_session_attachments_root,
-    bioinfoflow_home,
     legacy_agent_attachments_root,
     safe_join,
     state_root,
 )
 from app.repositories.agent_harness_repo import (
-    AgentHarnessArtifactRepository,
     AgentHarnessAttachmentRepository,
-    RunFence,
+)
+from app.services.agent_harness.artifact_service import (
+    AgentHarnessArtifactService,
+    artifact_reference_part,
 )
 from app.services.model_runtime.contracts import ImagePart, InputPart, TextPart
 from app.utils.exceptions import BadRequestError, ConflictError, NotFoundError
@@ -695,147 +691,6 @@ class AgentHarnessAttachmentService:
         return (TextPart(f"{label}\n\n{text}"),)
 
 
-class AgentHarnessArtifactService:
-    def __init__(self, db) -> None:
-        self.repo = AgentHarnessArtifactRepository(db)
-
-    async def list_for_session(
-        self,
-        *,
-        session_id: str,
-        workspace_id: str,
-        user_id: str,
-    ) -> list[AgentHarnessArtifact]:
-        session = await self.repo.session.get(AgentHarnessSession, session_id)
-        if (
-            session is None
-            or session.status == "deleted"
-            or str(session.workspace_id) != workspace_id
-            or session.user_id != user_id
-        ):
-            raise NotFoundError(f"Agent session not found: {session_id}")
-        return await self.repo.list_for_session(session_id)
-
-    async def get(
-        self,
-        *,
-        artifact_id: str,
-        workspace_id: str,
-        user_id: str,
-    ) -> AgentHarnessArtifact:
-        artifact = await self.repo.get_owned(
-            artifact_id,
-            workspace_id=workspace_id,
-            user_id=user_id,
-        )
-        if artifact is None:
-            raise NotFoundError(f"Agent artifact not found: {artifact_id}")
-        return artifact
-
-    def delete_session_files(self, session_id: str) -> None:
-        shutil.rmtree(agent_session_artifacts_root(session_id), ignore_errors=True)
-
-    async def download_path(
-        self,
-        *,
-        artifact_id: str,
-        workspace_id: str,
-        user_id: str,
-    ) -> tuple[Path, str, str]:
-        artifact = await self.get(
-            artifact_id=artifact_id,
-            workspace_id=workspace_id,
-            user_id=user_id,
-        )
-        raw_path = str(artifact.file_path or "").strip()
-        if not raw_path:
-            raise NotFoundError("Agent artifact has no downloadable file")
-        stored = Path(raw_path)
-        if stored.is_absolute():
-            candidate = stored.expanduser().resolve()
-            if not candidate.is_relative_to(bioinfoflow_home()):
-                raise NotFoundError("Agent artifact file is outside managed storage")
-        else:
-            try:
-                candidate = safe_join(
-                    agent_artifacts_root(),
-                    raw_path,
-                    escape_message="Agent artifact path escapes managed storage",
-                )
-            except PermissionError as exc:
-                raise NotFoundError("Agent artifact file is invalid") from exc
-        if not candidate.is_file():
-            raise NotFoundError("Agent artifact file was not found")
-        resource = artifact.resource_ref or {}
-        filename = str(resource.get("filename") or candidate.name)
-        media_type = str(
-            resource.get("mime_type")
-            or mimetypes.guess_type(filename)[0]
-            or "application/octet-stream"
-        )
-        return candidate, filename, media_type
-
-    def writer(self, *, session_id: str, run_id: str, fence: RunFence):
-        async def write(payload: dict[str, Any]) -> dict[str, Any]:
-            command = str(payload.get("command") or "Shell command")
-            artifact_id = str(uuid4())
-            root = agent_artifact_root(session_id, artifact_id)
-            staging_root = root.with_name(f".{artifact_id}.staging")
-            staging_root.mkdir(parents=True, exist_ok=False)
-            filename = "command-output.json"
-            output_path = staging_root / filename
-            encoded = json.dumps(
-                payload,
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ).encode("utf-8")
-            digest = hashlib.sha256(encoded).hexdigest()
-            try:
-                async with aiofiles.open(output_path, "xb") as output:
-                    await output.write(encoded)
-                artifact = await self.repo.create_for_run(
-                    id=artifact_id,
-                    session_id=session_id,
-                    run_id=run_id,
-                    fence=fence,
-                    commit=False,
-                    type=str(payload.get("type") or "command_output"),
-                    title=command[:200],
-                    summary=(
-                        "Full output preserved because the inline result was truncated."
-                    ),
-                    payload={
-                        "command": command,
-                        "cwd": payload.get("cwd"),
-                        "stdout_bytes": len(
-                            str(payload.get("stdout") or "").encode("utf-8")
-                        ),
-                        "stderr_bytes": len(
-                            str(payload.get("stderr") or "").encode("utf-8")
-                        ),
-                    },
-                    file_path=f"{session_id}/{artifact_id}/{filename}",
-                    resource_ref={
-                        "kind": "stored_file",
-                        "filename": filename,
-                        "mime_type": "application/json",
-                        "size_bytes": len(encoded),
-                        "sha256": digest,
-                    },
-                )
-                staging_root.rename(root)
-                await self.repo.session.commit()
-                await self.repo.session.refresh(artifact)
-            except Exception:
-                await self.repo.session.rollback()
-                shutil.rmtree(staging_root, ignore_errors=True)
-                shutil.rmtree(root, ignore_errors=True)
-                raise
-            return {"artifact_id": str(artifact.id)}
-
-        return write
-
-
 async def _stream_upload(
     upload: UploadFile, target: Path, *, max_bytes: int
 ) -> tuple[int, str]:
@@ -985,6 +840,7 @@ __all__ = [
     "AgentHarnessArtifactService",
     "AgentHarnessAttachmentService",
     "AgentSessionFileTombstone",
+    "artifact_reference_part",
     "migrate_legacy_agent_attachments",
     "recover_agent_session_file_tombstones",
     "stage_agent_session_files_for_delete",

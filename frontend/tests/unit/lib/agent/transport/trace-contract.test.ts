@@ -69,6 +69,8 @@ function timelineFixture(): AgentTraceTimelineContract {
         turn_id: "turn-1",
         category: "user",
         title: "User",
+        title_code: "agentTrace.event.user",
+        title_params: {},
         summary: "Inspect the FASTQ files exactly as received.",
         status: "completed",
         sequence: 1,
@@ -88,6 +90,8 @@ describe("Agent Trace transport contract", () => {
       turn_id: null,
       category: "system",
       title: "System",
+      title_code: "agentTrace.event.system",
+      title_params: {},
       summary: "You are BioinfoFlow.",
       status: null,
       sequence: 1,
@@ -109,6 +113,31 @@ describe("Agent Trace transport contract", () => {
     expect(parsed.value.events[0]).toMatchObject({
       turn_id: null,
       status: null,
+      title_code: "agentTrace.event.system",
+      title_params: {},
+    })
+  })
+
+  it("accepts legacy events without localized title metadata", () => {
+    const legacy = timelineFixture()
+    delete (legacy.events[0] as Partial<typeof legacy.events[0]>).title_code
+    delete (legacy.events[0] as Partial<typeof legacy.events[0]>).title_params
+
+    expect(parseAgentTraceTimeline(legacy)).toEqual({
+      ok: true,
+      value: legacy,
+    })
+  })
+
+  it("rejects malformed localized title metadata", () => {
+    const malformed = timelineFixture()
+    ;(malformed.events[0] as { title_params: unknown }).title_params = {
+      invalid: Symbol("not json"),
+    }
+
+    expect(parseAgentTraceTimeline(malformed)).toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: "invalid_payload" }),
     })
   })
 

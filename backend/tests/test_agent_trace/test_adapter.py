@@ -188,10 +188,20 @@ async def test_complete_harness_adapter_builds_session_trace_from_raw_sources(
         "tool",
     ]
     assert timeline.events[0].summary == "System prompt first line"
+    assert timeline.events[0].title_code == "agentTrace.event.system"
+    assert timeline.events[0].title_params == {}
     assert timeline.events[1].summary == "Run FastQC first line"
+    assert timeline.events[1].title_code == "agentTrace.event.user"
     assert timeline.events[2].summary == "openai/gpt-5 · 120 input tokens"
+    assert timeline.events[2].title_code == "agentTrace.event.modelRequest"
     assert timeline.events[3].summary == "I will inspect the reads."
+    assert timeline.events[3].title_code == "agentTrace.event.assistant"
     assert timeline.events[4].summary == ('bash({"command":"fastqc reads.fastq.gz"})')
+    assert timeline.events[4].title_code == "agentTrace.event.toolCall"
+    assert timeline.events[4].title_params == {
+        "name": "bash",
+        "display_name": "Terminal",
+    }
     assert timeline.context_flow[0].sequence == 3
     assert timeline.context_flow[0].through_sequence == 2
     assert timeline.context_flow[0].input_tokens == 120

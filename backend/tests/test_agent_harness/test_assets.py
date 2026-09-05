@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import shutil
 from datetime import datetime, timedelta, timezone
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.models.workspace import Workspace
 from app.path_layout import (
+    agent_artifact_root,
     agent_attachment_root,
     agent_attachments_root,
     agent_session_artifacts_root,
@@ -41,6 +43,7 @@ from app.services.agent_harness.contracts import (
     InputTextPart,
     MessageCommand,
 )
+from app.services.agent_harness.message_payload import user_message_payload_builder
 from app.utils.exceptions import ConflictError, NotFoundError
 from app.workspace import DEFAULT_WORKSPACE_ID
 from tests.test_agent_harness.run_test_helpers import (
@@ -53,6 +56,10 @@ PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUB"
     "AScY42YAAAAASUVORK5CYII="
 )
+
+
+def _payloads(repository: AgentHarnessRepository):
+    return user_message_payload_builder(repository.db)
 
 
 def _upload(name: str, content: bytes) -> UploadFile:
@@ -360,6 +367,7 @@ async def test_orphan_cleanup_removes_unreferenced_attachment_from_existing_hist
     await repository.submit_user_command(
         session_id,
         _message("message-1", "existing history"),
+        message_payload_builder=_payloads(repository),
         turn_execution_config=await agent_turn_execution_config(repository, session_id),
     )
     service = AgentHarnessAttachmentService(db_session)
@@ -404,6 +412,7 @@ async def test_orphan_cleanup_preserves_attachment_referenced_by_history(
             "use attachment",
             attachment_ids=[attachment.id],
         ),
+        message_payload_builder=_payloads(repository),
         turn_execution_config=await agent_turn_execution_config(repository, session_id),
     )
     attachment_id = str(attachment.id)
@@ -438,6 +447,7 @@ async def test_explicit_delete_rejects_attachment_referenced_by_history(
             "keep this attachment in permanent history",
             attachment_ids=[attachment.id],
         ),
+        message_payload_builder=_payloads(repository),
         turn_execution_config=await agent_turn_execution_config(repository, session_id),
     )
     attachment_id = str(attachment.id)
@@ -528,6 +538,7 @@ async def test_cross_worker_prompt_and_delete_serialize_attachment_reference(
                     "Use the attachment if it still exists.",
                     attachment_ids=[attachment_id],
                 ),
+                message_payload_builder=_payloads(prompt_repository),
                 turn_execution_config=turn_execution_config,
             )
         )
@@ -621,6 +632,7 @@ async def test_cross_worker_delete_waits_for_prompt_history_commit(
                     "Commit this attachment permanently.",
                     attachment_ids=[attachment_id],
                 ),
+                message_payload_builder=_payloads(prompt_repository),
                 turn_execution_config=turn_execution_config,
             )
         )
@@ -784,8 +796,9 @@ async def test_artifact_writer_persists_large_output_and_enforces_ownership(
     session_id = str(session.id)
     repository = AgentHarnessRepository(db_session)
     run = await create_agent_run(repository, session_id)
+    run_id = str(run.id)
     generation = await repository.claim_run(
-        str(run.id),
+        run_id,
         owner="worker-1",
         lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
     )
@@ -794,7 +807,7 @@ async def test_artifact_writer_persists_large_output_and_enforces_ownership(
 
     result = await service.writer(
         session_id=session_id,
-        run_id=str(run.id),
+        run_id=run_id,
         fence=RunFence(owner="worker-1", generation=generation),
     )(
         {
@@ -810,8 +823,8 @@ async def test_artifact_writer_persists_large_output_and_enforces_ownership(
     )
 
     assert artifact is not None
-    assert artifact.session_id == session.id
-    assert artifact.run_id == run.id
+    assert str(artifact.session_id) == session_id
+    assert str(artifact.run_id) == run_id
     assert "stdout" not in artifact.payload
     assert artifact.payload["stdout_bytes"] == 1000
     path, filename, media_type = await service.download_path(
@@ -838,6 +851,158 @@ async def test_artifact_writer_persists_large_output_and_enforces_ownership(
             workspace_id=DEFAULT_WORKSPACE_ID,
             user_id="other-user",
         )
+
+
+@pytest.mark.asyncio
+async def test_artifact_writer_publishes_a_declared_file_idempotently(
+    db_session,
+) -> None:
+    """A tool-call declaration has one durable artifact and safe public reference."""
+
+    session = await _session(db_session)
+    session_id = str(session.id)
+    repository = AgentHarnessRepository(db_session)
+    run = await create_agent_run(repository, session_id)
+    run_id = str(run.id)
+    generation = await repository.claim_run(
+        run_id,
+        owner="worker-1",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    assert generation == 1
+    writer = AgentHarnessArtifactService(db_session).writer(
+        session_id=session_id,
+        run_id=run_id,
+        fence=RunFence(owner="worker-1", generation=generation),
+    )
+    declaration = {
+        "type": "published_file",
+        "declaration_id": "tool:publish-1",
+        "filename": "report.tsv",
+        "title": "Final report",
+        "summary": "Validated differential expression table.",
+        "mime_type": "text/tab-separated-values",
+        "content": b"gene\tlog2fc\nTP53\t1.2\n",
+    }
+
+    first = await writer(declaration)
+    second = await writer(declaration)
+    artifact = await AgentHarnessArtifactRepository(db_session).get(
+        first["artifact_id"]
+    )
+
+    assert first == second
+    assert artifact is not None
+    assert str(artifact.session_id) == session_id
+    assert str(artifact.run_id) == run_id
+    assert artifact.type == "published_file"
+    assert artifact.title == "Final report"
+    assert artifact.payload == {"declaration_id": "tool:publish-1"}
+    assert artifact.resource_ref == {
+        "kind": "stored_file",
+        "filename": "report.tsv",
+        "mime_type": "text/tab-separated-values",
+        "size_bytes": len(declaration["content"]),
+        "sha256": hashlib.sha256(declaration["content"]).hexdigest(),
+    }
+    path, filename, media_type = await AgentHarnessArtifactService(
+        db_session
+    ).download_path(
+        artifact_id=first["artifact_id"],
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    assert path.read_bytes() == declaration["content"]
+    assert filename == "report.tsv"
+    assert media_type == "text/tab-separated-values"
+    with pytest.raises(ConflictError, match="conflicts"):
+        await writer({**declaration, "content": b"gene\tlog2fc\nTP53\t9.9\n"})
+
+
+@pytest.mark.asyncio
+async def test_declared_artifact_preserves_durable_state_when_refresh_fails(
+    db_session, monkeypatch
+) -> None:
+    session = await _session(db_session)
+    session_id = str(session.id)
+    repository = AgentHarnessRepository(db_session)
+    run = await create_agent_run(repository, session_id)
+    generation = await repository.claim_run(
+        str(run.id),
+        owner="worker-1",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    writer = AgentHarnessArtifactService(db_session).writer(
+        session_id=session_id,
+        run_id=str(run.id),
+        fence=RunFence(owner="worker-1", generation=generation),
+    )
+    declaration = {
+        "type": "published_file",
+        "declaration_id": "tool:refresh-fails",
+        "filename": "report.tsv",
+        "title": "Final report",
+        "mime_type": "text/tab-separated-values",
+        "content": b"gene\tcount\nTP53\t4\n",
+    }
+
+    async def fail_refresh(_artifact) -> None:
+        raise RuntimeError("refresh failed")
+
+    monkeypatch.setattr(db_session, "refresh", fail_refresh)
+
+    with pytest.raises(RuntimeError, match="refresh failed"):
+        await writer(declaration)
+
+    artifacts = await AgentHarnessArtifactRepository(db_session).list_for_session(
+        session_id
+    )
+    assert len(artifacts) == 1
+    artifact = artifacts[0]
+    assert (
+        agent_artifact_root(session_id, str(artifact.id)) / "report.tsv"
+    ).read_bytes() == declaration["content"]
+
+
+@pytest.mark.asyncio
+async def test_declared_artifact_rejects_a_stale_run_fence(db_session) -> None:
+    session = await _session(db_session)
+    session_id = str(session.id)
+    repository = AgentHarnessRepository(db_session)
+    run = await create_agent_run(repository, session_id)
+    first_generation = await repository.claim_run(
+        str(run.id),
+        owner="worker-1",
+        lease_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+    )
+    current_generation = await repository.claim_run(
+        str(run.id),
+        owner="worker-2",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    assert (first_generation, current_generation) == (1, 2)
+
+    writer = AgentHarnessArtifactService(db_session).writer(
+        session_id=session_id,
+        run_id=str(run.id),
+        fence=RunFence(owner="worker-1", generation=first_generation),
+    )
+    with pytest.raises(ValueError, match="stale Agent run fence"):
+        await writer(
+            {
+                "type": "published_file",
+                "declaration_id": "tool:publish-1",
+                "filename": "report.tsv",
+                "title": "Final report",
+                "mime_type": "text/tab-separated-values",
+                "content": b"gene\tcount\nTP53\t4\n",
+            }
+        )
+
+    assert (
+        await AgentHarnessArtifactRepository(db_session).list_for_session(session_id)
+        == []
+    )
 
 
 @pytest.mark.asyncio

@@ -11,8 +11,7 @@ from app.services.agent_harness.contracts import (
     OpenSessionRequest,
 )
 from app.services.agent_harness.run_submission import AgentRunSubmissionService
-
-
+from app.services.agent_harness.snapshot import AgentHarnessSnapshotService
 @pytest.mark.asyncio
 async def test_run_submission_prepares_title_and_effective_turn_config(
     harness_db,
@@ -52,7 +51,7 @@ async def test_run_submission_prepares_title_and_effective_turn_config(
         },
         "environment_targets": {},
     }
-    snapshot = await repository.snapshot(str(session.id))
+    snapshot = await AgentHarnessSnapshotService(repository).build(str(session.id))
     assert snapshot.session.title == "Summarize this very long"
     assert snapshot.entries[0].payload.parts[0].text == prompt
     persisted = await repository.get_session(str(session.id))

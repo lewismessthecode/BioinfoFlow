@@ -109,8 +109,8 @@ export function DemoPageClient({
         <div className="min-w-0 flex-1 border-r border-border">
           <AgentWorkbench
             className="h-full"
-            sessionId={sessionState.session?.id ?? null}
-            projectId={sessionState.session?.project_id ?? null}
+            sessionId={sessionState.view?.conversation.id ?? null}
+            projectId={sessionState.view?.conversation.projectId ?? null}
             sessionState={sessionState}
             interactive={false}
           />

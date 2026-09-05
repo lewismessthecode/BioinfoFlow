@@ -10,6 +10,7 @@ from typing import Any, Literal
 from app.services.agent_harness.tools.ask_user import AskUserTool
 from app.services.agent_harness.tools.bash import BashTool
 from app.services.agent_harness.tools.edit import EditTool
+from app.services.agent_harness.tools.publish_artifact import PublishArtifactTool
 from app.services.agent_harness.tools.read import ReadTool
 from app.services.agent_harness.tools.specs import (
     HarnessTool,
@@ -51,6 +52,7 @@ class ToolExecutor:
             BashTool(),
             EditTool(),
             WriteTool(),
+            PublishArtifactTool(),
             AskUserTool(),
             UpdatePlanTool(),
         )
@@ -121,6 +123,7 @@ class ToolExecutor:
             )
         context = ToolExecutionContext(
             backend=self.backend,
+            call_id=call.call_id,
             cancellation=cancellation,
             environment=dict(self.environment),
             sandbox_mode=sandbox_mode,
@@ -189,14 +192,16 @@ class ToolExecutor:
                 replay_policy=tool.spec.replay_policy,
                 error="tool is not permitted in a read_only workspace",
             )
-        requires_confirmation = escalated or (
-            self.permission_mode == "ask_changes" and not is_read_only
-        ) or (
-            self.permission_mode == "ask_dangerous"
-            and risk is not None
-            and (
-                risk.requires_explicit_approval
-                or risk.level in {"destructive", "critical"}
+        requires_confirmation = (
+            escalated
+            or (self.permission_mode == "ask_changes" and not is_read_only)
+            or (
+                self.permission_mode == "ask_dangerous"
+                and risk is not None
+                and (
+                    risk.requires_explicit_approval
+                    or risk.level in {"destructive", "critical"}
+                )
             )
         )
         approved_cwd_binding = None
@@ -317,6 +322,7 @@ class ToolExecutor:
                     return _failed(call, tool, exc)
             context = ToolExecutionContext(
                 backend=self.backend,
+                call_id=call.call_id,
                 cancellation=cancellation,
                 environment={**self.environment, **bash_environment},
                 sandbox_mode=sandbox_mode,
@@ -324,6 +330,7 @@ class ToolExecutor:
         if approved_cwd_binding is not None and interaction_response is not None:
             context = ToolExecutionContext(
                 backend=_CwdBoundBackend(self.backend, approved_cwd_binding),
+                call_id=call.call_id,
                 cancellation=context.cancellation,
                 environment=context.environment,
                 sandbox_mode=context.sandbox_mode,
@@ -692,11 +699,7 @@ def _approval_presentation(
 
     details = public_tool_details(call.name, call.arguments)
     preview = next(
-        (
-            detail.value
-            for detail in details
-            if detail.kind in {"command", "path"}
-        ),
+        (detail.value for detail in details if detail.kind in {"command", "path"}),
         None,
     )
     return tool.spec.summary, preview

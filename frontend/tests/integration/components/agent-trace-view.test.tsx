@@ -428,6 +428,45 @@ describe("AgentTraceView", () => {
     expect(screen.getByText("waiting_on_cluster")).toBeInTheDocument()
   })
 
+  it("localizes event titles from stable codes instead of backend fallback text", async () => {
+    const user = userEvent.setup()
+    const localizedTitleView: AgentTraceViewModel = {
+      ...view,
+      turns: [
+        {
+          ...view.turns[0],
+          events: [
+            {
+              ...view.turns[0].events[1],
+              title: "Tool result",
+              titleCode: "agentTrace.event.toolResult",
+              titleParams: {},
+            },
+          ],
+        },
+      ],
+    }
+
+    renderWithProviders(
+      <AgentTraceView
+        view={localizedTitleView}
+        onLoadDetail={vi.fn().mockResolvedValue(detail)}
+      />,
+    )
+
+    await user.click(
+      screen.getByRole("button", {
+        name: 'event.openDetail:{"title":"eventTitles.toolResult"}',
+      }),
+    )
+
+    expect(
+      within(
+        await screen.findByRole("complementary", { name: "inspector.label" }),
+      ).getByText("eventTitles.toolResult"),
+    ).toBeInTheDocument()
+  })
+
   it("uses one safe narrow-screen inspector close action", async () => {
     mocks.inspectorInline = false
     const user = userEvent.setup()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from collections.abc import Awaitable, Callable
 from typing import Any, Iterable
 
 from sqlalchemy import delete, func, or_, select, update
@@ -17,29 +18,9 @@ from app.models.agent_harness import (
 from app.repositories.base import BaseRepository
 from app.services.agent_harness.contracts import (
     ENTRY_PAYLOAD_TYPES,
-    ActiveRunView,
     AgentCommand,
-    AssistantDraftView,
     MessageCommand,
     OpenSessionRequest,
-    PendingInteractionView,
-    SessionSnapshot,
-    SessionView,
-    ToolProgressView,
-)
-from app.services.agent_harness.projection import (
-    entry_contract,
-    pending_interaction_entry_view,
-    public_interaction_request,
-    public_interaction_response,
-    public_model_summary,
-    run_view,
-)
-from app.services.agent_harness.tool_projection import (
-    public_error_message,
-    public_result_details,
-    public_tool_progress_view,
-    public_tool_details,
 )
 
 
@@ -47,6 +28,10 @@ ACTIVE_RUN_STATUSES = ("queued", "running", "waiting_user")
 TERMINAL_RUN_STATUSES = ("completed", "failed", "cancelled")
 _SESSION_SETTING_UNSET = object()
 _EXPECTED_ACTIVE_RUN_UNSET = object()
+UserMessagePayloadBuilder = Callable[
+    [AgentHarnessSession, AgentCommand | dict[str, Any]],
+    Awaitable[dict[str, Any]],
+]
 
 
 class SessionMutationConflict(RuntimeError):
@@ -624,6 +609,7 @@ class AgentHarnessRepository:
         session_id: str,
         command: MessageCommand,
         *,
+        message_payload_builder: UserMessagePayloadBuilder,
         model_snapshot: dict | None = None,
         automatic_title: str | None = None,
         turn_execution_config: dict[str, Any] | None = None,
@@ -654,7 +640,7 @@ class AgentHarnessRepository:
                 await self.db.commit()
                 return None, None, False
 
-            payload = await self._user_message_payload(session, command)
+            message_payload = await message_payload_builder(session, command)
             current = await self.get_current_run(session_id)
             current_id = str(current.id) if current is not None else None
             if (
@@ -701,7 +687,7 @@ class AgentHarnessRepository:
                 sequence=sequence,
                 type="message",
                 schema_version=2,
-                payload=payload,
+                payload=message_payload,
             )
             session.history_revision = sequence
             session.command_ids = [*command_ids, command.command_id]
@@ -713,108 +699,6 @@ class AgentHarnessRepository:
         except Exception:
             await self.db.rollback()
             raise
-
-    async def _user_message_payload(
-        self,
-        session: AgentHarnessSession,
-        command: AgentCommand | dict[str, Any],
-    ) -> dict[str, Any]:
-        raw = command if isinstance(command, dict) else command.model_dump(mode="json")
-        raw_parts = raw.get("parts")
-        if not isinstance(raw_parts, list) or not raw_parts:
-            raise ValueError("message command requires parts")
-        attachment_ids = [
-            str(item.get("attachment_id"))
-            for item in raw_parts
-            if isinstance(item, dict)
-            and item.get("type") in {"attachment_ref", "file_ref", "directory_ref"}
-            and item.get("attachment_id") is not None
-        ]
-        attachments = await AgentHarnessAttachmentRepository(
-            self.db
-        ).require_ids_for_session(
-            attachment_ids,
-            session_id=str(session.id),
-            workspace_id=str(session.workspace_id),
-            user_id=session.user_id,
-        )
-        attachments_by_id = {str(item.id): item for item in attachments}
-        command_id = str(raw.get("command_id") or "message")
-        parts: list[dict[str, Any]] = []
-        for index, item in enumerate(raw_parts):
-            if not isinstance(item, dict):
-                raise ValueError("message command parts must be objects")
-            part_id = f"input:{command_id}:{index}"
-            part_type = item.get("type")
-            if part_type == "text":
-                parts.append({"id": part_id, "type": "text", "text": item["text"]})
-            elif part_type == "attachment_ref":
-                attachment_id = str(item["attachment_id"])
-                attachment = attachments_by_id[attachment_id]
-                parts.append(
-                    {
-                        "id": part_id,
-                        "type": "attachment_ref",
-                        "attachment_id": attachment_id,
-                        "filename": attachment.filename,
-                        "kind": attachment.kind,
-                        "mime_type": attachment.mime_type,
-                        "size_bytes": attachment.size_bytes,
-                    }
-                )
-            elif part_type in {"file_ref", "directory_ref"}:
-                attachment_id = item.get("attachment_id")
-                if attachment_id is not None:
-                    attachment = attachments_by_id[str(attachment_id)]
-                    parts.append(
-                        {
-                            "id": part_id,
-                            "type": part_type,
-                            "label": attachment.filename,
-                            "attachment_id": str(attachment.id),
-                        }
-                    )
-                else:
-                    parts.append(
-                        {
-                            "id": part_id,
-                            "type": part_type,
-                            "label": str(item["path"]),
-                            "project_id": item["project_id"],
-                            "path": item["path"],
-                        }
-                    )
-            elif part_type == "workflow_ref":
-                parts.append(
-                    {
-                        "id": part_id,
-                        "type": "workflow_ref",
-                        "workflow_id": item["workflow_id"],
-                        "label": str(item["workflow_id"]),
-                        "project_id": item.get("project_id"),
-                    }
-                )
-            elif part_type == "run_ref":
-                parts.append(
-                    {
-                        "id": part_id,
-                        "type": "run_ref",
-                        "run_id": item["run_id"],
-                        "label": str(item["run_id"]),
-                    }
-                )
-            else:
-                raise ValueError(f"unsupported message part: {part_type}")
-        return (
-            ENTRY_PAYLOAD_TYPES["message"]
-            .model_validate(
-                {
-                    "role": "user",
-                    "parts": parts,
-                }
-            )
-            .model_dump(mode="json")
-        )
 
     async def get_run(self, run_id: str) -> AgentHarnessRun | None:
         return await self.db.get(AgentHarnessRun, run_id)
@@ -1026,14 +910,10 @@ class AgentHarnessRepository:
         run_id: str,
         *,
         call_id: str,
-        name: str,
-        status: str,
-        group_id: str | None = None,
-        execution_mode: str | None = None,
-        arguments: dict[str, Any] | None = None,
-        output_summary: str | None = None,
-        error: str | None = None,
-    ) -> ToolProgressView:
+        progress_projector: Callable[[dict[str, Any], datetime], dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Persist a caller-projected tool update under the existing run fence."""
+
         run = await self.get_run(run_id)
         if run is None:
             raise LookupError(f"agent run not found: {run_id}")
@@ -1046,59 +926,7 @@ class AgentHarnessRepository:
         )
         if existing is None:
             raise LookupError(f"tool progress not found: {call_id}")
-        now = datetime.now(timezone.utc)
-        source_arguments = (
-            arguments
-            if arguments is not None
-            else existing.get("arguments")
-            if isinstance(existing.get("arguments"), dict)
-            else {}
-        )
-        public_output = public_error_message(output_summary)
-        public_error = public_error_message(error)
-        existing_details = [
-            detail
-            for detail in existing.get("public_details") or []
-            if isinstance(detail, dict)
-            and detail.get("kind") not in {"output", "error"}
-        ]
-        input_details = existing_details or [
-            detail.model_dump(mode="json")
-            for detail in public_tool_details(name, source_arguments)
-        ]
-        raw: dict[str, Any] = {
-            **existing,
-            "call_id": call_id,
-            "group_id": existing["group_id"],
-            "execution_mode": existing["execution_mode"],
-            "name": name,
-            "display_name": existing["display_name"],
-            "category": existing["category"],
-            "summary": existing["summary"],
-            "arguments": {},
-            "status": status,
-            "revision": int(existing.get("revision") or 0) + 1,
-            "public_details": [
-                *input_details,
-                *[
-                    detail.model_dump(mode="json")
-                    for detail in public_result_details(
-                        output_summary=public_output,
-                        error=public_error,
-                    )
-                ],
-            ],
-        }
-        if public_output is not None:
-            raw["output_summary"] = public_output
-        if public_error is not None:
-            raw["error"] = public_error
-        if status == "running" and raw.get("started_at") is None:
-            raw["started_at"] = now
-        if status in {"completed", "failed", "blocked", "cancelled"}:
-            raw["completed_at"] = now
-        view = public_tool_progress_view(raw)
-        stored = view.model_dump(mode="json")
+        stored = progress_projector(existing, datetime.now(timezone.utc))
         for index, item in enumerate(progress):
             if item.get("call_id") == call_id:
                 progress[index] = stored
@@ -1106,7 +934,7 @@ class AgentHarnessRepository:
         else:
             progress.append(stored)
         await self.update_run(run_id, tool_progress=progress)
-        return view
+        return stored
 
     async def terminalize_run(self, run_id: str, **changes: Any) -> AgentHarnessRun:
         status = changes.get("status")
@@ -1406,7 +1234,11 @@ class AgentHarnessRepository:
         ]
 
     async def commit_steers_to_history(
-        self, session_id: str, *, run_id: str
+        self,
+        session_id: str,
+        *,
+        run_id: str,
+        message_payload_builder: UserMessagePayloadBuilder,
     ) -> list[AgentHarnessEntry]:
         """Atomically move queued steers into canonical history at a safe point."""
 
@@ -1445,7 +1277,7 @@ class AgentHarnessRepository:
             sequence = int(session.history_revision)
             entries: list[AgentHarnessEntry] = []
             for command in selected:
-                payload = await self._user_message_payload(session, command)
+                payload = await message_payload_builder(session, command)
                 sequence += 1
                 entry = AgentHarnessEntry(
                     session_id=session_id,
@@ -1468,7 +1300,11 @@ class AgentHarnessRepository:
             raise
 
     async def commit_steers_or_complete_run(
-        self, session_id: str, *, run_id: str
+        self,
+        session_id: str,
+        *,
+        run_id: str,
+        message_payload_builder: UserMessagePayloadBuilder,
     ) -> tuple[list[AgentHarnessEntry], AgentHarnessRun]:
         """Commit queued steers or terminalize the Run in one fenced transaction."""
 
@@ -1510,7 +1346,7 @@ class AgentHarnessRepository:
             if selected:
                 sequence = int(session.history_revision)
                 for command in selected:
-                    payload = await self._user_message_payload(session, command)
+                    payload = await message_payload_builder(session, command)
                     sequence += 1
                     entry = AgentHarnessEntry(
                         session_id=session_id,
@@ -1591,6 +1427,7 @@ class AgentHarnessRepository:
         kind: str,
         model_snapshot: dict | None = None,
         turn_execution_config: dict[str, Any],
+        message_payload_builder: UserMessagePayloadBuilder,
         expected_settings_revision: int | None = None,
     ) -> tuple[AgentHarnessRun, AgentHarnessEntry] | None:
         """Atomically consume one queued command, create its Run, and publish input."""
@@ -1636,7 +1473,7 @@ class AgentHarnessRepository:
                 await self.db.commit()
                 return None
             command = queue.pop(index)
-            payload = await self._user_message_payload(session, command)
+            payload = await message_payload_builder(session, command)
             session.command_queue = queue
             run = AgentHarnessRun(
                 session_id=session_id,
@@ -1916,7 +1753,7 @@ class AgentHarnessRepository:
             .model_validate(
                 {
                     "interaction_id": interaction_id,
-                    "response": public_interaction_response(response),
+                    "response": response,
                 }
             )
             .model_dump(mode="json")
@@ -1989,13 +1826,12 @@ class AgentHarnessRepository:
     ) -> tuple[AgentHarnessEntry | None, AgentHarnessEntry, AgentHarnessRun]:
         """Atomically publish an interaction and make the Run wait for its answer."""
 
-        public_request = public_interaction_request(request_payload["request"])
         request = (
             ENTRY_PAYLOAD_TYPES["interaction_request"]
             .model_validate(
                 {
                     "interaction_id": request_payload["interaction_id"],
-                    "request": public_request,
+                    "request": request_payload["request"],
                 }
             )
             .model_dump(mode="json")
@@ -2088,6 +1924,7 @@ class AgentHarnessRepository:
         call: dict[str, Any],
         replay_policy: str,
         command_id: str | None = None,
+        progress_projector: Callable[[dict[str, Any], datetime], dict[str, Any]],
     ) -> tuple[AgentHarnessEntry, AgentHarnessRun]:
         """Persist the accepted response and tool-start fence before execution."""
 
@@ -2096,7 +1933,7 @@ class AgentHarnessRepository:
             .model_validate(
                 {
                     "interaction_id": interaction_id,
-                    "response": public_interaction_response(response),
+                    "response": response,
                 }
             )
             .model_dump(mode="json")
@@ -2179,25 +2016,7 @@ class AgentHarnessRepository:
                 raise LookupError(
                     f"tool progress not found: {call.get('call_id') or 'unknown'}"
                 )
-            call_id = str(call.get("call_id") or "")
-            name = str(call.get("name") or "unknown")
-            replacement = ToolProgressView.model_validate(
-                {
-                    **existing,
-                    "call_id": call_id,
-                    "group_id": existing["group_id"],
-                    "execution_mode": existing["execution_mode"],
-                    "name": name,
-                    "display_name": existing["display_name"],
-                    "category": existing["category"],
-                    "summary": existing["summary"],
-                    "arguments": existing.get("arguments") or {},
-                    "status": "running",
-                    "revision": int(existing.get("revision") or 0) + 1,
-                    "started_at": existing.get("started_at")
-                    or datetime.now(timezone.utc),
-                }
-            ).model_dump(mode="json")
+            replacement = progress_projector(existing, datetime.now(timezone.utc))
             for index, item in enumerate(progress):
                 if item.get("call_id") == call.get("call_id"):
                     progress[index] = replacement
@@ -2292,96 +2111,6 @@ class AgentHarnessRepository:
             stmt = stmt.limit(limit)
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
-
-    async def snapshot(self, session_id: str) -> SessionSnapshot:
-        session = await self.get_session(session_id)
-        if session is None:
-            raise LookupError(f"agent session not found: {session_id}")
-        runs = await self.list_runs(session_id)
-        run = next(
-            (item for item in reversed(runs) if item.status in ACTIVE_RUN_STATUSES),
-            None,
-        )
-        entries = await self.list_entries(session_id)
-        active_run = (
-            ActiveRunView(
-                run=run_view(run),
-                assistant_draft=self._assistant_draft(run),
-                tool_progress=self._tool_progress(run),
-                pending_interaction=self._pending_interaction(run, entries),
-            )
-            if run is not None
-            else None
-        )
-        return SessionSnapshot(
-            session=SessionView.model_validate(
-                {
-                    "id": session.id,
-                    "user_id": session.user_id,
-                    "workspace_id": session.workspace_id,
-                    "project_id": session.project_id,
-                    "title": session.title,
-                    "model": public_model_summary(session.model_snapshot),
-                    "permission_mode": session.permission_mode,
-                    "workspace_access": session.workspace_access,
-                    "settings_revision": session.settings_revision,
-                    "environment_scope": session.environment_scope or {"mode": "auto"},
-                    "status": session.status,
-                    "created_at": session.created_at,
-                    "updated_at": session.updated_at,
-                }
-            ),
-            runs=[run_view(item) for item in runs],
-            entries=[
-                entry_contract(entry)
-                for entry in entries
-                if entry.type not in {"compaction", "context_update"}
-            ],
-            active_run=active_run,
-        )
-
-    @staticmethod
-    def _assistant_draft(run: AgentHarnessRun | None) -> AssistantDraftView | None:
-        if run is None or not run.draft:
-            return None
-        return AssistantDraftView.model_validate(run.draft)
-
-    @staticmethod
-    def _tool_progress(run: AgentHarnessRun | None) -> list[ToolProgressView]:
-        if run is None or not run.tool_progress:
-            return []
-        return [
-            AgentHarnessRepository._public_tool_progress(item)
-            for item in run.tool_progress
-        ]
-
-    @staticmethod
-    def _public_tool_progress(item: Any) -> ToolProgressView:
-        return public_tool_progress_view(item)
-
-    @staticmethod
-    def _pending_interaction(
-        run: AgentHarnessRun | None,
-        entries: list[AgentHarnessEntry],
-    ) -> PendingInteractionView | None:
-        if run is None or run.status != "waiting_user":
-            return None
-        pending: dict[str, AgentHarnessEntry] = {}
-        for entry in entries:
-            if str(entry.run_id) != str(run.id):
-                continue
-            interaction_id = str(entry.payload.get("interaction_id") or "")
-            if not interaction_id:
-                continue
-            if entry.type == "interaction_request":
-                pending[interaction_id] = entry
-            elif entry.type == "interaction_response":
-                pending.pop(interaction_id, None)
-        if not pending:
-            return None
-        request = max(pending.values(), key=lambda item: item.sequence)
-        return pending_interaction_entry_view(request)
-
 
 __all__ = [
     "AgentHarnessArtifactRepository",

@@ -129,6 +129,14 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   useEffect(() => {
     const onAgentRoute = pathname === "/agent" || pathname.startsWith("/agent/")
     if (!onAgentRoute) return
+    const routeSessionId = pathname.startsWith("/agent/")
+      ? pathname.slice("/agent/".length)
+      : null
+    const routeSession = routeSessionId
+      ? sessions.find((session) => session.id === routeSessionId)
+      : null
+    if (routeSessionId && !routeSession) return
+    if (routeSessionId && !routeSession.project_id) return
     if (selectedProjectId || conversationProjectId) return
 
     const regularProjects = projects.filter((project) => !project.is_default)
@@ -146,6 +154,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     conversationProjectId,
     pathname,
     projects,
+    sessions,
     selectWorkspaceProject,
     selectedProjectId,
   ])
@@ -162,6 +171,14 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   useEffect(() => {
     const onAgentRoute = pathname === "/agent" || pathname.startsWith("/agent/")
     if (!onAgentRoute) return
+    const routeSessionId = pathname.startsWith("/agent/")
+      ? pathname.slice("/agent/".length)
+      : null
+    const routeSession = routeSessionId
+      ? sessions.find((session) => session.id === routeSessionId)
+      : null
+    if (routeSessionId && !routeSession) return
+    if (routeSessionId && !routeSession.project_id) return
     if (!defaultProject) return
     if (projects.some((project) => !project.is_default)) return
     if (selectedProjectId || conversationProjectId) return
@@ -175,6 +192,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     defaultProject,
     pathname,
     projects,
+    sessions,
     selectedProjectId,
     setActiveConversationId,
     setConversationProjectId,
@@ -238,6 +256,9 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
 
   const handleSelectProject = (project: Project) => {
     selectWorkspaceProject(project.id)
+    if (pathname.startsWith("/agent/")) {
+      router.replace("/agent")
+    }
     if (!expandedProjects.has(project.id)) {
       toggleProjectExpanded(project.id)
     }
