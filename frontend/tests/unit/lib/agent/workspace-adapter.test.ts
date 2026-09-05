@@ -32,20 +32,20 @@ describe("bioinfoFlowAgentWorkspaceAdapter", () => {
   it("lists only server-owned session artifacts without scanning project files", async () => {
     mocks.listAgentArtifacts.mockResolvedValueOnce([
       {
+        artifact_id: "artifact-1",
         id: "artifact-1",
+        version_id: "artifact-version-1",
+        version: 1,
         session_id: "session-1",
         run_id: "run-1",
         type: "published_file",
         title: "report.json",
         summary: "QC report",
         payload: null,
-        resource_ref: {
-          kind: "stored_file",
-          filename: "report.json",
-          mime_type: "application/json",
-          size_bytes: 12,
-          sha256: "abc",
-        },
+        location: "/agent/artifacts/artifact-1/download",
+        media_type: "application/json",
+        status: "ready",
+        resource_ref: null,
         created_at: "2026-08-17T00:00:00Z",
         updated_at: "2026-08-17T00:00:00Z",
       },
@@ -66,6 +66,7 @@ describe("bioinfoFlowAgentWorkspaceAdapter", () => {
         runId: "run-1",
         title: "report.json",
         mediaType: "application/json",
+        resource: { kind: "session", artifactId: "artifact-1" },
       }),
     ])
   })
