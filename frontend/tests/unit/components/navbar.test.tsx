@@ -229,26 +229,24 @@ describe("Navbar", () => {
     expect(buttons.at(-1)).toHaveTextContent("Open run panel")
   })
 
-  it("keeps More, Terminal, divider, workspace surfaces, and Panel Close in contract order", () => {
+  it("keeps More, Terminal, workspace add, and Drawer toggle in contract order", () => {
     render(
       <Navbar viewer={AUTH_VIEWER}>
         <button type="button" data-navbar-action="terminal">Terminal</button>
         <AgentWorkspaceActionGroup
-          activeTab="files"
           panelOpen
           labels={{
             group: "Agent workspace",
+            addTab: "Add tab",
             artifacts: "Artifacts",
             files: "Files",
             dag: "DAG",
             browser: "Browser",
             openPanel: "Open workspace panel",
             closePanel: "Close workspace panel",
-            closeTab: "Close Files",
           }}
           onOpenTab={vi.fn()}
           onTogglePanel={vi.fn()}
-          onCloseTab={vi.fn()}
         />
       </Navbar>,
     )
@@ -257,20 +255,16 @@ describe("Navbar", () => {
     expect(
       Array.from(
         actionRow.querySelectorAll<HTMLElement>(
-          "[data-navbar-action], [data-workspace-divider], [data-workspace-action]",
+          "[data-navbar-action], [data-workspace-action], [data-testid=agent-action-add-tab]",
         ),
       ).map((node) =>
         node.dataset.navbarAction ??
-        (node.dataset.workspaceDivider ? "divider" : node.dataset.workspaceAction),
+        node.dataset.workspaceAction ?? node.dataset.testid,
       ),
     ).toEqual([
       "more",
       "terminal",
-      "artifacts",
-      "files",
-      "dag",
-      "browser",
-      "divider",
+      "agent-action-add-tab",
       "panel",
     ])
   })

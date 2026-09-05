@@ -30,6 +30,7 @@ import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useIsMobile, useMediaQuery } from "@/hooks/use-media-query"
 import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard-shortcuts-overlay"
 import type { ConversationSummary } from "@/lib/agent/conversation-model/types"
+import { drawerArtifactTab, drawerFileTab, drawerToolTab } from "@/lib/agent/drawer-tabs"
 import {
   listConversationRouteSummaries,
   type ConversationRouteSummary,
@@ -44,6 +45,7 @@ import {
 const LIVE_DECK_TAB_BY_ACTION: Record<AgentWorkspaceTab, LiveDeckTab> = {
   browser: "browser",
   files: "workspace",
+  workspace: "workspace",
   artifacts: "artifacts",
   dag: "dag",
 }
@@ -103,6 +105,9 @@ export function AgentPageContent({
     : selectedProjectId
   const {
     preferences: panelPreferences,
+    selectTab,
+    selectExistingTab,
+    closeTab,
     update: updatePanelPreferences,
     close: closeLiveDeck,
     recordFocusReturn,
@@ -225,70 +230,29 @@ export function AgentPageContent({
     setMobileOpen,
   ])
 
-  const toggleAction = useCallback(
-    (actionId: AgentWorkspaceTab) => {
-      recordFocusReturn(actionId)
-      const nextTab = LIVE_DECK_TAB_BY_ACTION[actionId]
-      const isActive =
-        liveDeckTab === nextTab &&
-        (workspaceUsesSheet ? mobileLiveDeckOpen : !rightSidebarCollapsed)
-
-      if (isActive) {
-        if (workspaceUsesSheet) {
-          closeMobileLiveDeck()
-        } else {
-          closeLiveDeck()
-        }
-        return
-      }
-
-      if (workspaceUsesSheet) {
-        setMobileOpen(true)
-        updatePanelPreferences({ activeTab: nextTab })
-      } else {
-        updatePanelPreferences({ activeTab: nextTab, open: true })
-      }
-    },
-    [
-      liveDeckTab,
-      mobileLiveDeckOpen,
-      setMobileOpen,
-      recordFocusReturn,
-      rightSidebarCollapsed,
-      updatePanelPreferences,
-      closeLiveDeck,
-      closeMobileLiveDeck,
-      workspaceUsesSheet,
-    ],
-  )
 
   const openWorkspaceTab = useCallback(
     (tab: AgentWorkspaceTab) => {
-      toggleAction(tab)
+      recordFocusReturn(tab)
+      selectTab(drawerToolTab(LIVE_DECK_TAB_BY_ACTION[tab]))
+      if (workspaceUsesSheet) setMobileOpen(true)
+      else updatePanelPreferences({ open: true })
     },
-    [toggleAction],
+    [
+      recordFocusReturn,
+      selectTab,
+      setMobileOpen,
+      updatePanelPreferences,
+      workspaceUsesSheet,
+    ],
   )
   const toggleWorkspacePanel = useCallback(() => {
     if (workspaceUsesSheet) toggleMobileLiveDeck()
     else toggleRightSidebar()
   }, [toggleMobileLiveDeck, toggleRightSidebar, workspaceUsesSheet])
-  const closeWorkspacePanel = useCallback(() => {
-    if (workspaceUsesSheet) closeMobileLiveDeck()
-    else closeLiveDeck()
-  }, [closeLiveDeck, closeMobileLiveDeck, workspaceUsesSheet])
   const workspacePanelOpen = workspaceUsesSheet
     ? mobileLiveDeckOpen
     : !rightSidebarCollapsed
-  const openSelectedWorkspaceFile = useCallback(() => {
-    recordFocusReturn("files")
-    if (workspaceUsesSheet) {
-      setMobileOpen(true)
-      updatePanelPreferences({ activeTab: "workspace" })
-    } else {
-      updatePanelPreferences({ activeTab: "workspace", open: true })
-    }
-  }, [recordFocusReturn, setMobileOpen, updatePanelPreferences, workspaceUsesSheet])
-
   useEffect(() => {
     if (!effectiveProjectId) {
       setNavbarActions(null)
@@ -297,38 +261,28 @@ export function AgentPageContent({
 
     setNavbarActions(
       <AgentWorkspaceActionGroup
-        activeTab={liveDeckTab === "workspace" ? "files" : liveDeckTab}
         panelOpen={workspacePanelOpen}
         labels={{
           group: t("workspacePanel.action"),
+          addTab: t("workspacePanel.addTab"),
           artifacts: t("workspacePanel.actions.artifacts"),
           files: t("workspacePanel.actions.files"),
           dag: t("workspacePanel.actions.dag"),
           browser: t("workspacePanel.actions.browser"),
           openPanel: t("workspacePanel.open"),
           closePanel: t("workspacePanel.close"),
-          closeTab: tAccessibility("hidePanel"),
         }}
         onOpenTab={openWorkspaceTab}
         onTogglePanel={toggleWorkspacePanel}
-        onCloseTab={closeWorkspacePanel}
-        selectedFile={selectedWorkspaceFile}
-        onOpenSelectedFile={openSelectedWorkspaceFile}
-        onCloseSelectedFile={() => setSelectedWorkspaceFile(null)}
       />,
     )
 
     return () => setNavbarActions(null)
   }, [
-    closeWorkspacePanel,
     effectiveProjectId,
-    liveDeckTab,
     openWorkspaceTab,
-    openSelectedWorkspaceFile,
-    selectedWorkspaceFile,
     setNavbarActions,
     t,
-    tAccessibility,
     toggleWorkspacePanel,
     workspacePanelOpen,
   ])
@@ -347,6 +301,7 @@ export function AgentPageContent({
       setSelectedRun(null)
       setFocusedRunId(runId)
       setDag(null)
+      selectTab(drawerToolTab("dag"))
       if (workspaceUsesSheet) {
         setMobileOpen(true)
         updatePanelPreferences({ activeTab: "dag" })
@@ -356,6 +311,7 @@ export function AgentPageContent({
     },
     [
       recordFocusReturn,
+      selectTab,
       setMobileOpen,
       stateIdentity,
       updatePanelPreferences,
@@ -371,6 +327,7 @@ export function AgentPageContent({
       setDag(null)
       setActiveStateIdentity(stateIdentity)
       setFocusedArtifactId(artifactId)
+      selectTab(drawerArtifactTab(artifactId))
       if (workspaceUsesSheet) {
         setMobileOpen(true)
         updatePanelPreferences({ activeTab: "artifacts" })
@@ -380,6 +337,7 @@ export function AgentPageContent({
     },
     [
       recordFocusReturn,
+      selectTab,
       setMobileOpen,
       stateIdentity,
       updatePanelPreferences,
@@ -393,8 +351,9 @@ export function AgentPageContent({
       setDag(null)
       setActiveStateIdentity(stateIdentity)
       setFocusedArtifactId(artifactId)
+      if (artifactId) selectTab(drawerArtifactTab(artifactId))
     },
-    [stateIdentity],
+    [selectTab, stateIdentity],
   )
 
   const [showShortcuts, setShowShortcuts] = useState(false)
@@ -570,6 +529,10 @@ export function AgentPageContent({
             </SheetHeader>
             <LiveDeck
               activeTab={liveDeckTab}
+              tabs={panelPreferences.tabs}
+              activeTabId={panelPreferences.activeTabId}
+              onSelectTab={selectExistingTab}
+              onCloseTab={closeTab}
               projectId={effectiveProjectId}
               sessionId={routeSessionId}
               selectedArtifactId={visibleFocusedArtifactId}
@@ -578,7 +541,10 @@ export function AgentPageContent({
               dag={visibleDag}
               onRunSelect={handleRunSelect}
               selectedFilePath={selectedWorkspaceFile?.path ?? null}
-              onSelectedFileChange={setSelectedWorkspaceFile}
+              onSelectedFileChange={(file) => {
+                setSelectedWorkspaceFile(file)
+                if (file) selectTab(drawerFileTab(file))
+              }}
             />
           </SheetContent>
         </Sheet>
@@ -603,6 +569,10 @@ export function AgentPageContent({
           />
           <LiveDeck
             activeTab={liveDeckTab}
+            tabs={panelPreferences.tabs}
+            activeTabId={panelPreferences.activeTabId}
+            onSelectTab={selectExistingTab}
+            onCloseTab={closeTab}
             projectId={effectiveProjectId}
             sessionId={routeSessionId}
             selectedArtifactId={visibleFocusedArtifactId}
@@ -611,7 +581,10 @@ export function AgentPageContent({
             dag={visibleDag}
             onRunSelect={handleRunSelect}
             selectedFilePath={selectedWorkspaceFile?.path ?? null}
-            onSelectedFileChange={setSelectedWorkspaceFile}
+            onSelectedFileChange={(file) => {
+              setSelectedWorkspaceFile(file)
+              if (file) selectTab(drawerFileTab(file))
+            }}
           />
         </div>
       ) : null}

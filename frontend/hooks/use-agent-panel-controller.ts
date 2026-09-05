@@ -9,20 +9,32 @@ import {
 } from "react"
 import type { LiveDeckTab } from "@/components/bioinfoflow/live-deck"
 import type { AgentWorkspaceTab } from "@/components/bioinfoflow/agent/agent-workspace-action-group"
+import {
+  addDrawerTab,
+  closeDrawerTab,
+  drawerToolTab,
+  isDrawerTab,
+  type AgentDrawerTab,
+} from "@/lib/agent/drawer-tabs"
 
 export const RIGHT_SIDEBAR_MIN = 300
 export const RIGHT_SIDEBAR_MAX = 600
 const RIGHT_SIDEBAR_DEFAULT = 400
+const DRAWER_WIDTH_PREFERENCE_KEY = "agent-panel:drawer-width"
 
 export type AgentPanelPreferences = {
   activeTab: LiveDeckTab
+  activeTabId: string | null
   open: boolean
+  tabs: AgentDrawerTab[]
   width: number
 }
 
 const DEFAULT_PANEL_PREFERENCES: AgentPanelPreferences = {
   activeTab: "workspace",
+  activeTabId: null,
   open: false,
+  tabs: [],
   width: RIGHT_SIDEBAR_DEFAULT,
 }
 const panelPreferenceListeners = new Map<string, Set<() => void>>()
@@ -69,18 +81,30 @@ function parsePanelPreferences(raw: string | null): AgentPanelPreferences {
   if (!raw) return DEFAULT_PANEL_PREFERENCES
   try {
     const parsed = JSON.parse(raw) as Partial<AgentPanelPreferences>
-    return {
-      activeTab:
+    const activeTab =
         parsed.activeTab === "workspace" ||
         parsed.activeTab === "dag" ||
         parsed.activeTab === "artifacts" ||
         parsed.activeTab === "browser"
           ? parsed.activeTab
-          : DEFAULT_PANEL_PREFERENCES.activeTab,
+          : DEFAULT_PANEL_PREFERENCES.activeTab
+    const tabs = Array.isArray(parsed.tabs)
+      ? parsed.tabs.filter(isDrawerTab)
+      : raw.includes('"activeTab"')
+        ? [drawerToolTab(activeTab)]
+        : []
+    const activeTabId =
+      typeof parsed.activeTabId === "string" && tabs.some((tab) => tab.id === parsed.activeTabId)
+        ? parsed.activeTabId
+        : tabs.find((tab) => tab.kind === activeTab)?.id ?? tabs.at(-1)?.id ?? null
+    return {
+      activeTab,
+      activeTabId,
       open:
         typeof parsed.open === "boolean"
           ? parsed.open
           : DEFAULT_PANEL_PREFERENCES.open,
+      tabs,
       width:
         typeof parsed.width === "number"
           ? clampRightSidebarWidth(parsed.width)
@@ -97,8 +121,25 @@ function writePanelPreferences(
 ) {
   if (!key || typeof window === "undefined") return
   const current = parsePanelPreferences(readPanelPreferences(key))
-  window.localStorage.setItem(key, JSON.stringify({ ...current, ...updates }))
+  const next = { ...current, ...updates }
+  const sessionState = { ...next }
+  delete sessionState.width
+  window.localStorage.setItem(key, JSON.stringify(sessionState))
   panelPreferenceListeners.get(key)?.forEach((listener) => listener())
+}
+
+function readDrawerWidthPreference(): number | null {
+  if (typeof window === "undefined") return null
+  const raw = window.localStorage.getItem(DRAWER_WIDTH_PREFERENCE_KEY)
+  if (!raw) return null
+  const value = Number(raw)
+  return Number.isFinite(value) ? clampRightSidebarWidth(value) : null
+}
+
+function writeDrawerWidthPreference(width: number) {
+  if (typeof window === "undefined") return
+  window.localStorage.setItem(DRAWER_WIDTH_PREFERENCE_KEY, String(clampRightSidebarWidth(width)))
+  panelPreferenceListeners.get(DRAWER_WIDTH_PREFERENCE_KEY)?.forEach((listener) => listener())
 }
 
 function mobilePreferenceKey(key: string | null) {
@@ -123,7 +164,9 @@ function migratePanelPreferences(
   const source = readPanelPreferences(sourceKey)
   const target = readPanelPreferences(targetKey)
   if (source && !target) {
-    window.localStorage.setItem(targetKey, source)
+    const sessionState = parsePanelPreferences(source)
+    delete sessionState.width
+    window.localStorage.setItem(targetKey, JSON.stringify(sessionState))
     window.localStorage.removeItem(sourceKey)
   }
 
@@ -148,16 +191,9 @@ function migratePanelPreferences(
 
 const getServerPanelPreferences = () => null
 
-const ACTION_BY_TAB: Partial<Record<LiveDeckTab, AgentWorkspaceTab>> = {
-  browser: "browser",
-  workspace: "files",
-  artifacts: "artifacts",
-  dag: "dag",
-}
-
 type FocusReturn = {
   element: HTMLElement | null
-  actionId: AgentWorkspaceTab | null
+  actionId: AgentWorkspaceTab | "panel" | null
 }
 
 export function useAgentPanelController({
@@ -184,7 +220,20 @@ export function useAgentPanelController({
     getSnapshot,
     getServerPanelPreferences,
   )
-  const preferences = parsePanelPreferences(panelSnapshot)
+  const storedPreferences = parsePanelPreferences(panelSnapshot)
+  const subscribeWidth = useCallback(
+    (listener: () => void) => subscribeToPanelPreferences(DRAWER_WIDTH_PREFERENCE_KEY, listener),
+    [],
+  )
+  const widthSnapshot = useSyncExternalStore(
+    subscribeWidth,
+    () => typeof window === "undefined" ? null : window.localStorage.getItem(DRAWER_WIDTH_PREFERENCE_KEY),
+    getServerPanelPreferences,
+  )
+  const preferences = {
+    ...storedPreferences,
+    width: (widthSnapshot === null ? null : readDrawerWidthPreference()) ?? storedPreferences.width,
+  }
   const mobileKey = mobilePreferenceKey(key)
   const subscribeMobile = useCallback(
     (listener: () => void) => subscribeToPanelPreferences(mobileKey, listener),
@@ -206,8 +255,49 @@ export function useAgentPanelController({
     [key],
   )
   const update = useCallback(
-    (updates: Partial<AgentPanelPreferences>) => writePanelPreferences(key, updates),
+    (updates: Partial<AgentPanelPreferences>) => {
+      if (typeof updates.width === "number") writeDrawerWidthPreference(updates.width)
+      const sessionUpdates = { ...updates }
+      delete sessionUpdates.width
+      if (Object.keys(sessionUpdates).length > 0) writePanelPreferences(key, sessionUpdates)
+    },
     [key],
+  )
+  const selectTab = useCallback(
+    (tab: AgentDrawerTab) => {
+      const current = parsePanelPreferences(readPanelPreferences(key))
+      const next = addDrawerTab(current.tabs, current.activeTabId, tab)
+      update({
+        activeTab: liveDeckTabForDrawerTab(tab),
+        activeTabId: next.activeTabId,
+        tabs: next.tabs,
+      })
+    },
+    [key, update],
+  )
+  const closeTab = useCallback(
+    (tabId: string) => {
+      const current = parsePanelPreferences(readPanelPreferences(key))
+      const next = closeDrawerTab(current.tabs, current.activeTabId, tabId)
+      const active = next.tabs.find((tab) => tab.id === next.activeTabId)
+      update({
+        activeTab: active ? liveDeckTabForDrawerTab(active) : DEFAULT_PANEL_PREFERENCES.activeTab,
+        activeTabId: next.activeTabId,
+        tabs: next.tabs,
+        open: next.tabs.length > 0 ? current.open : false,
+      })
+      if (next.tabs.length === 0) setMobileOpen(false)
+    },
+    [key, setMobileOpen, update],
+  )
+  const selectExistingTab = useCallback(
+    (tabId: string) => {
+      const current = parsePanelPreferences(readPanelPreferences(key))
+      const tab = current.tabs.find((item) => item.id === tabId)
+      if (!tab) return
+      update({ activeTab: liveDeckTabForDrawerTab(tab), activeTabId: tab.id })
+    },
+    [key, update],
   )
   const handoffDraftToSession = useCallback(
     (sessionId: string, sessionProjectId = projectId) => {
@@ -218,7 +308,7 @@ export function useAgentPanelController({
 
   const focusReturnRef = useRef<FocusReturn>({ element: null, actionId: null })
   const focusRestorePendingRef = useRef(false)
-  const recordFocusReturn = useCallback((actionId: AgentWorkspaceTab | null) => {
+  const recordFocusReturn = useCallback((actionId: AgentWorkspaceTab | "panel" | null) => {
     const activeElement = document.activeElement
     focusReturnRef.current = {
       element:
@@ -245,9 +335,9 @@ export function useAgentPanelController({
     if (focusReturnRef.current.element?.isConnected || focusReturnRef.current.actionId) return
     focusReturnRef.current = {
       element: null,
-      actionId: ACTION_BY_TAB[preferences.activeTab] ?? null,
+      actionId: "panel",
     }
-  }, [preferences.activeTab])
+  }, [])
   const close = useCallback(() => {
     ensurePanelFocusReturn()
     focusRestorePendingRef.current = true
@@ -299,6 +389,9 @@ export function useAgentPanelController({
     mobileOpen,
     setMobileOpen,
     preferences,
+    selectTab,
+    selectExistingTab,
+    closeTab,
     update,
     close,
     recordFocusReturn,
@@ -308,4 +401,10 @@ export function useAgentPanelController({
     resizeEnd,
     isMobile,
   }
+}
+
+function liveDeckTabForDrawerTab(tab: AgentDrawerTab): LiveDeckTab {
+  if (tab.kind === "file") return "workspace"
+  if (tab.kind === "artifact") return "artifacts"
+  return tab.kind
 }

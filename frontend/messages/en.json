@@ -2589,6 +2589,7 @@
       "action": "Workspace",
       "open": "Open workspace panel",
       "close": "Close workspace panel",
+      "addTab": "Add tab",
       "codePreview": {
         "label": "Workspace code preview"
       },
