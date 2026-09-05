@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
 } from "react"
 import type { LiveDeckTab } from "@/components/bioinfoflow/live-deck"
-import type { AgentWorkspaceTab } from "@/components/bioinfoflow/agent/agent-workspace-action-group"
+import type { AgentWorkspaceTab } from "@/lib/agent/drawer-tabs"
 import {
   addDrawerTab,
   closeDrawerTab,

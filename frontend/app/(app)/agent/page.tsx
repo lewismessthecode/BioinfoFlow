@@ -13,9 +13,8 @@ import {
 } from "@/components/bioinfoflow/agent/agent-workbench"
 import {
   AgentWorkspaceActionGroup,
-  type AgentWorkspaceTab,
 } from "@/components/bioinfoflow/agent/agent-workspace-action-group"
-import { LiveDeck, type LiveDeckTab } from "@/components/bioinfoflow/live-deck"
+import { LiveDeck } from "@/components/bioinfoflow/live-deck"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useEvents } from "@/hooks/use-events"
@@ -30,7 +29,12 @@ import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useIsMobile, useMediaQuery } from "@/hooks/use-media-query"
 import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard-shortcuts-overlay"
 import type { ConversationSummary } from "@/lib/agent/conversation-model/types"
-import { drawerArtifactTab, drawerFileTab, drawerToolTab } from "@/lib/agent/drawer-tabs"
+import {
+  drawerArtifactTab,
+  drawerFileTab,
+  drawerToolTab,
+  type AgentWorkspaceTab,
+} from "@/lib/agent/drawer-tabs"
 import {
   listConversationRouteSummaries,
   type ConversationRouteSummary,
@@ -42,14 +46,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-const LIVE_DECK_TAB_BY_ACTION: Record<AgentWorkspaceTab, LiveDeckTab> = {
-  browser: "browser",
-  files: "workspace",
-  workspace: "workspace",
-  artifacts: "artifacts",
-  dag: "dag",
-}
-
 export default function AgentPage() {
   return <AgentPageContent routeSessionId={null} />
 }
@@ -191,7 +187,7 @@ export function AgentPageContent({
       if (!visibleSelectedRun) return
       if (envelope.data.run_id !== visibleSelectedRun.run_id) return
       setDag(envelope.data.dag)
-      if (envelope.data.dag) updatePanelPreferences({ activeTab: "dag" })
+      if (envelope.data.dag) selectTab(drawerToolTab("dag"))
     },
   })
 
@@ -234,7 +230,7 @@ export function AgentPageContent({
   const openWorkspaceTab = useCallback(
     (tab: AgentWorkspaceTab) => {
       recordFocusReturn(tab)
-      selectTab(drawerToolTab(LIVE_DECK_TAB_BY_ACTION[tab]))
+      selectTab(drawerToolTab(tab))
       if (workspaceUsesSheet) setMobileOpen(true)
       else updatePanelPreferences({ open: true })
     },
@@ -304,9 +300,8 @@ export function AgentPageContent({
       selectTab(drawerToolTab("dag"))
       if (workspaceUsesSheet) {
         setMobileOpen(true)
-        updatePanelPreferences({ activeTab: "dag" })
       } else {
-        updatePanelPreferences({ activeTab: "dag", open: true })
+        updatePanelPreferences({ open: true })
       }
     },
     [
@@ -330,9 +325,8 @@ export function AgentPageContent({
       selectTab(drawerArtifactTab(artifactId))
       if (workspaceUsesSheet) {
         setMobileOpen(true)
-        updatePanelPreferences({ activeTab: "artifacts" })
       } else {
-        updatePanelPreferences({ activeTab: "artifacts", open: true })
+        updatePanelPreferences({ open: true })
       }
     },
     [

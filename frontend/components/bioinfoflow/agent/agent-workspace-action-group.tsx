@@ -19,7 +19,9 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 
-export type AgentWorkspaceTab = "artifacts" | "files" | "workspace" | "dag" | "browser"
+import type { AgentWorkspaceTab } from "@/lib/agent/drawer-tabs"
+
+export type { AgentWorkspaceTab } from "@/lib/agent/drawer-tabs"
 
 export type AgentWorkspaceActionGroupProps = {
   panelOpen: boolean

@@ -916,6 +916,43 @@ describe("Agent pages", () => {
     )
   })
 
+  it("keeps the active drawer tab id in sync when a run DAG arrives", () => {
+    localStorage.setItem(
+      "agent-panel:project-1:draft",
+      JSON.stringify({
+        activeTab: "browser",
+        activeTabId: "browser",
+        open: true,
+        tabs: [{ id: "browser", kind: "browser", title: "Browser" }],
+      }),
+    )
+    renderAppPage(<AgentPage />, {
+      projectContext: { selectedProjectId: "project-1" },
+    })
+
+    fireEvent.click(screen.getByTestId("select-run"))
+    const eventHandlers = mocks.useEvents.mock.calls.at(-1)?.[0] as {
+      onRunDag?: (event: {
+        data: { run_id: string; dag: { nodes: never[]; edges: never[] } }
+      }) => void
+    }
+
+    act(() => {
+      eventHandlers.onRunDag?.({
+        data: { run_id: "run-a", dag: { nodes: [], edges: [] } },
+      })
+    })
+
+    expect(JSON.parse(localStorage.getItem("agent-panel:project-1:draft") ?? "{}")).toMatchObject({
+      activeTab: "dag",
+      activeTabId: "dag",
+      tabs: [
+        { id: "browser" },
+        { id: "dag", kind: "dag", title: "DAG" },
+      ],
+    })
+  })
+
   it("preserves a connected referenced opener when desktop Escape closes the rail", async () => {
     renderAppPage(<AgentPage />, {
       projectContext: { selectedProjectId: "project-1" },
