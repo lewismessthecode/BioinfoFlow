@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import mimetypes
 import shutil
 from pathlib import Path
@@ -114,82 +113,9 @@ class AgentHarnessArtifactService:
                     run_id=run_id,
                     fence=fence,
                 )
-            return await self._store_command_output(
-                payload,
-                session_id=session_id,
-                run_id=run_id,
-                fence=fence,
-            )
+            raise ValueError("Artifact writer accepts only published_file payloads")
 
         return write
-
-    async def _store_command_output(
-        self,
-        payload: dict[str, Any],
-        *,
-        session_id: str,
-        run_id: str,
-        fence: RunFence,
-    ) -> dict[str, Any]:
-        command = str(payload.get("command") or "Shell command")
-        artifact_id = str(uuid4())
-        root = agent_artifact_root(session_id, artifact_id)
-        staging_root = root.with_name(f".{artifact_id}.staging")
-        staging_root.mkdir(parents=True, exist_ok=False)
-        filename = "command-output.json"
-        output_path = staging_root / filename
-        encoded = json.dumps(
-            payload,
-            ensure_ascii=False,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        digest = hashlib.sha256(encoded).hexdigest()
-        try:
-            async with aiofiles.open(output_path, "xb") as output:
-                await output.write(encoded)
-            artifact = await self.repo.create_for_run(
-                id=artifact_id,
-                session_id=session_id,
-                run_id=run_id,
-                fence=fence,
-                commit=False,
-                type=str(payload.get("type") or "command_output"),
-                title=command[:200],
-                summary=(
-                    "Full output preserved because the inline result was truncated."
-                ),
-                payload={
-                    "command": command,
-                    "cwd": payload.get("cwd"),
-                    "stdout_bytes": len(
-                        str(payload.get("stdout") or "").encode("utf-8")
-                    ),
-                    "stderr_bytes": len(
-                        str(payload.get("stderr") or "").encode("utf-8")
-                    ),
-                },
-                file_path=f"{session_id}/{artifact_id}/{filename}",
-                resource_ref={
-                    "kind": "stored_file",
-                    "filename": filename,
-                    "mime_type": "application/json",
-                    "size_bytes": len(encoded),
-                    "sha256": digest,
-                },
-            )
-            staging_root.rename(root)
-            await self.repo.session.commit()
-        except Exception:
-            await self.repo.session.rollback()
-            shutil.rmtree(staging_root, ignore_errors=True)
-            shutil.rmtree(root, ignore_errors=True)
-            raise
-        try:
-            await self.repo.session.refresh(artifact)
-        except Exception:
-            # The database row and file are already durable; keep both for retry.
-            raise
-        return {"artifact_id": str(artifact.id)}
 
     async def _publish_declared_file(
         self,

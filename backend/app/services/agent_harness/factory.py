@@ -25,6 +25,7 @@ from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.repositories.agent_harness_repo import RunFence
 from app.services.agent_harness.model_resolver import AgentModelResolver
 from app.services.agent_harness.assets import AgentHarnessArtifactService
+from app.services.agent_harness.tool_output_service import AgentHarnessToolOutputService
 from app.services.agent_harness.api_endpoint import workspace_api_url
 from app.services.agent_harness.context import bounded_skill_metadata_for_prompt
 from app.services.agent_harness.harness import AgentHarness
@@ -182,10 +183,16 @@ def harness_for_database(db: AsyncSession, **runtime: Any) -> AgentHarness:
             run_id=run_id,
             fence=fence,
         )
+        write_tool_output = AgentHarnessToolOutputService(db).writer(
+            session_id=str(session.id),
+            run_id=run_id,
+            fence=fence,
+        )
         return routed_workspace_runtime_for_session(
             db,
             session,
             artifact_writer=write_artifact,
+            tool_output_writer=write_tool_output,
         )
 
     return AgentHarness.for_database(

@@ -14,6 +14,7 @@ from app.models.agent_harness import (
     AgentHarnessEntry,
     AgentHarnessRun,
     AgentHarnessSession,
+    AgentHarnessToolOutput,
 )
 from app.repositories.base import BaseRepository
 from app.services.agent_harness.contracts import (
@@ -374,7 +375,10 @@ class AgentHarnessArtifactRepository(BaseRepository[AgentHarnessArtifact]):
     async def list_for_session(self, session_id: str) -> list[AgentHarnessArtifact]:
         result = await self.session.execute(
             select(self.model)
-            .where(self.model.session_id == session_id)
+            .where(
+                self.model.session_id == session_id,
+                self.model.type != "command_output",
+            )
             .order_by(self.model.created_at.desc(), self.model.id.desc())
         )
         return list(result.scalars().all())
@@ -394,12 +398,86 @@ class AgentHarnessArtifactRepository(BaseRepository[AgentHarnessArtifact]):
             )
             .where(
                 self.model.id == artifact_id,
+                self.model.type != "command_output",
                 AgentHarnessSession.workspace_id == workspace_id,
                 AgentHarnessSession.user_id == user_id,
                 AgentHarnessSession.status != "deleted",
             )
         )
         return result.scalar_one_or_none()
+
+
+class AgentHarnessToolOutputRepository(BaseRepository[AgentHarnessToolOutput]):
+    model = AgentHarnessToolOutput
+
+    async def create_for_run(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+        fence: RunFence,
+        commit: bool = True,
+        **data: Any,
+    ) -> AgentHarnessToolOutput:
+        repository = AgentHarnessRepository(self.session)
+        try:
+            await repository.require_run_fence(
+                session_id=session_id,
+                run_id=run_id,
+                fence=fence,
+                operation="tool output creation",
+            )
+            output = await self.add(
+                session_id=session_id,
+                run_id=run_id,
+                **data,
+            )
+            if commit:
+                await self.session.commit()
+                await self.session.refresh(output)
+            return output
+        except Exception:
+            await self.session.rollback()
+            raise
+
+    async def list_for_session(
+        self, session_id: str, *, run_id: str | None = None
+    ) -> list[AgentHarnessToolOutput]:
+        query = select(self.model).where(self.model.session_id == session_id)
+        if run_id is not None:
+            query = query.where(self.model.run_id == run_id)
+        result = await self.session.execute(
+            query.order_by(self.model.created_at.desc(), self.model.id.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_owned(
+        self,
+        output_id: str,
+        *,
+        workspace_id: str,
+        user_id: str,
+    ) -> AgentHarnessToolOutput | None:
+        result = await self.session.execute(
+            select(self.model)
+            .join(
+                AgentHarnessSession,
+                AgentHarnessSession.id == self.model.session_id,
+            )
+            .where(
+                self.model.id == output_id,
+                AgentHarnessSession.workspace_id == workspace_id,
+                AgentHarnessSession.user_id == user_id,
+                AgentHarnessSession.status != "deleted",
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def storage_identities(self) -> set[tuple[str, str]]:
+        result = await self.session.execute(
+            select(self.model.session_id, self.model.id)
+        )
+        return {(str(session_id), str(output_id)) for session_id, output_id in result}
 
 
 class AgentHarnessRepository:
@@ -414,6 +492,28 @@ class AgentHarnessRepository:
 
     def run_fence(self, run_id: str) -> RunFence | None:
         return self._run_fences.get(run_id)
+
+    async def require_run_fence(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+        fence: RunFence,
+        operation: str,
+    ) -> None:
+        fenced = await self.db.execute(
+            update(AgentHarnessRun)
+            .where(
+                AgentHarnessRun.id == run_id,
+                AgentHarnessRun.session_id == session_id,
+                AgentHarnessRun.status.in_(ACTIVE_RUN_STATUSES),
+                AgentHarnessRun.lease_owner == fence.owner,
+                AgentHarnessRun.lease_generation == fence.generation,
+            )
+            .values(lease_generation=AgentHarnessRun.lease_generation)
+        )
+        if not fenced.rowcount:
+            raise ValueError(f"stale Agent run fence rejected {operation}")
 
     def _fence_predicates(self, run_id: str):
         fence = self._run_fences.get(run_id)
@@ -2112,9 +2212,11 @@ class AgentHarnessRepository:
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
+
 __all__ = [
     "AgentHarnessArtifactRepository",
     "AgentHarnessAttachmentRepository",
     "AgentHarnessRepository",
+    "AgentHarnessToolOutputRepository",
     "SessionMutationConflict",
 ]

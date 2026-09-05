@@ -31,6 +31,9 @@ from app.services.agent_harness.assets import (
     migrate_legacy_agent_attachments,
     recover_agent_session_file_tombstones,
 )
+from app.services.agent_harness.tool_output_service import (
+    recover_agent_tool_output_storage,
+)
 from app.utils.exceptions import AppError, http_error_code
 from app.utils.logging import (
     bind_request_id,
@@ -64,6 +67,7 @@ async def lifespan(app: FastAPI):
     )
     async with app.state_db_session() as session:
         await recover_agent_session_file_tombstones(session)
+        await recover_agent_tool_output_storage(session)
         workspace_service = WorkspaceService(session)
         await workspace_service.ensure_default_workspace()
         await sync_environment_llm_catalog(session)

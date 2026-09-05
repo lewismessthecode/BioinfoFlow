@@ -25,6 +25,7 @@ from app.path_layout import (
     agent_harness_tombstones_root,
     agent_session_artifacts_root,
     agent_session_attachments_root,
+    agent_session_tool_outputs_root,
     legacy_agent_attachments_root,
     safe_join,
     state_root,
@@ -108,6 +109,7 @@ class AgentSessionFileTombstone:
         return (
             ("attachments", agent_session_attachments_root(self.session_id)),
             ("artifacts", agent_session_artifacts_root(self.session_id)),
+            ("tool_outputs", agent_session_tool_outputs_root(self.session_id)),
         )
 
 

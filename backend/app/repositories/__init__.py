@@ -3,6 +3,7 @@ from app.repositories.agent_harness_repo import (
     AgentHarnessArtifactRepository,
     AgentHarnessAttachmentRepository,
     AgentHarnessRepository,
+    AgentHarnessToolOutputRepository,
 )
 from app.repositories.agent_token_repo import AgentTokenRepository
 from app.repositories.llm_repo import (
@@ -24,6 +25,7 @@ __all__ = [
     "AgentHarnessRepository",
     "AgentHarnessAttachmentRepository",
     "AgentHarnessArtifactRepository",
+    "AgentHarnessToolOutputRepository",
     "AgentTokenRepository",
     "LlmProviderRepository",
     "LlmProviderCredentialRepository",

@@ -79,6 +79,7 @@ _HARNESS_ENV_ALLOWLIST = frozenset(
     }
 )
 ArtifactWriter = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+ToolOutputWriter = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 _LOCAL_ARTIFACT_CAPTURE_LIMIT = 30 * 1024 * 1024
 _REMOTE_ARTIFACT_CAPTURE_LIMIT = 5 * 1024 * 1024
 _LOCAL_STREAM_CHUNK_SIZE = 64 * 1024
@@ -145,6 +146,7 @@ class LocalWorkspaceBackend:
         container_executor: DockerSandboxExecutor | None = None,
         base_environment: dict[str, str] | None = None,
         artifact_writer: ArtifactWriter | None = None,
+        tool_output_writer: ToolOutputWriter | None = None,
     ) -> None:
         self.policy = FilesystemPolicy(
             read_roots=list(read_roots),
@@ -168,6 +170,7 @@ class LocalWorkspaceBackend:
         )
         self._trusted_bif = _trusted_bif_executable(self._safe_path)
         self.artifact_writer = artifact_writer
+        self.tool_output_writer = tool_output_writer
 
     def canonical_path(self, raw_path: str) -> Path:
         candidate = Path(raw_path).expanduser()
@@ -441,6 +444,7 @@ class LocalWorkspaceBackend:
             "read-only", "workspace-write", "danger-full-access"
         ] = "workspace-write",
         expected_cwd_binding: dict[str, Any] | None = None,
+        tool_call_id: str | None = None,
     ) -> dict[str, Any]:
         working_directory = self.policy.require_allowed_dir(
             self.canonical_path(cwd) if isinstance(cwd, str) else self.working_directory
@@ -493,6 +497,7 @@ class LocalWorkspaceBackend:
                     cwd=working_directory,
                     output_limit=output_limit,
                     environment=environment,
+                    tool_call_id=tool_call_id,
                 )
             sandbox = self.sandbox_runner.build(
                 command=execution_command,
@@ -623,16 +628,18 @@ class LocalWorkspaceBackend:
                 "denied": sandbox_denied,
             },
         }
-        if self.artifact_writer is not None and (stdout_truncated or stderr_truncated):
-            result["artifact"] = await self.artifact_writer(
-                {
-                    "type": "command_output",
-                    "command": command,
-                    "cwd": str(working_directory),
-                    "stdout": full_stdout,
-                    "stderr": full_stderr,
-                    "capture_truncated": output_limit_exceeded,
-                }
+        if self.tool_output_writer is not None and (
+            stdout_truncated or stderr_truncated
+        ):
+            result["tool_output"] = await _write_command_output(
+                self.tool_output_writer,
+                tool_call_id=tool_call_id,
+                command=command,
+                cwd=str(working_directory),
+                exit_code=exit_code,
+                stdout=full_stdout,
+                stderr=full_stderr,
+                capture_truncated=output_limit_exceeded,
             )
         return result
 
@@ -644,6 +651,7 @@ class LocalWorkspaceBackend:
         cwd: Path,
         output_limit: int,
         environment: dict[str, str],
+        tool_call_id: str | None,
     ) -> dict[str, Any]:
         if execution.timed_out:
             raise TimeoutError("command timed out inside the sandbox container")
@@ -687,16 +695,18 @@ class LocalWorkspaceBackend:
                 "execution": "disposable-container",
             },
         }
-        if self.artifact_writer is not None and (stdout_truncated or stderr_truncated):
-            result["artifact"] = await self.artifact_writer(
-                {
-                    "type": "command_output",
-                    "command": command,
-                    "cwd": str(cwd),
-                    "stdout": full_stdout,
-                    "stderr": full_stderr,
-                    "capture_truncated": execution.output_limit_exceeded,
-                }
+        if self.tool_output_writer is not None and (
+            stdout_truncated or stderr_truncated
+        ):
+            result["tool_output"] = await _write_command_output(
+                self.tool_output_writer,
+                tool_call_id=tool_call_id,
+                command=command,
+                cwd=str(cwd),
+                exit_code=execution.exit_code,
+                stdout=full_stdout,
+                stderr=full_stderr,
+                capture_truncated=execution.output_limit_exceeded,
             )
         return result
 
@@ -748,6 +758,7 @@ class RemoteWorkspaceBackend:
         write_roots: tuple[str, ...],
         allow_network: bool = False,
         artifact_writer: ArtifactWriter | None = None,
+        tool_output_writer: ToolOutputWriter | None = None,
     ) -> None:
         self.connection = connection
         self.executor = executor
@@ -760,6 +771,7 @@ class RemoteWorkspaceBackend:
         )
         self.allow_network = allow_network
         self.artifact_writer = artifact_writer
+        self.tool_output_writer = tool_output_writer
         self._sandbox_preflight: dict[str, Any] | None = None
         self._sandbox_preflight_lock = asyncio.Lock()
         self._bif_preflight: str | None = None
@@ -921,6 +933,7 @@ class RemoteWorkspaceBackend:
             "read-only", "workspace-write", "danger-full-access"
         ] = "workspace-write",
         expected_cwd_binding: dict[str, Any] | None = None,
+        tool_call_id: str | None = None,
     ) -> dict[str, Any]:
         if sandbox_mode == "danger-full-access":
             raise PermissionDeniedError(
@@ -1038,18 +1051,20 @@ class RemoteWorkspaceBackend:
             "cwd": str(working_directory),
             "command": command,
         }
-        if self.artifact_writer is not None and (stdout_truncated or stderr_truncated):
-            observation["artifact"] = await self.artifact_writer(
-                {
-                    "type": "command_output",
-                    "command": command,
-                    "cwd": str(working_directory),
-                    "stdout": full_stdout,
-                    "stderr": full_stderr,
-                    "capture_truncated": bool(
-                        result.stdout_truncated or result.stderr_truncated
-                    ),
-                }
+        if self.tool_output_writer is not None and (
+            stdout_truncated or stderr_truncated
+        ):
+            observation["tool_output"] = await _write_command_output(
+                self.tool_output_writer,
+                tool_call_id=tool_call_id,
+                command=command,
+                cwd=str(working_directory),
+                exit_code=result.exit_code,
+                stdout=full_stdout,
+                stderr=full_stderr,
+                capture_truncated=bool(
+                    result.stdout_truncated or result.stderr_truncated
+                ),
             )
         return observation
 
@@ -1431,6 +1446,31 @@ async def _kill_process_group(process: asyncio.subprocess.Process) -> None:
     except ProcessLookupError:
         pass
     await process.wait()
+
+
+async def _write_command_output(
+    writer: ToolOutputWriter,
+    *,
+    tool_call_id: str | None,
+    command: str,
+    cwd: str,
+    exit_code: int,
+    stdout: str,
+    stderr: str,
+    capture_truncated: bool,
+) -> dict[str, Any]:
+    return await writer(
+        {
+            "type": "command_output",
+            "tool_call_id": tool_call_id,
+            "command": command,
+            "cwd": cwd,
+            "exit_code": exit_code,
+            "stdout": stdout,
+            "stderr": stderr,
+            "capture_truncated": capture_truncated,
+        }
+    )
 
 
 def _limit_output(text: str, limit: int) -> tuple[str, bool]:

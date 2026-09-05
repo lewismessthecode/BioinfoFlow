@@ -67,6 +67,7 @@ class BashTool:
             cancellation=context.cancellation,
             environment=context.environment,
             sandbox_mode=context.sandbox_mode,
+            tool_call_id=context.call_id,
         )
 
 

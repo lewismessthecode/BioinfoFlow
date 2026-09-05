@@ -1030,7 +1030,17 @@ async def test_agent_api_preserves_attachment_and_artifact_frontend_contracts(
             session_id=session_id,
             run_id=str(run.id),
             fence=RunFence(owner="api-test-worker", generation=generation),
-        )({"type": "command_output", "command": "pytest", "stdout": "ok"})
+        )(
+            {
+                "type": "published_file",
+                "declaration_id": "tool:api-test-publish",
+                "filename": "report.txt",
+                "title": "Final report",
+                "summary": None,
+                "mime_type": "text/plain",
+                "content": b"published result\n",
+            }
+        )
         artifact_id = artifact_result["artifact_id"]
 
     artifacts = await async_client.get(f"/api/v1/agent/sessions/{session_id}/artifacts")
@@ -1044,7 +1054,7 @@ async def test_agent_api_preserves_attachment_and_artifact_frontend_contracts(
     assert artifacts.json()["data"][0]["location"].endswith(
         f"/agent/artifacts/{artifact_id}/download"
     )
-    assert artifacts.json()["data"][0]["media_type"] == "application/json"
+    assert artifacts.json()["data"][0]["media_type"] == "text/plain"
     assert artifacts.json()["data"][0]["status"] == "ready"
     assert "turn_id" not in artifacts.json()["data"][0]
     assert "action_id" not in artifacts.json()["data"][0]
@@ -1054,8 +1064,77 @@ async def test_agent_api_preserves_attachment_and_artifact_frontend_contracts(
     assert detail.json()["data"]["artifact_id"] == artifact_id
     assert "file_path" not in detail.json()["data"]
     assert download.status_code == 200
-    assert download.headers["content-type"] == "application/json"
-    assert b'"stdout":"ok"' in download.content
+    assert download.headers["content-type"].startswith("text/plain")
+    assert download.content == b"published result\n"
 
     deleted = await async_client.delete(f"/api/v1/agent/attachments/{attachment['id']}")
     assert deleted.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_agent_tool_output_api_lists_gets_and_downloads_owned_output(
+    async_client,
+) -> None:
+    with patch(
+        "app.api.v1.agent.resolve_model_snapshot",
+        return_value={"target": {"model_name": "fake"}},
+    ):
+        created = await async_client.post("/api/v1/agent/sessions", json={})
+    session_id = created.json()["data"]["session"]["id"]
+
+    from app.repositories.agent_harness_repo import AgentHarnessRepository, RunFence
+    from app.services.agent_harness.tool_output_service import (
+        AgentHarnessToolOutputService,
+    )
+    import app.database as app_database
+
+    async with app_database.async_session_maker() as db:
+        repository = AgentHarnessRepository(db)
+        run = await create_agent_run(repository, session_id)
+        generation = await repository.claim_run(
+            str(run.id),
+            owner="api-test-worker",
+            lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+        )
+        output = await AgentHarnessToolOutputService(db).writer(
+            session_id=session_id,
+            run_id=str(run.id),
+            fence=RunFence(owner="api-test-worker", generation=generation),
+        )(
+            {
+                "type": "command_output",
+                "tool_call_id": "call-api-output",
+                "command": "pytest -q",
+                "cwd": "/workspace",
+                "exit_code": 0,
+                "stdout": "full output",
+                "stderr": "",
+                "capture_truncated": False,
+            }
+        )
+        output_id = output["tool_output_id"]
+
+    listing = await async_client.get(
+        f"/api/v1/agent/sessions/{session_id}/tool-outputs"
+    )
+    run_listing = await async_client.get(
+        f"/api/v1/agent/sessions/{session_id}/tool-outputs?run_id={run.id}"
+    )
+    detail = await async_client.get(f"/api/v1/agent/tool-outputs/{output_id}")
+    download = await async_client.get(
+        f"/api/v1/agent/tool-outputs/{output_id}/download"
+    )
+
+    assert listing.status_code == 200
+    assert [item["id"] for item in listing.json()["data"]] == [output_id]
+    assert [item["id"] for item in run_listing.json()["data"]] == [output_id]
+    assert listing.json()["data"][0]["session_id"] == session_id
+    assert listing.json()["data"][0]["run_id"] == str(run.id)
+    assert listing.json()["data"][0]["tool_call_id"] == "call-api-output"
+    assert "file_path" not in listing.json()["data"][0]
+    assert detail.status_code == 200
+    assert detail.json()["data"]["command"] == "pytest -q"
+    assert "file_path" not in detail.json()["data"]
+    assert download.status_code == 200
+    assert download.headers["content-type"] == "application/json"
+    assert download.json()["stdout"] == "full output"
