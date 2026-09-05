@@ -120,14 +120,6 @@ export function WorkspacePanel({
     }
   }, [loadRoot])
 
-  useEffect(() => {
-    if (selectedFilePath !== null || !selectedFile) return
-    setSelectedFile(null)
-    setPreview(null)
-    setCopied(false)
-    setPreviewStatus("idle")
-  }, [selectedFile, selectedFilePath])
-
   const loadChildren = useCallback(
     async (node: WorkspaceFileNode) => {
       if (!projectId || node.type !== "directory" || node.children) return
@@ -171,15 +163,15 @@ export function WorkspacePanel({
     [adapter, projectId],
   )
 
-  const selectFile = useCallback(
-    async (node: WorkspaceFileNode) => {
+  const openFile = useCallback(
+    async (node: WorkspaceFileNode, notifyParent = false) => {
       if (!projectId || node.type !== "file") return
       previewControllerRef.current?.abort()
       const controller = new AbortController()
       previewControllerRef.current = controller
       const generation = requestGenerationRef.current
       setSelectedFile(node)
-      onSelectedFileChange?.({ name: node.name, path: node.path })
+      if (notifyParent) onSelectedFileChange?.({ name: node.name, path: node.path })
       setPreview(null)
       setCopied(false)
       setPreviewStatus("loading")
@@ -203,6 +195,28 @@ export function WorkspacePanel({
     },
     [adapter, onSelectedFileChange, projectId],
   )
+  const selectFile = useCallback(
+    (node: WorkspaceFileNode) => {
+      void openFile(node, true)
+    },
+    [openFile],
+  )
+
+  useEffect(() => {
+    if (selectedFilePath === undefined) return
+    if (selectedFilePath === null) {
+      if (!selectedFile) return
+      previewControllerRef.current?.abort()
+      setSelectedFile(null)
+      setPreview(null)
+      setCopied(false)
+      setPreviewStatus("idle")
+      return
+    }
+    if (selectedFile?.path === selectedFilePath) return
+    const node = findNode(nodes, selectedFilePath) ?? fileNodeFromPath(selectedFilePath)
+    void openFile(node)
+  }, [nodes, openFile, selectedFile, selectedFilePath])
 
   const visibleNodes = useMemo(
     () => filterNodes(nodes, query.trim().toLowerCase()),
@@ -543,6 +557,27 @@ function replaceChildren(
         ? { ...node, children: replaceChildren(node.children, path, children) }
         : node,
   )
+}
+
+function findNode(nodes: WorkspaceFileNode[], path: string): WorkspaceFileNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node
+    if (node.children) {
+      const match = findNode(node.children, path)
+      if (match) return match
+    }
+  }
+  return null
+}
+
+function fileNodeFromPath(path: string): WorkspaceFileNode {
+  return {
+    name: path.split("/").filter(Boolean).at(-1) ?? path,
+    path,
+    type: "file",
+    sizeBytes: null,
+    modifiedAt: null,
+  }
 }
 
 function sortNodes(nodes: WorkspaceFileNode[]) {
