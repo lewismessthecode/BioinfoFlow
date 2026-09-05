@@ -557,7 +557,15 @@ test.describe("Agent workspace shell", () => {
     await page.evaluate(() => document.fonts.ready)
     await expect(page).toHaveScreenshot(
       `drawer-terminal-${viewport.width}x${viewport.height}.png`,
-      { animations: "disabled", caret: "hide" },
+      {
+        animations: "disabled",
+        caret: "hide",
+        mask: [
+          page.locator("#sidebar-workspace-tree"),
+          page.getByText(project.name, { exact: true }),
+        ],
+        maskColor: "#ff00ff",
+      },
     )
   })
 })
