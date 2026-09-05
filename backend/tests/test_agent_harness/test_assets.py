@@ -1019,6 +1019,176 @@ async def test_artifact_writer_publishes_a_declared_file_idempotently(
 
 
 @pytest.mark.asyncio
+async def test_published_artifact_keeps_identity_and_versions_content_across_runs(
+    db_session,
+) -> None:
+    """A logical declaration keeps its id while new content gets a new version."""
+
+    session = await _session(db_session)
+    session_id = str(session.id)
+    repository = AgentHarnessRepository(db_session)
+
+    first_run = await create_agent_run(repository, session_id)
+    first_generation = await repository.claim_run(
+        str(first_run.id),
+        owner="worker-1",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    repository.bind_run_fence(
+        str(first_run.id), owner="worker-1", generation=first_generation
+    )
+    first_writer = AgentHarnessArtifactService(db_session).writer(
+        session_id=session_id,
+        run_id=str(first_run.id),
+        fence=RunFence(owner="worker-1", generation=first_generation),
+    )
+    first = await first_writer(
+        {
+            "type": "published_file",
+            "declaration_id": "logical:report",
+            "filename": "report.html",
+            "title": "Report",
+            "mime_type": "text/html",
+            "content": b"<h1>First</h1>",
+        }
+    )
+    await repository.update_run(str(first_run.id), status="completed")
+
+    second_run = await create_agent_run(repository, session_id)
+    second_generation = await repository.claim_run(
+        str(second_run.id),
+        owner="worker-2",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    repository.bind_run_fence(
+        str(second_run.id), owner="worker-2", generation=second_generation
+    )
+    second_writer = AgentHarnessArtifactService(db_session).writer(
+        session_id=session_id,
+        run_id=str(second_run.id),
+        fence=RunFence(owner="worker-2", generation=second_generation),
+    )
+    second = await second_writer(
+        {
+            "type": "published_file",
+            "declaration_id": "logical:report",
+            "filename": "report.html",
+            "title": "Report",
+            "mime_type": "text/html",
+            "content": b"<h1>Second</h1>",
+        }
+    )
+
+    service = AgentHarnessArtifactService(db_session)
+    latest = await service.get(
+        artifact_id=first["artifact_id"],
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    history = await service.list_versions(
+        artifact_id=first["artifact_id"],
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    old_path, _, _ = await service.download_path(
+        artifact_id=first["artifact_id"],
+        version_id=first["version_id"],
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    assert second["artifact_id"] == first["artifact_id"]
+    assert second["version"] == 2
+    assert latest.version == 2
+    assert [(item.version, str(item.run_id)) for item in history] == [
+        (2, str(second_run.id)),
+        (1, str(first_run.id)),
+    ]
+    assert old_path.read_bytes() == b"<h1>First</h1>"
+
+
+@pytest.mark.asyncio
+async def test_republishing_unchanged_artifact_does_not_create_a_version(db_session):
+    session = await _session(db_session)
+    session_id = str(session.id)
+    repository = AgentHarnessRepository(db_session)
+    run = await create_agent_run(repository, session_id)
+    generation = await repository.claim_run(
+        str(run.id),
+        owner="worker-1",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    writer = AgentHarnessArtifactService(db_session).writer(
+        session_id=session_id,
+        run_id=str(run.id),
+        fence=RunFence(owner="worker-1", generation=generation),
+    )
+    declaration = {
+        "type": "published_file",
+        "declaration_id": "logical:unchanged",
+        "filename": "report.html",
+        "title": "Report",
+        "mime_type": "text/html",
+        "content": b"<h1>Same</h1>",
+    }
+
+    first = await writer(declaration)
+    second = await writer(declaration)
+
+    history = await AgentHarnessArtifactService(db_session).list_versions(
+        artifact_id=first["artifact_id"],
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    assert second == first
+    assert [(item.version, item.title) for item in history] == [(1, "Report")]
+
+
+@pytest.mark.asyncio
+async def test_publish_artifact_can_append_version_by_explicit_identity(db_session):
+    session = await _session(db_session)
+    session_id = str(session.id)
+    repository = AgentHarnessRepository(db_session)
+    run = await create_agent_run(repository, session_id)
+    generation = await repository.claim_run(
+        str(run.id),
+        owner="worker-1",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    writer = AgentHarnessArtifactService(db_session).writer(
+        session_id=session_id,
+        run_id=str(run.id),
+        fence=RunFence(owner="worker-1", generation=generation),
+    )
+
+    first = await writer(
+        {
+            "type": "published_file",
+            "declaration_id": "tool:first-report",
+            "filename": "report.html",
+            "title": "Report",
+            "mime_type": "text/html",
+            "content": b"<h1>First</h1>",
+        }
+    )
+    second = await writer(
+        {
+            "type": "published_file",
+            "artifact_id": first["artifact_id"],
+            "declaration_id": "tool:revised-report",
+            "filename": "report.html",
+            "title": "Revised report",
+            "mime_type": "text/html",
+            "content": b"<h1>Second</h1>",
+        }
+    )
+
+    assert second["artifact_id"] == first["artifact_id"]
+    assert second["version"] == 2
+
+
+@pytest.mark.asyncio
 async def test_declared_artifact_preserves_durable_state_when_refresh_fails(
     db_session, monkeypatch
 ) -> None:

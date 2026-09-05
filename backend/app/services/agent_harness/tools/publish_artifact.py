@@ -21,6 +21,11 @@ class PublishArtifactTool:
             "type": "object",
             "properties": {
                 "path": {"type": "string", "minLength": 1},
+                "artifact_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Existing Artifact identity to create a new version.",
+                },
                 "title": {"type": "string", "minLength": 1, "maxLength": 200},
                 "summary": {"type": "string", "maxLength": 4000},
             },
@@ -63,6 +68,11 @@ class PublishArtifactTool:
                 "summary": summary.strip() if isinstance(summary, str) else None,
                 "mime_type": mime_type,
                 "content": content,
+                **(
+                    {"artifact_id": arguments["artifact_id"]}
+                    if "artifact_id" in arguments
+                    else {}
+                ),
             }
         )
         return {"path": path, "artifact": artifact}

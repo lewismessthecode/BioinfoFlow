@@ -55,10 +55,13 @@ _REASONING_TEXT_FIELDS = {
 }
 
 
-def artifact_view(artifact: AgentHarnessArtifact) -> dict[str, Any]:
+def artifact_view(
+    artifact: AgentHarnessArtifact, *, version_specific: bool = False
+) -> dict[str, Any]:
     """Build the stable public Artifact projection without exposing storage paths."""
 
-    artifact_id = str(artifact.id)
+    artifact_id = str(artifact.artifact_id or artifact.id)
+    version_id = str(artifact.id)
     raw_file_path = str(artifact.file_path or "").strip()
     resource_ref = artifact.resource_ref
     resource = resource_ref if isinstance(resource_ref, dict) else None
@@ -78,6 +81,8 @@ def artifact_view(artifact: AgentHarnessArtifact) -> dict[str, Any]:
         # ``id`` remains for 0.2 clients; ``artifact_id`` is the canonical 0.3 name.
         "artifact_id": artifact_id,
         "id": artifact_id,
+        "version_id": version_id,
+        "version": artifact.version or 1,
         "session_id": str(artifact.session_id),
         "run_id": str(artifact.run_id) if artifact.run_id else None,
         "type": artifact.type,
@@ -85,7 +90,11 @@ def artifact_view(artifact: AgentHarnessArtifact) -> dict[str, Any]:
         "summary": artifact.summary,
         "payload": artifact.payload,
         "location": (
-            f"/api/v1/agent/artifacts/{artifact_id}/download"
+            (
+                f"/api/v1/agent/artifacts/{artifact_id}/versions/{version_id}/download"
+                if version_specific
+                else f"/api/v1/agent/artifacts/{artifact_id}/download"
+            )
             if raw_file_path
             else None
         ),

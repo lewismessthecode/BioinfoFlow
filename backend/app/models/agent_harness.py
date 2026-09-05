@@ -176,6 +176,11 @@ class AgentHarnessAttachment(Base, UUIDMixin, TimestampMixin):
 
 class AgentHarnessArtifact(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "agent_artifacts"
+    __table_args__ = (
+        UniqueConstraint(
+            "artifact_id", "version", name="uq_agent_artifacts_identity_version"
+        ),
+    )
 
     session_id: Mapped[str] = mapped_column(
         GUID(),
@@ -188,6 +193,14 @@ class AgentHarnessArtifact(Base, UUIDMixin, TimestampMixin):
         ForeignKey("agent_runs.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
+    )
+    # ``id`` identifies one immutable version row. ``artifact_id`` identifies
+    # the logical delivery and remains stable as new versions are published.
+    # Legacy rows are backfilled to point at themselves by migration 0065.
+    artifact_id: Mapped[str | None] = mapped_column(GUID(), nullable=True, index=True)
+    version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    declaration_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True, index=True
     )
     type: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
