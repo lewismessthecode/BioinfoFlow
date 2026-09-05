@@ -19,7 +19,13 @@ from app.services.agent_harness.contracts import (
     SnapshotEvent,
 )
 from app.services.agent_harness.events import AgentEventHub
+from app.services.agent_harness.adapter import (
+    BIOINFOFLOW_HOST_CAPABILITIES,
+    AgentHarnessAdapter,
+    HarnessAdapterManifest,
+)
 from app.services.agent_harness.harness import AgentHarness
+from app.services.agent_harness.loop import HARNESS_VERSION
 from app.services.agent_harness.snapshot import AgentHarnessSnapshotService
 from app.services.agent_harness.projection import run_view
 from app.utils.logging import get_logger
@@ -28,17 +34,24 @@ from app.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-HarnessFactory = Callable[..., AgentHarness]
+NativeHarnessFactory = Callable[..., AgentHarness]
 
 
 class AgentRuntime:
     """Process-level owner of live Agent tasks, cancellation and event fan-out."""
 
+    manifest = HarnessAdapterManifest(
+        adapter_id="bioinfoflow-native",
+        adapter_version=HARNESS_VERSION,
+        unmediated_tools_enabled=False,
+        host_capabilities=BIOINFOFLOW_HOST_CAPABILITIES,
+    )
+
     def __init__(
         self,
         session_factory: Callable[[], Any],
         *,
-        harness_factory: HarnessFactory,
+        harness_factory: NativeHarnessFactory,
         cancel_poll_interval_seconds: float = 0.1,
         quiesce_timeout_seconds: float = 10.0,
     ) -> None:
@@ -417,7 +430,7 @@ def _database_harness(db: AsyncSession, **runtime: Any) -> AgentHarness:
     return harness_for_database(db, **runtime)
 
 
-agent_runtime = AgentRuntime(
+agent_runtime: AgentHarnessAdapter = AgentRuntime(
     _database_session,
     harness_factory=_database_harness,
 )
