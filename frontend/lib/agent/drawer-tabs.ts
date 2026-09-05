@@ -1,5 +1,9 @@
 export type AgentDrawerTabKind = "artifacts" | "workspace" | "dag" | "browser" | "file" | "artifact"
 
+// Toolbar actions can only open a tool surface. Resource tabs (files and
+// artifacts) are created by the corresponding surface after a selection.
+export type AgentWorkspaceTab = Exclude<AgentDrawerTabKind, "file" | "artifact">
+
 export type AgentDrawerTab = {
   id: string
   kind: AgentDrawerTabKind
