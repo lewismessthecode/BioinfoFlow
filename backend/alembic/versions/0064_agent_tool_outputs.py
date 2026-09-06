@@ -71,8 +71,12 @@ def downgrade() -> None:
 def _restore_legacy_command_outputs() -> None:
     bind = op.get_bind()
     metadata = sa.MetaData()
-    artifacts = sa.Table("agent_artifacts", metadata, autoload_with=bind)
-    outputs = sa.Table("agent_tool_outputs", metadata, autoload_with=bind)
+    artifacts = sa.Table(
+        "agent_artifacts", metadata, autoload_with=bind, resolve_fks=False
+    )
+    outputs = sa.Table(
+        "agent_tool_outputs", metadata, autoload_with=bind, resolve_fks=False
+    )
     rows = list(bind.execute(sa.select(outputs)).mappings())
     if any(
         _json_object(row.get("resource_ref")).get("legacy_storage") != "artifact"
@@ -118,8 +122,12 @@ def _json_object(value) -> dict:
 def _move_legacy_command_outputs() -> None:
     bind = op.get_bind()
     metadata = sa.MetaData()
-    artifacts = sa.Table("agent_artifacts", metadata, autoload_with=bind)
-    outputs = sa.Table("agent_tool_outputs", metadata, autoload_with=bind)
+    artifacts = sa.Table(
+        "agent_artifacts", metadata, autoload_with=bind, resolve_fks=False
+    )
+    outputs = sa.Table(
+        "agent_tool_outputs", metadata, autoload_with=bind, resolve_fks=False
+    )
     rows = bind.execute(
         sa.select(artifacts).where(artifacts.c.type == "command_output")
     ).mappings()
