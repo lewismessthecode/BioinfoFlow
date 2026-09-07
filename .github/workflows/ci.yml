@@ -366,7 +366,7 @@ jobs:
 
       - name: Upload Agent shell Playwright report and diagnostics
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agent-shell-${{ matrix.viewport.name }}-diagnostics
           path: |
