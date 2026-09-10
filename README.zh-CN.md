@@ -7,6 +7,8 @@
 
   一个让 Agent 真正参与分析工作的本地工作空间。
 
+  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lewismessthecode/BioinfoFlow)
+
   说清楚你要完成什么。Agent 会查看项目文件、准备输入、运行 Nextflow
   或 WDL、跟踪日志，并把结果讲明白。数据和运行环境始终由你掌握。
 
@@ -20,15 +22,23 @@
   <p><a href="README.md">English</a> · <b>简体中文</b></p>
 </div>
 
+## Bioinfoflow 是什么？
+
+Bioinfoflow 是一个本地生物信息工作流控制平面，让 Agent 参与分析流程。
+它把项目、流程定义、运行、日志、结果和操作确认放在同一个工作空间里，
+数据与运行环境仍由你自己掌握。
+
 ## 先跑起来
 
-准备一台安装了 Docker Engine 或 Docker Desktop 的 macOS 或 Linux 电脑。
+准备一台安装了 Docker Engine 或 Docker Desktop（Compose 2.24 及以上）的
+macOS 或 Linux 电脑。只有使用 Agent 时才需要配置 AI 服务。
 
 ```bash
 curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh
 ```
 
-打开 [localhost:3000](http://localhost:3000)，连接一个模型，然后运行演示流程。
+打开 [localhost:3000](http://localhost:3000)，在界面中连接一个模型，发送
+快捷提示 **在运行前检查这个工作流**。
 
 如果要参与开发，或者需要自定义部署方式：
 
@@ -45,7 +55,7 @@ docker compose up -d --build
 
 _Agent 页面把对话、项目工作区、执行目标和操作确认放在了一起。_
 
-## 每个页面负责什么
+## 核心能力
 
 | 页面 | 主要用途 |
 | --- | --- |
@@ -62,6 +72,12 @@ _Agent 页面把对话、项目工作区、执行目标和操作确认放在了�
 Bioinfoflow 把项目、流程、运行、日志和结果放在同一个上下文里。数据可以放在
 本机、外部项目目录，或你明确选定的 SSH 主机上。远程连接适合检查远程环境和打开
 交互式终端；流程运行仍由 Bioinfoflow 的调度器负责。
+
+## 试运行示例
+
+仓库附带可直接运行的 [nf-core/rnaseq 演示流程](demo/nfcore-rnaseq/README.md)，
+适合作为首次体验。另有面向 GPU 主机的 NVIDIA Parabricks 示例，以及用于验证
+不同运行边界的 WDL 测试流程。
 
 ## GPU 分析流程
 
@@ -81,6 +97,7 @@ RTX 4080 SUPER 这样的显卡可以用来在本机运行 GPU 流程；最终能
 ## 常用入口
 
 - [文档首页](docs/README.md)
+- [演示流程](demo/nfcore-rnaseq/README.md)
 - [SSH 远程连接](docs/guides/remote-connections.md)
 - [存储与数据目录](docs/concepts/storage.md)
 - [架构说明](docs/architecture.md)

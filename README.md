@@ -7,6 +7,8 @@
 
   A local Agent workspace for bioinformatics analysis.
 
+  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lewismessthecode/BioinfoFlow)
+
   Describe the work. The Agent reads your project, prepares inputs, runs
   Nextflow or WDL, follows logs, and explains what happened — on infrastructure
   you control.
@@ -21,18 +23,26 @@
   <p><b>English</b> · <a href="README.zh-CN.md">简体中文</a></p>
 </div>
 
+## What is Bioinfoflow?
+
+Bioinfoflow is a local control plane for running bioinformatics workflows with
+an Agent in the loop. It brings projects, workflow definitions, execution,
+logs, results, and approvals into one workspace while keeping data and runtime
+infrastructure under your control.
+
 ## Get started
 
-macOS or Linux with Docker Engine or Docker Desktop.
+You need macOS or Linux with Docker Engine or Docker Desktop (Compose 2.24 or
+newer). An AI provider is only required when you use the Agent.
 
 ```bash
 curl -fsSL https://github.com/lewismessthecode/BioinfoFlow/releases/latest/download/install.sh | sh
 ```
 
-Open [localhost:3000](http://localhost:3000), connect a model, and run the
-demo workflow.
+Open [localhost:3000](http://localhost:3000), connect a model from the UI, and
+send the starter prompt **Check the workflow before I run it**.
 
-For development or a customized deployment:
+For development or a customized deployment, build from source:
 
 ```bash
 git clone https://github.com/lewismessthecode/BioinfoFlow.git
@@ -48,7 +58,7 @@ updates, authentication, remote deployments, GPU setup, and voice input.
 _The Agent page keeps the conversation, project workspace, execution target,
 and approval controls together._
 
-## Inside Bioinfoflow
+## Core capabilities
 
 | Page | What it is for |
 | --- | --- |
@@ -66,6 +76,12 @@ Bioinfoflow keeps the project, workflow, execution, logs, and results in one
 place. It can work with local data, external project directories, and selected
 SSH-connected hosts. Remote Connections support inspection and interactive
 terminals; workflow dispatch remains managed by Bioinfoflow's local scheduler.
+
+## Try an example
+
+The bundled [nf-core/rnaseq demo](demo/nfcore-rnaseq/README.md) is a small,
+runnable onboarding workflow. The repository also includes focused WDL
+fixtures and NVIDIA Parabricks examples for GPU-capable hosts.
 
 ## GPU workflows
 
@@ -96,9 +112,9 @@ See [Parabricks WGS workflows](docs/workflows/parabricks-wgs.md).
 ## Development
 
 See [AGENTS.md](AGENTS.md) for repository conventions and verification commands.
-When running the backend directly from source, first run
-`npm ci --prefix sandbox_worker` from `backend/` to install the local Agent
-sandbox worker dependencies.
+For backend development, install the local Agent sandbox worker from `backend/`
+with `npm ci --prefix sandbox_worker` before starting the backend directly from
+source.
 
 ## License
 
