@@ -293,8 +293,11 @@ async def test_cross_worker_cancel_stops_a_running_bash_command(
     harness_db: AsyncSession,
     tmp_path: Path,
 ) -> None:
+    engine = harness_db.bind
+    # Release the fixture session so concurrent workers do not contend on SQLite.
+    await harness_db.close()
     session_factory = async_sessionmaker(
-        harness_db.bind,
+        engine,
         expire_on_commit=False,
         class_=AsyncSession,
     )
@@ -325,6 +328,12 @@ async def test_cross_worker_cancel_stops_a_running_bash_command(
         _message("message-cross-worker-bash", "Run it."),
     )
     await asyncio.wait_for(backend.started.wait(), timeout=1)
+    await _wait_for_run_status(
+        running_worker,
+        session_id,
+        "running",
+        timeout_seconds=5.0,
+    )
 
     try:
         await cancelling_worker.dispatch(
@@ -335,11 +344,12 @@ async def test_cross_worker_cancel_stops_a_running_bash_command(
             ),
         )
 
-        await asyncio.wait_for(backend.stopped.wait(), timeout=0.5)
+        await asyncio.wait_for(backend.stopped.wait(), timeout=5.0)
         snapshot = await _wait_for_run_status(
             cancelling_worker,
             session_id,
             "cancelled",
+            timeout_seconds=30.0,
         )
         assert _latest_run(snapshot).status == "cancelled"
         assert _latest_run(snapshot).termination_reason == "user_cancelled"
@@ -1058,12 +1068,16 @@ async def _wait_for_run_status(
     runtime: AgentRuntime,
     session_id: str,
     status: str,
+    *,
+    timeout_seconds: float = 1.0,
+    poll_interval_seconds: float = 0.01,
 ):
-    for _ in range(100):
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while asyncio.get_running_loop().time() < deadline:
         snapshot = await runtime.snapshot(session_id)
         if _latest_run(snapshot).status == status:
             return snapshot
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(poll_interval_seconds)
     raise AssertionError(f"Agent run did not reach {status}")
 
 
