@@ -293,14 +293,7 @@ async def test_cross_worker_cancel_stops_a_running_bash_command(
     harness_db: AsyncSession,
     tmp_path: Path,
 ) -> None:
-    engine = harness_db.bind
-    # Release the fixture session so concurrent workers do not contend on SQLite.
-    await harness_db.close()
-    session_factory = async_sessionmaker(
-        engine,
-        expire_on_commit=False,
-        class_=AsyncSession,
-    )
+    session_factory = await _isolated_harness_session_factory(harness_db)
     backend = CancellableCommandBackend(tmp_path)
 
     def build_harness(db: AsyncSession, **runtime) -> AgentHarness:
@@ -349,7 +342,7 @@ async def test_cross_worker_cancel_stops_a_running_bash_command(
             cancelling_worker,
             session_id,
             "cancelled",
-            timeout_seconds=30.0,
+            timeout_seconds=SQLITE_CONTENTION_TIMEOUT_SECONDS,
         )
         assert _latest_run(snapshot).status == "cancelled"
         assert _latest_run(snapshot).termination_reason == "user_cancelled"
@@ -363,11 +356,7 @@ async def test_runtime_cancel_claims_a_waiting_user_run(
     harness_db: AsyncSession,
     tmp_path: Path,
 ) -> None:
-    session_factory = async_sessionmaker(
-        harness_db.bind,
-        expire_on_commit=False,
-        class_=AsyncSession,
-    )
+    session_factory = await _isolated_harness_session_factory(harness_db)
 
     def build_harness(db: AsyncSession, **runtime) -> AgentHarness:
         return AgentHarness.for_database(
@@ -384,14 +373,24 @@ async def test_runtime_cancel_claims_a_waiting_user_run(
         session_id,
         _message("message-before-wait", "Ask me."),
     )
-    await _wait_for_run_status(runtime, session_id, "waiting_user")
+    await _wait_for_run_status(
+        runtime,
+        session_id,
+        "waiting_user",
+        timeout_seconds=SQLITE_CONTENTION_TIMEOUT_SECONDS,
+    )
 
     await runtime.dispatch(
         session_id,
         CancelCommand(command_id="cancel-waiting", reason="user_cancelled"),
     )
 
-    cancelled = await _wait_for_run_status(runtime, session_id, "cancelled")
+    cancelled = await _wait_for_run_status(
+        runtime,
+        session_id,
+        "cancelled",
+        timeout_seconds=SQLITE_CONTENTION_TIMEOUT_SECONDS,
+    )
     assert _latest_run(cancelled).termination_reason == "user_cancelled"
     await runtime.shutdown()
 
@@ -1064,6 +1063,18 @@ async def test_background_bootstrap_failure_is_persisted_instead_of_leaking_task
     await runtime.shutdown()
 
 
+SQLITE_CONTENTION_TIMEOUT_SECONDS = 35.0
+
+
+async def _isolated_harness_session_factory(
+    harness_db: AsyncSession,
+) -> async_sessionmaker[AsyncSession]:
+    engine = harness_db.bind
+    # Release the fixture session so runtime workers do not contend on SQLite.
+    await harness_db.close()
+    return async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+
 async def _wait_for_run_status(
     runtime: AgentRuntime,
     session_id: str,
@@ -1073,12 +1084,17 @@ async def _wait_for_run_status(
     poll_interval_seconds: float = 0.01,
 ):
     deadline = asyncio.get_running_loop().time() + timeout_seconds
+    last_status = "unknown"
     while asyncio.get_running_loop().time() < deadline:
         snapshot = await runtime.snapshot(session_id)
-        if _latest_run(snapshot).status == status:
+        last_status = _latest_run(snapshot).status
+        if last_status == status:
             return snapshot
         await asyncio.sleep(poll_interval_seconds)
-    raise AssertionError(f"Agent run did not reach {status}")
+    raise AssertionError(
+        f"Agent run did not reach {status} within {timeout_seconds}s "
+        f"(last status: {last_status})"
+    )
 
 
 def _open_request() -> OpenSessionRequest:
