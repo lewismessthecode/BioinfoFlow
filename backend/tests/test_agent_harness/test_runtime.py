@@ -328,7 +328,7 @@ async def test_cross_worker_cancel_stops_a_running_bash_command(
         running_worker,
         session_id,
         "running",
-        timeout_seconds=5.0,
+        timeout_seconds=SQLITE_CONTENTION_TIMEOUT_SECONDS,
     )
 
     try:
@@ -1078,6 +1078,7 @@ async def _isolated_harness_session_factory(
 ) -> async_sessionmaker[AsyncSession]:
     engine = harness_db.bind
     # Release the fixture session so runtime workers do not contend on SQLite.
+    # Engine disposal remains in the harness_db fixture after yield.
     await harness_db.close()
     return async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
