@@ -236,11 +236,7 @@ async def test_cross_worker_cancel_interrupts_a_running_model(
     tmp_path: Path,
 ) -> None:
     model = BlockingModel()
-    session_factory = async_sessionmaker(
-        harness_db.bind,
-        expire_on_commit=False,
-        class_=AsyncSession,
-    )
+    session_factory = await _isolated_harness_session_factory(harness_db)
 
     def build_harness(db: AsyncSession, **runtime) -> AgentHarness:
         return AgentHarness.for_database(
@@ -267,6 +263,12 @@ async def test_cross_worker_cancel_interrupts_a_running_model(
         _message("message-cross-worker", "Wait."),
     )
     await asyncio.wait_for(model.started.wait(), timeout=1)
+    await _wait_for_run_status(
+        running_worker,
+        session_id,
+        "running",
+        timeout_seconds=SQLITE_CONTENTION_TIMEOUT_SECONDS,
+    )
 
     try:
         await cancelling_worker.dispatch(
@@ -279,6 +281,7 @@ async def test_cross_worker_cancel_interrupts_a_running_model(
             cancelling_worker,
             session_id,
             "cancelled",
+            timeout_seconds=SQLITE_CONTENTION_TIMEOUT_SECONDS,
         )
         assert _latest_run(snapshot).status == "cancelled"
         assert _latest_run(snapshot).termination_reason == "user_cancelled"
@@ -293,11 +296,7 @@ async def test_cross_worker_cancel_stops_a_running_bash_command(
     harness_db: AsyncSession,
     tmp_path: Path,
 ) -> None:
-    session_factory = async_sessionmaker(
-        harness_db.bind,
-        expire_on_commit=False,
-        class_=AsyncSession,
-    )
+    session_factory = await _isolated_harness_session_factory(harness_db)
     backend = CancellableCommandBackend(tmp_path)
 
     def build_harness(db: AsyncSession, **runtime) -> AgentHarness:
@@ -325,6 +324,12 @@ async def test_cross_worker_cancel_stops_a_running_bash_command(
         _message("message-cross-worker-bash", "Run it."),
     )
     await asyncio.wait_for(backend.started.wait(), timeout=1)
+    await _wait_for_run_status(
+        running_worker,
+        session_id,
+        "running",
+        timeout_seconds=SQLITE_CONTENTION_TIMEOUT_SECONDS,
+    )
 
     try:
         await cancelling_worker.dispatch(
@@ -335,11 +340,12 @@ async def test_cross_worker_cancel_stops_a_running_bash_command(
             ),
         )
 
-        await asyncio.wait_for(backend.stopped.wait(), timeout=0.5)
+        await asyncio.wait_for(backend.stopped.wait(), timeout=5.0)
         snapshot = await _wait_for_run_status(
             cancelling_worker,
             session_id,
             "cancelled",
+            timeout_seconds=SQLITE_CONTENTION_TIMEOUT_SECONDS,
         )
         assert _latest_run(snapshot).status == "cancelled"
         assert _latest_run(snapshot).termination_reason == "user_cancelled"
@@ -353,11 +359,7 @@ async def test_runtime_cancel_claims_a_waiting_user_run(
     harness_db: AsyncSession,
     tmp_path: Path,
 ) -> None:
-    session_factory = async_sessionmaker(
-        harness_db.bind,
-        expire_on_commit=False,
-        class_=AsyncSession,
-    )
+    session_factory = await _isolated_harness_session_factory(harness_db)
 
     def build_harness(db: AsyncSession, **runtime) -> AgentHarness:
         return AgentHarness.for_database(
@@ -374,14 +376,24 @@ async def test_runtime_cancel_claims_a_waiting_user_run(
         session_id,
         _message("message-before-wait", "Ask me."),
     )
-    await _wait_for_run_status(runtime, session_id, "waiting_user")
+    await _wait_for_run_status(
+        runtime,
+        session_id,
+        "waiting_user",
+        timeout_seconds=SQLITE_CONTENTION_TIMEOUT_SECONDS,
+    )
 
     await runtime.dispatch(
         session_id,
         CancelCommand(command_id="cancel-waiting", reason="user_cancelled"),
     )
 
-    cancelled = await _wait_for_run_status(runtime, session_id, "cancelled")
+    cancelled = await _wait_for_run_status(
+        runtime,
+        session_id,
+        "cancelled",
+        timeout_seconds=SQLITE_CONTENTION_TIMEOUT_SECONDS,
+    )
     assert _latest_run(cancelled).termination_reason == "user_cancelled"
     await runtime.shutdown()
 
@@ -429,11 +441,7 @@ async def test_cross_worker_delete_waits_for_running_bash_to_quiesce(
     harness_db: AsyncSession,
     tmp_path: Path,
 ) -> None:
-    session_factory = async_sessionmaker(
-        harness_db.bind,
-        expire_on_commit=False,
-        class_=AsyncSession,
-    )
+    session_factory = await _isolated_harness_session_factory(harness_db)
     backend = CancellableCommandBackend(tmp_path)
 
     def build_harness(db: AsyncSession, **runtime) -> AgentHarness:
@@ -453,11 +461,22 @@ async def test_cross_worker_delete_waits_for_running_bash_to_quiesce(
         _message("message-bash", "Run the command."),
     )
     await asyncio.wait_for(backend.started.wait(), timeout=1)
+    await _wait_for_run_status(
+        running_worker,
+        session_id,
+        "running",
+        timeout_seconds=SQLITE_CONTENTION_TIMEOUT_SECONDS,
+    )
 
     await deleting_worker.quiesce_session(session_id)
 
     assert backend.stopped.is_set()
-    snapshot = await deleting_worker.snapshot(session_id)
+    snapshot = await _wait_for_run_status(
+        deleting_worker,
+        session_id,
+        "cancelled",
+        timeout_seconds=SQLITE_CONTENTION_TIMEOUT_SECONDS,
+    )
     assert _latest_run(snapshot).status == "cancelled"
     assert _latest_run(snapshot).termination_reason == "session_deleted"
     events = deleting_worker.events(session_id)
@@ -477,11 +496,7 @@ async def test_cross_worker_quiesce_timeout_keeps_closing_session_durable(
     tmp_path: Path,
 ) -> None:
     model = CancellationResistantModel()
-    session_factory = async_sessionmaker(
-        harness_db.bind,
-        expire_on_commit=False,
-        class_=AsyncSession,
-    )
+    session_factory = await _isolated_harness_session_factory(harness_db)
 
     def build_harness(db: AsyncSession, **runtime) -> AgentHarness:
         return AgentHarness.for_database(
@@ -520,11 +535,12 @@ async def test_cross_worker_quiesce_timeout_keeps_closing_session_durable(
         )
 
     model.release.set()
-    for _ in range(100):
-        snapshot = await deleting_worker.snapshot(session_id)
-        if _latest_run(snapshot).status == "cancelled":
-            break
-        await asyncio.sleep(0.01)
+    snapshot = await _wait_for_run_status(
+        deleting_worker,
+        session_id,
+        "cancelled",
+        timeout_seconds=SQLITE_CONTENTION_TIMEOUT_SECONDS,
+    )
     assert _latest_run(snapshot).status == "cancelled"
     await deleting_worker.quiesce_session(session_id)
     await running_worker.shutdown()
@@ -1054,17 +1070,39 @@ async def test_background_bootstrap_failure_is_persisted_instead_of_leaking_task
     await runtime.shutdown()
 
 
+SQLITE_CONTENTION_TIMEOUT_SECONDS = 35.0
+
+
+async def _isolated_harness_session_factory(
+    harness_db: AsyncSession,
+) -> async_sessionmaker[AsyncSession]:
+    engine = harness_db.bind
+    # Release the fixture session so runtime workers do not contend on SQLite.
+    # Engine disposal remains in the harness_db fixture after yield.
+    await harness_db.close()
+    return async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+
 async def _wait_for_run_status(
     runtime: AgentRuntime,
     session_id: str,
     status: str,
+    *,
+    timeout_seconds: float = 1.0,
+    poll_interval_seconds: float = 0.01,
 ):
-    for _ in range(100):
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    last_status = "unknown"
+    while asyncio.get_running_loop().time() < deadline:
         snapshot = await runtime.snapshot(session_id)
-        if _latest_run(snapshot).status == status:
+        last_status = _latest_run(snapshot).status
+        if last_status == status:
             return snapshot
-        await asyncio.sleep(0.01)
-    raise AssertionError(f"Agent run did not reach {status}")
+        await asyncio.sleep(poll_interval_seconds)
+    raise AssertionError(
+        f"Agent run did not reach {status} within {timeout_seconds}s "
+        f"(last status: {last_status})"
+    )
 
 
 def _open_request() -> OpenSessionRequest:
