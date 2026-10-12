@@ -202,7 +202,7 @@ def test_kimi_k3_maps_medium_effort_to_supported_high_tier() -> None:
         ("zai", "glm-4.7", ("extra_body", "thinking", "type"), "enabled"),
         ("kimi_code", "kimi-for-coding", ("extra_body", "thinking", "type"), "enabled"),
         ("minimax", "MiniMax-M3", ("extra_body", "reasoning_split"), True),
-        ("gemini", "gemini-3-pro-preview", ("reasoning_effort",), "high"),
+        ("gemini", "gemini-2.5-pro", ("reasoning_effort",), "high"),
     ],
 )
 def test_phase_one_profiles_compile_reasoning_controls(
@@ -223,6 +223,45 @@ def test_phase_one_profiles_compile_reasoning_controls(
         assert isinstance(value, dict)
         value = value[part]
     assert value == expected_value
+
+
+def test_gemini_profile_omits_reasoning_when_litellm_does_not_support_it() -> None:
+    compiled = profile_for("gemini").compile_request(
+        {"model": "gemini/gemini-3-pro-preview", "messages": [], "max_tokens": 100},
+        model_name="gemini-3-pro-preview",
+        wire_protocol="chat_completions",
+        reasoning=ReasoningRequest(enabled=True, effort="high"),
+    )
+
+    assert "reasoning_effort" not in compiled
+    assert "thinking" not in compiled
+
+
+def test_gemini_profile_treats_none_supported_params_as_unsupported(
+    monkeypatch,
+    caplog,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.llm.profiles.gemini.get_supported_openai_params",
+        lambda **kwargs: None,
+    )
+
+    with caplog.at_level("DEBUG"):
+        compiled = profile_for("gemini").compile_request(
+            {
+                "model": "gemini/gemini-3-pro-preview",
+                "messages": [],
+                "max_tokens": 100,
+            },
+            model_name="gemini-3-pro-preview",
+            wire_protocol="chat_completions",
+            reasoning=ReasoningRequest(enabled=True, effort="high"),
+        )
+
+    assert "reasoning_effort" not in compiled
+    assert "thinking" not in compiled
+    assert "reasoning_effort" in caplog.text
+    assert "gemini-3-pro-preview" in caplog.text
 
 
 def test_huggingface_profile_omits_unverified_universal_reasoning_control() -> None:
