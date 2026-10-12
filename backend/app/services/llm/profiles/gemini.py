@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from litellm.utils import get_supported_openai_params
@@ -11,6 +12,8 @@ from app.services.llm.profiles.base import (
 )
 from app.services.llm.registry import ModelSpec
 from app.services.model_runtime.contracts import ReasoningRequest, WireProtocol
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiProfile(ProviderProfile):
@@ -30,16 +33,20 @@ class GeminiProfile(ProviderProfile):
                 reasoning=ReasoningRequest(enabled=False),
             )
 
-        supported = set(
-            get_supported_openai_params(
-                model=model_name,
-                custom_llm_provider="gemini",
-            )
+        supported_params = get_supported_openai_params(
+            model=model_name,
+            custom_llm_provider="gemini",
         )
+        supported = set(supported_params or ())
         if wire_protocol == "responses":
             if "reasoning" not in supported:
                 reasoning = ReasoningRequest(enabled=False)
         elif "reasoning_effort" not in supported:
+            logger.debug(
+                "Dropping unsupported Gemini reasoning param %s for model %s",
+                "reasoning_effort",
+                model_name,
+            )
             reasoning = ReasoningRequest(enabled=False)
 
         return super().compile_request(
