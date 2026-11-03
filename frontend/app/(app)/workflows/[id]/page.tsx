@@ -223,7 +223,7 @@ export default function WorkflowDetailPage() {
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-gradient-to-br from-secondary/70 via-background to-background shadow-sm">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-muted/30">
               <svg viewBox="0 0 24 24" className="h-6 w-6 text-foreground/80" fill="currentColor">
                 <path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18l6.9 3.45L12 11.09 5.1 7.63 12 4.18zM4 16.54V9.09l7 3.5v7.45l-7-3.5zm9 3.5v-7.45l7-3.5v7.45l-7 3.5z" />
               </svg>
@@ -233,11 +233,11 @@ export default function WorkflowDetailPage() {
                 <h1 className="text-2xl font-semibold text-foreground truncate">
                   {formatWorkflowName(workflow)}
                 </h1>
-                <Badge variant="secondary" className="text-xs-tight uppercase tracking-wide shrink-0">
+                <Badge variant="secondary" className="shrink-0 text-xs">
                   {workflow.source}
                 </Badge>
                 {readinessBadges.map((badge) => (
-                  <Badge key={badge} variant="outline" className="text-xs-tight uppercase tracking-wide shrink-0">
+                  <Badge key={badge} variant="outline" className="shrink-0 text-xs">
                     {badge}
                   </Badge>
                 ))}

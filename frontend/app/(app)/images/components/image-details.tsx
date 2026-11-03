@@ -2,7 +2,6 @@ import {
   Copy,
   Download,
   RefreshCcw,
-  Sparkles,
   FileArchive,
   Package2,
   Trash2,
@@ -46,13 +45,12 @@ export function OnboardingImagesEmptyState({
   onChooseRecommended: (value: string) => void
 }) {
   return (
-    <section className="rounded-3xl border border-border/70 bg-[radial-gradient(circle_at_top_left,rgba(148,163,184,0.14),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.95),rgba(248,250,252,0.88))] p-7 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:bg-[radial-gradient(circle_at_top_left,rgba(148,163,184,0.08),transparent_42%),linear-gradient(180deg,rgba(30,30,32,0.95),rgba(24,24,27,0.88))] dark:shadow-[0_1px_2px_rgba(0,0,0,0.2)]">
+    <section className="rounded-xl border border-border bg-card p-6">
       <div className="max-w-2xl">
-        <Badge variant="secondary" className="mb-3 gap-1 text-xs-tight uppercase tracking-[0.18em]">
-          <Sparkles className="h-3 w-3" />
+        <Badge variant="secondary" className="mb-3 text-xs font-medium">
           {tImages("shared")}
         </Badge>
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">{tImages("empty.availableTitle")}</h2>
+        <h2 className="text-2xl font-medium text-foreground">{tImages("empty.availableTitle")}</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{tImages("empty.availableDescription")}</p>
       </div>
 
@@ -66,7 +64,7 @@ export function OnboardingImagesEmptyState({
           {tImages("empty.actions.tarball")}
         </Button>
         <Button variant="outline" className="justify-start" onClick={onOpenRecommendations}>
-          <Sparkles className="mr-2 h-4 w-4" />
+          <Package2 className="mr-2 h-4 w-4" />
           {tImages("empty.actions.recommended")}
         </Button>
       </div>
@@ -96,8 +94,8 @@ export function UnavailableImagesEmptyState({
   onRefresh: () => void
 }) {
   return (
-    <section className="rounded-3xl border border-warning/24 bg-warning/7 p-7 text-left">
-      <h2 className="text-2xl font-semibold tracking-tight text-foreground">{tImages("empty.unavailableTitle")}</h2>
+    <section className="rounded-xl border border-warning/24 bg-warning/7 p-6 text-left">
+      <h2 className="text-2xl font-medium text-foreground">{tImages("empty.unavailableTitle")}</h2>
       <p className="mt-2 max-w-xl text-sm leading-6 text-warning-foreground/80">{tImages("empty.unavailableDescription")}</p>
       <Button variant="outline" className="mt-5" onClick={onRefresh}>
         <RefreshCcw className="mr-2 h-4 w-4" />

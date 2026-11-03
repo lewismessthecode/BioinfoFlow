@@ -48,7 +48,7 @@ import { isTerminalScreenshotFixtureEnabled } from "@/lib/terminal/screenshot-fi
 
 const LEFT_SIDEBAR_MIN = 240
 const LEFT_SIDEBAR_MAX = 420
-const LEFT_SIDEBAR_DEFAULT = 300
+const LEFT_SIDEBAR_DEFAULT = 280
 const LEFT_SIDEBAR_COLLAPSED = 56
 
 const LazyCommandPalette = dynamic(

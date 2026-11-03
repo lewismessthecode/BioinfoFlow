@@ -7,9 +7,7 @@ import { AlertTriangle } from "@/lib/icons";
 import { apiRequest, getApiErrorMessage } from "@/lib/api";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import type { SchedulerStatus } from "@/lib/types";
-import { getTimePeriod } from "@/lib/time-greeting";
 import { withMinimumDuration } from "@/lib/minimum-duration";
-import { authClient } from "@/lib/auth-client";
 import {
   buildNarrative,
   type DashboardStats,
@@ -25,7 +23,6 @@ import { ReadinessCenter } from "./components/readiness-center";
 
 export default function DashboardPage() {
   const tDashboard = useTranslations("dashboard");
-  const tGreeting = useTranslations("greeting");
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [gpuInfo, setGpuInfo] = useState<GpuInfo | null>(null);
@@ -34,17 +31,6 @@ export default function DashboardPage() {
   const [readiness, setReadiness] = useState<ReadinessStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const { data: session } = authClient.useSession();
-  const userName = session?.user?.name;
-  const firstName = userName?.split(/\s+/)[0] || "";
-  const period = getTimePeriod();
-  const dashboardKey =
-    `dashboard${period.charAt(0).toUpperCase()}${period.slice(1)}` as
-      | "dashboardMorning"
-      | "dashboardAfternoon"
-      | "dashboardEvening"
-      | "dashboardLateNight";
-  const greeting = tGreeting(dashboardKey, { name: firstName });
   const monitoringOverviewLabel = tDashboard("monitoringOverview");
 
   const fetchData = useCallback(async () => {
@@ -85,12 +71,9 @@ export default function DashboardPage() {
           data-dashboard-surface="monitoring"
           className="bif-workbench-page__inner"
         >
-          <div className="mb-6 flex flex-col gap-2.5">
-            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              {monitoringOverviewLabel}
-            </p>
-            <h1 className="text-2xl font-medium tracking-tight text-foreground">
-              {greeting}
+          <div className="mb-6 flex flex-col gap-2">
+            <h1 className="text-2xl font-medium text-foreground">
+              {tDashboard("title")}
             </h1>
             <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
               {tDashboard("subtitle")}
@@ -109,12 +92,9 @@ export default function DashboardPage() {
         data-dashboard-surface="monitoring"
         className="bif-workbench-page__inner"
       >
-        <div className="mb-6 flex flex-col gap-2.5">
-          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-            {monitoringOverviewLabel}
-          </p>
-          <h1 className="text-2xl font-medium tracking-tight text-foreground">
-            {greeting}
+        <div className="mb-6 flex flex-col gap-2">
+          <h1 className="text-2xl font-medium text-foreground">
+            {tDashboard("title")}
           </h1>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
             {stats ? buildNarrative(stats, tDashboard) : tDashboard("subtitle")}

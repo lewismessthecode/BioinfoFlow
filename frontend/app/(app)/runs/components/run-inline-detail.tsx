@@ -116,7 +116,7 @@ export function RunInlineDetail({
                   { label: tRuns("samples"), value: String(run.samples_count ?? "-") },
                 ].map((item) => (
                   <div key={item.label} className="rounded-xl border border-border/50 bg-background/60 px-3 py-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{item.label}</p>
+                    <p className="text-xs font-medium text-muted-foreground">{item.label}</p>
                     <p className={cn("mt-0.5 text-[13px] font-medium text-foreground", item.mono && "font-mono", item.title && "truncate")} title={item.title}>{item.value}</p>
                   </div>
                 ))}

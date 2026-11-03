@@ -113,7 +113,6 @@
 
   /* DAG visualization tokens */
   --dag-glow: color-mix(in srgb, var(--accent) 28%, transparent);
-  --dag-grid: color-mix(in srgb, var(--text-secondary) 10%, transparent);
   --dag-dot-bg: color-mix(in srgb, var(--text-secondary) 16%, transparent);
   --dag-corner-glow: color-mix(in srgb, var(--accent) 18%, transparent);
   --dag-minimap-mask: rgba(0, 0, 0, 0.1);
@@ -167,7 +166,6 @@
 
   /* DAG visualization tokens — reduced opacity for dark backgrounds */
   --dag-glow: color-mix(in srgb, var(--accent) 44%, transparent);
-  --dag-grid: color-mix(in srgb, var(--fg-secondary) 10%, transparent);
   --dag-dot-bg: color-mix(in srgb, var(--fg-secondary) 16%, transparent);
   --dag-corner-glow: color-mix(in srgb, var(--accent) 28%, transparent);
   --dag-minimap-mask: rgba(255, 255, 255, 0.06);

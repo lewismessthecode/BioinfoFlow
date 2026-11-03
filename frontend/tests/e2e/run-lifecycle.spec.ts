@@ -12,6 +12,30 @@ test.describe("Run lifecycle journey", () => {
     seedRunLifecycleFixture()
   })
 
+  test("keeps expanded run controls visible on desktop and scrollable on narrow screens", async ({ page }) => {
+    await page.setViewportSize({ width: 1200, height: 900 })
+    const runs = new RunsPage(page)
+    await runs.goto(runLifecycleFixture.projectId)
+    await runs.expectRunVisible(runLifecycleFixture.failedRunId)
+
+    const row = page.locator('tbody > tr[role="button"]').filter({ hasText: runLifecycleFixture.failedRunId })
+    await row.getByRole("button", { name: "View Details", exact: true }).click()
+    const fullscreen = page.getByRole("button", { name: "Fullscreen", exact: true })
+    await expect(fullscreen).toBeVisible()
+
+    const table = page.getByRole("table")
+    const wrapper = table.locator("..")
+    await expect.poll(() => wrapper.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0)
+    const [wrapperBox, buttonBox] = await Promise.all([wrapper.boundingBox(), fullscreen.boundingBox()])
+    expect(wrapperBox).not.toBeNull()
+    expect(buttonBox).not.toBeNull()
+    if (!wrapperBox || !buttonBox) throw new Error("Run detail is not visible")
+    expect(buttonBox.x + buttonBox.width).toBeLessThanOrEqual(wrapperBox.x + wrapperBox.width)
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect.poll(() => wrapper.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeGreaterThan(0)
+  })
+
   test("resumes a failed run and cancels the queued retry from the Runs page", async ({ page }) => {
     const runs = new RunsPage(page)
 
