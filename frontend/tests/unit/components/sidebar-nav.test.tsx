@@ -84,18 +84,4 @@ describe("SidebarNav", () => {
     expect(inactiveLink.className).not.toContain("text-foreground/72")
   })
 
-  it("renders desktop links as compact system-list rows", () => {
-    usePathnameMock.mockReturnValue("/agent")
-
-    render(<SidebarNav collapsed={false} />)
-
-    const activeLink = screen.getByRole("link", { name: "Agent" })
-
-    expect(activeLink.className).toContain("h-[30px]")
-    expect(activeLink.className).toContain("gap-2")
-    expect(activeLink.className).toContain("px-2.5")
-    expect(activeLink.className).toContain("text-[12px]")
-    expect(activeLink.className).not.toContain("h-[34px]")
-    expect(activeLink.className).not.toContain("gap-3")
-  })
 })

@@ -145,35 +145,35 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
       </div>
 
       {/* New Conversation CTA */}
-      <div className={cn("px-2.5 pb-1.5", collapsed ? "space-y-1 px-2 pt-1" : "pt-1.5")}>
+      <div className={cn("px-3 pb-2", collapsed ? "space-y-1 px-2 pt-1" : "pt-2")}>
         {collapsed ? (
           <>
             <RailButton
               label={tSidebar("newConversation")}
               onClick={handleNewConversation}
-              icon={<SquarePen className="h-3.5 w-3.5" />}
+              icon={<SquarePen className="h-4 w-4" />}
             />
             <RailButton
               label={tSidebar("search")}
               onClick={onCommandOpen}
-              icon={<Search className="h-3.5 w-3.5" />}
+              icon={<Search className="h-4 w-4" />}
             />
           </>
         ) : (
           <div className="space-y-1">
             <Button
-              className="h-[30px] w-full justify-start gap-2 rounded-[7px] border border-transparent bg-sidebar-foreground/[0.08] px-2.5 text-[12px] font-medium text-sidebar-foreground shadow-none transition-colors duration-200 hover:bg-sidebar-foreground/[0.1]"
+              className="h-8 w-full justify-start gap-3 rounded-lg border border-transparent bg-sidebar-foreground/[0.08] px-2.5 text-[13px] font-medium text-sidebar-foreground shadow-none transition-colors duration-200 hover:bg-sidebar-foreground/[0.1]"
               onClick={handleNewConversation}
             >
-              <SquarePen className="h-3.5 w-3.5 shrink-0" />
+              <SquarePen className="h-4 w-4 shrink-0" />
               <span className="truncate">{tSidebar("newConversation")}</span>
             </Button>
             <Button
               variant="ghost"
-              className="h-[30px] w-full justify-start gap-2 rounded-[7px] px-2.5 text-[12px] font-medium text-sidebar-foreground/74 transition-colors hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
+              className="h-8 w-full justify-start gap-3 rounded-lg px-2.5 text-[13px] font-medium text-sidebar-foreground/74 transition-colors hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
               onClick={onCommandOpen}
             >
-              <Search className="h-3.5 w-3.5 shrink-0" />
+              <Search className="h-4 w-4 shrink-0" />
               <span className="truncate">{tSidebar("search")}</span>
             </Button>
           </div>
@@ -181,7 +181,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
       </div>
 
       {/* Navigation */}
-      <div className={cn("px-2.5 py-0.5", collapsed && "px-2")}>
+      <div className={cn("px-3 py-1", collapsed && "px-2")}>
         <SidebarNav collapsed={collapsed} />
       </div>
 

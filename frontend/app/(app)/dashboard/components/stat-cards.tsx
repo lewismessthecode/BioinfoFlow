@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Play, GitBranch, Container, FolderOpen } from "@/lib/icons";
 import {
   CardRoot,
   CardContent,
@@ -20,7 +19,6 @@ export function StatCards({ stats }: StatCardsProps) {
   const statCards = [
     {
       key: "runs",
-      icon: Play,
       href: "/runs?scope=all",
       getValue: () => stats?.runs.total ?? 0,
       getDetails: () => [
@@ -31,7 +29,6 @@ export function StatCards({ stats }: StatCardsProps) {
     },
     {
       key: "workflows",
-      icon: GitBranch,
       href: "/workflows?scope=hub",
       getValue: () => stats?.workflows.total ?? 0,
       getDetails: () => [
@@ -40,7 +37,6 @@ export function StatCards({ stats }: StatCardsProps) {
     },
     {
       key: "images",
-      icon: Container,
       href: "/images",
       getValue: () => stats?.images.total ?? 0,
       getDetails: () => [
@@ -50,7 +46,6 @@ export function StatCards({ stats }: StatCardsProps) {
     },
     {
       key: "projects",
-      icon: FolderOpen,
       href: "/agent",
       getValue: () => stats?.projects.total ?? 0,
       getDetails: () => [
@@ -65,7 +60,6 @@ export function StatCards({ stats }: StatCardsProps) {
       data-testid="dashboard-metric-grid"
     >
       {statCards.map((card) => {
-        const Icon = card.icon;
         return (
           <div
             key={card.key}
@@ -77,12 +71,12 @@ export function StatCards({ stats }: StatCardsProps) {
                 className="group block h-full rounded-[inherit] transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-inset"
               >
                 <CardContent className="flex min-h-[6.75rem] flex-col justify-between gap-3 !p-4">
-                  <span className="flex items-start justify-between gap-3">
+                  <span className="flex items-start gap-3">
                     <span className="min-w-0">
                       <span className="block truncate text-[13px] font-medium text-muted-foreground transition-colors group-hover:text-foreground">
                         {tDashboard(card.key)}
                       </span>
-                      <span className="mt-2 block font-mono text-2xl font-medium tracking-tight text-foreground tabular-nums">
+                      <span className="mt-2 block font-mono text-3xl font-medium text-foreground tabular-nums">
                         {card.getValue()}
                       </span>
                       {card.key === "runs" && (stats?.runs.running ?? 0) > 0 ? (
@@ -94,7 +88,6 @@ export function StatCards({ stats }: StatCardsProps) {
                         </span>
                       ) : null}
                     </span>
-                    <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground" aria-hidden="true" />
                   </span>
                   <span className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     {card.getDetails().map((detail) => (

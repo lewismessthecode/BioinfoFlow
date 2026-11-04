@@ -69,9 +69,9 @@ export function SettingsSidebar({
         <button
           type="button"
           onClick={handleBackToApp}
-          className="group flex h-8 w-full items-center gap-2 rounded-[7px] border border-transparent px-2 text-left text-[12px] font-medium text-sidebar-foreground/82 transition-colors hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
+          className="group flex h-8 w-full items-center gap-2 rounded-lg border border-transparent px-2 text-left text-[13px] font-medium text-sidebar-foreground/82 transition-colors hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
         >
-          <ArrowLeft className="h-3.5 w-3.5 shrink-0" />
+          <ArrowLeft className="h-4 w-4 shrink-0" />
           <span className="truncate">{tSidebar("backToApp")}</span>
         </button>
       </div>
@@ -101,7 +101,7 @@ export function SettingsSidebar({
         ) : (
           groups.map(({ group, items }) => (
             <div key={group} className="mb-3 last:mb-0">
-              <div className="px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.06em] text-sidebar-foreground/56">
+              <div className="px-2 pb-2 pt-3 text-xs font-medium text-sidebar-foreground/60">
                 {tSidebar(`groups.${group}`)}
               </div>
               <ul className="space-y-0.5">
@@ -118,7 +118,7 @@ export function SettingsSidebar({
                         replace
                         aria-current={isActive ? "page" : undefined}
                         className={cn(
-                          "group flex h-[30px] items-center gap-2 rounded-[7px] border border-transparent px-2.5 text-[12px] font-medium leading-none transition-colors duration-150",
+                          "group flex h-8 items-center gap-2 rounded-lg border border-transparent px-2 text-[13px] font-medium leading-5 transition-colors duration-150",
                           isActive
                             ? "bg-sidebar-foreground/[0.08] text-sidebar-foreground"
                             : "text-sidebar-foreground/82 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground",
@@ -126,13 +126,13 @@ export function SettingsSidebar({
                       >
                         <span
                           className={cn(
-                            "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] transition-colors duration-150",
+                            "flex h-5 w-5 shrink-0 items-center justify-center transition-colors duration-150",
                             isActive
                               ? "text-sidebar-foreground"
                               : "text-sidebar-foreground/76 group-hover:text-sidebar-foreground",
                           )}
                         >
-                          <item.icon className="h-3.5 w-3.5 shrink-0" />
+                          <item.icon className="h-4 w-4 shrink-0" />
                         </span>
                         <span className="truncate">{t(`nav.${item.key}`)}</span>
                       </Link>

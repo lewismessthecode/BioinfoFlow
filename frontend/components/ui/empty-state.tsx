@@ -17,10 +17,10 @@ export interface EmptyStateProps {
 export function EmptyState({ icon, title, description, action, className }: EmptyStateProps) {
   return (
     <div className={cn("flex flex-col items-center justify-center py-12 px-4 text-center", className)}>
-      <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-muted/30 mb-4">
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-xl bg-muted/30">
         <AppIconGlyph icon={icon} size="xl" className="text-muted-foreground" />
       </div>
-      <h2 className="text-lg font-semibold text-foreground mb-2">{title}</h2>
+      <h2 className="mb-2 text-lg font-medium text-foreground">{title}</h2>
       <p className="text-sm text-muted-foreground max-w-md mb-6">{description}</p>
       {action && (
         <Button onClick={action.onClick} variant="default">

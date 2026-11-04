@@ -146,30 +146,38 @@ export default function RunsPage() {
     {
       key: "runId",
       header: tRuns("runId"),
-      cellClassName: "whitespace-nowrap",
-      cell: (run) => <span className="font-mono text-sm text-foreground whitespace-nowrap">{run.run_id}</span>,
+      headerClassName: "px-2",
+      cellClassName: "px-2",
+      cell: (run) => (
+        <span className="block max-w-40 truncate font-mono text-sm text-foreground xl:max-w-48 2xl:max-w-80" title={run.run_id}>
+          {run.run_id}
+        </span>
+      ),
     },
     {
       key: "workflow",
       header: tRuns("workflow"),
-      cellClassName: "whitespace-nowrap",
+      headerClassName: "px-2",
+      cellClassName: "px-2",
       cell: (run) =>
         run.workflow_id ? (
           <Link
             href={`/workflows/${run.workflow_id}`}
-            className="whitespace-nowrap text-sm text-muted-foreground transition-colors hover:text-foreground hover:underline underline-offset-4"
+            className="block max-w-40 truncate text-sm text-muted-foreground transition-colors hover:text-foreground hover:underline underline-offset-4 2xl:max-w-64"
+            title={getPipelineName(run)}
             onClick={(event) => event.stopPropagation()}
           >
             {getPipelineName(run)}
           </Link>
         ) : (
-          <span className="whitespace-nowrap text-sm text-muted-foreground">{getPipelineName(run)}</span>
+          <span className="block max-w-40 truncate text-sm text-muted-foreground 2xl:max-w-64" title={getPipelineName(run)}>{getPipelineName(run)}</span>
         ),
     },
     {
       key: "status",
       header: tRuns("status"),
-      cellClassName: "whitespace-nowrap",
+      headerClassName: "px-2",
+      cellClassName: "px-2 whitespace-nowrap",
       cell: (run) => (
         <StatusBadge variant={runStatusVariant[run.status]}>
           {tStatus(runStatusLabel[run.status])}
@@ -179,29 +187,30 @@ export default function RunsPage() {
     {
       key: "startTime",
       header: tRuns("startTime"),
-      headerClassName: "hidden whitespace-nowrap md:table-cell",
-      cellClassName: "hidden whitespace-nowrap text-sm text-muted-foreground md:table-cell",
+      headerClassName: "hidden px-2 whitespace-nowrap md:table-cell",
+      cellClassName: "hidden px-2 whitespace-nowrap text-sm text-muted-foreground md:table-cell",
       cell: (run) => formatDateTime(run.started_at),
     },
     {
       key: "duration",
       header: tRuns("duration"),
-      headerClassName: "hidden whitespace-nowrap md:table-cell",
-      cellClassName: "hidden whitespace-nowrap text-sm text-muted-foreground font-mono md:table-cell",
+      headerClassName: "hidden px-2 whitespace-nowrap md:table-cell",
+      cellClassName: "hidden px-2 whitespace-nowrap text-sm text-muted-foreground font-mono md:table-cell",
       cell: (run) => formatDuration(run.duration_seconds),
     },
     {
       key: "samples",
       header: tRuns("samples"),
-      headerClassName: "hidden whitespace-nowrap lg:table-cell",
-      cellClassName: "hidden whitespace-nowrap text-sm text-muted-foreground lg:table-cell",
+      headerClassName: "hidden px-2 whitespace-nowrap lg:table-cell",
+      cellClassName: "hidden px-2 whitespace-nowrap text-sm text-muted-foreground lg:table-cell",
       cell: (run) => run.samples_count,
     },
     {
       key: "actions",
       header: tRuns("actions"),
       align: "right",
-      cellClassName: "whitespace-nowrap",
+      headerClassName: "px-2",
+      cellClassName: "px-2 whitespace-nowrap",
       cell: (run) => (
         <RunRowActions
           run={run}
@@ -219,11 +228,10 @@ export default function RunsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-4 sm:p-6 max-w-6xl mx-auto">
+      <div className="p-4 sm:p-6">
         {/* Header */}
         <div className="mb-5">
           <h1 className="text-xl font-semibold text-foreground">{tRuns("title")}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{tRuns("subtitle")}</p>
         </div>
 
         {/* Actions Bar */}
